@@ -55,10 +55,11 @@ if [ ! -d "$ROOT/repo/.git" ]; then
   as_app git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$ROOT/repo" >/dev/null 2>&1 || fail "clone"
 fi
 as_app git -C "$ROOT/repo" fetch --depth 1 --quiet origin "$BRANCH" || fail "fetch"
-sha=$(git -C "$ROOT/repo" rev-parse FETCH_HEAD)
+GIT_SAFE=(-c "safe.directory=$ROOT/repo")   # repo is owned by the service user; root only reads it
+sha=$(git "${GIT_SAFE[@]}" -C "$ROOT/repo" rev-parse FETCH_HEAD)
 rel="$ROOT/releases/$sha"
 rm -rf "$rel"; mkdir -p "$rel"
-git -C "$ROOT/repo" archive "$sha" | tar -x -C "$rel" || fail "archive"
+git "${GIT_SAFE[@]}" -C "$ROOT/repo" archive "$sha" | tar -x -C "$rel" || fail "archive"
 chown -R "$APP_USER:$APP_USER" "$rel" 2>/dev/null || true
 
 # ---- Python dependencies (shared venv, reinstalled only when requirements change)
