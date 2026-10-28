@@ -1,0 +1,127 @@
+"""NSE public files: F&O participant-wise open interest / volume and FII/DII cash activity.
+
+Small, polite, personal-research use: one request at a time, a pause between requests, an honest
+User-Agent, and a hard stop (not a retry storm) if NSE answers 403/429. Raw bytes are kept by the
+store so every parsed number can be re-checked against the file it came from. Nothing is guessed:
+a file whose own "as on" date differs from the requested date is rejected.
+"""
+
+from __future__ import annotations
+
+import csv
+import io
+import json
+import re
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from datetime import date, datetime
+from typing import Any
+
+USER_AGENT = "NSEUniverse-personal-research/1.0 (single user, low rate)"
+ARCHIVE = "https://archives.nseindia.com/content/nsccl"
+KINDS = {
+    "fao_participant_oi": ("fao_participant_oi_{d}.csv", "Open Interest"),
+    "fao_participant_vol": ("fao_participant_vol_{d}.csv", "Trading Volumes"),
+}
+FII_DII_PAGE = "https://www.nseindia.com/"
+FII_DII_API = "https://www.nseindia.com/api/fiidiiTradeReact"
+PARTICIPANTS = ("Client", "DII", "FII", "Pro")
+
+
+class NseParseError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class Fetched:
+    status: int  # HTTP status; 0 = network error
+    body: bytes | None
+    error: str | None = None
+
+
+def file_url(kind: str, session: date) -> str:
+    return f"{ARCHIVE}/{KINDS[kind][0].format(d=session.strftime('%d%m%Y'))}"
+
+
+def fetch(url: str, *, timeout: float = 20.0, headers: dict[str, str] | None = None, opener: Any = None) -> Fetched:
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "*/*", **(headers or {})})  # noqa: S310
+    try:
+        with (opener.open(req, timeout=timeout) if opener else urllib.request.urlopen(req, timeout=timeout)) as r:  # noqa: S310
+            return Fetched(r.status, r.read())
+    except urllib.error.HTTPError as e:
+        return Fetched(e.code, None, f"HTTP {e.code}")
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        return Fetched(0, None, f"{type(e).__name__}: {e}")
+
+
+_AS_ON = re.compile(r"as on\s+([A-Za-z]{3})[a-z]*\s+(\d{1,2}),\s*(\d{4})", re.I)
+
+
+def _num(s: str) -> int:
+    t = s.strip().replace(",", "")
+    if not re.fullmatch(r"-?\d+(\.0+)?", t):
+        raise NseParseError(f"not a whole number: {s!r}")
+    return int(float(t))
+
+
+def parse_participant(body: bytes, kind: str, session: date) -> dict[str, dict[str, int]]:
+    """{participant: {column: value}} for Client, DII, FII, Pro (TOTAL is kept for cross-checking)."""
+    text = body.decode("utf-8-sig", errors="replace")
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if len(lines) < 6:
+        raise NseParseError("file too short")
+    m = _AS_ON.search(lines[0])
+    if not m:
+        raise NseParseError("no 'as on <date>' in the title line")
+    stated = datetime.strptime(f"{m.group(1)[:3].title()} {m.group(2)} {m.group(3)}", "%b %d %Y").date()
+    if stated != session:
+        raise NseParseError(f"file says {stated}, requested {session}")
+    if KINDS[kind][1].lower() not in lines[0].lower():
+        raise NseParseError(f"title does not look like {kind}: {lines[0][:80]!r}")
+    rows = list(csv.reader(io.StringIO("\n".join(lines[1:]))))
+    head = [c.strip() for c in rows[0]]
+    if not head or head[0].lower() != "client type":
+        raise NseParseError("header row not found")
+    cols = [c for c in head[1:] if c]
+    out: dict[str, dict[str, int]] = {}
+    for r in rows[1:]:
+        if not r or not r[0].strip():
+            continue
+        name = r[0].strip()
+        key = "TOTAL" if name.upper() == "TOTAL" else name
+        vals = [c for c in r[1:] if c.strip() != ""]
+        if len(vals) != len(cols):
+            raise NseParseError(f"{name}: {len(vals)} values for {len(cols)} columns")
+        out[key] = {c: _num(v) for c, v in zip(cols, vals, strict=True)}
+    if set(PARTICIPANTS) - set(out):
+        raise NseParseError(f"missing participants: {sorted(set(PARTICIPANTS) - set(out))}")
+    if "TOTAL" in out:  # integrity: the four groups must add up to the file's own total row
+        for c in cols:
+            # NSE's own TOTAL row is off by a contract or two on some days (seen in real files)
+            tol = max(5, out["TOTAL"][c] // 100_000)
+            if abs(sum(out[p][c] for p in PARTICIPANTS) - out["TOTAL"][c]) > tol:
+                parts = {p: out[p][c] for p in PARTICIPANTS}
+                raise NseParseError(f"column {c!r}: participants do not add up to TOTAL ({parts} vs {out['TOTAL'][c]})")
+    return out
+
+
+def parse_fii_dii(body: bytes) -> list[dict[str, Any]]:
+    """Latest-day provisional cash activity: [{category, session, buy, sell, net}] in Rs crore."""
+    try:
+        rows = json.loads(body)
+    except ValueError as e:
+        raise NseParseError(f"not JSON: {e}") from e
+    if not isinstance(rows, list) or not rows:
+        raise NseParseError("empty or unexpected FII/DII response")
+    out = []
+    for r in rows:
+        try:
+            d = datetime.strptime(str(r["date"]), "%d-%b-%Y").date()
+            buy, sell, net = (float(str(r[k]).replace(",", "")) for k in ("buyValue", "sellValue", "netValue"))
+        except (KeyError, ValueError) as e:
+            raise NseParseError(f"unexpected FII/DII row: {r!r}") from e
+        if abs((buy - sell) - net) > 0.05 * max(1.0, abs(net)) + 1:
+            raise NseParseError(f"{r.get('category')}: buy - sell does not equal net")
+        out.append({"category": str(r["category"]).strip(), "session": d, "buy": buy, "sell": sell, "net": net})
+    return out

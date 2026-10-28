@@ -1,0 +1,428 @@
+// Mirrors backend pydantic models (backend/app/domain/models.py, app/api/routes.py).
+
+export type DataSource = "live" | "snapshot" | "stored";
+export type Completeness = "complete" | "partial" | "empty";
+export type ExpiryKind = "weekly" | "monthly";
+export type AuthState =
+  | "not_attempted"
+  | "authenticating"
+  | "authenticated"
+  | "failed";
+
+export interface AuthStatus {
+  state: AuthState;
+  last_attempt_at: string | null;
+  last_success_at: string | null;
+  last_error: string | null;
+}
+
+export interface SnapshotActivity {
+  last_attempt_at: string | null;
+  last_success_at: string | null;
+  last_error: string | null;
+  in_progress: boolean;
+  captured_count: number;
+}
+
+export type StreamState =
+  | "stopped" | "connecting" | "subscribing" | "waiting_for_data" | "streaming"
+  | "reconnecting" | "auth_failed" | "failed";
+export type Freshness = "none" | "fresh" | "stale" | "market_closed";
+
+export interface MarketStatus {
+  state: "unknown" | "open" | "closed" | "other";
+  code: number | null;
+  text: string | null;
+  exchange_segment: string | null;
+  received_at: string | null;
+  source: "exchange_feed" | "none";
+}
+
+export interface StreamError { at: string; code: string; message: string }
+
+export interface StreamStatus {
+  implemented: boolean;
+  state: StreamState;
+  state_since: string | null;
+  effective_state: string;
+  freshness: Freshness;
+  data_source: "live" | "none";
+  phase: "idle" | "test_subscription" | "full_subscription";
+  test_subscription_result: "not_run" | "received" | "no_data";
+  message_count: number;
+  tick_count: number;
+  instruments_with_data: number;
+  subscribed_tokens: number;
+  acknowledged_tokens: number;
+  reconnect_count: number;
+  connected_since: string | null;
+  last_message_at: string | null;
+  last_market_data_at: string | null;
+  data_age_seconds: number | null;
+  stale_after_seconds: number;
+  expiries: string[];
+  market: MarketStatus;
+  recent_errors: StreamError[];
+  note: string;
+}
+
+/** True only for the streaming-era status shape. An older backend sends a different, smaller object. */
+export function isStreamStatus(s: unknown): s is StreamStatus {
+  const o = s as Partial<StreamStatus> | null | undefined;
+  return (
+    !!o && typeof o.state === "string" && typeof o.effective_state === "string" &&
+    !!o.market && typeof o.market.state === "string" && typeof o.stale_after_seconds === "number"
+  );
+}
+
+export interface LiveTick {
+  key: string;
+  kind: "scrip" | "index";
+  exchange_segment: string;
+  instrument_token: string;
+  trading_symbol: string | null;
+  ltp: number | null;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  prev_close: number | null;
+  volume: number | null;
+  oi: number | null;
+  net_change: number | null;
+  net_change_pct: number | null;
+  last_trade_time_raw: number | null;
+  last_update_time_raw: number | null;
+  received_at: string;
+  seq: number;
+  source: "live";
+}
+
+export type ServerMessage =
+  | { type: "hello"; status: StreamStatus; ticks: LiveTick[] }
+  | { type: "ticks"; ticks: LiveTick[] }
+  | { type: "status"; status: StreamStatus }
+  | { type: "market"; market: MarketStatus };
+
+export interface AppStatus {
+  session_id: string;
+  started_at: string;
+  underlying: string;
+  broker: string;
+  auth: AuthStatus;
+  snapshots: SnapshotActivity;
+  stream: StreamStatus;
+  snapshot_stale_after_seconds: number;
+  server_time: string;
+}
+
+export interface ConfigStatus {
+  credentials_present: Record<string, boolean>;
+  allowed_origins: string[];
+  host_is_loopback: boolean;
+  underlying: string;
+  option_chain_strike_count: number;
+}
+
+export interface ExpirySelection {
+  underlying: string;
+  as_of: string;
+  available: string[];
+  weekly: string | null;
+  monthly: string | null;
+  monthly_is_next_month: boolean;
+  weekly_equals_monthly: boolean;
+  source: DataSource;
+  retrieved_at: string;
+  warnings: string[];
+}
+
+export interface OptionQuote {
+  exchange_segment: string | null;
+  instrument_token: string | null;
+  trading_symbol: string | null;
+  option_type: "CE" | "PE";
+  ltp: number | null;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  prev_close: number | null;
+  close: number | null;
+  volume: number | null;
+  oi: number | null;
+  oi_previous: number | null;
+  oi_change: number | null;
+  oi_change_pct: number | null;
+  moneyness: string | null;
+  invalid_fields: string[];
+}
+
+export interface OptionChainRow {
+  strike: number;
+  call: OptionQuote | null;
+  put: OptionQuote | null;
+}
+
+export interface SnapshotSummary {
+  snapshot_id: string;
+  session_id: string;
+  underlying: string;
+  expiry: string;
+  expiry_kinds: ExpiryKind[];
+  source: DataSource;
+  retrieved_at: string;
+  completeness: Completeness;
+  strikes: number;
+  ce_count: number;
+  pe_count: number;
+  file_ref: string;
+  underlying_ltp: number | null;
+  underlying_prev_close: number | null;
+}
+
+export interface OptionChainSnapshot extends Omit<SnapshotSummary, "strikes" | "file_ref"> {
+  exchange_timestamp: string | null;
+  lot_size: number | null;
+  multiplier: number | null;
+  underlying_ltp: number | null;
+  underlying_prev_close: number | null;
+  requested_strike_count: number;
+  rows: OptionChainRow[];
+  warnings: string[];
+}
+
+export interface ChainResponse {
+  snapshot: OptionChainSnapshot;
+  age_seconds: number;
+  stale: boolean;
+  display_source: DataSource;
+}
+
+export interface SessionInfo {
+  session_id: string;
+  started_at: string;
+  ended_at: string | null;
+  data_mode?: string;
+  snapshot_count: number;
+}
+
+export interface ErrorEvent {
+  at: string;
+  component: string;
+  code: string;
+  message: string;
+}
+
+export interface Observation {
+  snapshot_id: string;
+  retrieved_at: string;
+  session_id: string;
+  underlying_ltp: number | null;
+  underlying_prev_close: number | null;
+  atm_strike: number | null;
+  atm_call_ltp: number | null;
+  atm_put_ltp: number | null;
+  straddle: number | null;
+  total_ce_premium: number | null;
+  total_pe_premium: number | null;
+  total_ce_oi: number | null;
+  total_pe_oi: number | null;
+  total_ce_volume: number | null;
+  total_pe_volume: number | null;
+  strikes_in_universe: number;
+  missing_ltp: number;
+  same_as_previous: boolean;
+}
+
+export interface HistoryResponse {
+  underlying: string;
+  expiry: string;
+  strikes_each_side: number;
+  observations: Observation[];
+  distinct_observations: number;
+  definitions: Record<string, string>;
+  note: string;
+}
+
+export interface SamplerStatus {
+  enabled: boolean;
+  interval_seconds: number;
+  session: string;
+  state: "off" | "waiting" | "sampling" | "error";
+  reason: string;
+  in_session: boolean;
+  last_attempt_at: string | null;
+  last_success_at: string | null;
+  last_error: string | null;
+  next_due_at: string | null;
+  samples_this_run: number;
+  skipped_unchanged: number;
+  free_disk_gb: number | null;
+}
+
+export type BaselineKind = "previous" | "at" | "session_open" | "prev_session" | "broker_prev_day";
+
+export interface OiRow {
+  strike: number;
+  side: "CE" | "PE";
+  oi: number | null;
+  baseline_oi: number | null;
+  change: number | null;
+  change_pct: number | null;
+  label: string;
+  ltp: number | null;
+  baseline_ltp: number | null;
+  price_change: number | null;
+  price_change_pct: number | null;
+  relation: string | null;
+}
+
+export interface OiChange {
+  underlying: string;
+  expiry: string;
+  baseline: { kind: BaselineKind; label: string; at: string | null; note: string };
+  current_at: string | null;
+  spot: number | null;
+  baseline_spot: number | null;
+  underlying_change: number | null;
+  atm_strike: number | null;
+  strikes_each_side: number | null;
+  rows: OiRow[];
+  totals: { ce_oi: number | null; pe_oi: number | null; ce_change: number | null; pe_change: number | null };
+  concentration: {
+    strike: number; side: "CE" | "PE"; oi: number; share_pct: number;
+    baseline_share_pct: number | null; share_change_pts: number | null;
+  }[];
+  observations_available: number;
+  warnings: string[];
+  definitions: Record<string, string>;
+}
+
+export interface OiHeatmap {
+  underlying: string;
+  expiry: string;
+  side: "CE" | "PE";
+  baseline: { kind: string; label: string; at: string | null; note: string };
+  strikes: number[];
+  times: string[];
+  change: (number | null)[][];
+  stride: number;
+  atm_strike: number | null;
+  missing_cells: number;
+  warnings: string[];
+}
+
+export interface HistorySymbol {
+  key: string;
+  yahoo: string;
+  name: string;
+  kind: string;
+  timing_verified: boolean;
+  has_data: boolean;
+  first?: string;
+  last?: string;
+  bars?: number;
+  disagreements?: number;
+}
+
+export interface HistoryFetchStatus {
+  enabled: boolean;
+  source: string;
+  running: boolean;
+  progress: string;
+  last_run: {
+    run_id: string;
+    started_at: string;
+    finished_at: string | null;
+    summary: { ok_symbols: number; failed_symbols: string[]; empty_symbols: string[]; new_bars: number; disagreements: number } | null;
+  } | null;
+  symbols: HistorySymbol[];
+  started?: boolean;
+}
+
+export type Verdict = "better" | "promising" | "no_difference" | "worse";
+
+export interface ModelScore {
+  n: number; brier: number; log_loss: number; hit: number; hit_ci: [number, number];
+  gain: number; gain_ci95: [number, number]; gain_ci_strict_low: number; skill: number; verdict: Verdict;
+}
+
+export interface ModelEval {
+  description: string;
+  params: Record<string, number> | null;
+  holdout: ModelScore;
+  tuning: { n: number; brier: number; gain: number; skill: number };
+  calibration: { low: number; high: number; n: number; predicted: number; observed: number }[];
+  folds: { start: string; end: string; n: number; brier_model: number; brier_base: number; phase: "tuning" | "holdout" }[];
+}
+
+export interface CallStats {
+  threshold: number; rule: string; n_holdout: number; n_called: number; coverage?: number;
+  hit?: number; hit_ci?: [number, number]; always_up_hit?: number; always_up_ci?: [number, number];
+  verdict: "promising" | "no_edge_shown" | "too_few_calls";
+}
+
+export interface HorizonEval {
+  available: boolean;
+  reason?: string;
+  n_labelled?: number;
+  tuning_period?: [string, string];
+  holdout_period?: [string, string];
+  base?: { brier_holdout: number; brier_coin_flip: number; up_rate_holdout: number };
+  models?: Record<string, ModelEval>;
+  best_on_tuning?: string;
+  calls?: CallStats;
+  features?: string[];
+  method?: string;
+}
+
+export interface ForecastPayload {
+  p_up_model: number; p_up_raw: number; p_up_climatology: number; p_up_climatology_recent_750: number; model_verdict: Verdict;
+  return_quantiles_climatological: Record<string, number>;
+  top_drivers: { feature: string; log_odds: number; value: number }[];
+  params: Record<string, number> | null;
+  call: "up" | "down" | null; call_reason: string | null; call_strength: number | null; call_threshold: number | null;
+}
+
+export interface ModelForecast {
+  reference_session: string;
+  reference_close: number;
+  first_target_session?: string;
+  target_session?: string;
+  recorded: boolean;
+  preview?: boolean;
+  forecast_id?: string;
+  already_recorded?: boolean;
+  reason?: string;
+  payload: ForecastPayload | null;
+}
+
+export interface PredictionLedgerRow {
+  forecast_id: string; model: string; model_version: string; reference_session: string; target_session: string; generated_at: string;
+  p_up_model: number | null; p_up_climatology: number | null; intact: boolean;
+  outcome: { realized: { positive: boolean; close_to_close?: number; ret5?: number }; status: string } | null;
+}
+
+export type PredictionSummary =
+  | { ready: false; reason: string; computing?: boolean }
+  | {
+      ready: true;
+      generated_at: string;
+      computed_at: string;
+      model_version: string;
+      features: { T1: { version: string; names: string[] }; T5: { version: string; names: string[]; flows: string[] } };
+      data: { symbol: string; bars: number; first: string; last: string; reference_close: number; up_rate_all: Record<string, number>; overnight_data_fresh: boolean; stale_series: string[] };
+      evaluation: { initial_train: number; test_size: number; scheme: string; horizons: Record<"T1" | "T5" | "T5F", HorizonEval> };
+      forecasts: Record<"T1" | "T5", { headline_model?: string; calls?: { call: "up" | "down" | null; reason: string | null; strength: number | null; threshold: number | null }; models: Record<string, ModelForecast> }>;
+      excluded_inputs: string[];
+      ledger: { counts: Record<string, { forecasts: number; outcomes: number }>; recent: Record<"T1" | "T5", PredictionLedgerRow[]> };
+    };
+
+export interface FlowsCoverage { first: string | null; last: string | null; files: number; not_published_404: number; last_stored_utc: string | null }
+export interface FlowsStatus {
+  enabled: boolean; running: boolean; progress: string; blocked: string | null; cash_note: string | null; source: string;
+  last_run: { requests: number; stored: number; missing: number; errors: number; rejected: string[]; cash_new?: number } | null;
+  coverage: Record<"fao_participant_oi" | "fao_participant_vol" | "fii_dii_cash", FlowsCoverage>;
+}
+
+export interface FlowsDay { session: string; participants: Record<string, Record<string, number>> }
+export interface FlowsLatest { open_interest: FlowsDay[]; volume: FlowsDay[] }

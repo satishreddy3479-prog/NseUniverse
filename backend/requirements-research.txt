@@ -1,0 +1,4 @@
+# Research-only packages (price-history downloads). NOT installed on the small server:
+# the server installs requirements.txt only; the PC / Codespaces use requirements-dev.txt.
+yfinance>=1.7,<2
+numpy>=1.26

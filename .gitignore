@@ -1,0 +1,53 @@
+# Secrets / credentials / sessions
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+secrets/
+credentials*.json
+*session*.json
+*.token
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+.vite/
+*.tsbuildinfo
+coverage/
+
+# Logs / temp
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.swp
+.DS_Store
+Thumbs.db
+
+# Generated market data (do not commit by default)
+data/
+*.parquet
+*.sqlite
+*.sqlite3
+*.db
+*.csv.gz
+
+# Local-only Claude Code config
+.claude/settings.local.json
+CLAUDE.local.md

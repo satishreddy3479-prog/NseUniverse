@@ -1,0 +1,52 @@
+[project]
+name = "nse-universe-backend"
+version = "0.1.0"
+description = "NSE Universe backend: Kotak Neo market data, snapshots, API"
+requires-python = ">=3.11,<3.15"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.30,<1",
+  "pydantic>=2.7,<3",
+  "pydantic-settings>=2.4,<3",
+  "kotakneoapi>=3.0.13,<4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "httpx>=0.27", "ruff>=0.6", "mypy>=1.11"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = ["live: real Kotak Neo calls; run only with NSE_LIVE_TESTS=1 and a configured .env"]
+addopts = "-m 'not live'"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "W"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/unit/test_research.py" = ["E501"]
+"tests/**" = ["S104", "S105", "S106", "S107", "S311"]
+# symbol registry rows and SQL statements read better on one line
+"app/prediction/sources/yahoo.py" = ["E501"]
+"app/prediction/history_store.py" = ["E501"]
+"app/prediction/research.py" = ["E501"]
+"tests/unit/test_history.py" = ["E501"]
+"app/prediction/features_multi.py" = ["E501", "B023"]
+"app/prediction/flows_store.py" = ["E501"]
+"app/prediction/flows_service.py" = ["E501"]
+"app/prediction/sources/nse.py" = ["E501"]
+"tests/unit/test_flows.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["app"]
+
+[[tool.mypy.overrides]]
+module = ["neo_api_client", "neo_api_client.*", "pyotp"]
+ignore_missing_imports = true
