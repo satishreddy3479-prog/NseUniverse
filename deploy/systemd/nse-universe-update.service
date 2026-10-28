@@ -1,0 +1,9 @@
+[Unit]
+Description=NSE Universe: deploy a new GitHub commit if there is one
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nse-universe-update
+Nice=10
+TimeoutStartSec=1800

@@ -1,0 +1,8 @@
+[Unit]
+Description=NSE Universe: nightly SQLite backup
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nse-universe-backup
+Nice=15
+IOSchedulingClass=idle

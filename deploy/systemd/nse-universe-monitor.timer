@@ -1,0 +1,9 @@
+[Unit]
+Description=Storage report every 6 hours
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=6h
+
+[Install]
+WantedBy=timers.target

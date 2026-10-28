@@ -38,3 +38,7 @@ See [audit-checkpoint1](audit-checkpoint1.md): real snapshot data confirmed, not
 1. User: `scripts\setup.ps1` → `scripts\check.ps1` → `scripts\dev.ps1` on Windows (or just double-click NSE Universe.cmd).
 2. User: fill `backend\.env`, run `scripts\live-check.ps1`, share the (secret-free) output.
 3. Claude: fix any live-shape mismatches, then Checkpoint 2 (SFeed streaming, app WebSocket, live state).
+
+
+## Server deployment (2026-10-28)
+Deploy kit written and tested for update/rollback logic and backend startup with server-style settings; **not yet run on the VPS** (see docs/deployment-server.md). T+1 overnight and T+5 broad models, calibration, calls and the forward scoreboard are built; see docs/decisions.md D47.

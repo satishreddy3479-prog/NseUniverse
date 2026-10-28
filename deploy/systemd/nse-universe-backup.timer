@@ -1,0 +1,9 @@
+[Unit]
+Description=Nightly NSE Universe database backup (18:30 UTC = midnight IST)
+
+[Timer]
+OnCalendar=*-*-* 18:30:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,7 @@
+[Unit]
+Description=NSE Universe: disk, memory and database size report
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nse-universe-monitor
+Nice=15

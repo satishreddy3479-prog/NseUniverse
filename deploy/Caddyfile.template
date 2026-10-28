@@ -1,0 +1,36 @@
+# Public HTTPS front door. Everything requires a login: the app has no user accounts of its own,
+# and its control endpoints trust the proxy (which only forwards authenticated requests).
+__DOMAIN__ {
+	encode zstd gzip
+
+	basic_auth {
+		import /etc/nse-universe/caddy-users
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8010
+	}
+	handle /ws/* {
+		reverse_proxy 127.0.0.1:8010
+	}
+	handle {
+		root * /opt/nse-universe/current/frontend/dist
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output file /var/log/caddy/nse-universe.log {
+			roll_size 5MiB
+			roll_keep 3
+		}
+	}
+}

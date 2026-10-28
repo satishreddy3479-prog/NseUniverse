@@ -131,3 +131,10 @@ Status: **Final** or **Proposed**. Date 2026-10-28 unless noted.
 - Protocol: earlier half of purged walk-forward folds tunes hyper-parameters and fits a Platt calibration; later half is an untouched holdout; verdicts use a Bonferroni-adjusted bootstrap. "Calls" (all base models agree and the ensemble is in the top quarter of tuning-period strength) are scored separately; otherwise "no call".
 - Result on real data (holdout 2018-09 to 2025-12, 1,750 predictions): T+1 all four models beat the base rate (Brier gain +0.013 to +0.015, strict test passed, hit rate 60-61%); confident calls (41% of days) right 67.7% vs 52.9% always-up. Leakage sanity: delaying the overnight data by one day removes the edge. T+5 broad: no detectable edge (ensemble worse).
 - Recording: forecasts are recorded only 08:35-09:10 IST on the target day, after the overnight data is complete (US session complete after 03:00 IST); otherwise the page shows a preview. History refresh also runs at 07:30 IST.
+
+## D48 — Server-first deployment kit (2026-10-28)
+- `deploy/` holds a repeatable bootstrap and a pull-based updater: a timer checks GitHub every minute (`git ls-remote`), builds a new release next to the running one, checks `/api/health`, switches the `current` symlink, and rolls back by itself on failure. Production does not depend on GitHub Actions.
+- Public exposure requires authentication (CLAUDE.md rule): Caddy HTTPS with a mandatory login in front of everything; the backend listens on 127.0.0.1:8010 only; ALLOWED_ORIGINS is the public origin.
+- Resource and data rules: 1 GB swap file, systemd memory limits, journald cap, nightly integrity-checked SQLite backups, disk monitor (70/80/90 %), no automatic deletion of market data; deploys never touch the data directory.
+- Existing services on the VPS (an earlier nse-tradingdesk) are left untouched; the script refuses to continue if ports 80/443/8010 are taken.
+- Not done by me: logging in to the VPS, DuckDNS registration, filling broker credentials (they stay on the server). I could not verify the kit on the real server; it is tested here for the update/rollback logic and backend startup only.
