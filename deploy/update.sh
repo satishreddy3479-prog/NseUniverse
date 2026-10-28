@@ -76,7 +76,8 @@ if [ "$TEST_MODE" != 1 ]; then
   (cd "$rel/backend" && as_app "$ROOT/venv/bin/python" -c "import app.main") || fail "backend does not import"
 fi
 
-# ---- Frontend build (node_modules cached by lock-file hash; one cache kept)
+# ---- Frontend build (node_modules cached by lock-file hash; one cache kept).
+# Production only bundles with vite; type checks and tests run on the development machine / CI.
 if [ "$TEST_MODE" != 1 ]; then
   lockhash=$(sha256sum "$rel/frontend/package-lock.json" | cut -c1-16)
   cache="$ROOT/cache/nm-$lockhash"
@@ -88,7 +89,7 @@ if [ "$TEST_MODE" != 1 ]; then
     for d in "$ROOT"/cache/nm-*; do [ "$d" = "$cache" ] || rm -rf "$d"; done
   fi
   ln -sfn "$cache" "$rel/frontend/node_modules"
-  (cd "$rel/frontend" && as_app env PATH="$PATH" NODE_OPTIONS=--max-old-space-size=700 npm run build --silent) || fail "frontend build"
+  (cd "$rel/frontend" && as_app env PATH="$PATH" NODE_OPTIONS=--max-old-space-size=700 ./node_modules/.bin/vite build --logLevel warn) || fail "frontend build"
   [ -f "$rel/frontend/dist/index.html" ] || fail "frontend build produced no index.html"
 fi
 
