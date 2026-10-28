@@ -80,15 +80,15 @@ fi
 # Production only bundles with vite; type checks and tests run on the development machine / CI.
 if [ "$TEST_MODE" != 1 ]; then
   lockhash=$(sha256sum "$rel/frontend/package-lock.json" | cut -c1-16)
-  cache="$ROOT/cache/nm-$lockhash"
+  cache="$ROOT/cache/nm2-$lockhash"   # must contain a folder literally named node_modules (Node resolves real paths)
   export PATH="/opt/node/bin:$PATH"
-  if [ ! -d "$cache" ]; then
+  if [ ! -d "$cache/node_modules" ]; then
     log "installing frontend packages"
     (cd "$rel/frontend" && as_app env PATH="$PATH" npm ci --no-audit --no-fund --loglevel=error) || fail "npm ci"
-    mv "$rel/frontend/node_modules" "$cache"
-    for d in "$ROOT"/cache/nm-*; do [ "$d" = "$cache" ] || rm -rf "$d"; done
+    mkdir -p "$cache" && mv "$rel/frontend/node_modules" "$cache/node_modules"
+    for d in "$ROOT"/cache/*; do [ "$d" = "$cache" ] || rm -rf "$d"; done
   fi
-  ln -sfn "$cache" "$rel/frontend/node_modules"
+  ln -sfn "$cache/node_modules" "$rel/frontend/node_modules"
   (cd "$rel/frontend" && as_app env PATH="$PATH" NODE_OPTIONS=--max-old-space-size=700 ./node_modules/.bin/vite build --logLevel warn) || fail "frontend build"
   [ -f "$rel/frontend/dist/index.html" ] || fail "frontend build produced no index.html"
 fi
