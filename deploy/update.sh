@@ -65,7 +65,8 @@ chown -R "$APP_USER:$APP_USER" "$rel" 2>/dev/null || true
 reqhash=$(cat "$rel"/backend/requirements.txt "$rel"/backend/requirements-research.txt | sha256sum | cut -c1-16)
 if [ "$TEST_MODE" != 1 ] && [ "$(cat "$ROOT/venv/.reqhash" 2>/dev/null || true)" != "$reqhash" ]; then
   log "installing Python packages"
-  [ -x "$ROOT/venv/bin/python" ] || as_app python3 -m venv "$ROOT/venv" || fail "venv"
+  PYBIN=$(cat /etc/nse-universe-python 2>/dev/null || echo python3)
+  [ -x "$ROOT/venv/bin/python" ] || as_app "$PYBIN" -m venv "$ROOT/venv" || fail "venv"
   as_app "$ROOT/venv/bin/pip" install --quiet --disable-pip-version-check \
     -r "$rel/backend/requirements.txt" -r "$rel/backend/requirements-research.txt" || fail "pip install"
   echo "$reqhash" > "$ROOT/venv/.reqhash"

@@ -60,7 +60,7 @@ cat > /etc/sysctl.d/99-nse-universe.conf <<'SYS'
 vm.swappiness=20
 vm.vfs_cache_pressure=80
 SYS
-sysctl --system >/dev/null
+sysctl -p /etc/sysctl.d/99-nse-universe.conf >/dev/null
 mkdir -p /etc/systemd/journald.conf.d
 printf '[Journal]\nSystemMaxUse=200M\nRuntimeMaxUse=50M\n' > /etc/systemd/journald.conf.d/nse-universe.conf
 systemctl restart systemd-journald
@@ -70,7 +70,20 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq git curl ca-certificates nano python3 python3-venv python3-pip sqlite3 xz-utils \
   debian-keyring debian-archive-keyring apt-transport-https gpg util-linux >/dev/null
-python3 -c 'import sys; assert sys.version_info >= (3, 11), sys.version' || die "Python 3.11+ is required (Ubuntu 24.04 has 3.12)"
+find_python() { for c in python3.13 python3.12 python3.11 python3; do
+  command -v "$c" >/dev/null && "$c" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' && { echo "$c"; return 0; }
+done; return 1; }
+if ! find_python >/dev/null; then
+  [ "${ID:-}" = ubuntu ] || die "Python 3.11+ is required and this is not Ubuntu; install it and rerun"
+  say "Python 3.12 (added next to the system Python 3.10; the system Python is not changed)"
+  apt-get install -y -qq software-properties-common >/dev/null
+  add-apt-repository -y ppa:deadsnakes/ppa >/dev/null
+  apt-get update -qq
+  apt-get install -y -qq python3.12 python3.12-venv python3.12-dev >/dev/null
+fi
+PY=$(find_python) || die "no Python 3.11+ available"
+echo "using $PY ($($PY --version))"
+echo "$PY" > /etc/nse-universe-python
 
 say "Node.js (official tarball, checksum verified)"
 if [ ! -x /opt/node/bin/node ]; then
