@@ -216,3 +216,14 @@ def test_stream_control_is_local_only(tmp_path: Path) -> None:
         assert c.post("/api/stream/start").status_code == 403
         assert c.post("/api/stream/stop").status_code == 403
         assert c.get("/api/stream/status").status_code == 200
+
+
+def test_daily_login_status_is_exposed(tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+
+    from tests.conftest import make_app
+
+    with TestClient(make_app(tmp_path)) as c:
+        body = c.get("/api/broker/daily-login").json()
+        assert body["enabled"] is True and body["time_ist"] == "08:30"
+        assert body["done_today"] in (True, False)

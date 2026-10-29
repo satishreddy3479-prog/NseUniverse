@@ -364,6 +364,12 @@ async def oi_heatmap_route(
     )  # fmt: skip
 
 
+@router.get("/broker/daily-login")
+async def daily_login_status(request: Request) -> dict[str, Any]:
+    """Morning broker sign-in schedule and the result of today's attempt."""
+    return request.app.state.daily_login.status()  # type: ignore[no-any-return]
+
+
 @router.get("/intraday/summary")
 async def intraday_summary(request: Request, expiry: date) -> dict[str, Any]:
     """Market Sentiment Command Center: rules-based intraday assessment from stored observations."""

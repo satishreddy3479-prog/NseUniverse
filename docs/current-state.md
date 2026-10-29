@@ -53,3 +53,6 @@ Deploy kit written and tested for update/rollback logic and backend startup with
 - Found and fixed a real leak: 12 partial bars (US/Europe, 28 Oct) and 4 Asian bars (29 Oct) had been stored mid-session as final. They are excluded and the 12 were corrected from the final download (the 4 of 29 Oct are corrected after those sessions end). `history/status` lists any held-back bars (`partial_bars_held_back`).
 - Models are trained/evaluated only outside market hours (report states "paused" and serves the cache during 09:15-15:45 IST); forecasts are still recorded only 08:35-09:10 IST on overnight data.
 - Guard tests: `backend/tests/unit/test_no_intraday_leak.py` (import boundary, completion times, the 28 Oct incident replayed, retry logic, market-hours gate).
+
+## Daily broker sign-in (2026-10-29)
+- The backend signs in to Kotak Neo every day at 08:30 IST (`BROKER_DAILY_LOGIN`, `BROKER_LOGIN_TIME`), retries every 5 minutes until 09:10 on failure, and restarts the live stream afterwards if it was running so it uses the new session. Status: `GET /api/broker/daily-login`. Tested with a stand-in broker (schedule, retry, once per day); the first real 08:30 run is 29 Oct.

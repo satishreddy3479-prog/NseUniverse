@@ -7,7 +7,7 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -30,6 +30,7 @@ from app.prediction.news_service import NewsService
 from app.prediction.news_store import NewsStore
 from app.prediction.research import PredictionResearch
 from app.services.backfill import backfill_observations
+from app.services.daily_login import DailyLogin
 from app.services.sampler import SnapshotSampler
 from app.services.snapshot_service import SnapshotService
 from app.services.state import AppState
@@ -137,6 +138,19 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         )
         app.state.sampler = sampler
         sampler.start()
+
+        async def _restart_stream() -> None:
+            # the feed holds the old session: restart it only if it was running
+            if stream.status().state.value != "stopped":
+                await stream.stop()
+                await stream.start()
+
+        hh, mm = (int(x) for x in settings.broker_login_time.split(":"))
+        daily_login = DailyLogin(
+            b.login, _restart_stream, at=time(hh, mm), enabled=settings.broker_daily_login
+        )
+        app.state.daily_login = daily_login
+        daily_login.start()
         stream.start_background()
         if settings.stream_autostart:
             await stream.start()
@@ -152,6 +166,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         finally:
             if not login_task.done():
                 login_task.cancel()
+            await daily_login.stop()
             await intraday.stop()
             intraday_store.close()
             await history.stop()

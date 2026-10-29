@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     history_autofetch: bool = True
     flows_history_days: int = 10  # NSE files are collected from this many days back, then daily
     news_autofetch: bool = True  # GDELT daily tone/volume (headline aggregates only)
+    broker_daily_login: bool = True  # fresh broker sign-in every morning
+    broker_login_time: str = "08:30"  # IST, HH:MM
     intraday_autoscore: bool = True  # record the rules-based intraday score each minute in session
     flows_autofetch: bool = True  # NSE participant-wise F&O files and FII/DII cash (low rate)
     history_start: date = date(2007, 1, 1)
