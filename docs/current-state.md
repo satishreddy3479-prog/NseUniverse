@@ -13,6 +13,9 @@ _Last updated: 2026-10-29_
 - Open items: no stored sample at 15:30 itself (sampler's last in-session sample was 15:29); post-close fetches show deep-OTM contracts with OI 0 and LTP 0.0, which is not a real quote.
 - New (29 Oct): the PCR widget (ATM strike, strikes in view, whole chain; shown once to saved layouts), dark change segments in the OI explorer, and a Full-view table of every time slot.
 
+## OI explorer, StockMojo-style single screen (30 Oct 2026)
+- Time slots count back from the last stored sample of the session (after the close: the last sample taken 09:15-15:30 IST) and pass `until` to `/api/oi/change`, so after hours "Last 30 min" shows the final half hour of trading. Full view shows Open Interest Change, Total Open Interest and PCR cards for the chosen slot, next to the strike chart; the table was removed. OI-decrease segments no longer have a border. StockMojo's page (29 Oct 15:40:59 data) shows PCR 1.03, the same as ours. Not yet checked in a live session.
+
 ## OI explorer (29 Oct 2026)
 - The default Analysis widget "Open interest by strike" now carries the explorer (no separate widget to add): modes OI change + total / OI change / Total OI; windows Last 3/5/10/15/30 min, 1/2/3 hr, All; call/put OI, change and PCR for the window; ⤢ Full. Windows compare the newest stored sample with the one that long ago (`/api/oi/change`, baseline `at`), so they need stored samples (about one a minute in market hours). Not yet checked in a live session. The "Sampled live / Sampling delayed / Stored" chip is removed; time-series widgets show only "last sample HH:MM IST".
 

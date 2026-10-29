@@ -64,10 +64,10 @@ export const api = {
   login: () => request<AppStatus["auth"]>("/api/auth/login", { method: "POST" }),
   streamStart: () => request<StreamStatus>("/api/stream/start", { method: "POST" }),
   streamStop: () => request<StreamStatus>("/api/stream/stop", { method: "POST" }),
-  oiChange: (expiry: string, baseline: string, strikes: string, at?: string) =>
+  oiChange: (expiry: string, baseline: string, strikes: string, at?: string, until?: string) =>
     request<OiChange>(
       `/api/oi/change?expiry=${encodeURIComponent(expiry)}&baseline=${baseline}&strikes=${strikes}` +
-        (at ? `&at=${encodeURIComponent(at)}` : ""),
+        (at ? `&at=${encodeURIComponent(at)}` : "") + (until ? `&until=${encodeURIComponent(until)}` : ""),
     ),
   oiHeatmap: (expiry: string, side: "CE" | "PE", baseline: string, strikes: string) =>
     request<OiHeatmap>(

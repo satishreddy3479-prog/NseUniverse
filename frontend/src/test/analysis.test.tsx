@@ -516,21 +516,25 @@ describe("PCR widget and the Full time-slot table", () => {
     expect(screen.queryByRole("region", { name: "PCR: ATM and overall" })).toBeNull();
   });
 
-  it("the Full view lists every time slot with call and put OI and change", async () => {
+  it("Full view adds totals, change and PCR cards that follow the chosen slot; the normal view stays compact", async () => {
+    const urls: string[] = [];
     localStorage.setItem("nse.analysis.layout.v1", JSON.stringify({ active: ["oi"], layout: [{ i: "oi", x: 0, y: 0, w: 12, h: 14 }] }));
-    mockApi(history([obs(1), obs(2)], 1));
+    mockApi(history([obs(1), obs(2)], 1), { "/api/oi/change": (u: string) => { urls.push(u); return oiRes(); } });
     renderAnalysis();
     const inline = await screen.findByTestId("oi-explorer");
-    expect(within(inline).queryByTestId("oi-slot-table")).toBeNull(); // normal view: chart and totals only
+    expect(within(inline).queryByTestId("oi-cards")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Open OI explorer full size" }));
     const dlg = await screen.findByRole("dialog", { name: "Open interest: change and total by window" });
-    const table = await within(dlg).findByTestId("oi-slot-table");
-    for (const l of ["Last 3 min", "Last 30 min", "Last 3 hr", "All"]) expect(within(table).getByRole("row", { name: new RegExp(`^${l}`) })).toBeInTheDocument();
-    // oiRes totals: call 210 (+60), put 90 (−30), PCR 90/210 = 0.43, PCR of change −30/60 = −0.50
-    const all = await waitFor(() => { const r = within(table).getByRole("row", { name: /^All/ }); expect(r).toHaveTextContent("+60"); return r; });
-    expect(all).toHaveTextContent("210");
-    expect(all).toHaveTextContent("−30");
-    expect(all).toHaveTextContent("0.43");
-    expect(all).toHaveTextContent("-0.50");
+    await userEvent.click(within(dlg).getByRole("button", { name: "Last 30 min" }));
+    await waitFor(() => expect(urls.at(-1)).toContain("baseline=at"));
+    expect(urls.at(-1)).toContain("until="); // the slot counts back from a stored sample, not from the clock
+    const cards = await within(dlg).findByTestId("oi-cards");
+    // oiRes totals: call OI 210 (+60), put OI 90 (−30), PCR 90/210 = 0.43, PCR of OI change −30/60 = −0.50
+    expect(within(cards).getByLabelText("Open Interest Change")).toHaveTextContent("+60");
+    expect(within(cards).getByLabelText("Open Interest Change")).toHaveTextContent("−30");
+    expect(within(cards).getByLabelText("Total Open Interest")).toHaveTextContent("210");
+    expect(within(cards).getByLabelText("Put/Call Ratio")).toHaveTextContent("0.43");
+    expect(within(cards).getByLabelText("Put/Call Ratio")).toHaveTextContent("-0.50");
+    expect(within(dlg).queryByTestId("oi-slot-table")).toBeNull();
   });
 });

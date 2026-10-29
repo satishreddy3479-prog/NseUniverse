@@ -171,6 +171,29 @@ export function windowStartIso(newestIso: string, minutes: number): string {
   return new Date(new Date(newestIso).getTime() - minutes * 60_000).toISOString();
 }
 
+/**
+ * The instant the time slots count back from. While the session is running (or when nothing is stored for the day
+ * inside 09:15-15:30 IST) it is the newest stored sample; after the close it is the last sample taken during the
+ * session, so "Last 30 min" shows the final half hour of trading rather than an unchanged after-hours chain.
+ */
+export function windowEndIso(sampleIsos: string[]): string | null {
+  if (!sampleIsos.length) return null;
+  const IST = 330, OPEN = 9 * 60 + 15, CLOSE = 15 * 60 + 30;
+  const parts = (iso: string) => {
+    const m = Math.floor(new Date(iso).getTime() / 60_000) + IST;
+    return { day: Math.floor(m / 1440), min: ((m % 1440) + 1440) % 1440 };
+  };
+  const newest = sampleIsos[sampleIsos.length - 1]!;
+  const n = parts(newest);
+  if (n.min >= OPEN && n.min <= CLOSE) return newest;
+  let best: string | null = null;
+  for (const iso of sampleIsos) {
+    const p = parts(iso);
+    if (p.day === n.day && p.min >= OPEN && p.min <= CLOSE) best = iso;
+  }
+  return best ?? newest;
+}
+
 export interface OiWindowStats {
   ceOi: number | null; peOi: number | null; ceChange: number | null; peChange: number | null;
   pcr: number | null; pcrBaseline: number | null; pcrChange: number | null;

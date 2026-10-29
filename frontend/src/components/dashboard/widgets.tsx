@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { EChart, useChartColors } from "../EChart";
 import { ChainTable } from "../ChainTable";
 import { Button, EmptyState, SourceTag } from "../ui";
 import { useDash } from "./DashContext";
 import { FullChart } from "./FullChart";
-import { atmStraddle, compactIN, computeTotals, maxPain, OI_MODES, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, TS_RANGES, windowStartIso, type OiMode } from "../../lib/analytics";
+import { atmStraddle, compactIN, computeTotals, maxPain, OI_MODES, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, TS_RANGES, windowEndIso, windowStartIso, type OiMode } from "../../lib/analytics";
 import {
   decayOption, oiChangeBarOption, oiHeatmapOption, premiumOption, spotOption, straddleOption, strikeBarOption,
   oiExplorerOption, totalsBarOption, type StrikeMetric } from "../../lib/chartOptions";
@@ -615,54 +615,38 @@ export function PriceOiWidget() {
 const signedUnits = (v: number | null) => (v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${compactIN(Math.abs(v))}`);
 const fmt2 = (v: number | null) => (v == null ? "—" : v.toFixed(2));
 
-/** Full view only: totals and change for calls and puts in every time slot, one row per window. */
-function OiSlotTable({ newest }: { newest: string | null }) {
-  const d = useDash();
-  const qs = useQueries({
-    queries: OI_WINDOWS.map((w) => {
-      const at = w.minutes == null || !newest ? undefined : windowStartIso(newest, w.minutes);
-      return {
-        queryKey: ["oiWindow", d.expiry, w.id, at, d.range],
-        queryFn: () => api.oiChange(d.expiry!, w.minutes == null ? "session_open" : "at", strikesParam(d.range), at),
-        enabled: !!d.expiry && (w.minutes == null || !!newest), refetchInterval: 30_000, retry: false,
-      };
-    }),
-  });
+/** One StockMojo-style pair: calls and puts side by side, bars drawn to the same scale. */
+function PairBars({ title, ce, pe, signed }: { title: string; ce: number | null; pe: number | null; signed: boolean }) {
+  const top = Math.max(Math.abs(ce ?? 0), Math.abs(pe ?? 0));
+  const bar = (v: number | null, cls: string, label: string) => (
+    <div className="flex flex-1 flex-col items-center justify-end gap-1">
+      <span className="num text-sm text-paper">{v == null ? "—" : signed ? signedUnits(v) : compactIN(v)}</span>
+      <div className="flex h-20 w-full items-end justify-center">
+        {v != null && top > 0 && <div className={`w-3/5 rounded-t-sm ${cls}`} style={{ height: `${Math.max(2, (Math.abs(v) / top) * 100)}%` }} />}
+      </div>
+      <span className="text-xs text-muted">{label}</span>
+    </div>
+  );
   return (
-    <div className="overflow-x-auto" data-testid="oi-slot-table">
-      <table className="w-full text-xs">
-        <caption className="mb-1 text-left text-muted">Every time slot: call and put OI now, how much each changed, and the PCR (strikes in view).</caption>
-        <thead>
-          <tr className="text-muted">
-            <th scope="col" className="px-2 py-1 text-left font-medium">Time slot</th>
-            <th scope="col" className="px-2 py-1 text-right font-medium">Call OI</th><th scope="col" className="px-2 py-1 text-right font-medium">Call OI change</th>
-            <th scope="col" className="px-2 py-1 text-right font-medium">Put OI</th><th scope="col" className="px-2 py-1 text-right font-medium">Put OI change</th>
-            <th scope="col" className="px-2 py-1 text-right font-medium">PCR</th><th scope="col" className="px-2 py-1 text-right font-medium">PCR of OI change</th>
-          </tr>
-        </thead>
-        <tbody>
-          {OI_WINDOWS.map((w, i) => {
-            const q = qs[i]!;
-            const st = q.data ? oiWindowStats(q.data.totals) : null;
-            const pending = q.isPending && q.fetchStatus !== "idle";
-            return (
-              <tr key={w.id} className="border-t border-rule">
-                <th scope="row" className="px-2 py-1 text-left font-medium text-paper">{w.label}</th>
-                {st ? (
-                  <>
-                    <td className="num px-2 py-1 text-right">{st.ceOi == null ? "—" : compactIN(st.ceOi)}</td>
-                    <td className="num px-2 py-1 text-right">{signedUnits(st.ceChange)}</td>
-                    <td className="num px-2 py-1 text-right">{st.peOi == null ? "—" : compactIN(st.peOi)}</td>
-                    <td className="num px-2 py-1 text-right">{signedUnits(st.peChange)}</td>
-                    <td className="num px-2 py-1 text-right">{fmt2(st.pcr)}</td>
-                    <td className="num px-2 py-1 text-right" title={st.pcrOiChangeNote ?? undefined}>{fmt2(st.pcrOiChange)}</td>
-                  </>
-                ) : <td colSpan={6} className="px-2 py-1 text-muted">{pending ? "Loading…" : q.error ? "Could not load" : "No earlier stored sample for this slot"}</td>}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <figure className="min-w-0 flex-1 rounded-sm border border-rule bg-slate-2 p-2" aria-label={title}>
+      <figcaption className="mb-1 text-xs font-medium text-paper">{title}</figcaption>
+      <div className="flex gap-2">{bar(ce, "bg-up", "CALL")}{bar(pe, "bg-down", "PUT")}</div>
+    </figure>
+  );
+}
+
+/** Full view: totals, change and PCR for the chosen time slot, next to the strike chart. */
+function OiCards({ st }: { st: ReturnType<typeof oiWindowStats> }) {
+  return (
+    <div className="flex flex-wrap gap-2" data-testid="oi-cards">
+      <PairBars title="Open Interest Change" ce={st.ceChange} pe={st.peChange} signed />
+      <PairBars title="Total Open Interest" ce={st.ceOi} pe={st.peOi} signed={false} />
+      <figure className="min-w-0 flex-1 rounded-sm border border-rule bg-slate-2 p-2" aria-label="Put/Call Ratio">
+        <figcaption className="mb-1 text-xs font-medium text-paper">Put/Call Ratio</figcaption>
+        <p className="num text-2xl text-paper">{fmt2(st.pcr)}</p>
+        <p className="text-xs text-muted">PCR {st.pcrChange == null ? "change —" : `${st.pcrChange >= 0 ? "+" : "−"}${Math.abs(st.pcrChange).toFixed(2)} in slot`}</p>
+        <p className="mt-1 text-xs text-muted" title={st.pcrOiChangeNote ?? undefined}>PCR of OI change <span className="num text-paper">{fmt2(st.pcrOiChange)}</span></p>
+      </figure>
     </div>
   );
 }
@@ -673,13 +657,13 @@ function OiExplorerBody({ large, mode, setMode, win, setWin }: {
   const d = useDash();
   const colors = useChartColors();
   const obs = d.history.data?.observations ?? [];
-  const newest = obs.length ? obs[obs.length - 1]!.retrieved_at : null;
+  const newest = useMemo(() => windowEndIso(obs.map((o) => o.retrieved_at)), [obs]);
   const w = OI_WINDOWS.find((x) => x.id === win)!;
   const at = w.minutes == null || !newest ? undefined : windowStartIso(newest, w.minutes);
   const q = useQuery({
-    queryKey: ["oiWindow", d.expiry, win, at, d.range],
-    queryFn: () => api.oiChange(d.expiry!, w.minutes == null ? "session_open" : "at", strikesParam(d.range), at),
-    enabled: !!d.expiry && (w.minutes == null || !!newest), refetchInterval: 30_000, retry: false,
+    queryKey: ["oiWindow", d.expiry, win, at, newest, d.range],
+    queryFn: () => api.oiChange(d.expiry!, w.minutes == null ? "session_open" : "at", strikesParam(d.range), at, newest ?? undefined),
+    enabled: !!d.expiry && !!newest, refetchInterval: 30_000, retry: false,
   });
   const res = q.data;
   const opt = useMemo(() => (res ? oiExplorerOption(res, mode, d.showCalls, d.showPuts, d.selected, colors) : null), [res, mode, d.showCalls, d.showPuts, d.selected, colors]);
@@ -700,7 +684,7 @@ function OiExplorerBody({ large, mode, setMode, win, setWin }: {
       <div role="group" aria-label="OI window" className="flex flex-wrap items-center gap-1">
         {OI_WINDOWS.map((x) => <button key={x.id} type="button" aria-pressed={win === x.id} onClick={() => setWin(x.id)} className={chip(win === x.id)}>{x.label}</button>)}
       </div>
-      {res && st && (
+      {res && st && !large && (
         <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs sm:grid-cols-4" data-testid="oi-window-stats">
           <div><span className="text-muted">Call OI </span><span className="num text-paper">{compactIN(st.ceOi)}</span> <span className="num text-muted">({signedUnits(st.ceChange)})</span></div>
           <div><span className="text-muted">Put OI </span><span className="num text-paper">{compactIN(st.peOi)}</span> <span className="num text-muted">({signedUnits(st.peChange)})</span></div>
@@ -708,7 +692,7 @@ function OiExplorerBody({ large, mode, setMode, win, setWin }: {
           <div title={st.pcrOiChangeNote ?? "Put OI change divided by call OI change"}><span className="text-muted">PCR of OI change </span><span className="num text-paper">{fmt2(st.pcrOiChange)}</span></div>
         </div>
       )}
-      {large && <OiSlotTable newest={newest} />}
+      {large && st && <OiCards st={st} />}
       {res && (
         <p className="text-[11px] text-muted" data-testid="oi-window-note">
           {w.label}: compared with the stored sample at {res.baseline.at ? fmtTimeIST(res.baseline.at) : "—"}, now {res.current_at ? fmtTimeIST(res.current_at) : "—"}

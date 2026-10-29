@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { atmStraddle, compactIN, computeTotals, maxPain, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, universeRows, windowStartIso } from "../lib/analytics";
+import { atmStraddle, compactIN, computeTotals, maxPain, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, universeRows, windowEndIso, windowStartIso } from "../lib/analytics";
 import type { OptionChainRow, OptionQuote } from "../lib/types";
 
 const q = (over: Partial<OptionQuote> = {}): OptionQuote => ({
@@ -162,5 +162,20 @@ describe("OI by window", () => {
     expect(none.pcrOiChangeNote).toBe("no baseline OI for the window");
     expect(oiWindowStats({ ce_oi: 0, pe_oi: 80, ce_change: null, pe_change: null }).pcr).toBeNull();
     expect(oiWindowStats({ ce_oi: null, pe_oi: null, ce_change: null, pe_change: null }).pcr).toBeNull();
+  });
+});
+
+describe("windowEndIso", () => {
+  // IST 15:30 is 10:00Z and 09:15 IST is 03:45Z
+  it("is the newest sample while the session runs", () => {
+    expect(windowEndIso(["2026-10-29T04:00:00Z", "2026-10-29T06:00:00Z"])).toBe("2026-10-29T06:00:00Z");
+  });
+  it("after the close it is the last sample taken inside the session of the same day", () => {
+    const s = ["2026-10-29T09:58:00Z", "2026-10-29T09:59:02Z", "2026-10-29T14:51:00Z", "2026-10-29T18:11:00Z"];
+    expect(windowEndIso(s)).toBe("2026-10-29T09:59:02Z");
+  });
+  it("falls back to the newest sample when nothing was taken in session that day; null when empty", () => {
+    expect(windowEndIso(["2026-10-29T00:38:00Z"])).toBe("2026-10-29T00:38:00Z");
+    expect(windowEndIso([])).toBeNull();
   });
 });
