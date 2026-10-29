@@ -3,7 +3,7 @@
 `backend/app/strategy/backtest.py`, `POST /api/strategy/backtest`, `GET /api/strategy/availability`.
 
 ## Data reality (checked, not assumed)
-The only option prices are the last traded prices NSE Universe stored itself, about one per minute during market hours, from **28 Oct 2026**. There is no bid/ask and no earlier history. A session needs at least 30 stored samples to be used. On 30 Oct 2026 that is two to three sessions. Results over so few sessions show how rules behave, not whether a strategy works; every result says this, and bucket tables say "too few trades to conclude" below 30 trades.
+The only option prices are the last traded prices NSE Universe stored itself, about one per minute during market hours, from the **29 Oct 2026** session. There is no bid/ask and no earlier history. A session needs at least 30 stored samples to be used. On 30 Oct 2026 that is **one** session (29 Oct, 348 samples), so the first live run gave a single trade. It is a mechanics check, not evidence. Results over so few sessions show how rules behave, not whether a strategy works; every result says this, and bucket tables say "too few trades to conclude" below 30 trades.
 
 ## What is implemented
 One trade per session: strikes chosen at entry as listed-strike offsets from the ATM; entry at the first stored sample at or after the entry time (within a configurable wait) where every leg has a price; stop-loss and target (rupees on the strategy, or % of premium traded) checked on every later sample, stop-loss first; otherwise exit at the first sample at or after the exit time. Lots, lot size (from the stored sample), costs and slippage (same cost model as the builder).
