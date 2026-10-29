@@ -82,7 +82,7 @@
   "universe": "ATM +/-10 listed strikes"
  },
  "assessment": {
-  "score": 0.07592667571203876,
+  "score": 0.09146075243571816,
   "label": "Neutral / range-bound",
   "direction": "Flat",
   "coverage": 0.75,
@@ -183,26 +183,26 @@
     "name": "Global markets (overnight)",
     "weight": 0.1,
     "available": true,
-    "score": 0.10692107002156767,
+    "score": 0.22342664544916324,
     "reason": "",
     "formula": "mean of clip(S&P 500 return / its 60-day sd) and clip(-USD/INR return / its 60-day sd); last completed daily bars",
     "inputs": [
      {
       "name": "S&P 500",
-      "value": 0.15266929419377462,
+      "value": 0.5969968881235133,
       "unit": "%",
-      "session": "2026-10-28"
+      "session": "2026-10-27"
      },
      {
       "name": "USD/INR",
-      "value": 0.024165721545155172,
+      "value": 0.2622689656801791,
       "unit": "%",
-      "session": "2026-10-28"
+      "session": "2026-10-27"
      }
     ],
     "source": "Yahoo Finance daily bars (stored)",
-    "as_of": "2026-10-28",
-    "contribution": 0.010692107002156767
+    "as_of": "2026-10-27",
+    "contribution": 0.022342664544916326
    },
    {
     "key": "institutional",
@@ -262,7 +262,7 @@
    "probability": null,
    "status": "rules-based, no probability (no validated intraday model)",
    "supporting": [
-    "Global markets (overnight): +0.11",
+    "Global markets (overnight): +0.22",
     "Institutional cash flows: +0.28"
    ],
    "conflicting": [],
@@ -273,27 +273,15 @@
    },
    "strengthens": "Sustained trade above 22,698.85 with the score staying above +0.2",
    "weakens": "Falls back below 22,698.85 (previous close) or below 22,698.85"
-  },
-  {
-   "name": "Bearish continuation / reversal",
-   "horizon": "rest of today's session",
-   "probability": null,
-   "status": "rules-based, no probability (no validated intraday model)",
-   "supporting": [],
-   "conflicting": [
-    "Global markets (overnight): +0.11",
-    "Institutional cash flows: +0.28"
-   ],
-   "levels": {
-    "trigger below": 22698.85,
-    "put OI concentration": 22500.0,
-    "previous day low": 22497.69921875
-   },
-   "strengthens": "Sustained trade below 22,698.85 with the score staying below -0.2",
-   "weakens": "Recovers above 22,698.85 (previous close) or above 22,698.85"
   }
  ],
- "narrative": "Current assessment: Neutral / range-bound (score +0.08, coverage 75%, provisional rules). NIFTY 22,698.85 is +0.00% from the previous close. Last 30 minutes +0.00%. PCR (OI, ATM +/-10) 0.94, +0.00 since the first sample. Observed regime: Sideways consolidation; volatility low. Not included: market breadth, sector participation.",
+ "scenarios_ruled_out": [
+  {
+   "name": "Bearish continuation / reversal",
+   "reason": "none of the 4 available evidence groups is below -0.10 (2 are bullish)"
+  }
+ ],
+ "narrative": "Current assessment: Neutral / range-bound (score +0.09, coverage 75%, provisional rules). NIFTY 22,698.85 is +0.00% from the previous close. Last 30 minutes +0.00%. PCR (OI, ATM +/-10) 0.94, +0.00 since the first sample. Observed regime: Sideways consolidation; volatility low. Not included: market breadth, sector participation.",
  "context": [
   {
    "question": "Trending or rotating?",
@@ -321,7 +309,7 @@
   },
   {
    "question": "Global conditions?",
-   "answer": "S&P 500 +0.15% on 2026-10-28."
+   "answer": "S&P 500 +0.60% on 2026-10-27."
   },
   {
    "question": "Important event approaching?",
@@ -422,57 +410,57 @@
   {
    "key": "SPX",
    "name": "S&P 500",
-   "session": "2026-10-28",
-   "ret_pct": 0.15266929419377462,
-   "sd_pct": 0.5872482852264734,
+   "session": "2026-10-27",
+   "ret_pct": 0.5969968881235133,
+   "sd_pct": 0.63010928376319,
    "fresh": true
   },
   {
    "key": "NDX_COMP",
    "name": "Nasdaq Composite",
-   "session": "2026-10-28",
-   "ret_pct": -0.038873942132711115,
-   "sd_pct": 0.930109528906587,
+   "session": "2026-10-27",
+   "ret_pct": 1.1785899298015101,
+   "sd_pct": 0.9875228619950175,
    "fresh": true
   },
   {
    "key": "VIX",
    "name": "CBOE VIX",
-   "session": "2026-10-28",
-   "ret_pct": -0.684936279098225,
-   "sd_pct": 6.034683613006211,
+   "session": "2026-10-27",
+   "ret_pct": -4.730826322781068,
+   "sd_pct": 6.0611027758761225,
    "fresh": true
   },
   {
    "key": "USDINR",
    "name": "USD/INR",
-   "session": "2026-10-28",
-   "ret_pct": 0.024165721545155172,
-   "sd_pct": 0.5238400097933789,
+   "session": "2026-10-27",
+   "ret_pct": 0.2622689656801791,
+   "sd_pct": 0.5239129381815262,
    "fresh": true
   },
   {
    "key": "BRENT",
    "name": "Brent crude",
-   "session": "2026-10-28",
-   "ret_pct": -1.650858182964654,
-   "sd_pct": 2.229985900551049,
+   "session": "2026-10-27",
+   "ret_pct": -1.6665230514311236,
+   "sd_pct": 2.33623878006761,
    "fresh": true
   },
   {
    "key": "UST10Y",
    "name": "US 10Y yield",
-   "session": "2026-10-28",
-   "ret_pct": 0.7810942137773669,
-   "sd_pct": 0.9780176872710493,
+   "session": "2026-10-27",
+   "ret_pct": 0.14039248689796668,
+   "sd_pct": 0.9906858864426228,
    "fresh": true
   },
   {
    "key": "GOLD",
    "name": "Gold",
-   "session": "2026-10-28",
-   "ret_pct": -0.4589455373364526,
-   "sd_pct": 1.3048663940070513,
+   "session": "2026-10-27",
+   "ret_pct": 0.8963994697873012,
+   "sd_pct": 1.3185296788639642,
    "fresh": true
   },
   {
@@ -494,9 +482,9 @@
   {
    "key": "DAX",
    "name": "DAX",
-   "session": "2026-10-28",
-   "ret_pct": 0.2762760681684906,
-   "sd_pct": 0.7374798842052466,
+   "session": "2026-10-27",
+   "ret_pct": 0.7080824113109951,
+   "sd_pct": 0.7371606199211098,
    "fresh": true
   }
  ],
@@ -620,8 +608,8 @@
   {
    "source": "Global markets",
    "status": "fresh",
-   "detail": "latest S&P 500 daily bar 2026-10-28",
-   "as_of": "2026-10-28"
+   "detail": "latest S&P 500 daily bar 2026-10-27",
+   "as_of": "2026-10-27"
   },
   {
    "source": "Economic calendar",
@@ -661,5 +649,15 @@
   },
   "min_coverage": 0.45
  },
- "compute_ms": 323.1
+ "compute_ms": 247.1,
+ "timings_ms": {
+  "samples_query": 0.5,
+  "calendar": 0.2,
+  "daily_history": 20.1,
+  "price_and_options": 1.7,
+  "global_flows": 141.0,
+  "assess_regime_store": 0.6,
+  "health_counts": 82.2,
+  "record": 1.3
+ }
 }

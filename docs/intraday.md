@@ -60,11 +60,19 @@ institutional 0.10. Each group score ∈ [−1, +1]:
   snapshots before anyone calls them meaningful.
 
 ## Regime and scenarios
-Observed regime needs ≥ 15 samples: up/downtrend (efficiency ≥ 0.35 and |60-min return| ≥ half the
+Observed regime needs >= 15 samples: up/downtrend (efficiency >= 0.35 and |60-min return| >= half the
 typical 60-min move), mean-reverting (efficiency < 0.2), otherwise sideways; tags for opening-range
-breakout/breakdown, volatility expansion/contraction, exhaustion risk, event risk. Scenarios (bullish,
-range, bearish) are qualitative, ordered by agreement with the score, with evidence for/against,
-levels, strengthen/weaken conditions; **probability is always null** until a validated model exists.
+breakout/breakdown, volatility expansion/contraction, exhaustion risk, event risk.
+
+Scenarios (bullish, range-bound, bearish) are qualitative and **only the relevant ones are shown**; the
+others are listed as "Not shown" with the reason:
+- *Bullish* needs at least one available evidence group above +0.10; *bearish* at least one below -0.10.
+- *Range-bound* is shown unless the session is a clean trend (efficiency >= 0.35) with |score| >= 0.5, and
+  it is the fallback when no direction is supported.
+- Order: range-bound first when the observed regime is sideways/choppy, otherwise the direction of the
+  score first.
+Each shown scenario lists evidence for and against, levels, and what would strengthen or weaken it.
+**Probability is always null** until a validated model exists.
 
 ## Score ledger
 `data/intraday.sqlite3`, table `scores`: one row per (expiry, sample, scoring version) written when

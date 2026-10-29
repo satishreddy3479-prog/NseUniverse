@@ -74,6 +74,21 @@ describe("Market Sentiment Command Center", () => {
     expect(screen.queryByText(/\d+% chance/)).toBeNull();
   });
 
+  it("shows only the supported scenarios and explains the ones ruled out", async () => {
+    mock(base);
+    renderCC();
+    await screen.findByTestId("cc-regime");
+    expect(base.scenarios.length + base.scenarios_ruled_out.length).toBe(3);
+    expect(screen.getAllByText(/Probability: not estimated/).length).toBe(base.scenarios.length);
+    const note = screen.getByTestId("cc-ruled-out");
+    for (const r of base.scenarios_ruled_out) {
+      expect(within(note).getByText(`Not shown: ${r.name}`)).toBeInTheDocument();
+      expect(note.textContent).toContain(r.reason);
+    }
+    // a ruled-out scenario is not also drawn as a card
+    expect(screen.queryAllByText(base.scenarios_ruled_out[0]!.name, { selector: "span.text-sm" })).toHaveLength(0);
+  });
+
   it("shows VWAP as not available for an index", async () => {
     mock(base);
     renderCC();

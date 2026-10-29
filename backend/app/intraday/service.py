@@ -339,7 +339,7 @@ class IntradayService:
             e.impact == "high" and e.start <= close_today + timedelta(hours=18) for e in upcoming
         )
         reg = regime(p, ctx, event_today)
-        scen = scenarios(a, p, o, ctx)
+        scen, scen_ruled_out = scenarios(a, p, o, ctx, reg)
         prev_score = None
         if latest is not None and a.score is not None:
             prev_score = self.store.last_before(
@@ -386,6 +386,7 @@ class IntradayService:
             "changes": changes,
             "regime": reg,
             "scenarios": scen,
+            "scenarios_ruled_out": scen_ruled_out,
             "narrative": narrative(a, p, o, reg),
             "context": self._context(a, p, o, reg, glob, upcoming, chain_status),
             "levels": levels,

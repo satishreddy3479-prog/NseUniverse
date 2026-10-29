@@ -481,6 +481,8 @@ export interface IntradaySummary {
   changes: { component: string; delta: number }[];
   regime: { primary: string; tags: string[]; reason: string };
   scenarios: IntradayScenario[];
+  /** Scenarios evaluated and ruled out by the current evidence, with the reason. */
+  scenarios_ruled_out: { name: string; reason: string }[];
   narrative: string;
   context: { question: string; answer: string }[];
   levels: IntradayLevel[];

@@ -215,7 +215,7 @@ function Regime({ d }: { d: IntradaySummary }) {
             <div key={s.name} className={`rounded-sm border p-2 ${i === 0 ? "border-brass/60" : "border-rule"} bg-slate-2`}>
               <div className="flex items-baseline justify-between gap-2">
                 <span className={`text-sm font-semibold ${s.name.startsWith("Bull") ? "text-up" : s.name.startsWith("Bear") ? "text-down" : "text-info"}`}>{s.name}</span>
-                <span className="text-[10px] text-muted">{i === 0 ? "most consistent" : ""}</span>
+                <span className="text-[10px] text-muted">{i === 0 ? "best fit now" : ""}</span>
               </div>
               <p className="text-[11px] text-muted">Probability: not estimated ({s.status}) · {s.horizon}</p>
               <p className="mt-1 text-xs"><span className="text-up">For:</span> {s.supporting.length ? s.supporting.join("; ") : "none"}</p>
@@ -226,6 +226,13 @@ function Regime({ d }: { d: IntradaySummary }) {
             </div>
           ))}
         </div>
+      )}
+      {d.scenarios_ruled_out.length > 0 && (
+        <ul className="mt-2 space-y-0.5 text-xs text-muted" data-testid="cc-ruled-out" aria-label="Scenarios ruled out">
+          {d.scenarios_ruled_out.map((r) => (
+            <li key={r.name}><span className="text-paper">Not shown: {r.name}</span> — {r.reason}.</li>
+          ))}
+        </ul>
       )}
     </Card>
   );

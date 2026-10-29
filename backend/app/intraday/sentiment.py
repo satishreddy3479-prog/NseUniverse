@@ -308,13 +308,22 @@ def _fmt(v: float | None) -> str:
     return "n/a" if v is None else f"{v:,.2f}"
 
 
+CHOPPY = ("Sideways consolidation", "Mean-reverting / choppy")
+
+
 def scenarios(
-    a: Assessment, p: PriceFeatures, o: OptionsFeatures, ctx: DailyContext
-) -> list[dict[str, Any]]:
-    """Up to three qualitative scenarios built from explicit rules. No probabilities: there is no
-    validated intraday model, and numbers would be invented."""
+    a: Assessment, p: PriceFeatures, o: OptionsFeatures, ctx: DailyContext, reg: dict[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """Qualitative scenarios that are relevant now, plus the ones ruled out and why.
+
+    Relevance rules: bullish needs at least one available evidence group above +0.10, bearish at least
+    one below -0.10; range-bound is shown unless the session is a clean trend (efficiency ratio >= 0.35)
+    with a strong score (|score| >= 0.5), and always when nothing else is relevant. Order: the observed
+    regime first (range-bound when choppy), then by agreement with the score. No probabilities: there is
+    no validated intraday model, and numbers would be invented.
+    """
     if a.score is None or p.last is None:
-        return []
+        return [], []
     bull = [c for c in a.components if c.available and (c.score or 0) > 0.1]
     bear = [c for c in a.components if c.available and (c.score or 0) < -0.1]
     up = max(x for x in (p.or_high, p.sampled_high) if x is not None)
@@ -341,9 +350,25 @@ def scenarios(
          "strengthens": f"Sustained trade below {_fmt(dn)} with the score staying below -0.2",
          "weakens": f"Recovers above {_fmt(p.prev_close)} (previous close) or above {_fmt(up)}"},
     ]  # fmt: skip
-    # order by agreement with the current assessment; the least relevant last
-    key = {"Up": [0, 1, 2], "Down": [2, 1, 0], "Flat": [1, 0, 2]}.get(a.direction, [1, 0, 2])
-    return [out[i] for i in key]
+    n_av = sum(1 for c in a.components if c.available)
+    trending = p.er_session is not None and p.er_session >= 0.35 and abs(a.score) >= 0.5
+    why: dict[int, str] = {}
+    if not bull:
+        why[0] = f"none of the {n_av} available evidence groups is above +0.10"
+    if not bear:
+        why[2] = f"none of the {n_av} available evidence groups is below -0.10" + (f" ({len(bull)} are bullish)" if bull else "")
+    if trending and not (why.get(0) and why.get(2)):
+        why[1] = f"a clean trend: efficiency ratio {p.er_session:.2f} with score {a.score:+.2f}"
+    if len(why) == 3:  # nothing directional is supported: range-bound is the honest default
+        del why[1]
+    primary = (reg or {}).get("primary")
+    if primary in CHOPPY:
+        key = [1, 0, 2] if len(bull) >= len(bear) else [1, 2, 0]
+    else:
+        key = {"Up": [0, 1, 2], "Down": [2, 1, 0]}.get(a.direction, [1, 0, 2])
+    shown = [out[i] for i in key if i not in why]
+    ruled = [{"name": out[i]["name"], "reason": why[i]} for i in key if i in why]
+    return shown, ruled
 
 
 def narrative(a: Assessment, p: PriceFeatures, o: OptionsFeatures, reg: dict[str, Any]) -> str:

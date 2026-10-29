@@ -404,7 +404,8 @@ def test_full_session_is_scored_recorded_once_and_explained(tmp_path: Path) -> N
     assert out["daily"]["daily_sd_pct"] == pytest.approx(
         1.0, rel=0.05
     )  # alternating +/-0.5% closes
-    assert len(out["scenarios"]) == 3 and all(x["probability"] is None for x in out["scenarios"])
+    assert 1 <= len(out["scenarios"]) <= 3 and all(x["probability"] is None for x in out["scenarios"])
+    assert len(out["scenarios"]) + len(out["scenarios_ruled_out"]) == 3  # every scenario is either shown or explained away
     assert out["narrative"].startswith("Current assessment:")
     assert svc.store.count() == 1
     svc._cache.clear()
@@ -431,3 +432,46 @@ def test_feed_previous_close_is_cross_checked(tmp_path: Path, close: float, warn
     out = svc.summary(EXP)
     assert out["price"]["prev_close"] == pytest.approx(close)
     assert any(h["source"] == "Previous close check" for h in out["health"]) is warn
+
+
+# ----------------------------------------------------------------------- scenario relevance
+
+
+class TestScenarioRelevance:
+    """Only scenarios supported by the evidence are shown; the others are listed with the reason."""
+
+    def setup(self, scores: dict[str, float | None], trend: bool, regime: str):
+        from app.intraday.sentiment import SCORE_CONFIG, Component, assess, scenarios
+
+        w = SCORE_CONFIG["weights"]
+        comps = [Component(k, k, w[k], sc is not None, sc, "" if sc is not None else "n/a") for k, sc in scores.items()]
+        vals = [20000 + 2 * i for i in range(61)] if trend else [20000 + (i % 2) * 2 for i in range(61)]
+        f = price_features(path(vals), ist(10, 15), DailyContext(date(2026, 10, 28), 20100.0, 19900.0, 20000.0, 1.0, 1.2, 60), 20000.0)
+        a = assess(comps, f)
+        return scenarios(a, f, options_features({}, None, None, None), DailyContext(), {"primary": regime}), a
+
+    def test_choppy_session_with_only_bullish_evidence_shows_range_first_and_rules_out_bearish(self) -> None:
+        (shown, ruled), a = self.setup({"price": 0.3, "options": 0.4, "global": 0.2}, trend=False, regime="Mean-reverting / choppy")
+        assert a.direction == "Up"
+        assert [x["name"] for x in shown] == ["Range-bound consolidation", "Bullish continuation / recovery"]
+        assert [x["name"] for x in ruled] == ["Bearish continuation / reversal"]
+        assert "none of the 3 available evidence groups is below -0.10" in ruled[0]["reason"] and "3 are bullish" in ruled[0]["reason"]
+
+    def test_mixed_evidence_shows_all_three(self) -> None:
+        (shown, ruled), _ = self.setup({"price": 0.3, "options": -0.4, "global": 0.2}, trend=False, regime="Sideways consolidation")
+        assert len(shown) == 3 and ruled == [] and shown[0]["name"] == "Range-bound consolidation"
+
+    def test_a_clean_strong_trend_rules_out_range_and_the_opposite_direction(self) -> None:
+        (shown, ruled), a = self.setup({"price": 0.9, "options": 0.8, "global": 0.5}, trend=True, regime="Uptrend")
+        assert a.score is not None and a.score >= 0.5
+        assert [x["name"] for x in shown] == ["Bullish continuation / recovery"]
+        assert {x["name"] for x in ruled} == {"Range-bound consolidation", "Bearish continuation / reversal"}
+
+    def test_no_directional_evidence_falls_back_to_range_bound_only(self) -> None:
+        (shown, ruled), _ = self.setup({"price": 0.05, "options": -0.05, "global": 0.0}, trend=False, regime="Sideways consolidation")
+        assert [x["name"] for x in shown] == ["Range-bound consolidation"]
+        assert len(ruled) == 2
+
+    def test_no_assessment_means_no_scenarios_at_all(self) -> None:
+        (shown, ruled), a = self.setup({"price": None, "options": 0.4}, trend=False, regime="Unclassified")
+        assert a.score is None and shown == [] and ruled == []
