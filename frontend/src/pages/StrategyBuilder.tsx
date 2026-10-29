@@ -8,6 +8,7 @@ import { compactIN } from "../lib/analytics";
 import { strategyInsights } from "../lib/strategyInsights";
 import { fmtDateTimeIST, fmtInt, fmtPrice } from "../lib/format";
 import { useExpiries } from "../lib/hooks";
+import { marketClockMs } from "../lib/session";
 import { carryFromForward, contractDelta, expiryEnd, impliedForward, lognormalLevel, netGreeks, probabilityOfProfit, scenarioGrid, sdBands, spotAtPremium, theoreticalPnl, type Valuation } from "../lib/optionModel";
 import {
   analyzeExpiry, expiryPnl, newLegId, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds,
@@ -79,7 +80,9 @@ export default function StrategyBuilder() {
   const snap = chain.data?.snapshot;
   const lotSize = snap?.lot_size ?? null;
   const spot = snap?.underlying_ltp ?? null;
-  const snapMs = snap ? Date.parse(snap.retrieved_at) : Date.now();
+  // prices are valued at the market time they belong to: a chain fetched after the close holds the close's prices
+  const fetchedMs = snap ? Date.parse(snap.retrieved_at) : Date.now();
+  const snapMs = marketClockMs(fetchedMs);
   const rows = useMemo(() => snap?.rows ?? [], [snap]);
   const strikes = useMemo(() => rows.map((r) => r.strike), [rows]);
   const atm = useMemo(() => (spot == null || strikes.length === 0 ? null : strikes.reduce((b, k) => (Math.abs(k - spot) < Math.abs(b - spot) ? k : b), strikes[0]!)), [strikes, spot]);
@@ -407,6 +410,7 @@ export default function StrategyBuilder() {
                     <ul className="mt-2 list-disc space-y-1 pl-5 text-muted">
                       <li>Forward: {fwd ? <><span className="num text-paper">{fmtPrice(fwd.forward)}</span> from put-call parity at the {fwd.n} strikes nearest spot (spread between them {fwd.spread.toFixed(1)} pts); implied carry <span className="num text-paper">{(carry * 100).toFixed(2)}%</span> a year</> : <>not available (fewer than 3 strikes with both a stored call and put price), so spot grown at the {rate}% rate you set is used</>}.</li>
                       <li>Rate {rate}% is used only to discount; change it in Settings.</li>
+                      <li>Valued at {new Date(snapMs).toLocaleString("en-GB", { timeZone: "Asia/Kolkata" })} IST{snapMs !== fetchedMs ? <>: the chain was fetched at {new Date(fetchedMs).toLocaleString("en-GB", { timeZone: "Asia/Kolkata" })} IST, after the prices were last traded, so decay is counted from the market time, not the fetch.</> : "."}</li>
                       <li>Volatility: each leg uses the implied volatility of its own strike's stored price ({mlegs.filter((l) => marketIv(l) != null).length} of {mlegs.length} legs; the rest fall back to the entry premium). The ±σ markers and POP use the ATM implied volatility <span className="num text-paper">{atmIv == null ? "—" : `${(atmIv * 100).toFixed(1)}%`}</span> at strike {atmK ?? "—"}.</li>
                       <li>Distribution: lognormal around the forward, σ√T with T the calendar time to the expiry close ({dte} days). {straddle != null && spot ? <>For a model-free cross-check the ATM straddle costs <span className="num text-paper">{fmtPrice(straddle)}</span> ({((straddle / spot) * 100).toFixed(2)}% of spot) against a ±1σ move of {bands ? <span className="num text-paper">{fmtInt(Math.round((bands.p1 - bands.m1) / 2))}</span> : "—"} points.</> : null}</li>
                     </ul>
