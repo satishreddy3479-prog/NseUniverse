@@ -212,3 +212,30 @@ describe("StockMojo-style layout", () => {
     expect(await screen.findByTestId("greeks")).toHaveTextContent("Model values");
   });
 });
+
+describe("Target and stop-loss per leg", () => {
+  it("a bought call at 100: 50% target and 30% stop give hand-calculated exit P&L and totals", async () => {
+    mount();
+    await loaded();
+    await userEvent.click(await screen.findByRole("button", { name: "Buy CE 24100" })); // stored price 100, lot 75
+    await userEvent.click(await screen.findByRole("button", { name: "Target 50%" })); // 150 -> +50 x 75
+    await userEvent.click(screen.getByRole("button", { name: "Stop 30%" })); // 70 -> -30 x 75
+    expect(await screen.findByTestId("risk-stats")).toHaveTextContent("If targets hit+₹3,750");
+    expect(screen.getByTestId("risk-stats")).toHaveTextContent("If stops hit−₹2,250");
+    expect((screen.getByLabelText("Target premium") as HTMLInputElement).value).toBe("150");
+    expect((screen.getByLabelText("Stop-loss premium") as HTMLInputElement).value).toBe("70");
+  });
+
+  it("a target on the wrong side of the entry is flagged, and for a seller the sides swap", async () => {
+    mount();
+    await loaded();
+    await userEvent.click(await screen.findByRole("button", { name: "Sell CE 24100" })); // entry 100
+    await userEvent.click(await screen.findByRole("button", { name: "Target 50%" })); // seller target is below: 50
+    expect((screen.getByLabelText("Target premium") as HTMLInputElement).value).toBe("50");
+    await userEvent.click(screen.getByRole("button", { name: "Stop 30%" })); // seller stop is above: 130
+    expect((screen.getByLabelText("Stop-loss premium") as HTMLInputElement).value).toBe("130");
+    await userEvent.clear(screen.getByLabelText("Target premium"));
+    await userEvent.type(screen.getByLabelText("Target premium"), "120");
+    expect(await screen.findByText("Target must be below the entry.")).toBeInTheDocument();
+  });
+});

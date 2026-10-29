@@ -383,6 +383,8 @@ export interface PayoffSeries {
   bands: { m2: number; m1: number; p1: number; p2: number } | null;
   /** open interest per strike drawn faintly behind the payoff */
   oi: { strike: number; call: number | null; put: number | null }[] | null;
+  /** NIFTY levels where a leg is modelled to hit its target or stop (estimates) */
+  levels?: { s: number; kind: "target" | "stop"; label: string }[];
 }
 
 const lerp = (pts: { s: number; pnl: number | null }[], x: number): number | null => {
@@ -405,44 +407,66 @@ const lerp = (pts: { s: number; pnl: number | null }[], x: number): number | nul
 export function payoffOption(p: PayoffSeries, c: ChartColors): EChartsCoreOption {
   const pts = [...p.expiry, ...p.breakevens.map((b) => ({ s: b, pnl: 0 }))].sort((x, y) => x.s - y.s);
   const line = (label: string, color: string, keep: (v: number) => boolean) => ({
-    name: label, type: "line", showSymbol: false, itemStyle: { color }, lineStyle: { width: 2.4, color }, z: 3,
-    areaStyle: { color, opacity: 0.16 }, data: pts.map((x) => [x.s, keep(x.pnl) ? x.pnl : null]),
+    name: label, type: "line", showSymbol: false, itemStyle: { color }, lineStyle: { width: 2.6, color }, z: 3,
+    areaStyle: { color, opacity: 0.14 }, data: pts.map((x) => [x.s, keep(x.pnl) ? x.pnl : null]),
   });
-  const mk = (xAxis: number, name: string, color: string, text: string, type: "dashed" | "dotted", top = false) => ({
-    xAxis, name, lineStyle: { color, type, width: 1.2 }, label: { formatter: text, color, fontSize: 10, position: top ? "start" : "insideEndBottom" },
+  // y scale: fit the shape that matters. A side that runs off to a huge loss or profit is clipped at 3x the other
+  // side, so the peak and the breakevens stay readable.
+  const vals = pts.map((x) => x.pnl);
+  const peak = Math.max(0, ...vals), trough = Math.min(0, ...vals);
+  let top = peak, bottom = trough;
+  if (peak > 0 && trough < 0) { if (-trough > 3 * peak) bottom = -3 * peak; else if (peak > -trough * 3) top = -trough * 3; }
+  const pad = Math.max(top - bottom, 1) * 0.12;
+  const yMax = top + pad, yMin = bottom - pad;
+  const money = (v: number) => (v < 0 ? "−" : "") + "₹" + (Math.abs(v) >= 1e5 ? `${(Math.abs(v) / 1e5).toFixed(1)}L` : Math.abs(v) >= 1e3 ? `${(Math.abs(v) / 1e3).toFixed(Math.abs(v) >= 1e4 ? 0 : 1)}K` : `${Math.round(Math.abs(v))}`);
+  const mk = (xAxis: number, name: string, color: string, text: string, type: "dashed" | "dotted", where: "top" | "bottom" | "mid", width = 1.2) => ({
+    xAxis, name, lineStyle: { color, type, width },
+    label: { formatter: text, color, fontSize: 10, rotate: where === "top" ? 0 : 90, position: where === "top" ? "end" : where === "bottom" ? "insideEndTop" : "insideStartBottom",
+      backgroundColor: where === "top" ? c.slate : undefined, padding: [1, 3], borderRadius: 2 },
   });
   const marks = [
     { yAxis: 0, lineStyle: { color: c.muted, type: "solid", width: 1 }, label: { show: false } },
-    mk(p.spot, "Spot", c.brass, `Spot: ${fmtPrice(p.spot)}`, "dashed", true),
-    ...p.breakevens.map((b) => mk(b, "BE", c.muted, `BE ${fmtInt(Math.round(b))}`, "dotted")),
-    ...(p.bands ? ([["-2SD", p.bands.m2], ["-1SD", p.bands.m1], ["+1SD", p.bands.p1], ["+2SD", p.bands.p2]] as [string, number][]).map(([t, x]) => mk(x, "SD", c.muted, t, "dotted", true)) : []),
+    mk(p.spot, "Spot", c.brass, `Spot ${fmtInt(Math.round(p.spot))}`, "dashed", "top", 1.6),
+    ...p.breakevens.map((b) => mk(b, "BE", c.info, `BE ${fmtInt(Math.round(b))}`, "dotted", "bottom")),
+    ...(p.bands ? ([["−2σ", p.bands.m2], ["−1σ", p.bands.m1], ["+1σ", p.bands.p1], ["+2σ", p.bands.p2]] as [string, number][]).map(([t, x]) => ({
+      ...mk(x, "SD", c.muted, t, "dotted", "mid"), label: { show: true, formatter: t, color: c.muted, fontSize: 10, rotate: 90, position: "insideStartBottom" } })) : []),
+    ...(p.levels ?? []).map((l) => mk(l.s, l.kind === "target" ? "Target" : "Stop", l.kind === "target" ? c.up : c.down, `${l.kind === "target" ? "Target" : "Stop"} ${l.label} ${fmtInt(Math.round(l.s))}`, "dashed", "bottom", 1.2)),
   ];
+  const areas = p.bands ? [
+    [{ xAxis: p.bands.m2, itemStyle: { color: c.brass, opacity: 0.05 } }, { xAxis: p.bands.p2 }],
+    [{ xAxis: p.bands.m1, itemStyle: { color: c.info, opacity: 0.08 } }, { xAxis: p.bands.p1 }],
+  ] : [];
   const signed = (v: number | null) => (v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}₹${fmtInt(Math.round(Math.abs(v)))}`);
   const maxOi = Math.max(1, ...(p.oi ?? []).map((o) => Math.max(o.call ?? 0, o.put ?? 0)));
+  const xs = pts.map((x) => x.s);
   return {
     animation: false,
-    grid: { left: 70, right: 18, top: 30, bottom: 40 },
-    tooltip: { trigger: "axis", backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 },
+    grid: { left: 62, right: 16, top: 24, bottom: 30 },
+    tooltip: { trigger: "axis", axisPointer: { type: "cross", lineStyle: { color: c.muted, type: "dashed" }, label: { show: false } },
+      backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 },
       formatter: (params: unknown) => {
         const x = (params as { axisValue: number }[])[0]!.axisValue;
-        const est = p.target ? `<br/>${p.targetLabel}: ${signed(lerp(p.target, x))}` : "";
-        return `<b>NIFTY ${fmtInt(Math.round(x))}</b><br/>At expiry: ${signed(lerp(pts, x))}${est}`;
+        const est = p.target ? `<br/><span style="color:${c.info}">${p.targetLabel}</span>: ${signed(lerp(p.target, x))}` : "";
+        const sd = p.bands ? (x >= p.bands.m1 && x <= p.bands.p1 ? "<br/>inside ±1σ (about 68%, model)" : x >= p.bands.m2 && x <= p.bands.p2 ? "<br/>inside ±2σ (about 95%, model)" : "<br/>outside ±2σ (model)") : "";
+        return `<b>NIFTY ${fmtInt(Math.round(x))}</b> (${(((x / p.spot) - 1) * 100).toFixed(2)}%)<br/>At expiry: <b>${signed(lerp(pts, x))}</b>${est}${sd}`;
       } },
-    xAxis: { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => fmtInt(Math.round(v)) }, axisLine: { lineStyle: { color: c.rule } }, splitLine: { show: false } },
+    xAxis: { type: "value", min: Math.min(...xs), max: Math.max(...xs), axisLabel: { ...axisText(c), formatter: (v: number) => fmtInt(Math.round(v)), hideOverlap: true }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } },
     yAxis: [
-      { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => (v < 0 ? "−" : "") + compactIN(Math.abs(v)) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
-      { type: "value", show: false, min: 0, max: maxOi * 3.2 },
+      { type: "value", min: yMin, max: yMax, splitNumber: 4, axisLabel: { ...axisText(c), formatter: (v: number) => money(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.35 } } },
+      { type: "value", show: false, min: 0, max: maxOi * 6 },
     ],
     dataZoom: [{ type: "inside", filterMode: "none" }],
     series: [
       ...(p.oi ? [
-        { name: "Call OI", type: "bar", yAxisIndex: 1, barWidth: 5, silent: true, tooltip: { show: false }, itemStyle: { color: c.up, opacity: 0.28 }, z: 0, data: p.oi.map((o) => [o.strike, o.call]) },
-        { name: "Put OI", type: "bar", yAxisIndex: 1, barWidth: 5, silent: true, tooltip: { show: false }, itemStyle: { color: c.down, opacity: 0.28 }, z: 0, data: p.oi.map((o) => [o.strike, o.put]) },
+        { name: "Call OI", type: "bar", yAxisIndex: 1, barWidth: 4, silent: true, tooltip: { show: false }, itemStyle: { color: c.up, opacity: 0.35 }, z: 0, data: p.oi.map((o) => [o.strike, o.call]) },
+        { name: "Put OI", type: "bar", yAxisIndex: 1, barWidth: 4, silent: true, tooltip: { show: false }, itemStyle: { color: c.down, opacity: 0.35 }, z: 0, data: p.oi.map((o) => [o.strike, o.put]) },
       ] : []),
       line("Profit", c.up, (v) => v >= 0),
       line("Loss", c.down, (v) => v <= 0),
-      ...(p.target ? [{ name: p.targetLabel, type: "line", showSymbol: false, itemStyle: { color: c.info }, lineStyle: { color: c.info, width: 1.6, type: "dashed" }, z: 4, connectNulls: false, data: p.target.map((x) => [x.s, x.pnl]) }] : []),
-      { name: "Markers", type: "line", silent: true, showSymbol: false, data: [], markLine: { symbol: "none", silent: true, data: marks } },
+      ...(p.target ? [{ name: p.targetLabel, type: "line", showSymbol: false, itemStyle: { color: c.info }, lineStyle: { color: c.info, width: 1.8, type: "dashed" }, z: 4, connectNulls: false, data: p.target.map((x) => [x.s, x.pnl]) }] : []),
+      { name: "Markers", type: "line", silent: true, showSymbol: false, data: [],
+        markArea: areas.length ? { silent: true, data: areas } : undefined,
+        markLine: { symbol: "none", silent: true, animation: false, data: marks } },
     ],
   };
 }

@@ -23,6 +23,7 @@ function render(legs: Leg[], spot = 22937, extras: "none" | "all" = "all") {
     expiry: curve, spot, breakevens: a.breakevens,
     target: extras === "all" ? curve.map((p) => ({ s: p.s, pnl: p.pnl * 0.8 })) : null, targetLabel: "Estimated (model)",
     bands: extras === "all" ? { m2: spot * 0.97, m1: spot * 0.985, p1: spot * 1.015, p2: spot * 1.03 } : null,
+    levels: extras === "all" ? [{ s: spot * 0.99, kind: "target", label: "22950CE" }, { s: spot * 1.01, kind: "stop", label: "22950PE" }] : undefined,
     oi: extras === "all" ? [22800, 22900, 23000].map((k, i) => ({ strike: k, call: 1000 * (i + 1), put: i === 1 ? null : 500 })) : null,
   }, colors));
   const svg = chart.renderToSVGString();

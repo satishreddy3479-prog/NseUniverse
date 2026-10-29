@@ -7,7 +7,7 @@ import { api } from "../lib/api";
 import { compactIN } from "../lib/analytics";
 import { fmtDateTimeIST, fmtInt, fmtPrice } from "../lib/format";
 import { useExpiries } from "../lib/hooks";
-import { contractDelta, expiryEnd, netGreeks, probabilityOfProfit, sdBands, theoreticalPnl, type Valuation } from "../lib/optionModel";
+import { contractDelta, expiryEnd, netGreeks, probabilityOfProfit, sdBands, spotAtPremium, theoreticalPnl, type Valuation } from "../lib/optionModel";
 import {
   analyzeExpiry, expiryPnl, newLegId, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds,
   type Action, type Bias, type Leg, type OptionType, type Template,
@@ -120,29 +120,52 @@ export default function StrategyBuilder() {
   const dte = expiry ? Math.max(0, dayDiff(expiry, snapMs)) : 0;
   const targetMs = snapMs + Math.min(days, dte) * 86_400_000;
   const val: Valuation = { spotNow: spot ?? 0, nowMs: snapMs, rate: r, ivShift: 0 };
+  const bands = expiry && spot && atmIv ? sdBands(spot, atmIv, expiry, snapMs) : null;
   const curve = useMemo(() => {
     if (!ready || !a?.defined || !lotSize || !spot) return null;
     const ks = live.map((l) => l.strike);
-    const lo = Math.min(spot * 0.93, ...ks.map((k) => k * 0.97)), hi = Math.max(spot * 1.07, ...ks.map((k) => k * 1.03));
+    // show the part that matters: out to the 2-sigma band, the strikes and the breakevens, plus a margin
+    const near = [spot, ...ks, ...a.breakevens, ...(bands ? [bands.m2, bands.p2] : [spot * 0.94, spot * 1.06])];
+    const m = spot * 0.012;
+    const lo = Math.min(...near) - m, hi = Math.max(...near) + m;
     const step = Math.max(1, Math.round((hi - lo) / 240));
     return payoffCurve(live, lotSize, Math.floor(lo / step) * step, hi, step);
-  }, [ready, a, lotSize, spot, live]);
+  }, [ready, a, lotSize, spot, live, bands]);
   const target = useMemo(() => (curve && lotSize ? curve.map((p) => ({ s: p.s, pnl: theoreticalPnl(live, p.s, targetMs, lotSize, val) })) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [curve, live, lotSize, targetMs, r]);
-  const bands = expiry && spot && atmIv ? sdBands(spot, atmIv, expiry, snapMs) : null;
+  const levels = useMemo(() => {
+    if (!curve?.length || !spot) return [];
+    const lo = curve[0]!.s, hi = curve[curve.length - 1]!.s;
+    const out: { s: number; kind: "target" | "stop"; label: string }[] = [];
+    for (const l of live) for (const kind of ["target", "stop"] as const) {
+      const px = kind === "target" ? l.target : l.stop;
+      if (px == null || px <= 0) continue;
+      const x = spotAtPremium(l, px, targetMs, val, lo, hi);
+      if (x != null) out.push({ s: x, kind, label: `${l.strike}${l.type}` });
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curve, live, targetMs, r, spot]);
   const chart = useMemo(() => (curve?.length && a?.defined && spot ? payoffOption({
     expiry: curve, target: target && target.some((x) => x.pnl != null) ? target : null,
     targetLabel: days > 0 ? `Estimated in ${Math.min(days, dte)} day${days === 1 ? "" : "s"} (model)` : "Estimated at the snapshot time (model)",
-    spot, breakevens: a.breakevens, bands: showSd ? bands : null,
+    spot, breakevens: a.breakevens, bands: showSd ? bands : null, levels,
     oi: showOi ? shown.map((x) => ({ strike: x.strike, call: x.call?.oi ?? null, put: x.put?.oi ?? null })) : null,
-  }, colors) : null), [curve, target, a, spot, days, dte, bands, showSd, showOi, shown, colors]);
+  }, colors) : null), [curve, target, a, spot, days, dte, bands, showSd, showOi, shown, colors, levels]);
   const pop = ready && a?.defined && lotSize && spot && atmIv && expiry ? probabilityOfProfit(live, lotSize, spot, atmIv, expiry, snapMs, r) : null;
   const greeks = ready && lotSize && spot ? netGreeks(live, lotSize, val) : null;
   const unreal = (l: Leg, mkt: number | null) => (mkt == null || l.premium == null || !lotSize ? null : sign(l.action) * (mkt - l.premium) * l.lots * mult * lotSize);
   const totalPnl = lotSize && live.length && live.every((l) => l.premium != null && ltp(l.strike, l.type) != null)
     ? live.reduce((s, l) => s + (unreal({ ...l, lots: l.lots / mult }, ltp(l.strike, l.type)) ?? 0), 0) : null;
   const netPremium = lotSize && live.length && live.every((l) => l.premium != null) ? live.reduce((s, l) => s - sign(l.action) * (l.premium as number) * l.lots * lotSize, 0) : null;
+  const exitPnl = (kind: "target" | "stop") => {
+    if (!lotSize) return null;
+    const withPx = live.filter((l) => (kind === "target" ? l.target : l.stop) != null && l.premium != null);
+    if (withPx.length === 0) return null;
+    return { v: withPx.reduce((t, l) => t + sign(l.action) * (((kind === "target" ? l.target : l.stop) as number) - (l.premium as number)) * l.lots * lotSize, 0), n: withPx.length };
+  };
+  const ifTarget = exitPnl("target"), ifStop = exitPnl("stop");
   const rr = a?.defined && a.maxProfit != null && a.maxLoss != null && a.maxLoss < 0 ? a.maxProfit / -a.maxLoss : null;
 
   const update = (id: string, patch: Partial<Leg>) => setLegs((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -172,6 +195,30 @@ export default function StrategyBuilder() {
   const chooseStrike = (l: Leg, strike: number) => {
     const m = ltp(strike, l.type);
     update(l.id, { strike, ...(l.premiumSource === "manual" ? {} : { premium: m, premiumSource: m == null ? null : "market" }) });
+  };
+  /** Target or stop-loss for one leg: a premium, or a % of the entry premium. Targets are on the profit side of the entry, stops on the loss side. */
+  const setExit = (l: Leg, kind: "target" | "stop", px: number | null) => update(l.id, kind === "target" ? { target: px } : { stop: px });
+  const exitCell = (l: Leg, kind: "target" | "stop") => {
+    const cur = kind === "target" ? l.target ?? null : l.stop ?? null;
+    const buy = l.action === "BUY";
+    const profitSide = kind === "target";
+    const up = profitSide === buy; // the premium moves up for a buyer's target and a seller's stop
+    const wrong = cur != null && l.premium != null && (up ? cur <= l.premium : cur >= l.premium);
+    const pct = (p: number) => (l.premium == null ? null : Math.max(0.05, Math.round(l.premium * (up ? 1 + p / 100 : 1 - p / 100) * 20) / 20));
+    const presets = kind === "target" ? [30, 50, 80] : [30, 50, 100];
+    const tone2 = kind === "target" ? "border-up/60 text-up" : "border-down/60 text-down";
+    return (
+      <div>
+        <input className={`${field} w-20 ${wrong ? "border-down" : ""}`} type="number" min={0} step="0.05" aria-label={kind === "target" ? "Target premium" : "Stop-loss premium"}
+          value={cur ?? ""} placeholder="none" onChange={(e) => setExit(l, kind, e.target.value === "" ? null : Number(e.target.value))} />
+        <div className="mt-0.5 flex gap-1">
+          {presets.map((p) => { const v = pct(p); return v == null || (kind === "stop" && !up && v < 0.05) ? null : <button key={p} type="button" aria-label={`${kind === "target" ? "Target" : "Stop"} ${p}%`} title={`${p}% ${up ? "above" : "below"} the entry premium`} onClick={() => setExit(l, kind, v)} className={`rounded-sm border px-1 text-[10px] ${tone2}`}>{p}%</button>; })}
+          {cur != null && <button type="button" aria-label={`Clear ${kind === "target" ? "target" : "stop"}`} onClick={() => setExit(l, kind, null)} className="text-[10px] text-muted hover:text-paper">✕</button>}
+        </div>
+        {wrong && <div className="max-w-[16ch] text-[10px] text-down">{kind === "target" ? "Target" : "Stop"} must be {up ? "above" : "below"} the entry.</div>}
+        {cur != null && !wrong && l.premium != null && lotSize && <div className={`num text-[10px] ${tone(sign(l.action) * (cur - l.premium))}`}>{money(sign(l.action) * (cur - l.premium) * l.lots * mult * lotSize)}</div>}
+      </div>
+    );
   };
   const persist = (s: Saved[]) => { setSaved(s); try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch { /* storage unavailable: kept for this visit only */ } };
   const net = (k: number, t: OptionType) => legs.filter((l) => l.strike === k && l.type === t).reduce((s, l) => s + sign(l.action) * l.lots, 0);
@@ -298,6 +345,8 @@ export default function StrategyBuilder() {
                   <Stat label="Max profit" value={a.profitUnlimited ? "Unlimited" : money(a.maxProfit)} cls="text-up" hint="Best P&L at expiry over every NIFTY level from 0 upwards" />
                   <Stat label="Max loss" value={a.lossUnlimited ? "Unlimited" : money(a.maxLoss)} cls="text-down" hint="Worst P&L at expiry over every NIFTY level from 0 upwards" />
                   <Stat label="Breakevens" value={a.breakevens.length ? a.breakevens.map((b) => fmtInt(Math.round(b * 100) / 100)).join(" · ") : "none"} sub={spot ? a.breakevens.map((b) => `${((b / spot - 1) * 100).toFixed(2)}%`).join(" · ") : undefined} />
+                  {ifTarget && <Stat label="If targets hit" value={money(ifTarget.v)} cls={tone(ifTarget.v)} sub={`${ifTarget.n} of ${live.length} legs, at their target premium`} hint="Sum over the legs that have a target of (target premium - entry) x quantity. Exact arithmetic, not a forecast." />}
+                  {ifStop && <Stat label="If stops hit" value={money(ifStop.v)} cls={tone(ifStop.v)} sub={`${ifStop.n} of ${live.length} legs, at their stop premium`} hint="Sum over the legs that have a stop of (stop premium - entry) x quantity. Exact arithmetic, not a forecast." />}
                   <Stat label="Net premium" value={netPremium == null ? "—" : `${money(netPremium)} ${netPremium >= 0 ? "credit" : "debit"}`} cls={tone(netPremium)} />
                 </dl>
                 <div className="min-w-0 p-2">
@@ -330,7 +379,7 @@ export default function StrategyBuilder() {
               {tab === "positions" ? (
                 <div className="overflow-x-auto p-2">
                   <table className="w-full text-sm" aria-label="Strategy legs">
-                    <thead className="text-xs text-muted"><tr>{["", "B/S", "Lots", "Expiry", "Strike", "Type", "Entry", "LTP", "P&L", ""].map((h, i) => <th key={i} className="px-1 py-1 text-left font-normal">{h}</th>)}</tr></thead>
+                    <thead className="text-xs text-muted"><tr>{["", "B/S", "Lots", "Expiry", "Strike", "Type", "Entry", "LTP", "P&L", "🎯 Target ₹", "🛑 Stop ₹", ""].map((h, i) => <th key={i} className="px-1 py-1 text-left font-normal">{h}</th>)}</tr></thead>
                     <tbody>
                       {legs.map((l) => {
                         const mk = ltp(l.strike, l.type);
@@ -348,6 +397,8 @@ export default function StrategyBuilder() {
                               <div className="text-[10px] text-muted">{l.premiumSource === "market" ? "stored quote" : l.premiumSource === "manual" ? "you entered" : "missing"}</div></td>
                             <td className="num px-1 py-2">{mk == null ? <span className="text-muted" title="No quote in the stored chain for this contract">—</span> : fmtPrice(mk)}</td>
                             <td className={`num px-1 py-2 ${tone(pl)}`}>{money(pl)}</td>
+                            <td className="px-1 py-1">{exitCell(l, "target")}</td>
+                            <td className="px-1 py-1">{exitCell(l, "stop")}</td>
                             <td className="whitespace-nowrap px-1 py-2">
                               {mk != null && l.premium !== mk && <button type="button" className="mr-2 text-xs text-info hover:underline" aria-label="Use stored quote" title="Set the entry premium to the stored quote" onClick={() => update(l.id, { premium: mk, premiumSource: "market" })}>⟳</button>}
                               <button type="button" className="mr-2 text-xs text-info hover:underline" aria-label="Duplicate leg" onClick={() => setLegs((ls) => { const i = ls.findIndex((x) => x.id === l.id); const c = [...ls]; c.splice(i + 1, 0, { ...l, id: newLegId() }); return c; })}>Copy</button>

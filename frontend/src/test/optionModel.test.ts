@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import vectors from "./vectors/black76.json";
-import { black76, cnd, contractDelta, expiryEnd, impliedVol, netGreeks, probabilityOfProfit, sdBands, theoreticalPnl, type Valuation } from "../lib/optionModel";
+import { black76, cnd, contractDelta, expiryEnd, impliedVol, netGreeks, probabilityOfProfit, sdBands, spotAtPremium, legTheoreticalValue, theoreticalPnl, type Valuation } from "../lib/optionModel";
 import { expiryPnl, type Leg } from "../lib/strategy";
 
 const LOT = 65;
@@ -102,5 +102,17 @@ describe("probability of profit and standard-deviation bands", () => {
     expect(c.iv).toBeCloseTo(0.17, 6);
     expect(c.delta - p.delta).toBeCloseTo(1, 6);
     expect(contractDelta("CE", null, 24000, 24100, "2026-11-03", NOW, 0.06)).toBeNull();
+  });
+});
+
+
+describe("spotAtPremium", () => {
+  it("inverts the model value: pricing the leg at the returned spot gives the premium back", () => {
+    const l = { id: "a", expiry: "2026-11-03", strike: 23000, type: "CE" as const, action: "BUY" as const, lots: 1, premium: 100, premiumSource: "manual" as const, iv: 0.15 };
+    const v = { spotNow: 23000, nowMs: Date.parse("2026-10-30T05:00:00Z"), rate: 0.06, ivShift: 0 };
+    const x = spotAtPremium(l, 250, v.nowMs, v, 22000, 24000)!;
+    expect(x).toBeGreaterThan(23000);
+    expect(legTheoreticalValue(l, x, v.nowMs, v)!).toBeCloseTo(250, 4);
+    expect(spotAtPremium(l, 1e6, v.nowMs, v, 22000, 24000)).toBeNull(); // not reachable in range
   });
 });

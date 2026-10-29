@@ -19,6 +19,9 @@ export interface Leg {
   enabled?: boolean;
   /** manual implied volatility override for the model estimates, 0.15 = 15 % */
   iv?: number | null;
+  /** premium level at which you plan to take profit / cut the loss, per unit (null = none) */
+  target?: number | null;
+  stop?: number | null;
 }
 
 export const sign = (a: Action) => (a === "BUY" ? 1 : -1);

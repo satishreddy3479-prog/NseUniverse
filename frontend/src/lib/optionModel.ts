@@ -171,3 +171,22 @@ export function sdBands(spot: number, sigma: number, expiry: string, nowMs: numb
   const sd = spot * sigma * Math.sqrt(t);
   return { m2: spot - 2 * sd, m1: spot - sd, p1: spot + sd, p2: spot + 2 * sd };
 }
+
+/**
+ * NIFTY level at which a leg's model value reaches `price` on date `atMs` (a model estimate, used to place the
+ * target and stop-loss markers on the payoff chart). Null when the leg's volatility is unknown or the price is not
+ * reachable inside [lo, hi].
+ */
+export function spotAtPremium(l: Leg, price: number, atMs: number, v: Valuation, lo: number, hi: number): number | null {
+  const at = (x: number) => legTheoreticalValue(l, x, atMs, v);
+  const a = at(lo), b = at(hi);
+  if (a == null || b == null) return null;
+  if ((a - price) * (b - price) > 0) return null;
+  let x0 = lo, x1 = hi;
+  for (let i = 0; i < 60; i++) {
+    const m = (x0 + x1) / 2, fm = at(m);
+    if (fm == null) return null;
+    if ((fm - price) * (a - price) > 0) x0 = m; else x1 = m;
+  }
+  return (x0 + x1) / 2;
+}

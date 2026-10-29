@@ -123,3 +123,6 @@ Deploy kit written and tested for update/rollback logic and backend startup with
 
 ## 30 Oct 2026: strategy builder redesigned (StockMojo-style)
 New layout, ready-made gallery, POP/Reward:Risk/breakeven % stats, dashed model estimate, ±SD markers, OI bars on the payoff, Positions/Greeks tabs, multiplier, include checkboxes. `optionModel.ts` restored with `contractDelta`, `probabilityOfProfit`, `sdBands`. 270+ frontend tests, tsc and build pass. Live check after deploy still to be done by eye.
+
+## 30 Oct 2026: payoff chart reworked, target and stop-loss per leg
+Chart: y-scale fitted to the shape (a runaway side is clipped at 3x the other), x-range out to the 2-sigma band, shaded 1σ/2σ corridors, horizontal spot label, vertical BE/σ labels, OI bars smaller, tooltip shows % from spot and the σ zone. Per leg Target and Stop-loss premium (price or 30/50/80% and 30/50/100% presets; sides swap for sellers; wrong side is flagged). Stats show "If targets hit" / "If stops hit" (exact arithmetic) and the chart marks the NIFTY level where each leg is modelled to reach its target/stop (`spotAtPremium`, a model estimate, Black-76 at the chosen day). Not wired to any order: read-only, no order placement.
