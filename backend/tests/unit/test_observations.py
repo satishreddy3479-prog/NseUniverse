@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.analytics.oi import oi_change, oi_heatmap, premium_decay, universe
+from app.analytics.oi import oi_change, oi_heatmap, oi_series, premium_decay, universe
 from app.domain.models import (
     Completeness,
     DataSource,
@@ -386,4 +386,31 @@ class TestPremiumDecay:
 
     def test_needs_two_samples(self, obs: ObservationStore) -> None:
         r = premium_decay(obs, "NIFTY", EXP, since=D)
+        assert r.times == [] and r.warnings
+
+
+class TestOiSeries:
+    def test_totals_change_and_pcr_over_the_same_strikes(self, obs: ObservationStore) -> None:
+        r = oi_series(obs, "NIFTY", EXP, each_side=None, since=B)
+        assert r.times == [B, C, D] and r.strikes == [100.0, 110.0, 120.0]
+        # B: calls 60+40+25 = 125, puts 10+25+30 = 65 ; D: calls 55+60+25 = 140, puts 0+25+40 = 65
+        assert r.ce_oi == [125, 125, 140] and r.pe_oi == [65, 65, 65]
+        # previous-day OI: calls 50+40+30 = 120, puts 10+20+30 = 60
+        assert r.ce_change == [5, 5, 20] and r.pe_change == [5, 5, 5]
+        assert r.pcr == [0.52, 0.52, 0.4643]  # 65/125, 65/125, 65/140
+
+    def test_missing_oi_is_left_out_and_counted(self, tmp_path: Path) -> None:
+        o = ObservationStore(tmp_path)
+        o.record_snapshot(
+            snap("z1", B, 100.0, {100: (1.0, 10, 8), 110: (1.0, None, 5)}, {100: (1.0, 20, 10), 110: (1.0, 30, None)}),
+            unchanged=False,
+        )
+        r = oi_series(o, "NIFTY", EXP, each_side=None)
+        assert r.ce_oi == [10] and r.ce_strikes_used == [1]  # strike 110 has no OI
+        assert r.ce_change == [2]  # 10 - 8; the strike without OI is not zero-filled
+        assert r.pe_oi == [50] and r.pe_change == [10]  # strike 110 has no previous-day OI: left out of the change
+        assert r.warnings
+
+    def test_no_data_is_reported(self, tmp_path: Path) -> None:
+        r = oi_series(ObservationStore(tmp_path), "NIFTY", EXP)
         assert r.times == [] and r.warnings

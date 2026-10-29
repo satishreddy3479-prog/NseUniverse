@@ -14,10 +14,12 @@ from app.analytics.oi import (
     BaselineKind,
     Heatmap,
     OiChange,
+    OiSeries,
     PremiumDecay,
     Side,
     oi_change,
     oi_heatmap,
+    oi_series,
     parse_time,
     premium_decay,
 )
@@ -378,6 +380,23 @@ async def premium_decay_route(
     """Premium change since the first sample in range, summed over a fixed set of strikes."""
     return await asyncio.to_thread(
         premium_decay, _obs(request), _svc(request).underlying, expiry.isoformat(),
+        each_side=_each_side(strikes), since=_time(since, "since"), until=_time(until, "until"),
+        max_points=max_points,
+    )  # fmt: skip
+
+
+@router.get("/history/oi-series", response_model=OiSeries)
+async def oi_series_route(
+    request: Request,
+    expiry: date,
+    since: str | None = None,
+    until: str | None = None,
+    strikes: str = "all",
+    max_points: Annotated[int, Query(ge=20, le=1000)] = 400,
+) -> OiSeries:
+    """Total OI, OI change and PCR through time over a fixed set of strikes."""
+    return await asyncio.to_thread(
+        oi_series, _obs(request), _svc(request).underlying, expiry.isoformat(),
         each_side=_each_side(strikes), since=_time(since, "since"), until=_time(until, "until"),
         max_points=max_points,
     )  # fmt: skip

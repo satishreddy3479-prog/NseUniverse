@@ -13,6 +13,9 @@ _Last updated: 2026-10-29_
 - Open items: no stored sample at 15:30 itself (sampler's last in-session sample was 15:29); post-close fetches show deep-OTM contracts with OI 0 and LTP 0.0, which is not a real quote.
 - New (29 Oct): the PCR widget (ATM strike, strikes in view, whole chain; shown once to saved layouts), dark change segments in the OI explorer, and a Full-view table of every time slot.
 
+## PCR / OI trend widgets (30 Oct 2026)
+- New widgets (offered once to saved layouts): "Put-call ratio over time", "OI change over time (call vs put)", "Total OI over time (call vs put)" (NIFTY dotted on the left axis, metric on the right; strike picker defaults to all listed strikes) and "PCR donut: overall and ATM" (outer ring whole chain, inner ring ATM strike), plus the earlier PCR table. Backed by `/api/history/oi-series`: the same strikes at every point, OI change = OI minus the broker's previous-day OI (strikes lacking either are left out and counted). Not yet checked against live data.
+
 ## Premium decay fixed (30 Oct 2026)
 - The old decay line summed prices over "ATM ±10" re-centred at every sample, so strikes entered and left the sum as NIFTY moved (calls fell while NIFTY rose). `/api/history/premium-decay` now sums the price change of the SAME strikes (ATM ±N of the newest sample) against the first sample in range; a price that is missing or not above zero drops that strike from the point and is counted. Hand-calculated tests in `test_observations.py`. The Total premium widget still shows the sliding-universe total and says so.
 

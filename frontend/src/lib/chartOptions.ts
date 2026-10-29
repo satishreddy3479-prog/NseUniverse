@@ -3,7 +3,7 @@
 import type { EChartsCoreOption } from "echarts/core";
 import { compactIN, type Totals } from "./analytics";
 import { fmtDateTimeIST, fmtInt, fmtPrice, fmtTimeIST } from "./format";
-import type { IntradayScoreRow, Observation, OiChange, OiHeatmap, OptionChainRow, PremiumDecay } from "./types";
+import type { IntradayScoreRow, Observation, OiChange, OiHeatmap, OiSeries, OptionChainRow, PremiumDecay } from "./types";
 
 export interface ChartColors {
   up: string; down: string; brass: string; info: string; muted: string; rule: string; paper: string; slate: string;
@@ -330,5 +330,44 @@ export function oiExplorerOption(
     yAxis: { type: "value", axisLabel: { ...axisText(c), formatter: (v: number) => compactIN(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
     dataZoom: compact ? [{ type: "inside", filterMode: "none" }] : [{ type: "inside", filterMode: "none" }, { type: "slider", height: 14, bottom: 6, borderColor: c.rule, textStyle: { color: c.muted } }],
     series,
+  };
+}
+
+export type OiSeriesKind = "pcr" | "change" | "total";
+
+/**
+ * PCR, OI change or total OI through time, with NIFTY as a dotted line on the left axis (StockMojo style).
+ * Calls and puts use the same fixed strikes at every point; a missing value is a gap.
+ */
+export function oiSeriesOption(res: OiSeries, kind: OiSeriesKind, c: ChartColors, showCalls = true, showPuts = true): EChartsCoreOption {
+  const x = res.times.map((v) => new Date(v).getTime());
+  const line = (name: string, color: string, vals: (number | null)[], yAxisIndex: number, dotted = false) => ({
+    name, type: "line", yAxisIndex, showSymbol: false, itemStyle: { color }, connectNulls: false,
+    lineStyle: { color, width: dotted ? 1 : 1.8, type: dotted ? "dotted" : "solid" },
+    data: x.map((t, i) => [t, vals[i] ?? null]),
+  });
+  const fmt = (name: string, v: number) => (name === "NIFTY" ? fmtPrice(v) : kind === "pcr" ? v.toFixed(3) : (v < 0 ? "−" : kind === "change" && v > 0 ? "+" : "") + compactIN(Math.abs(v)));
+  const main =
+    kind === "pcr"
+      ? [line("Put-call ratio", c.info, res.pcr, 1)]
+      : [
+          ...(showCalls ? [line(kind === "change" ? "Call OI change" : "Call OI", c.up, kind === "change" ? res.ce_change : res.ce_oi, 1)] : []),
+          ...(showPuts ? [line(kind === "change" ? "Put OI change" : "Put OI", c.down, kind === "change" ? res.pe_change : res.pe_oi, 1)] : []),
+        ];
+  const axis = (opposite: boolean, f: (v: number) => string) => ({
+    type: "value", scale: true, position: opposite ? "right" : "left", axisLabel: { ...axisText(c), formatter: f },
+    splitLine: { show: !opposite, lineStyle: { color: c.rule, opacity: 0.5 } },
+  });
+  const base = tsBase(c, () => "");
+  return {
+    ...base,
+    grid: { left: 58, right: 58, top: 34, bottom: 44 },
+    tooltip: { ...base.tooltip, formatter: (params: unknown) => {
+      const ps = params as { axisValue: number; seriesName: string; value: [number, number | null] }[];
+      return `<b>${fmtDateTimeIST(new Date(ps[0]!.axisValue).toISOString())}</b><br/>` +
+        ps.map((p) => `${p.seriesName}: ${p.value[1] == null ? "—" : fmt(p.seriesName, p.value[1])}`).join("<br/>");
+    } },
+    yAxis: [axis(false, (v) => fmtInt(v)), axis(true, (v) => (kind === "pcr" ? v.toFixed(2) : compactIN(v)))],
+    series: [line("NIFTY", c.muted, res.spot, 0, true), ...main],
   };
 }

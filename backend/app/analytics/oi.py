@@ -509,6 +509,106 @@ def premium_decay(
     )  # fmt: skip
 
 
+class OiSeries(BaseModel):
+    underlying: str
+    expiry: str
+    #: strikes summed at every point (fixed for the whole series)
+    strikes: list[float]
+    atm_strike: float | None
+    times: list[datetime]
+    spot: list[float | None]
+    ce_oi: list[int | None]
+    pe_oi: list[int | None]
+    #: sum of (OI now - previous-day OI the broker supplied) over strikes that have both
+    ce_change: list[int | None]
+    pe_change: list[int | None]
+    #: put OI / call OI; None when either total is missing or the call total is 0
+    pcr: list[float | None]
+    ce_strikes_used: list[int]
+    pe_strikes_used: list[int]
+    stride: int
+    warnings: list[str] = []
+    definitions: dict[str, str] = {}
+
+
+OI_SERIES_DEFINITIONS = {
+    "ce_oi": "Sum of call OI (units) over the listed strikes; a strike without OI is left out of that point.",
+    "ce_change": "Sum of (call OI now - previous-day call OI from the broker) over strikes that have both.",
+    "pcr": "Total put OI / total call OI over the same strikes.",
+}
+
+
+def oi_series(
+    obs: ObservationStore,
+    underlying: str,
+    expiry: str,
+    *,
+    each_side: int | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    max_points: int = 400,
+) -> OiSeries:
+    """Total OI, OI change and PCR through time over one fixed set of strikes."""
+    samples = obs.samples(underlying, expiry, until=until)
+    empty = OiSeries(
+        underlying=underlying, expiry=expiry, strikes=[], atm_strike=None, times=[], spot=[],
+        ce_oi=[], pe_oi=[], ce_change=[], pe_change=[], pcr=[], ce_strikes_used=[],
+        pe_strikes_used=[], stride=1, definitions=OI_SERIES_DEFINITIONS,
+    )  # fmt: skip
+    if not samples:
+        empty.warnings.append("No observations are stored for this expiry.")
+        return empty
+    last = samples[-1]
+    cache: dict[int, dict[tuple[float, int], Contract]] = {}
+
+    def contracts_of(s: Sample) -> dict[tuple[float, int], Contract]:
+        if s.values_from not in cache:
+            cache[s.values_from] = obs.contracts(s.values_from)
+        return cache[s.values_from]
+
+    strikes = universe(sorted({k for k, _ in contracts_of(last)}), last.spot, each_side)
+    atm = _nearest(strikes, last.spot) if strikes and last.spot is not None else None
+    shown = [s for s in samples if since is None or s.received_at >= since]
+    if not shown:
+        empty.strikes, empty.atm_strike = strikes, atm
+        empty.warnings.append("No samples in the chosen range.")
+        return empty
+    stride = max(1, -(-len(shown) // max_points))
+    cols = shown[::stride]
+    if cols[-1].sample_id != shown[-1].sample_id:
+        cols.append(shown[-1])
+    oi: dict[int, list[int | None]] = {CALL: [], PUT: []}
+    ch: dict[int, list[int | None]] = {CALL: [], PUT: []}
+    used: dict[int, list[int]] = {CALL: [], PUT: []}
+    pcr: list[float | None] = []
+    for s in cols:
+        cur = contracts_of(s)
+        for side in (CALL, PUT):
+            vals = [c.oi for k in strikes if (c := cur.get((k, side))) is not None and c.oi is not None]
+            diffs = [
+                c.oi - c.oi_prev
+                for k in strikes
+                if (c := cur.get((k, side))) is not None and c.oi is not None and c.oi_prev is not None
+            ]
+            oi[side].append(sum(vals) if vals else None)
+            ch[side].append(sum(diffs) if diffs else None)
+            used[side].append(len(vals))
+        ce, pe = oi[CALL][-1], oi[PUT][-1]
+        pcr.append(None if ce is None or pe is None or ce <= 0 else round(pe / ce, 4))
+    warnings: list[str] = []
+    if stride > 1:
+        warnings.append(f"Showing every {stride}th observation ({len(shown)} stored).")
+    if any(n < len(strikes) for n in used[CALL] + used[PUT]):
+        warnings.append("Some points use fewer strikes than listed because OI was missing.")
+    return OiSeries(
+        underlying=underlying, expiry=expiry, strikes=strikes, atm_strike=atm,
+        times=[s.received_at for s in cols], spot=[s.spot for s in cols],
+        ce_oi=oi[CALL], pe_oi=oi[PUT], ce_change=ch[CALL], pe_change=ch[PUT], pcr=pcr,
+        ce_strikes_used=used[CALL], pe_strikes_used=used[PUT], stride=stride,
+        warnings=warnings, definitions=OI_SERIES_DEFINITIONS,
+    )  # fmt: skip
+
+
 def parse_time(v: str | None) -> datetime | None:
     if not v:
         return None

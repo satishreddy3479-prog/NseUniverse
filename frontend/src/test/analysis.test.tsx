@@ -50,7 +50,7 @@ function sampler(over: Partial<SamplerStatus> = {}): SamplerStatus {
 function mockApi(hist: HistoryResponse, extra: Record<string, unknown> = {}) {
   const routes: Record<string, unknown> = {
     "/api/status": status(), "/api/expiries": expiries, "/api/snapshots": [], "/api/sessions": [],
-    "/api/option-chain": bigChain(), "/api/history/observations": hist, "/api/oi/change": oiRes(), "/api/history/premium-decay": decayRes(), ...extra,
+    "/api/option-chain": bigChain(), "/api/history/observations": hist, "/api/oi/change": oiRes(), "/api/history/premium-decay": decayRes(), "/api/history/oi-series": seriesRes(), ...extra,
   };
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const hit = routes[String(input).split("?")[0]!];
@@ -322,6 +322,12 @@ function decayRes() {
     times: ["2026-10-28T02:00:00Z", "2026-10-28T02:30:00Z"], spot: [24040, 24060], ce: [0, 12.5], pe: [0, -9], ce_strikes_used: [3, 3], pe_strikes_used: [3, 3],
     stride: 1, warnings: [], definitions: {} };
 }
+function seriesRes() {
+  return { underlying: "NIFTY", expiry: "2026-11-03", strikes: [24000, 24050, 24100], atm_strike: 24050,
+    times: ["2026-10-28T02:00:00Z", "2026-10-28T02:30:00Z"], spot: [24040, 24060], ce_oi: [3000, 3300], pe_oi: [3300, 3600],
+    ce_change: [100, 400], pe_change: [200, 500], pcr: [1.1, 1.0909], ce_strikes_used: [3, 3], pe_strikes_used: [3, 3],
+    stride: 1, warnings: [], definitions: {} };
+}
 function oiRes(over: Partial<OiChange> = {}): OiChange {
   const row = (strike: number, side: "CE" | "PE", oi: number, base: number | null, ltp: number, bl: number | null) => ({
     strike, side, oi, baseline_oi: base, change: base == null ? null : oi - base,
@@ -568,5 +574,32 @@ describe("Premium decay widget", () => {
     await userEvent.click(within(box).getByRole("button", { name: "All strikes" }));
     await waitFor(() => expect(urls.at(-1)).toContain("strikes=all"));
     expect(within(box).getByRole("button", { name: "All strikes" })).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+describe("OI trend widgets and the PCR donut", () => {
+  it("draws PCR, OI change and total OI through time, with NIFTY, from the server series", async () => {
+    const ids = ["pcrTrend", "oiChangeTrend", "oiTotalTrend"];
+    localStorage.setItem("nse.analysis.layout.v1", JSON.stringify({ active: ids, layout: ids.map((id, i) => ({ i: id, x: 0, y: i * 10, w: 12, h: 10 })) }));
+    mockApi(history([obs(1), obs(2)], 1));
+    renderAnalysis();
+    const chart = async (title: string, label: string) => within(await widget(title)).findByRole("img", { name: label });
+    await waitFor(async () => expect((await chart("Put-call ratio over time", "Put-call ratio through the session")).dataset.series).toBe("NIFTY|Put-call ratio"));
+    await waitFor(async () => expect((await chart("OI change over time (call vs put)", "OI change (call vs put) through the session")).dataset.series).toBe("NIFTY|Call OI change|Put OI change"));
+    await waitFor(async () => expect((await chart("Total OI over time (call vs put)", "Total OI (call vs put) through the session")).dataset.series).toBe("NIFTY|Call OI|Put OI"));
+    expect(within(await widget("Total OI over time (call vs put)")).getByTestId("series-note")).toHaveTextContent("3 strikes, the same at every point");
+  });
+
+  it("shows overall and ATM PCR in one donut from hand-calculated totals", async () => {
+    // ATM 24050: put OI 1500 vs call OI 1000; the other six strikes 1000 vs 1000 -> ATM 1.50, overall 7500/7000 = 1.07
+    const chain = bigChain();
+    chain.snapshot.rows.find((r) => r.strike === 24050)!.put!.oi = 1500;
+    localStorage.setItem("nse.analysis.layout.v1", JSON.stringify({ active: ["pcrDonut"], layout: [{ i: "pcrDonut", x: 0, y: 0, w: 6, h: 9 }] }));
+    mockApi(history([obs(1), obs(2)], 1), { "/api/option-chain": chain });
+    renderAnalysis();
+    const box = await screen.findByTestId("pcr-donut");
+    await waitFor(() => expect(box).toHaveTextContent("PCR 1.07"));
+    expect(box).toHaveTextContent("ATM strike 24,050");
+    expect(box).toHaveTextContent("PCR 1.50");
   });
 });

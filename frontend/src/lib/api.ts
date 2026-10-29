@@ -9,7 +9,7 @@ import type {
   ConfigStatus,
   ErrorEvent,
   ExpirySelection,
-  EventItem, FlowsLatest, StorageStatus, IntradayScoreRow, IntradaySummary, NewsStatus, FlowsStatus, HistoryFetchStatus, HistoryResponse, OiChange, OiHeatmap, PremiumDecay, PredictionSummary, SamplerStatus,
+  EventItem, FlowsLatest, StorageStatus, IntradayScoreRow, IntradaySummary, NewsStatus, FlowsStatus, HistoryFetchStatus, HistoryResponse, OiChange, OiHeatmap, OiSeries, PremiumDecay, PredictionSummary, SamplerStatus,
   SessionInfo,
   SnapshotSummary,
 } from "./types";
@@ -68,6 +68,10 @@ export const api = {
     request<OiChange>(
       `/api/oi/change?expiry=${encodeURIComponent(expiry)}&baseline=${baseline}&strikes=${strikes}` +
         (at ? `&at=${encodeURIComponent(at)}` : "") + (until ? `&until=${encodeURIComponent(until)}` : ""),
+    ),
+  oiSeries: (expiry: string, strikes: string, since?: string) =>
+    request<OiSeries>(
+      `/api/history/oi-series?expiry=${encodeURIComponent(expiry)}&strikes=${strikes}` + (since ? `&since=${encodeURIComponent(since)}` : ""),
     ),
   premiumDecay: (expiry: string, strikes: string, since?: string) =>
     request<PremiumDecay>(

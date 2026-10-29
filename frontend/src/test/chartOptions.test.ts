@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   sentimentHistoryOption,
-  decayOption, oiChangeBarOption, oiExplorerOption, oiHeatmapOption, premiumOption, spotOption, straddleOption,
+  decayOption, oiChangeBarOption, oiSeriesOption, oiExplorerOption, oiHeatmapOption, premiumOption, spotOption, straddleOption,
   strikeBarOption, totalsBarOption,
 } from "../lib/chartOptions";
 import { computeTotals } from "../lib/analytics";
 import { bigChain } from "./fixtures";
-import type { Observation, OiChange, OiHeatmap, OiRow, PremiumDecay } from "../lib/types";
+import type { Observation, OiChange, OiHeatmap, OiRow, OiSeries, PremiumDecay } from "../lib/types";
 
 const colors = { up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" };
 const rows = bigChain().snapshot.rows;
@@ -208,5 +208,22 @@ describe("OI explorer option", () => {
     expect(get("change").map((x) => x.data)).toEqual([[60, null], [-30, null]]);
     expect(get("total").map((x) => x.data)).toEqual([[160, 50], [90, null]]);
     expect(get("total", false, true).map((x) => x.name)).toEqual(["Put OI"]);
+  });
+});
+
+describe("oiSeriesOption", () => {
+  const res = { times: ["2026-10-28T02:00:00Z", "2026-10-28T02:30:00Z"], spot: [24000, 24020], ce_oi: [100, null], pe_oi: [150, 160],
+    ce_change: [10, 20], pe_change: [-5, 5], pcr: [1.5, null] } as unknown as OiSeries;
+  const sr = (k: "pcr" | "change" | "total", calls = true, puts = true) => (oiSeriesOption(res, k, colors, calls, puts) as unknown as { series: { name: string; yAxisIndex: number; data: [number, number | null][] }[] }).series;
+  it("plots NIFTY on the left axis and the metric on the right, gaps as gaps", () => {
+    const p = sr("pcr");
+    expect(p.map((x) => [x.name, x.yAxisIndex])).toEqual([["NIFTY", 0], ["Put-call ratio", 1]]);
+    expect(p[1]!.data.map((d) => d[1])).toEqual([1.5, null]);
+    expect(sr("total")[1]!.data.map((d) => d[1])).toEqual([100, null]);
+  });
+  it("change and total honour the call and put toggles", () => {
+    expect(sr("change", true, false).map((x) => x.name)).toEqual(["NIFTY", "Call OI change"]);
+    expect(sr("change")[2]!.data.map((d) => d[1])).toEqual([-5, 5]);
+    expect(sr("total", false, true).map((x) => x.name)).toEqual(["NIFTY", "Put OI"]);
   });
 });

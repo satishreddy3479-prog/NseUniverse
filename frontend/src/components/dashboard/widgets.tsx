@@ -8,7 +8,7 @@ import { useDash } from "./DashContext";
 import { FullChart } from "./FullChart";
 import { atmStraddle, compactIN, computeTotals, maxPain, OI_MODES, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, TS_RANGES, windowEndIso, windowStartIso, type OiMode } from "../../lib/analytics";
 import {
-  decayOption, oiChangeBarOption, oiHeatmapOption, premiumOption, spotOption, straddleOption, strikeBarOption,
+  decayOption, oiChangeBarOption, oiSeriesOption, type OiSeriesKind, oiHeatmapOption, premiumOption, spotOption, straddleOption, strikeBarOption,
   oiExplorerOption, totalsBarOption, type StrikeMetric } from "../../lib/chartOptions";
 import { ageSeconds, fmtDateTimeIST, fmtExpiry, fmtTimeIST, fmtInt, fmtPct, fmtPrice, fmtSigned } from "../../lib/format";
 import { useLiveSpot } from "../../lib/useLive";
@@ -238,9 +238,21 @@ export function PremiumWidget() {
   const build = useMemo(() => (o: Observation[], c: ReturnType<typeof useChartColors>) => premiumOption(o, c, d.showCalls, d.showPuts), [d.showCalls, d.showPuts]);
   return <TimeSeries build={build} label="Total premium over stored snapshots" />;
 }
-const DECAY_STRIKES: { id: number | "all"; label: string }[] = [
+const STRIKE_CHOICES: { id: number | "all"; label: string }[] = [
   { id: 5, label: "±5" }, { id: 10, label: "±10" }, { id: 20, label: "±20" }, { id: "all", label: "All strikes" },
 ];
+
+/** Which strikes a time-series widget sums (around the ATM of the newest sample). */
+function StrikePicker({ value, onChange }: { value: number | "all"; onChange: (v: number | "all") => void }) {
+  return (
+    <div role="group" aria-label="Strikes summed" className="flex items-center gap-0.5" title="Which strikes are summed (around the ATM of the newest sample)">
+      {STRIKE_CHOICES.map((x) => (
+        <button key={String(x.id)} type="button" aria-pressed={value === x.id} onClick={() => onChange(x.id)}
+          className={`widget-nodrag min-h-6 rounded-sm border px-1.5 text-xs ${value === x.id ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{x.label}</button>
+      ))}
+    </div>
+  );
+}
 
 export function DecayWidget() {
   const d = useDash();
@@ -258,20 +270,85 @@ export function DecayWidget() {
     () => (_o: Observation[], c: ReturnType<typeof useChartColors>) => (res ? decayOption(res, c, d.showCalls, d.showPuts) : { animation: false, series: [] }),
     [res, d.showCalls, d.showPuts],
   );
-  const extra = (
-    <div role="group" aria-label="Decay strikes" className="flex items-center gap-0.5" title="Which strikes are summed (around the ATM of the newest sample)">
-      {DECAY_STRIKES.map((x) => (
-        <button key={String(x.id)} type="button" aria-pressed={strikes === x.id} onClick={() => setSel(x.id)}
-          className={`widget-nodrag min-h-6 rounded-sm border px-1.5 text-xs ${strikes === x.id ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{x.label}</button>
-      ))}
-    </div>
-  );
+  const extra = <StrikePicker value={strikes} onChange={setSel} />;
   return (
     <>
       <TimeSeries build={build} label="Premium decay versus first sample in range" extra={extra}
         note={`Same ${res?.strikes.length ?? ""} strikes at every point (ATM as of the newest sample); premium now minus premium at the first sample in range.${res?.warnings.length ? ` ${res.warnings.join(" ")}` : ""}`} />
       {q.error && <p className="sr-only">Could not load the premium decay: {String((q.error as Error).message)}</p>}
     </>
+  );
+}
+/** Total OI, OI change and PCR through time over one fixed set of strikes (default: every listed strike). */
+function useOiSeries(strikes: number | "all") {
+  const d = useDash();
+  const all = d.history.data?.observations;
+  const since = useMemo(() => rangeObservations(all ?? [], d.tsRange).rows[0]?.retrieved_at, [all, d.tsRange]);
+  return useQuery({
+    queryKey: ["oiSeries", d.expiry, strikes, since],
+    queryFn: () => api.oiSeries(d.expiry!, strikesParam(strikes), since),
+    enabled: !!d.expiry && !!since, refetchInterval: 30_000, retry: false,
+  });
+}
+
+function OiSeriesWidget({ kind, label }: { kind: OiSeriesKind; label: string }) {
+  const d = useDash();
+  const [strikes, setStrikes] = useState<number | "all">("all");
+  const q = useOiSeries(strikes);
+  const res = q.data;
+  const build = useMemo(
+    () => (_o: Observation[], c: ReturnType<typeof useChartColors>) => (res ? oiSeriesOption(res, kind, c, d.showCalls, d.showPuts) : { animation: false, series: [] }),
+    [res, kind, d.showCalls, d.showPuts],
+  );
+  const what = kind === "pcr" ? "put OI ÷ call OI" : kind === "change" ? "OI now minus the broker's previous-day OI" : "open interest";
+  return (
+    <>
+      <TimeSeries build={build} label={label} extra={<StrikePicker value={strikes} onChange={setStrikes} />}
+        note={`${res?.strikes.length ?? ""} strikes, the same at every point; ${what}. NIFTY is the dotted line.${res?.warnings.length ? ` ${res.warnings.join(" ")}` : ""}`} />
+      {q.error && <p className="sr-only">Could not load {label}: {String((q.error as Error).message)}</p>}
+    </>
+  );
+}
+export const PcrTrendWidget = () => <OiSeriesWidget kind="pcr" label="Put-call ratio through the session" />;
+export const OiChangeTrendWidget = () => <OiSeriesWidget kind="change" label="OI change (call vs put) through the session" />;
+export const OiTotalTrendWidget = () => <OiSeriesWidget kind="total" label="Total OI (call vs put) through the session" />;
+
+/** Overall and ATM PCR in one donut: outer ring = whole chain, inner ring = ATM strike; green = call OI, red = put OI. */
+export function PcrDonutWidget() {
+  const d = useDash();
+  const overall = computeTotals(d.rows);
+  const atm = computeTotals(d.rows.filter((r) => r.strike === d.atmStrike));
+  const ring = (t: ReturnType<typeof computeTotals>, r: number) => {
+    const tot = t.ceOi != null && t.peOi != null ? t.ceOi + t.peOi : 0;
+    const share = tot > 0 ? (t.ceOi as number) / tot : null;
+    const C = 2 * Math.PI * r;
+    return (
+      <>
+        <circle cx="90" cy="90" r={r} fill="none" strokeWidth="16" className={share == null ? "stroke-rule" : "stroke-down"} />
+        {share != null && <circle cx="90" cy="90" r={r} fill="none" strokeWidth="16" className="stroke-up" strokeDasharray={`${share * C} ${C}`} transform="rotate(-90 90 90)" />}
+      </>
+    );
+  };
+  const f = (v: number | null) => (v == null ? "—" : v.toFixed(2));
+  const pAll = pcr(overall.peOi, overall.ceOi), pAtm = pcr(atm.peOi, atm.ceOi);
+  return (
+    <ChainGuard>
+      <Body footer={<Meta kind="chain" />}>
+        <div className="flex h-full flex-wrap items-center justify-center gap-4 overflow-auto" data-testid="pcr-donut">
+          <svg viewBox="0 0 180 180" className="size-44 shrink-0" role="img" aria-label={`PCR overall ${f(pAll)}, at the money ${f(pAtm)}`}>
+            {ring(overall, 76)}
+            {ring(atm, 56)}
+            <text x="90" y="86" textAnchor="middle" className="fill-muted" fontSize="10">PCR overall</text>
+            <text x="90" y="104" textAnchor="middle" className="fill-paper" fontSize="18" fontWeight="600">{f(pAll)}</text>
+          </svg>
+          <dl className="text-sm">
+            <div className="mb-2"><dt className="text-xs text-muted">Outer ring · overall ({d.rows.length} listed strikes)</dt><dd className="num text-paper">PCR {f(pAll)}</dd></div>
+            <div><dt className="text-xs text-muted">Inner ring · ATM strike {d.atmStrike == null ? "—" : fmtInt(d.atmStrike)}</dt><dd className="num text-paper">PCR {f(pAtm)}</dd></div>
+            <p className="mt-2 text-[11px] text-muted"><span className="text-up">Green</span> = call OI, <span className="text-down">red</span> = put OI.</p>
+          </dl>
+        </div>
+      </Body>
+    </ChainGuard>
   );
 }
 export const StraddleWidget = () => <TimeSeries build={straddleOption} label="ATM straddle over stored snapshots" />;
@@ -881,6 +958,10 @@ export const WIDGETS: WidgetDef[] = [
   { id: "volume", title: "Volume by strike", render: () => <VolumeWidget />, x: 0, y: 29, w: 6, h: 8, minW: 3, minH: 5 },
   { id: "straddle", title: "ATM straddle", render: () => <StraddleWidget />, x: 0, y: 29, w: 4, h: 8, minW: 3, minH: 5 },
   { id: "pcr", title: "PCR: ATM and overall", render: () => <PcrWidget />, x: 0, y: 29, w: 6, h: 7, minW: 4, minH: 5 },
+  { id: "pcrDonut", title: "PCR donut: overall and ATM", render: () => <PcrDonutWidget />, x: 6, y: 36, w: 6, h: 9, minW: 3, minH: 6 },
+  { id: "pcrTrend", title: "Put-call ratio over time", render: () => <PcrTrendWidget />, x: 0, y: 45, w: 6, h: 10, minW: 4, minH: 6 },
+  { id: "oiChangeTrend", title: "OI change over time (call vs put)", render: () => <OiChangeTrendWidget />, x: 6, y: 45, w: 6, h: 10, minW: 4, minH: 6 },
+  { id: "oiTotalTrend", title: "Total OI over time (call vs put)", render: () => <OiTotalTrendWidget />, x: 0, y: 55, w: 6, h: 10, minW: 4, minH: 6 },
   { id: "levels", title: "Key levels", render: () => <LevelsWidget />, x: 6, y: 21, w: 6, h: 8, minW: 3, minH: 5 },
   { id: "oiIntraday", title: "Intraday OI change", render: () => <OiIntradayWidget />, x: 0, y: 37, w: 6, h: 12, minW: 4, minH: 7 },
   { id: "oiHeatmap", title: "OI change heatmap", render: () => <OiHeatmapWidget />, x: 6, y: 37, w: 6, h: 12, minW: 4, minH: 7 },
@@ -890,7 +971,7 @@ export const WIDGETS: WidgetDef[] = [
 ];
 
 /** First screen: the nine widgets of the reference layout; the rest are one click away in "Add widget". */
-export const DEFAULT_ACTIVE = ["spot", "oi", "oiChange", "chain", "premium", "decay", "oiTotal", "oiChangeTotal", "levels", "pcr"];
+export const DEFAULT_ACTIVE = ["spot", "oi", "oiChange", "chain", "premium", "decay", "oiTotal", "oiChangeTotal", "levels", "pcr", "pcrDonut", "pcrTrend", "oiChangeTrend", "oiTotalTrend"];
 
 /** Widgets added after the first release: offered once to layouts saved earlier, so they are not hidden behind "Add widget". */
-export const NEW_DEFAULT_WIDGETS = ["pcr"];
+export const NEW_DEFAULT_WIDGETS = ["pcr", "pcrDonut", "pcrTrend", "oiChangeTrend", "oiTotalTrend"];

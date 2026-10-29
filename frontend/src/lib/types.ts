@@ -657,3 +657,22 @@ export interface PremiumDecay {
   warnings: string[];
   definitions: Record<string, string>;
 }
+
+export interface OiSeries {
+  underlying: string;
+  expiry: string;
+  strikes: number[];
+  atm_strike: number | null;
+  times: string[];
+  spot: (number | null)[];
+  ce_oi: (number | null)[];
+  pe_oi: (number | null)[];
+  ce_change: (number | null)[];
+  pe_change: (number | null)[];
+  pcr: (number | null)[];
+  ce_strikes_used: number[];
+  pe_strikes_used: number[];
+  stride: number;
+  warnings: string[];
+  definitions: Record<string, string>;
+}
