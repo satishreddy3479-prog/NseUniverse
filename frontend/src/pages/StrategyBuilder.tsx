@@ -5,11 +5,10 @@ import { Button } from "../components/ui";
 import { payoffOption } from "../lib/chartOptions";
 import { api } from "../lib/api";
 import { compactIN } from "../lib/analytics";
-import { strategyInsights } from "../lib/strategyInsights";
 import { fmtDateTimeIST, fmtInt, fmtPrice } from "../lib/format";
 import { useExpiries } from "../lib/hooks";
 import { marketClockMs } from "../lib/session";
-import { carryFromForward, contractDelta, expiryEnd, impliedForward, lognormalLevel, netGreeks, probabilityOfProfit, scenarioGrid, sdBands, spotAtPremium, theoreticalPnl, type Valuation } from "../lib/optionModel";
+import { carryFromForward, contractGreeks, expiryEnd, impliedForward, legGreeks, sdLevel, netGreeks, probabilityOfProfit, scenarioGrid, sdBands, spotAtPremium, theoreticalPnl, type ContractGreeks, type Valuation } from "../lib/optionModel";
 import {
   analyzeExpiry, expiryPnl, newLegId, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds,
   type Action, type Bias, type Leg, type OptionType, type Template,
@@ -23,6 +22,15 @@ const tone = (v: number | null) => (v == null || v === 0 ? "text-paper" : v > 0 
 const todayIST = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 const field = "min-h-8 rounded-sm border border-rule bg-slate-2 px-2 text-sm text-paper";
 const WIDTHS = [5, 10, 20, "all"] as const;
+type GKey = "delta" | "gamma" | "theta" | "vega" | "iv";
+const GCOLS: { key: GKey; short: string; hint: string }[] = [
+  { key: "delta", short: "Δ", hint: "Delta: change of the option price per 1-point NIFTY move (Black-76 model)" },
+  { key: "gamma", short: "Γ", hint: "Gamma: change of delta per 1-point NIFTY move" },
+  { key: "theta", short: "Θ", hint: "Theta: change of the option price in one calendar day (₹ per unit)" },
+  { key: "vega", short: "Vega", hint: "Vega: change of the option price per volatility point (₹ per unit)" },
+  { key: "iv", short: "IV", hint: "Implied volatility of the stored last traded price" },
+];
+const fmtG = (k: GKey, c: ContractGreeks) => (k === "delta" ? c.delta.toFixed(2) : k === "gamma" ? c.gamma.toFixed(4) : k === "theta" ? c.thetaDay.toFixed(1) : k === "vega" ? c.vegaPt.toFixed(2) : `${(c.iv * 100).toFixed(1)}`);
 const dayDiff = (iso: string, fromMs: number) => Math.round((Date.parse(`${iso}T00:00:00Z`) - Date.parse(`${new Date(fromMs + 330 * 60_000).toISOString().slice(0, 10)}T00:00:00Z`)) / 86_400_000);
 const dmy = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" });
 
@@ -72,6 +80,8 @@ export default function StrategyBuilder() {
   const [showOi, setShowOi] = useState(true);
   const [showSd, setShowSd] = useState(true);
   const [ivPts, setIvPts] = useState(0);
+  const [gcols, setGcols] = useState<GKey[]>(["delta", "iv"]);
+  const [wide, setWide] = useState(false);
   const [whatPct, setWhatPct] = useState(0);
   const [saved, setSaved] = useState<Saved[]>(loadSaved);
   const [name, setName] = useState("");
@@ -96,17 +106,21 @@ export default function StrategyBuilder() {
   const fwd = useMemo(() => (expiry && spot != null ? impliedForward(rows.map((x) => ({ strike: x.strike, call: x.call?.ltp ?? null, put: x.put?.ltp ?? null })), spot, expiry, snapMs, r) : null), [rows, expiry, spot, snapMs, r]);
   const fwdCarry = fwd && expiry && spot != null ? carryFromForward(spot, fwd.forward, expiry, snapMs) : null;
   const carry = fwdCarry ?? r;
-  const deltas = useMemo(() => {
-    const m = new Map<number, { ce: number | null; pe: number | null; ceIv: number | null; peIv: number | null }>();
+  // Black-76 Greeks of every listed contract from its own stored price: one calculation feeds the chain, the legs and the strategy
+  const cg = useMemo(() => {
+    const m = new Map<number, { ce: ContractGreeks | null; pe: ContractGreeks | null }>();
     if (!expiry || spot == null) return m;
     for (const row of rows) {
-      const c = contractDelta("CE", row.call?.ltp != null && row.call.ltp > 0 ? row.call.ltp : null, spot, row.strike, expiry, snapMs, r, carry);
-      const p = contractDelta("PE", row.put?.ltp != null && row.put.ltp > 0 ? row.put.ltp : null, spot, row.strike, expiry, snapMs, r, carry);
-      m.set(row.strike, { ce: c?.delta ?? null, pe: p?.delta ?? null, ceIv: c?.iv ?? null, peIv: p?.iv ?? null });
+      const px = (q: typeof row.call) => (q?.ltp != null && q.ltp > 0 ? q.ltp : null);
+      m.set(row.strike, { ce: contractGreeks("CE", px(row.call), spot, row.strike, expiry, snapMs, r, carry), pe: contractGreeks("PE", px(row.put), spot, row.strike, expiry, snapMs, r, carry) });
     }
     return m;
   }, [rows, expiry, spot, snapMs, r, carry]);
-  // the at-the-money strike for volatility is the one nearest the forward, where call and put are both closest to at-the-money
+  const deltas = useMemo(() => {
+    const m = new Map<number, { ce: number | null; pe: number | null; ceIv: number | null; peIv: number | null }>();
+    for (const [k, v] of cg) m.set(k, { ce: v.ce?.delta ?? null, pe: v.pe?.delta ?? null, ceIv: v.ce?.iv ?? null, peIv: v.pe?.iv ?? null });
+    return m;
+  }, [cg]);
   const atmK = useMemo(() => {
     const ref = fwd?.forward ?? spot;
     return ref == null || strikes.length === 0 ? null : strikes.reduce((b, k) => (Math.abs(k - ref) < Math.abs(b - ref) ? k : b), strikes[0]!);
@@ -142,7 +156,7 @@ export default function StrategyBuilder() {
   const mlegs = useMemo(() => live.map((l) => ({ ...l, iv: l.iv ?? marketIv(l) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [live, deltas]);
-  const bands = expiry && spot && atmIv ? sdBands(spot, atmIv, expiry, snapMs, carry) : null;
+  const bands = expiry && spot && atmIv ? sdBands(spot, atmIv, expiry, snapMs) : null;
   const curve = useMemo(() => {
     if (!ready || !a?.defined || !lotSize || !spot) return null;
     const ks = live.map((l) => l.strike);
@@ -196,21 +210,13 @@ export default function StrategyBuilder() {
   const grid = useMemo(() => {
     if (!ready || !lotSize || !expiry || !spot || !atmIv || tab !== "scenarios") return null;
     const ks = [-2, -1, -0.5, 0, 0.5, 1, 2];
-    const spots = ks.map((k) => lognormalLevel(spot, atmIv, expiry, snapMs, carry, k)).filter((x): x is number => x != null);
+    const spots = ks.map((k) => sdLevel(spot, atmIv, expiry, snapMs, k)).filter((x): x is number => x != null);
     if (spots.length !== ks.length) return null;
     const dayOffsets = [...new Set(Array.from({ length: Math.min(dte, 5) + 1 }, (_, i) => Math.round((i * dte) / Math.max(1, Math.min(dte, 5)))))];
     const dates = dayOffsets.map((d) => (d >= dte ? expiryEnd(expiry) : snapMs + d * 86_400_000));
     return { ks, spots, dayOffsets, cells: scenarioGrid(mlegs, lotSize, spots, dates, val) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, lotSize, expiry, spot, atmIv, tab, dte, snapMs, carry, mlegs, ivPts, r]);
-  const insights = useMemo(() => (ready && a?.defined && spot ? strategyInsights({
-    legs: live, spot, maxProfit: a.maxProfit, maxLoss: a.maxLoss, profitUnlimited: a.profitUnlimited, lossUnlimited: a.lossUnlimited,
-    breakevens: a.breakevens, pop, delta: greeks && greeks.unavailable.length === 0 ? greeks.delta : null, thetaDay: greeks && greeks.unavailable.length === 0 ? greeks.thetaDay : null,
-    bands, oi: shown.map((x) => ({ strike: x.strike, call: x.call?.oi ?? null, put: x.put?.oi ?? null })), stale: !!chain.data?.stale,
-    missingQuote: live.filter((l) => ltp(l.strike, l.type) == null).length,
-  }) : []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ready, a, live, spot, pop, greeks, bands, shown, chain.data?.stale, rows]);
   const rr = a?.defined && a.maxProfit != null && a.maxLoss != null && a.maxLoss < 0 ? a.maxProfit / -a.maxLoss : null;
 
   const update = (id: string, patch: Partial<Leg>) => setLegs((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -284,18 +290,21 @@ export default function StrategyBuilder() {
         <span className="ml-auto text-xs text-muted" title="Premiums are the last traded prices in this stored snapshot, not live quotes">Snapshot <span className={`num ${chain.data?.stale ? "text-warn" : "text-paper"}`}>{snap ? fmtDateTimeIST(snap.retrieved_at) : "—"}</span>{chain.data?.stale ? " · stale" : ""}</span>
       </div>
 
-      <div className="grid gap-3 xl:grid-cols-[minmax(480px,36%)_1fr]">
+      <div className={`grid gap-3 ${wide ? "" : "xl:grid-cols-[minmax(480px,36%)_1fr]"}`}>
         {/* ------------------------------------------------------------ chain */}
         <section aria-label="Option chain" className="flex h-fit flex-col rounded-[var(--radius-panel)] border border-rule bg-slate">
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-rule px-3 py-2 text-sm">
             <span className="text-xs text-muted">SPOT <span className="num text-[15px] font-semibold text-paper">{spot == null ? "—" : fmtPrice(spot)}</span></span>
             <span className="text-xs text-muted" title="Average implied volatility of the call and put at the strike nearest the forward, from their stored prices (model)">ATM IV <span className="num text-paper">{atmIv == null ? "—" : `${(atmIv * 100).toFixed(1)}%`}</span></span>
             <span className="text-xs text-muted" title="From the broker's instrument data in the stored chain">LOT <span className="num text-paper">{lotSize ?? "—"}</span></span>
-            <details className="ml-auto text-xs">
+            <button type="button" aria-pressed={wide} onClick={() => setWide((w) => !w)} className="ml-auto rounded-sm border border-rule px-2 py-0.5 text-xs text-muted hover:text-paper" title="Give the option chain the full width, useful with several Greeks columns">{wide ? "⤡ Narrow" : "⤢ Wide"}</button>
+            <details className="text-xs">
               <summary className="cursor-pointer text-info">Settings</summary>
               <div className="absolute z-10 mt-1 flex w-64 flex-col gap-2 rounded-sm border border-rule bg-slate p-3 shadow-lg">
                 <div role="group" aria-label="Strikes shown" className="flex flex-wrap items-center gap-1"><span className="text-muted">Strikes</span>
                   {WIDTHS.map((w) => <button key={String(w)} type="button" aria-pressed={width === w} onClick={() => setWidth(w)} className={`min-h-7 rounded-sm border px-2 ${width === w ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted"}`}>{w === "all" ? "All" : `±${w}`}</button>)}</div>
+                <div role="group" aria-label="Greeks columns" className="flex flex-wrap items-center gap-2"><span className="text-muted">Greeks</span>
+                  {GCOLS.map((g) => <label key={g.key} className="flex items-center gap-1" title={g.hint}><input type="checkbox" checked={gcols.includes(g.key)} onChange={(e) => setGcols((c) => (e.target.checked ? [...c, g.key] : c.filter((x) => x !== g.key)))} />{g.short}</label>)}</div>
                 <label className="flex items-center gap-2 text-muted">Interest rate % (model)<input type="number" step="0.25" className={`${field} w-20`} value={rate} onChange={(e) => setRate(Number(e.target.value))} aria-label="Interest rate" /></label>
               </div>
             </details>
@@ -313,38 +322,50 @@ export default function StrategyBuilder() {
             <div className="max-h-[640px] overflow-auto">
               <table className="w-full text-sm" aria-label="Option chain">
                 <thead className="sticky top-0 z-[1] bg-slate text-xs text-muted">
-                  <tr><th className="px-2 py-1 text-left font-normal">Call Δ</th><th className="px-2 py-1 text-left font-normal">LTP</th><th className="px-2 py-1 text-right font-normal">OI</th><th className="px-2 py-1 text-center font-medium text-paper">Strike</th><th className="px-2 py-1 text-left font-normal">OI</th><th className="px-2 py-1 text-right font-normal">LTP</th><th className="px-2 py-1 text-right font-normal">Put Δ</th></tr>
+                  <tr>
+                    {GCOLS.filter((g) => gcols.includes(g.key)).map((g) => <th key={`c${g.key}`} className="px-1.5 py-1 text-left font-normal" title={g.hint}>{g.short}</th>)}
+                    <th className="px-2 py-1 text-left font-normal">LTP</th><th className="px-2 py-1 text-right font-normal">Call OI</th>
+                    <th className="px-2 py-1 text-center font-medium text-paper">Strike</th>
+                    <th className="px-2 py-1 text-left font-normal">Put OI</th><th className="px-2 py-1 text-right font-normal">LTP</th>
+                    {[...GCOLS].reverse().filter((g) => gcols.includes(g.key)).map((g) => <th key={`p${g.key}`} className="px-1.5 py-1 text-right font-normal" title={g.hint}>{g.short}</th>)}
+                  </tr>
                 </thead>
                 <tbody>
                   {shown.map((row) => {
-                    const isAtm = row.strike === atm, on = sel === row.strike, d = deltas.get(row.strike);
+                    const isAtm = row.strike === atm, on = sel === row.strike, g = cg.get(row.strike);
+                    const netCe = net(row.strike, "CE"), netPe = net(row.strike, "PE");
+                    const held = netCe !== 0 || netPe !== 0;
+                    const side = (v: number) => (v > 0 ? "bg-up/20" : v < 0 ? "bg-down/20" : "");
                     const bs = (type: OptionType) => (["BUY", "SELL"] as const).map((action) => {
-                      const mine = legs.filter((l) => l.strike === row.strike && l.type === type && l.action === action).reduce((s, l) => s + l.lots, 0);
+                      const mine = legs.filter((l) => l.strike === row.strike && l.type === type && l.action === action && l.enabled !== false).reduce((s, l) => s + l.lots, 0);
                       return (
                         <button key={action} type="button" aria-label={`${action === "BUY" ? "Buy" : "Sell"} ${type} ${row.strike}`}
                           title={ltp(row.strike, type) == null ? "No stored quote: the premium must be entered by hand" : `${action === "BUY" ? "Buy" : "Sell"} one lot at ${fmtPrice(ltp(row.strike, type))}`}
                           onClick={(e) => { e.stopPropagation(); fromChain(row.strike, type, action); }}
-                          className={`min-h-6 min-w-6 rounded-sm border px-1 text-[11px] font-semibold ${action === "BUY" ? "border-up bg-up/10 text-up" : "border-down bg-down text-white"}`}>
+                          className={`min-h-6 min-w-6 rounded-sm border px-1 text-[11px] font-semibold ${action === "BUY" ? "border-up bg-up/10 text-up" : "border-down bg-down text-white"} ${mine > 0 ? "ring-1 ring-paper" : ""}`}>
                           {action === "BUY" ? "B" : "S"}{mine > 0 ? ` ${mine}` : ""}
                         </button>
                       );
                     });
-                    const held = (type: OptionType) => { const v = net(row.strike, type); return v === 0 ? null : <span className={`mr-1 rounded-sm border px-1 text-[10px] ${v > 0 ? "border-up text-up" : "border-down text-down"}`}>{v > 0 ? "+" : "−"}{Math.abs(v)}</span>; };
+                    const tag = (v: number) => (v === 0 ? null : <span data-testid={`held-${row.strike}`} className={`rounded-sm border px-1 text-[10px] font-semibold ${v > 0 ? "border-up text-up" : "border-down text-down"}`}>{v > 0 ? "+" : "−"}{Math.abs(v)} lot{Math.abs(v) === 1 ? "" : "s"}</span>);
                     const bar = (v: number | null, color: string, align: "left" | "right") => (
                       <div className={`flex h-4 ${align === "right" ? "justify-end" : ""}`}><div className="h-4 rounded-sm" style={{ width: `${v == null ? 0 : Math.max(2, (v / maxOi) * 100)}%`, background: color, opacity: 0.35 }} title={v == null ? "no OI" : `OI ${compactIN(v)}`} /></div>
                     );
+                    const cell = (c: ContractGreeks | null | undefined, key: GKey, right: boolean) => (
+                      <td key={`${right ? "p" : "c"}${key}`} className={`px-1.5 py-1 text-xs text-muted ${right ? "text-right" : "text-left"}`}>{c == null ? "—" : fmtG(key, c)}</td>
+                    );
                     return (
-                      <tr key={row.strike} onClick={() => setSel(row.strike)} data-testid={`chain-${row.strike}`}
-                        className={`group num cursor-pointer border-t border-rule/40 ${on ? "bg-info/20" : isAtm ? "bg-brass/10" : row.strike < (spot ?? 0) ? "bg-up/[0.04]" : "bg-down/[0.03]"}`}>
-                        <td className="px-2 py-1 text-left text-muted">{d?.ce == null ? "—" : d.ce.toFixed(2)}</td>
-                        <td className="px-2 py-1 text-left"><div className="flex items-center gap-1">{ltp(row.strike, "CE") == null ? "—" : fmtPrice(ltp(row.strike, "CE"))}</div>
-                          <div className={`mt-0.5 flex items-center gap-1 ${on ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}>{held("CE")}{bs("CE")}</div></td>
-                        <td className="w-[22%] px-1 py-1">{bar(row.call?.oi ?? null, colors.up, "right")}</td>
-                        <td className={`px-2 py-1 text-center font-medium ${isAtm ? "text-brass" : "text-paper"}`}><span className="inline-block min-w-[3.6rem] rounded-sm border border-rule bg-slate-2 px-1.5 py-0.5">{fmtInt(row.strike)}</span></td>
-                        <td className="w-[22%] px-1 py-1">{bar(row.put?.oi ?? null, colors.down, "left")}</td>
-                        <td className="px-2 py-1 text-right"><div>{ltp(row.strike, "PE") == null ? "—" : fmtPrice(ltp(row.strike, "PE"))}</div>
-                          <div className={`mt-0.5 flex items-center justify-end gap-1 ${on ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}>{held("PE")}{bs("PE")}</div></td>
-                        <td className="px-2 py-1 text-right text-muted">{d?.pe == null ? "—" : d.pe.toFixed(2)}</td>
+                      <tr key={row.strike} onClick={() => setSel(row.strike)} data-testid={`chain-${row.strike}`} data-held={held ? "true" : undefined}
+                        className={`group num cursor-pointer border-t border-rule/40 ${on ? "bg-info/20" : held ? "bg-info/[0.08]" : isAtm ? "bg-brass/10" : row.strike < (spot ?? 0) ? "bg-up/[0.04]" : "bg-down/[0.03]"}`}>
+                        {GCOLS.filter((x) => gcols.includes(x.key)).map((x) => cell(g?.ce, x.key, false))}
+                        <td className={`px-2 py-1 text-left ${side(netCe)}`}><div className="flex items-center gap-1">{ltp(row.strike, "CE") == null ? "—" : fmtPrice(ltp(row.strike, "CE"))}{tag(netCe)}</div>
+                          <div className={`mt-0.5 flex items-center gap-1 ${on || netCe !== 0 ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}>{bs("CE")}</div></td>
+                        <td className="w-[16%] px-1 py-1">{bar(row.call?.oi ?? null, colors.up, "right")}</td>
+                        <td className={`px-2 py-1 text-center font-medium ${isAtm ? "text-brass" : "text-paper"}`}><span className={`inline-block min-w-[3.6rem] rounded-sm border px-1.5 py-0.5 ${held ? "border-info bg-info/25" : "border-rule bg-slate-2"}`}>{fmtInt(row.strike)}</span></td>
+                        <td className="w-[16%] px-1 py-1">{bar(row.put?.oi ?? null, colors.down, "left")}</td>
+                        <td className={`px-2 py-1 text-right ${side(netPe)}`}><div className="flex items-center justify-end gap-1">{tag(netPe)}{ltp(row.strike, "PE") == null ? "—" : fmtPrice(ltp(row.strike, "PE"))}</div>
+                          <div className={`mt-0.5 flex items-center justify-end gap-1 ${on || netPe !== 0 ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}>{bs("PE")}</div></td>
+                        {[...GCOLS].reverse().filter((x) => gcols.includes(x.key)).map((x) => cell(g?.pe, x.key, true))}
                       </tr>
                     );
                   })}
@@ -383,7 +404,7 @@ export default function StrategyBuilder() {
               <p className="p-3 text-sm text-muted" data-testid="payoff-empty">{lotSize == null ? "Waiting for a stored chain with a lot size." : errors.length ? "Fix the highlighted legs to see the payoff." : live.length === 0 ? "Tick at least one leg." : a?.reason ?? "Enter the entry premium of every leg."}</p>
             ) : (
               <div className="flex flex-col">
-                <dl className="grid grid-cols-2 border-b border-rule sm:grid-cols-4 2xl:grid-cols-7 [&>div]:border-r [&>div]:border-rule/60" data-testid="risk-stats">
+                <dl className="grid grid-cols-2 border-b border-rule sm:grid-cols-4 2xl:grid-cols-8 [&>div]:border-r [&>div]:border-rule/60" data-testid="risk-stats">
                   <Stat label="P&L now (vs entry)" value={money(totalPnl)} cls={tone(totalPnl)} hint="Stored last traded prices minus your entry premiums" />
                   <Stat label="POP (model estimate)" value={pop == null ? "—" : `${(pop * 100).toFixed(0)}%`} hint="Chance of ending in profit at expiry if NIFTY moves like a lognormal with the ATM implied volatility. A model, not a forecast." />
                   <Stat label="Reward : Risk" value={rr == null ? "N/A" : `${rr.toFixed(2)} : 1`} />
@@ -392,6 +413,7 @@ export default function StrategyBuilder() {
                   <Stat label="Breakevens" value={a.breakevens.length ? a.breakevens.map((b) => fmtInt(Math.round(b * 100) / 100)).join(" · ") : "none"} sub={spot ? a.breakevens.map((b) => `${((b / spot - 1) * 100).toFixed(2)}%`).join(" · ") : undefined} />
                   {ifTarget && <Stat label="If targets hit" value={money(ifTarget.v)} cls={tone(ifTarget.v)} sub={`${ifTarget.n} of ${live.length} legs, at their target premium`} hint="Sum over the legs that have a target of (target premium - entry) x quantity. Exact arithmetic, not a forecast." />}
                   {ifStop && <Stat label="If stops hit" value={money(ifStop.v)} cls={tone(ifStop.v)} sub={`${ifStop.n} of ${live.length} legs, at their stop premium`} hint="Sum over the legs that have a stop of (stop premium - entry) x quantity. Exact arithmetic, not a forecast." />}
+                  {greeks && greeks.unavailable.length === 0 && <Stat label="Net Δ (model)" value={greeks.delta.toFixed(1)} sub={`Θ ${money(greeks.thetaDay)}/day · Vega ${money(greeks.vegaPt)}`} hint="Position delta in NIFTY units; theta per calendar day; vega per volatility point. Black-76 model values." />}
                   <Stat label="Net premium" value={netPremium == null ? "—" : `${money(netPremium)} ${netPremium >= 0 ? "credit" : "debit"}`} cls={tone(netPremium)} />
                 </dl>
                 <div className="min-w-0 p-2">
@@ -425,16 +447,6 @@ export default function StrategyBuilder() {
             )}
           </section>
 
-          {insights.length > 0 && (
-            <section aria-label="Strategy analysis" data-testid="insights" className="rounded-[var(--radius-panel)] border border-rule bg-slate">
-              <div className="flex items-baseline gap-2 border-b border-rule px-3 py-2"><h2 className="text-sm font-semibold text-paper">Strategy analysis</h2>
-                <span className="text-[11px] text-muted" title="Each line is a rule applied to the exact payoff, the stored chain and the labelled model values. It is not an external AI service and not advice.">rules on your numbers · not advice</span></div>
-              <ul className="flex flex-col gap-1.5 p-3 text-sm">
-                {insights.map((x, n) => <li key={n} className="flex gap-2"><span aria-hidden="true" className={x.level === "warn" ? "text-warn" : x.level === "good" ? "text-up" : "text-info"}>{x.level === "warn" ? "▲" : x.level === "good" ? "●" : "◆"}</span><span className={x.level === "warn" ? "text-paper" : "text-paper/90"}>{x.text}</span></li>)}
-              </ul>
-            </section>
-          )}
-
           {legs.length > 0 && (
             <section aria-label="Positions" className="rounded-[var(--radius-panel)] border border-rule bg-slate">
               <div className="flex flex-wrap items-center gap-3 border-b border-rule px-3 py-2 text-sm">
@@ -446,26 +458,47 @@ export default function StrategyBuilder() {
                 </div>
               </div>
               {tab === "positions" ? (
-                <div className="overflow-x-auto p-2">
+                <div className="p-2">
+                  <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-muted" data-testid="legs-summary">
+                    <span><span className="num text-paper">{legs.filter((l) => l.enabled !== false).length}</span> of {legs.length} legs active</span>
+                    <span>Net premium <span className={`num ${tone(netPremium)}`}>{netPremium == null ? "—" : `${money(netPremium)} ${netPremium >= 0 ? "credit" : "debit"}`}</span></span>
+                    <span>Greeks: Δ <span className="num text-paper">{greeks && greeks.unavailable.length === 0 ? greeks.delta.toFixed(1) : "—"}</span> · Θ/day <span className={`num ${tone(greeks ? greeks.thetaDay : null)}`}>{greeks && greeks.unavailable.length === 0 ? money(greeks.thetaDay) : "—"}</span> (model)</span>
+                  </div>
+                  <div className="overflow-x-auto">
                   <table className="w-full text-sm" aria-label="Strategy legs">
-                    <thead className="text-xs text-muted"><tr>{["", "B/S", "Lots", "Expiry", "Strike", "Type", "Entry", "LTP", "P&L", "🎯 Target ₹", "🛑 Stop ₹", ""].map((h, i) => <th key={i} className="px-1 py-1 text-left font-normal">{h}</th>)}</tr></thead>
+                    <thead className="text-xs text-muted"><tr>{["", "Leg", "Strike", "Lots", "Expiry", "Entry ₹", "LTP", "P&L", "Δ · Θ/day", "Target ₹", "Stop ₹", ""].map((h, i) => <th key={i} className="px-1 py-1 text-left font-normal">{h}</th>)}</tr></thead>
                     <tbody>
                       {legs.map((l) => {
                         const mk = ltp(l.strike, l.type);
                         const issue = issues.filter((i) => i.legId === l.id);
                         const pl = unreal(l, mk);
+                        const si = strikes.indexOf(l.strike);
+                        const lg = lotSize && spot && l.enabled !== false ? legGreeks({ ...l, lots: l.lots * mult, iv: l.iv ?? marketIv(l) }, lotSize, val0) : null;
+                        const buy = l.action === "BUY";
+                        const step = "grid size-7 place-items-center rounded-sm border border-rule bg-slate-2 text-paper hover:border-info disabled:opacity-40";
                         return (
-                          <tr key={l.id} className={`border-t border-rule/50 align-top ${l.enabled === false ? "opacity-50" : ""}`} data-testid={`leg-${l.id}`}>
-                            <td className="px-1 py-1"><input type="checkbox" aria-label="Include leg" checked={l.enabled !== false} onChange={(e) => update(l.id, { enabled: e.target.checked })} /></td>
-                            <td className="px-1 py-1"><select className={`${field} font-semibold ${l.action === "BUY" ? "text-up" : "text-down"}`} aria-label="Action" value={l.action} onChange={(e) => update(l.id, { action: e.target.value as Action })}><option>BUY</option><option>SELL</option></select></td>
-                            <td className="px-1 py-1"><input className={`${field} w-16`} type="number" min={1} step={1} aria-label="Lots" value={l.lots} onChange={(e) => update(l.id, { lots: Number(e.target.value) })} /></td>
+                          <tr key={l.id} className={`border-t border-rule/50 align-top ${l.enabled === false ? "opacity-50" : ""}`} style={{ boxShadow: `inset 3px 0 0 ${buy ? "var(--up)" : "var(--down)"}` }} data-testid={`leg-${l.id}`}>
+                            <td className="px-2 py-2"><input type="checkbox" aria-label="Include leg" checked={l.enabled !== false} onChange={(e) => update(l.id, { enabled: e.target.checked })} /></td>
+                            <td className="px-1 py-1.5"><div className="flex gap-1">
+                              <select className={`${field} font-semibold ${buy ? "border-up/60 text-up" : "border-down/60 text-down"}`} aria-label="Action" value={l.action} onChange={(e) => update(l.id, { action: e.target.value as Action })}><option>BUY</option><option>SELL</option></select>
+                              <select className={`${field} font-semibold`} aria-label="Option type" value={l.type} onChange={(e) => { const t = e.target.value as OptionType; const m = ltp(l.strike, t); update(l.id, { type: t, ...(l.premiumSource === "manual" ? {} : { premium: m, premiumSource: m == null ? null : "market" }) }); }}><option>CE</option><option>PE</option></select>
+                            </div></td>
+                            <td className="px-1 py-1.5"><div className="flex items-center gap-1">
+                              <button type="button" className={step} aria-label="Previous strike" disabled={si <= 0} onClick={() => chooseStrike(l, strikes[si - 1]!)}>‹</button>
+                              <select className={`${field} w-[5.6rem]`} aria-label="Strike" value={l.strike} onChange={(e) => chooseStrike(l, Number(e.target.value))}>{si < 0 && <option value={l.strike}>{l.strike} (not listed)</option>}{strikes.map((k) => <option key={k} value={k}>{fmtInt(k)}</option>)}</select>
+                              <button type="button" className={step} aria-label="Next strike" disabled={si < 0 || si >= strikes.length - 1} onClick={() => chooseStrike(l, strikes[si + 1]!)}>›</button>
+                            </div></td>
+                            <td className="px-1 py-1.5"><div className="flex items-center gap-1">
+                              <button type="button" className={step} aria-label="Decrease lots" disabled={l.lots <= 1} onClick={() => update(l.id, { lots: Math.max(1, l.lots - 1) })}>−</button>
+                              <input className={`${field} w-12 text-center`} type="number" min={1} step={1} aria-label="Lots" value={l.lots} onChange={(e) => update(l.id, { lots: Number(e.target.value) })} />
+                              <button type="button" className={step} aria-label="Increase lots" onClick={() => update(l.id, { lots: l.lots + 1 })}>+</button>
+                            </div><div className="num mt-0.5 text-[10px] text-muted">{lotSize ? `${fmtInt(l.lots * mult * lotSize)} qty` : ""}</div></td>
                             <td className="num px-1 py-2 text-xs text-muted">{dmy(l.expiry)}</td>
-                            <td className="px-1 py-1"><select className={field} aria-label="Strike" value={l.strike} onChange={(e) => chooseStrike(l, Number(e.target.value))}>{!strikes.includes(l.strike) && <option value={l.strike}>{l.strike} (not listed)</option>}{strikes.map((k) => <option key={k} value={k}>{fmtInt(k)}</option>)}</select></td>
-                            <td className="px-1 py-1"><select className={field} aria-label="Option type" value={l.type} onChange={(e) => { const t = e.target.value as OptionType; const m = ltp(l.strike, t); update(l.id, { type: t, ...(l.premiumSource === "manual" ? {} : { premium: m, premiumSource: m == null ? null : "market" }) }); }}><option>CE</option><option>PE</option></select></td>
-                            <td className="px-1 py-1"><input className={`${field} w-24`} type="number" min={0} step="0.05" aria-label="Entry premium" value={l.premium ?? ""} placeholder="enter" title={l.premiumSource === "market" ? "Stored quote" : l.premiumSource === "manual" ? "You entered this" : "Missing"} onChange={(e) => update(l.id, { premium: e.target.value === "" ? null : Number(e.target.value), premiumSource: e.target.value === "" ? null : "manual" })} />
+                            <td className="px-1 py-1.5"><input className={`${field} w-24`} type="number" min={0} step="0.05" aria-label="Entry premium" value={l.premium ?? ""} placeholder="enter" title={l.premiumSource === "market" ? "Stored quote" : l.premiumSource === "manual" ? "You entered this" : "Missing"} onChange={(e) => update(l.id, { premium: e.target.value === "" ? null : Number(e.target.value), premiumSource: e.target.value === "" ? null : "manual" })} />
                               <div className="text-[10px] text-muted">{l.premiumSource === "market" ? "stored quote" : l.premiumSource === "manual" ? "you entered" : "missing"}</div></td>
                             <td className="num px-1 py-2">{mk == null ? <span className="text-muted" title="No quote in the stored chain for this contract">—</span> : fmtPrice(mk)}</td>
                             <td className={`num px-1 py-2 ${tone(pl)}`}>{money(pl)}</td>
+                            <td className="num px-1 py-2 text-xs">{lg ? <><span className="text-paper">{lg.delta.toFixed(1)}</span> <span className="text-muted">·</span> <span className={tone(lg.thetaDay)}>{money(lg.thetaDay)}</span></> : <span className="text-muted" title="No volatility fits this leg's stored price">—</span>}</td>
                             <td className="px-1 py-1">{exitCell(l, "target")}</td>
                             <td className="px-1 py-1">{exitCell(l, "stop")}</td>
                             <td className="whitespace-nowrap px-1 py-2">
@@ -479,22 +512,23 @@ export default function StrategyBuilder() {
                       })}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               ) : tab === "greeks" ? (
                 <div className="overflow-x-auto p-2" data-testid="greeks">
                   <table className="w-full text-sm" aria-label="Greeks">
-                    <thead className="text-xs text-muted"><tr><th className="px-1 py-1 text-left font-normal">Leg</th><th className="px-1 py-1 text-right font-normal">IV</th><th className="px-1 py-1 text-right font-normal">Delta</th><th className="px-1 py-1 text-right font-normal">Gamma</th><th className="px-1 py-1 text-right font-normal">Theta / day</th><th className="px-1 py-1 text-right font-normal">Vega / vol pt</th></tr></thead>
+                    <thead className="text-xs text-muted"><tr><th className="px-1 py-1 text-left font-normal">Leg</th><th className="px-1 py-1 text-right font-normal">IV</th><th className="px-1 py-1 text-right font-normal">Δ per unit</th><th className="px-1 py-1 text-right font-normal">Position Δ</th><th className="px-1 py-1 text-right font-normal">Γ</th><th className="px-1 py-1 text-right font-normal">Θ / day</th><th className="px-1 py-1 text-right font-normal">Vega / vol pt</th></tr></thead>
                     <tbody>
                       {mlegs.map((l) => {
-                        const g = lotSize && spot ? netGreeks([l], lotSize, val0) : null;
-                        const unavailable = !g || g.unavailable.length > 0;
-                        return <tr key={l.id} className="num border-t border-rule/50"><td className="px-1 py-1">{l.action} {l.lots}× {fmtInt(l.strike)} {l.type}</td><td className="px-1 text-right">{(() => { const d = deltas.get(l.strike); const v = l.type === "CE" ? d?.ceIv : d?.peIv; return v == null ? "—" : `${(v * 100).toFixed(1)}%`; })()}</td>
-                          {unavailable ? <td colSpan={4} className="px-1 text-right text-xs text-muted">unavailable: no volatility fits the premium</td> : <><td className="px-1 text-right">{g.delta.toFixed(1)}</td><td className="px-1 text-right">{g.gamma.toFixed(4)}</td><td className={`px-1 text-right ${tone(g.thetaDay)}`}>{money(g.thetaDay)}</td><td className={`px-1 text-right ${tone(g.vegaPt)}`}>{money(g.vegaPt)}</td></>}</tr>;
+                        const g = lotSize && spot ? legGreeks(l, lotSize, val0) : null;
+                        const c = cg.get(l.strike)?.[l.type === "CE" ? "ce" : "pe"];
+                        return <tr key={l.id} className="num border-t border-rule/50"><td className="px-1 py-1">{l.action} {l.lots}× {fmtInt(l.strike)} {l.type}</td><td className="px-1 text-right">{c ? `${(c.iv * 100).toFixed(1)}%` : "—"}</td>
+                          {!g ? <td colSpan={5} className="px-1 text-right text-xs text-muted">unavailable: no volatility fits the premium</td> : <><td className="px-1 text-right text-muted">{c ? c.delta.toFixed(3) : "—"}</td><td className="px-1 text-right">{g.delta.toFixed(1)}</td><td className="px-1 text-right">{g.gamma.toFixed(4)}</td><td className={`px-1 text-right ${tone(g.thetaDay)}`}>{money(g.thetaDay)}</td><td className={`px-1 text-right ${tone(g.vegaPt)}`}>{money(g.vegaPt)}</td></>}</tr>;
                       })}
-                      {greeks && <tr className="num border-t border-rule font-medium"><td className="px-1 py-1">Net</td><td /><td className="px-1 text-right">{greeks.delta.toFixed(1)}</td><td className="px-1 text-right">{greeks.gamma.toFixed(4)}</td><td className={`px-1 text-right ${tone(greeks.thetaDay)}`}>{money(greeks.thetaDay)}</td><td className={`px-1 text-right ${tone(greeks.vegaPt)}`}>{money(greeks.vegaPt)}</td></tr>}
+                      {greeks && <tr className="num border-t border-rule font-medium"><td className="px-1 py-1">Net</td><td /><td /><td className="px-1 text-right">{greeks.delta.toFixed(1)}</td><td className="px-1 text-right">{greeks.gamma.toFixed(4)}</td><td className={`px-1 text-right ${tone(greeks.thetaDay)}`}>{money(greeks.thetaDay)}</td><td className={`px-1 text-right ${tone(greeks.vegaPt)}`}>{money(greeks.vegaPt)}</td></tr>}
                     </tbody>
                   </table>
-                  <p className="mt-2 text-[11px] text-muted">Model values (Black-76). Each leg uses the volatility implied by the stored market price of its own strike, forward {fwd ? `${fmtPrice(fwd.forward)} read from put-call parity` : `from the ${rate}% rate assumption (parity unavailable)`}. Delta is rupees of P&L per 1-point NIFTY move; theta is the change from one day passing.</p>
+                  <p className="mt-2 text-[11px] text-muted">Black-76 model values. Each leg uses the volatility implied by the stored price of its own strike, forward {fwd ? `${fmtPrice(fwd.forward)} read from put-call parity` : `from the ${rate}% rate assumption (parity unavailable)`}. Position Δ is rupees of P&L per 1-point NIFTY move (lots × lot size × per-unit Δ); Γ is the change of that Δ per point; Θ is the P&L change from one calendar day passing; Vega is the P&L change per volatility point. Rho is not shown: the forward is read from the market, so the rate only discounts.</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto p-2" data-testid="scenarios">

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import vectors from "./vectors/black76.json";
-import { black76, cnd, contractDelta, expiryEnd, impliedVol, netGreeks, probabilityOfProfit, sdBands, spotAtPremium, legTheoreticalValue, impliedForward, carryFromForward, scenarioGrid, theoreticalPnl, type Valuation } from "../lib/optionModel";
+import { black76, cnd, contractDelta, expiryEnd, impliedVol, netGreeks, probabilityOfProfit, sdBands, contractGreeks, spotAtPremium, legTheoreticalValue, impliedForward, carryFromForward, scenarioGrid, theoreticalPnl, type Valuation } from "../lib/optionModel";
 import { expiryPnl, type Leg } from "../lib/strategy";
 
 const LOT = 65;
@@ -54,7 +54,7 @@ describe("Black-76 and Greeks", () => {
     expect(g.delta).toBeCloseTo((f(SPOT + h) - f(SPOT - h)) / (2 * h), 4);
     expect(g.gamma).toBeCloseTo((f(SPOT + h) - 2 * f(SPOT) + f(SPOT - h)) / (h * h), 5);
     expect(g.thetaDay).toBeCloseTo(f(SPOT, NOW + 86_400_000) - f(SPOT), 6);
-    expect(g.vegaPt).toBeCloseTo(f(SPOT, NOW, 0.01) - f(SPOT), 6);
+    expect(g.vegaPt).toBeCloseTo(((f(SPOT, NOW, 1e-4) - f(SPOT, NOW, -1e-4)) / 2e-4) / 100, 4); // derivative per volatility point
     expect(g.unavailable).toEqual([]);
   });
   it("a leg whose volatility cannot be found is reported as unavailable, not valued", () => {
@@ -87,20 +87,46 @@ describe("probability of profit and standard-deviation bands", () => {
     expect(probabilityOfProfit([leg("BUY", "CE", 24000, 100)], LOT, 24000, 0.2, "2026-11-03", Date.UTC(2026, 10, 4), 0.06)).toBeNull();
     expect(probabilityOfProfit([leg("BUY", "CE", 24000, null)], LOT, 24000, 0.2, "2026-11-03", NOW, 0.06)).toBeNull();
   });
-  it("sd bands are lognormal quantiles: ln S = ln(spot) + carry t - sigma^2 t / 2 +/- k sigma sqrt(t) (hand calculation)", () => {
+  it("sd levels are the expected move: spot x (1 +/- k sigma sqrt(t)), centred on spot (hand calculation)", () => {
     const t = (expiryEnd("2026-11-03") - NOW) / (365 * 86_400_000);
-    const sigma = 0.16, carry = 0.05;
-    const b = sdBands(24000, sigma, "2026-11-03", NOW, carry)!;
-    const mid = Math.log(24000) + carry * t - 0.5 * sigma * sigma * t, sd = sigma * Math.sqrt(t);
-    expect(Math.log(b.p1)).toBeCloseTo(mid + sd, 10);
-    expect(Math.log(b.m2)).toBeCloseTo(mid - 2 * sd, 10);
-    expect(Math.log(b.p2) - Math.log(b.p1)).toBeCloseTo(sd, 10);
+    const b = sdBands(24000, 0.16, "2026-11-03", NOW)!;
+    const move = 24000 * 0.16 * Math.sqrt(t);
+    expect(b.p1).toBeCloseTo(24000 + move, 9);
+    expect(b.m1).toBeCloseTo(24000 - move, 9);
+    expect(b.p2).toBeCloseTo(24000 + 2 * move, 9);
+    expect(b.m2).toBeCloseTo(24000 - 2 * move, 9);
+    expect(sdBands(24000, 0, "2026-11-03", NOW)).toBeNull(); // no volatility: not guessed
   });
-  it("the sd markers and the probability of profit are one distribution: a nearly free call struck at +1 sd wins about 15.9 %", () => {
-    const sigma = 0.18, carry = 0.04;
-    const b = sdBands(24000, sigma, "2026-11-03", NOW, carry)!;
-    const pop = probabilityOfProfit([leg("BUY", "CE", b.p1, 0.0001)], LOT, 24000, sigma, "2026-11-03", NOW, carry)!;
-    expect(pop).toBeCloseTo(1 - cnd(1), 3);
+  it("probability of profit uses a lognormal about the forward: a nearly free call struck at the forward wins about 50 % less the drift term", () => {
+    const sigma = 0.18, carry = 0.04, t = (expiryEnd("2026-11-03") - NOW) / (365 * 86_400_000);
+    const K = 24000 * Math.exp(carry * t);
+    const pop = probabilityOfProfit([leg("BUY", "CE", K, 0.0001)], LOT, 24000, sigma, "2026-11-03", NOW, carry)!;
+    expect(pop).toBeCloseTo(cnd(-0.5 * sigma * Math.sqrt(t)), 2); // P(S > F) = N(-sigma sqrt(t) / 2)
+  });
+  it("contract Greeks match finite differences of the Black-76 price (delta, gamma, vega, theta) for calls and puts", () => {
+    const rate = 0.06, carry = 0.1, sigma = 0.15, spot = 24000, K = 24100;
+    const t = (expiryEnd("2026-11-03") - NOW) / (365 * 86_400_000);
+    const P = (type: "CE" | "PE", s: number, sg: number, tt: number) => black76(type, s * Math.exp(carry * tt), K, tt, sg, rate);
+    for (const type of ["CE", "PE"] as const) {
+      const g = contractGreeks(type, null, spot, K, "2026-11-03", NOW, rate, carry, sigma)!;
+      const ds = 0.5, dv = 1e-4, dt = 1 / 365;
+      expect(g.delta).toBeCloseTo((P(type, spot + ds, sigma, t) - P(type, spot - ds, sigma, t)) / (2 * ds), 6);
+      expect(g.gamma).toBeCloseTo((P(type, spot + ds, sigma, t) - 2 * P(type, spot, sigma, t) + P(type, spot - ds, sigma, t)) / (ds * ds), 6);
+      expect(g.vegaPt).toBeCloseTo(((P(type, spot, sigma + dv, t) - P(type, spot, sigma - dv, t)) / (2 * dv)) / 100, 6);
+      expect(g.thetaDay).toBeCloseTo(P(type, spot, sigma, t - dt) - P(type, spot, sigma, t), 10); // one calendar day
+      expect(g.price).toBeCloseTo(P(type, spot, sigma, t), 10);
+    }
+    const c = contractGreeks("CE", null, spot, K, "2026-11-03", NOW, rate, carry, sigma)!, p = contractGreeks("PE", null, spot, K, "2026-11-03", NOW, rate, carry, sigma)!;
+    expect(c.delta - p.delta).toBeCloseTo(Math.exp((carry - rate) * t), 10); // delta parity
+    expect(c.gamma).toBeCloseTo(p.gamma, 12);
+    expect(c.vegaPt).toBeCloseTo(p.vegaPt, 12);
+  });
+  it("Greeks recovered from a price use the implied volatility, and are null when none fits", () => {
+    const t = (expiryEnd("2026-11-03") - NOW) / (365 * 86_400_000);
+    const price = black76("CE", 24000 * Math.exp(0.06 * t), 24100, t, 0.17, 0.06);
+    expect(contractGreeks("CE", price, 24000, 24100, "2026-11-03", NOW, 0.06, 0.06)!.iv).toBeCloseTo(0.17, 5);
+    expect(contractGreeks("CE", 1, 24000, 23000, "2026-11-03", NOW, 0.06, 0.06)).toBeNull(); // below intrinsic: no volatility fits
+    expect(contractGreeks("CE", null, 24000, 24100, "2026-11-03", NOW, 0.06, 0.06)).toBeNull(); // no price and no volatility
   });
   it("implied forward from put-call parity recovers the forward that generated the prices", () => {
     const t = (expiryEnd("2026-11-03") - NOW) / (365 * 86_400_000);

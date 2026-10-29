@@ -114,28 +114,57 @@ export function theoreticalPnl(legs: Leg[], s: number, atMs: number, lotSize: nu
 
 export interface NetGreeks { delta: number; gamma: number; thetaDay: number; vegaPt: number; unavailable: string[] }
 
-/** Position Greeks at the current spot and time (delta and gamma analytic; theta and vega by one-day / one-point bumps). */
+export interface ContractGreeks { iv: number; price: number; delta: number; gamma: number; thetaDay: number; vegaPt: number }
+
+/**
+ * Black-76 Greeks of one contract per unit, from the forward F = spot * e^(carry t) and discounting at `rate`.
+ * Volatility is `iv` when given, otherwise the one implied by `price`.
+ *   delta = d(price)/d(spot) = e^((carry-rate) t) N(d1)            (call; put: N(d1) - 1)
+ *   gamma = e^((carry-rate) t) phi(d1) / (spot sigma sqrt(t))
+ *   vega  = e^(-rate t) F phi(d1) sqrt(t) / 100                    per volatility point
+ *   theta = price one calendar day later (intrinsic value once the contract expires) minus price now, at fixed spot and volatility
+ * Null when time is up, or no volatility fits the price.
+ */
+export function contractGreeks(type: OptionType, price: number | null, spot: number, strike: number, expiry: string, nowMs: number, rate: number, carry: number, iv?: number | null): ContractGreeks | null {
+  const t = (expiryEnd(expiry) - nowMs) / YEAR_MS;
+  if (!(t > 0) || !(spot > 0)) return null;
+  const f = spot * Math.exp(carry * t);
+  const sigma = iv != null && iv > 0 ? iv : price != null ? impliedVol(type, price, f, strike, t, rate) : null;
+  if (sigma == null || !(sigma > 0)) return null;
+  const sq = sigma * Math.sqrt(t);
+  const d1 = (Math.log(f / strike) + 0.5 * sigma * sigma * t) / sq;
+  const k = Math.exp((carry - rate) * t);
+  const val = (tt: number) => black76(type, spot * Math.exp(carry * tt), strike, tt, sigma, rate);
+  return {
+    iv: sigma,
+    price: val(t),
+    delta: k * (type === "CE" ? cnd(d1) : cnd(d1) - 1),
+    gamma: (k * pdf(d1)) / (spot * sq),
+    thetaDay: (t > 1 / 365 ? val(t - 1 / 365) : Math.max(type === "CE" ? spot - strike : strike - spot, 0)) - val(t),
+    vegaPt: (Math.exp(-rate * t) * f * pdf(d1) * Math.sqrt(t)) / 100,
+  };
+}
+
+/** Position Greeks of one leg in rupee units (lots x lot size, sign for buy/sell) at the current spot and time. Null when no volatility is available. */
+export function legGreeks(l: Leg, lotSize: number, v: Valuation): { delta: number; gamma: number; thetaDay: number; vegaPt: number } | null {
+  const { iv } = legIv(l, v);
+  if (iv == null) return null;
+  const g = contractGreeks(l.type, null, v.spotNow, l.strike, l.expiry, v.nowMs, v.rate, carryOf(v), Math.max(iv + v.ivShift, 1e-4));
+  if (!g) return null;
+  const q = sign(l.action) * l.lots * lotSize;
+  return { delta: q * g.delta, gamma: q * g.gamma, thetaDay: q * g.thetaDay, vegaPt: q * g.vegaPt };
+}
+
+/** Net position Greeks. A leg that cannot be valued (no volatility, or expired) is listed in `unavailable`, never counted as zero. */
 export function netGreeks(legs: Leg[], lotSize: number, v: Valuation): NetGreeks {
   const out: NetGreeks = { delta: 0, gamma: 0, thetaDay: 0, vegaPt: 0, unavailable: [] };
   for (const l of legs) {
-    const t = (expiryEnd(l.expiry) - v.nowMs) / YEAR_MS;
-    const { iv } = legIv(l, v);
-    if (t <= 0 || iv == null) { out.unavailable.push(`${l.type} ${l.strike}`); continue; }
-    const sigma = Math.max(iv + v.ivShift, 1e-4);
-    const q = sign(l.action) * l.lots * lotSize;
-    const vt = sigma * Math.sqrt(t);
-    const cr = carryOf(v);
-    const d1 = (Math.log(v.spotNow / l.strike) + (cr + 0.5 * sigma * sigma) * t) / vt;
-    const k = Math.exp((cr - v.rate) * t); // d(price)/d(spot) = e^(-rt) * e^(carry t) * N(d1)
-    out.delta += q * k * (l.type === "CE" ? cnd(d1) : cnd(d1) - 1);
-    out.gamma += (q * k * pdf(d1)) / (v.spotNow * vt);
-    const val = (tt: number, sg: number) => black76(l.type, v.spotNow * Math.exp(cr * tt), l.strike, tt, sg, v.rate);
-    out.thetaDay += q * ((t > 1 / 365 ? val(t - 1 / 365, sigma) : intrinsic(l, v.spotNow)) - val(t, sigma));
-    out.vegaPt += q * (val(t, sigma + 0.01) - val(t, sigma));
+    const g = legGreeks(l, lotSize, v);
+    if (!g) { out.unavailable.push(`${l.type} ${l.strike}`); continue; }
+    out.delta += g.delta; out.gamma += g.gamma; out.thetaDay += g.thetaDay; out.vegaPt += g.vegaPt;
   }
   return out;
 }
-
 
 /** Black-76 delta of one contract with respect to the forward-adjusted spot (call N(d1), put N(d1)-1), or null when no volatility fits the price. */
 export function contractDelta(type: OptionType, price: number | null, spot: number, strike: number, expiry: string, nowMs: number, rate: number, carry: number = rate): { delta: number; iv: number } | null {
@@ -173,22 +202,20 @@ export function probabilityOfProfit(legs: Leg[], lotSize: number, spot: number, 
 }
 
 /**
- * Spot levels at expiry for the model's lognormal distribution with the given volatility and carry: the quantiles at
- * one and two standard deviations of ln(S), F * exp(-sigma^2 t / 2 +/- k sigma sqrt(t)), F = spot * e^(carry t).
- * The same distribution `probabilityOfProfit` integrates, so the markers and the POP agree.
+ * The market-convention expected-move levels at expiry: spot x (1 +/- k sigma sqrt(t)), t the calendar time to the
+ * expiry close and sigma the at-the-money implied volatility. Centred on spot, as StockMojo and Sensibull draw them.
+ * (The probability of profit separately uses a lognormal distribution around the forward.)
  */
-export function sdBands(spot: number, sigma: number, expiry: string, nowMs: number, carry: number): { m2: number; m1: number; p1: number; p2: number } | null {
+export function sdLevel(spot: number, sigma: number, expiry: string, nowMs: number, k: number): number | null {
   const t = (expiryEnd(expiry) - nowMs) / YEAR_MS;
   if (!(t > 0) || !(sigma > 0) || !(spot > 0)) return null;
-  const q = (k: number) => lognormalLevel(spot, sigma, expiry, nowMs, carry, k) as number;
-  return { m2: q(-2), m1: q(-1), p1: q(1), p2: q(2) };
+  return spot * (1 + k * sigma * Math.sqrt(t));
 }
 
-/** The level k standard deviations (of ln S) from the median expiry distribution; see sdBands. */
-export function lognormalLevel(spot: number, sigma: number, expiry: string, nowMs: number, carry: number, k: number): number | null {
-  const t = (expiryEnd(expiry) - nowMs) / YEAR_MS;
-  if (!(t > 0) || !(sigma > 0) || !(spot > 0)) return null;
-  return Math.exp(Math.log(spot) + carry * t - 0.5 * sigma * sigma * t + k * sigma * Math.sqrt(t));
+export function sdBands(spot: number, sigma: number, expiry: string, nowMs: number): { m2: number; m1: number; p1: number; p2: number } | null {
+  const q = (k: number) => sdLevel(spot, sigma, expiry, nowMs, k);
+  const m2 = q(-2), m1 = q(-1), p1 = q(1), p2 = q(2);
+  return m2 == null || m1 == null || p1 == null || p2 == null ? null : { m2, m1, p1, p2 };
 }
 
 export interface ImpliedForward { forward: number; n: number; spread: number }

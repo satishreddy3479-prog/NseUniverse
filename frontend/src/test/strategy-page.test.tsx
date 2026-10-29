@@ -209,7 +209,7 @@ describe("StockMojo-style layout", () => {
     await loaded();
     await userEvent.click(await screen.findByRole("button", { name: "Buy CE 24100" }));
     await userEvent.click(screen.getByRole("button", { name: "Greeks" }));
-    expect(await screen.findByTestId("greeks")).toHaveTextContent("Model values");
+    expect(await screen.findByTestId("greeks")).toHaveTextContent("Black-76 model values");
   });
 });
 
@@ -237,18 +237,6 @@ describe("Target and stop-loss per leg", () => {
     await userEvent.clear(screen.getByLabelText("Target premium"));
     await userEvent.type(screen.getByLabelText("Target premium"), "120");
     expect(await screen.findByText("Target must be below the entry.")).toBeInTheDocument();
-  });
-});
-
-describe("Strategy analysis panel", () => {
-  it("reads the strategy back in words from the exact numbers", async () => {
-    mount();
-    await loaded();
-    await userEvent.click(await screen.findByRole("button", { name: "Sell CE 24100" }));
-    const panel = await screen.findByTestId("insights");
-    expect(panel).toHaveTextContent("Loss is unlimited if NIFTY rises");
-    expect(panel).toHaveTextContent("No stop-loss is set on any short leg.");
-    expect(panel).toHaveTextContent("not advice");
   });
 });
 
@@ -284,5 +272,52 @@ describe("What-if, scenarios and model inputs", () => {
     const m = await screen.findByTestId("model-inputs");
     expect(m).toHaveTextContent("Forward:");
     expect(m).toHaveTextContent("Volatility:");
+  });
+});
+
+describe("Greeks in the chain, highlighted legs and steppers", () => {
+  it("rows that hold a leg are highlighted and tagged after a ready-made strategy, without hovering", async () => {
+    mount();
+    await loaded();
+    await pick("long_straddle");
+    const held = (await screen.findAllByTestId(/^held-/)).length;
+    expect(held).toBeGreaterThanOrEqual(2); // a call tag and a put tag at the straddle strike
+    const rows = screen.getAllByTestId(/^chain-/).filter((r) => r.getAttribute("data-held") === "true");
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    expect(rows[0]).toHaveTextContent("+1 lot");
+  });
+
+  it("every Greek can be shown as a chain column and is a number or a dash, never a made-up zero", async () => {
+    mount();
+    await loaded();
+    const group = screen.getByRole("group", { name: "Greeks columns" });
+    for (const k of ["Γ", "Θ", "Vega"]) await userEvent.click(within(group).getByLabelText(k));
+    const head = within(screen.getByRole("table", { name: "Option chain" })).getAllByRole("columnheader").map((h) => h.textContent);
+    for (const k of ["Δ", "Γ", "Θ", "Vega", "IV"]) expect(head).toContain(k);
+    const atm = await screen.findByTestId("chain-24050");
+    expect(within(atm).getAllByRole("cell").length).toBeGreaterThan(10);
+  });
+
+  it("lots and strike have steppers", async () => {
+    mount();
+    await loaded();
+    await userEvent.click(await screen.findByRole("button", { name: "Buy CE 24100" }));
+    await userEvent.click(screen.getByRole("button", { name: "Increase lots" }));
+    expect((screen.getByLabelText("Lots") as HTMLInputElement).value).toBe("2");
+    await userEvent.click(screen.getByRole("button", { name: "Decrease lots" }));
+    expect((screen.getByLabelText("Lots") as HTMLInputElement).value).toBe("1");
+    expect(screen.getByRole("button", { name: "Decrease lots" })).toBeDisabled(); // never below one lot
+    const before = Number((screen.getByLabelText("Strike") as HTMLSelectElement).value);
+    await userEvent.click(screen.getByRole("button", { name: "Next strike" }));
+    expect(Number((screen.getByLabelText("Strike") as HTMLSelectElement).value)).toBeGreaterThan(before);
+    await userEvent.click(screen.getByRole("button", { name: "Previous strike" }));
+    expect(Number((screen.getByLabelText("Strike") as HTMLSelectElement).value)).toBe(before);
+  });
+
+  it("the strategy-analysis panel is gone", async () => {
+    mount();
+    await loaded();
+    await userEvent.click(await screen.findByRole("button", { name: "Sell CE 24100" }));
+    expect(screen.queryByTestId("insights")).toBeNull();
   });
 });
