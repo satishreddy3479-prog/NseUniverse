@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Panel } from "../components/ui";
+import { EventsNewsPanel } from "../components/EventsNewsPanel";
 import { FlowsPanel } from "../components/FlowsPanel";
 import { api } from "../lib/api";
 import { fmtDateTimeIST, fmtPrice } from "../lib/format";
@@ -120,6 +121,11 @@ function ForecastCard({ hz, f, evs }: { hz: "T1" | "T5"; f: PredictionSummaryRea
           </p>
           <p className="mt-1 text-center text-xs text-muted">Historical up-frequency {pct(p.p_up_climatology)} (last 750 sessions {pct(p.p_up_climatology_recent_750)}).</p>
           {f.calls && <div className="mt-3"><CallBanner calls={f.calls} hz={hz} /></div>}
+          {p.event_risk && p.event_risk.length > 0 && (
+            <p className="mt-2 rounded-sm border border-warn/50 px-3 py-1.5 text-sm text-warn" data-testid={`event-risk-${hz}`}>
+              Event risk before the target close: {p.event_risk.map((e) => `${e.name} (${new Date(e.start_ist).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: e.all_day ? undefined : "2-digit", minute: e.all_day ? undefined : "2-digit" })}${e.all_day ? ", all day" : " IST"})`).join("; ")}.
+            </p>
+          )}
           <p className="mt-3 text-sm text-muted">{VERDICT[evOf(head!)].text}</p>
           <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
             {entries.map(([name, mf]) => {
@@ -223,6 +229,32 @@ function ModelDetail({ hz, name, m }: { hz: Hz; name: string; m: ModelEval }) {
   );
 }
 
+function ForwardPanel({ board }: { board: PredictionSummaryReady["ledger"]["scoreboard"] }) {
+  const rows = (["T1", "T5"] as const).flatMap((h) => Object.entries(board[h] ?? {}).map(([m, s]) => ({ h, m, s })));
+  return (
+    <Panel title="Forward scoreboard — real results of forecasts made before the outcome">
+      {rows.length === 0 ? (
+        <p className="text-sm text-muted" data-testid="forward-empty">No forecast has resolved yet. Each one is scored automatically after its target session closes; with few days the numbers say little, so read them only once dozens have accumulated.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm" aria-label="Forward scoreboard">
+            <thead className="text-xs text-muted"><tr><th className="text-left font-normal">Horizon</th><th className="text-left font-normal">Model</th><th className="text-right font-normal">Resolved</th><th className="text-right font-normal">Brier</th><th className="text-right font-normal">Base-rate Brier</th><th className="text-right font-normal">Hit rate (95%)</th></tr></thead>
+            <tbody>
+              {rows.map(({ h, m, s }) => (
+                <tr key={`${h}${m}`} className="num border-t border-rule/50">
+                  <td>{h}</td><td>{label(m)}</td><td className="text-right">{s.n}</td>
+                  <td className={`text-right ${s.brier < s.brier_base ? "text-up" : "text-down"}`}>{num(s.brier)}</td><td className="text-right text-muted">{num(s.brier_base)}</td>
+                  <td className="text-right">{pct(s.hit)} <span className="text-muted">({pct(s.hit_ci[0])}–{pct(s.hit_ci[1])})</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 function LedgerTable({ hz, rows }: { hz: "T1" | "T5"; rows: PredictionLedgerRow[] }) {
   if (!rows.length) return <p className="text-sm text-muted">{H[hz]}: nothing recorded yet.</p>;
   return (
@@ -282,6 +314,8 @@ export default function Prediction() {
                   <p className="text-xs text-muted">Results fill in automatically after the target session closes and the price history is refreshed.</p>
                 </div>
               </Panel>
+              <EventsNewsPanel />
+              <ForwardPanel board={d.ledger.scoreboard} />
               <FlowsPanel />
               <Panel title="Models and data">
                 <div className="space-y-1 text-sm">

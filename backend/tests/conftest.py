@@ -27,6 +27,7 @@ def make_settings(tmp_path: Path, **overrides: Any) -> Settings:
         "stream_autostart": False,
         "history_autofetch": False,
         "flows_autofetch": False,
+        "news_autofetch": False,
         **CREDS,
     }
     base.update(overrides)

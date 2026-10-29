@@ -36,6 +36,7 @@ from app.prediction.evaluation import (
     walk_forward_splits,
     wilson_interval,
 )
+from app.prediction.events import EventCalendar
 from app.prediction.features_multi import (
     FLOW_NAMES,
     T1_CORE,
@@ -296,9 +297,11 @@ class PredictionResearch:
         test_size: int = TEST_SIZE,
         cache_dir: Any = None,
         flows: Any = None,
+        events: EventCalendar | None = None,
     ) -> None:
         self._store, self._ledger, self._clock, self._flows_store = store, ledger, clock, flows
         self._calendar = calendar
+        self._events = events if events is not None else EventCalendar.load()
         self._it, self._ts = initial_train, test_size
         self._lock = threading.Lock()
         self._cache: tuple[tuple[Any, ...], dict[str, Any]] | None = None
@@ -434,6 +437,15 @@ class PredictionResearch:
         except Exception as e:  # noqa: BLE001 - e.g. calendar coverage; reported, not hidden
             return {**out, "recorded": False, "reason": f"target session unknown: {e}"}
         out.update(first_target_session=str(first), target_session=str(target))
+        ref_close = datetime(ref.session.year, ref.session.month, ref.session.day, 15, 30, tzinfo=IST)
+        end_day = first if h == "T1" else target
+        window_end = datetime(end_day.year, end_day.month, end_day.day, 15, 30, tzinfo=IST)
+        risk = [e.public() for e in self._events.between(ref_close, window_end)]
+        payload["event_risk"] = risk
+        high = [e for e in risk if e["impact"] == "high"]
+        if h == "T1" and payload.get("call") and high:  # precaution, not a validated improvement
+            payload["call"], payload["call_reason"] = None, f"event risk: {high[0]['name']} before the target close (calls are withheld around high-impact events)"
+        out["payload"] = payload
         ist = now.astimezone(IST)
         in_window = ist.date() == first and WINDOW[0] <= (ist.hour, ist.minute) < WINDOW[1]
         if not fresh:

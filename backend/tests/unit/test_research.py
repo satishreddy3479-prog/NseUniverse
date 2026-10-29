@@ -180,3 +180,19 @@ def test_forward_scoreboard_scores_only_resolved_forecasts(tmp_path: Path) -> No
     svc, _ = _service(tmp_path, 560, _at(_Cal().next_session(last), 8, 50))
     s = svc.summary(block=True)
     assert s["ledger"]["scoreboard"]["T1"] == {}  # nothing has resolved yet, so nothing is scored
+
+
+def test_a_high_impact_event_before_the_t1_close_withholds_the_call_only_for_t1(tmp_path: Path) -> None:
+    from app.prediction.events import Event, EventCalendar
+
+    last = _walk(560, 1)[-1].session
+    nxt = _Cal().next_session(last)
+    mid = datetime(last.year, last.month, last.day, 12, 0, tzinfo=UTC) + timedelta(hours=8)  # evening of the reference day
+    ev = EventCalendar([Event("x", "Test central bank decision", "fomc", mid, mid, "high", True, False, "test")])
+    svc, _ = _service(tmp_path, 560, _at(nxt, 8, 50))
+    svc._events = ev
+    s = svc.summary(block=True)
+    t1 = s["forecasts"]["T1"]["models"]["ensemble"]["payload"]
+    assert t1["event_risk"] and t1["event_risk"][0]["name"] == "Test central bank decision"
+    assert t1["call"] is None
+    assert s["forecasts"]["T5"]["models"]["ensemble"]["payload"]["event_risk"]  # still listed for T+5

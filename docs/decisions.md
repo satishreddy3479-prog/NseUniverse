@@ -138,3 +138,8 @@ Status: **Final** or **Proposed**. Date 2026-10-28 unless noted.
 - Resource and data rules: 1 GB swap file, systemd memory limits, journald cap, nightly integrity-checked SQLite backups, disk monitor (70/80/90 %), no automatic deletion of market data; deploys never touch the data directory.
 - Existing services on the VPS (an earlier nse-tradingdesk) are left untouched; the script refuses to continue if ports 80/443/8010 are taken.
 - Not done by me: logging in to the VPS, DuckDNS registration, filling broker credentials (they stay on the server). I could not verify the kit on the real server; it is tested here for the update/rollback logic and backend startup only.
+
+## D49 — Events and news inputs (2026-10-29)
+- Scheduled events (`backend/app/prediction/reference/events.json`): FOMC 2026-27 (federalreserve.gov calendar), RBI MPC 2026-27 (RBI press release 2025-2026/2306), US election day, India CPI (MoSPI). Each has a source; release clock times that the source does not state are marked unconfirmed.
+- Events are shown as event risk beside each forecast. For T+1 only, a directional call is withheld when a high-impact event falls between the reference close and the target close. This is a precaution; there are too few past occurrences to validate it. T+5 lists events but is not withheld.
+- News: GDELT DOC API daily tone and coverage share for five themes, collected twice a day and stored append-only (`news.sqlite3`). GDELT serves daily series for only the last three months, so there is no multi-year history: the series builds forward and is NOT a model input yet. Economic Times RSS (terms unverified) and NSE announcements (automated access refused) are not used.

@@ -39,7 +39,7 @@ function data(): PredictionSummary {
     data: { symbol: "NIFTY 50", bars: 4689, first: "2007-09-17", last: "2026-10-28", reference_close: 22698.85, up_rate_all: { T1: 0.53 }, overnight_data_fresh: true, stale_series: [] },
     evaluation: { initial_train: 1000, test_size: 250, scheme: "expanding window", horizons: { T1: a.ev, T5: b.ev, T5F: { available: false, reason: "NSE participant history is too short so far" } } },
     forecasts: { T1: a.f, T5: b.f }, excluded_inputs: ["news"],
-    ledger: { counts: {}, recent: { T1: [{ forecast_id: "a", model: "ensemble", model_version: "3", reference_session: "2026-10-28", target_session: "2026-10-29", generated_at: "x", p_up_model: 0.536, p_up_climatology: 0.528, intact: true, outcome: null }], T5: [] } },
+    ledger: { counts: {}, recent: { T1: [{ forecast_id: "a", model: "ensemble", model_version: "3", reference_session: "2026-10-28", target_session: "2026-10-29", generated_at: "x", p_up_model: 0.536, p_up_climatology: 0.528, intact: true, outcome: null }], T5: [] }, scoreboard: { T1: {}, T5: {} } },
   };
 }
 function mount(body: PredictionSummary | null) {
@@ -66,7 +66,18 @@ describe("Prediction page", () => {
     expect(within(screen.getByTestId("perf-T1")).getByText(/Calls beat always-up/)).toBeInTheDocument();
     expect(screen.getByTestId("perf-T5F-na")).toHaveTextContent("too short");
     expect(screen.getByRole("table", { name: "Ledger T1" })).toBeInTheDocument();
+    expect(screen.getByTestId("forward-empty")).toBeInTheDocument();
     expect(screen.getByText(/not trading advice/i)).toBeInTheDocument();
+  });
+  it("shows event risk on the forecast and the events panel with its caveat", async () => {
+    const d = data();
+    if (d.ready) {
+      const ev = { id: "fomc-2026-10-28", name: "US Fed (FOMC) rate decision", kind: "fomc", impact: "high", start_ist: "2026-10-28T23:30:00+05:30", all_day: false, time_verified: false, tentative: false, source: "federalreserve.gov" };
+      for (const m of Object.values(d.forecasts.T1.models)) if (m.payload) m.payload.event_risk = [ev];
+    }
+    mount(d);
+    expect(await screen.findByTestId("event-risk-T1")).toHaveTextContent("US Fed (FOMC) rate decision");
+    expect(await screen.findByText(/not a validated improvement/)).toBeInTheDocument();
   });
   it("marks a preview clearly when the overnight data is not in yet", async () => {
     const d = data();

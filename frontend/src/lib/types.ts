@@ -339,6 +339,8 @@ export interface HistoryFetchStatus {
   started?: boolean;
 }
 
+export interface ForwardScore { n: number; brier: number; brier_base: number; hit: number; hit_ci: [number, number] }
+
 export type Verdict = "better" | "promising" | "no_difference" | "worse";
 
 export interface ModelScore {
@@ -376,6 +378,7 @@ export interface HorizonEval {
 }
 
 export interface ForecastPayload {
+  event_risk?: EventItem[];
   p_up_model: number; p_up_raw: number; p_up_climatology: number; p_up_climatology_recent_750: number; model_verdict: Verdict;
   return_quantiles_climatological: Record<string, number>;
   top_drivers: { feature: string; log_odds: number; value: number }[];
@@ -414,7 +417,7 @@ export type PredictionSummary =
       evaluation: { initial_train: number; test_size: number; scheme: string; horizons: Record<"T1" | "T5" | "T5F", HorizonEval> };
       forecasts: Record<"T1" | "T5", { headline_model?: string; calls?: { call: "up" | "down" | null; reason: string | null; strength: number | null; threshold: number | null }; models: Record<string, ModelForecast> }>;
       excluded_inputs: string[];
-      ledger: { counts: Record<string, { forecasts: number; outcomes: number }>; recent: Record<"T1" | "T5", PredictionLedgerRow[]> };
+      ledger: { counts: Record<string, { forecasts: number; outcomes: number }>; recent: Record<"T1" | "T5", PredictionLedgerRow[]>; scoreboard: Record<"T1" | "T5", Record<string, ForwardScore>> };
     };
 
 export interface FlowsCoverage { first: string | null; last: string | null; files: number; not_published_404: number; last_stored_utc: string | null }
@@ -426,3 +429,11 @@ export interface FlowsStatus {
 
 export interface FlowsDay { session: string; participants: Record<string, Record<string, number>> }
 export interface FlowsLatest { open_interest: FlowsDay[]; volume: FlowsDay[] }
+
+export interface EventItem { id: string; name: string; kind: string; impact: string; start_ist: string; all_day: boolean; time_verified: boolean; tentative: boolean; source: string }
+export interface NewsStatus {
+  enabled: boolean; running: boolean; problems: string[]; source: string; not_used: string; model_use: string;
+  coverage: { first_day: string | null; last_day: string | null; days: number; collecting_since: string | null; last_fetch: string | null };
+  themes: Record<string, string>;
+  latest: Record<string, { day: string; tone: number | null; volume_pct: number | null }[]>;
+}

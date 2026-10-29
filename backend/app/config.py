@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     sampler_min_free_gb: float = Field(default=2.0, ge=0.1)
     history_autofetch: bool = True
     flows_history_days: int = 10  # NSE files are collected from this many days back, then daily
+    news_autofetch: bool = True  # GDELT daily tone/volume (headline aggregates only)
     flows_autofetch: bool = True  # NSE participant-wise F&O files and FII/DII cash (low rate)
     history_start: date = date(2007, 1, 1)
     ws_max_clients: int = Field(default=10, ge=1, le=100)

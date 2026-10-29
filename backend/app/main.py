@@ -24,6 +24,8 @@ from app.prediction.flows_store import FlowsStore
 from app.prediction.history_service import HistoryService
 from app.prediction.history_store import HistoryStore
 from app.prediction.ledger import ForecastLedger
+from app.prediction.news_service import NewsService
+from app.prediction.news_store import NewsStore
 from app.prediction.research import PredictionResearch
 from app.services.backfill import backfill_observations
 from app.services.sampler import SnapshotSampler
@@ -96,6 +98,10 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         ledger = ForecastLedger(settings.data_dir)
         history.start()
         flows_store = FlowsStore(settings.data_dir)
+        news_store = NewsStore(settings.data_dir)
+        news = NewsService(news_store, enabled=settings.news_autofetch)
+        app.state.news = news
+        news.start()
         research = PredictionResearch(
             history_store, ledger, cache_dir=settings.data_dir, flows=flows_store
         )
@@ -139,6 +145,8 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
                 login_task.cancel()
             await history.stop()
             await research.stop()
+            await news.stop()
+            news_store.close()
             await flows.stop()
             flows_store.close()
             history_store.close()

@@ -412,3 +412,23 @@ async def flows_latest(
     oi = await asyncio.to_thread(st.latest_participants, "fao_participant_oi", limit)
     vol = await asyncio.to_thread(st.latest_participants, "fao_participant_vol", limit)
     return {"open_interest": oi, "volume": vol}
+
+
+@router.get("/prediction/events")
+async def prediction_events(days: Annotated[int, Query(ge=1, le=120)] = 30) -> dict[str, Any]:
+    """Scheduled macro events from official calendars (dates known in advance)."""
+    from app.prediction.events import EventCalendar
+
+    cal = await asyncio.to_thread(EventCalendar.load)
+    return {"events": [e.public() for e in cal.upcoming(datetime.now(UTC), days)]}
+
+
+@router.get("/prediction/news/status")
+async def news_status(request: Request) -> dict[str, Any]:
+    return await asyncio.to_thread(request.app.state.news.status)
+
+
+@router.post("/prediction/news/refresh", dependencies=[Depends(require_local_control)])
+async def news_refresh(request: Request) -> dict[str, Any]:
+    started = request.app.state.news.trigger()
+    return {"started": started, **await asyncio.to_thread(request.app.state.news.status)}
