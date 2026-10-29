@@ -555,4 +555,18 @@ describe("Premium decay widget", () => {
     expect(chart.dataset.points).toBe("2,2");
     expect(within(box).getByTestId("series-note")).toHaveTextContent("Same 3 strikes at every point");
   });
+
+  it("asks the server for the strike range picked in the widget, including all strikes", async () => {
+    const urls: string[] = [];
+    localStorage.setItem("nse.analysis.layout.v1", JSON.stringify({ active: ["decay"], layout: [{ i: "decay", x: 0, y: 0, w: 12, h: 10 }] }));
+    mockApi(history([obs(1), obs(2)], 1), { "/api/history/premium-decay": (u: string) => { urls.push(u); return decayRes(); } });
+    renderAnalysis();
+    const box = await widget("Premium decay");
+    await waitFor(() => expect(urls.at(-1)).toContain("strikes=10"));
+    await userEvent.click(within(box).getByRole("button", { name: "±20" }));
+    await waitFor(() => expect(urls.at(-1)).toContain("strikes=20"));
+    await userEvent.click(within(box).getByRole("button", { name: "All strikes" }));
+    await waitFor(() => expect(urls.at(-1)).toContain("strikes=all"));
+    expect(within(box).getByRole("button", { name: "All strikes" })).toHaveAttribute("aria-pressed", "true");
+  });
 });

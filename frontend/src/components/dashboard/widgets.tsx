@@ -175,11 +175,13 @@ function RangeChips({ small = false }: { small?: boolean }) {
   );
 }
 
-function TimeSeries({ build, label, note }: {
+function TimeSeries({ build, label, note, extra }: {
   build: (obs: Observation[], c: ReturnType<typeof useChartColors>) => ReturnType<typeof premiumOption>;
   label: string;
   /** Extra line about how the series is built (e.g. its baseline). */
   note?: string;
+  /** Extra controls shown next to the time-range chips (and in the full-size toolbar). */
+  extra?: ReactNode;
 }) {
   const d = useDash();
   const colors = useChartColors();
@@ -203,7 +205,7 @@ function TimeSeries({ build, label, note }: {
         ) : (
           <div className="flex h-full flex-col">
             <div className="mb-1 flex items-center justify-between gap-2">
-              <RangeChips small />
+              <div className="flex flex-wrap items-center gap-2"><RangeChips small />{extra}</div>
               <button type="button" onClick={() => setOpen(true)} aria-label={`Open ${label} full size`} title="Open this chart full size (or click the line)"
                 className="widget-nodrag inline-flex min-h-6 items-center rounded-sm border border-rule bg-slate-2 px-2 text-xs text-muted hover:border-brass hover:text-paper">⤢ Full</button>
             </div>
@@ -222,7 +224,7 @@ function TimeSeries({ build, label, note }: {
         )}
       </Body>
       {open && (
-        <FullChart title={label} onClose={close} toolbar={<RangeChips />}
+        <FullChart title={label} onClose={close} toolbar={<><RangeChips />{extra}</>}
           footer={<>{obs.length} sample{obs.length === 1 ? "" : "s"} · {rangeLabel}{all.length !== obs.length ? ` of ${all.length} stored` : ""}. Drag the bar below the chart or scroll to zoom; hover for exact values.{note ? ` ${note}` : ""}</>}>
           <EChart option={opt} ariaLabel={`${label} (full size)`} />
         </FullChart>
@@ -236,13 +238,19 @@ export function PremiumWidget() {
   const build = useMemo(() => (o: Observation[], c: ReturnType<typeof useChartColors>) => premiumOption(o, c, d.showCalls, d.showPuts), [d.showCalls, d.showPuts]);
   return <TimeSeries build={build} label="Total premium over stored snapshots" />;
 }
+const DECAY_STRIKES: { id: number | "all"; label: string }[] = [
+  { id: 5, label: "±5" }, { id: 10, label: "±10" }, { id: 20, label: "±20" }, { id: "all", label: "All strikes" },
+];
+
 export function DecayWidget() {
   const d = useDash();
+  const [sel, setSel] = useState<number | "all" | null>(null); // null = follow the page's strike range
+  const strikes = sel ?? d.range;
   const all = d.history.data?.observations;
   const since = useMemo(() => rangeObservations(all ?? [], d.tsRange).rows[0]?.retrieved_at, [all, d.tsRange]);
   const q = useQuery({
-    queryKey: ["premiumDecay", d.expiry, d.range, since],
-    queryFn: () => api.premiumDecay(d.expiry!, strikesParam(d.range), since),
+    queryKey: ["premiumDecay", d.expiry, strikes, since],
+    queryFn: () => api.premiumDecay(d.expiry!, strikesParam(strikes), since),
     enabled: !!d.expiry && !!since, refetchInterval: 30_000, retry: false,
   });
   const res = q.data;
@@ -250,9 +258,17 @@ export function DecayWidget() {
     () => (_o: Observation[], c: ReturnType<typeof useChartColors>) => (res ? decayOption(res, c, d.showCalls, d.showPuts) : { animation: false, series: [] }),
     [res, d.showCalls, d.showPuts],
   );
+  const extra = (
+    <div role="group" aria-label="Decay strikes" className="flex items-center gap-0.5" title="Which strikes are summed (around the ATM of the newest sample)">
+      {DECAY_STRIKES.map((x) => (
+        <button key={String(x.id)} type="button" aria-pressed={strikes === x.id} onClick={() => setSel(x.id)}
+          className={`widget-nodrag min-h-6 rounded-sm border px-1.5 text-xs ${strikes === x.id ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{x.label}</button>
+      ))}
+    </div>
+  );
   return (
     <>
-      <TimeSeries build={build} label="Premium decay versus first sample in range"
+      <TimeSeries build={build} label="Premium decay versus first sample in range" extra={extra}
         note={`Same ${res?.strikes.length ?? ""} strikes at every point (ATM as of the newest sample); premium now minus premium at the first sample in range.${res?.warnings.length ? ` ${res.warnings.join(" ")}` : ""}`} />
       {q.error && <p className="sr-only">Could not load the premium decay: {String((q.error as Error).message)}</p>}
     </>
