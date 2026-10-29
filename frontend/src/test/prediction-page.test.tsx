@@ -36,7 +36,7 @@ function data(): PredictionSummary {
   return {
     ready: true, generated_at: "2026-10-28T15:30:00Z", computed_at: "2026-10-28T15:30:00Z", model_version: "3",
     features: { T1: { version: "t1-v1", names: ["spx_ret", "brent_ret"] }, T5: { version: "t5-v1", names: ["nifty_ret_5d"], flows: [] } },
-    data: { symbol: "NIFTY 50", bars: 4689, first: "2007-09-17", last: "2026-10-28", reference_close: 22698.85, up_rate_all: { T1: 0.53 }, overnight_data_fresh: true, stale_series: [] },
+    data: { symbol: "NIFTY 50", bars: 4689, first: "2007-09-17", last: "2026-10-28", reference_close: 22698.85, up_rate_all: { T1: 0.53 }, overnight_data_fresh: true, stale_series: [], inputs: { T1: { nifty_ret_1d: -0.0022, nifty_ret_5d: -0.0049, indiavix_ln: Math.log(16.25), indiavix_chg_1d: -0.0095, spx_ret: 0.0057, brent_ret: -0.0167 }, T5: { sectors_above_sma20: 4 } } },
     evaluation: { initial_train: 1000, test_size: 250, scheme: "expanding window", horizons: { T1: a.ev, T5: b.ev, T5F: { available: false, reason: "NSE participant history is too short so far" } } },
     forecasts: { T1: a.f, T5: b.f }, excluded_inputs: ["news"],
     ledger: { counts: {}, recent: { T1: [{ forecast_id: "a", model: "ensemble", model_version: "3", reference_session: "2026-10-28", target_session: "2026-10-29", generated_at: "x", p_up_model: 0.536, p_up_climatology: 0.528, intact: true, outcome: null }], T5: [] }, scoreboard: { T1: {}, T5: {} } },
@@ -58,7 +58,7 @@ describe("Prediction page", () => {
     mount(data());
     const t1 = await screen.findByTestId("forecast-T1");
     expect(within(t1).getByText(/Target: 2026-10-29/)).toBeInTheDocument();
-    expect(within(t1).getByTestId("call-T1")).toHaveTextContent("No call");
+    expect(within(t1).getByTestId("call-T1")).toHaveTextContent("NO CALL");
     for (const n of names) expect(screen.getByTestId(`chip-T1-${n}`)).toBeInTheDocument();
     expect(within(t1).getAllByText("Edge confirmed").length).toBeGreaterThan(0);
     expect(within(screen.getByTestId("forecast-T5")).getAllByText("No edge shown").length).toBeGreaterThan(0);
@@ -68,6 +68,12 @@ describe("Prediction page", () => {
     expect(screen.getByRole("table", { name: "Ledger T1" })).toBeInTheDocument();
     expect(screen.getByTestId("forward-empty")).toBeInTheDocument();
     expect(screen.getByText(/not trading advice/i)).toBeInTheDocument();
+    expect(screen.getByTestId("status-chips")).toHaveTextContent("data up to 2026-10-28");
+    expect(screen.getByTestId("summary-strip")).toHaveTextContent("T+1 holdout hit rate");
+    const inputs = screen.getByTestId("inputs-panel");
+    expect(inputs).toHaveTextContent("16.25");
+    expect(inputs).toHaveTextContent("4 of 8");
+    expect(screen.getByTestId("postmortem-empty")).toBeInTheDocument();
   });
   it("shows event risk on the forecast and the events panel with its caveat", async () => {
     const d = data();

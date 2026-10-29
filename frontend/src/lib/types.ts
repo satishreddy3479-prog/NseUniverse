@@ -403,6 +403,7 @@ export interface PredictionLedgerRow {
   forecast_id: string; model: string; model_version: string; reference_session: string; target_session: string; generated_at: string;
   p_up_model: number | null; p_up_climatology: number | null; intact: boolean;
   outcome: { realized: { positive: boolean; close_to_close?: number; ret5?: number }; status: string } | null;
+  drivers?: { feature: string; log_odds: number; value: number }[]; call?: "up" | "down" | null;
 }
 
 export type PredictionSummary =
@@ -413,7 +414,7 @@ export type PredictionSummary =
       computed_at: string;
       model_version: string;
       features: { T1: { version: string; names: string[] }; T5: { version: string; names: string[]; flows: string[] } };
-      data: { symbol: string; bars: number; first: string; last: string; reference_close: number; up_rate_all: Record<string, number>; overnight_data_fresh: boolean; stale_series: string[] };
+      data: { symbol: string; bars: number; first: string; last: string; reference_close: number; up_rate_all: Record<string, number>; overnight_data_fresh: boolean; stale_series: string[]; inputs: Partial<Record<"T1" | "T5", Record<string, number>>> };
       evaluation: { initial_train: number; test_size: number; scheme: string; horizons: Record<"T1" | "T5" | "T5F", HorizonEval> };
       forecasts: Record<"T1" | "T5", { headline_model?: string; calls?: { call: "up" | "down" | null; reason: string | null; strength: number | null; threshold: number | null }; models: Record<string, ModelForecast> }>;
       excluded_inputs: string[];

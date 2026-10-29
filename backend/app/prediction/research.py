@@ -400,6 +400,7 @@ class PredictionResearch:
         horizons: dict[str, Any] = {}
         forecasts: dict[str, Any] = {"T1": {"models": {}}, "T5": {"models": {}}}
         ups: dict[str, float] = {}
+        inputs: dict[str, dict[str, float]] = {}
         for v in VARIANTS:
             data = _dataset(bars, others, flows, v)
             if v == "T5F" and len(data.y) < self._it + 2 * self._ts:
@@ -411,6 +412,8 @@ class PredictionResearch:
                 continue
             ups[v] = sum(data.y) / len(data.y)
             hz = "T1" if v == "T1" else "T5"
+            if v != "T5F" and data.x_now is not None:
+                inputs[v] = {n: x for n, x in zip(data.names, data.x_now, strict=True)}
             if data.x_now is None:
                 forecasts[hz]["models"].update({f"{nm}{'+flows' if v == 'T5F' else ''}": {"recorded": False, "reason": "an input for the reference session is missing; no value is guessed", "reference_session": str(ref.session), "reference_close": ref.close, "payload": None} for nm in (*MODELS, ENSEMBLE)})  # fmt: skip
                 continue
@@ -424,7 +427,7 @@ class PredictionResearch:
         return {
             "ready": True, "model_version": MODEL_VERSION,
             "features": {"T1": {"version": T1_VERSION, "names": list(T1_NAMES)}, "T5": {"version": T5_VERSION, "names": list(T5_NAMES), "flows": list(FLOW_NAMES)}},
-            "data": {"symbol": "NIFTY 50 (^NSEI via Yahoo Finance) + global/sector series + NSE participant files", "bars": len(bars), "first": str(bars[0].session), "last": str(ref.session), "reference_close": ref.close, "up_rate_all": ups, "overnight_data_fresh": fresh, "stale_series": stale},  # fmt: skip
+            "data": {"symbol": "NIFTY 50 (^NSEI via Yahoo Finance) + global/sector series + NSE participant files", "bars": len(bars), "first": str(bars[0].session), "last": str(ref.session), "reference_close": ref.close, "up_rate_all": ups, "overnight_data_fresh": fresh, "stale_series": stale, "inputs": inputs},  # fmt: skip
             "evaluation": {"initial_train": self._it, "test_size": self._ts, "scheme": "expanding window purged by the label horizon; early half tunes and calibrates, later half is an untouched holdout", "horizons": horizons},
             "forecasts": forecasts, "excluded_inputs": EXCLUDED, "computed_at": now.isoformat(),
         }  # fmt: skip
@@ -475,6 +478,7 @@ class PredictionResearch:
                 "reference_session": f["reference_session"], "target_session": f["target_session"],
                 "generated_at": f["generated_at"], "p_up_model": f["payload"].get("p_up_model"),
                 "p_up_climatology": f["payload"].get("p_up_climatology"), "intact": r["intact"], "outcome": r["outcome"],
+                "drivers": f["payload"].get("top_drivers") or [], "call": f["payload"].get("call"),
             }  # fmt: skip
 
         return {
