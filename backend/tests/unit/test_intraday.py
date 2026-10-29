@@ -318,7 +318,8 @@ class TestService:
             h["source"] == "Market breadth" and h["status"] == "not_available"
             for h in out["health"]
         )
-        assert out["ml"]["status"] == "not_trained" and out["ml"]["complete_sessions"] == 0
+        assert out["ml"]["status"] == "collecting" and out["ml"]["labelled_sessions"] == 0 and out["ml"]["model_trained"] is False
+        assert out["ml"]["next"]["at_sessions"] == 5
         assert out["scenarios"] == []  # no invented scenarios without an assessment
 
     def test_stale_and_historical_modes(self, tmp_path: Path) -> None:
@@ -475,3 +476,43 @@ class TestScenarioRelevance:
     def test_no_assessment_means_no_scenarios_at_all(self) -> None:
         (shown, ruled), a = self.setup({"price": None, "options": 0.4}, trend=False, regime="Unclassified")
         assert a.score is None and shown == [] and ruled == []
+
+
+# ------------------------------------------------------------------------------- regime
+
+
+class TestRegime:
+    """The 29 Oct case: NIFTY +171 points with a zigzagging one-minute path was called 'sideways'."""
+
+    ctx = DailyContext(date(2026, 10, 28), 22778.0, 22497.0, 22698.85, 0.705, 1.4, 60)
+
+    def run(self, vals: list[float]):
+        from app.intraday.sentiment import regime
+
+        pts = path(vals)
+        f = price_features(pts, pts[-1].at, self.ctx, 22698.85)
+        return regime(f, self.ctx, False), f
+
+    def test_a_noisy_but_clear_rise_is_an_uptrend(self) -> None:
+        # 76 one-minute samples from 22,700 to 22,870 (+0.75%) with +/-4 point zigzag on every sample
+        vals = [22700 + 170 * i / 75 + (4 if i % 2 else -4) for i in range(76)]
+        r, f = self.run(vals)
+        assert f.er_session is not None and f.er_session < 0.35  # the old measure called this noise
+        assert f.er_5m is not None and f.er_5m >= 0.2
+        assert r["primary"] == "Uptrend"
+        assert "60-min move +0.6" in r["reason"] and "x its typical size" in r["reason"]
+
+    def test_the_same_in_reverse_is_a_downtrend(self) -> None:
+        vals = [22870 - 170 * i / 75 + (4 if i % 2 else -4) for i in range(76)]
+        assert self.run(vals)[0]["primary"] == "Downtrend"
+
+    def test_back_and_forth_without_a_net_move_is_choppy_not_a_trend(self) -> None:
+        vals = [22700 + (6 if (i // 3) % 2 else -6) for i in range(76)]
+        assert self.run(vals)[0]["primary"] == "Mean-reverting / choppy"
+
+    def test_a_small_drift_inside_normal_size_is_sideways(self) -> None:
+        vals = [22700 + 10 * i / 75 + (2 if i % 2 else -2) for i in range(76)]
+        assert self.run(vals)[0]["primary"] in ("Sideways consolidation", "Mean-reverting / choppy")
+
+    def test_too_few_samples_are_unclassified(self) -> None:
+        assert self.run([22700.0 + i for i in range(10)])[0]["primary"] == "Unclassified"

@@ -491,7 +491,12 @@ export interface IntradaySummary {
   institutional: { session: string; fii_net: number | null; dii_net: number | null; fresh: boolean } | null;
   events: EventItem[];
   health: IntradayHealth[];
-  ml: { status: string; complete_sessions: number; required_sessions: number; sessions_with_samples: number; reason: string };
+  ml: {
+    status: string; stage_name: string; labelled_sessions: number; complete_sessions: number; sessions_with_samples: number;
+    stages: { id: string; name: string; from_sessions: number; what: string }[];
+    next: { name: string; at_sessions: number; sessions_to_go: number } | null;
+    model_trained: boolean; reason: string;
+  };
   config: { version: string; weights: Record<string, number>; min_coverage: number };
 }
 export interface IntradayScoreRow { sample_utc: string; spot: number | null; score: number | null; label: string; coverage: number; regime: string | null }

@@ -174,3 +174,8 @@ Status: **Final** or **Proposed**. Date 2026-10-28 unless noted.
 - After 15:45 IST each finished session is validated, archived (verified by checksum and row counts), summarised (including the close-of-day option chain, permanent) and given a manifest; after 19:00 the databases are backed up (the server's own timer does this; the app skips its copy there) and regenerable leftovers are tidied. Daily T+1/T+5 models retrain on each new final price bar, never during 09:15-15:45.
 - Deletion: only regenerable files (old exports, stray `*.tmp`, expired backup folders) are removed automatically. Removing snapshot files (raw payloads, normalized) is implemented with safety checks but **disabled** (`SNAPSHOT_RAW_KEEP_DAYS=0`, `SNAPSHOT_NORMALIZED_KEEP_DAYS=0`) until the owner approves limits. The recommended limits are 14 days (raw) and 30 days (normalized); the observation database and archives are kept.
 - The intraday data is not an input of the daily models and cannot be (D53); it is retained because Kotak provides no historical option chains and it is cheap when archived.
+
+## D55 — Intraday regime measure and the staged intraday-ML plan (2026-10-29)
+- The one-minute efficiency ratio called a +171 point, 1.6x-normal climb "sideways". The regime now uses a z-score of the move against the 60-session daily volatility and the 5-minute path efficiency.
+- Scenarios shown only when supported; the others are listed as ruled out with a reason.
+- Intraday ML is staged by labelled sessions (5 experimental, 20 paper-test, 60 eligible for "validated"), and a labelled feature/label dataset is built every night from day one ([intraday-ml-plan](intraday-ml-plan.md)). No model is trained yet; no probability is shown.

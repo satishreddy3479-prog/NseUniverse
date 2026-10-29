@@ -58,7 +58,12 @@ logger = logging.getLogger(__name__)
 #: a session counts towards ML training data only if it holds this many in-session samples
 COMPLETE_SESSION_SAMPLES = 300
 #: documented minimum before an intraday model is even trained (docs/intraday.md)
-ML_MIN_SESSIONS = 60
+ML_STAGES: list[dict[str, Any]] = [
+    {"id": "collecting", "name": "Collecting labelled data", "from_sessions": 0, "what": "every finished session is turned into feature rows with forward-return labels"},
+    {"id": "experimental", "name": "Experimental training", "from_sessions": 5, "what": "baselines and a simple model, leave-one-day-out with a purge; shown as experimental, no validity claimed"},
+    {"id": "paper", "name": "Paper-testing", "from_sessions": 20, "what": "tree models vs baselines, calibration; every live prediction recorded before its outcome"},
+    {"id": "validated", "name": "Eligible for 'validated'", "from_sessions": 60, "what": "label 'validated' only if it beats the baselines across regimes with calibrated probabilities"},
+]
 GLOBAL_KEYS = ("SPX", "NDX_COMP", "VIX", "USDINR", "BRENT", "UST10Y", "GOLD", "N225", "HSI", "DAX")
 SECTOR_KEYS = (
     "NIFTYBANK",
@@ -395,14 +400,7 @@ class IntradayService:
             "institutional": asdict(flow) if flow else None,
             "events": [e.public() for e in upcoming[:6]],
             "health": health,
-            "ml": {
-                "status": "not_trained",
-                "complete_sessions": len(complete),
-                "required_sessions": ML_MIN_SESSIONS,
-                "sessions_with_samples": len(counts),
-                "reason": f"{len(complete)} complete market-hours sessions stored (need {ML_MIN_SESSIONS} with >= {COMPLETE_SESSION_SAMPLES} samples each "
-                          "before a model is trained and walk-forward tested). The sentiment above is rules-based, not ML.",  # fmt: skip
-            },
+            "ml": self._ml_status(len(complete), len(counts)),
             "config": {"version": SCORE_VERSION, "weights": SCORE_CONFIG["weights"], "min_coverage": SCORE_CONFIG["min_coverage"]},
             "compute_ms": None,
         }  # fmt: skip
@@ -418,6 +416,23 @@ class IntradayService:
         result["compute_ms"] = round((_time.perf_counter() - t0) * 1000, 1)
         result["timings_ms"] = marks
         return result
+
+    def _ml_status(self, complete_sessions: int, sessions_with_samples: int) -> dict[str, Any]:
+        """Where the intraday model effort stands, from the labelled sessions actually stored."""
+        from app.intraday.dataset import FEATURE_VERSION
+
+        labelled = len(self.store.feature_sessions(FEATURE_VERSION))
+        stage = max((i for i, st in enumerate(ML_STAGES) if labelled >= st["from_sessions"]), default=0)
+        nxt = ML_STAGES[stage + 1] if stage + 1 < len(ML_STAGES) else None
+        return {
+            "status": ML_STAGES[stage]["id"], "stage_name": ML_STAGES[stage]["name"], "labelled_sessions": labelled,
+            "complete_sessions": complete_sessions, "sessions_with_samples": sessions_with_samples,
+            "stages": ML_STAGES, "next": None if nxt is None else {"name": nxt["name"], "at_sessions": nxt["from_sessions"], "sessions_to_go": nxt["from_sessions"] - labelled},
+            "model_trained": False,
+            "reason": f"{labelled} session(s) of labelled data stored (features at each sample, forward returns as labels). "
+                      + (f"Next: {nxt['name'].lower()} at {nxt['from_sessions']} sessions ({nxt['from_sessions'] - labelled} to go). " if nxt else "")
+                      + "No model has been trained yet; the sentiment shown is rules-based, not ML.",
+        }  # fmt: skip
 
     # ------------------------------------------------------------------ sections
 

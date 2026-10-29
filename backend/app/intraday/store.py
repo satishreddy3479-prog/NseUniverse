@@ -44,6 +44,22 @@ CREATE TABLE IF NOT EXISTS daily_summaries (
   payload TEXT NOT NULL,
   UNIQUE (session, expiry, version)
 );
+CREATE TABLE IF NOT EXISTS feature_rows (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session TEXT NOT NULL,
+  expiry TEXT NOT NULL,
+  sample_utc TEXT NOT NULL,
+  version TEXT NOT NULL,
+  spot REAL NOT NULL,
+  features TEXT NOT NULL,
+  labels TEXT NOT NULL,
+  UNIQUE (session, expiry, sample_utc, version)
+);
+CREATE INDEX IF NOT EXISTS ix_feature_rows_session ON feature_rows(session, expiry);
+CREATE TRIGGER IF NOT EXISTS feature_rows_no_update BEFORE UPDATE ON feature_rows
+  BEGIN SELECT RAISE(ABORT, 'stored feature rows are never changed'); END;
+CREATE TRIGGER IF NOT EXISTS feature_rows_no_delete BEFORE DELETE ON feature_rows
+  BEGIN SELECT RAISE(ABORT, 'stored feature rows are never deleted'); END;
 CREATE TRIGGER IF NOT EXISTS summaries_no_update BEFORE UPDATE ON daily_summaries
   BEGIN SELECT RAISE(ABORT, 'stored summaries are never changed'); END;
 CREATE TRIGGER IF NOT EXISTS summaries_no_delete BEFORE DELETE ON daily_summaries
@@ -95,6 +111,29 @@ class IntradayStore:
             )
             self._db.commit()
             return cur.rowcount > 0
+
+    def record_features(self, session: str, expiry: str, version: str, rows: list[dict[str, Any]]) -> int:
+        """Store a finished session's rows in one transaction; rows that already exist are ignored."""
+        with self._lock:
+            before = self._db.total_changes
+            self._db.executemany(
+                "INSERT OR IGNORE INTO feature_rows (session, expiry, sample_utc, version, spot, features, labels)"
+                " VALUES (?,?,?,?,?,?,?)",
+                [(session, expiry, r["sample_utc"], version, r["spot"], json.dumps(r["features"], separators=(",", ":")), json.dumps(r["labels"], separators=(",", ":"))) for r in rows],
+            )
+            self._db.commit()
+            return self._db.total_changes - before
+
+    def feature_sessions(self, version: str) -> dict[str, int]:
+        """Session -> number of stored feature rows (best expiry), for readiness and status."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT session, expiry, COUNT(*) FROM feature_rows WHERE version=? GROUP BY session, expiry", (version,)
+            ).fetchall()
+        out: dict[str, int] = {}
+        for sess, _, n in rows:
+            out[sess] = max(out.get(sess, 0), int(n))
+        return out
 
     def summaries(self, limit: int = 60) -> list[dict[str, Any]]:
         with self._lock:

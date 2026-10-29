@@ -120,6 +120,10 @@ class TestEod:
         assert verify_archive(tmp_path / m["archive"]["path"], m["archive"]["sha256"], 320, m["archive"]["contracts"]) is None
         sums = IntradayStore(tmp_path).summaries()
         assert len(sums) == 1 and sums[0]["expiry"] == EXP and sums[0]["status"] == "complete" and sums[0]["price"]["first"] > 0
+        # the labelled research dataset was built too: every sample after the 15-sample warm-up, once
+        from app.intraday.dataset import FEATURE_VERSION
+
+        assert IntradayStore(tmp_path).feature_sessions(FEATURE_VERSION) == {DAY.isoformat(): 320 - 15}
         # the compact close-of-day chain is kept in the permanent summary: every listed strike, both sides
         cc = sums[0]["close_chain"]
         assert cc["columns"][:3] == ["strike", "ce_ltp", "ce_oi"] and len(cc["rows"]) == 81 and cc["spot"] > 0

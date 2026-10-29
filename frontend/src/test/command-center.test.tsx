@@ -42,7 +42,10 @@ describe("Market Sentiment Command Center", () => {
     expect(await screen.findByTestId("cc-label")).toHaveTextContent(base.assessment.label);
     expect(screen.getByTestId("cc-narrative")).toHaveTextContent(base.narrative);
     expect(screen.getByText(`${Math.round(base.assessment.coverage * 100)}%`)).toBeInTheDocument();
-    expect(within(screen.getByTestId("cc-ml")).getByText("Not trained")).toBeInTheDocument();
+    const ml = within(screen.getByTestId("cc-ml"));
+    expect(ml.getByText("No model yet")).toBeInTheDocument();
+    expect(ml.getByRole("list", { name: "Intraday model stages" }).children).toHaveLength(4);
+    expect(ml.getByText(/session\(s\) of labelled data stored/)).toBeInTheDocument();
     expect(screen.getByText("Not calibrated")).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/demo|mock/i);
   });

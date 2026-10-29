@@ -60,9 +60,13 @@ institutional 0.10. Each group score ∈ [−1, +1]:
   snapshots before anyone calls them meaningful.
 
 ## Regime and scenarios
-Observed regime needs >= 15 samples: up/downtrend (efficiency >= 0.35 and |60-min return| >= half the
-typical 60-min move), mean-reverting (efficiency < 0.2), otherwise sideways; tags for opening-range
-breakout/breakdown, volatility expansion/contraction, exhaustion risk, event risk.
+Observed regime needs >= 15 samples. A trend needs a move that is large for its length and directional:
+the larger of the 60-minute move and the whole-session move, as a multiple of what a random walk with the
+60-session daily volatility would typically do in that time, must be at least 1.5x, and the 5-minute path
+must not be just back-and-forth (efficiency ratio >= 0.20). Mean-reverting: 5-minute efficiency < 0.20 and
+the move < 1x typical. Otherwise sideways. (The one-minute efficiency ratio is not used: it is low even in a
+clean trend because minute samples zigzag; 29 Oct showed that.) Tags: opening-range breakout/breakdown, gap,
+volatility expansion/contraction, exhaustion risk, event risk.
 
 Scenarios (bullish, range-bound, bearish) are qualitative and **only the relevant ones are shown**; the
 others are listed as "Not shown" with the reason:
@@ -88,10 +92,8 @@ days. FII/DII fresh when it describes the previous trading session.
 The intraday view reads stored daily bars; the prediction models never read intraday samples, chains, ticks or the score ledger, and they train only outside market hours (see D53 and `test_no_intraday_leak.py`). Any future intraday model gets its own pipeline and ledger.
 
 ## ML readiness
-A session counts as complete with ≥ 300 in-session samples. No intraday model is trained before 60
-complete sessions exist; it must then beat the persistence/majority baselines under purged walk-forward
-evaluation. **On 2026-10-29 the store held 0 complete sessions** (all earlier samples were taken
-outside market hours), so the first usable session is 29 Oct 2026.
+Staged plan in [intraday-ml-plan](intraday-ml-plan.md): labelled data is built nightly from day one; experimental
+training starts at 5 labelled sessions, paper-testing at 20, and 60 only gates the label "validated".
 
 ## Not built yet (from the master spec; in dependency order)
 1. Breadth and intraday sectors (needs a legitimate constituent quote source; Kotak quotes for 50

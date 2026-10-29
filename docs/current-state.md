@@ -62,3 +62,6 @@ Deploy kit written and tested for update/rollback logic and backend startup with
 - **Not enabled until the owner approves limits:** removal of snapshot files. Defaults keep everything.
 - **Open finding:** the PC stopped collecting at 09:49 IST on 29 Oct (the log ends there without an error, consistent with the computer sleeping). Only the server should be relied on for full sessions; its first full session has not been checked from here.
 - Not verified live: the end-of-day run has not yet executed on a real full session (the first one after deploy is the next trading day).
+
+## Intraday regime and ML plan (2026-10-29, D55)
+- Regime measure fixed (z-score of the move + 5-minute path efficiency); scenarios filtered by relevance; nightly labelled dataset (`feature_rows`, version if-1) built by the end-of-day job; page shows the ML stage. Not verified live: the first nightly dataset is built after the next full session; no intraday model exists yet.

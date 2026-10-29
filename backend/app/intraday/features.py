@@ -96,6 +96,19 @@ def as_of(points: Sequence[Point], at: datetime, slack_min: float) -> Point | No
     return best
 
 
+def resample(points: Sequence[Point], minutes: int) -> list[Point]:
+    """Last sample of every ``minutes``-minute bucket of the session (09:15 anchored).
+
+    One-minute paths zigzag even in a clear trend, which makes their efficiency ratio low; thinning
+    to 5-minute points measures persistence instead of tick noise.
+    """
+    out: dict[int, Point] = {}
+    for p in points:
+        t = p.at.astimezone(IST)
+        out[(t.hour * 60 + t.minute - (OPEN.hour * 60 + OPEN.minute)) // minutes] = p
+    return [out[k] for k in sorted(out)]
+
+
 def efficiency_ratio(points: Sequence[Point]) -> float | None:
     """|net move| / sum of |point-to-point moves| in [0, 1]: 1 = straight line, ~0 = back and forth."""
     if len(points) < 3:
@@ -174,6 +187,11 @@ class PriceFeatures:
     returns_pct: dict[int, float | None] = field(default_factory=dict)
     er_30: float | None = None
     er_session: float | None = None
+    #: efficiency ratio of the 5-minute thinned path (persistence of direction, less tick noise)
+    er_5m: float | None = None
+    #: last / first sample - 1, in percent, and the minutes between them
+    net_pct: float | None = None
+    net_minutes: float | None = None
     rv_pct: float | None = None
     #: realized vol so far / (typical daily sd scaled to the elapsed time); 1 = normal
     rv_ratio: float | None = None
@@ -224,6 +242,9 @@ def price_features(
         f.returns_pct[h] = None if a is None else (last.spot / a.spot - 1) * 100
     f.er_30 = efficiency_ratio([p for p in points if p.at >= last.at - timedelta(minutes=30)])
     f.er_session = efficiency_ratio(points)
+    f.er_5m = efficiency_ratio(resample(points, 5))
+    f.net_pct = (last.spot / first.spot - 1) * 100 if first.spot else None
+    f.net_minutes = (last.at - first.at).total_seconds() / 60
     f.rv_pct = realized_vol_pct(points)
     elapsed = minutes_elapsed(last.at)
     if f.rv_pct is not None and ctx.daily_sd_pct and elapsed >= 15:

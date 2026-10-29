@@ -23,6 +23,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
+from app.intraday.dataset import FEATURE_VERSION, build_rows
 from app.intraday.features import (
     CLOSE,
     IST,
@@ -195,6 +196,26 @@ class EodService:
             stored += self.intraday.record_summary(day.isoformat(), expiry, VERSION, status, len(samples), payload, now=self._clock())
         return stored
 
+    def build_dataset(self, day: date) -> dict[str, int]:
+        """Labelled feature rows of the finished session, one set per expiry (append-only)."""
+        start, end = day_window(day)
+        bars = [DailyBar(b.session, b.open, b.high, b.low, b.close) for b in self.history.bars("NIFTY50")[-120:]]
+        ctx = daily_context(bars, day)
+        stored: dict[str, int] = {}
+        for expiry, _ in self.obs.day_counts(self.underlying, start, end):
+            samples = [s for s in self.obs.samples(self.underlying, expiry, since=datetime.fromtimestamp(start / 1000, UTC), until=datetime.fromtimestamp((end - 1) / 1000, UTC), limit=5000)
+                       if s.spot is not None and s.spot > 0 and OPEN <= s.received_at.astimezone(IST).time() <= CLOSE]  # fmt: skip
+            if len(samples) < 16:
+                continue
+            pts = [Point(s.received_at, float(s.spot or 0)) for s in samples]
+
+            def chain_at(i: int, _s: Any = samples) -> dict[tuple[float, int], Quote]:
+                return {k: Quote(c.ltp, c.oi, c.oi_prev, c.volume) for k, c in self.obs.contracts(_s[i].values_from).items()}
+
+            rows = build_rows(pts, chain_at, samples[0].prev_close, ctx, date.fromisoformat(expiry), day)
+            stored[expiry] = self.intraday.record_features(day.isoformat(), expiry, FEATURE_VERSION, rows)
+        return stored
+
     def process_day(self, day: date) -> dict[str, Any]:
         v = self.validate(day)
         arch = archive_day(self.obs, self.underlying, day, self.data_dir, now=self._clock())
@@ -206,10 +227,11 @@ class EodService:
             res["state"] = f"archive not verified: {arch.problem}"
             return res
         res["summaries_stored"] = self.summarise(day, v["status"])
+        res["feature_rows_stored"] = self.build_dataset(day)
         self.manifests.mkdir(parents=True, exist_ok=True)
         doc = {"schema": 1, "version": VERSION, "day": day.isoformat(), "underlying": self.underlying, "status": v["status"], "created_utc": self._clock().isoformat(),
                "validation": v, "archive": arch.public(), "summaries": {"table": "intraday.sqlite3:daily_summaries", "version": VERSION},
-               "ml_ready_session": v["status"] == "complete", "notes": "the database remains the primary store; the archive is a verified copy"}  # fmt: skip
+               "ml_ready_session": v["status"] == "complete", "feature_version": FEATURE_VERSION, "notes": "the database remains the primary store; the archive is a verified copy"}  # fmt: skip
         tmp = self.manifest_path(day).with_suffix(".json.tmp")
         tmp.write_text(json.dumps(doc, indent=1), "utf-8")
         tmp.replace(self.manifest_path(day))

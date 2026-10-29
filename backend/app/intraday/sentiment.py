@@ -263,42 +263,56 @@ def assess(components: list[Component], p: PriceFeatures) -> Assessment:
 
 
 def regime(p: PriceFeatures, ctx: DailyContext, event_today: bool) -> dict[str, Any]:
-    """Observed state of the session so far (a description, not a forecast)."""
+    """Observed state of the session so far (a description, not a forecast).
+
+    Trend = the move is large for its length AND directional. "Large" is a z-score against what a
+    random walk with the 60-session daily volatility would typically do over the same time; the
+    larger of the 60-minute move and the whole-session move counts. "Directional" = the 5-minute path
+    is not just back-and-forth (efficiency ratio >= 0.20). One-minute efficiency is not used for the
+    decision: it is low even in a clean trend because minute samples zigzag.
+    """
     tags: list[str] = []
     if p.samples < 15 or ctx.daily_sd_pct is None:
         return {"primary": "Unclassified", "tags": tags,
                 "reason": f"{p.samples} in-session samples (need 15) and daily history for scale"}  # fmt: skip
+    sd = ctx.daily_sd_pct
     r60 = p.returns_pct.get(60)
-    exp60 = ctx.daily_sd_pct * math.sqrt(60 / SESSION_MINUTES)
-    er = p.er_session
+    exp60 = sd * math.sqrt(60 / SESSION_MINUTES)
+    z60 = None if r60 is None else r60 / exp60
+    zs = None
+    if p.net_pct is not None and p.net_minutes and p.net_minutes >= 30:
+        zs = p.net_pct / (sd * math.sqrt(p.net_minutes / SESSION_MINUTES))
+    zs_list = [z for z in (z60, zs) if z is not None]
+    z = max(zs_list, key=abs) if zs_list else None
+    er5 = p.er_5m
     primary = "Sideways consolidation"
-    if r60 is not None and er is not None and er >= 0.35 and abs(r60) >= 0.5 * exp60:
-        primary = "Uptrend" if r60 > 0 else "Downtrend"
-    elif er is not None and er < 0.2:
+    if z is not None and abs(z) >= 1.5 and er5 is not None and er5 >= 0.20:
+        primary = "Uptrend" if z > 0 else "Downtrend"
+    elif er5 is not None and er5 < 0.20 and (z is None or abs(z) < 1.0):
         primary = "Mean-reverting / choppy"
     if p.or_high is not None and p.last is not None and p.last > p.or_high:
         tags.append("Above opening range (breakout attempt)")
     if p.or_low is not None and p.last is not None and p.last < p.or_low:
         tags.append("Below opening range (breakdown attempt)")
+    if p.gap_pct is not None and abs(p.gap_pct) >= 0.5 * sd:
+        tags.append(f"Gap {'up' if p.gap_pct > 0 else 'down'} {p.gap_pct:+.2f}% at the open")
     vol, _ = vol_regime(p)
     if vol == "High":
         tags.append("Volatility expansion")
     elif vol == "Low":
         tags.append("Volatility contraction")
     r15 = p.returns_pct.get(15)
-    if (
-        primary in ("Uptrend", "Downtrend")
-        and r15 is not None
-        and r60 is not None
-        and r15 * r60 < 0
-        and abs(r15) > 0.4 * abs(r60)
-    ):
+    if primary in ("Uptrend", "Downtrend") and r15 is not None and r60 is not None and r15 * r60 < 0 and abs(r15) > 0.4 * abs(r60):
         tags.append("Trend exhaustion risk (last 15 min against the hour)")
     if event_today:
         tags.append("Event risk later today")
-    return {"primary": primary, "tags": tags,
-            "reason": ("no price movement between samples" if er is None else f"efficiency ratio {er:.2f} over the session")
-            + ("; 60-min return n/a" if r60 is None else f"; 60-min return {r60:+.2f}% vs typical {exp60:.2f}%")}  # fmt: skip
+    bits = []
+    if z60 is not None:
+        bits.append(f"60-min move {r60:+.2f}% = {z60:+.1f}x its typical size ({exp60:.2f}%)")
+    if zs is not None:
+        bits.append(f"session move {p.net_pct:+.2f}% over {p.net_minutes:.0f} min = {zs:+.1f}x typical")
+    bits.append("5-min path efficiency " + ("n/a" if er5 is None else f"{er5:.2f}"))
+    return {"primary": primary, "tags": tags, "reason": "; ".join(bits)}
 
 
 # --------------------------------------------------------------------------------- scenarios
@@ -317,13 +331,14 @@ def scenarios(
     """Qualitative scenarios that are relevant now, plus the ones ruled out and why.
 
     Relevance rules: bullish needs at least one available evidence group above +0.10, bearish at least
-    one below -0.10; range-bound is shown unless the session is a clean trend (efficiency ratio >= 0.35)
+    one below -0.10; range-bound is shown unless the observed regime is an up/downtrend
     with a strong score (|score| >= 0.5), and always when nothing else is relevant. Order: the observed
     regime first (range-bound when choppy), then by agreement with the score. No probabilities: there is
     no validated intraday model, and numbers would be invented.
     """
     if a.score is None or p.last is None:
         return [], []
+    primary = (reg or {}).get("primary")
     bull = [c for c in a.components if c.available and (c.score or 0) > 0.1]
     bear = [c for c in a.components if c.available and (c.score or 0) < -0.1]
     up = max(x for x in (p.or_high, p.sampled_high) if x is not None)
@@ -338,8 +353,8 @@ def scenarios(
          "strengthens": f"Sustained trade above {_fmt(up)} with the score staying above +0.2",
          "weakens": f"Falls back below {_fmt(p.prev_close)} (previous close) or below {_fmt(dn)}"},
         {"name": "Range-bound consolidation", **common,
-         "supporting": [f"Session efficiency ratio {p.er_session:.2f}"] if p.er_session is not None and p.er_session < 0.35 else [],
-         "conflicting": [f"Session efficiency ratio {p.er_session:.2f}"] if p.er_session is not None and p.er_session >= 0.35 else [],
+         "supporting": [f"Observed regime: {primary}"] if primary in CHOPPY else [],
+         "conflicting": [f"Observed regime: {primary}"] if primary in ("Uptrend", "Downtrend") else [],
          "levels": {"range high": up, "range low": dn},
          "strengthens": f"Price keeps rotating between {_fmt(dn)} and {_fmt(up)}",
          "weakens": f"A sustained move outside {_fmt(dn)}-{_fmt(up)}"},
@@ -351,17 +366,16 @@ def scenarios(
          "weakens": f"Recovers above {_fmt(p.prev_close)} (previous close) or above {_fmt(up)}"},
     ]  # fmt: skip
     n_av = sum(1 for c in a.components if c.available)
-    trending = p.er_session is not None and p.er_session >= 0.35 and abs(a.score) >= 0.5
+    trending = (reg or {}).get("primary") in ("Uptrend", "Downtrend") and abs(a.score) >= 0.5
     why: dict[int, str] = {}
     if not bull:
         why[0] = f"none of the {n_av} available evidence groups is above +0.10"
     if not bear:
         why[2] = f"none of the {n_av} available evidence groups is below -0.10" + (f" ({len(bull)} are bullish)" if bull else "")
     if trending and not (why.get(0) and why.get(2)):
-        why[1] = f"a clean trend: efficiency ratio {p.er_session:.2f} with score {a.score:+.2f}"
+        why[1] = f"a clear {(reg or {}).get('primary', 'trend').lower()} with score {a.score:+.2f}"
     if len(why) == 3:  # nothing directional is supported: range-bound is the honest default
         del why[1]
-    primary = (reg or {}).get("primary")
     if primary in CHOPPY:
         key = [1, 0, 2] if len(bull) >= len(bear) else [1, 2, 0]
     else:

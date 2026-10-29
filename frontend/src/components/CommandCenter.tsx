@@ -114,7 +114,7 @@ function Header({ d }: { d: IntradaySummary }) {
       <Stat label="Last stored sample" value={d.market.last_sample_at ? fmtTimeIST(d.market.last_sample_at) : MISSING}
         sub={d.market.age_seconds != null ? `${Math.round(d.market.age_seconds / 60)} min ago` : "none"} />
       <Stat label="Scoring" value="Rules v1 (provisional)" sub={d.assessment.version} />
-      <Stat label="Intraday ML" value="Not trained" cls="text-muted" sub={`${d.ml.complete_sessions}/${d.ml.required_sessions} sessions`} />
+      <Stat label="Intraday ML" value={d.ml.model_trained ? d.ml.stage_name : "No model yet"} cls="text-muted" sub={`${d.ml.stage_name} · ${d.ml.labelled_sessions} session${d.ml.labelled_sessions === 1 ? "" : "s"} labelled`} />
     </div>
   );
 }
@@ -363,12 +363,19 @@ function EventsMl({ d }: { d: IntradaySummary }) {
       <div className="mt-3 rounded-sm border border-rule bg-slate-2 p-2" data-testid="cc-ml">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-semibold text-paper">Intraday ML model</span>
-          <Chip>Not trained</Chip>
+          <Chip>{d.ml.model_trained ? d.ml.stage_name : "No model yet"}</Chip>
         </div>
         <p className="mt-1 text-xs text-muted">{d.ml.reason}</p>
-        <div className="mt-2 h-1.5 w-full rounded-sm bg-slate" aria-hidden>
-          <div className="h-full rounded-sm bg-accent" style={{ width: `${Math.min(100, (d.ml.complete_sessions / d.ml.required_sessions) * 100)}%` }} />
-        </div>
+        <ol className="mt-2 grid grid-cols-4 gap-1" aria-label="Intraday model stages">
+          {d.ml.stages.map((st) => {
+            const done = d.ml.labelled_sessions >= st.from_sessions;
+            return (
+              <li key={st.id} title={st.what} className={`rounded-sm border px-1 py-1 text-center text-[10px] leading-tight ${done ? "border-accent/60 text-paper" : "border-rule text-muted"}`}>
+                <span className="block font-semibold">{st.from_sessions}+</span>{st.name}
+              </li>
+            );
+          })}
+        </ol>
         <p className="mt-1 text-[11px] text-muted">The overnight T+1 / T+5 models are on the Prediction page and are separate from this.</p>
       </div>
     </Card>

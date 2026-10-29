@@ -38,6 +38,9 @@
   },
   "er_30": null,
   "er_session": null,
+  "er_5m": null,
+  "net_pct": 0.0,
+  "net_minutes": 39.0,
   "rv_pct": 0.0,
   "rv_ratio": 0.0,
   "range_pct": 0.0,
@@ -239,7 +242,7 @@
   "tags": [
    "Volatility contraction"
   ],
-  "reason": "no price movement between samples; 60-min return n/a"
+  "reason": "session move +0.00% over 39 min = +0.0x typical; 5-min path efficiency n/a"
  },
  "scenarios": [
   {
@@ -247,7 +250,9 @@
    "horizon": "rest of today's session",
    "probability": null,
    "status": "rules-based, no probability (no validated intraday model)",
-   "supporting": [],
+   "supporting": [
+    "Observed regime: Sideways consolidation"
+   ],
    "conflicting": [],
    "levels": {
     "range high": 22698.85,
@@ -285,7 +290,7 @@
  "context": [
   {
    "question": "Trending or rotating?",
-   "answer": "Sideways consolidation (no price movement between samples; 60-min return n/a)"
+   "answer": "Sideways consolidation (session move +0.00% over 39 min = +0.0x typical; 5-min path efficiency n/a)"
   },
   {
    "question": "Broad or concentrated participation?",
@@ -631,11 +636,44 @@
   }
  ],
  "ml": {
-  "status": "not_trained",
+  "status": "collecting",
+  "stage_name": "Collecting labelled data",
+  "labelled_sessions": 0,
   "complete_sessions": 0,
-  "required_sessions": 60,
   "sessions_with_samples": 1,
-  "reason": "0 complete market-hours sessions stored (need 60 with >= 300 samples each before a model is trained and walk-forward tested). The sentiment above is rules-based, not ML."
+  "stages": [
+   {
+    "id": "collecting",
+    "name": "Collecting labelled data",
+    "from_sessions": 0,
+    "what": "every finished session is turned into feature rows with forward-return labels"
+   },
+   {
+    "id": "experimental",
+    "name": "Experimental training",
+    "from_sessions": 5,
+    "what": "baselines and a simple model, leave-one-day-out with a purge; shown as experimental, no validity claimed"
+   },
+   {
+    "id": "paper",
+    "name": "Paper-testing",
+    "from_sessions": 20,
+    "what": "tree models vs baselines, calibration; every live prediction recorded before its outcome"
+   },
+   {
+    "id": "validated",
+    "name": "Eligible for 'validated'",
+    "from_sessions": 60,
+    "what": "label 'validated' only if it beats the baselines across regimes with calibrated probabilities"
+   }
+  ],
+  "next": {
+   "name": "Experimental training",
+   "at_sessions": 5,
+   "sessions_to_go": 5
+  },
+  "model_trained": false,
+  "reason": "0 session(s) of labelled data stored (features at each sample, forward returns as labels). Next: experimental training at 5 sessions (5 to go). No model has been trained yet; the sentiment shown is rules-based, not ML."
  },
  "config": {
   "version": "intraday-rules-v1-eb55087c",
@@ -649,15 +687,15 @@
   },
   "min_coverage": 0.45
  },
- "compute_ms": 247.1,
+ "compute_ms": 404.9,
  "timings_ms": {
-  "samples_query": 0.5,
+  "samples_query": 0.6,
   "calendar": 0.2,
-  "daily_history": 20.1,
-  "price_and_options": 1.7,
-  "global_flows": 141.0,
-  "assess_regime_store": 0.6,
-  "health_counts": 82.2,
-  "record": 1.3
+  "daily_history": 23.2,
+  "price_and_options": 2.1,
+  "global_flows": 231.6,
+  "assess_regime_store": 0.9,
+  "health_counts": 145.8,
+  "record": 1.2
  }
 }
