@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { EChart, useChartColors } from "../EChart";
@@ -10,9 +10,38 @@ import {
   decayOption, oiChangeBarOption, oiHeatmapOption, premiumOption, spotOption, straddleOption, strikeBarOption,
   totalsBarOption, type StrikeMetric,
 } from "../../lib/chartOptions";
-import { fmtDateTimeIST, fmtExpiry, fmtInt, fmtPct, fmtPrice, fmtSigned } from "../../lib/format";
+import { ageSeconds, fmtDateTimeIST, fmtExpiry, fmtTimeIST, fmtInt, fmtPct, fmtPrice, fmtSigned } from "../../lib/format";
 import { useLiveSpot } from "../../lib/useLive";
 import type { BaselineKind, Observation, OiChange, OptionChainRow } from "../../lib/types";
+
+/** Age in seconds of the newest stored sample, re-evaluated every 15 s so the label cannot go stale. */
+function useLastSample(): { at: string | null; age: number | null } {
+  const d = useDash();
+  const obs = d.history.data?.observations;
+  const at = obs && obs.length ? obs[obs.length - 1]!.retrieved_at : null;
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(t);
+  }, []);
+  return { at, age: ageSeconds(at, now) };
+}
+
+/** Time-series widgets are built from stored samples; say how fresh the newest one is. */
+function SampleTag() {
+  const { at, age } = useLastSample();
+  const fresh = age != null && age <= 180;
+  const late = age != null && age > 180 && age <= 600;
+  const cls = fresh ? "border-up/50 text-up" : late ? "border-warn/50 text-warn" : "border-info/50 text-info";
+  const text = fresh ? "Sampled live" : late ? "Sampling delayed" : "Stored (last session)";
+  return (
+    <>
+      <span className={`inline-flex items-center rounded-sm border px-1.5 py-px text-xs font-medium ${cls}`}
+        title="These charts plot the option-chain samples stored every minute in market hours (not individual ticks).">{text}</span>
+      {at && <span>last sample {fmtTimeIST(at)} IST</span>}
+    </>
+  );
+}
 
 /** Source line printed under every widget: where the numbers come from and how fresh they are. */
 function Meta({ kind, children }: { kind: "chain" | "history"; children?: ReactNode }) {
@@ -22,7 +51,7 @@ function Meta({ kind, children }: { kind: "chain" | "history"; children?: ReactN
   const live = kind === "chain" && d.liveMode === "fresh";
   return (
     <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted">
-      <SourceTag source={live ? "live" : kind === "history" ? "stored" : "snapshot"} />
+      {kind === "history" ? <SampleTag /> : <SourceTag source={live ? "live" : "snapshot"} />}
       <span>{fmtExpiry(d.expiry)}</span>
       <span>{d.universeLabel}</span>
       {kind === "chain" && !live && <span>snapshot {fmtDateTimeIST(snap.retrieved_at)}</span>}

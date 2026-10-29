@@ -97,7 +97,19 @@ describe("analysis dashboard", () => {
     expect(await within(oi).findByText("Snapshot")).toBeInTheDocument();
     expect(within(oi).getByText(/03 Nov|3 Nov/)).toBeInTheDocument();
     const prem = await widget("Total premium");
-    expect(await within(prem).findByText("Stored (historical)")).toBeInTheDocument();
+    expect(await within(prem).findByText("Stored (last session)")).toBeInTheDocument();
+    expect(within(prem).getByText(/last sample/)).toBeInTheDocument();
+  });
+
+  it("tells a live-sampled chart from a delayed and a last-session one", async () => {
+    const at = (secondsAgo: number) => new Date(Date.now() - secondsAgo * 1000).toISOString();
+    for (const [secs, text] of [[30, "Sampled live"], [400, "Sampling delayed"]] as const) {
+      mockApi(history([obs(1, { retrieved_at: at(secs + 60) }), obs(2, { retrieved_at: at(secs) })], 2));
+      const { unmount } = renderAnalysis();
+      const prem = await widget("Total premium");
+      expect(await within(prem).findByText(text)).toBeInTheDocument();
+      unmount();
+    }
   });
 
   it("explains a flat time series instead of presenting it as movement", async () => {
