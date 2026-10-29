@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { atmStraddle, compactIN, computeTotals, maxPain, pcr, universeRows } from "../lib/analytics";
+import { atmStraddle, compactIN, computeTotals, maxPain, pcr, rangeObservations, universeRows } from "../lib/analytics";
 import type { OptionChainRow, OptionQuote } from "../lib/types";
 
 const q = (over: Partial<OptionQuote> = {}): OptionQuote => ({
@@ -106,5 +106,32 @@ describe("compactIN", () => {
     expect(compactIN(-250_000)).toBe("−2.50 L");
     expect(compactIN(5_400)).toBe("5.4 K");
     expect(compactIN(null)).toBe("—");
+  });
+});
+
+describe("rangeObservations", () => {
+  // IST wall-clock -> ISO (UTC = IST - 5:30). Samples: yesterday 14:00; today 09:00, 09:15, 12:00, 15:30, 15:31.
+  const at = (day: number, h: number, m: number) => ({ retrieved_at: new Date(Date.UTC(2026, 9, day, h, m) - 5.5 * 3600_000).toISOString(), tag: `${day}@${h}:${m}` });
+  const obs = [at(28, 14, 0), at(29, 9, 0), at(29, 9, 15), at(29, 12, 0), at(29, 15, 30), at(29, 15, 31)];
+  const tags = (r: { rows: { tag: string }[] }) => r.rows.map((o) => o.tag);
+
+  it("session keeps the newest day's 09:15-15:30 samples only (edges included)", () => {
+    const r = rangeObservations(obs, "session");
+    expect(tags(r)).toEqual(["29@9:15", "29@12:0", "29@15:30"]);
+    expect(r.note).toBeNull();
+  });
+  it("30 min and 1 hour are measured back from the newest sample, not the wall clock", () => {
+    expect(tags(rangeObservations(obs, "30m"))).toEqual(["29@15:30", "29@15:31"]); // >= 15:01
+    expect(tags(rangeObservations(obs, "1h"))).toEqual(["29@15:30", "29@15:31"]); // >= 14:31, 12:00 is out
+  });
+  it("all returns everything and an empty input stays empty", () => {
+    expect(rangeObservations(obs, "all").rows).toHaveLength(6);
+    expect(rangeObservations([], "session")).toEqual({ rows: [], note: null });
+  });
+  it("a day with only pre-market samples shows that day and says so", () => {
+    const pre = [at(28, 14, 0), at(29, 8, 40), at(29, 9, 5)];
+    const r = rangeObservations(pre, "session");
+    expect(tags(r)).toEqual(["29@8:40", "29@9:5"]);
+    expect(r.note).toMatch(/No sample from 09:15–15:30 on 2026-10-29/);
   });
 });

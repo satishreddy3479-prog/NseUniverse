@@ -28,6 +28,9 @@ Not collected yet (shown as **Not available**, never zero): market breadth (cons
 advances/declines), intraday sector data, VWAP (NIFTY 50 is an index without traded volume, so a
 VWAP is undefined; a futures VWAP would need a futures feed).
 
+## Time-series widgets: ranges and full-size view
+The NIFTY, total premium, premium decay and ATM straddle charts have range buttons: 30 min, 1 hour (measured back from the newest stored sample), **Session** (default: the newest sample's IST day, 09:15-15:30; the last session when the market is closed) and All. The range is shared by the four charts and remembered in the browser. `⤢ Full` or a click on the line opens a full-window chart with the same range buttons and a zoom bar; Esc closes it. Premium decay is measured against the first sample *in the chosen range*. The tag under each chart says *Sampled live* (newest sample <= 3 min), *Sampling delayed* (<= 10 min) or *Stored (last session)*.
+
 ## Feature definitions (`features.py`)
 - **Session phase** (IST): pre-market < 09:00, pre-open 09:00–09:15, opening 09:15–09:45, morning –11:30,
   midday –13:30, afternoon –15:00, closing –15:30, post-market; *closed* on NSE holidays (holiday

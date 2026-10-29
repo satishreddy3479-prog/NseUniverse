@@ -113,3 +113,38 @@ export function compactIN(v: number | null | undefined): string {
   if (a >= 1e3) return `${sign}${(a / 1e3).toFixed(1)} K`;
   return `${sign}${Math.round(a)}`;
 }
+
+// ---------------------------------------------------------------- time ranges for stored samples
+
+export type TsRange = "30m" | "1h" | "session" | "all";
+export const TS_RANGES: { id: TsRange; label: string; title: string }[] = [
+  { id: "30m", label: "30 min", title: "The 30 minutes up to the newest stored sample" },
+  { id: "1h", label: "1 hour", title: "The hour up to the newest stored sample" },
+  { id: "session", label: "Session", title: "Today's session, 09:15–15:30 IST (the last session when the market is closed)" },
+  { id: "all", label: "All", title: "Every stored sample returned for this expiry" },
+];
+
+const IST_MS = 5.5 * 3600_000;
+const istDay = (ms: number) => new Date(ms + IST_MS).toISOString().slice(0, 10);
+const istMinute = (ms: number) => Math.floor((((ms + IST_MS) % 86400_000) + 86400_000) % 86400_000 / 60_000);
+const SESSION_FROM = 9 * 60 + 15, SESSION_TO = 15 * 60 + 30;
+
+/**
+ * Restrict stored observations to a range. Ranges are measured from the newest sample, not from the
+ * wall clock, so they also work after the close. "session" = the IST day of the newest sample,
+ * 09:15-15:30; if that day has no in-session sample the whole day is shown and the note says so.
+ */
+export function rangeObservations<T extends { retrieved_at: string }>(obs: T[], range: TsRange): { rows: T[]; note: string | null } {
+  if (obs.length === 0 || range === "all") return { rows: obs, note: null };
+  const ms = (o: T) => new Date(o.retrieved_at).getTime();
+  const newest = Math.max(...obs.map(ms));
+  if (range === "30m" || range === "1h") {
+    const from = newest - (range === "30m" ? 30 : 60) * 60_000;
+    return { rows: obs.filter((o) => ms(o) >= from), note: null };
+  }
+  const day = istDay(newest);
+  const sameDay = obs.filter((o) => istDay(ms(o)) === day);
+  const inSession = sameDay.filter((o) => istMinute(ms(o)) >= SESSION_FROM && istMinute(ms(o)) <= SESSION_TO);
+  if (inSession.length > 0) return { rows: inSession, note: null };
+  return { rows: sameDay, note: `No sample from 09:15–15:30 on ${day}; showing every sample of that day.` };
+}

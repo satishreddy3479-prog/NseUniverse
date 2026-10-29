@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { EChart, useChartColors } from "../EChart";
 import { ChainTable } from "../ChainTable";
 import { Button, EmptyState, SourceTag } from "../ui";
 import { useDash } from "./DashContext";
-import { atmStraddle, compactIN, maxPain, pcr } from "../../lib/analytics";
+import { FullChart } from "./FullChart";
+import { atmStraddle, compactIN, maxPain, pcr, rangeObservations, TS_RANGES } from "../../lib/analytics";
 import {
   decayOption, oiChangeBarOption, oiHeatmapOption, premiumOption, spotOption, straddleOption, strikeBarOption,
   totalsBarOption, type StrikeMetric,
@@ -154,37 +155,72 @@ export function ChainWidget() {
 
 // ---------- time-series widgets (stored snapshot observations) ----------
 
-function TimeSeries({ build, label }: {
+function RangeChips({ small = false }: { small?: boolean }) {
+  const d = useDash();
+  return (
+    <div role="group" aria-label="Time range" className="flex items-center gap-1">
+      {TS_RANGES.map((r) => (
+        <button key={r.id} type="button" title={r.title} aria-pressed={d.tsRange === r.id} onClick={() => d.setTsRange(r.id)}
+          className={`widget-nodrag rounded-sm border px-2 text-xs ${small ? "min-h-6" : "min-h-9 text-sm"} ${d.tsRange === r.id ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>
+          {r.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function TimeSeries({ build, label, note }: {
   build: (obs: Observation[], c: ReturnType<typeof useChartColors>) => ReturnType<typeof premiumOption>;
   label: string;
+  /** Extra line about how the series is built (e.g. its baseline). */
+  note?: string;
 }) {
   const d = useDash();
   const colors = useChartColors();
-  const obs = d.history.data?.observations ?? [];
+  const [open, setOpen] = useState(false);
+  const all = d.history.data?.observations ?? [];
+  const { rows: obs, note: rangeNote } = useMemo(() => rangeObservations(all, d.tsRange), [all, d.tsRange]);
   const opt = useMemo(() => build(obs, colors), [build, obs, colors]);
-  const distinct = d.history.data?.distinct_observations ?? 0;
+  const distinct = new Set(obs.map((o) => `${o.underlying_ltp}|${o.total_ce_oi}|${o.total_pe_oi}|${o.total_ce_premium}|${o.total_pe_premium}`)).size;
+  const rangeLabel = TS_RANGES.find((r) => r.id === d.tsRange)!.label;
+  const close = useCallback(() => setOpen(false), []);
   return (
     <ChainGuard>
-      <Body footer={<Meta kind="history"><span>{obs.length} stored snapshot{obs.length === 1 ? "" : "s"}</span></Meta>}>
+      <Body footer={<Meta kind="history"><span>{obs.length} sample{obs.length === 1 ? "" : "s"} · {rangeLabel}{all.length !== obs.length ? ` of ${all.length} stored` : ""}</span></Meta>}>
         {d.history.isPending ? (
           <p className="p-3 text-sm text-muted">Loading stored snapshots…</p>
-        ) : obs.length < 2 ? (
+        ) : all.length < 2 ? (
           <EmptyState title="Not enough stored snapshots to draw a line">
-            {obs.length} snapshot stored for this expiry and strike range. A line needs at least two. Each
-            “Refresh snapshot” stores one more; during market hours the stream also keeps the table live.
+            {all.length} snapshot stored for this expiry and strike range. A line needs at least two. Each
+            “Refresh snapshot” stores one more; during market hours the sampler stores one a minute.
           </EmptyState>
         ) : (
           <div className="flex h-full flex-col">
-            {distinct < 2 && (
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <RangeChips small />
+              <button type="button" onClick={() => setOpen(true)} aria-label={`Open ${label} full size`} title="Open this chart full size (or click the line)"
+                className="widget-nodrag inline-flex min-h-6 items-center rounded-sm border border-rule bg-slate-2 px-2 text-xs text-muted hover:border-brass hover:text-paper">⤢ Full</button>
+            </div>
+            {(rangeNote || obs.length < 2) && (
               <p className="mb-1 rounded-sm border border-warn/40 bg-warn/10 px-2 py-1 text-[11px] text-warn">
-                All {obs.length} stored snapshots carry identical values (captured with the market closed),
-                so the line is flat. It will move once snapshots from market hours are stored.
+                {obs.length < 2 ? `Fewer than two samples in “${rangeLabel}”: pick a longer range.` : rangeNote}
               </p>
             )}
-            <div className="min-h-0 flex-1"><EChart option={opt} ariaLabel={label} /></div>
+            {obs.length >= 2 && distinct < 2 && (
+              <p className="mb-1 rounded-sm border border-warn/40 bg-warn/10 px-2 py-1 text-[11px] text-warn">
+                All {obs.length} samples in this range carry identical values (market closed or nothing changed), so the line is flat.
+              </p>
+            )}
+            <div className="min-h-0 flex-1"><EChart option={opt} ariaLabel={label} onClick={() => setOpen(true)} /></div>
           </div>
         )}
       </Body>
+      {open && (
+        <FullChart title={label} onClose={close} toolbar={<RangeChips />}
+          footer={<>{obs.length} sample{obs.length === 1 ? "" : "s"} · {rangeLabel}{all.length !== obs.length ? ` of ${all.length} stored` : ""}. Drag the bar below the chart or scroll to zoom; hover for exact values.{note ? ` ${note}` : ""}</>}>
+          <EChart option={opt} ariaLabel={`${label} (full size)`} />
+        </FullChart>
+      )}
     </ChainGuard>
   );
 }
@@ -197,7 +233,7 @@ export function PremiumWidget() {
 export function DecayWidget() {
   const d = useDash();
   const build = useMemo(() => (o: Observation[], c: ReturnType<typeof useChartColors>) => decayOption(o, c, d.showCalls, d.showPuts), [d.showCalls, d.showPuts]);
-  return <TimeSeries build={build} label="Premium decay versus first stored snapshot" />;
+  return <TimeSeries build={build} label="Premium decay versus first sample in range" note="Baseline = the first sample in the chosen range." />;
 }
 export const StraddleWidget = () => <TimeSeries build={straddleOption} label="ATM straddle over stored snapshots" />;
 export const SpotWidget = () => <TimeSeries build={spotOption} label="NIFTY 50 at each stored snapshot" />;

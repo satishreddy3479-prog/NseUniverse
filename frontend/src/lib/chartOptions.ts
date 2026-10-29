@@ -123,7 +123,7 @@ function tsBase(c: ChartColors, valueFormatter: (v: number) => string) {
 
 export function premiumOption(obs: Observation[], c: ChartColors, showCalls = true, showPuts = true): EChartsCoreOption {
   const line = (name: string, color: string, pick: (o: Observation) => number | null) => ({
-    name, type: "line", showSymbol: true, symbolSize: 6, itemStyle: { color }, lineStyle: { color, width: 2 },
+    name, type: "line", showSymbol: obs.length <= 80, symbolSize: 6, itemStyle: { color }, lineStyle: { color, width: 2 },
     data: obs.map((o) => [t(o), pick(o)]),
   });
   return {
@@ -136,7 +136,7 @@ export function premiumOption(obs: Observation[], c: ChartColors, showCalls = tr
   };
 }
 
-/** Change in total premium relative to the first stored observation (the baseline). */
+/** Change in total premium relative to the first observation passed in (the baseline of the chosen range). */
 export function decaySeries(obs: Observation[]): { baselineAt: string | null; ce: (number | null)[]; pe: (number | null)[] } {
   const base = obs.find((o) => o.total_ce_premium != null && o.total_pe_premium != null);
   if (!base) return { baselineAt: null, ce: obs.map(() => null), pe: obs.map(() => null) };
@@ -151,7 +151,7 @@ export function decaySeries(obs: Observation[]): { baselineAt: string | null; ce
 export function decayOption(obs: Observation[], c: ChartColors, showCalls = true, showPuts = true): EChartsCoreOption {
   const s = decaySeries(obs);
   const area = (name: string, color: string, vals: (number | null)[]) => ({
-    name, type: "line", showSymbol: true, symbolSize: 5, itemStyle: { color }, lineStyle: { color, width: 1.5 },
+    name, type: "line", showSymbol: obs.length <= 80, symbolSize: 5, itemStyle: { color }, lineStyle: { color, width: 1.5 },
     areaStyle: { color, opacity: 0.25 }, data: obs.map((o, i) => [t(o), vals[i]]),
     markLine: { symbol: "none", silent: true, lineStyle: { color: c.muted, type: "dashed" }, label: { show: false }, data: [{ yAxis: 0 }] },
   });
@@ -176,7 +176,7 @@ export function spotOption(obs: Observation[], c: ChartColors): EChartsCoreOptio
     ...tsBase(c, (v) => fmtPrice(v)),
     yAxis: { type: "value", scale: true, ...fit, axisLabel: { ...axisText(c), formatter: (v: number) => fmtInt(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
     series: [{
-      name: "NIFTY 50 at snapshot", type: "line", showSymbol: true, symbolSize: 7, itemStyle: { color: c.info }, lineStyle: { color: c.info, width: 2 },
+      name: "NIFTY 50 at snapshot", type: "line", showSymbol: obs.length <= 80, symbolSize: 7, itemStyle: { color: c.info }, lineStyle: { color: c.info, width: 2 },
       data: obs.map((o) => [t(o), o.underlying_ltp]),
       markLine: prev == null ? undefined : { symbol: "none", silent: true, lineStyle: { color: c.muted, type: "dashed" },
         label: { formatter: `Prev close ${fmtPrice(prev)}`, color: c.muted, fontSize: 11, position: "insideEndTop" }, data: [{ yAxis: prev }] },
@@ -189,7 +189,7 @@ export function straddleOption(obs: Observation[], c: ChartColors): EChartsCoreO
     ...tsBase(c, (v) => fmtPrice(v)),
     yAxis: { type: "value", scale: true, minInterval: 1, axisLabel: { ...axisText(c), formatter: (v: number) => fmtInt(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
     series: [{
-      name: "ATM straddle", type: "line", showSymbol: true, symbolSize: 6, itemStyle: { color: c.brass }, lineStyle: { color: c.brass, width: 2 },
+      name: "ATM straddle", type: "line", showSymbol: obs.length <= 80, symbolSize: 6, itemStyle: { color: c.brass }, lineStyle: { color: c.brass, width: 2 },
       data: obs.map((o) => ({ value: [t(o), o.straddle], atm: o.atm_strike })),
       tooltip: { formatter: (p: unknown) => { const x = p as { value: [number, number | null]; data: { atm: number | null } }; return `ATM ${x.data.atm ?? "—"}: ${x.value[1] == null ? "—" : fmtPrice(x.value[1])}`; } },
     }],

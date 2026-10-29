@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
-import { computeTotals, universeRows, type Totals } from "../../lib/analytics";
+import { computeTotals, universeRows, type Totals, type TsRange } from "../../lib/analytics";
 import { liveStore } from "../../lib/liveStore";
 import { useLiveAtmStrike, useStreamStatus } from "../../lib/useLive";
 import { isAtm, mergeRows, type LiveMode } from "../ChainTable";
@@ -32,6 +32,9 @@ export interface DashState {
   select: (strike: number | null) => void;
   history: UseQueryResult<HistoryResponse>;
   universeLabel: string;
+  /** Time window of the time-series widgets (shared by all of them). */
+  tsRange: TsRange;
+  setTsRange: (r: TsRange) => void;
 }
 
 const Ctx = createContext<DashState | null>(null);
@@ -68,6 +71,16 @@ export function DashProvider({ expiry, range, showCalls, showPuts, children }: {
   const qc = useQueryClient();
   const { stream } = useStreamStatus();
   const [selected, select] = useState<number | null>(null);
+  const [tsRange, setRange] = useState<TsRange>(() => {
+    try {
+      const v = localStorage.getItem("nse.analysis.tsrange");
+      return v === "30m" || v === "1h" || v === "all" ? v : "session";
+    } catch { return "session"; }
+  });
+  const setTsRange = (r: TsRange) => {
+    setRange(r);
+    try { localStorage.setItem("nse.analysis.tsrange", r); } catch { /* storage unavailable: applies to this visit only */ }
+  };
 
   const chain = useQuery({
     queryKey: ["chain", expiry],
@@ -116,7 +129,7 @@ export function DashProvider({ expiry, range, showCalls, showPuts, children }: {
     expiry, chain, snapshot, noSnapshot, fetchChain: () => fetch.mutate(), fetching: fetch.isPending,
     fetchError: fetch.error ? (fetch.error instanceof ApiError ? fetch.error.message : "Unknown error") : null,
     liveMode, rows, view, totals, atmStrike, atmLive: liveAtm != null, range, showCalls, showPuts,
-    selected, select, history, universeLabel,
+    selected, select, history, universeLabel, tsRange, setTsRange,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

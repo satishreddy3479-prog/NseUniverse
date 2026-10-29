@@ -112,6 +112,50 @@ describe("analysis dashboard", () => {
     }
   });
 
+  describe("time ranges and the full-size chart", () => {
+    // IST 27 Oct 10:30, and 28 Oct 09:30 and 10:00: two samples in the newest session, one the day before
+    const sample = (i: number, iso: string, premium: number) => obs(i, { retrieved_at: iso, total_ce_premium: premium, total_pe_premium: premium + 1 });
+    const data = () => history([sample(1, "2026-10-27T05:00:00Z", 600), sample(2, "2026-10-28T04:00:00Z", 700), sample(3, "2026-10-28T04:30:00Z", 710)], 3);
+    const points = async () => (await within(await widget("Total premium")).findByRole("img", { name: /Total premium over stored snapshots$/ })).dataset.points;
+
+    it("defaults to the current session and the buttons change the range, shared and remembered", async () => {
+      mockApi(data());
+      renderAnalysis();
+      expect(await points()).toBe("2,2");
+      const prem = await widget("Total premium");
+      expect(within(prem).getByRole("button", { name: "Session" })).toHaveAttribute("aria-pressed", "true");
+      await userEvent.click(within(prem).getByRole("button", { name: "All" }));
+      expect(await points()).toBe("3,3");
+      await userEvent.click(within(prem).getByRole("button", { name: "30 min" }));
+      expect(await points()).toBe("2,2"); // 04:00 is 30 min before the newest sample 04:30
+      expect(localStorage.getItem("nse.analysis.tsrange")).toBe("30m");
+      // the NIFTY chart follows the same setting
+      const spot = await widget("NIFTY 50 — snapshot observations");
+      expect(within(spot).getByRole("button", { name: "30 min" })).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("opens a full-size chart with the same range and closes with Escape", async () => {
+      mockApi(data());
+      renderAnalysis();
+      const prem = await widget("Total premium");
+      await userEvent.click(await within(prem).findByRole("button", { name: /full size/ }));
+      const dlg = await screen.findByRole("dialog", { name: /Total premium over stored snapshots/ });
+      expect(within(dlg).getByRole("img", { name: /\(full size\)/ }).dataset.points).toBe("2,2");
+      await userEvent.click(within(dlg).getByRole("button", { name: "All" }));
+      expect(within(dlg).getByRole("img", { name: /\(full size\)/ }).dataset.points).toBe("3,3");
+      await userEvent.keyboard("{Escape}");
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("says so when a range has fewer than two samples", async () => {
+      mockApi(history([sample(1, "2026-10-27T05:00:00Z", 600), sample(2, "2026-10-28T04:00:00Z", 700)], 2));
+      renderAnalysis();
+      const prem = await widget("Total premium");
+      await userEvent.click(await within(prem).findByRole("button", { name: "30 min" }));
+      expect(await within(prem).findByText(/Fewer than two samples/)).toBeInTheDocument();
+    });
+  });
+
   it("explains a flat time series instead of presenting it as movement", async () => {
     mockApi(history([obs(1), obs(2)], 1));
     renderAnalysis();
