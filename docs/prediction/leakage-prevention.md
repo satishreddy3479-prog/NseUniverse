@@ -27,3 +27,8 @@ A forecast may use only information that was **published** at or before its cuto
 
 ## What cannot be guaranteed yet
 Because no feature pipeline exists yet, the end-to-end leakage test ("rebuild features for date D from data truncated at D's cutoff and compare") is specified but not yet runnable. It is a gate for Milestone 4.
+
+## Intraday data and partial bars (added 2026-10-29)
+- **Partial bars:** a daily bar enters the history only after its session has ended plus 30 minutes. A bar stored too early is hidden from the models and replaced via the append-only `bar_corrections` table (original kept). Incident of 28-29 Oct 2026 and the fix are in decisions D53.
+- **No intraday inputs:** nothing under `app/prediction` may import live, broker, stream, observation-store, API or intraday code (enforced by `tests/unit/test_no_intraday_leak.py`). The models see daily bars, official calendars, and published participant/FII data only.
+- **Job timing:** training and evaluation do not run during 09:15-15:45 IST on trading days; forecasts are recorded only 08:35-09:10 IST.

@@ -73,6 +73,9 @@ Chain/spot in market hours: fresh ≤ 3 min, delayed ≤ 10 min, stale beyond; o
 session". Daily history fresh when its last bar is the previous trading session. Global fresh within 4
 days. FII/DII fresh when it describes the previous trading session.
 
+## Separation from the T+1 / T+5 prediction models
+The intraday view reads stored daily bars; the prediction models never read intraday samples, chains, ticks or the score ledger, and they train only outside market hours (see D53 and `test_no_intraday_leak.py`). Any future intraday model gets its own pipeline and ledger.
+
 ## ML readiness
 A session counts as complete with ≥ 300 in-session samples. No intraday model is trained before 60
 complete sessions exist; it must then beat the persistence/majority baselines under purged walk-forward

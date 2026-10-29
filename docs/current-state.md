@@ -48,3 +48,8 @@ Deploy kit written and tested for update/rollback logic and backend startup with
 - Backend `app/intraday/` + `GET /api/intraday/summary`, `GET /api/intraday/scores`; score ledger `data/intraday.sqlite3` (append-only), recorded each minute in market hours.
 - Tested in Claude's workspace: pytest 266 passed (26 new; plus a fix for a wall-clock leak in the history run log that broke a schedule test after 07:30 IST: features, scoring, leakage `until=now`, ledger immutability, API, real captured chain), ruff + mypy clean; vitest 156 passed (12 new), tsc, build; browser check at 1440 px and 390 px (no horizontal overflow) using a payload computed from the PC's real daily history and FII/DII data plus the real captured chain.
 - **Not verified live:** no market-hours sample existed before 29 Oct 2026 (0 complete sessions); the first live session is 29 Oct. Breadth, intraday sectors, news headlines, intraday ML, manifests/archive and the daily report are not built (see intraday.md).
+
+## Intraday / prediction separation (2026-10-29, D53)
+- Found and fixed a real leak: 12 partial bars (US/Europe, 28 Oct) and 4 Asian bars (29 Oct) had been stored mid-session as final. They are excluded and the 12 were corrected from the final download (the 4 of 29 Oct are corrected after those sessions end). `history/status` lists any held-back bars (`partial_bars_held_back`).
+- Models are trained/evaluated only outside market hours (report states "paused" and serves the cache during 09:15-15:45 IST); forecasts are still recorded only 08:35-09:10 IST on overnight data.
+- Guard tests: `backend/tests/unit/test_no_intraday_leak.py` (import boundary, completion times, the 28 Oct incident replayed, retry logic, market-hours gate).

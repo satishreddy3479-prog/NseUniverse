@@ -13,8 +13,9 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from datetime import date, time
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any, Literal, Protocol
+from zoneinfo import ZoneInfo
 
 Kind = Literal["india_index", "india_vix", "global_index", "yield", "fx", "commodity"]
 
@@ -90,6 +91,21 @@ SYMBOLS: list[SymbolSpec] = [
 # NIFTY's next opening gap and bars dated t+1 only +0.10, which is the signature of correct dating.
 SYMBOLS = [replace(s, timing_verified=True) for s in SYMBOLS]
 BY_KEY = {s.key: s for s in SYMBOLS}
+
+#: a daily bar is final only this long after its session ends; before that it is a partial,
+#: intraday bar and must never enter the history the prediction models read
+COMPLETE_BUFFER = timedelta(minutes=30)
+
+
+def complete_after(spec: SymbolSpec, session: date) -> datetime:
+    """UTC instant from which the daily bar of ``session`` is final.
+
+    Series with a regular close use it. Series without one (futures, FX, yields) use 17:00 New York
+    for US-dated series and the end of the UTC day for USD/INR, both followed by the buffer.
+    """
+    tz = ZoneInfo(spec.timezone)
+    close = spec.close or (time(17, 0) if tz.key == "America/New_York" else time(23, 59, 59))
+    return (datetime.combine(session, close, tz) + COMPLETE_BUFFER).astimezone(UTC)
 
 
 @dataclass(frozen=True)

@@ -15,7 +15,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
-from app.prediction.sources.yahoo import RawRow
+from app.prediction.sources.yahoo import BY_KEY, RawRow, complete_after
 from app.prediction.targets import Bar, BarError
 
 _SCHEMA = """
@@ -34,6 +34,16 @@ CREATE TABLE IF NOT EXISTS fetch_runs (
   run_id TEXT PRIMARY KEY, source TEXT NOT NULL, started_utc TEXT NOT NULL, finished_utc TEXT,
   summary TEXT
 );
+CREATE TABLE IF NOT EXISTS bar_corrections (
+  symbol TEXT NOT NULL, session TEXT NOT NULL, source TEXT NOT NULL, open REAL NOT NULL,
+  high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL, retrieved_utc TEXT NOT NULL,
+  run_id TEXT NOT NULL, replaces_retrieved_utc TEXT NOT NULL, reason TEXT NOT NULL,
+  PRIMARY KEY (symbol, session, source)
+) WITHOUT ROWID;
+CREATE TRIGGER IF NOT EXISTS bar_corrections_no_update BEFORE UPDATE ON bar_corrections
+  BEGIN SELECT RAISE(ABORT, 'stored corrections are never overwritten'); END;
+CREATE TRIGGER IF NOT EXISTS bar_corrections_no_delete BEFORE DELETE ON bar_corrections
+  BEGIN SELECT RAISE(ABORT, 'stored corrections are never deleted'); END;
 CREATE TRIGGER IF NOT EXISTS daily_bars_no_update BEFORE UPDATE ON daily_bars
   BEGIN SELECT RAISE(ABORT, 'stored bars are never overwritten'); END;
 CREATE TRIGGER IF NOT EXISTS daily_bars_no_delete BEFORE DELETE ON daily_bars
@@ -49,6 +59,7 @@ class InsertResult:
     changed: int = 0
     invalid: int = 0
     incomplete: int = 0  # rows with a missing price
+    corrected: int = 0  # premature (partial) stored bars replaced by the final bar via bar_corrections
 
 
 class HistoryStore:
@@ -65,6 +76,14 @@ class HistoryStore:
     def close(self) -> None:
         with self._lock:
             self._db.close()
+
+    @staticmethod
+    def _premature(symbol: str, session: str, retrieved_utc: str) -> bool:
+        """Was this bar stored before its session had finished (i.e. a partial intraday bar)?"""
+        spec = BY_KEY.get(symbol)
+        if spec is None:
+            return False
+        return datetime.fromisoformat(retrieved_utc) < complete_after(spec, date.fromisoformat(session))
 
     def insert_bars(
         self, symbol: str, rows: list[RawRow], *, source: str, run_id: str, now: datetime | None = None,
@@ -84,9 +103,11 @@ class HistoryStore:
                     continue
                 vol = r.volume if volume_meaningful and r.volume and r.volume > 0 else None
                 cur = self._db.execute(
-                    "SELECT open, high, low, close FROM daily_bars WHERE symbol=? AND session=? AND source=?",
+                    "SELECT open, high, low, close, retrieved_utc FROM daily_bars WHERE symbol=? AND session=? AND source=?",
                     (symbol, str(bar.session), source),
                 ).fetchone()
+                stored_at = str(cur[4]) if cur else ""
+                cur = cur[:4] if cur else None
                 if cur is None:
                     self._db.execute(
                         "INSERT INTO daily_bars VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -109,6 +130,18 @@ class HistoryStore:
                     for a, b in zip(cur, (bar.open, bar.high, bar.low, bar.close), strict=True)
                 ):
                     res.unchanged += 1
+                elif self._premature(symbol, str(bar.session), stored_at) and not self._db.execute(
+                    "SELECT 1 FROM bar_corrections WHERE symbol=? AND session=? AND source=?",
+                    (symbol, str(bar.session), source),
+                ).fetchone():
+                    # the stored bar was taken while the session was still running: keep it for the
+                    # record, store the final bar beside it, and read the final one from now on
+                    self._db.execute(
+                        "INSERT INTO bar_corrections VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        (symbol, str(bar.session), source, bar.open, bar.high, bar.low, bar.close, stamp, run_id, stored_at,
+                         "stored before the session ended (partial intraday bar)"),
+                    )
+                    res.corrected += 1
                 else:
                     self._db.execute(
                         "INSERT INTO bar_changes(symbol, session, source, stored, seen, detected_utc, run_id) VALUES (?,?,?,?,?,?,?)",
@@ -127,12 +160,53 @@ class HistoryStore:
         return res
 
     def bars(self, symbol: str, source: str = "yahoo") -> list[Bar]:
+        """Final daily bars only. A bar stored before its session ended is replaced by its stored
+        correction, or left out until the final bar has been downloaded (never used as it was)."""
         with self._lock:
             rows = self._db.execute(
                 "SELECT session, open, high, low, close FROM daily_bars WHERE symbol=? AND source=? ORDER BY session",
                 (symbol, source),
             ).fetchall()
-        return [Bar(date.fromisoformat(s), o, h, lo, c) for s, o, h, lo, c in rows]
+            # only bars fetched within 3 days of their session can have been fetched too early
+            early = {
+                r[0]: r[1]
+                for r in self._db.execute(
+                    "SELECT session, retrieved_utc FROM daily_bars WHERE symbol=? AND source=?"
+                    " AND julianday(retrieved_utc) - julianday(session) < 3",
+                    (symbol, source),
+                )
+            }
+            fixes = {
+                r[0]: r[1:]
+                for r in self._db.execute(
+                    "SELECT session, open, high, low, close FROM bar_corrections WHERE symbol=? AND source=?",
+                    (symbol, source),
+                )
+            }
+        out: list[Bar] = []
+        premature = {s for s, got in early.items() if self._premature(symbol, s, got)}
+        for s, o, h, lo, c in rows:
+            if s in fixes:
+                o, h, lo, c = fixes[s]
+            elif s in premature:
+                continue
+            out.append(Bar(date.fromisoformat(s), o, h, lo, c))
+        return out
+
+    def premature_bars(self, source: str = "yahoo") -> list[dict[str, Any]]:
+        """Stored bars that were taken before their session ended, and whether a correction exists."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT d.symbol, d.session, d.retrieved_utc, c.session IS NOT NULL FROM daily_bars d"
+                " LEFT JOIN bar_corrections c ON c.symbol=d.symbol AND c.session=d.session AND c.source=d.source"
+                " WHERE d.source=? AND julianday(d.retrieved_utc) - julianday(d.session) < 3",
+                (source,),
+            ).fetchall()
+        return [
+            {"symbol": sy, "session": se, "stored_utc": got, "corrected": bool(fx)}
+            for sy, se, got, fx in rows
+            if self._premature(sy, se, got)
+        ]
 
     def last_session(self, symbol: str, source: str = "yahoo") -> date | None:
         with self._lock:
@@ -142,6 +216,12 @@ class HistoryStore:
         return date.fromisoformat(r[0]) if r and r[0] else None
 
     def coverage(self, source: str = "yahoo") -> list[dict[str, Any]]:
+        """Per-symbol coverage. ``last`` is the newest session the models may use (a partial bar
+        stored too early and not yet corrected does not count)."""
+        held_back: dict[str, set[str]] = {}
+        for b in self.premature_bars(source):
+            if not b["corrected"]:
+                held_back.setdefault(b["symbol"], set()).add(b["session"])
         with self._lock:
             rows = self._db.execute(
                 "SELECT symbol, MIN(session), MAX(session), COUNT(*), MAX(retrieved_utc) FROM daily_bars"
@@ -153,11 +233,20 @@ class HistoryStore:
                     "SELECT symbol, COUNT(*) FROM bar_changes GROUP BY symbol"
                 ).fetchall()
             )
+            usable_last = {}
+            for sym, bad in held_back.items():
+                marks = ",".join("?" for _ in bad)
+                r = self._db.execute(
+                    "SELECT MAX(session) FROM daily_bars WHERE symbol=? AND source=?"  # noqa: S608 - only '?' placeholders are interpolated
+                    f" AND session NOT IN ({marks})",
+                    (sym, source, *bad),
+                ).fetchone()
+                usable_last[sym] = r[0] if r else None
         return [
             {
                 "symbol": s,
                 "first": a,
-                "last": b,
+                "last": usable_last.get(s, b),
                 "bars": n,
                 "last_retrieved": r,
                 "disagreements": changes.get(s, 0),

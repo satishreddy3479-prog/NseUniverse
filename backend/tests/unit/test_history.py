@@ -65,7 +65,7 @@ class TestStore:
             RawRow(D("2026-10-28"), -1, 1, 1, 1, 0),
             row("2026-10-29"),
         ]
-        res = st.insert_bars("NIFTY50", rows, source="yahoo", run_id="r1")
+        res = st.insert_bars("NIFTY50", rows, source="yahoo", run_id="r1", now=datetime(2026, 10, 30, tzinfo=UTC))
         assert (res.incomplete, res.invalid, res.new) == (1, 2, 1)
         assert len(st.bars("NIFTY50")) == 1
 

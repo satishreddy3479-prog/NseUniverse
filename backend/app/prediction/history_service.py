@@ -20,7 +20,13 @@ from typing import Any
 from app.logging_setup import log_event
 from app.prediction.history_store import HistoryStore, InsertResult
 from app.prediction.pit import IST
-from app.prediction.sources.yahoo import SYMBOLS, Downloader, SymbolSpec, yahoo_download
+from app.prediction.sources.yahoo import (
+    SYMBOLS,
+    Downloader,
+    SymbolSpec,
+    complete_after,
+    yahoo_download,
+)
 
 logger = logging.getLogger(__name__)
 SOURCE = "yahoo"
@@ -66,12 +72,17 @@ class HistoryService:
             max(self.start_date, last - timedelta(days=OVERLAP_DAYS)) if last else self.start_date
         )
         end = self._clock().astimezone(IST).date() + timedelta(days=1)  # end is exclusive
-        rows = self._download(spec, start, end)
+        downloaded = self._download(spec, start, end)
+        now = self._clock()
+        # a bar whose session has not finished is partial (intraday): never stored as a daily bar
+        rows = [r for r in downloaded if complete_after(spec, r.session) <= now]
+        partial = len(downloaded) - len(rows)
         res: InsertResult = self.store.insert_bars(
             spec.key, rows, source=SOURCE, run_id=run_id, now=self._clock(), volume_meaningful=False
         )
         return {
-            "symbol": spec.key, "yahoo": spec.yahoo, "downloaded": len(rows), "new": res.new,
+            "symbol": spec.key, "yahoo": spec.yahoo, "downloaded": len(rows),
+            "partial_skipped": partial, "corrected": res.corrected, "new": res.new,
             "unchanged": res.unchanged, "changed": res.changed, "invalid": res.invalid,
             "incomplete": res.incomplete, "error": None,
         }  # fmt: skip
@@ -100,6 +111,8 @@ class HistoryService:
         summary = {
             "ok_symbols": len(ok), "failed_symbols": failed, "empty_symbols": empty,
             "new_bars": sum(r.get("new", 0) for r in results),
+            "corrected_bars": sum(r.get("corrected", 0) for r in results),
+            "partial_bars_skipped": sum(r.get("partial_skipped", 0) for r in results),
             "disagreements": sum(r.get("changed", 0) for r in results), "results": results,
         }  # fmt: skip
         await asyncio.to_thread(self.store.finish_run, run_id, summary, self._clock())
@@ -123,7 +136,7 @@ class HistoryService:
         d = now.astimezone(IST).date() - timedelta(days=1)
         while d.weekday() >= 5:
             d -= timedelta(days=1)
-        last = {c["symbol"]: c["last"] for c in self.store.coverage()}
+        last = {c["symbol"]: c["last"] for c in self.store.coverage()}  # usable (final) bars only
         return [k for k in OVERNIGHT_KEYS if (last.get(k) or "") < str(d)]
 
     def due(self, now: datetime | None = None) -> bool:
@@ -179,6 +192,9 @@ class HistoryService:
             "source": "Yahoo Finance via yfinance (unofficial, personal use)",
             "running": self.running,
             "progress": self.progress,
+            "partial_bars_held_back": [
+                b for b in self.store.premature_bars(SOURCE) if not b["corrected"]
+            ],
             "last_run": run,
             "symbols": [
                 {

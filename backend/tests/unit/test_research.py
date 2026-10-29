@@ -101,8 +101,8 @@ def _service(tmp_path: Path, n: int, now: datetime, series_end_offset: int = 0) 
     series = _all_series(n)
     for key, bars in series.items():
         bars = bars[: len(bars) - series_end_offset] if key != "NIFTY50" else bars
-        store.insert_bars(key, [RawRow(b.session, b.open, b.high, b.low, b.close, None) for b in bars], source="yahoo", run_id="r")
-    svc = PredictionResearch(store, ForecastLedger(tmp_path, clock=lambda: now), calendar=_Cal(), clock=lambda: now, initial_train=200, test_size=60, cache_dir=tmp_path)
+        store.insert_bars(key, [RawRow(b.session, b.open, b.high, b.low, b.close, None) for b in bars], source="yahoo", run_id="r", now=datetime(2035, 1, 1, tzinfo=UTC))  # downloaded long after every session
+    svc = PredictionResearch(store, ForecastLedger(tmp_path, clock=lambda: now), calendar=_Cal(), clock=lambda: now, initial_train=200, test_size=60, cache_dir=tmp_path, pause_in_market_hours=False)
     return svc, series["NIFTY50"]
 
 

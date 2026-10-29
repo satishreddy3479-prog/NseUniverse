@@ -65,6 +65,9 @@ BASE_MODELS = ("logit-all", "logit-core", "boost-all")
 ENSEMBLE = "ensemble"
 FRESH_KEYS = ("SPX", "VIX", "BRENT", "DXY", "USDINR", "UST10Y")  # must have a bar dated on/after the reference session
 WINDOW = ((8, 35), (9, 10))  # IST: forecasts are recorded only inside this window
+#: no model training or evaluation while the cash market is open (keeps the models away from the
+#: live session and leaves the CPU to the collectors); the cached report is still served
+MARKET_HOURS = ((9, 15), (15, 45))  # IST, weekdays that are trading sessions
 EXCLUDED = [
     "news tone (collection started 29 Oct; too little history to train on)",
     "scheduled events (shown as risk flags, not model inputs)",
@@ -304,7 +307,9 @@ class PredictionResearch:
         cache_dir: Any = None,
         flows: Any = None,
         events: EventCalendar | None = None,
+        pause_in_market_hours: bool = True,
     ) -> None:
+        self._pause_in_market_hours = pause_in_market_hours
         self._store, self._ledger, self._clock, self._flows_store = store, ledger, clock, flows
         self._calendar = calendar
         self._events = events if events is not None else EventCalendar.load()
@@ -321,6 +326,15 @@ class PredictionResearch:
         if self._calendar is None:
             self._calendar = TradingCalendar.load()
         return self._calendar
+
+    def market_hours(self, now: datetime) -> bool:
+        ist = now.astimezone(IST)
+        if not MARKET_HOURS[0] <= (ist.hour, ist.minute) < MARKET_HOURS[1] or ist.weekday() >= 5:
+            return False
+        try:
+            return self._cal().is_session(ist.date())
+        except Exception:  # noqa: BLE001 - calendar gap: the weekday rule above stands
+            return True
 
     def _complete_bars(self, now: datetime) -> list[Bar]:
         bars = self._store.bars("NIFTY50")
@@ -364,6 +378,8 @@ class PredictionResearch:
             body = None if force else (self._cache[1] if self._cache and list(self._cache[0]) == key else self._read_disk(key))
             if body is not None:
                 self._cache = (tuple(key), body)
+            elif self._pause_in_market_hours and self.market_hours(now):
+                return {"ready": False, "paused": True, "reason": "Models are trained and evaluated only after the market closes (09:15-15:45 IST is excluded); the report will be computed then."}
             elif self._worker is None or not self._worker.is_alive():
                 self._error = None
                 self._worker = threading.Thread(target=self._run, args=(bars, key, now), daemon=True, name="prediction-research")
