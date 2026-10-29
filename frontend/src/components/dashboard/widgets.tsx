@@ -691,8 +691,11 @@ function OiRangeTrack({ startIso, endIso, minutes }: { startIso: string | null; 
   );
 }
 
-function OiExplorerBody({ large, mode, setMode, win, setWin }: {
-  large: boolean; mode: OiMode; setMode: (m: OiMode) => void; win: string; setWin: (w: string) => void;
+const SHORT_MODE: Record<string, string> = { both: "Change + total", change: "Change", total: "Total" };
+const shortWindow = (label: string) => label.replace("Last ", "").replace(" min", "m").replace(" hr", "h");
+
+function OiExplorerBody({ large, mode, setMode, win, setWin, action }: {
+  large: boolean; mode: OiMode; setMode: (m: OiMode) => void; win: string; setWin: (w: string) => void; action?: ReactNode;
 }) {
   const d = useDash();
   const colors = useChartColors();
@@ -706,13 +709,16 @@ function OiExplorerBody({ large, mode, setMode, win, setWin }: {
     enabled: !!d.expiry && !!newest, refetchInterval: 30_000, retry: false,
   });
   const res = q.data;
-  const opt = useMemo(() => (res ? oiExplorerOption(res, mode, d.showCalls, d.showPuts, d.selected, colors) : null), [res, mode, d.showCalls, d.showPuts, d.selected, colors]);
+  const opt = useMemo(() => (res ? oiExplorerOption(res, mode, d.showCalls, d.showPuts, d.selected, colors, !large) : null), [res, mode, d.showCalls, d.showPuts, d.selected, colors, large]);
   const st = res ? oiWindowStats(res.totals) : null;
   const chip = (on: boolean) => `widget-nodrag rounded-sm border px-2 ${large ? "min-h-9 text-sm" : "min-h-7 text-xs"} ${on ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`;
   return (
     <div className={`flex h-full min-h-0 flex-col gap-1 ${large ? "overflow-y-auto" : ""}`} data-testid="oi-explorer">
-      <div role="group" aria-label="OI view" className="flex flex-wrap items-center gap-1">
-        {OI_MODES.map((m) => <button key={m.id} type="button" title={m.title} aria-pressed={mode === m.id} onClick={() => setMode(m.id)} className={chip(mode === m.id)}>{m.label}</button>)}
+      <div className="flex items-center justify-between gap-2">
+        <div role="group" aria-label="OI view" className="flex flex-wrap items-center gap-1">
+          {OI_MODES.map((m) => <button key={m.id} type="button" title={m.title} aria-label={m.label} aria-pressed={mode === m.id} onClick={() => setMode(m.id)} className={chip(mode === m.id)}>{large ? m.label : SHORT_MODE[m.id] ?? m.label}</button>)}
+        </div>
+        {!large && action}
       </div>
       <div className={large ? "min-h-[240px] flex-1" : "min-h-0 flex-1"}>
         {q.isPending && q.fetchStatus !== "idle" ? <p className="p-3 text-sm text-muted">Loading observations…</p>
@@ -722,11 +728,11 @@ function OiExplorerBody({ large, mode, setMode, win, setWin }: {
           : null}
       </div>
       {large && <OiRangeTrack startIso={at ?? null} endIso={newest} minutes={w.minutes} />}
-      <div role="group" aria-label="OI window" className="flex flex-wrap items-center gap-1">
-        {OI_WINDOWS.map((x) => <button key={x.id} type="button" aria-pressed={win === x.id} onClick={() => setWin(x.id)} className={chip(win === x.id)}>{x.label}</button>)}
+      <div role="group" aria-label="OI window" className={`flex flex-wrap items-center ${large ? "gap-1" : "gap-0.5"}`}>
+        {OI_WINDOWS.map((x) => <button key={x.id} type="button" aria-label={x.label} title={x.label} aria-pressed={win === x.id} onClick={() => setWin(x.id)} className={chip(win === x.id)}>{large ? x.label : shortWindow(x.label)}</button>)}
       </div>
       {res && st && !large && (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs sm:grid-cols-4" data-testid="oi-window-stats">
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs" data-testid="oi-window-stats">
           <div><span className="text-muted">Call OI </span><span className="num text-paper">{compactIN(st.ceOi)}</span> <span className="num text-muted">({signedUnits(st.ceChange)})</span></div>
           <div><span className="text-muted">Put OI </span><span className="num text-paper">{compactIN(st.peOi)}</span> <span className="num text-muted">({signedUnits(st.peChange)})</span></div>
           <div><span className="text-muted">PCR </span><span className="num text-paper">{fmt2(st.pcr)}</span> <span className="num text-muted">({st.pcrChange == null ? "—" : `${st.pcrChange >= 0 ? "+" : "−"}${Math.abs(st.pcrChange).toFixed(2)}`} in window)</span></div>
@@ -736,9 +742,18 @@ function OiExplorerBody({ large, mode, setMode, win, setWin }: {
       {large && st && <OiCards st={st} />}
       {res && (
         <p className="text-[11px] text-muted" data-testid="oi-window-note">
-          {w.label}: compared with the stored sample at {res.baseline.at ? fmtTimeIST(res.baseline.at) : "—"}, now {res.current_at ? fmtTimeIST(res.current_at) : "—"}
-          {res.underlying_change != null && <> · NIFTY {res.underlying_change >= 0 ? "+" : "−"}{fmtPrice(Math.abs(res.underlying_change))}</>}.
-          {" "}Samples are stored about once a minute.{st?.pcrOiChangeNote ? ` PCR of OI change: ${st.pcrOiChangeNote}.` : ""}
+          {large ? (
+            <>
+              {w.label}: compared with the stored sample at {res.baseline.at ? fmtTimeIST(res.baseline.at) : "—"}, now {res.current_at ? fmtTimeIST(res.current_at) : "—"}
+              {res.underlying_change != null && <> · NIFTY {res.underlying_change >= 0 ? "+" : "−"}{fmtPrice(Math.abs(res.underlying_change))}</>}.
+              {" "}Samples are stored about once a minute.{st?.pcrOiChangeNote ? ` PCR of OI change: ${st.pcrOiChangeNote}.` : ""}
+            </>
+          ) : (
+            <span title={st?.pcrOiChangeNote ? `PCR of OI change: ${st.pcrOiChangeNote}` : undefined}>
+              {res.baseline.at ? fmtTimeIST(res.baseline.at) : "—"} → {res.current_at ? fmtTimeIST(res.current_at) : "—"}
+              {res.underlying_change != null && <> · NIFTY {res.underlying_change >= 0 ? "+" : "−"}{fmtPrice(Math.abs(res.underlying_change))}</>}
+            </span>
+          )}
           {res.warnings.map((x) => <span key={x} className="text-warn"> {x}</span>)}
         </p>
       )}
@@ -754,12 +769,10 @@ export function OiExplorerWidget() {
   return (
     <ChainGuard>
       <Body footer={<Meta kind="history"><span>click a bar to select a strike</span></Meta>}>
-        <div className="flex h-full flex-col">
-          <div className="mb-1 flex justify-end">
+        <div className="h-full min-h-0">
+          {!open && <OiExplorerBody large={false} mode={mode} setMode={setMode} win={win} setWin={setWin} action={
             <button type="button" onClick={() => setOpen(true)} aria-label="Open OI explorer full size" title="Open this chart full size"
-              className="widget-nodrag inline-flex min-h-6 items-center rounded-sm border border-rule bg-slate-2 px-2 text-xs text-muted hover:border-brass hover:text-paper">⤢ Full</button>
-          </div>
-          <div className="min-h-0 flex-1">{!open && <OiExplorerBody large={false} mode={mode} setMode={setMode} win={win} setWin={setWin} />}</div>
+              className="widget-nodrag inline-flex min-h-7 shrink-0 items-center rounded-sm border border-rule bg-slate-2 px-2 text-xs text-muted hover:border-brass hover:text-paper">⤢ Full</button>} />}
         </div>
       </Body>
       {open && (

@@ -290,7 +290,7 @@ export function sentimentHistoryOption(rows: IntradayScoreRow[], c: ChartColors)
  * "change": only the change. "total": only the OI now. A strike without a baseline shows its total as a plain bar.
  */
 export function oiExplorerOption(
-  res: OiChange, mode: "both" | "change" | "total", showCalls: boolean, showPuts: boolean, selectedStrike: number | null, c: ChartColors,
+  res: OiChange, mode: "both" | "change" | "total", showCalls: boolean, showPuts: boolean, selectedStrike: number | null, c: ChartColors, compact = false,
 ): EChartsCoreOption {
   const strikes = [...new Set(res.rows.map((r) => r.strike))].sort((a, b) => a - b);
   const row = (k: number, side: "CE" | "PE") => res.rows.find((r) => r.strike === k && r.side === side);
@@ -321,8 +321,8 @@ export function oiExplorerOption(
   const signed = (v: number | null) => (v == null ? "no baseline" : (v > 0 ? "+" : v < 0 ? "−" : "") + fmtInt(Math.abs(v)));
   return {
     animation: false,
-    grid: { left: 62, right: 14, top: 34, bottom: 56 },
-    legend: { top: 0, right: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
+    grid: compact ? { left: 44, right: 8, top: 16, bottom: 22 } : { left: 62, right: 14, top: 34, bottom: 56 },
+    legend: compact ? { show: false } : { top: 0, right: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 },
       formatter: (params: unknown) => {
         const ps = params as { axisValue: string }[];
@@ -335,7 +335,7 @@ export function oiExplorerOption(
       } },
     xAxis: { type: "category", data: strikes.map(String), axisLabel: { ...axisText(c), hideOverlap: true }, axisLine: { lineStyle: { color: c.rule } } },
     yAxis: { type: "value", axisLabel: { ...axisText(c), formatter: (v: number) => compactIN(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
-    dataZoom: [{ type: "inside", filterMode: "none" }, { type: "slider", height: 14, bottom: 6, borderColor: c.rule, textStyle: { color: c.muted } }],
+    dataZoom: compact ? [{ type: "inside", filterMode: "none" }] : [{ type: "inside", filterMode: "none" }, { type: "slider", height: 14, bottom: 6, borderColor: c.rule, textStyle: { color: c.muted } }],
     series,
   };
 }
