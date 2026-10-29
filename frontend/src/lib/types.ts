@@ -488,6 +488,7 @@ export interface IntradaySummary {
   structure?: PriceStructure;
   vwap?: FutureVwap | null;
   volatility?: VolatilityBlock;
+  positioning?: PositioningBlock;
   narrative: string;
   context: { question: string; answer: string }[];
   levels: IntradayLevel[];
@@ -524,12 +525,22 @@ export interface PriceStructure {
   as_of: string; data: "LIVE" | "HISTORICAL"; completed_minutes: number; candle_note: string; ranges: OpeningRange[]; breakout: BreakoutState | null;
   structure: { label: string; last_swing_high: number | null; last_swing_low: number | null; break: string | null; swing_rule: string } | null;
 }
+export interface SideClass { label: string | null; reading: string | null; reason: string | null; premium_change?: number; oi_change?: number; strikes_used?: number }
+export interface PositioningBlock {
+  status: string; as_of?: string; reference_minutes?: number;
+  pcr_windows?: Record<string, { strikes: number; pcr_oi: number | null; pcr_volume: number | null; ce_oi: number | null; pe_oi: number | null }>;
+  oi_change_pcr_since_open?: { value: number | null; reason: string | null; ce_change?: number | null; pe_change?: number | null };
+  classification?: { available: boolean; reason?: string; limits: string; calls?: SideClass; puts?: SideClass };
+  concentration?: { calls: { top3_share: number | null; max_strike: number | null }; puts: { top3_share: number | null; max_strike: number | null }; note: string };
+  concentration_shift_since_open?: { calls: { top3_share_change: number | null; max_strike_from: number | null; max_strike_to: number | null }; puts: { top3_share_change: number | null; max_strike_from: number | null; max_strike_to: number | null } } | null;
+}
 export interface GreekRow { strike: number; side: "CE" | "PE"; price: number | null; otm: boolean; iv: number | null; delta: number | null; gamma: number | null; theta_day: number | null; vega_pt: number | null }
 export interface VolatilityBlock {
   status: string; model?: string; rate_assumed?: number; dividends?: string; time_to_expiry_days?: number | null; data?: "LIVE" | "HISTORICAL"; as_of?: string;
   forward?: number; forward_source?: string; atm_strike?: number; atm_iv?: number | null; atm_call_iv?: number | null; atm_put_iv?: number | null; near_atm_iv?: number | null;
   skew_25d_put_minus_call?: number | null; rows?: GreekRow[]; straddle?: number | null; expected_move_straddle_pts?: number | null; expected_move_iv_1sd_pts?: number | null;
-  expected_move_note?: string; iv_change_pts?: Record<string, number | null>; realized_vol_60m?: number | null; iv_minus_realized?: number | null; interpretation?: string[];
+  expected_move_note?: string;
+  term_structure?: { rows: { expiry: string; days: number; atm_iv: number | null }[]; shape: string | null; iv_far_minus_near?: number; reason: string | null }; iv_change_pts?: Record<string, number | null>; realized_vol_60m?: number | null; iv_minus_realized?: number | null; interpretation?: string[];
 }
 export interface FutureVwap {
   price: number; vwap: number; distance_pts: number; distance_pct: number; distance_atr: number | null; side: "above" | "below" | "at";
@@ -597,4 +608,12 @@ export interface StorageStatus {
     backups_enabled: boolean; snapshot_retention: { raw_days: number; normalized_days: number; last_run: { raw_files: number; normalized_files: number } | null };
   };
   daily_models: { when: string; intraday_model: string };
+}
+
+// ---- Intraday model research (/api/intraday/research)
+export interface ModelMetrics { log_loss: number; brier: number; accuracy: number; balanced_accuracy: number | null; n: number; calibration: { ece: number } }
+export interface ResearchReport {
+  status: "insufficient" | "experimental" | "validated"; sessions: number; rows: number; horizon_minutes: number; reason?: string;
+  test_sessions?: number; models?: Record<string, ModelMetrics>; dropped?: { ambiguous: number; missing: number }; effective_observations?: number;
+  gate?: { status: string; show_probabilities: boolean; reasons: string[]; label: string | null; beat_share?: number; ece?: number }; note?: string;
 }

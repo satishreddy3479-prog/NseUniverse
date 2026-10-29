@@ -8,7 +8,7 @@ import { compactIN } from "../lib/analytics";
 import { sentimentHistoryOption } from "../lib/chartOptions";
 import { fmtDateTimeIST, fmtPct, fmtPrice, fmtTimeIST, MISSING } from "../lib/format";
 import { useLiveSpot } from "../lib/useLive";
-import type { BreadthBlock, BreakoutState, FlowStats, IntradayComponent, IntradaySummary, MarketSummary } from "../lib/types";
+import type { BreadthBlock, BreakoutState, FlowStats, IntradayComponent, IntradaySummary, MarketSummary, SideClass } from "../lib/types";
 import { EChart, useChartColors } from "./EChart";
 
 const PHASE: Record<string, string> = {
@@ -513,6 +513,69 @@ function Volatility({ d }: { d: IntradaySummary }) {
   );
 }
 
+const WINDOW_NAMES: Record<string, string> = { atm_pm2: "ATM ±2", atm_pm5: "ATM ±5", atm_pm10: "ATM ±10", all: "All strikes" };
+
+function Positioning({ d }: { d: IntradaySummary }) {
+  const p = d.positioning;
+  const ts = d.volatility?.term_structure;
+  const fmt = (x: number | null | undefined) => (x == null ? MISSING : x.toFixed(2));
+  const cls = (c?: SideClass) => (!c ? MISSING : c.label ? `${c.label}${c.reading ? ` (${c.reading})` : ""}` : c.reason ?? MISSING);
+  return (
+    <Card title="Options positioning detail" className="lg:col-span-6" right={<span className="text-[11px] text-muted">tentative readings, not signals</span>}>
+      {!p || p.status !== "ok" ? <p className="text-sm text-muted" data-testid="cc-pos-missing">{p?.status ?? "Not available."}</p> : (
+        <div className="space-y-3 text-xs" data-testid="cc-pos">
+          <table className="w-full text-xs">
+            <thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Window</th><th className="py-1 text-right font-normal">PCR (OI)</th><th className="py-1 text-right font-normal">PCR (volume)</th></tr></thead>
+            <tbody>
+              {Object.entries(p.pcr_windows ?? {}).map(([k, w]) => (
+                <tr key={k} className="border-t border-rule/50"><td className="py-1 text-paper">{WINDOW_NAMES[k] ?? k}</td><td className="num py-1 text-right">{fmt(w.pcr_oi)}</td><td className="num py-1 text-right">{fmt(w.pcr_volume)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="text-muted">OI-change PCR since the open: <span className="num text-paper">{p.oi_change_pcr_since_open?.value == null ? MISSING : p.oi_change_pcr_since_open.value.toFixed(2)}</span>{p.oi_change_pcr_since_open?.reason ? ` (${p.oi_change_pcr_since_open.reason})` : ""}</p>
+          <div>
+            <div className="text-[11px] text-muted">Premium and OI against {p.reference_minutes} minutes ago (ATM ±5)</div>
+            {p.classification?.available ? (
+              <ul className="mt-1 space-y-0.5"><li><span className="text-muted">Calls: </span><span className="text-paper">{cls(p.classification.calls)}</span></li><li><span className="text-muted">Puts: </span><span className="text-paper">{cls(p.classification.puts)}</span></li></ul>
+            ) : <p className="text-muted">{p.classification?.reason ?? "Not available."}</p>}
+            <p className="mt-1 text-[11px] text-muted">{p.classification?.limits}</p>
+          </div>
+          <p className="num text-muted">OI concentration (top-3 strikes): calls {p.concentration?.calls.top3_share == null ? MISSING : `${Math.round(p.concentration.calls.top3_share * 100)}%`} (largest {p.concentration?.calls.max_strike ?? MISSING}) · puts {p.concentration?.puts.top3_share == null ? MISSING : `${Math.round(p.concentration.puts.top3_share * 100)}%`} (largest {p.concentration?.puts.max_strike ?? MISSING}). A hypothesis for a reaction zone, not support or resistance.</p>
+          <p className="text-muted" data-testid="cc-term">IV term structure: {ts?.shape ? `${ts.shape}, far minus near ${ts.iv_far_minus_near?.toFixed(2)} pts (${ts.rows.map((r) => `${r.expiry} ${r.atm_iv?.toFixed(1)}%`).join(", ")})` : (ts?.reason ?? MISSING)}</p>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ModelResearch() {
+  const q = useQuery({ queryKey: ["intradayResearch", 15], queryFn: () => api.intradayResearch(15), refetchInterval: 600_000, retry: false });
+  const r = q.data;
+  const models = r?.models ? Object.entries(r.models) : [];
+  return (
+    <Card title="Prediction model research (15 min)" className="lg:col-span-12" right={<span className="text-[11px] text-muted">walk-forward on stored sessions</span>}>
+      {q.isLoading ? <p className="text-sm text-muted">Loading…</p> : !r ? <p className="text-sm text-muted" data-testid="cc-research-error">Model research is unavailable.</p> : (
+        <div className="space-y-2 text-xs" data-testid="cc-research">
+          <p className="text-paper"><span className="font-semibold">{r.gate?.label ?? (r.status === "validated" ? "Validated" : "Insufficient data")}</span> · {r.sessions} labelled session(s), {r.rows} rows</p>
+          {r.reason && <p className="text-muted">{r.reason}. No probabilities are shown.</p>}
+          {r.gate?.reasons.map((x) => <p key={x} className="text-muted">• {x}</p>)}
+          {models.length > 0 && (
+            <table className="w-full min-w-[28rem] text-xs">
+              <thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Model</th><th className="py-1 text-right font-normal">Log loss</th><th className="py-1 text-right font-normal">Brier</th><th className="py-1 text-right font-normal">Balanced acc.</th><th className="py-1 text-right font-normal">Calibration error</th></tr></thead>
+              <tbody>
+                {models.map(([k, m]) => (
+                  <tr key={k} className="border-t border-rule/50"><td className="py-1 text-paper">{k.replace("_", " ")}</td><td className="num py-1 text-right">{m.log_loss.toFixed(3)}</td><td className="num py-1 text-right">{m.brier.toFixed(3)}</td><td className="num py-1 text-right">{m.balanced_accuracy == null ? MISSING : m.balanced_accuracy.toFixed(3)}</td><td className="num py-1 text-right">{m.calibration.ece.toFixed(3)}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="text-[11px] text-muted">{r.note}</p>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function Sectors({ d }: { d: IntradaySummary }) {
   const m = d.stocks;
   const rows = (m?.sectors.nifty500 ?? []).filter((r) => r.equal_weight_return != null);
@@ -760,8 +823,10 @@ export function CommandCenter({ expiry }: { expiry: string | null }) {
             <Heavyweights d={d} />
             <Breakout d={d} />
             <Volatility d={d} />
+            <Positioning d={d} />
             <FlowCard d={d} />
             <Sectors d={d} />
+            <ModelResearch />
             <Context d={d} />
             <Levels d={d} />
             <Options d={d} />

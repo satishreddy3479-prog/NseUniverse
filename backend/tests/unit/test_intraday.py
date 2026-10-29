@@ -414,6 +414,10 @@ def test_full_session_is_scored_recorded_once_and_explained(tmp_path: Path) -> N
     assert vol["forward_source"] == "put-call parity at 22700" and vol["skew_25d_put_minus_call"] > 0
     # the straddle should be close to 0.8 of the one-standard-deviation move implied by the same IV
     assert vol["expected_move_straddle_pts"] / vol["expected_move_iv_1sd_pts"] == pytest.approx(0.8, abs=0.03)
+    pos = out["positioning"]  # same real chain: the +/-10 window PCR must equal the long-standing options feature
+    assert pos["status"] == "ok" and pos["pcr_windows"]["atm_pm10"]["pcr_oi"] == pytest.approx(out["options"]["pcr_oi"], abs=1e-4)
+    assert pos["pcr_windows"]["atm_pm10"]["pcr_volume"] == pytest.approx(out["options"]["pcr_vol"], abs=1e-4)
+    assert pos["concentration"]["calls"]["top3_share"] is not None and out["volatility"]["term_structure"]["shape"] is None
     assert vol["data"] in ("LIVE", "HISTORICAL") and set(vol["iv_change_pts"]) == {"5", "15", "30"}
     assert svc.store.count() == 1
     svc._cache.clear()

@@ -1,4 +1,5 @@
 import type {
+  ResearchReport,
   AppStatus,
   StreamStatus,
   ChainResponse,
@@ -71,6 +72,7 @@ export const api = {
     ),
   storageStatus: () => request<StorageStatus>("/api/storage/status"),
   predictionSummary: () => request<PredictionSummary>("/api/prediction/summary"),
+  intradayResearch: (horizon: number) => request<ResearchReport>(`/api/intraday/research?horizon=${horizon}`),
   intradaySummary: (expiry: string) => request<IntradaySummary>(`/api/intraday/summary?expiry=${encodeURIComponent(expiry)}`),
   intradayScores: (expiry: string) =>
     request<{ session: string; expiry: string; rows: IntradayScoreRow[] }>(`/api/intraday/scores?expiry=${encodeURIComponent(expiry)}`),

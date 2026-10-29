@@ -18,6 +18,8 @@ vi.mock("../components/EChart", () => ({
 
 const base = real as unknown as IntradaySummary;
 
+let research: unknown = { status: "insufficient", sessions: 1, rows: 0, horizon_minutes: 15, reason: "needs more than 3 labelled sessions to test on a later one (has 1)" };
+
 function mock(summary: IntradaySummary | null, scores: unknown[] = []) {
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -25,6 +27,7 @@ function mock(summary: IntradaySummary | null, scores: unknown[] = []) {
       return summary ? new Response(JSON.stringify(summary), { status: 200 })
         : new Response(JSON.stringify({ detail: { code: "internal_error", message: "internal server error" } }), { status: 500 });
     }
+    if (url.startsWith("/api/intraday/research")) return new Response(JSON.stringify(research), { status: 200 });
     if (url.startsWith("/api/intraday/scores")) return new Response(JSON.stringify({ session: "2026-10-29", expiry: "2026-11-03", rows: scores }), { status: 200 });
     return new Response(JSON.stringify({ detail: { code: "nf", message: "nf" } }), { status: 404 });
   }));
@@ -198,6 +201,50 @@ describe("Market Sentiment Command Center", () => {
     expect(box.getByText(/Above own day VWAP: 42.9% \(3 of 7\) · 1 without a VWAP/)).toBeInTheDocument();
     expect(box.getByText(/5 without a recorded range/)).toBeInTheDocument();
     expect(box.getByText(/Breadth momentum \(15 min\): −0.40. Index rising while fewer stocks take part \(bearish divergence\)/)).toBeInTheDocument();
+  });
+
+  it("shows window PCRs, the tentative premium/OI reading with its limits, and the term structure", async () => {
+    const positioning = { status: "ok", reference_minutes: 15,
+      pcr_windows: { atm_pm2: { strikes: 5, pcr_oi: 0.91, pcr_volume: 0.87, ce_oi: 1, pe_oi: 1 }, all: { strikes: 40, pcr_oi: null, pcr_volume: 1.1, ce_oi: 0, pe_oi: 1 } },
+      oi_change_pcr_since_open: { value: null, reason: "call OI did not increase, so the ratio is not meaningful" },
+      classification: { available: true, limits: "Tentative: aggregate OI does not show who bought or sold.", calls: { label: "Falling premium, rising OI", reading: "new writing more likely", reason: null }, puts: { label: null, reading: null, reason: "no strike has both samples" } },
+      concentration: { calls: { top3_share: 0.62, max_strike: 23000 }, puts: { top3_share: null, max_strike: null }, note: "x" } };
+    const volatility = { status: "ok", atm_iv: 16.5, term_structure: { rows: [{ expiry: "2026-11-03", days: 5.2, atm_iv: 16.5 }, { expiry: "2026-11-24", days: 26.2, atm_iv: 17.9 }], shape: "upward (far expiry richer)", iv_far_minus_near: 1.4, reason: null } };
+    mock({ ...base, positioning, volatility } as never);
+    renderCC();
+    const box = within(await screen.findByTestId("cc-pos"));
+    expect(box.getByText("ATM ±2")).toBeInTheDocument();
+    expect(box.getByText("Falling premium, rising OI (new writing more likely)")).toBeInTheDocument();
+    expect(box.getByText("no strike has both samples")).toBeInTheDocument();
+    expect(box.getByText(/aggregate OI does not show who bought or sold/)).toBeInTheDocument();
+    expect(box.getByText(/call OI did not increase, so the ratio is not meaningful/)).toBeInTheDocument();
+    expect(screen.getByTestId("cc-term")).toHaveTextContent("upward (far expiry richer), far minus near 1.40 pts (2026-11-03 16.5%, 2026-11-24 17.9%)");
+  });
+
+  it("says there is not enough data for the prediction model and shows no probabilities", async () => {
+    mock(base);
+    renderCC();
+    const box = within(await screen.findByTestId("cc-research"));
+    expect(box.getByText(/Insufficient data/)).toBeInTheDocument();
+    expect(box.getByText(/needs more than 3 labelled sessions to test on a later one \(has 1\). No probabilities are shown./)).toBeInTheDocument();
+    expect(screen.queryByText(/upside probability/i)).toBeNull();
+  });
+
+  it("labels an unvalidated model as experimental and lists the baselines it is compared with", async () => {
+    research = {
+      status: "experimental", sessions: 8, rows: 960, horizon_minutes: 15,
+      gate: { status: "experimental", show_probabilities: false, reasons: ["only 8 labelled sessions (validation needs 20)"], label: "EXPERIMENTAL MODEL: PROBABILITIES NOT VALIDATED" },
+      models: { majority: { log_loss: 1.097, brier: 0.66, accuracy: 0.37, balanced_accuracy: 0.333, n: 600, calibration: { ece: 0.01 } }, logistic: { log_loss: 0.295, brier: 0.15, accuracy: 0.977, balanced_accuracy: 0.97, n: 600, calibration: { ece: 0.14 } } },
+      note: "Overlapping samples are not independent.",
+    };
+    mock(base);
+    renderCC();
+    const box = within(await screen.findByTestId("cc-research"));
+    expect(box.getByText(/EXPERIMENTAL MODEL: PROBABILITIES NOT VALIDATED/)).toBeInTheDocument();
+    expect(box.getByText(/only 8 labelled sessions/)).toBeInTheDocument();
+    expect(box.getByText("majority")).toBeInTheDocument();
+    expect(box.getByText("0.295")).toBeInTheDocument();
+    research = { status: "insufficient", sessions: 1, rows: 0, horizon_minutes: 15, reason: "needs more than 3 labelled sessions to test on a later one (has 1)" };
   });
 
   it("explains that futures are not subscribed instead of inventing flow", async () => {

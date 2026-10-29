@@ -19,7 +19,7 @@ from datetime import UTC, date, datetime, timedelta
 from statistics import pstdev
 from typing import Any
 
-from app.intraday import price_structure
+from app.intraday import evaluate, labels, positioning, price_structure
 from app.intraday import volatility as volmod
 from app.intraday.features import (
     CLOSE,
@@ -445,6 +445,9 @@ class IntradayService:
         mark("structure")
         result["volatility"] = self._volatility(expiry, now, latest, session_samples, pts, live)
         mark("volatility")
+        result["positioning"] = self._positioning(chain, first_chain, latest, session_samples)
+        result["volatility"]["term_structure"] = self._term_structure(expiry, now, latest, result["volatility"])
+        mark("positioning")
         result["compute_ms"] = round((_time.perf_counter() - t0) * 1000, 1)
         result["timings_ms"] = marks
         return result
@@ -499,6 +502,75 @@ class IntradayService:
         out["iv_minus_realized"] = None if rv is None else round(now_s["atm_iv"] - rv, 2)
         out["interpretation"] = volmod.interpret(spot_chg, changes.get("15"), straddle_chg) if live else []
         return out
+
+    def research(self, horizon: int = 15, k: float = labels.DEFAULT_K) -> dict[str, Any]:
+        """Walk-forward evaluation on every stored labelled session: barrier labels from the stored spot paths, features from
+        the nightly dataset (built from samples at or before each time). Probabilities are not shown unless the gate passes."""
+        from app.intraday.dataset import FEATURE_VERSION
+
+        key = ("research", horizon, k, len(self.store.feature_sessions(FEATURE_VERSION)))
+        hit = self._slow.get(key)  # type: ignore[arg-type]
+        if hit and _time.monotonic() - hit[0] < 600:
+            return hit[1]  # type: ignore[no-any-return]
+        rows: list[dict[str, Any]] = []
+        dropped = {"ambiguous": 0, "missing": 0}
+        for sess, (exp, frows) in sorted(self.store.feature_session_rows(FEATURE_VERSION).items()):
+            day = date.fromisoformat(sess)
+            lo = datetime.combine(day, OPEN, IST)
+            samples = self.obs.samples(self.underlying, exp, since=lo, until=datetime.combine(day, CLOSE, IST), limit=2000)
+            pts = in_session([Point(x.received_at, x.spot) for x in samples if x.spot is not None], day)
+            ctx = daily_context([b for b in self._daily("NIFTY50") if b.session < day], day)
+            by_time = {p_.at.isoformat(): i for i, p_ in enumerate(pts)}
+            for stamp, feats in frows:
+                i = by_time.get(datetime.fromisoformat(stamp).isoformat())
+                if i is None:
+                    continue
+                lab = labels.label_at(pts, i, horizon, ctx.daily_sd_pct, k)
+                if lab["outcome"] in evaluate.CLASSES:
+                    rows.append({"session": sess, "features": feats, "outcome": lab["outcome"]})
+                else:
+                    dropped[lab["outcome"]] += 1
+        res = evaluate.walk_forward(rows, stride=max(1, horizon // 3))
+        res |= {"horizon_minutes": horizon, "barrier_k": k, "dropped": dropped, "effective_observations": round(len(rows) / max(1, horizon)),
+                "features_version": FEATURE_VERSION, "note": "Barrier = k x daily sd x sqrt(h/375) from earlier sessions. Overlapping samples are not independent; the gate counts sessions."}  # fmt: skip
+        self._slow[key] = (_time.monotonic(), res)  # type: ignore[index]
+        return res
+
+    def _chain_of(self, sample: Any) -> dict[Any, Quote]:
+        return {k: Quote(c.ltp, c.oi, c.oi_prev, c.volume) for k, c in self.obs.contracts(sample.values_from).items()}
+
+    def _positioning(self, chain: dict[Any, Quote] | None, first_chain: dict[Any, Quote] | None, latest: Any, session_samples: list[Any]) -> dict[str, Any]:
+        """Window PCRs, premium/OI classification against the sample 15 minutes earlier, OI concentration and its shift since the open."""
+        if latest is None or not chain:
+            return {"status": "not available: no option-chain sample"}
+        at = latest.received_at
+        ref = next((x for x in reversed(session_samples) if x.received_at <= at - timedelta(minutes=15)), None)
+        ref_chain = None if ref is None or (at - timedelta(minutes=15) - ref.received_at) > timedelta(minutes=3) else self._chain_of(ref)
+        spot = latest.spot
+        return {
+            "status": "ok", "as_of": at.isoformat(), "reference_minutes": 15,
+            "pcr_windows": positioning.window_pcr(chain, spot),
+            "oi_change_pcr_since_open": positioning.oi_change_pcr(chain, first_chain, spot),
+            "classification": positioning.side_classification(chain, ref_chain, spot),
+            "concentration": positioning.concentration(chain),
+            "concentration_shift_since_open": positioning.concentration_shift(chain, first_chain),
+        }  # fmt: skip
+
+    def _term_structure(self, expiry: str, now: datetime, latest: Any, vol: dict[str, Any]) -> dict[str, Any]:
+        """ATM IV of every expiry that has a sample within 5 minutes of the main one (same session, same moment)."""
+        if latest is None or vol.get("atm_iv") is None:
+            return {"rows": [], "shape": None, "reason": "no ATM IV for the selected expiry"}
+        pts: list[tuple[date, float, float | None]] = [(date.fromisoformat(expiry), vol["time_to_expiry_days"], vol["atm_iv"])]
+        at = latest.received_at
+        for other in self.expiries_today():
+            if other == expiry:
+                continue
+            ss = self.obs.samples(self.underlying, other, since=at - timedelta(minutes=5), until=at + timedelta(minutes=5), limit=1)
+            if not ss or ss[-1].spot is None:
+                continue
+            sf = self._surface_of(ss[-1], date.fromisoformat(other), ss[-1].received_at)
+            pts.append((date.fromisoformat(other), sf.get("time_to_expiry_days") or 0.0, sf.get("atm_iv") if sf.get("status") == "ok" else None))
+        return volmod.term_structure(pts)
 
     def _ml_status(self, complete_sessions: int, sessions_with_samples: int) -> dict[str, Any]:
         """Where the intraday model effort stands, from the labelled sessions actually stored."""

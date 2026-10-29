@@ -135,6 +135,19 @@ class IntradayStore:
             out[sess] = max(out.get(sess, 0), int(n))
         return out
 
+    def feature_session_rows(self, version: str) -> dict[str, tuple[str, list[tuple[str, dict[str, Any]]]]]:
+        """session -> (expiry with the most rows, [(sample_utc, features)]) for one feature version."""
+        with self._lock:
+            best = {}
+            for sess, exp, n in self._db.execute("SELECT session, expiry, COUNT(*) FROM feature_rows WHERE version=? GROUP BY session, expiry", (version,)).fetchall():
+                if sess not in best or n > best[sess][1]:
+                    best[sess] = (exp, n)
+            out = {}
+            for sess, (exp, _) in best.items():
+                rows = self._db.execute("SELECT sample_utc, features FROM feature_rows WHERE session=? AND expiry=? AND version=? ORDER BY sample_utc", (sess, exp, version)).fetchall()
+                out[sess] = (exp, [(a, json.loads(b)) for a, b in rows])
+        return out
+
     def summaries(self, limit: int = 60) -> list[dict[str, Any]]:
         with self._lock:
             rows = self._db.execute(

@@ -462,6 +462,16 @@ async def intraday_summary(request: Request, expiry: date) -> dict[str, Any]:
     return await asyncio.to_thread(request.app.state.intraday.summary, expiry.isoformat())
 
 
+@router.get("/intraday/research")
+async def intraday_research(request: Request, horizon: int = 15, k: float = 0.5) -> dict[str, Any]:
+    """Walk-forward evaluation of the intraday model against baselines (read-only)."""
+    if horizon not in (5, 15, 30, 60) or not 0.1 <= k <= 2.0:
+        raise HTTPException(
+            status_code=422, detail="horizon must be 5, 15, 30 or 60 and k between 0.1 and 2"
+        )
+    return await asyncio.to_thread(request.app.state.intraday.research, horizon, k)
+
+
 @router.get("/intraday/scores")
 async def intraday_scores(
     request: Request, expiry: date, session: date | None = None
