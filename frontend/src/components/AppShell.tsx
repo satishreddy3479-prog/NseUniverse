@@ -17,7 +17,7 @@ export function AppShell() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex min-h-14 items-center gap-3 border-b border-rule bg-slate px-3">
+      <header className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 border-b border-rule bg-slate px-3 py-1.5">
         <button
           type="button"
           className="rounded-sm border border-rule px-2 py-1 text-sm md:hidden"
@@ -43,7 +43,7 @@ export function AppShell() {
             <NavLinks onNavigate={() => setMenuOpen(false)} />
           </div>
         )}
-        <main className="min-w-0 flex-1 overflow-y-auto p-4 lg:p-6">
+        <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 md:p-4 lg:p-6">
           <Outlet />
         </main>
       </div>

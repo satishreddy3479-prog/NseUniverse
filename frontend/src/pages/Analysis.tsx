@@ -14,6 +14,7 @@ import { useLiveSpot } from "../lib/useLive";
 
 const STORAGE_KEY = "nse.analysis.layout.v1";
 const COLS = 12;
+const NARROW = 820; // below this width the widgets stack in one full-width column (no dragging)
 const ROW_HEIGHT = 36;
 type Mode = "weekly" | "monthly" | "manual";
 const RANGES: Range[] = [5, 10, 20, "all"];
@@ -159,11 +160,18 @@ function Board() {
             ))}
           </ul>
         )}
-        <span className="text-xs text-muted">Drag a title bar to move · drag a corner to resize · layout is remembered in this browser</span>
+        <span className="hidden text-xs text-muted md:inline">Drag a title bar to move · drag a corner to resize · layout is remembered in this browser</span>
       </div>
 
       <div ref={containerRef} data-testid="board">
-        {mounted && active.length > 0 && (
+        {mounted && active.length > 0 && width > 0 && width < NARROW && (
+          <div className="flex flex-col gap-3" data-testid="board-stacked">
+            {active.map((w) => (
+              <div key={w.id} style={{ height: Math.max(300, w.h * (ROW_HEIGHT + 12) - 12) }}><Frame def={w} onClose={() => close(w.id)} /></div>
+            ))}
+          </div>
+        )}
+        {mounted && active.length > 0 && !(width > 0 && width < NARROW) && (
           <GridLayout
             width={width}
             layout={saved.layout}
