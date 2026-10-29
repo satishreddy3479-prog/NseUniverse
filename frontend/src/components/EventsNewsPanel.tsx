@@ -20,18 +20,32 @@ export function EventsNewsPanel() {
             : ev.error || !ev.data ? <p className="text-sm text-muted">Not available: the running backend does not have this module yet.</p>
             : ev.data.events.length === 0 ? <p className="text-sm text-muted">No scheduled high-impact events in the calendar for the next 45 days.</p>
             : (
-              <table className="w-full text-sm" aria-label="Upcoming events">
-                <thead className="text-xs text-muted"><tr><th className="text-left font-normal">When</th><th className="text-left font-normal">Event</th><th className="text-left font-normal">Impact</th></tr></thead>
-                <tbody>
+              <>
+                <table className="hidden w-full text-sm md:table" aria-label="Upcoming events">
+                  <thead className="text-xs text-muted"><tr><th className="text-left font-normal">When</th><th className="text-left font-normal">Event</th><th className="text-left font-normal">Impact</th></tr></thead>
+                  <tbody>
+                    {ev.data.events.map((e) => (
+                      <tr key={e.id} className="border-t border-rule/50" title={e.source}>
+                        <td className="num whitespace-nowrap py-1 pr-3">{when(e.start_ist, e.all_day)}{!e.time_verified && !e.all_day && <span className="text-muted"> (time usual, unconfirmed)</span>}{e.tentative && <span className="text-muted"> (tentative)</span>}</td>
+                        <td>{e.name}</td>
+                        <td className={e.impact === "high" ? "text-warn" : "text-muted"}>{e.impact}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <ul className="space-y-2 md:hidden" aria-label="Upcoming events (list)">
                   {ev.data.events.map((e) => (
-                    <tr key={e.id} className="border-t border-rule/50" title={e.source}>
-                      <td className="num py-1 pr-3 whitespace-nowrap">{when(e.start_ist, e.all_day)}{!e.time_verified && !e.all_day && <span className="text-muted"> (time usual, unconfirmed)</span>}{e.tentative && <span className="text-muted"> (tentative)</span>}</td>
-                      <td>{e.name}</td>
-                      <td className={e.impact === "high" ? "text-warn" : "text-muted"}>{e.impact}</td>
-                    </tr>
+                    <li key={e.id} className="rounded-xl border border-rule bg-ink/50 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-[11px] uppercase tracking-wider text-muted">{when(e.start_ist, e.all_day)}</span>
+                        <span className={`rounded-md border px-1.5 text-[11px] uppercase ${e.impact === "high" ? "border-warn/50 text-warn" : "border-rule text-muted"}`}>{e.impact}</span>
+                      </div>
+                      <p className="mt-1 text-sm font-medium">{e.name}</p>
+                      {(!e.time_verified && !e.all_day) || e.tentative ? <p className="text-xs text-muted">{!e.time_verified && !e.all_day ? "time usual, unconfirmed" : ""}{e.tentative ? " · tentative" : ""}</p> : null}
+                    </li>
                   ))}
-                </tbody>
-              </table>
+                </ul>
+              </>
             )}
           <p className="mt-1 text-xs text-muted">Dates come from the official central-bank, statistics-office and election calendars (hover a row for its source). For the next-session forecast, a directional call is withheld when a high-impact event falls before the target close. That is a precaution, not a validated improvement.</p>
         </div>

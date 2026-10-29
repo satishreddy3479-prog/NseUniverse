@@ -432,3 +432,31 @@ async def news_status(request: Request) -> dict[str, Any]:
 async def news_refresh(request: Request) -> dict[str, Any]:
     started = request.app.state.news.trigger()
     return {"started": started, **await asyncio.to_thread(request.app.state.news.status)}
+
+
+class CashImport(BaseModel):
+    csv: str
+
+
+@router.post("/prediction/flows/cash/import", dependencies=[Depends(require_local_control)])
+async def flows_cash_import(request: Request, body: CashImport) -> dict[str, Any]:
+    """Import FII/DII cash activity from an NSE CSV; only the newest 7 sessions are kept."""
+    from app.prediction.sources.nse import NseParseError
+
+    if len(body.csv) > 200_000:
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            {"code": "too_large", "message": "file too large"},
+        )
+    try:
+        return await asyncio.to_thread(request.app.state.flows.import_cash_csv, body.csv)
+    except NseParseError as e:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, {"code": "invalid_file", "message": str(e)}
+        ) from e
+
+
+@router.get("/prediction/flows/cash")
+async def flows_cash(request: Request) -> dict[str, Any]:
+    rows = await asyncio.to_thread(request.app.state.flows.store.cash_rows)
+    return {"rows": rows, "window_sessions": 7}

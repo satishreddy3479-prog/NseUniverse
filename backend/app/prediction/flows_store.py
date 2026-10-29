@@ -109,6 +109,22 @@ class FlowsStore:
             self._db.commit()
         return n
 
+    def prune_cash(self, keep_sessions: int = 7) -> int:
+        """Rolling window: keep the newest ``keep_sessions`` sessions of cash activity, delete older ones."""
+        with self._lock:
+            days = [r[0] for r in self._db.execute("SELECT DISTINCT session FROM cash_flows ORDER BY session DESC")]
+            if len(days) <= keep_sessions:
+                return 0
+            cutoff = days[keep_sessions - 1]
+            n = self._db.execute("DELETE FROM cash_flows WHERE session < ?", (cutoff,)).rowcount
+            self._db.commit()
+        return n
+
+    def cash_rows(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute("SELECT session, category, buy, sell, net FROM cash_flows ORDER BY session DESC, category").fetchall()
+        return [{"session": s, "category": c, "buy": b, "sell": sl, "net": n} for s, c, b, sl, n in rows]
+
     def participant_rows(self, kind: str) -> dict[date, dict[str, dict[str, int]]]:
         out: dict[date, dict[str, dict[str, int]]] = {}
         with self._lock:

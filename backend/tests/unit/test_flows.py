@@ -106,3 +106,29 @@ def test_stored_values_cannot_be_changed(tmp_path: Path) -> None:
     s.run()
     with pytest.raises(sqlite3.DatabaseError):
         s.store._db.execute("UPDATE participant SET metrics='{}'")
+
+
+CASH_CSV = """Category,Date,Buy Value(Rs Crores),Sell Value(Rs Crores),Net Value(Rs Crores)
+DII **,28-Oct-2026,"16,834.50","16,191.10",643.40
+FII/FPI *,28-Oct-2026,"16,834.50","15,962.70",871.80
+"""
+
+
+def test_cash_csv_parses_and_rejects_inconsistent_rows() -> None:
+    from app.prediction.sources.nse import parse_cash_csv
+
+    rows = parse_cash_csv(CASH_CSV)
+    assert {r["category"] for r in rows} == {"DII", "FII/FPI"} and rows[0]["session"] == date(2026, 10, 28)
+    with pytest.raises(NseParseError, match="does not equal"):
+        parse_cash_csv(CASH_CSV.replace("643.40", "9000.00"))
+    with pytest.raises(NseParseError, match="no column"):
+        parse_cash_csv("a,b\n1,2\n")
+
+
+def test_cash_window_keeps_only_the_newest_seven_sessions(tmp_path: Path) -> None:
+    s = _svc(tmp_path, Fake(set()), [])
+    for d in range(1, 12):  # 11 sessions, one import each
+        text = f"Category,Date,Buy,Sell,Net\nFII/FPI,{d:02d}-Oct-2026,100,40,60\nDII,{d:02d}-Oct-2026,50,70,-20\n"
+        r = s.import_cash_csv(text)
+    days = sorted({row["session"] for row in s.store.cash_rows()})
+    assert days == [f"2026-10-{d:02d}" for d in range(5, 12)] and r["sessions_kept"] == 7

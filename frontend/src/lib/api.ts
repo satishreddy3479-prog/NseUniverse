@@ -73,6 +73,8 @@ export const api = {
   flowsLatest: () => request<FlowsLatest>("/api/prediction/flows/latest?limit=15"),
   events: () => request<{ events: EventItem[] }>("/api/prediction/events?days=45"),
   newsStatus: () => request<NewsStatus>("/api/prediction/news/status"),
+  flowsCash: () => request<{ rows: { session: string; category: string; buy: number; sell: number; net: number }[]; window_sessions: number }>("/api/prediction/flows/cash"),
+  importCash: (csv: string) => request<{ rows: number; added: number; removed_old: number; sessions_kept: number }>("/api/prediction/flows/cash/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ csv }) }),
   flowsStatus: () => request<FlowsStatus>("/api/prediction/flows/status"),
   flowsRefresh: () => request<FlowsStatus>("/api/prediction/flows/refresh", { method: "POST" }),
   historyStatus: () => request<HistoryFetchStatus>("/api/prediction/history/status"),

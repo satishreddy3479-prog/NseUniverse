@@ -125,3 +125,54 @@ def parse_fii_dii(body: bytes) -> list[dict[str, Any]]:
             raise NseParseError(f"{r.get('category')}: buy - sell does not equal net")
         out.append({"category": str(r["category"]).strip(), "session": d, "buy": buy, "sell": sell, "net": net})
     return out
+
+
+_DATE_FORMATS = ("%d-%b-%Y", "%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%B-%Y")
+
+
+def _parse_date(text: str) -> date:
+    t = text.strip()
+    for f in _DATE_FORMATS:
+        try:
+            return datetime.strptime(t, f).date()
+        except ValueError:
+            continue
+    raise NseParseError(f"unreadable date {text!r}")
+
+
+def _crore(text: str) -> float:
+    t = text.strip().replace(",", "").replace("\u20b9", "").replace("Rs.", "").strip()
+    try:
+        return float(t)
+    except ValueError as e:
+        raise NseParseError(f"not a number: {text!r}") from e
+
+
+def parse_cash_csv(text: str) -> list[dict[str, Any]]:
+    """FII/DII cash-market activity from a CSV downloaded from NSE's FII/DII report (Rs crore).
+
+    Needs columns for category, date, buy, sell and net (names matched loosely). Each row must satisfy
+    buy - sell = net, otherwise the whole file is rejected; nothing is guessed or repaired.
+    """
+    rows = list(csv.reader(io.StringIO(text.lstrip("\ufeff"))))
+    rows = [r for r in rows if any(c.strip() for c in r)]
+    if len(rows) < 2:
+        raise NseParseError("file too short")
+    head = [c.strip().lower() for c in rows[0]]
+
+    def col(*names: str) -> int:
+        for i, h in enumerate(head):
+            if any(n in h for n in names):
+                return i
+        raise NseParseError(f"no column like {names[0]!r} in header {rows[0]!r}")
+
+    ic, idt, ib, isl, inet = col("category", "client"), col("date"), col("buy", "purchase"), col("sell", "sale"), col("net")
+    out = []
+    for r in rows[1:]:
+        if len(r) <= max(ic, idt, ib, isl, inet):
+            raise NseParseError(f"short row {r!r}")
+        buy, sell, net = _crore(r[ib]), _crore(r[isl]), _crore(r[inet])
+        if abs((buy - sell) - net) > 0.05 * max(1.0, abs(net)) + 1:
+            raise NseParseError(f"{r[ic]} {r[idt]}: buy - sell does not equal net")
+        out.append({"category": r[ic].strip().rstrip("*").strip(), "session": _parse_date(r[idt]), "buy": buy, "sell": sell, "net": net})
+    return out

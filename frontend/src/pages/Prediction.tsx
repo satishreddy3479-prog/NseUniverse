@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Panel } from "../components/ui";
 import { EventsNewsPanel } from "../components/EventsNewsPanel";
+import { CashPanel } from "../components/CashPanel";
 import { FlowsPanel } from "../components/FlowsPanel";
 import { api } from "../lib/api";
 import { fmtDateTimeIST, fmtPrice } from "../lib/format";
@@ -409,6 +410,7 @@ export default function Prediction() {
               <EventsNewsPanel />
               <ForwardPanel board={d.ledger.scoreboard} />
               <PostMortem rows={[...d.ledger.recent.T1.map((r) => ({ ...r, hz: "T1" as const })), ...d.ledger.recent.T5.map((r) => ({ ...r, hz: "T5" as const }))]} />
+              <CashPanel />
               <FlowsPanel />
               <Panel title="Models and data">
                 <div className="space-y-1 text-sm">

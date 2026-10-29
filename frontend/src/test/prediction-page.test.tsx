@@ -53,6 +53,34 @@ function mount(body: PredictionSummary | null) {
 }
 afterEach(() => vi.unstubAllGlobals());
 
+describe("FII/DII cash panel", () => {
+  it("shows the rolling window and imports a pasted NSE CSV", async () => {
+    const rows = [
+      { session: "2026-10-28", category: "FII/FPI", buy: 16834.5, sell: 15962.7, net: 871.8 },
+      { session: "2026-10-28", category: "DII", buy: 16834.5, sell: 16191.1, net: 643.4 },
+    ];
+    const posted: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input).split("?")[0]!;
+      if (url === "/api/prediction/flows/cash/import" && init?.method === "POST") { posted.push(String(init.body)); return new Response(JSON.stringify({ rows: 2, added: 2, removed_old: 3, sessions_kept: 7 }), { status: 200 }); }
+      if (url === "/api/prediction/flows/cash") return new Response(JSON.stringify({ rows, window_sessions: 7 }), { status: 200 });
+      return new Response("{}", { status: 404 });
+    }));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { CashPanel } = await import("../components/CashPanel");
+    render(<QueryClientProvider client={qc}><CashPanel /></QueryClientProvider>);
+    const table = await screen.findByRole("table", { name: "FII DII cash" });
+    expect(table).toHaveTextContent("2026-10-28");
+    expect(table).toHaveTextContent("1,515");
+    const box = screen.getByLabelText("NSE FII DII CSV");
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.type(box, "x,y");
+    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("3 older rows removed");
+    expect(posted[0]).toContain("x,y");
+  });
+});
+
 describe("Prediction page", () => {
   it("shows both models separately, the call banner, calls statistics and a verdict per model", async () => {
     mount(data());

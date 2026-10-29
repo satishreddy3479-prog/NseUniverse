@@ -31,6 +31,7 @@ from app.prediction.sources.nse import (
     NseParseError,
     fetch,
     file_url,
+    parse_cash_csv,
     parse_fii_dii,
     parse_participant,
 )
@@ -40,6 +41,7 @@ RUN_AFTER = (19, 30)
 STOP_AFTER_FINAL_404 = 40  # consecutive known trading days without a file => the history starts later
 BLOCK_STATUSES = {403, 429}
 MAX_NETWORK_ERRORS = 5
+CASH_KEEP_SESSIONS = 7  # rolling window for FII/DII cash activity
 RECENT_DAYS = 3  # a 404 this recent may just mean "not published yet"
 Fetcher = Callable[[str], Fetched]
 
@@ -155,7 +157,15 @@ class FlowsService:
             self.cash_note = f"FII/DII cash feed rejected: {e}"
             return
         summary["cash_new"] = self.store.save_cash(rows, now=self._clock())
+        self.store.prune_cash(CASH_KEEP_SESSIONS)
         self.cash_note = None
+
+    def import_cash_csv(self, text: str) -> dict[str, Any]:
+        """Store FII/DII cash activity from a file the user downloaded from NSE, then trim to the rolling window."""
+        rows = parse_cash_csv(text)
+        added = self.store.save_cash(rows, now=self._clock())
+        removed = self.store.prune_cash(CASH_KEEP_SESSIONS)
+        return {"rows": len(rows), "added": added, "removed_old": removed, "sessions_kept": len({r["session"] for r in self.store.cash_rows()})}
 
     # ------------------------------------------------------------------ scheduling
     def trigger(self) -> bool:
