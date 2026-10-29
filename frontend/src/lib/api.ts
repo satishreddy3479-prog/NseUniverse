@@ -9,7 +9,7 @@ import type {
   ConfigStatus,
   ErrorEvent,
   ExpirySelection,
-  EventItem, FlowsLatest, StorageStatus, IntradayScoreRow, IntradaySummary, NewsStatus, FlowsStatus, HistoryFetchStatus, HistoryResponse, OiChange, OiHeatmap, OiSeries, PremiumDecay, BacktestRequest, BacktestResult, StrategyAvailability, PredictionSummary, SamplerStatus,
+  EventItem, FlowsLatest, StorageStatus, IntradayScoreRow, IntradaySummary, NewsStatus, FlowsStatus, HistoryFetchStatus, HistoryResponse, OiChange, OiHeatmap, OiSeries, PremiumDecay, PredictionSummary, SamplerStatus,
   SessionInfo,
   SnapshotSummary,
 } from "./types";
@@ -73,8 +73,6 @@ export const api = {
     request<OiSeries>(
       `/api/history/oi-series?expiry=${encodeURIComponent(expiry)}&strikes=${strikes}` + (since ? `&since=${encodeURIComponent(since)}` : ""),
     ),
-  strategyAvailability: () => request<StrategyAvailability>("/api/strategy/availability"),
-  strategyBacktest: (cfg: BacktestRequest) => request<BacktestResult>("/api/strategy/backtest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cfg) }),
   premiumDecay: (expiry: string, strikes: string, since?: string) =>
     request<PremiumDecay>(
       `/api/history/premium-decay?expiry=${encodeURIComponent(expiry)}&strikes=${strikes}` + (since ? `&since=${encodeURIComponent(since)}` : ""),

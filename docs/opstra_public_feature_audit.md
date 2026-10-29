@@ -1,5 +1,7 @@
 # Opstra public feature audit
 
+> **Scope decision (30 Oct 2026):** only strategy building and the expiry payoff graph were kept. Rows below marked "Implemented" in the earlier version for Greeks, target-date curve, costs and backtesting were removed from the product; they remain here as the record of what Opstra is described as offering.
+
 Reference product: **Opstra by Definedge** (https://opstra.definedge.com/), chosen by the owner on 30 Oct 2026 instead of StockMock.
 Written 30 Oct 2026. Nothing here is copied code or private API behaviour.
 

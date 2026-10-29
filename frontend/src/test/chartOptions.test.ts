@@ -228,14 +228,12 @@ describe("oiSeriesOption", () => {
   });
 });
 
-describe("payoffOption and equityOption", () => {
-  it("draws the exact expiry payoff, the optional model estimate, and markers for spot, target and breakevens", async () => {
-    const { payoffOption, equityOption } = await import("../lib/chartOptions");
-    const o = payoffOption({ expiry: [{ s: 23900, pnl: -100 }, { s: 24100, pnl: 100 }], target: [{ s: 23900, pnl: null }, { s: 24100, pnl: 50 }], spot: 24000, targetSpot: 24050, breakevens: [24000], targetLabel: "Estimated now (model)" }, colors) as unknown as { series: { name: string; data: [number, number | null][]; markLine?: { data: { name?: string }[] } }[] };
-    expect(o.series.map((x) => x.name)).toEqual(["At expiry", "Estimated now (model)"]);
-    expect(o.series[1]!.data[0]![1]).toBeNull(); // a leg that cannot be valued is a gap, not zero
-    expect(o.series[0]!.markLine!.data.map((d) => d.name).filter(Boolean)).toEqual(["Spot", "Target", "BE"]);
-    const e = equityOption([{ at: "2026-10-28T04:00:00Z", equity: 100 }, { at: "2026-10-29T04:00:00Z", equity: -50 }], colors) as unknown as { series: { data: number[] }[] };
-    expect(e.series[0]!.data).toEqual([100, -50]);
+describe("payoffOption", () => {
+  it("draws the exact expiry payoff with markers for the spot and each breakeven", async () => {
+    const { payoffOption } = await import("../lib/chartOptions");
+    const o = payoffOption({ expiry: [{ s: 23900, pnl: -100 }, { s: 24100, pnl: 100 }], spot: 24000, breakevens: [24000, 24100] }, colors) as unknown as { series: { name: string; data: [number, number][]; markLine: { data: { name?: string }[] } }[] };
+    expect(o.series.map((x) => x.name)).toEqual(["At expiry"]);
+    expect(o.series[0]!.data).toEqual([[23900, -100], [24100, 100]]);
+    expect(o.series[0]!.markLine.data.map((d) => d.name).filter(Boolean)).toEqual(["Spot", "BE", "BE"]);
   });
 });

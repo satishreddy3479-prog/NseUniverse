@@ -374,30 +374,24 @@ export function oiSeriesOption(res: OiSeries, kind: OiSeriesKind, c: ChartColors
 
 export interface PayoffSeries {
   expiry: { s: number; pnl: number }[];
-  /** estimated P&L on the chosen date; null points are gaps where a leg could not be valued */
-  target: { s: number; pnl: number | null }[] | null;
   spot: number;
-  targetSpot: number | null;
   breakevens: number[];
-  targetLabel: string;
 }
 
-/** Payoff diagram: exact expiry P&L (profit green, loss red), an optional model estimate for another date, markers for spot and breakevens. */
+/** Payoff diagram at expiry: profit green, loss red, markers for the spot and each breakeven. */
 export function payoffOption(p: PayoffSeries, c: ChartColors): EChartsCoreOption {
   const marks = [
     { xAxis: p.spot, name: "Spot", lineStyle: { color: c.brass, type: "dashed", width: 1.5 }, label: { formatter: `Spot ${fmtInt(Math.round(p.spot))}`, color: c.brass, fontSize: 11 } },
-    ...(p.targetSpot != null && p.targetSpot !== p.spot ? [{ xAxis: p.targetSpot, name: "Target", lineStyle: { color: c.info, type: "dashed", width: 1.5 }, label: { formatter: `Target ${fmtInt(Math.round(p.targetSpot))}`, color: c.info, fontSize: 11 } }] : []),
     ...p.breakevens.map((b) => ({ xAxis: b, name: "BE", lineStyle: { color: c.muted, type: "dotted", width: 1 }, label: { formatter: `BE ${fmtInt(Math.round(b))}`, color: c.muted, fontSize: 10, position: "insideEndBottom" } })),
   ];
   const signed = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}₹${fmtInt(Math.round(Math.abs(v)))}`;
   return {
     animation: false,
-    grid: { left: 70, right: 18, top: 34, bottom: 40 },
-    legend: { top: 0, right: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
+    grid: { left: 70, right: 18, top: 20, bottom: 40 },
     tooltip: { trigger: "axis", backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 },
       formatter: (params: unknown) => {
-        const ps = params as { axisValue: number; seriesName: string; value: [number, number | null] }[];
-        return `<b>NIFTY ${fmtInt(Math.round(ps[0]!.axisValue))}</b><br/>` + ps.map((q) => `${q.seriesName}: ${q.value[1] == null ? "—" : signed(q.value[1])}`).join("<br/>");
+        const ps = params as { axisValue: number; value: [number, number] }[];
+        return `<b>NIFTY at expiry ${fmtInt(Math.round(ps[0]!.axisValue))}</b><br/>P&L ${signed(ps[0]!.value[1])}`;
       } },
     xAxis: { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => fmtInt(Math.round(v)) }, axisLine: { lineStyle: { color: c.rule } }, splitLine: { show: false } },
     yAxis: { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => (v < 0 ? "−" : "") + compactIN(Math.abs(v)) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
@@ -406,20 +400,6 @@ export function payoffOption(p: PayoffSeries, c: ChartColors): EChartsCoreOption
     series: [
       { name: "At expiry", type: "line", showSymbol: false, lineStyle: { width: 2 }, areaStyle: { opacity: 0.18 }, data: p.expiry.map((x) => [x.s, x.pnl]),
         markLine: { symbol: "none", silent: true, data: [{ yAxis: 0, lineStyle: { color: c.muted, type: "solid", width: 1 }, label: { show: false } }, ...marks] } },
-      ...(p.target ? [{ name: p.targetLabel, type: "line", showSymbol: false, itemStyle: { color: c.info }, lineStyle: { color: c.info, width: 1.6, type: "dashed" }, connectNulls: false, data: p.target.map((x) => [x.s, x.pnl]) }] : []),
     ],
-  };
-}
-
-/** Cumulative net P&L after each closed trade. */
-export function equityOption(points: { at: string; equity: number }[], c: ChartColors): EChartsCoreOption {
-  return {
-    animation: false,
-    grid: { left: 70, right: 16, top: 16, bottom: 36 },
-    tooltip: { trigger: "axis", backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 } },
-    xAxis: { type: "category", data: points.map((p) => fmtDateTimeIST(p.at)), axisLabel: { ...axisText(c), hideOverlap: true } },
-    yAxis: { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => (v < 0 ? "−" : "") + compactIN(Math.abs(v)) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
-    series: [{ name: "Net equity (₹)", type: "line", step: "end", showSymbol: points.length <= 40, itemStyle: { color: c.brass }, lineStyle: { color: c.brass, width: 2 }, areaStyle: { color: c.brass, opacity: 0.12 }, data: points.map((p) => p.equity),
-      markLine: { symbol: "none", silent: true, data: [{ yAxis: 0 }], lineStyle: { color: c.muted, type: "dashed" }, label: { show: false } } }],
   };
 }

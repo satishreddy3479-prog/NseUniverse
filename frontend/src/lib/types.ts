@@ -691,27 +691,3 @@ export interface ForecastDay {
   p_up: number | null; p_up_climatology: number | null; model: string | null; logged_utc: string;
   actual: { positive: boolean; return: number | null } | null; counts_in_forward_test: boolean;
 }
-
-export interface BacktestLegSpec { type: "CE" | "PE"; action: "BUY" | "SELL"; lots: number; offset_steps: number }
-export interface BacktestRequest {
-  legs: BacktestLegSpec[]; expiry: "nearest" | "next"; entry_time: string; exit_time: string; max_wait_minutes: number;
-  stop_loss: { mode: "rupees" | "pct_of_premium"; value: number } | null; target: { mode: "rupees" | "pct_of_premium"; value: number } | null;
-  start: string | null; end: string | null;
-  costs: { brokerage_per_order: number; stt_sell_pct: number; exchange_pct: number; sebi_pct: number; stamp_buy_pct: number; gst_pct: number; slippage_per_unit: number };
-}
-export interface BacktestTrade {
-  session: string; expiry: string; entry_at: string; exit_at: string; entry_spot: number | null; exit_spot: number | null;
-  legs: { type: string; action: string; strike: number; lots: number; entry: number; exit: number }[];
-  gross: number; costs: number; net: number; exit_reason: "stop_loss" | "target" | "time"; minutes_held: number; samples_skipped_missing_price: number;
-}
-export interface BacktestBucket { n: number; net_pnl: number; win_rate: number; enough_data: boolean }
-export interface BacktestResult {
-  config_hash: string; data_fingerprint: string;
-  data: { sessions_with_enough_samples: string[]; first: string | null; last: string | null; samples_per_session: Record<string, number>; price_source: string; history_starts: string | null };
-  metrics: { trades: number; wins: number; losses: number; win_rate: number | null; gross_pnl: number; net_pnl: number; avg_win: number | null; avg_loss: number | null; avg_trade: number | null; profit_factor: number | null; max_drawdown: number; largest_win: number | null; largest_loss: number | null; avg_minutes_held: number | null; sharpe_note: string | null };
-  trades: BacktestTrade[]; equity_curve: { at: string; session: string; equity: number }[];
-  monthly_net: Record<string, number>; yearly_net: Record<string, number>;
-  by_expiry_day: Record<string, BacktestBucket>; by_day_direction: Record<string, BacktestBucket>; regime_note: string;
-  skipped_sessions: { session: string; reason: string }[]; unpriced_sessions: { session: string; reason: string }[]; warnings: string[];
-}
-export interface StrategyAvailability { underlying: string; sessions: { session: string; samples: number; usable: boolean }[]; min_samples_per_session: number; source: string }
