@@ -19,6 +19,7 @@ import logging
 import time as time_mod
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime, time, timedelta
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -48,6 +49,10 @@ INDEX_KEY = "nse_cm|Nifty 50"
 FUT_SYMBOL = "FUT:NIFTY"
 LISTS_AT, TOKENS_AT, BHAV_AT = time(7, 45), time(8, 5), time(19, 30)
 RETRY = timedelta(minutes=30)
+STALE_WEIGHTS_DAYS = (
+    60  # NSE reviews the index in March and September; weights older than this are flagged
+)
+SEED_DIR = Path(__file__).parent / "seed"
 
 
 def _rank_key(r: dict[str, Any]) -> float:
@@ -94,7 +99,7 @@ class MarketService:
         if cur is None:
             return []
         items, _ = cur
-        wt = self.store.latest_weights("nifty50") if index == "nifty50" else None
+        wt = self.weights_now() if index == "nifty50" else None
         w = wt[0] if wt else {}
         return [m.Stock(c.symbol, c.industry or None, w.get(c.symbol)) for c in items]
 
@@ -126,10 +131,61 @@ class MarketService:
             )
         return out
 
+    def weights_now(self) -> tuple[dict[str, float], str, str, str | None] | None:
+        """(weights %, as_of, source, rolled_to). Official weights are rolled forward to the latest stored close:
+        free-float weights move with price, so w_i x (close now / close at the weights date), renormalised. Skipped
+        (static weights, as of their own date) when a close is missing or a price ratio looks like a corporate action."""
+        wt = self.store.latest_weights("nifty50")
+        if wt is None:
+            return None
+        w, as_of, source = wt
+        sessions = self.store.daily_sessions()
+        if (
+            source.startswith("approx")
+            or not sessions
+            or sessions[-1] <= as_of
+            or as_of not in sessions
+        ):
+            return w, as_of, source, None
+        c0, c1 = self.store.closes_on(as_of, list(w)), self.store.closes_on(sessions[-1], list(w))
+        if len(c0) < len(w) or len(c1) < len(w):
+            return w, as_of, source, None
+        ratio = {k: c1[k] / c0[k] for k in w}
+        if any(not 0.6 < r < 1.5 for r in ratio.values()):  # a split/bonus/demerger: do not guess
+            return w, as_of, source, None
+        raw = {k: w[k] * ratio[k] for k in w}
+        tot = sum(raw.values())
+        return {k: v / tot * sum(w.values()) for k, v in raw.items()}, as_of, source, sessions[-1]
+
+    def seed_weights(self) -> str:
+        """Load the official weights shipped with the code (captured from NSE's index tracker) when none are stored."""
+        cur = self.store.latest_weights("nifty50")
+        if cur is not None and not cur[2].startswith("approx"):
+            return "official weights already stored"
+        files = sorted(SEED_DIR.glob("nifty50_weights_*.csv"))
+        if not files or not self.universe("nifty50"):
+            return "no seed file or no NIFTY 50 list yet"
+        f = files[-1]
+        as_of = date.fromisoformat(f.stem.rsplit("_", 1)[1])
+        try:
+            res = self.import_weights(
+                f.read_text(encoding="utf-8"),
+                as_of,
+                "NSE index tracker (nseindia.com/index-tracker/NIFTY 50)",
+            )
+        except SourceError as e:
+            self.store.attempt("weights_seed", False, str(e), self._clock())
+            return f"rejected: {e}"
+        self.store.attempt(
+            "weights_seed", True, f"{res['stocks']} weights as of {as_of}", self._clock()
+        )
+        self._cache = None
+        return f"{res['stocks']} official weights as of {as_of}"
+
     def heavy(self) -> tuple[list[str], str]:
         """The five stocks followed in depth: the largest index weights, or (until weights exist) yesterday's traded value."""
         syms = [x.symbol for x in self.universe("nifty50")]
-        wt = self.store.latest_weights("nifty50")
+        wt = self.weights_now()
         if wt and wt[0]:
             top = sorted((k for k in wt[0] if k in syms), key=lambda k: -wt[0][k])[:5]
             return top, "approximate index weights" if wt[2].startswith(
@@ -404,7 +460,7 @@ class MarketService:
         prev_ranks = {
             r["sector"]: r["rank"] for r in (prev[-1]["nifty500"] if prev else []) if r.get("rank")
         }
-        wt = self.store.latest_weights("nifty50")
+        wt = self.weights_now()
         return {
             "generated_at": now.isoformat(),
             "elapsed_minutes": round(elapsed, 1),
@@ -418,7 +474,12 @@ class MarketService:
                 "stocks": table[:50],
                 "weights": None
                 if wt is None
-                else {"as_of": wt[1], "source": wt[2], "approximate": wt[2].startswith("approx")},
+                else {
+                    "as_of": wt[1],
+                    "source": wt[2],
+                    "approximate": wt[2].startswith("approx"),
+                    "rolled_to": wt[3],
+                },
             },
             "nifty500": {"breadth": b500.public()},
             "flow": self.flow_summary(now, elapsed, ticks, table),
@@ -432,7 +493,7 @@ class MarketService:
     def sources(self, now: datetime | None = None) -> dict[str, Any]:
         l50, l500 = self.store.current_list("nifty50"), self.store.current_list("nifty500")
         wt, tok, ses = (
-            self.store.latest_weights("nifty50"),
+            self.weights_now(),
             self.store.latest_tokens(),
             self.store.bhav_sessions(),
         )
@@ -442,7 +503,7 @@ class MarketService:
         return {
             "lists": {"nifty50": l50 and {"stocks": len(l50[0]), **l50[1]}, "nifty500": l500 and {"stocks": len(l500[0]), **l500[1]}, "last_attempt": self.store.last_attempt("lists")},
             "tokens": {"day": tok and tok[1], "found": len([s for s in syms500 if s in tm]), "of": len(syms500), "last_attempt": self.store.last_attempt("tokens")},
-            "weights": wt and {"as_of": wt[1], "source": wt[2], "stocks": len(wt[0]), "approximate": wt[2].startswith("approx")},
+            "weights": wt and {"as_of": wt[1], "source": wt[2], "stocks": len(wt[0]), "approximate": wt[2].startswith("approx"), "rolled_to": wt[3], "age_days": (now or self._clock()).astimezone(IST).date().toordinal() - date.fromisoformat(wt[1]).toordinal(), "stale": (now or self._clock()).astimezone(IST).date().toordinal() - date.fromisoformat(wt[1]).toordinal() > STALE_WEIGHTS_DAYS and not wt[2].startswith("approx")},
             "volume_baseline": {"sessions": len(ses), "stocks": len(self.avg_volume()), "needs_sessions": 10, "history_sessions": len(self.store.daily_sessions()), "last_attempt": self.store.last_attempt("bhav")},
             "list_changes": self.store.list_changes(5),
             "live": {"stocks_with_ticks": len(ticks), "subscribed": len(self.stream_tokens())},
@@ -722,6 +783,9 @@ class MarketService:
                 len(self.store.daily_sessions()) < 55
                 and self.store.current_list("nifty500") is not None
             )
+        if kind == "weights_seed":
+            cur = self.store.latest_weights("nifty50")
+            return (cur is None or cur[2].startswith("approx")) and bool(self.universe("nifty50"))
         if kind == "weights_est":
             la = self.store.last_attempt("weights_est")
             wt = self.store.latest_weights("nifty50")
@@ -742,7 +806,15 @@ class MarketService:
     async def run_due(self) -> dict[str, str]:
         now = self._clock()
         out: dict[str, str] = {}
-        for kind in ("lists", "tokens", "bhav", "bhav_backfill", "weights", "weights_est"):
+        for kind in (
+            "lists",
+            "weights_seed",
+            "tokens",
+            "bhav",
+            "bhav_backfill",
+            "weights",
+            "weights_est",
+        ):
             if not self.due(kind, now):
                 continue
             self._last_try[kind] = now
@@ -754,6 +826,8 @@ class MarketService:
                 out[kind] = await asyncio.to_thread(self.refresh_bhav, now.astimezone(IST).date())
             elif kind == "bhav_backfill":
                 out[kind] = await asyncio.to_thread(self.backfill_bhav, now.astimezone(IST).date())
+            elif kind == "weights_seed":
+                out[kind] = await asyncio.to_thread(self.seed_weights)
             elif kind == "weights_est":
                 out[kind] = await asyncio.to_thread(self.estimate_weights)
             else:

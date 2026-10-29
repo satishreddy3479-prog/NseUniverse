@@ -532,7 +532,7 @@ export interface MarketSummary {
   sources: {
     lists: { nifty50: { stocks: number; fetched_utc: string } | null; nifty500: { stocks: number; fetched_utc: string } | null };
     tokens: { day: string | null; found: number; of: number };
-    weights: { as_of: string; source: string; stocks: number; approximate: boolean } | null;
+    weights: { as_of: string; source: string; stocks: number; approximate: boolean; rolled_to?: string | null; age_days?: number; stale?: boolean } | null;
     volume_baseline: { sessions: number; stocks: number; needs_sessions: number; history_sessions?: number };
     list_changes?: { index: string; detected: string; added: string[]; removed: string[] }[];
     live: { stocks_with_ticks: number; subscribed: number };
@@ -543,7 +543,7 @@ export interface MarketSummary {
     volume: { covered: number; weighted_rv: number | null; reference: string; up_volume_share: number | null; low_volume_names: string[] } | null;
     quality: { state: string; reasons: string[]; provisional: boolean };
     stocks: { symbol: string; sector: string | null; weight: number | null; change_pct: number | null; contribution: number | null; volume: number | null; relative_volume: number | null }[];
-    weights: { as_of: string; source: string; approximate: boolean } | null;
+    weights: { as_of: string; source: string; approximate: boolean; rolled_to?: string | null } | null;
   };
   nifty500: { breadth: BreadthBlock };
   flow?: FlowBlock;

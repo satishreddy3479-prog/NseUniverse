@@ -6,6 +6,7 @@ _Last updated: 2026-10-29_
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
 ## Market breadth (built 2026-10-29, unverified live)
+- Official NIFTY 50 weights loaded (D59): NSE index tracker, 29 Oct close, rolled forward with price; top-5 are now HDFCBANK, ICICIBANK, RELIANCE, BHARTIARTL, LT. Compare with the page's advance/decline (39/11 on 29 Oct) after the next session.
 - Added 29 Oct evening (D58): NIFTY futures flow/CVD, depth for the top-5 heavyweights, technical read from daily bars, estimated weights, own intraday volume profile (after 5 sessions), list-change log, snapshot retention enabled (raw 7 d, normalized 14 d, verified-archive days only). Offline-tested; Kotak depth fields and the F&O scrip master are unverified.
 - `/api/market/summary|status|coverage`, `POST /api/market/refresh`, `POST /api/market/weights/import`. NIFTY 50/500 breadth, heavyweight contribution, relative volume, sectors in the Command Center. Offline-tested only; needs a market-hours check of token coverage and tick fields. Weights not loaded. See D57.
 

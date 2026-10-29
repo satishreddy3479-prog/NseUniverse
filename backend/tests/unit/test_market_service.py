@@ -475,3 +475,48 @@ def test_a_changed_constituent_list_is_logged(tmp_path: Path, monkeypatch: pytes
     assert res["nifty50"] == "CHANGED: +1 -1"
     assert svc.store.list_changes()[0]["added"] == ["NEWSTOCK"] and svc.store.list_changes()[0]["removed"] == ["BAJAJ-AUTO"]
     assert svc.refresh_lists()["nifty50"] == "unchanged"
+
+
+# ------------------------------------------------------------------------------------ official weights (NSE index tracker)
+
+SEED_FILE = Path(__file__).resolve().parents[2] / "app" / "market" / "seed" / "nifty50_weights_2026-10-29.csv"
+
+
+def _full_service(tmp_path: Path) -> MarketService:
+    """A service whose NIFTY 50 list holds the 50 symbols of the captured NSE weights file (list rows are labels only)."""
+    syms = [ln.split(",")[0] for ln in SEED_FILE.read_text().splitlines()[1:]]
+    text = "Company Name,Industry,Symbol,Series,ISIN Code\n" + "".join(f"{s} Ltd.,Financial Services,{s},EQ,INE{i:09d}\n" for i, s in enumerate(syms))
+    st = MarketStore(tmp_path)
+    st.save_list("nifty50", parse_index_list(text, "nifty50"), text.encode(), NOW)
+    return MarketService(st, clock=lambda: NOW)
+
+
+def test_the_captured_nse_weights_are_complete_and_load_as_official(tmp_path: Path) -> None:
+    """The file holds the 'weightage' values NSE's index-tracker page returned on 29 Oct 2026 15:30 IST (50 stocks)."""
+    rows = [ln.split(",") for ln in SEED_FILE.read_text().splitlines()[1:]]
+    assert len(rows) == 50 and sum(float(w) for _, w in rows) == pytest.approx(100.01, abs=0.001)
+    svc = _full_service(tmp_path)
+    assert svc.seed_weights() == "50 official weights as of 2026-10-29"
+    w, as_of, src, rolled = svc.weights_now() or ({}, "", "", None)
+    assert as_of == "2026-10-29" and src.startswith("NSE index tracker") and rolled is None
+    assert w["HDFCBANK"] == 9.9 and w["ICICIBANK"] == 9.44 and w["RELIANCE"] == 7.6 and w["M&M"] == 2.43
+    assert svc.heavy() == (["HDFCBANK", "ICICIBANK", "RELIANCE", "BHARTIARTL", "LT"], "official index weights")
+    assert svc.seed_weights() == "official weights already stored"  # not loaded twice
+
+
+def test_official_weights_move_with_price_until_the_next_official_file(tmp_path: Path) -> None:
+    svc = _full_service(tmp_path)
+    svc.seed_weights()
+    syms = [s.symbol for s in svc.universe("nifty50")]
+    svc.store.save_bhav([sources.BhavRow(date(2026, 10, 29), s, 100.0, 100.0, 1000, None, 100.0, 100.0, 100.0) for s in syms])
+    # next session HDFCBANK +10 %, every other stock unchanged
+    svc.store.save_bhav([sources.BhavRow(date(2026, 10, 30), s, 100.0, 110.0 if s == "HDFCBANK" else 100.0, 1000, None, 100.0, 100.0, 100.0) for s in syms])
+    w, _, _, rolled = svc.weights_now() or ({}, "", "", None)
+    # raw: 9.9 x 1.10 = 10.89 and the other 90.11 unchanged -> total 101.0; scaled back to the 100.01 total
+    assert rolled == "2026-10-30" and w["HDFCBANK"] == pytest.approx(10.89 / 101.0 * 100.01) and sum(w.values()) == pytest.approx(100.01)
+    assert w["RELIANCE"] == pytest.approx(7.6 / 101.0 * 100.01)
+    # a price ratio that looks like a split disables the roll-forward instead of guessing
+    svc.store.save_bhav([sources.BhavRow(date(2026, 10, 31), s, 100.0, 50.0 if s == "LT" else 100.0, 1000, None, 100.0, 100.0, 100.0) for s in syms])
+    assert (svc.weights_now() or ({}, "", "", "x"))[3] is None
+    src = svc.sources(NOW)["weights"]
+    assert src["stale"] is False and src["age_days"] == 0 and src["approximate"] is False

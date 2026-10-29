@@ -187,6 +187,14 @@ class MarketStore:
             ).fetchall()
         return list(reversed(rows))
 
+    def closes_on(self, session: str, symbols: list[str]) -> dict[str, float]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT symbol, close FROM daily WHERE session=? AND close IS NOT NULL", (session,)
+            ).fetchall()
+        want = set(symbols)
+        return {s: float(c) for s, c in rows if s in want}
+
     def last_traded_value(self, symbols: list[str]) -> dict[str, float]:
         """close x volume of the newest session for each symbol (a liquidity ranking, not an index weight)."""
         with self._lock:
