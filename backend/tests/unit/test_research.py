@@ -89,6 +89,16 @@ def test_logistic_and_boost_find_planted_signals() -> None:
 
 
 class _Cal:
+    def is_session(self, d: date) -> bool:
+        return d.weekday() < 5
+
+    def prev_session(self, d: date, n: int = 1) -> date:
+        while n:
+            d -= timedelta(days=1)
+            if d.weekday() < 5:
+                n -= 1
+        return d
+
     def next_session(self, d: date, n: int = 1) -> date:
         while n:
             d += timedelta(days=1)
@@ -249,3 +259,38 @@ def test_the_morning_run_waits_for_the_overnight_bars_instead_of_giving_the_day_
     assert ready.morning_ready(_at(nxt, 9, 20)) is False  # after 09:10
     ready._morning_done = nxt
     assert ready.morning_ready(_at(nxt, 8, 50)) is False  # already done today
+
+
+def test_every_forecast_day_is_logged_with_its_status_and_a_missed_day_keeps_only_a_preview(tmp_path: Path) -> None:
+    last = _walk(560, 1)[-1].session
+    nxt = _Cal().next_session(last)
+    after = _at(nxt, 9, 20)
+    ok, _ = _service(tmp_path / "ok", 560, _at(nxt, 8, 50))
+    ok.summary(block=True)
+    assert ok.log_day(_at(nxt, 9, 0)) == 0  # the window is still open: nothing is logged yet
+    assert ok.log_day(after) == 2 and ok.log_day(after) == 0  # T+1 and T+5, written once
+    days = {d["horizon"]: d for d in ok.summary()["days"]}
+    assert days["T1"]["status"] == "recorded" and days["T1"]["counts_in_forward_test"] is True and days["T1"]["reason"] is None
+    assert days["T1"]["target_session"] == str(nxt) and 0 < days["T1"]["p_up"] < 1 and days["T1"]["actual"] is None  # not resolved yet
+
+    late, _ = _service(tmp_path / "late", 560, _at(nxt, 8, 50), series_end_offset=1)  # overnight bars missing
+    late.summary(block=True)
+    late.log_day(after)
+    d = {x["horizon"]: x for x in late.summary()["days"]}["T1"]
+    assert d["status"] == "missed" and "not yet in" in d["reason"] and "SPX" in d["stale"]
+    assert d["counts_in_forward_test"] is False and d["p_up"] is not None  # the preview is kept, flagged as not counted
+    assert late._ledger.counts()["T1"]["forecasts"] == 0  # and it never reaches the forward test
+
+    none, _ = _service(tmp_path / "none", 560, _at(nxt, 8, 50))  # nothing computed at all
+    none.log_day(after)
+    assert none._days.recent()[0]["status"] == "missed" and "not computed" in none._days.recent()[0]["reason"]
+
+
+def test_a_logged_day_cannot_be_changed(tmp_path: Path) -> None:
+    import sqlite3
+
+    svc, _ = _service(tmp_path, 560, _at(_Cal().next_session(_walk(560, 1)[-1].session), 8, 50))
+    svc.summary(block=True)
+    svc.log_day(_at(_Cal().next_session(_walk(560, 1)[-1].session), 9, 20))
+    with pytest.raises(sqlite3.DatabaseError):
+        svc._days._db.execute("UPDATE days SET status='recorded'")

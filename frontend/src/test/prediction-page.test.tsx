@@ -158,3 +158,30 @@ describe("Compute now and last-run stamps", () => {
     await vi.waitFor(() => expect(posted).toEqual(["/api/prediction/summary/recompute?model=T1"]));
   });
 });
+
+describe("Daily forward-test log", () => {
+  it("lists recorded and missed days, keeps a missed day's number as a preview and never counts it", async () => {
+    const d = data();
+    if (d.ready) {
+      d.days = [
+        { horizon: "T1", target_session: "2026-10-30", reference_session: "2026-10-29", status: "recorded", reason: null, stale: [], p_up: 0.581, p_up_climatology: 0.528, model: "ensemble", logged_utc: "x", actual: null, counts_in_forward_test: true },
+        { horizon: "T1", target_session: "2026-10-29", reference_session: "2026-10-28", status: "missed", reason: "preview: overnight bars not yet in for SPX", stale: ["SPX", "VIX"], p_up: 0.581, p_up_climatology: 0.528, model: "ensemble", logged_utc: "x", actual: { positive: true, return: 0.0075 }, counts_in_forward_test: false },
+      ];
+    }
+    mount(d);
+    const missed = await screen.findByTestId("day-T1-2026-10-29");
+    expect(missed).toHaveTextContent("Not recorded");
+    expect(missed).toHaveTextContent("58.1% (preview)");
+    expect(missed).toHaveTextContent("Up +0.75%");
+    expect(missed).toHaveTextContent("Right · not counted");
+    expect(missed).toHaveTextContent("Late series: SPX, VIX");
+    const rec = screen.getByTestId("day-T1-2026-10-30");
+    expect(rec).toHaveTextContent("Recorded");
+    expect(rec).toHaveTextContent("pending");
+    expect(rec).toHaveTextContent("Locked before the open.");
+  });
+  it("says so when nothing has been logged yet", async () => {
+    mount(data());
+    expect(await screen.findByTestId("daylog-empty")).toBeInTheDocument();
+  });
+});

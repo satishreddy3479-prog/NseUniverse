@@ -27,6 +27,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from app.prediction.calendar import SessionLookup, TradingCalendar
+from app.prediction.daylog import DayLog
 from app.prediction.evaluation import (
     brier,
     calibration_bins,
@@ -323,6 +324,7 @@ class PredictionResearch:
         self._cache_file = None if cache_dir is None else cache_dir / "prediction_report.json"
         self._runs_file = None if cache_dir is None else cache_dir / "prediction_runs.json"
         self._runs: dict[str, dict[str, Any]] = self._load_runs()
+        self._days = DayLog(cache_dir)
 
     def _load_runs(self) -> dict[str, dict[str, Any]]:
         if self._runs_file is None or not self._runs_file.exists():
@@ -416,7 +418,7 @@ class PredictionResearch:
                 raise RuntimeError(self._error)
             return {"ready": False, "computing": True, "reason": "Training and evaluating models on the stored data. This takes a few minutes the first time and is then cached."}
         self._settle(bars)
-        return {**body, "ledger": self._ledger_view(), "generated_at": now.isoformat(), "runs": self._runs, "computing": worker is not None and worker.is_alive()}
+        return {**body, "ledger": self._ledger_view(), "generated_at": now.isoformat(), "runs": self._runs, "computing": worker is not None and worker.is_alive(), "days": self._days_view(bars)}
 
     def _run(self, bars: list[Bar], key: list[Any], now: datetime, trigger: str = "auto", only: str | None = None, base: dict[str, Any] | None = None) -> None:
         try:
@@ -593,6 +595,53 @@ class PredictionResearch:
         ist = now.astimezone(IST)
         return ist.weekday() < 5 and WINDOW[0] <= (ist.hour, ist.minute) < WINDOW[1]
 
+    def log_day(self, now: datetime) -> int:
+        """After the recording window closes, write down each horizon's day: recorded or not, and why not."""
+        ist = now.astimezone(IST)
+        if (ist.hour, ist.minute) < WINDOW[1]:
+            return 0
+        try:
+            cal = self._cal()
+            if not cal.is_session(ist.date()):
+                return 0
+            ref = cal.prev_session(ist.date())
+            targets = {"T1": cal.next_session(ref, 1), "T5": cal.next_session(ref, 5)}
+        except Exception:  # noqa: BLE001 - no verified calendar for that date: log nothing rather than guess
+            return 0
+        body: dict[str, Any] | None = self._cache[1] if self._cache else None
+        wrote = 0
+        for hz, target in targets.items():
+            if self._days.has(hz, target):
+                continue
+            stale = list((body or {}).get("data", {}).get("stale_series", []))
+            status: str
+            reason: str | None
+            if body is None or body.get("data", {}).get("last") != str(ref):
+                status, reason, p, c, model = "missed", f"the report was not computed from the {ref} close", None, None, None
+            else:
+                models = body["forecasts"][hz]["models"]
+                head = body["forecasts"][hz].get("headline_model")
+                name = head if head in models else next(iter(models), None)
+                m = models.get(name) if name else None
+                pay = (m or {}).get("payload") or {}
+                recorded = bool(m and m.get("recorded"))
+                status = "recorded" if recorded else "missed"
+                reason = None if recorded else ((m or {}).get("reason") or "no forecast could be made")
+                p, c, model = pay.get("p_up_model"), pay.get("p_up_climatology"), name
+            wrote += self._days.log(hz, target, ref, status, reason, stale, p, c, model, now=now)
+        return wrote
+
+    def _days_view(self, bars: list[Bar]) -> list[dict[str, Any]]:
+        """The day log with what actually happened. A day that was not recorded keeps its number as a preview."""
+        labels = make_labels(bars)
+        tables: dict[str, dict[date, Any]] = {"T1": {x.reference_session: x for x in labels.t1}, "T5": {x.reference_session: x for x in labels.t5}}
+        out: list[dict[str, Any]] = []
+        for d in self._days.recent(40):
+            lab = tables[d["horizon"]].get(date.fromisoformat(d["reference_session"]))
+            actual = None if lab is None else {"positive": lab.positive, "return": lab.close_to_close if d["horizon"] == "T1" else lab.ret5}
+            out.append({**d, "actual": actual, "counts_in_forward_test": d["status"] == "recorded"})
+        return out
+
     def morning_ready(self, now: datetime) -> bool:
         """Inside the 08:35-09:10 window, not yet recorded today, and every overnight series has its final bar."""
         if not self._window_due(now) or self._morning_done == now.astimezone(IST).date():
@@ -610,6 +659,7 @@ class PredictionResearch:
                 if self.morning_ready(now):
                     self._morning_done = now.astimezone(IST).date()
                     await asyncio.to_thread(self.summary, True, True)  # force: new overnight data must be used
+                self.log_day(now)
             except Exception:  # noqa: BLE001 - the scheduler must survive
                 self._error = "morning run failed"
             await asyncio.sleep(240)

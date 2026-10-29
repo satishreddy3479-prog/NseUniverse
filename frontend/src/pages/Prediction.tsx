@@ -217,6 +217,40 @@ function SummaryStrip({ d }: { d: PredictionSummaryReady }) {
   );
 }
 
+/** Every forecast day, including the ones that could not be recorded and why. A missed day keeps its number as a
+ *  preview: shown with the outcome for learning, never counted in the forward test. */
+function DayLogPanel({ days }: { days: NonNullable<PredictionSummaryReady["days"]> }) {
+  return (
+    <Panel title="Daily forward-test log — every forecast day, recorded or missed">
+      {days.length === 0 ? (
+        <p className="text-sm text-muted" data-testid="daylog-empty">Nothing logged yet. Each weekday after 09:10 IST the page records whether the forecast was locked in the ledger and, if not, why.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm" aria-label="Daily forward-test log">
+            <thead className="text-xs text-muted"><tr><th className="text-left font-normal">Target</th><th className="text-left font-normal">Horizon</th><th className="text-left font-normal">Status</th><th className="text-right font-normal">Said up</th><th className="text-right font-normal">Actual</th><th className="pl-4 text-left font-normal">Result</th><th className="pl-4 text-left font-normal">Why / note</th></tr></thead>
+            <tbody>
+              {days.map((d) => {
+                const right = d.p_up == null || !d.actual ? null : d.p_up > 0.5 === d.actual.positive;
+                return (
+                  <tr key={`${d.horizon}-${d.target_session}`} className="num border-t border-rule/50" data-testid={`day-${d.horizon}-${d.target_session}`}>
+                    <td>{d.target_session}</td><td>{d.horizon}</td>
+                    <td className={d.status === "recorded" ? "text-up" : "text-warn"}>{d.status === "recorded" ? "Recorded" : "Not recorded"}</td>
+                    <td className="text-right">{d.p_up == null ? "—" : `${pct(d.p_up)}${d.status === "recorded" ? "" : " (preview)"}`}</td>
+                    <td className={`text-right ${d.actual ? (d.actual.positive ? "text-up" : "text-down") : ""}`}>{d.actual ? `${d.actual.positive ? "Up" : "Not up"} ${d.actual.return == null ? "" : sgn(d.actual.return)}` : "pending"}</td>
+                    <td className={`pl-4 font-medium ${right == null ? "text-muted" : right ? "text-up" : "text-down"}`}>{right == null ? "—" : `${right ? "Right" : "Wrong"}${d.counts_in_forward_test ? "" : " · not counted"}`}</td>
+                    <td className="pl-4 text-xs text-muted">{d.status === "recorded" ? "Locked before the open." : `${d.reason ?? "No forecast"}${d.stale.length ? ` Late series: ${d.stale.join(", ")}.` : ""}`}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="mt-2 text-xs text-muted">The forward test counts only forecasts locked before the outcome. A day that could not be locked stays in this log with its reason; its number is a preview and is never added to the scoreboard.</p>
+    </Panel>
+  );
+}
+
 function PostMortem({ rows }: { rows: (PredictionLedgerRow & { hz: "T1" | "T5" })[] }) {
   const done = rows.filter((r) => r.outcome && r.model === "ensemble").slice(0, 12);
   return (
@@ -430,6 +464,7 @@ export default function Prediction() {
                 </div>
               </Panel>
               <EventsNewsPanel />
+              <DayLogPanel days={d.days ?? []} />
               <ForwardPanel board={d.ledger.scoreboard} />
               <PostMortem rows={[...d.ledger.recent.T1.map((r) => ({ ...r, hz: "T1" as const })), ...d.ledger.recent.T5.map((r) => ({ ...r, hz: "T5" as const }))]} />
               <CashPanel />

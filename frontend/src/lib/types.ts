@@ -412,6 +412,7 @@ export type PredictionSummary =
       ready: true;
       computing?: boolean;
       runs?: Record<string, { last_auto?: { at: string }; last_manual?: { at: string } }>;
+      days?: ForecastDay[];
       generated_at: string;
       computed_at: string;
       model_version: string;
@@ -682,4 +683,11 @@ export interface OiSeries {
   stride: number;
   warnings: string[];
   definitions: Record<string, string>;
+}
+
+export interface ForecastDay {
+  horizon: "T1" | "T5"; target_session: string; reference_session: string;
+  status: "recorded" | "missed"; reason: string | null; stale: string[];
+  p_up: number | null; p_up_climatology: number | null; model: string | null; logged_utc: string;
+  actual: { positive: boolean; return: number | null } | null; counts_in_forward_test: boolean;
 }
