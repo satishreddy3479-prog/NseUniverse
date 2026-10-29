@@ -313,8 +313,8 @@ export function oiExplorerOption(
     } else {
       series.push(
         { ...common, name: `${s.name} OI`, data: r.map((x) => (x == null || x.oi == null ? null : x.baseline_oi == null ? x.oi : Math.min(x.oi, x.baseline_oi))), itemStyle: { color: s.color }, ...first },
-        { ...common, name: `${s.name} OI increase`, data: r.map((x) => (x?.change != null && x.change > 0 ? x.change : null)), itemStyle: { color: s.color, opacity: 0.45, borderColor: s.color, borderWidth: 1 } },
-        { ...common, name: `${s.name} OI decrease`, data: r.map((x) => (x?.change != null && x.change < 0 ? -x.change : null)), itemStyle: { color: "transparent", borderColor: s.color, borderWidth: 1, borderType: "dashed" } },
+        { ...common, name: `${s.name} OI increase`, data: r.map((x) => (x?.change != null && x.change > 0 ? x.change : null)), itemStyle: { color: s.color, opacity: 0.5 } },
+        { ...common, name: `${s.name} OI decrease`, data: r.map((x) => (x?.change != null && x.change < 0 ? -x.change : null)), itemStyle: { color: s.color, opacity: 0.5, borderColor: s.color, borderWidth: 1, borderType: "dashed" } },
       );
     }
   });

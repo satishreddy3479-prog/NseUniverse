@@ -488,3 +488,49 @@ describe("OI intelligence widgets", () => {
     expect(await within(w).findByText("Only one observation so far")).toBeInTheDocument();
   });
 });
+
+describe("PCR widget and the Full time-slot table", () => {
+  it("shows PCR at the ATM strike, in view and overall, from hand-calculated totals", async () => {
+    // ATM 24050: put OI 1500 vs call OI 1000; the other six strikes 1000 vs 1000; volume 10 vs 10 everywhere
+    const chain = bigChain();
+    chain.snapshot.rows.find((r) => r.strike === 24050)!.put!.oi = 1500;
+    localStorage.setItem("nse.analysis.layout.v1", JSON.stringify({ active: ["pcr"], layout: [{ i: "pcr", x: 0, y: 0, w: 12, h: 8 }] }));
+    mockApi(history([obs(1), obs(2)], 1), { "/api/option-chain": chain });
+    renderAnalysis();
+    const box = await screen.findByTestId("pcr-widget");
+    const row = (name: RegExp) => within(box).getByRole("row", { name });
+    await waitFor(() => expect(row(/ATM strike 24,050/)).toHaveTextContent("1.50")); // 1500 / 1000
+    expect(row(/Overall: all 7 listed strikes/)).toHaveTextContent("1.07"); // 7500 / 7000
+    expect(row(/Overall/)).toHaveTextContent("1.00"); // volume 70 / 70
+  });
+
+  it("offers the PCR widget once to a layout saved before it existed, then respects removing it", async () => {
+    localStorage.removeItem("nse.analysis.seen.v1");
+    localStorage.setItem("nse.analysis.layout.v1", JSON.stringify({ active: ["spot"], layout: [{ i: "spot", x: 0, y: 0, w: 4, h: 8 }] }));
+    mockApi(history([obs(1), obs(2)], 1));
+    const { unmount } = renderAnalysis();
+    await userEvent.click(await screen.findByRole("button", { name: "Remove PCR: ATM and overall" }));
+    unmount();
+    renderAnalysis();
+    await widget("NIFTY 50 — snapshot observations");
+    expect(screen.queryByRole("region", { name: "PCR: ATM and overall" })).toBeNull();
+  });
+
+  it("the Full view lists every time slot with call and put OI and change", async () => {
+    localStorage.setItem("nse.analysis.layout.v1", JSON.stringify({ active: ["oi"], layout: [{ i: "oi", x: 0, y: 0, w: 12, h: 14 }] }));
+    mockApi(history([obs(1), obs(2)], 1));
+    renderAnalysis();
+    const inline = await screen.findByTestId("oi-explorer");
+    expect(within(inline).queryByTestId("oi-slot-table")).toBeNull(); // normal view: chart and totals only
+    await userEvent.click(screen.getByRole("button", { name: "Open OI explorer full size" }));
+    const dlg = await screen.findByRole("dialog", { name: "Open interest: change and total by window" });
+    const table = await within(dlg).findByTestId("oi-slot-table");
+    for (const l of ["Last 3 min", "Last 30 min", "Last 3 hr", "All"]) expect(within(table).getByRole("row", { name: new RegExp(`^${l}`) })).toBeInTheDocument();
+    // oiRes totals: call 210 (+60), put 90 (−30), PCR 90/210 = 0.43, PCR of change −30/60 = −0.50
+    const all = await waitFor(() => { const r = within(table).getByRole("row", { name: /^All/ }); expect(r).toHaveTextContent("+60"); return r; });
+    expect(all).toHaveTextContent("210");
+    expect(all).toHaveTextContent("−30");
+    expect(all).toHaveTextContent("0.43");
+    expect(all).toHaveTextContent("-0.50");
+  });
+});

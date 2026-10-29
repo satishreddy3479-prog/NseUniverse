@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { EChart, useChartColors } from "../EChart";
 import { ChainTable } from "../ChainTable";
 import { Button, EmptyState, SourceTag } from "../ui";
 import { useDash } from "./DashContext";
 import { FullChart } from "./FullChart";
-import { atmStraddle, compactIN, maxPain, OI_MODES, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, TS_RANGES, windowStartIso, type OiMode } from "../../lib/analytics";
+import { atmStraddle, compactIN, computeTotals, maxPain, OI_MODES, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, TS_RANGES, windowStartIso, type OiMode } from "../../lib/analytics";
 import {
   decayOption, oiChangeBarOption, oiHeatmapOption, premiumOption, spotOption, straddleOption, strikeBarOption,
   oiExplorerOption, totalsBarOption, type StrikeMetric } from "../../lib/chartOptions";
@@ -30,7 +30,7 @@ function useLastSample(): { at: string | null; age: number | null } {
 /** Time-series widgets are built from stored samples; say how fresh the newest one is. */
 function SampleTag() {
   const { at } = useLastSample();
-  return at ? <span title="Charts plot the option-chain samples stored every minute in market hours (not individual ticks).">last sample {fmtTimeIST(at)} IST</span> : null;
+  return at ? <span title="Charts plot the option-chain samples stored every minute in market hours (not individual ticks).">last sample {fmtTimeIST(at)}</span> : null;
 }
 
 /** Source line printed under every widget: where the numbers come from and how fresh they are. */
@@ -615,6 +615,58 @@ export function PriceOiWidget() {
 const signedUnits = (v: number | null) => (v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${compactIN(Math.abs(v))}`);
 const fmt2 = (v: number | null) => (v == null ? "—" : v.toFixed(2));
 
+/** Full view only: totals and change for calls and puts in every time slot, one row per window. */
+function OiSlotTable({ newest }: { newest: string | null }) {
+  const d = useDash();
+  const qs = useQueries({
+    queries: OI_WINDOWS.map((w) => {
+      const at = w.minutes == null || !newest ? undefined : windowStartIso(newest, w.minutes);
+      return {
+        queryKey: ["oiWindow", d.expiry, w.id, at, d.range],
+        queryFn: () => api.oiChange(d.expiry!, w.minutes == null ? "session_open" : "at", strikesParam(d.range), at),
+        enabled: !!d.expiry && (w.minutes == null || !!newest), refetchInterval: 30_000, retry: false,
+      };
+    }),
+  });
+  return (
+    <div className="overflow-x-auto" data-testid="oi-slot-table">
+      <table className="w-full text-xs">
+        <caption className="mb-1 text-left text-muted">Every time slot: call and put OI now, how much each changed, and the PCR (strikes in view).</caption>
+        <thead>
+          <tr className="text-muted">
+            <th scope="col" className="px-2 py-1 text-left font-medium">Time slot</th>
+            <th scope="col" className="px-2 py-1 text-right font-medium">Call OI</th><th scope="col" className="px-2 py-1 text-right font-medium">Call OI change</th>
+            <th scope="col" className="px-2 py-1 text-right font-medium">Put OI</th><th scope="col" className="px-2 py-1 text-right font-medium">Put OI change</th>
+            <th scope="col" className="px-2 py-1 text-right font-medium">PCR</th><th scope="col" className="px-2 py-1 text-right font-medium">PCR of OI change</th>
+          </tr>
+        </thead>
+        <tbody>
+          {OI_WINDOWS.map((w, i) => {
+            const q = qs[i]!;
+            const st = q.data ? oiWindowStats(q.data.totals) : null;
+            const pending = q.isPending && q.fetchStatus !== "idle";
+            return (
+              <tr key={w.id} className="border-t border-rule">
+                <th scope="row" className="px-2 py-1 text-left font-medium text-paper">{w.label}</th>
+                {st ? (
+                  <>
+                    <td className="num px-2 py-1 text-right">{st.ceOi == null ? "—" : compactIN(st.ceOi)}</td>
+                    <td className="num px-2 py-1 text-right">{signedUnits(st.ceChange)}</td>
+                    <td className="num px-2 py-1 text-right">{st.peOi == null ? "—" : compactIN(st.peOi)}</td>
+                    <td className="num px-2 py-1 text-right">{signedUnits(st.peChange)}</td>
+                    <td className="num px-2 py-1 text-right">{fmt2(st.pcr)}</td>
+                    <td className="num px-2 py-1 text-right" title={st.pcrOiChangeNote ?? undefined}>{fmt2(st.pcrOiChange)}</td>
+                  </>
+                ) : <td colSpan={6} className="px-2 py-1 text-muted">{pending ? "Loading…" : q.error ? "Could not load" : "No earlier stored sample for this slot"}</td>}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function OiExplorerBody({ large, mode, setMode, win, setWin }: {
   large: boolean; mode: OiMode; setMode: (m: OiMode) => void; win: string; setWin: (w: string) => void;
 }) {
@@ -634,11 +686,11 @@ function OiExplorerBody({ large, mode, setMode, win, setWin }: {
   const st = res ? oiWindowStats(res.totals) : null;
   const chip = (on: boolean) => `widget-nodrag rounded-sm border px-2 ${large ? "min-h-9 text-sm" : "min-h-7 text-xs"} ${on ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`;
   return (
-    <div className="flex h-full min-h-0 flex-col gap-1" data-testid="oi-explorer">
+    <div className={`flex h-full min-h-0 flex-col gap-1 ${large ? "overflow-y-auto" : ""}`} data-testid="oi-explorer">
       <div role="group" aria-label="OI view" className="flex flex-wrap items-center gap-1">
         {OI_MODES.map((m) => <button key={m.id} type="button" title={m.title} aria-pressed={mode === m.id} onClick={() => setMode(m.id)} className={chip(mode === m.id)}>{m.label}</button>)}
       </div>
-      <div className="min-h-0 flex-1">
+      <div className={large ? "min-h-[380px] flex-1" : "min-h-0 flex-1"}>
         {q.isPending && q.fetchStatus !== "idle" ? <p className="p-3 text-sm text-muted">Loading observations…</p>
           : q.error ? <EmptyState title="Could not load OI for this window">{String((q.error as Error).message)}</EmptyState>
           : !res || res.observations_available === 0 ? <EmptyState title="No observations stored for this expiry yet">Observations are stored each time a chain is fetched.</EmptyState>
@@ -656,9 +708,10 @@ function OiExplorerBody({ large, mode, setMode, win, setWin }: {
           <div title={st.pcrOiChangeNote ?? "Put OI change divided by call OI change"}><span className="text-muted">PCR of OI change </span><span className="num text-paper">{fmt2(st.pcrOiChange)}</span></div>
         </div>
       )}
+      {large && <OiSlotTable newest={newest} />}
       {res && (
         <p className="text-[11px] text-muted" data-testid="oi-window-note">
-          {w.label}: compared with the stored sample at {res.baseline.at ? fmtTimeIST(res.baseline.at) : "—"} IST, now {res.current_at ? fmtTimeIST(res.current_at) : "—"} IST
+          {w.label}: compared with the stored sample at {res.baseline.at ? fmtTimeIST(res.baseline.at) : "—"}, now {res.current_at ? fmtTimeIST(res.current_at) : "—"}
           {res.underlying_change != null && <> · NIFTY {res.underlying_change >= 0 ? "+" : "−"}{fmtPrice(Math.abs(res.underlying_change))}</>}.
           {" "}Samples are stored about once a minute.{st?.pcrOiChangeNote ? ` PCR of OI change: ${st.pcrOiChangeNote}.` : ""}
           {res.warnings.map((x) => <span key={x} className="text-warn"> {x}</span>)}
@@ -694,6 +747,49 @@ export function OiExplorerWidget() {
   );
 }
 
+/** PCR at the ATM strike and over the whole chain, side by side with the strikes in view. */
+export function PcrWidget() {
+  const d = useDash();
+  const atmRows = useMemo(() => d.rows.filter((r) => r.strike === d.atmStrike), [d.rows, d.atmStrike]);
+  const lines = [
+    { id: "atm", label: d.atmStrike == null ? "ATM strike" : `ATM strike ${fmtInt(d.atmStrike)}`, rows: atmRows },
+    { id: "view", label: d.universeLabel, rows: d.view },
+    { id: "all", label: `Overall: all ${d.rows.length} listed strikes`, rows: d.rows },
+  ].map((l) => ({ ...l, t: computeTotals(l.rows) }));
+  const f = (v: number | null) => (v == null ? "—" : v.toFixed(2));
+  return (
+    <ChainGuard>
+      <Body footer={<Meta kind="chain" />}>
+        <div className="h-full overflow-auto" data-testid="pcr-widget">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs text-muted">
+                <th scope="col" className="px-2 py-1 text-left font-medium">Strikes</th>
+                <th scope="col" className="px-2 py-1 text-right font-medium">PCR (OI)</th>
+                <th scope="col" className="px-2 py-1 text-right font-medium">PCR (volume)</th>
+                <th scope="col" className="px-2 py-1 text-right font-medium">Put OI</th>
+                <th scope="col" className="px-2 py-1 text-right font-medium">Call OI</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lines.map((l) => (
+                <tr key={l.id} className="border-t border-rule">
+                  <th scope="row" className="px-2 py-1 text-left font-medium text-paper">{l.label}</th>
+                  <td className="num px-2 py-1 text-right text-paper">{f(pcr(l.t.peOi, l.t.ceOi))}</td>
+                  <td className="num px-2 py-1 text-right">{f(pcr(l.t.peVolume, l.t.ceVolume))}</td>
+                  <td className="num px-2 py-1 text-right">{l.t.peOi == null ? "—" : compactIN(l.t.peOi)}</td>
+                  <td className="num px-2 py-1 text-right">{l.t.ceOi == null ? "—" : compactIN(l.t.ceOi)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="px-2 pt-1 text-[11px] text-muted">PCR = total put ÷ total call. A value is "—" when the data is missing, never zero.</p>
+        </div>
+      </Body>
+    </ChainGuard>
+  );
+}
+
 export interface WidgetDef {
   id: string;
   title: string;
@@ -713,6 +809,7 @@ export const WIDGETS: WidgetDef[] = [
   { id: "oiChangeTotal", title: "Total OI change — calls vs puts", render: () => <OiChangeTotalWidget />, x: 3, y: 21, w: 3, h: 8, minW: 2, minH: 5 },
   { id: "volume", title: "Volume by strike", render: () => <VolumeWidget />, x: 0, y: 29, w: 6, h: 8, minW: 3, minH: 5 },
   { id: "straddle", title: "ATM straddle", render: () => <StraddleWidget />, x: 0, y: 29, w: 4, h: 8, minW: 3, minH: 5 },
+  { id: "pcr", title: "PCR: ATM and overall", render: () => <PcrWidget />, x: 0, y: 29, w: 6, h: 7, minW: 4, minH: 5 },
   { id: "levels", title: "Key levels", render: () => <LevelsWidget />, x: 6, y: 21, w: 6, h: 8, minW: 3, minH: 5 },
   { id: "oiIntraday", title: "Intraday OI change", render: () => <OiIntradayWidget />, x: 0, y: 37, w: 6, h: 12, minW: 4, minH: 7 },
   { id: "oiHeatmap", title: "OI change heatmap", render: () => <OiHeatmapWidget />, x: 6, y: 37, w: 6, h: 12, minW: 4, minH: 7 },
@@ -722,4 +819,7 @@ export const WIDGETS: WidgetDef[] = [
 ];
 
 /** First screen: the nine widgets of the reference layout; the rest are one click away in "Add widget". */
-export const DEFAULT_ACTIVE = ["spot", "oi", "oiChange", "chain", "premium", "decay", "oiTotal", "oiChangeTotal", "levels"];
+export const DEFAULT_ACTIVE = ["spot", "oi", "oiChange", "chain", "premium", "decay", "oiTotal", "oiChangeTotal", "levels", "pcr"];
+
+/** Widgets added after the first release: offered once to layouts saved earlier, so they are not hidden behind "Add widget". */
+export const NEW_DEFAULT_WIDGETS = ["pcr"];

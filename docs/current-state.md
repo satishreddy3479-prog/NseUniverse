@@ -5,6 +5,14 @@ _Last updated: 2026-10-29_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## StockMojo comparison, 29 Oct 2026 (read-only check of the server's stored samples)
+- Our widgets match our own API to the unit (±10 strikes around ATM 22,950: call OI 6.610 Cr, put OI 6.838 Cr, change +33.11 L / +3.95 Cr). StockMojo showed 6.58 / 6.79 Cr and +29.71 L / +3.9 Cr.
+- The gap is in the *current* OI, not the baseline: our OI minus StockMojo's is about 3 L (calls) and 5 L (puts), and the change gap is the same size, so both tools use the same previous-day baseline.
+- The same ±10 strikes held 6.466 / 6.820 Cr in the last in-session sample (15:29 IST) and 6.610 / 6.838 Cr in every sample stored after the close (first at 20:21 IST). OI is revised after the close, so any tool is only comparable at the same timestamp. StockMojo's figures sit between those two moments and its capture time is unknown.
+- Our totals cover ATM ±10 only (the widget says so). The whole chain is 12.95 Cr calls / 16.96 Cr puts, so a tool that sums all strikes shows different totals.
+- Open items: no stored sample at 15:30 itself (sampler's last in-session sample was 15:29); post-close fetches show deep-OTM contracts with OI 0 and LTP 0.0, which is not a real quote.
+- New (29 Oct): the PCR widget (ATM strike, strikes in view, whole chain; shown once to saved layouts), dark change segments in the OI explorer, and a Full-view table of every time slot.
+
 ## OI explorer (29 Oct 2026)
 - The default Analysis widget "Open interest by strike" now carries the explorer (no separate widget to add): modes OI change + total / OI change / Total OI; windows Last 3/5/10/15/30 min, 1/2/3 hr, All; call/put OI, change and PCR for the window; ⤢ Full. Windows compare the newest stored sample with the one that long ago (`/api/oi/change`, baseline `at`), so they need stored samples (about one a minute in market hours). Not yet checked in a live session. The "Sampled live / Sampling delayed / Stored" chip is removed; time-series widgets show only "last sample HH:MM IST".
 

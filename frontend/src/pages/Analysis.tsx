@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GridLayout, useContainerWidth, verticalCompactor, type Layout, type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import { DashProvider, useDash, type Range } from "../components/dashboard/DashContext";
-import { DEFAULT_ACTIVE, WIDGETS, type WidgetDef } from "../components/dashboard/widgets";
+import { DEFAULT_ACTIVE, NEW_DEFAULT_WIDGETS, WIDGETS, type WidgetDef } from "../components/dashboard/widgets";
 import { CommandCenter } from "../components/CommandCenter";
 import { StreamButtons } from "../components/LiveActivity";
 import { Button } from "../components/ui";
@@ -14,6 +14,7 @@ import { useExpiries } from "../lib/hooks";
 import { useLiveSpot } from "../lib/useLive";
 
 const STORAGE_KEY = "nse.analysis.layout.v1";
+const SEEN_KEY = "nse.analysis.seen.v1";
 const COLS = 12;
 const NARROW = 820; // below this width the widgets stack in one full-width column (no dragging)
 const ROW_HEIGHT = 36;
@@ -28,11 +29,24 @@ export function defaultLayout(active: string[]): LayoutItem[] {
   }));
 }
 
+/** Widgets added after a layout was saved are offered once: added to the saved layout the first time, then left to the user. */
+function withNewDefaults(base: SavedLayout): SavedLayout {
+  try {
+    const seen = new Set<string>(JSON.parse(localStorage.getItem(SEEN_KEY) ?? "[]") as string[]);
+    const fresh = NEW_DEFAULT_WIDGETS.filter((id) => !seen.has(id));
+    if (!fresh.length) return base;
+    const active = [...base.active], layout = [...base.layout];
+    for (const id of fresh) if (!active.includes(id)) { active.push(id); layout.push({ ...defaultLayout([id])[0]!, y: 1000 }); }
+    localStorage.setItem(SEEN_KEY, JSON.stringify([...seen, ...fresh]));
+    return { active, layout };
+  } catch { return base; }
+}
+
 export function loadLayout(): SavedLayout {
   const fallback = { active: DEFAULT_ACTIVE, layout: defaultLayout(DEFAULT_ACTIVE) };
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return fallback;
+    if (!raw) return withNewDefaults(fallback);
     const v = JSON.parse(raw) as SavedLayout;
     const known = new Set(WIDGETS.map((w) => w.id));
     const active = (v.active ?? []).filter((id) => known.has(id));
@@ -40,7 +54,7 @@ export function loadLayout(): SavedLayout {
     const layout = (v.layout ?? []).filter((l) => active.includes(l.i));
     // any active widget without a saved box gets its default one
     for (const id of active) if (!layout.some((l) => l.i === id)) layout.push(defaultLayout([id])[0]!);
-    return { active, layout };
+    return withNewDefaults({ active, layout });
   } catch {
     return fallback;
   }
