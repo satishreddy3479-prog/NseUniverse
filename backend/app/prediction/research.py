@@ -55,7 +55,7 @@ from app.prediction.sources.yahoo import SYMBOLS
 from app.prediction.targets import Bar, make_labels
 
 MODEL_VERSION = "3"
-REPORT_SCHEMA = 4  # bump whenever the stored report gains or changes fields, so an older cached report is recomputed
+REPORT_SCHEMA = 5  # bump whenever the stored report gains or changes fields, so an older cached report is recomputed
 INITIAL_TRAIN = 1000
 TEST_SIZE = 250
 HORIZON_N: dict[str, int] = {"T1": 1, "T5": 5}
@@ -65,7 +65,12 @@ BASE_MODELS = ("logit-all", "logit-core", "boost-all")
 ENSEMBLE = "ensemble"
 FRESH_KEYS = ("SPX", "VIX", "BRENT", "DXY", "USDINR", "UST10Y")  # must have a bar dated on/after the reference session
 WINDOW = ((8, 35), (9, 10))  # IST: forecasts are recorded only inside this window
-EXCLUDED = ["news and events (history not yet collected)", "GIFT Nifty (no free history)", "FII/DII cash values (NSE blocks the feed)"]
+EXCLUDED = [
+    "news tone (collection started 29 Oct; too little history to train on)",
+    "scheduled events (shown as risk flags, not model inputs)",
+    "GIFT Nifty (no free history)",
+    "FII/DII cash (NSE refuses automated download; the window is only 7 days)",
+]
 
 
 def _fit_logit(X: Any, y: list[int], p: dict[str, Any], core: tuple[int, ...]) -> Any:

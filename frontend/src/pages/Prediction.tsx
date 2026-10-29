@@ -420,15 +420,17 @@ export default function Prediction() {
               <PostMortem rows={[...d.ledger.recent.T1.map((r) => ({ ...r, hz: "T1" as const })), ...d.ledger.recent.T5.map((r) => ({ ...r, hz: "T5" as const }))]} />
               <CashPanel />
               <FlowsPanel />
-              <Panel title="Models and data">
-                <div className="space-y-1 text-sm">
-                  <p>Data: {d.data.symbol}; {d.data.bars} NIFTY 50 daily bars, {d.data.first} to {d.data.last}. Computed {fmtDateTimeIST(d.computed_at)} (version {d.model_version}).</p>
-                  <p>Protocol: {d.evaluation.scheme}. First {d.evaluation.initial_train} sessions are training only; test windows of {d.evaluation.test_size}.</p>
-                  <p className="text-muted">Not used yet: {d.excluded_inputs.join("; ")}.</p>
-                  <p className="text-muted">T+1 inputs ({d.features.T1.version}): {d.features.T1.names.map((f) => f.replaceAll("_", " ")).join(", ")}.</p>
-                  <p className="text-muted">T+5 inputs ({d.features.T5.version}): {d.features.T5.names.map((f) => f.replaceAll("_", " ")).join(", ")}.</p>
-                </div>
-              </Panel>
+              <section aria-label="Models and data" className="rounded-xl border border-rule bg-slate px-4 py-3 text-sm" data-testid="models-data">
+                <p className="text-muted">
+                  Data: NIFTY 50 {d.data.first} to {d.data.last} ({d.data.bars} sessions) plus global, sector and NSE series. Computed {fmtDateTimeIST(d.computed_at)}. Models trained on the early half, scored on the later half ({d.evaluation.test_size}-session windows).
+                </p>
+                <p className="mt-1 text-muted">Not used by the models: {d.excluded_inputs.join("; ")}.</p>
+                <details className="mt-1">
+                  <summary className="cursor-pointer text-info">Show every model input</summary>
+                  <p className="mt-2 text-xs text-muted">T+1 ({d.features.T1.version}): {d.features.T1.names.map((f) => f.replaceAll("_", " ")).join(", ")}.</p>
+                  <p className="mt-2 text-xs text-muted">T+5 ({d.features.T5.version}): {d.features.T5.names.map((f) => f.replaceAll("_", " ")).join(", ")}.</p>
+                </details>
+              </section>
             </>
           );
         })()}
