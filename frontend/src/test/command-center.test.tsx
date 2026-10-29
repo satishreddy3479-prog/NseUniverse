@@ -164,6 +164,42 @@ describe("Market Sentiment Command Center", () => {
     expect(screen.getByTestId("cc-vwap")).toHaveTextContent("not available (no futures feed)");
   });
 
+  it("shows implied volatility with its assumptions, and the reason when it cannot be computed", async () => {
+    const volatility = { status: "ok", model: "Black-76; forward from put-call parity", rate_assumed: 0.06, time_to_expiry_days: 5.2, data: "LIVE", forward: 22703.85, forward_source: "put-call parity at 22700",
+      atm_strike: 22700, atm_iv: 16.54, skew_25d_put_minus_call: 1.29, iv_change_pts: { "5": 0.1, "15": -0.4, "30": null }, realized_vol_60m: 12.1, iv_minus_realized: 4.4,
+      expected_move_straddle_pts: 358, expected_move_iv_1sd_pts: 450, interpretation: ["Underlying rising while IV falls (calls being repriced lower in volatility: a calm advance)."],
+      rows: [{ strike: 22700, side: "CE", price: 190, otm: true, iv: 16.5, delta: 0.52, gamma: 0.00045, theta_day: -18.2, vega_pt: 11.9 }] };
+    mock({ ...base, volatility } as never);
+    renderCC();
+    const box = within(await screen.findByTestId("cc-vol"));
+    expect(box.getByText("16.54%")).toBeInTheDocument();
+    expect(box.getByText(/\+0.10 \/ −0.40 \/ — pts/)).toBeInTheDocument();
+    expect(box.getByText(/Implied, not a forecast/)).toBeInTheDocument();
+    expect(box.getByText(/not validated against a broker reference/)).toBeInTheDocument();
+    expect(within(screen.getByTestId("cc-greeks")).getByText("0.520")).toBeInTheDocument();
+  });
+
+  it("says why implied volatility is missing instead of showing numbers", async () => {
+    mock({ ...base, volatility: { status: "not computed: less than 15 minutes to expiry (or expired)" } } as never);
+    renderCC();
+    expect(await screen.findByTestId("cc-vol-missing")).toHaveTextContent("not computed: less than 15 minutes to expiry");
+  });
+
+  it("shows stock participation: VWAP, opening range and breadth divergence", async () => {
+    const stocks = JSON.parse(JSON.stringify(standin)) as MarketSummary;
+    stocks.participation = {
+      above_vwap: { above: 3, below: 3, at: 1, covered: 7, missing: 1, pct_above: 42.9 },
+      opening_range: { above_high: 1, below_low: 1, inside: 1, covered: 3, missing: 5, pct_above_high: 33.3, pct_below_low: 33.3, minutes: 15 },
+      momentum: { window_minutes: 15, breadth_momentum: -0.4, index_move_pct: 0.3, state: "bearish_divergence" },
+    };
+    mock({ ...base, stocks });
+    renderCC();
+    const box = within(await screen.findByTestId("cc-participation"));
+    expect(box.getByText(/Above own day VWAP: 42.9% \(3 of 7\) · 1 without a VWAP/)).toBeInTheDocument();
+    expect(box.getByText(/5 without a recorded range/)).toBeInTheDocument();
+    expect(box.getByText(/Breadth momentum \(15 min\): −0.40. Index rising while fewer stocks take part \(bearish divergence\)/)).toBeInTheDocument();
+  });
+
   it("explains that futures are not subscribed instead of inventing flow", async () => {
     const stocks = JSON.parse(JSON.stringify(standin)) as MarketSummary;
     stocks.flow!.futures = null;

@@ -155,6 +155,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         app.state.market = market
         stream.on_internal = market.on_tick
         intraday.market = market
+        intraday.risk_free_rate = settings.risk_free_rate
         if settings.breadth_enabled:
             market_ref["m"] = market
             market.start()

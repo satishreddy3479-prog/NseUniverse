@@ -487,6 +487,7 @@ export interface IntradaySummary {
   stocks: MarketSummary | null;
   structure?: PriceStructure;
   vwap?: FutureVwap | null;
+  volatility?: VolatilityBlock;
   narrative: string;
   context: { question: string; answer: string }[];
   levels: IntradayLevel[];
@@ -523,9 +524,21 @@ export interface PriceStructure {
   as_of: string; data: "LIVE" | "HISTORICAL"; completed_minutes: number; candle_note: string; ranges: OpeningRange[]; breakout: BreakoutState | null;
   structure: { label: string; last_swing_high: number | null; last_swing_low: number | null; break: string | null; swing_rule: string } | null;
 }
+export interface GreekRow { strike: number; side: "CE" | "PE"; price: number | null; otm: boolean; iv: number | null; delta: number | null; gamma: number | null; theta_day: number | null; vega_pt: number | null }
+export interface VolatilityBlock {
+  status: string; model?: string; rate_assumed?: number; dividends?: string; time_to_expiry_days?: number | null; data?: "LIVE" | "HISTORICAL"; as_of?: string;
+  forward?: number; forward_source?: string; atm_strike?: number; atm_iv?: number | null; atm_call_iv?: number | null; atm_put_iv?: number | null; near_atm_iv?: number | null;
+  skew_25d_put_minus_call?: number | null; rows?: GreekRow[]; straddle?: number | null; expected_move_straddle_pts?: number | null; expected_move_iv_1sd_pts?: number | null;
+  expected_move_note?: string; iv_change_pts?: Record<string, number | null>; realized_vol_60m?: number | null; iv_minus_realized?: number | null; interpretation?: string[];
+}
 export interface FutureVwap {
   price: number; vwap: number; distance_pts: number; distance_pct: number; distance_atr: number | null; side: "above" | "below" | "at";
   slope_pts_per_15m: number | null; crosses: number; minutes_above: number; minutes_below: number; events: { event: string; minute: number }[]; samples: number; note: string;
+}
+export interface Participation {
+  above_vwap: { above: number; below: number; at: number; covered: number; missing: number; pct_above: number | null };
+  opening_range: { above_high: number; below_low: number; inside: number; covered: number; missing: number; pct_above_high: number | null; pct_below_low: number | null; minutes: number } | null;
+  momentum: { window_minutes: number; breadth_momentum: number | null; index_move_pct: number | null; state: string };
 }
 export interface FlowStats {
   symbol: string; estimated: boolean; since: string | null; buy_volume: number; sell_volume: number; unclassified_volume: number;
@@ -564,6 +577,7 @@ export interface MarketSummary {
   };
   nifty500: { breadth: BreadthBlock };
   flow?: FlowBlock;
+  participation?: Participation;
   sectors: { nifty50: SectorRowT[]; nifty500: SectorRowT[]; rotation: { sector: string; from_rank: number; to_rank: number; direction: string }[] };
 }
 export interface IntradayScoreRow { sample_utc: string; spot: number | null; score: number | null; label: string; coverage: number; regime: string | null }

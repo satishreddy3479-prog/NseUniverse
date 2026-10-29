@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 
 from app.logging_setup import log_event
 from app.market import metrics as m
+from app.market import participation as part
 from app.market import technical as tech
 from app.market import vwap as vwapmod
 from app.market import weights as wmod
@@ -50,6 +51,7 @@ INDEX_KEY = "nse_cm|Nifty 50"
 FUT_SYMBOL = "FUT:NIFTY"
 LISTS_AT, TOKENS_AT, BHAV_AT = time(7, 45), time(8, 5), time(19, 30)
 RETRY = timedelta(minutes=30)
+OR_MINUTES = 15  # opening range used for stock participation
 STALE_WEIGHTS_DAYS = (
     60  # NSE reviews the index in March and September; weights older than this are flagged
 )
@@ -93,6 +95,7 @@ class MarketService:
         self._roles: tuple[float, dict[str, str]] | None = None
         self._base_cache: tuple[str, dict[str, Any]] | None = None
         self.future_note = "not looked up yet"
+        self._part_cache: tuple[str, dict[str, Any]] | None = None
 
     # ----------------------------------------------------------------------------- universe
     def universe(self, index: str) -> list[m.Stock]:
@@ -331,6 +334,61 @@ class MarketService:
             },
         }
 
+    def participation(
+        self,
+        now: datetime,
+        u50: list[m.Stock],
+        chg50: dict[str, float],
+        b50: m.Breadth,
+        idx: float | None,
+    ) -> dict[str, Any]:
+        """Share of NIFTY 50 stocks above their day VWAP and opening range, breadth momentum and price/breadth divergence."""
+        t = now.astimezone(IST)
+        raw = self._ticks()
+        by_token = {tk.token: sym for sym, tk in self.token_map().items()}
+        pairs: dict[str, tuple[float | None, float | None]] = {
+            s_.symbol: (None, None) for s_ in u50
+        }
+        for lt in raw.values():
+            sym = (
+                by_token.get(lt.instrument_token)
+                if lt.exchange_segment == "nse_cm" and lt.kind == "scrip"
+                else None
+            )
+            if sym in pairs and (now - lt.received_at).total_seconds() <= m.MAX_TICK_AGE_S:
+                pairs[sym] = (lt.ltp, lt.avg_price)
+        stamp = t.strftime("%Y%m%d%H%M")
+        if self._part_cache is None or self._part_cache[0] != stamp:
+            day_start = datetime.combine(t.date(), SESSION_OPEN, IST)
+            or_changes: dict[str, list[float]] = {}
+            for at, pl in self.store.samples_since(
+                "stocks50", day_start.astimezone(UTC).isoformat()
+            ):
+                if (
+                    datetime.fromisoformat(at).astimezone(IST) - day_start
+                ).total_seconds() < OR_MINUTES * 60:
+                    for r in pl.get("rows", []):
+                        if r[1] is not None:
+                            or_changes.setdefault(r[0], []).append(float(r[1]))
+            then = None
+            for at, pl in self.store.samples_since(
+                "nifty50", (now - timedelta(minutes=15 + 3)).astimezone(UTC).isoformat()
+            ):
+                if datetime.fromisoformat(at) <= now - timedelta(minutes=15):
+                    then = pl
+            self._part_cache = (stamp, {"or": or_changes, "then": then})
+        c = self._part_cache[1]
+        elapsed = self.elapsed_minutes(now)
+        then = c["then"]
+        return {
+            "above_vwap": part.above_vwap(pairs),
+            "opening_range": None if elapsed < OR_MINUTES else part.opening_range_status({x.symbol: c["or"].get(x.symbol, []) for x in u50}, chg50) | {"minutes": OR_MINUTES},
+            "momentum": part.momentum_and_divergence(
+                part.balance(b50.advancing, b50.declining), None if not then else part.balance(then.get("advancing"), then.get("declining")),
+                idx, None if not then else then.get("idx"),
+            ),
+        }  # fmt: skip
+
     def vwap_block(self, now: datetime) -> dict[str, Any] | None:
         """Day-VWAP description of the NIFTY future from today's minute recordings plus the live tick."""
         t = now.astimezone(IST)
@@ -506,6 +564,7 @@ class MarketService:
             },
             "nifty500": {"breadth": b500.public()},
             "flow": self.flow_summary(now, elapsed, ticks, table),
+            "participation": self.participation(now, u50, chg50, b50, idx),
             "sectors": {
                 "nifty50": [r.public() for r in sec50],
                 "nifty500": [r.public() for r in sec500],

@@ -297,6 +297,24 @@ function SourceChecklist({ s }: { s: MarketSummary["sources"] }) {
   );
 }
 
+const DIVERGENCE_TEXT: Record<string, string> = {
+  bearish_divergence: "Index rising while fewer stocks take part (bearish divergence)",
+  bullish_divergence: "Index falling while more stocks recover (bullish divergence)",
+  confirmed: "Index and breadth moving together",
+  no_clear_index_move: "No clear index move in the window",
+};
+
+function Participation({ p }: { p: NonNullable<MarketSummary["participation"]> }) {
+  const mo = p.momentum;
+  return (
+    <div className="mt-2 space-y-1 border-t border-rule/50 pt-2 text-muted" data-testid="cc-participation">
+      <p className="num">Above own day VWAP: {p.above_vwap.pct_above == null ? MISSING : `${p.above_vwap.pct_above}% (${p.above_vwap.above} of ${p.above_vwap.covered})`}{p.above_vwap.missing > 0 ? ` · ${p.above_vwap.missing} without a VWAP` : ""}</p>
+      <p className="num">{p.opening_range == null ? "Opening range still forming." : `Above ${p.opening_range.minutes}-min opening-range high: ${p.opening_range.above_high} · below low: ${p.opening_range.below_low} · inside: ${p.opening_range.inside} (${p.opening_range.missing} without a recorded range)`}</p>
+      <p className="num">Breadth momentum ({mo.window_minutes} min): {mo.breadth_momentum == null ? MISSING : `${mo.breadth_momentum >= 0 ? "+" : "−"}${Math.abs(mo.breadth_momentum).toFixed(2)}`}. {DIVERGENCE_TEXT[mo.state] ?? "Not enough history yet."}</p>
+    </div>
+  );
+}
+
 function Breadth({ d }: { d: IntradaySummary }) {
   const m = d.stocks;
   const q = m ? QUALITY[m.nifty50.quality.state] ?? QUALITY.unknown! : null;
@@ -321,6 +339,7 @@ function Breadth({ d }: { d: IntradaySummary }) {
             {m.nifty50.volume?.weighted_rv != null && (
               <p className="num mt-1 text-muted">Volume {m.nifty50.volume.weighted_rv.toFixed(2)}x normal so far ({m.nifty50.volume.reference === "profile" ? "against the typical intraday profile" : "linear time reference: early volume is front-loaded, so this can show thin but not confirm strong"}).</p>
             )}
+            {m.participation && <Participation p={m.participation} />}
           </div>
           <details className="mt-2 text-xs text-muted"><summary className="cursor-pointer">Data sources</summary><div className="mt-1"><SourceChecklist s={m.sources} /></div></details>
         </>
@@ -450,6 +469,44 @@ function FlowCard({ d }: { d: IntradaySummary }) {
             </table>
             {fl.heavy5.stocks.some((s) => !s.technical.enough_history) && <p className="mt-1 text-[11px] text-muted">Technical reads use NSE daily files; the 50-day trend needs 50 sessions of history, which is still being collected.</p>}
           </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function Volatility({ d }: { d: IntradaySummary }) {
+  const v = d.volatility;
+  const ok = v?.status === "ok" && v.atm_iv != null;
+  const chg = (k: string) => { const x = v?.iv_change_pts?.[k]; return x == null ? MISSING : `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(2)}`; };
+  const near = (v?.rows ?? []).filter((r) => r.otm && r.iv != null && Math.abs(r.strike - (v?.atm_strike ?? 0)) <= 100);
+  return (
+    <Card title="Implied volatility & Greeks" className="lg:col-span-6" right={<span className="text-[11px] text-muted">{v?.data ?? "no data"} · computed from option prices</span>}>
+      {!ok ? <p className="text-sm text-muted" data-testid="cc-vol-missing">{v ? v.status : "Not available."}</p> : (
+        <div className="space-y-3 text-xs" data-testid="cc-vol">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
+            <div><div className="text-[11px] text-muted">ATM IV (strike {v.atm_strike})</div><div className="num text-sm font-semibold text-paper">{v.atm_iv?.toFixed(2)}%</div></div>
+            <div><div className="text-[11px] text-muted">IV change 5 / 15 / 30 min</div><div className="num text-paper">{chg("5")} / {chg("15")} / {chg("30")} pts</div></div>
+            <div><div className="text-[11px] text-muted">Put − call IV (≈25Δ)</div><div className="num text-paper">{v.skew_25d_put_minus_call == null ? MISSING : `${v.skew_25d_put_minus_call.toFixed(2)} pts`}</div></div>
+            <div><div className="text-[11px] text-muted">IV − realised (60 min)</div><div className="num text-paper">{v.iv_minus_realized == null ? MISSING : `${v.iv_minus_realized >= 0 ? "+" : "−"}${Math.abs(v.iv_minus_realized).toFixed(1)} pts`}</div></div>
+          </div>
+          <div className="text-muted">Implied move to expiry ({v.time_to_expiry_days?.toFixed(1)} days): ATM straddle <span className="num text-paper">{v.expected_move_straddle_pts?.toFixed(0) ?? MISSING} pts</span> · one standard deviation from IV <span className="num text-paper">{v.expected_move_iv_1sd_pts?.toFixed(0) ?? MISSING} pts</span>. Implied, not a forecast.</div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[26rem] text-xs" data-testid="cc-greeks">
+              <thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Strike</th><th className="py-1 font-normal">Side</th><th className="py-1 text-right font-normal">IV %</th><th className="py-1 text-right font-normal">Delta</th><th className="py-1 text-right font-normal">Gamma</th><th className="py-1 text-right font-normal">Theta/day</th><th className="py-1 text-right font-normal">Vega/pt</th></tr></thead>
+              <tbody>
+                {near.map((r) => (
+                  <tr key={`${r.strike}${r.side}`} className="border-t border-rule/50">
+                    <td className="num py-1 text-paper">{r.strike}</td><td className="py-1 text-muted">{r.side}</td>
+                    <td className="num py-1 text-right">{r.iv?.toFixed(2)}</td><td className="num py-1 text-right">{r.delta?.toFixed(3) ?? MISSING}</td>
+                    <td className="num py-1 text-right">{r.gamma?.toFixed(5) ?? MISSING}</td><td className="num py-1 text-right">{r.theta_day?.toFixed(2) ?? MISSING}</td><td className="num py-1 text-right">{r.vega_pt?.toFixed(2) ?? MISSING}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {(v.interpretation ?? []).map((t) => <p key={t} className="text-muted">Context: {t}</p>)}
+          <p className="text-[11px] text-muted">{v.model}. Forward {v.forward?.toFixed(2)} ({v.forward_source}). Discount rate assumed {((v.rate_assumed ?? 0) * 100).toFixed(1)}%; not validated against a broker reference.</p>
         </div>
       )}
     </Card>
@@ -702,6 +759,7 @@ export function CommandCenter({ expiry }: { expiry: string | null }) {
             <Breadth d={d} />
             <Heavyweights d={d} />
             <Breakout d={d} />
+            <Volatility d={d} />
             <FlowCard d={d} />
             <Sectors d={d} />
             <Context d={d} />

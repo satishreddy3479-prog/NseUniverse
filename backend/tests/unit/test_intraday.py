@@ -408,6 +408,13 @@ def test_full_session_is_scored_recorded_once_and_explained(tmp_path: Path) -> N
     assert 1 <= len(out["scenarios"]) <= 3 and all(x["probability"] is None for x in out["scenarios"])
     assert len(out["scenarios"]) + len(out["scenarios_ruled_out"]) == 3  # every scenario is either shown or explained away
     assert out["narrative"].startswith("Current assessment:")
+    vol = out["volatility"]  # REAL captured chain: implied volatility must come out as a plausible NIFTY number
+    # captured 28 Oct chain, 3 Nov expiry: ATM IV about 16.5 %, forward 22703.85 from put-call parity at 22700
+    assert vol["status"] == "ok" and vol["atm_iv"] == pytest.approx(16.54, abs=0.1) and vol["forward"] == pytest.approx(22703.85, abs=0.5)
+    assert vol["forward_source"] == "put-call parity at 22700" and vol["skew_25d_put_minus_call"] > 0
+    # the straddle should be close to 0.8 of the one-standard-deviation move implied by the same IV
+    assert vol["expected_move_straddle_pts"] / vol["expected_move_iv_1sd_pts"] == pytest.approx(0.8, abs=0.03)
+    assert vol["data"] in ("LIVE", "HISTORICAL") and set(vol["iv_change_pts"]) == {"5", "15", "30"}
     assert svc.store.count() == 1
     svc._cache.clear()
     svc.summary(EXP)

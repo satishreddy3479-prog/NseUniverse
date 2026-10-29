@@ -20,6 +20,7 @@ from statistics import pstdev
 from typing import Any
 
 from app.intraday import price_structure
+from app.intraday import volatility as volmod
 from app.intraday.features import (
     CLOSE,
     IST,
@@ -110,6 +111,7 @@ class IntradayService:
         clock: Any = None,
         market: Any = None,
     ) -> None:
+        self.risk_free_rate = volmod.DEFAULT_RATE  # assumed discount rate (RISK_FREE_RATE); affects IV only through e^{-rT}
         self.market = market  # optional MarketService: stock breadth, heavyweights, sectors
         self.obs, self.history, self.flows, self.store = observations, history, flows, store
         self.underlying = underlying
@@ -441,6 +443,8 @@ class IntradayService:
         mark("record")
         result["structure"], result["vwap"] = self._structure(mk, pts, now, live and age is not None and age <= STRUCTURE_MAX_AGE_S)
         mark("structure")
+        result["volatility"] = self._volatility(expiry, now, latest, session_samples, pts, live)
+        mark("volatility")
         result["compute_ms"] = round((_time.perf_counter() - t0) * 1000, 1)
         result["timings_ms"] = marks
         return result
@@ -457,6 +461,44 @@ class IntradayService:
             stamp = now.astimezone(UTC).replace(second=0, microsecond=0).isoformat()
             self.market.store.record_sample("breakout", stamp, {"or": b["or_minutes"], "dir": b["direction"], "status": b["status"], "q": b["quality"]["score"], "ext": b["extension_ow"], "px": b["last_price"]})  # fmt: skip
         return st, vb
+
+    def _surface_of(self, sample: Any, expiry_d: date, at: datetime) -> dict[str, Any]:
+        prices = {k: c.ltp for k, c in self.obs.contracts(sample.values_from).items()}
+        return volmod.surface(prices, sample.spot, expiry_d, at, self.risk_free_rate)
+
+    def _volatility(self, expiry: str, now: datetime, latest: Any, session_samples: list[Any], pts: list[Any], live: bool) -> dict[str, Any]:
+        """ATM IV, skew, Greeks and expected move from the latest stored chain; IV change against earlier samples of the same session."""
+        if latest is None:
+            return {"status": "not computed: no option-chain sample"}
+        try:
+            exp_d = date.fromisoformat(expiry)
+        except ValueError:
+            return {"status": "not computed: bad expiry"}
+        at = latest.received_at
+        now_s = self._surface_of(latest, exp_d, at)
+        out: dict[str, Any] = now_s | {"data": "LIVE" if live else "HISTORICAL", "as_of": at.isoformat()}
+        if now_s.get("status") != "ok" or now_s.get("atm_iv") is None:
+            return out
+        changes: dict[str, Any] = {}
+        spot_chg = straddle_chg = None
+        for mins in (5, 15, 30):
+            ref = next((x for x in reversed(session_samples) if x.received_at <= at - timedelta(minutes=mins)), None)
+            if ref is None or (at - timedelta(minutes=mins) - ref.received_at) > timedelta(minutes=3) or ref.spot is None:
+                changes[str(mins)] = None
+                continue
+            sf = self._surface_of(ref, exp_d, ref.received_at)
+            iv0 = sf.get("atm_iv") if sf.get("status") == "ok" else None
+            changes[str(mins)] = None if iv0 is None else round(now_s["atm_iv"] - iv0, 3)
+            if mins == 15 and iv0 is not None and latest.spot is not None:
+                spot_chg = (latest.spot / ref.spot - 1) * 100
+                st0, st1 = sf.get("straddle"), now_s.get("straddle")
+                straddle_chg = None if not st0 or st1 is None else (st1 / st0 - 1) * 100
+        out["iv_change_pts"] = changes
+        rv = volmod.realized_annualised([(p.at, p.spot) for p in pts if p.at >= at - timedelta(minutes=60)])
+        out["realized_vol_60m"] = None if rv is None else round(rv, 2)
+        out["iv_minus_realized"] = None if rv is None else round(now_s["atm_iv"] - rv, 2)
+        out["interpretation"] = volmod.interpret(spot_chg, changes.get("15"), straddle_chg) if live else []
+        return out
 
     def _ml_status(self, complete_sessions: int, sessions_with_samples: int) -> dict[str, Any]:
         """Where the intraday model effort stands, from the labelled sessions actually stored."""

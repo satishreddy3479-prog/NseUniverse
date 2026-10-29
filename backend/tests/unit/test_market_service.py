@@ -8,7 +8,7 @@ Kotak tokens and live ticks are stand-ins (no stock ticks have been captured yet
 from __future__ import annotations
 
 import sqlite3
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -520,3 +520,48 @@ def test_official_weights_move_with_price_until_the_next_official_file(tmp_path:
     assert (svc.weights_now() or ({}, "", "", "x"))[3] is None
     src = svc.sources(NOW)["weights"]
     assert src["stale"] is False and src["age_days"] == 0 and src["approximate"] is False
+
+
+# ------------------------------------------------------------------------------------ participation
+
+
+def test_participation_pure_functions_match_hand_counts() -> None:
+    from app.market import participation as pt
+
+    v = pt.above_vwap({"A": (101, 100), "B": (99, 100), "C": (100, 100), "D": (None, 100), "E": (50, 0)})
+    assert (v["above"], v["below"], v["at"], v["covered"], v["missing"], v["pct_above"]) == (1, 1, 1, 3, 2, 33.3)  # D has no price, E no VWAP
+    rng = [0.1, 0.3, 0.2, 0.0, 0.1]  # opening-range high 0.3, low 0.0
+    o = pt.opening_range_status({"A": rng, "B": rng, "C": rng, "D": rng, "E": [0.1] * 2}, {"A": 0.5, "B": -0.2, "C": 0.2, "D": None, "E": 9})
+    assert (o["above_high"], o["below_low"], o["inside"], o["missing"]) == (1, 1, 1, 2)  # D has no price, E too few samples
+    assert pt.balance(6, 2) == 0.5 and pt.balance(0, 0) is None and pt.balance(None, 3) is None
+    # index +0.3 % while the advance/decline balance fell 0.6 -> 0.2: fewer stocks take part
+    assert pt.momentum_and_divergence(0.2, 0.6, 0.5, 0.2)["state"] == "bearish_divergence"
+    assert pt.momentum_and_divergence(0.6, 0.2, -0.1, 0.3)["state"] == "bullish_divergence"
+    assert pt.momentum_and_divergence(0.6, 0.2, 0.9, 0.5)["state"] == "confirmed"
+    assert pt.momentum_and_divergence(0.2, 0.1, 0.12, 0.1)["state"] == "no_clear_index_move"
+    assert pt.momentum_and_divergence(None, 0.1, 0.5, 0.1)["state"] == "unknown"
+
+
+def test_summary_carries_participation_from_stock_vwap_and_recorded_opening_range(tmp_path: Path) -> None:
+    px = {"ADANIENT": 102.0, "ADANIPORTS": 101.0, "APOLLOHOSP": 101.0, "ASIANPAINT": 99.0, "AXISBANK": 101.5, "BSE": 101.0, "BAJAJ-AUTO": 98.0, "BAJFINANCE": 100.5}
+    svc = build(tmp_path, px)
+    atp = {"ADANIENT": 101.0, "ADANIPORTS": 101.5, "APOLLOHOSP": 101.0, "ASIANPAINT": 100.0, "AXISBANK": 100.0, "BSE": 100.0, "BAJAJ-AUTO": 99.0, "BAJFINANCE": None}
+    book = svc._ticks()
+    for sym, a in atp.items():
+        key = f"nse_cm|{TOKENS[sym]}"
+        book[key] = book[key].model_copy(update={"avg_price": a})
+    day = datetime(2026, 10, 29, 9, 15, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+    ranges = {"ADANIENT": (0.0, 1.0), "ASIANPAINT": (-0.5, 0.5), "AXISBANK": (0.0, 2.0)}  # sampled change % over the first 10 minutes
+    for i in range(10):
+        at = (day + timedelta(minutes=i)).astimezone(UTC).isoformat()
+        svc.store.record_sample("stocks50", at, {"rows": [[sym, lo + (hi - lo) * i / 9, 10] for sym, (lo, hi) in ranges.items()]})
+    svc.store.record_sample("nifty50", (NOW - timedelta(minutes=16)).isoformat(), {"advancing": 5, "declining": 3, "idx": 0.2})
+    p = svc.summary(NOW)["participation"]
+    # above: ADANIENT, AXISBANK, BSE; below: ADANIPORTS, ASIANPAINT, BAJAJ-AUTO; at: APOLLOHOSP; BAJFINANCE has no VWAP
+    assert (p["above_vwap"]["above"], p["above_vwap"]["below"], p["above_vwap"]["at"], p["above_vwap"]["missing"], p["above_vwap"]["pct_above"]) == (3, 3, 1, 1, 42.9)
+    # current changes: ADANIENT +2 (> 1.0 high), ASIANPAINT -1 (< -0.5 low), AXISBANK +1.5 (inside 0..2); five stocks have no recorded range
+    o = p["opening_range"]
+    assert (o["above_high"], o["below_low"], o["inside"], o["missing"], o["minutes"]) == (1, 1, 1, 5, 15)
+    # balance now (6 up, 2 down) = 0.5; then (5, 3) = 0.25; index now +1.0 vs +0.2 then
+    m = p["momentum"]
+    assert m["breadth_momentum"] == 0.25 and m["index_move_pct"] == 0.8 and m["state"] == "confirmed"
