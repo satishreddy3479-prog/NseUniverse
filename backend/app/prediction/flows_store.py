@@ -32,6 +32,10 @@ CREATE TABLE IF NOT EXISTS attempts (
   kind TEXT NOT NULL, session TEXT NOT NULL, status INTEGER NOT NULL, note TEXT, at_utc TEXT NOT NULL,
   PRIMARY KEY (kind, session)
 );
+CREATE TABLE IF NOT EXISTS runs (
+  component TEXT NOT NULL, at_utc TEXT NOT NULL, trigger TEXT NOT NULL, ok INTEGER NOT NULL,
+  newest_session TEXT, note TEXT
+);
 CREATE TRIGGER IF NOT EXISTS raw_no_update BEFORE UPDATE ON raw_files BEGIN SELECT RAISE(ABORT, 'raw files are never changed'); END;
 CREATE TRIGGER IF NOT EXISTS raw_no_delete BEFORE DELETE ON raw_files BEGIN SELECT RAISE(ABORT, 'raw files are never deleted'); END;
 CREATE TRIGGER IF NOT EXISTS part_no_update BEFORE UPDATE ON participant BEGIN SELECT RAISE(ABORT, 'stored values are never changed'); END;
@@ -76,6 +80,29 @@ class FlowsStore:
             days = [r[0] for r in self._db.execute("SELECT DISTINCT session FROM participant WHERE kind=? ORDER BY session DESC LIMIT ?", (kind, limit))]
         rows = self.participant_rows(kind)
         return [{"session": d, "participants": {p: m for p, m in rows[date.fromisoformat(d)].items() if p != "TOTAL"}} for d in days if date.fromisoformat(d) in rows]
+
+    def record_run(self, component: str, trigger: str, ok: bool, newest_session: str | None, note: str | None, now: datetime | None = None) -> None:
+        """One check of one data source: when, auto or manual, whether it worked, and what it found."""
+        with self._lock:
+            self._db.execute("INSERT INTO runs VALUES (?,?,?,?,?,?)", (component, (now or datetime.now(UTC)).isoformat(), trigger, 1 if ok else 0, newest_session, note))
+            self._db.commit()
+
+    def last_runs(self) -> dict[str, dict[str, Any]]:
+        """Per component: the last attempt, the last successful automatic check and the last successful manual one."""
+        out: dict[str, dict[str, Any]] = {}
+        with self._lock:
+            comps = [r[0] for r in self._db.execute("SELECT DISTINCT component FROM runs")]
+            for c in comps:
+                out[c] = {
+                    "last": self._last_run(c, ""),
+                    "last_auto_ok": self._last_run(c, "AND ok=1 AND trigger='auto'"),
+                    "last_manual_ok": self._last_run(c, "AND ok=1 AND trigger='manual'"),
+                }
+        return out
+
+    def _last_run(self, component: str, where: str) -> dict[str, Any] | None:
+        r = self._db.execute(f"SELECT at_utc, trigger, ok, newest_session, note FROM runs WHERE component=? {where} ORDER BY at_utc DESC LIMIT 1", (component,)).fetchone()  # noqa: S608 - fixed fragments only
+        return None if r is None else {"at": r[0], "trigger": r[1], "ok": bool(r[2]), "newest_session": r[3], "note": r[4]}
 
     def attempted(self, kind: str, session: date) -> int | None:
         with self._lock:
@@ -185,5 +212,6 @@ class FlowsStore:
                 last_seen = self._db.execute("SELECT MAX(first_seen_utc) FROM raw_files WHERE kind=?", (k,)).fetchone()[0]
                 kinds[k] = {"first": r[0], "last": r[1], "files": r[2], "not_published_404": miss, "last_stored_utc": last_seen}
             r = self._db.execute("SELECT MIN(session), MAX(session), COUNT(DISTINCT session) FROM cash_flows").fetchone()
-            kinds["fii_dii_cash"] = {"first": r[0], "last": r[1], "files": r[2], "not_published_404": 0, "last_stored_utc": None}
+            seen = self._db.execute("SELECT MAX(first_seen_utc) FROM cash_flows").fetchone()[0]
+            kinds["fii_dii_cash"] = {"first": r[0], "last": r[1], "files": r[2], "not_published_404": 0, "last_stored_utc": seen}
         return kinds

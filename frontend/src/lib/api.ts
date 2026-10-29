@@ -82,6 +82,7 @@ export const api = {
       `/api/oi/heatmap?expiry=${encodeURIComponent(expiry)}&side=${side}&baseline=${baseline}&strikes=${strikes}`,
     ),
   storageStatus: () => request<StorageStatus>("/api/storage/status"),
+  predictionRecompute: (model: "T1" | "T5" | "all") => request<PredictionSummary>(`/api/prediction/summary/recompute?model=${model}`, { method: "POST" }),
   predictionSummary: () => request<PredictionSummary>("/api/prediction/summary"),
   intradayResearch: (horizon: number) => request<ResearchReport>(`/api/intraday/research?horizon=${horizon}`),
   intradayReplaySessions: () => request<ReplaySessions>("/api/intraday/replay"),

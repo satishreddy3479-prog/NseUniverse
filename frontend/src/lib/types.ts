@@ -410,6 +410,8 @@ export type PredictionSummary =
   | { ready: false; reason: string; computing?: boolean }
   | {
       ready: true;
+      computing?: boolean;
+      runs?: Record<string, { last_auto?: { at: string }; last_manual?: { at: string } }>;
       generated_at: string;
       computed_at: string;
       model_version: string;
@@ -424,9 +426,14 @@ export type PredictionSummary =
 export interface FlowsCoverage { first: string | null; last: string | null; files: number; not_published_404: number; last_stored_utc: string | null }
 export interface FlowsStatus {
   enabled: boolean; running: boolean; progress: string; blocked: string | null; cash_note: string | null; source: string;
-  last_run: { requests: number; stored: number; missing: number; errors: number; rejected: string[]; cash_new?: number } | null;
+  last_run: { requests: number; stored: number; missing: number; errors: number; rejected: string[]; cash_new?: number; trigger?: string } | null;
   coverage: Record<"fao_participant_oi" | "fao_participant_vol" | "fii_dii_cash", FlowsCoverage>;
+  expected_session?: string;
+  missing_expected?: string[];
+  last_attempt_utc?: string | null;
+  components?: Record<string, { last: FlowsRun | null; last_auto_ok: FlowsRun | null; last_manual_ok: FlowsRun | null }>;
 }
+export interface FlowsRun { at: string; trigger: string; ok: boolean; newest_session: string | null; note: string | null }
 
 export interface FlowsDay { session: string; participants: Record<string, Record<string, number>> }
 export interface FlowsLatest { open_interest: FlowsDay[]; volume: FlowsDay[] }

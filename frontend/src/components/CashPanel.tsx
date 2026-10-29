@@ -3,11 +3,12 @@ import { useState } from "react";
 import { ApiError, api } from "../lib/api";
 import { fmtInt } from "../lib/format";
 import { Button, Panel } from "./ui";
+import { FlowsUpdateLoader } from "./FlowsUpdate";
 
 const tone = (v: number) => (v > 0 ? "text-up" : v < 0 ? "text-down" : "");
 
-/** FII/DII cash-market activity: the newest 7 sessions only. NSE refuses automated downloads of this feed,
- *  so it is filled from the CSV you download from NSE's FII/DII report page. */
+/** FII/DII cash-market activity: the newest 7 sessions only. The app reads NSE's feed itself every evening until
+ *  the newest session is stored ("Update now" does it on demand); a CSV downloaded from NSE can also be imported. */
 export function CashPanel() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["cash"], queryFn: api.flowsCash, retry: false });
@@ -24,6 +25,7 @@ export function CashPanel() {
   return (
     <Panel title="FII / DII cash activity — newest 7 sessions (₹ crore)">
       <div className="space-y-3">
+        <FlowsUpdateLoader components={["cash"]} />
         {q.isPending ? <p className="text-sm text-muted">Loading…</p>
           : q.error ? <p className="text-sm text-muted">Not available: the running backend does not have this module yet.</p>
           : days.length === 0 ? <p className="text-sm text-muted" data-testid="cash-empty">No cash-market data yet. NSE does not allow automated downloads of this feed. Download the CSV from NSE’s FII/DII report page and paste its contents below.</p>

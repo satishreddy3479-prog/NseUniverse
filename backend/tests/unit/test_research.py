@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import random
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -212,3 +213,26 @@ def test_a_cached_report_from_an_older_schema_is_recomputed(tmp_path: Path) -> N
     f.write_text(_json.dumps(doc))
     second = PredictionResearch(first._store, first._ledger, calendar=_Cal(), clock=lambda: now, initial_train=200, test_size=60, cache_dir=tmp_path)
     assert second.summary(block=True)["data"]["inputs"]  # recomputed, so the new field is present
+
+
+def test_compute_now_retrains_one_horizon_and_logs_manual_vs_automatic_runs(tmp_path: Path) -> None:
+    last = _walk(560, 1)[-1].session
+    svc, _ = _service(tmp_path, 560, _at(_Cal().next_session(last), 8, 50))
+    first = svc.summary(block=True)
+    assert set(first["runs"]) == {"T1", "T5"} and all("last_auto" in r and "last_manual" not in r for r in first["runs"].values())
+    t5_before = json.dumps(first["evaluation"]["horizons"]["T5"], sort_keys=True)
+    again = svc.summary(force=True, block=True, trigger="manual", only="T1")
+    assert "last_manual" in again["runs"]["T1"] and "last_manual" not in again["runs"]["T5"]
+    assert json.dumps(again["evaluation"]["horizons"]["T5"], sort_keys=True) == t5_before  # T+5 keeps its stored result
+    assert again["forecasts"]["T1"]["models"]["logit-all"]["already_recorded"] is True  # nothing is re-recorded
+    assert again["computing"] is False
+    assert json.loads((tmp_path / "prediction_runs.json").read_text())["T1"]["last_manual"]["at"]
+
+
+def test_a_manual_compute_is_allowed_in_market_hours(tmp_path: Path) -> None:
+    last = _walk(560, 1)[-1].session
+    svc, _ = _service(tmp_path, 560, _at(_Cal().next_session(last), 11, 0))  # 11:00 IST on a session day
+    svc._pause_in_market_hours = True
+    assert svc.summary(block=True).get("paused") is True  # the schedule waits for the close
+    s = svc.summary(force=True, block=True, trigger="manual")
+    assert s["ready"] is True and "last_manual" in s["runs"]["T1"]

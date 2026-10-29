@@ -575,8 +575,14 @@ async def prediction_summary(request: Request) -> dict[str, Any]:
 
 
 @router.post("/prediction/summary/recompute", dependencies=[Depends(require_local_control)])
-async def prediction_recompute(request: Request) -> dict[str, Any]:
-    return await asyncio.to_thread(request.app.state.research.summary, True)
+async def prediction_recompute(
+    request: Request, model: Annotated[str, Query(pattern="^(T1|T5|all)$")] = "all"
+) -> dict[str, Any]:
+    """Retrain by hand ("Compute now"), also in market hours; ``model`` picks one horizon."""
+    only = None if model == "all" else model
+    return await asyncio.to_thread(
+        request.app.state.research.summary, True, False, "manual", only
+    )
 
 
 @router.get("/prediction/flows/status")
@@ -587,7 +593,7 @@ async def flows_status(request: Request) -> dict[str, Any]:
 
 @router.post("/prediction/flows/refresh", dependencies=[Depends(require_local_control)])
 async def flows_refresh(request: Request) -> dict[str, Any]:
-    started = request.app.state.flows.trigger()
+    started = request.app.state.flows.trigger(manual=True)
     return {"started": started, **await asyncio.to_thread(request.app.state.flows.status)}
 
 

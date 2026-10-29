@@ -23,7 +23,7 @@ USER_AGENT = "NSEUniverse-personal-research/1.0 (single user, low rate)"
 ARCHIVE = "https://archives.nseindia.com/content/nsccl"
 KINDS = {
     "fao_participant_oi": ("fao_participant_oi_{d}.csv", "Open Interest"),
-    "fao_participant_vol": ("fao_participant_vol_{d}.csv", "Trading Volumes"),
+    "fao_participant_vol": ("fao_participant_vol_{d}.csv", "Trading Volume"),  # NSE writes the singular
 }
 FII_DII_PAGE = "https://www.nseindia.com/"
 FII_DII_API = "https://www.nseindia.com/api/fiidiiTradeReact"

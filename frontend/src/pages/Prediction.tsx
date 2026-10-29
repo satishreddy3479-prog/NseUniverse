@@ -1,6 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Panel } from "../components/ui";
+import { Button, Panel } from "../components/ui";
 import { EventsNewsPanel } from "../components/EventsNewsPanel";
 import { CashPanel } from "../components/CashPanel";
 import { FlowsPanel } from "../components/FlowsPanel";
@@ -75,7 +75,18 @@ function CallBanner({ calls, hz }: { calls: NonNullable<PredictionSummaryReady["
   );
 }
 
-function ForecastCard({ hz, f, evs }: { hz: "T1" | "T5"; f: PredictionSummaryReady["forecasts"]["T1"]; evs: Record<Hz, HorizonEval> }) {
+function ComputeBar({ hz, runs, computing, onCompute }: { hz: "T1" | "T5"; runs: PredictionSummaryReady["runs"]; computing: boolean; onCompute: () => void }) {
+  const r = runs?.[hz];
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted" data-testid={`compute-${hz}`}>
+      <Button disabled={computing} onClick={onCompute} title="Retrain this model now with the data stored so far (allowed in market hours too)">{computing ? "Computing…" : "Compute now"}</Button>
+      <span>Last automatic run: <span className="num text-paper">{r?.last_auto ? fmtDateTimeIST(r.last_auto.at) : "none yet"}</span></span>
+      <span>Last manual run: <span className="num text-paper">{r?.last_manual ? fmtDateTimeIST(r.last_manual.at) : "none yet"}</span></span>
+    </div>
+  );
+}
+
+function ForecastCard({ hz, f, evs, runs, computing, onCompute }: { hz: "T1" | "T5"; f: PredictionSummaryReady["forecasts"]["T1"]; evs: Record<Hz, HorizonEval>; runs: PredictionSummaryReady["runs"]; computing: boolean; onCompute: () => void }) {
   const entries = Object.entries(f.models);
   const head = f.headline_model && f.models[f.headline_model] ? f.headline_model : entries[0]?.[0];
   const m = head ? f.models[head] : undefined;
@@ -92,6 +103,7 @@ function ForecastCard({ hz, f, evs }: { hz: "T1" | "T5"; f: PredictionSummaryRea
         {head && <Badge v={evOf(head)} />}
       </div>
       <h2 className="mt-2 text-lg font-semibold text-paper">{H[hz]}</h2>
+      <ComputeBar hz={hz} runs={runs} computing={computing} onCompute={onCompute} />
       <p className="text-sm text-muted">{m ? `From the ${m.reference_session} close (₹${fmtPrice(m.reference_close)}). ${m.target_session ? `Target: ${m.target_session}` : m.reason ?? ""}` : "No forecast available."}</p>
       <p className="mt-1 text-xs text-muted">{SUB[hz]}</p>
       {preview && <p className="mt-2 rounded-lg border border-warn/50 px-3 py-1.5 text-sm text-warn" data-testid={`preview-${hz}`}>{m?.reason}. The number below is a preview and is not recorded.</p>}
@@ -364,10 +376,12 @@ function LedgerTable({ hz, rows }: { hz: "T1" | "T5"; rows: PredictionLedgerRow[
 }
 
 export default function Prediction() {
+  const qc = useQueryClient();
   const q = useQuery({
     queryKey: ["prediction-summary"], queryFn: api.predictionSummary, retry: false, staleTime: 60_000,
-    refetchInterval: (query) => { const d = query.state.data; return d && !d.ready && d.computing ? 3000 : false; },
+    refetchInterval: (query) => { const d = query.state.data; return d && d.computing ? 3000 : false; },
   });
+  const compute = useMutation({ mutationFn: api.predictionRecompute, onSettled: () => void qc.invalidateQueries({ queryKey: ["prediction-summary"] }) });
   const [sel, setSel] = useState<Record<Hz, string>>({ T1: "", T5: "", T5F: "" });
   return (
     <div className="mx-auto flex max-w-[1240px] flex-col gap-5">
@@ -401,8 +415,8 @@ export default function Prediction() {
           return (
             <>
               <div className="flex flex-col gap-5 lg:flex-row">
-                <ForecastCard hz="T1" f={d.forecasts.T1} evs={evs} />
-                <ForecastCard hz="T5" f={d.forecasts.T5} evs={evs} />
+                <ForecastCard hz="T1" f={d.forecasts.T1} evs={evs} runs={d.runs} computing={!!d.computing || compute.isPending} onCompute={() => compute.mutate("T1")} />
+                <ForecastCard hz="T5" f={d.forecasts.T5} evs={evs} runs={d.runs} computing={!!d.computing || compute.isPending} onCompute={() => compute.mutate("T5")} />
               </div>
               <SummaryStrip d={d} />
               <InputsPanel inputs={d.data.inputs} last={d.data.last} />

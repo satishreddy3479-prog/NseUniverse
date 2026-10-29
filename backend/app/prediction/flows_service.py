@@ -21,6 +21,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from app.logging_setup import log_event
+from app.prediction.calendar import CalendarCoverageError, TradingCalendar
 from app.prediction.flows_store import FlowsStore
 from app.prediction.pit import IST
 from app.prediction.sources.nse import (
@@ -40,6 +41,10 @@ from app.prediction.sources.nse import (
 
 logger = logging.getLogger(__name__)
 RUN_AFTER = (19, 30)
+PUBLISH_AFTER = (18, 30)  # IST: NSE posts the day's participant files and FII/DII figures in the evening
+CHECK_EVERY = timedelta(minutes=30)  # while the newest session is still missing
+BLOCKED_COOLDOWN = timedelta(hours=3)
+COMPONENTS = ("participant_oi", "participant_vol", "cash")
 CASH_AFTER = (18, 45)  # IST: the exchanges post provisional FII/DII figures after about 18:00
 STOP_AFTER_FINAL_404 = 40  # consecutive known trading days without a file => the history starts later
 BLOCK_STATUSES = {403, 429}
@@ -78,6 +83,47 @@ class FlowsService:
         self.last_attempt: datetime | None = None
         self.last_cash_date: date | None = None
         self.last_nsdl_date: date | None = None
+        self._cal: TradingCalendar | None = None
+
+    # ------------------------------------------------------------------ which session is expected
+    def _is_session(self, d: date) -> bool:
+        if d.weekday() >= 5:
+            return False
+        try:
+            if self._cal is None:
+                self._cal = TradingCalendar.load()
+            return self._cal.is_session(d)
+        except (CalendarCoverageError, OSError, ValueError):
+            return True  # no verified holiday list for that year: a weekday is assumed, a 404 just means "not published"
+
+    def expected_session(self, now: datetime | None = None) -> date:
+        """The newest session whose files NSE should have published by now (today's only after the evening)."""
+        n = (now or self._clock()).astimezone(IST)
+        d = n.date() if (n.hour, n.minute) >= PUBLISH_AFTER else n.date() - timedelta(days=1)
+        while not self._is_session(d):
+            d -= timedelta(days=1)
+        return d
+
+    def candidate_sessions(self) -> list[date]:
+        """Sessions to look for: those with a NIFTY daily bar, plus the recent weekdays up to the expected one.
+
+        The bar list lags (today's bar exists only after the close is final), so on its own it never asks for
+        the newest session's files."""
+        exp = self.expected_session()
+        recent = {exp - timedelta(days=i) for i in range(RECENT_DAYS + 4)}
+        known = set(self._sessions())
+        return sorted({d for d in known | recent if d <= exp and (d in known or self._is_session(d))}, reverse=True)
+
+    def newest_stored(self) -> dict[str, date | None]:
+        cov = self.store.coverage()
+        def newest(k: str) -> date | None:
+            return None if cov[k]["last"] is None else date.fromisoformat(cov[k]["last"])
+
+        return {"participant_oi": newest("fao_participant_oi"), "participant_vol": newest("fao_participant_vol"), "cash": newest("fii_dii_cash")}
+
+    def missing_expected(self) -> list[str]:
+        exp = self.expected_session()
+        return [c for c, d in self.newest_stored().items() if d is None or d < exp]
 
     # ------------------------------------------------------------------ fetching
     @staticmethod
@@ -136,13 +182,20 @@ class FlowsService:
         summary["stored"] += 1
         return "stored"
 
-    def run(self) -> dict[str, Any]:
+    def run(self, trigger: str = "auto") -> dict[str, Any]:
+        """One collection pass. Stored values are never changed: a file already stored is skipped, so an
+        earlier manual update and a later automatic one cannot disagree; the automatic run simply stops
+        once the expected session is stored."""
+        force = trigger == "manual"
         self.blocked = None
         self.last_attempt = self._clock()
-        summary: dict[str, Any] = {"requests": 0, "stored": 0, "missing": 0, "errors": 0, "rejected": [], "started_utc": self.last_attempt.isoformat()}
-        sessions = sorted(self._sessions(), reverse=True)
+        summary: dict[str, Any] = {"requests": 0, "stored": 0, "missing": 0, "errors": 0, "rejected": [], "trigger": trigger, "started_utc": self.last_attempt.isoformat()}  # fmt: skip
+        sessions = self.candidate_sessions()
+        expected = self.expected_session()
         net_errors = 0
+        per_kind: dict[str, dict[str, Any]] = {}
         for kind in KINDS:
+            before = {"stored": summary["stored"], "missing": summary["missing"], "errors": summary["errors"], "rejected": len(summary["rejected"])}
             misses = 0
             for i, s in enumerate(sessions):
                 if self.blocked or net_errors >= MAX_NETWORK_ERRORS:
@@ -159,17 +212,21 @@ class FlowsService:
                     net_errors += 1
                 if out in {"stored", "missing", "error", "rejected"}:
                     time.sleep(self._pause)
+            per_kind[kind] = {k: (len(summary[k]) if k == "rejected" else summary[k]) - v for k, v in before.items()}
         if net_errors >= MAX_NETWORK_ERRORS and not self.blocked:
             self.blocked = "repeated network errors; stopped"
         now_ist = self._clock().astimezone(IST)
         today = now_ist.date()
-        evening = (now_ist.hour, now_ist.minute) >= CASH_AFTER
-        if self.last_cash_date != today and evening:
-            self.last_cash_date = today  # one attempt a day, success or not
+        evening = (now_ist.hour, now_ist.minute) >= PUBLISH_AFTER
+        cash_newest = self.newest_stored()["cash"]
+        cash_ran = False
+        if force or (evening and (cash_newest is None or cash_newest < expected)):
+            self.last_cash_date = today
             self.progress = "FII/DII cash"
             self._cash_once(summary)
-        if self.last_nsdl_date != today:  # NSDL keeps the latest day on its page, so any time works
-            self.last_nsdl_date = today  # one attempt a day, success or not
+            cash_ran = True
+        if force or self.last_nsdl_date != today:  # NSDL keeps the latest day on its page
+            self.last_nsdl_date = today
             self.progress = "NSDL FPI"
             self._nsdl_once(summary)
         self.progress = "trimming to the rolling window"
@@ -179,9 +236,30 @@ class FlowsService:
             summary["pruned"] = {"error": f"{type(e).__name__}: {e}"}
         self.progress = ""
         summary["finished_utc"] = self._clock().isoformat()
+        self._log_components(trigger, expected, per_kind, cash_ran)
         self.last_run = summary
         log_event(logger, logging.INFO, "nse_flows_run", **{k: v for k, v in summary.items() if k != "rejected"})
         return summary
+
+    def _log_components(self, trigger: str, expected: date, per_kind: dict[str, dict[str, Any]], cash_ran: bool) -> None:
+        """Record one line per source: did this check work, and what is the newest session stored now."""
+        newest = self.newest_stored()
+        now = self._clock()
+        for comp, kind in (("participant_oi", "fao_participant_oi"), ("participant_vol", "fao_participant_vol")):
+            d = per_kind.get(kind, {})
+            have = newest[comp]
+            ok = not self.blocked and d.get("errors", 0) == 0 and d.get("rejected", 0) == 0
+            parts = [f"{d.get('stored', 0)} new file(s)"]
+            if have is None or have < expected:
+                parts.append(f"session {expected} not published yet" if d.get("missing") else f"session {expected} not stored")
+            if d.get("rejected"):
+                parts.append(f"{d['rejected']} file(s) failed validation")
+            if self.blocked:
+                parts.append(self.blocked)
+            self.store.record_run(comp, trigger, ok, None if have is None else str(have), "; ".join(parts), now=now)
+        if cash_ran:
+            ok = self.cash_note is None
+            self.store.record_run("cash", trigger, ok, None if newest["cash"] is None else str(newest["cash"]), self.cash_note or "FII/DII cash feed read", now=now)
 
     def _cash_once(self, summary: dict[str, Any]) -> None:
         res = self._cash()
@@ -205,11 +283,11 @@ class FlowsService:
         return {"rows": len(rows), "added": added, "removed_old": removed, "sessions_kept": len({r["session"] for r in self.store.cash_rows()})}
 
     # ------------------------------------------------------------------ scheduling
-    def trigger(self) -> bool:
+    def trigger(self, manual: bool = False) -> bool:
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
                 return False
-            self._thread = threading.Thread(target=self.run, daemon=True, name="nse-flows")
+            self._thread = threading.Thread(target=self.run, args=("manual" if manual else "auto",), daemon=True, name="nse-flows")
             self._thread.start()
             return True
 
@@ -217,10 +295,19 @@ class FlowsService:
         return self._thread is not None and self._thread.is_alive()
 
     def due(self, now: datetime | None = None) -> bool:
-        n = (now or self._clock()).astimezone(IST)
-        if self.last_attempt is not None and n - self.last_attempt.astimezone(IST) < timedelta(hours=6):
+        """Automatic checks: one when the app starts, then every 30 minutes from 18:30 IST, but only while the
+        expected session's data is still missing. Once it is stored (by an earlier run or a manual update)
+        nothing more is fetched until the next session is expected."""
+        t = now or self._clock()
+        n = t.astimezone(IST)
+        if self.last_attempt is None:
+            return True
+        gap = n - self.last_attempt.astimezone(IST)
+        if self.blocked and gap < BLOCKED_COOLDOWN:
             return False
-        return (n.hour, n.minute) >= RUN_AFTER or self.last_attempt is None
+        if gap < CHECK_EVERY:
+            return False
+        return bool(self.missing_expected()) and (n.hour, n.minute) >= PUBLISH_AFTER
 
     async def _loop(self) -> None:
         while True:
@@ -245,6 +332,8 @@ class FlowsService:
         return {
             "enabled": self.enabled, "running": self.running(), "progress": self.progress,
             "blocked": self.blocked, "cash_note": self.cash_note, "nsdl_note": self.nsdl_note, "last_run": self.last_run,
-            "coverage": self.store.coverage(),
+            "coverage": self.store.coverage(), "expected_session": str(self.expected_session()),
+            "missing_expected": self.missing_expected(), "components": self.store.last_runs(),
+            "last_attempt_utc": None if self.last_attempt is None else self.last_attempt.isoformat(),
             "source": "NSE public archive files (archives.nseindia.com) and the NSE FII/DII feed; personal research use, low rate",
         }  # fmt: skip

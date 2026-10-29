@@ -134,3 +134,27 @@ describe("Prediction page", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/not available/);
   });
 });
+
+describe("Compute now and last-run stamps", () => {
+  it("each model has its own Compute now button and shows the last automatic and manual run", async () => {
+    const d = data();
+    if (d.ready) d.runs = { T1: { last_auto: { at: "2026-10-29T03:10:00Z" }, last_manual: { at: "2026-10-29T14:00:00Z" } }, T5: { last_auto: { at: "2026-10-29T03:11:00Z" } } };
+    const posted: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const full = String(input);
+      if (init?.method === "POST" && full.startsWith("/api/prediction/summary/recompute")) { posted.push(full); return new Response(JSON.stringify(d), { status: 200 }); }
+      const url = full.split("?")[0]!;
+      const map: Record<string, unknown> = { "/api/status": status(), "/api/expiries": expiries, "/api/snapshots": [summary()], "/api/prediction/summary": d };
+      return map[url] == null ? new Response("{}", { status: 404 }) : new Response(JSON.stringify(map[url]), { status: 200 });
+    }));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={["/prediction"]}><AppRoutes /></MemoryRouter></QueryClientProvider>);
+    const t1 = await screen.findByTestId("compute-T1");
+    expect(t1).toHaveTextContent("Last automatic run: 29 Oct");
+    expect(t1).toHaveTextContent("Last manual run: 29 Oct");
+    expect(screen.getByTestId("compute-T5")).toHaveTextContent("Last manual run: none yet");
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.click(within(t1).getByRole("button", { name: "Compute now" }));
+    await vi.waitFor(() => expect(posted).toEqual(["/api/prediction/summary/recompute?model=T1"]));
+  });
+});

@@ -321,6 +321,27 @@ class PredictionResearch:
         self._task: asyncio.Task[None] | None = None
         self._morning_done: date | None = None
         self._cache_file = None if cache_dir is None else cache_dir / "prediction_report.json"
+        self._runs_file = None if cache_dir is None else cache_dir / "prediction_runs.json"
+        self._runs: dict[str, dict[str, Any]] = self._load_runs()
+
+    def _load_runs(self) -> dict[str, dict[str, Any]]:
+        if self._runs_file is None or not self._runs_file.exists():
+            return {}
+        try:
+            doc = json.loads(self._runs_file.read_text("utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return doc if isinstance(doc, dict) else {}
+
+    def _mark(self, horizons: list[str], trigger: str, now: datetime) -> None:
+        """When each horizon's models were last computed successfully, by the schedule or by hand."""
+        with self._lock:
+            for h in horizons:
+                r = self._runs.setdefault(h, {})
+                r["last_auto" if trigger == "auto" else "last_manual"] = {"at": now.isoformat()}
+            if self._runs_file is not None:
+                with contextlib.suppress(OSError):
+                    self._runs_file.write_text(json.dumps(self._runs), "utf-8")
 
     def _cal(self) -> SessionLookup:
         if self._calendar is None:
@@ -367,7 +388,8 @@ class PredictionResearch:
         out: list[Any] = json.loads(json.dumps(key))  # plain lists: equal after a JSON round trip
         return out
 
-    def summary(self, force: bool = False, block: bool = False) -> dict[str, Any]:
+    def summary(self, force: bool = False, block: bool = False, trigger: str = "auto", only: str | None = None) -> dict[str, Any]:
+        """``only`` = "T1" or "T5": retrain just that horizon's models and keep the other's stored result."""
         now = self._clock()
         bars = self._complete_bars(now)
         need = self._it + 2 * self._ts + 140
@@ -378,11 +400,12 @@ class PredictionResearch:
             body = None if force else (self._cache[1] if self._cache and list(self._cache[0]) == key else self._read_disk(key))
             if body is not None:
                 self._cache = (tuple(key), body)
-            elif self._pause_in_market_hours and self.market_hours(now):
+            elif self._pause_in_market_hours and self.market_hours(now) and trigger != "manual":
                 return {"ready": False, "paused": True, "reason": "Models are trained and evaluated only after the market closes (09:15-15:45 IST is excluded); the report will be computed then."}
             elif self._worker is None or not self._worker.is_alive():
                 self._error = None
-                self._worker = threading.Thread(target=self._run, args=(bars, key, now), daemon=True, name="prediction-research")
+                base = None if only is None else (self._cache[1] if self._cache and list(self._cache[0]) == key else self._read_disk(key))
+                self._worker = threading.Thread(target=self._run, args=(bars, key, now, trigger, only if base is not None else None, base), daemon=True, name="prediction-research")
                 self._worker.start()
             worker = self._worker
         if body is None:
@@ -393,11 +416,13 @@ class PredictionResearch:
                 raise RuntimeError(self._error)
             return {"ready": False, "computing": True, "reason": "Training and evaluating models on the stored data. This takes a few minutes the first time and is then cached."}
         self._settle(bars)
-        return {**body, "ledger": self._ledger_view(), "generated_at": now.isoformat()}
+        return {**body, "ledger": self._ledger_view(), "generated_at": now.isoformat(), "runs": self._runs, "computing": worker is not None and worker.is_alive()}
 
-    def _run(self, bars: list[Bar], key: list[Any], now: datetime) -> None:
+    def _run(self, bars: list[Bar], key: list[Any], now: datetime, trigger: str = "auto", only: str | None = None, base: dict[str, Any] | None = None) -> None:
         try:
-            body = self._compute(bars, now)
+            body = self._compute(bars, now, only)
+            if only is not None and base is not None:
+                body = self._merge(base, body, only)
         except Exception as e:  # noqa: BLE001 - surfaced to the page, never swallowed silently
             self._error = f"{type(e).__name__}: {e}"
             return
@@ -406,6 +431,22 @@ class PredictionResearch:
         if self._cache_file is not None:
             with contextlib.suppress(OSError):
                 self._cache_file.write_text(json.dumps({"key": key, "body": body}), "utf-8")
+        self._mark([only] if only else ["T1", "T5"], trigger, now)
+
+    @staticmethod
+    def _merge(base: dict[str, Any], new: dict[str, Any], hz: str) -> dict[str, Any]:
+        """The stored report with one horizon's freshly trained part swapped in."""
+        out = json.loads(json.dumps(base))
+        variants = ("T1",) if hz == "T1" else ("T5", "T5F")
+        for v in variants:
+            if v in new["evaluation"]["horizons"]:
+                out["evaluation"]["horizons"][v] = new["evaluation"]["horizons"][v]
+        out["forecasts"][hz] = new["forecasts"][hz]
+        out["data"]["up_rate_all"].update(new["data"]["up_rate_all"])
+        out["data"]["inputs"].update(new["data"]["inputs"])
+        out["data"]["overnight_data_fresh"], out["data"]["stale_series"] = new["data"]["overnight_data_fresh"], new["data"]["stale_series"]
+        out["computed_at"] = new["computed_at"]
+        return out  # type: ignore[no-any-return]
 
     def _fresh(self, others: dict[str, list[Bar]], ref: date, now: datetime) -> tuple[bool, list[str]]:
         stale = [k for k in FRESH_KEYS if k in others and (not others[k] or others[k][-1].session < ref)]
@@ -414,7 +455,7 @@ class PredictionResearch:
             stale = ["US session still open (complete after 03:00 IST)"]
         return not stale, stale
 
-    def _compute(self, bars: list[Bar], now: datetime) -> dict[str, Any]:
+    def _compute(self, bars: list[Bar], now: datetime, only: str | None = None) -> dict[str, Any]:
         ref = bars[-1]
         others = self._others()
         flows = self._flows()
@@ -424,6 +465,8 @@ class PredictionResearch:
         ups: dict[str, float] = {}
         inputs: dict[str, dict[str, float]] = {}
         for v in VARIANTS:
+            if only is not None and (v == "T1") != (only == "T1"):
+                continue  # the other horizon keeps its stored result
             data = _dataset(bars, others, flows, v)
             if v == "T5F" and len(data.y) < self._it + 2 * self._ts:
                 horizons[v] = {"available": False, "reason": f"NSE participant history is too short so far ({len(data.y)} usable sessions; needs {self._it + 2 * self._ts}); it keeps growing as files download"}

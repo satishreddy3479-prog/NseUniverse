@@ -1,7 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "../lib/api";
+import { FlowsUpdate, useFlowsStatus } from "./FlowsUpdate";
 import { fmtInt } from "../lib/format";
-import { Button, Panel } from "./ui";
+import { Panel } from "./ui";
 
 const ROWS: { key: "fao_participant_oi" | "fao_participant_vol" | "fii_dii_cash"; name: string; note: string }[] = [
   { key: "fao_participant_oi", name: "F&O participant open interest", note: "Client, DII, FII, Pro positions, one NSE file per session" },
@@ -11,22 +10,15 @@ const ROWS: { key: "fao_participant_oi" | "fao_participant_vol" | "fii_dii_cash"
 
 /** NSE institutional-flow collection: what is stored, whether NSE let us in, and a manual run. */
 export function PredictionFlows() {
-  const qc = useQueryClient();
-  const q = useQuery({
-    queryKey: ["flows-status"], queryFn: api.flowsStatus, retry: false,
-    refetchInterval: (query) => (query.state.data?.running ? 3000 : 30_000),
-  });
-  const run = useMutation({ mutationFn: api.flowsRefresh, onSettled: () => void qc.invalidateQueries({ queryKey: ["flows-status"] }) });
+  const q = useFlowsStatus();
   const s = q.data;
   return (
-    <Panel
-      title="Prediction data: NSE institutional flows"
-      actions={<Button disabled={!s || s.running || run.isPending} onClick={() => run.mutate()} title="Download new files now (also runs by itself after 19:30 IST)">{s?.running ? "Downloading…" : "Download now"}</Button>}
-    >
+    <Panel title="Prediction data: NSE institutional flows">
       {q.isPending ? <p className="text-sm text-muted">Loading…</p>
         : q.error || !s ? <p className="text-sm text-muted">Not available: the running backend does not have this module yet.</p>
         : (
           <div className="space-y-3">
+            <FlowsUpdate components={["participant_oi", "participant_vol", "cash"]} s={s} />
             <p className="text-sm text-muted">Source: {s.source}. {s.running && s.progress ? `Now: ${s.progress}.` : ""}</p>
             {s.blocked && <p role="alert" className="text-sm text-down" data-testid="flows-blocked">{s.blocked}</p>}
             {s.cash_note && <p className="text-sm text-warn" data-testid="flows-cash-note">{s.cash_note}</p>}

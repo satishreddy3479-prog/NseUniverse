@@ -188,3 +188,93 @@ def test_nsdl_is_fetched_once_a_day_and_stored_beside_the_nse_figures(tmp_path: 
     s.run()
     assert len(calls) == 1 and s.nsdl_note is None
     assert {r["category"] for r in s.store.cash_rows()} == {"FPI equity (stock exchange)", "FPI equity (incl. primary market)"}
+
+
+# ---------------------------------------------------------------- newest session, schedule, run log
+from datetime import timedelta  # noqa: E402
+
+
+class Clock:
+    def __init__(self, at: datetime) -> None:
+        self.at = at
+
+    def __call__(self) -> datetime:
+        return self.at
+
+
+def _live(tmp_path: Path, fetcher: Fake, sessions: list[date], at: datetime) -> tuple[FlowsService, Clock]:
+    clock = Clock(at)
+    svc = FlowsService(
+        FlowsStore(tmp_path), lambda: sessions, fetcher=fetcher, pause_s=0, clock=clock,
+        cash_fetcher=lambda: Fetched(0, None, "offline"), nsdl_fetcher=lambda: Fetched(0, None, "offline"),
+    )  # fmt: skip
+    return svc, clock
+
+
+EVENING = datetime(2026, 10, 29, 14, 0, tzinfo=UTC)  # 19:30 IST on Thursday 29 Oct
+
+
+def test_the_volume_file_title_is_accepted_in_singular_form() -> None:
+    body = csv_for("Oct 28, 2026", "Trading Volume")
+    assert parse_participant(body, "fao_participant_vol", date(2026, 10, 28))["FII"]["Future Index Long"] == 3
+
+
+def test_the_newest_session_is_requested_even_before_its_price_bar_exists(tmp_path: Path) -> None:
+    f = Fake({"29102026", "28102026"})
+    s, _ = _live(tmp_path, f, [date(2026, 10, 28)], EVENING)  # the bar list stops at 28 Oct
+    s.run()
+    assert s.store.coverage()["fao_participant_oi"]["last"] == "2026-10-29"
+    assert s.store.coverage()["fao_participant_vol"]["last"] == "2026-10-29"
+
+
+def test_the_expected_session_follows_the_publication_time_and_skips_weekends(tmp_path: Path) -> None:
+    s, _ = _live(tmp_path, Fake(set()), [], EVENING)
+    assert s.expected_session(datetime(2026, 10, 29, 14, 0, tzinfo=UTC)) == date(2026, 10, 29)  # 19:30 IST
+    assert s.expected_session(datetime(2026, 10, 29, 9, 0, tzinfo=UTC)) == date(2026, 10, 28)  # 14:30 IST: not yet
+    assert s.expected_session(datetime(2026, 10, 31, 14, 0, tzinfo=UTC)) == date(2026, 10, 30)  # Saturday -> Friday
+
+
+def test_automatic_checks_repeat_only_while_the_newest_session_is_missing(tmp_path: Path) -> None:
+    f = Fake({"28102026"})  # the 29 Oct files are not published yet
+    s, clock = _live(tmp_path, f, [date(2026, 10, 28)], EVENING)
+    assert s.due()  # first check after start
+    s.run()
+    assert s.missing_expected() and not s.due()  # just ran: wait
+    clock.at += timedelta(minutes=31)
+    assert s.due()  # still missing, 30 minutes later
+    f.available.add("29102026")
+    s.run()  # now published
+    clock.at += timedelta(hours=2)
+    assert s.missing_expected() == ["cash"] and s.due()  # cash feed offline in this test: still wanted
+    s.cash_note = None
+    s.store.save_cash([{"session": date(2026, 10, 29), "category": "FII/FPI", "buy": 2.0, "sell": 1.0, "net": 1.0}])
+    assert s.missing_expected() == [] and not s.due()  # everything for the session is stored: stop
+
+
+def test_no_automatic_check_before_the_evening_publication_time(tmp_path: Path) -> None:
+    s, clock = _live(tmp_path, Fake(set()), [], datetime(2026, 10, 29, 9, 0, tzinfo=UTC))  # 14:30 IST
+    s.last_attempt = clock.at - timedelta(hours=2)
+    s.store.save_cash([{"session": date(2026, 10, 27), "category": "FII/FPI", "buy": 2.0, "sell": 1.0, "net": 1.0}])
+    assert s.missing_expected() and not s.due()  # 28 Oct is expected and missing, but not before 18:30 IST
+
+
+def test_a_manual_update_is_never_overwritten_and_the_run_log_tells_auto_from_manual(tmp_path: Path) -> None:
+    f = Fake({"28102026", "29102026"})
+    s, clock = _live(tmp_path, f, [date(2026, 10, 28)], EVENING)
+    s.run("manual")
+    calls_after_manual = len(f.calls)
+    clock.at += timedelta(minutes=40)
+    r = s.run("auto")  # everything is already stored: no file is requested again
+    assert r["stored"] == 0 and len([c for c in f.calls[calls_after_manual:] if "29102026" in c]) == 0
+    runs = s.store.last_runs()
+    assert runs["participant_oi"]["last_manual_ok"]["newest_session"] == "2026-10-29"
+    assert runs["participant_oi"]["last_auto_ok"]["trigger"] == "auto"
+    assert runs["participant_vol"]["last_auto_ok"]["at"] > runs["participant_vol"]["last_manual_ok"]["at"]
+    assert s.status()["expected_session"] == "2026-10-29" and "components" in s.status()
+
+
+def test_a_failed_check_is_not_recorded_as_a_successful_one(tmp_path: Path) -> None:
+    s, _ = _live(tmp_path, Fake(set(), status=403), [date(2026, 10, 28)], EVENING)
+    s.run("auto")
+    runs = s.store.last_runs()
+    assert runs["participant_oi"]["last"]["ok"] is False and runs["participant_oi"]["last_auto_ok"] is None
