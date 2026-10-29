@@ -57,7 +57,12 @@ def _fresh(t: StockTick | None, now: datetime | None, max_age_s: float) -> bool:
     return (now - t.at).total_seconds() <= max_age_s
 
 
-def usable(universe: Sequence[Stock], ticks: Mapping[str, StockTick], now: datetime | None = None, max_age_s: float = MAX_TICK_AGE_S) -> dict[str, float]:
+def usable(
+    universe: Sequence[Stock],
+    ticks: Mapping[str, StockTick],
+    now: datetime | None = None,
+    max_age_s: float = MAX_TICK_AGE_S,
+) -> dict[str, float]:
     """symbol -> change % for every stock with a valid, fresh tick."""
     out: dict[str, float] = {}
     for s in universe:
@@ -97,7 +102,12 @@ class Breadth:
         return {**self.__dict__, "coverage": self.coverage}
 
 
-def breadth(universe: Sequence[Stock], ticks: Mapping[str, StockTick], now: datetime | None = None, max_age_s: float = MAX_TICK_AGE_S) -> Breadth:
+def breadth(
+    universe: Sequence[Stock],
+    ticks: Mapping[str, StockTick],
+    now: datetime | None = None,
+    max_age_s: float = MAX_TICK_AGE_S,
+) -> Breadth:
     chg = usable(universe, ticks, now, max_age_s)
     b = Breadth(total=len(universe), covered=len(chg))
     if not chg:
@@ -132,8 +142,12 @@ class Contribution:
     weight_covered: float  # percent of the index whose stocks have a valid price
     weight_loaded: float  # percent of the index for which weights are loaded
     cap_weight_return: float | None  # sum(w * chg) / sum(w) over covered stocks with weights
-    net_points_pct: float | None  # sum(w/100 * chg): contribution to the index return, in percentage points
-    top: list[tuple[str, float]] = field(default_factory=list)  # symbol, contribution in percentage points
+    net_points_pct: (
+        float | None
+    )  # sum(w/100 * chg): contribution to the index return, in percentage points
+    top: list[tuple[str, float]] = field(
+        default_factory=list
+    )  # symbol, contribution in percentage points
     top5_share: float | None = None
     top10_share: float | None = None
     stocks_for_half: int | None = None
@@ -142,7 +156,12 @@ class Contribution:
         return dict(self.__dict__)
 
 
-def contributions(universe: Sequence[Stock], ticks: Mapping[str, StockTick], now: datetime | None = None, max_age_s: float = MAX_TICK_AGE_S) -> Contribution | None:
+def contributions(
+    universe: Sequence[Stock],
+    ticks: Mapping[str, StockTick],
+    now: datetime | None = None,
+    max_age_s: float = MAX_TICK_AGE_S,
+) -> Contribution | None:
     """Who carried the index. None when no weights are loaded (nothing is guessed)."""
     weighted = [s for s in universe if s.weight is not None and s.weight > 0]
     if not weighted:
@@ -151,7 +170,9 @@ def contributions(universe: Sequence[Stock], ticks: Mapping[str, StockTick], now
     w_loaded = sum(s.weight for s in weighted if s.weight is not None)
     cov = [s for s in weighted if s.symbol in chg]
     w_cov = sum(s.weight for s in cov if s.weight is not None)
-    c = Contribution(weight_covered=w_cov, weight_loaded=w_loaded, cap_weight_return=None, net_points_pct=None)
+    c = Contribution(
+        weight_covered=w_cov, weight_loaded=w_loaded, cap_weight_return=None, net_points_pct=None
+    )
     if not cov or w_cov <= 0:
         return c
     pts = {s.symbol: (s.weight or 0.0) / 100 * chg[s.symbol] for s in cov}
@@ -160,7 +181,11 @@ def contributions(universe: Sequence[Stock], ticks: Mapping[str, StockTick], now
     c.cap_weight_return = sum((s.weight or 0.0) * chg[s.symbol] for s in cov) / w_cov
     c.top = [(k, round(v, 4)) for k, v in sorted(pts.items(), key=lambda kv: -abs(kv[1]))[:10]]
     if net != 0:
-        same = sorted((v for v in pts.values() if v * net > 0), reverse=True) if net > 0 else sorted(v for v in pts.values() if v * net > 0)
+        same = (
+            sorted((v for v in pts.values() if v * net > 0), reverse=True)
+            if net > 0
+            else sorted(v for v in pts.values() if v * net > 0)
+        )
         # same-direction contributions, largest first (for a falling index, the most negative first)
         c.top5_share = sum(same[:5]) / net
         c.top10_share = sum(same[:10]) / net
@@ -177,7 +202,9 @@ def contributions(universe: Sequence[Stock], ticks: Mapping[str, StockTick], now
 @dataclass
 class Volume:
     covered: int
-    weighted_rv: float | None  # weight-weighted relative volume (sum w*rv / sum w); equal weights if none are loaded
+    weighted_rv: (
+        float | None
+    )  # weight-weighted relative volume (sum w*rv / sum w); equal weights if none are loaded
     reference: str  # "profile" (typical intraday profile) or "linear" (share of the session elapsed; front-loaded volume biases it high)
     up_volume_share: float | None  # volume of advancing stocks / (advancing + declining)
     low_volume_names: list[str] = field(default_factory=list)
@@ -187,8 +214,13 @@ class Volume:
 
 
 def relative_volume(
-    universe: Sequence[Stock], ticks: Mapping[str, StockTick], avg_daily_volume: Mapping[str, float],
-    elapsed_minutes: float, profile_fraction: float | None = None, now: datetime | None = None, max_age_s: float = MAX_TICK_AGE_S,
+    universe: Sequence[Stock],
+    ticks: Mapping[str, StockTick],
+    avg_daily_volume: Mapping[str, float],
+    elapsed_minutes: float,
+    profile_fraction: float | None = None,
+    now: datetime | None = None,
+    max_age_s: float = MAX_TICK_AGE_S,
 ) -> Volume | None:
     """Volume done so far against what is normal by this time (20-day average x the elapsed share).
 
@@ -198,7 +230,11 @@ def relative_volume(
     """
     if elapsed_minutes < 15:
         return None
-    frac = profile_fraction if profile_fraction is not None else min(1.0, elapsed_minutes / SESSION_MINUTES)
+    frac = (
+        profile_fraction
+        if profile_fraction is not None
+        else min(1.0, elapsed_minutes / SESSION_MINUTES)
+    )
     ref = "profile" if profile_fraction is not None else "linear"
     chg = usable(universe, ticks, now, max_age_s)
     num = den = 0.0
@@ -228,27 +264,46 @@ def relative_volume(
     return Volume(n, num / den, ref, share, sorted(low)[:10])
 
 
-def move_quality(index_change: float | None, b: Breadth | None, c: Contribution | None, v: Volume | None) -> dict[str, Any]:
+def move_quality(
+    index_change: float | None, b: Breadth | None, c: Contribution | None, v: Volume | None
+) -> dict[str, Any]:
     """Provisional reading of whether the index move is real. Thresholds are NOT validated."""
     reasons: list[str] = []
     if index_change is None or b is None or b.covered < 0.7 * b.total:
-        return {"state": "unknown", "reasons": ["too few stocks have a valid price to judge breadth"], "provisional": True}
+        return {
+            "state": "unknown",
+            "reasons": ["too few stocks have a valid price to judge breadth"],
+            "provisional": True,
+        }
     if abs(index_change) < 0.15:
-        return {"state": "no_move", "reasons": [f"the index is only {index_change:+.2f}% from the previous close"], "provisional": True}
+        return {
+            "state": "no_move",
+            "reasons": [f"the index is only {index_change:+.2f}% from the previous close"],
+            "provisional": True,
+        }
     sign = 1 if index_change > 0 else -1
     agree = (b.advancing if sign > 0 else b.declining) / b.covered * 100
     narrow = False
     if c is not None and c.top5_share is not None and c.top5_share > 0.6 and agree < 50:
         narrow = True
-        reasons.append(f"the top 5 stocks explain {c.top5_share * 100:.0f}% of the move and only {agree:.0f}% of stocks agree")
+        reasons.append(
+            f"the top 5 stocks explain {c.top5_share * 100:.0f}% of the move and only {agree:.0f}% of stocks agree"
+        )
     thin = v is not None and v.weighted_rv is not None and v.weighted_rv < 0.7
     if thin and v is not None:
-        reasons.append(f"volume is {v.weighted_rv:.2f}x normal for this time ({v.reference} reference)")
+        reasons.append(
+            f"volume is {v.weighted_rv:.2f}x normal for this time ({v.reference} reference)"
+        )
     gap = None
     if c is not None and c.cap_weight_return is not None and b.equal_weight_return is not None:
         gap = abs(c.cap_weight_return - b.equal_weight_return)
     broad = agree >= 65 and (b.equal_weight_return or 0) * sign > 0 and (gap is None or gap <= 0.15)
-    vol_ok = v is not None and v.reference == "profile" and v.weighted_rv is not None and v.weighted_rv >= 1.0
+    vol_ok = (
+        v is not None
+        and v.reference == "profile"
+        and v.weighted_rv is not None
+        and v.weighted_rv >= 1.0
+    )
     if narrow:
         state = "narrow"
     elif thin:
@@ -256,10 +311,18 @@ def move_quality(index_change: float | None, b: Breadth | None, c: Contribution 
     elif broad:
         state = "broad_confirmed" if vol_ok else "broad"
         reasons.append(f"{agree:.0f}% of covered stocks move with the index")
-        reasons.append("volume confirms it" if vol_ok else "volume could not confirm it (no intraday profile yet)" if v is not None else "no volume data")
+        reasons.append(
+            "volume confirms it"
+            if vol_ok
+            else "volume could not confirm it (no intraday profile yet)"
+            if v is not None
+            else "no volume data"
+        )
     else:
         state = "mixed"
-        reasons.append(f"{agree:.0f}% of covered stocks move with the index; no clear broad or narrow pattern")
+        reasons.append(
+            f"{agree:.0f}% of covered stocks move with the index; no clear broad or narrow pattern"
+        )
     return {"state": state, "reasons": reasons, "provisional": True}
 
 
@@ -286,8 +349,14 @@ class SectorRow:
 
 
 def sector_table(
-    universe: Sequence[Stock], ticks: Mapping[str, StockTick], benchmark_change: float | None, sector_index_change: Mapping[str, float] | None = None,
-    avg_daily_volume: Mapping[str, float] | None = None, elapsed_minutes: float = 0.0, now: datetime | None = None, min_covered: int = 2,
+    universe: Sequence[Stock],
+    ticks: Mapping[str, StockTick],
+    benchmark_change: float | None,
+    sector_index_change: Mapping[str, float] | None = None,
+    avg_daily_volume: Mapping[str, float] | None = None,
+    elapsed_minutes: float = 0.0,
+    now: datetime | None = None,
+    min_covered: int = 2,
 ) -> list[SectorRow]:
     """One row per sector, ranked by relative strength (return minus the benchmark's)."""
     groups: dict[str, list[Stock]] = {}
@@ -311,7 +380,13 @@ def sector_table(
                 row.weighted_rv = None if v is None else v.weighted_rv
         if sector_index_change and name in sector_index_change:
             row.index_return = sector_index_change[name]
-        best = row.index_return if row.index_return is not None else row.cap_weight_return if row.cap_weight_return is not None else row.equal_weight_return
+        best = (
+            row.index_return
+            if row.index_return is not None
+            else row.cap_weight_return
+            if row.cap_weight_return is not None
+            else row.equal_weight_return
+        )
         if best is not None and benchmark_change is not None:
             row.relative_strength = best - benchmark_change
         rows.append(row)
@@ -324,7 +399,9 @@ def sector_table(
     return rows
 
 
-def rotation(previous: Mapping[str, int], current: Sequence[SectorRow], min_move: int = 2) -> list[dict[str, Any]]:
+def rotation(
+    previous: Mapping[str, int], current: Sequence[SectorRow], min_move: int = 2
+) -> list[dict[str, Any]]:
     """Sectors whose rank moved by at least ``min_move`` places since ``previous`` (sector -> rank)."""
     out = []
     for r in current:
@@ -332,7 +409,14 @@ def rotation(previous: Mapping[str, int], current: Sequence[SectorRow], min_move
         if r.rank is None or p is None:
             continue
         if abs(p - r.rank) >= min_move:
-            out.append({"sector": r.sector, "from_rank": p, "to_rank": r.rank, "direction": "up" if r.rank < p else "down"})
+            out.append(
+                {
+                    "sector": r.sector,
+                    "from_rank": p,
+                    "to_rank": r.rank,
+                    "direction": "up" if r.rank < p else "down",
+                }
+            )
     return sorted(out, key=lambda x: -abs(x["from_rank"] - x["to_rank"]))
 
 

@@ -8,7 +8,7 @@ import { compactIN } from "../lib/analytics";
 import { sentimentHistoryOption } from "../lib/chartOptions";
 import { fmtDateTimeIST, fmtPct, fmtPrice, fmtTimeIST, MISSING } from "../lib/format";
 import { useLiveSpot } from "../lib/useLive";
-import type { BreadthBlock, IntradayComponent, IntradaySummary, MarketSummary } from "../lib/types";
+import type { BreadthBlock, FlowStats, IntradayComponent, IntradaySummary, MarketSummary } from "../lib/types";
 import { EChart, useChartColors } from "./EChart";
 
 const PHASE: Record<string, string> = {
@@ -355,6 +355,72 @@ function Heavyweights({ d }: { d: IntradaySummary }) {
   );
 }
 
+const DIVERGENCE: Record<string, string> = {
+  confirmed: "Price and net buying agree",
+  bearish_divergence: "Price rose while sellers led (bearish divergence)",
+  bullish_divergence: "Price fell while buyers led (bullish divergence)",
+  no_clear_move: "No clear move to compare",
+};
+
+function fmtQty(n: number | null | undefined): string {
+  return n == null ? MISSING : `${n < 0 ? "−" : ""}${Math.abs(n).toLocaleString("en-IN")}`;
+}
+
+function FlowLine({ f }: { f: FlowStats }) {
+  return (
+    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
+      <div><div className="text-[11px] text-muted">Net buying (CVD, estimated)</div><div className={`num ${tone(f.cvd)}`}>{fmtQty(f.cvd)}{f.cvd_pct == null ? "" : ` · ${f.cvd_pct >= 0 ? "+" : "−"}${Math.abs(f.cvd_pct).toFixed(1)}%`}</div></div>
+      <div><div className="text-[11px] text-muted">Buy / sell volume</div><div className="num text-paper">{fmtQty(f.buy_volume)} / {fmtQty(f.sell_volume)}</div></div>
+      <div><div className="text-[11px] text-muted">Order-book imbalance</div><div className={`num ${tone(f.depth_imbalance)}`}>{f.depth_imbalance == null ? MISSING : f.depth_imbalance.toFixed(2)}</div></div>
+      <div><div className="text-[11px] text-muted">Volume vs normal</div><div className={`num ${f.relative_volume != null && f.relative_volume < 0.7 ? "text-warn" : "text-paper"}`}>{f.relative_volume == null ? MISSING : `${f.relative_volume.toFixed(2)}x`}</div></div>
+    </div>
+  );
+}
+
+function FlowCard({ d }: { d: IntradaySummary }) {
+  const fl = d.stocks?.flow;
+  const fut = fl?.futures ?? null;
+  return (
+    <Card title="Futures flow and top-5 heavyweights" className="lg:col-span-12" right={<span className="text-[11px] text-muted">estimated from the exchange feed · provisional</span>}>
+      {!fl ? <p className="text-sm text-muted">{d.stocks ? "No flow data yet." : "Stock breadth is turned off."}</p> : (
+        <div className="space-y-4" data-testid="cc-flow">
+          <div>
+            <div className="mb-1 text-xs font-medium text-paper">NIFTY current-month future {fl.futures_contract ? `(${fl.futures_contract})` : ""}</div>
+            {fut ? (
+              <>
+                <FlowLine f={fut} />
+                {fut.divergence && <p className="mt-1 text-xs text-muted" data-testid="cc-fut-divergence">Last {fut.divergence.window_minutes} min: {DIVERGENCE[fut.divergence.state] ?? fut.divergence.state} (price {fmtPct(fut.divergence.price_change_pct)}).</p>}
+              </>
+            ) : <p className="text-xs text-muted">{fl.futures_note}. No futures ticks received yet.</p>}
+            {!fl.baseline.futures_profile_ready && <p className="mt-1 text-[11px] text-muted">Volume vs normal needs {fl.baseline.needs_sessions} recorded sessions ({fl.baseline.profile_sessions_futures} so far).</p>}
+          </div>
+          <div className="overflow-x-auto">
+            <div className="mb-1 text-xs text-muted">Top 5 by {fl.heavy5.basis}</div>
+            <table className="w-full min-w-[36rem] text-xs" data-testid="cc-heavy5">
+              <thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Stock</th><th className="py-1 text-right font-normal">Change</th><th className="py-1 text-right font-normal">Volume vs normal</th><th className="py-1 text-right font-normal">Net buying (est.)</th><th className="py-1 text-right font-normal">Book imbalance</th><th className="py-1 text-right font-normal">Trend</th><th className="py-1 text-right font-normal">RSI</th><th className="py-1 text-right font-normal">vs 20-day avg</th></tr></thead>
+              <tbody>
+                {fl.heavy5.stocks.map((s) => (
+                  <tr key={s.symbol} className="border-t border-rule/50">
+                    <td className="py-1 text-paper">{s.symbol}</td>
+                    <td className={`num py-1 text-right ${tone(s.change_pct)}`}>{fmtPct(s.change_pct)}</td>
+                    <td className={`num py-1 text-right ${s.relative_volume != null && s.relative_volume < 0.7 ? "text-warn" : "text-muted"}`}>{s.relative_volume == null ? MISSING : `${s.relative_volume.toFixed(2)}x`}</td>
+                    <td className={`num py-1 text-right ${tone(s.flow?.cvd)}`}>{s.flow ? fmtQty(s.flow.cvd) : MISSING}</td>
+                    <td className={`num py-1 text-right ${tone(s.flow?.depth_imbalance)}`}>{s.flow?.depth_imbalance == null ? MISSING : s.flow.depth_imbalance.toFixed(2)}</td>
+                    <td className="py-1 text-right text-muted">{s.technical.trend ?? MISSING}</td>
+                    <td className="num py-1 text-right text-muted">{s.technical.rsi14 == null ? MISSING : s.technical.rsi14.toFixed(0)}</td>
+                    <td className={`num py-1 text-right ${tone(s.technical.price_vs_sma20_pct)}`}>{fmtPct(s.technical.price_vs_sma20_pct)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {fl.heavy5.stocks.some((s) => !s.technical.enough_history) && <p className="mt-1 text-[11px] text-muted">Technical reads use NSE daily files; the 50-day trend needs 50 sessions of history, which is still being collected.</p>}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function Sectors({ d }: { d: IntradaySummary }) {
   const m = d.stocks;
   const rows = (m?.sectors.nifty500 ?? []).filter((r) => r.equal_weight_return != null);
@@ -600,6 +666,7 @@ export function CommandCenter({ expiry }: { expiry: string | null }) {
             <Regime d={d} />
             <Breadth d={d} />
             <Heavyweights d={d} />
+            <FlowCard d={d} />
             <Sectors d={d} />
             <Context d={d} />
             <Levels d={d} />

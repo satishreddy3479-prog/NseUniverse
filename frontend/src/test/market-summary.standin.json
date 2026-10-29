@@ -32,11 +32,13 @@
    "sessions": 12,
    "stocks": 8,
    "needs_sessions": 10,
+   "history_sessions": 12,
    "last_attempt": null
   },
+  "list_changes": [],
   "live": {
    "stocks_with_ticks": 8,
-   "subscribed": 8
+   "subscribed": 9
   }
  },
  "nifty50": {
@@ -282,6 +284,205 @@
     ]
    ],
    "coverage": 1.0
+  }
+ },
+ "flow": {
+  "futures": {
+   "symbol": "NIFTYFUT",
+   "estimated": true,
+   "since": "2026-10-29T04:30:00+00:00",
+   "buy_volume": 100,
+   "sell_volume": 0,
+   "unclassified_volume": 0,
+   "cvd": 100,
+   "cvd_pct": 100.0,
+   "classified_share": 1.0,
+   "quote_rule_share": 1.0,
+   "volume": 700,
+   "last_price": 100.0,
+   "depth_imbalance": 0.6,
+   "depth_imbalance_avg": 0.6,
+   "divergence": null,
+   "updated": "2026-10-29T04:30:00+00:00",
+   "relative_volume": null,
+   "relative_volume_reference": null
+  },
+  "futures_contract": "NIFTY26NOVFUT",
+  "futures_note": "not looked up yet",
+  "heavy5": {
+   "basis": "official index weights",
+   "stocks": [
+    {
+     "symbol": "AXISBANK",
+     "weight": 25.0,
+     "change_pct": 1.5,
+     "volume": 60,
+     "relative_volume": 0.5,
+     "flow": {
+      "symbol": "AXISBANK",
+      "estimated": true,
+      "since": "2026-10-29T04:30:00+00:00",
+      "buy_volume": 300,
+      "sell_volume": 0,
+      "unclassified_volume": 0,
+      "cvd": 300,
+      "cvd_pct": 100.0,
+      "classified_share": 1.0,
+      "quote_rule_share": 1.0,
+      "volume": 1300,
+      "last_price": 100.0,
+      "depth_imbalance": 0.6,
+      "depth_imbalance_avg": 0.6,
+      "divergence": null,
+      "updated": "2026-10-29T04:30:00+00:00"
+     },
+     "technical": {
+      "symbol": "AXISBANK",
+      "bars": 12,
+      "last_session": "2026-10-12",
+      "last_close": 100.0,
+      "sma20": null,
+      "sma50": null,
+      "rsi14": null,
+      "atr14": null,
+      "atr_pct": null,
+      "high20": null,
+      "low20": null,
+      "avg_volume20": null,
+      "trend": null,
+      "price_vs_sma20_pct": null,
+      "range_position": null,
+      "enough_history": false
+     }
+    },
+    {
+     "symbol": "ADANIENT",
+     "weight": 20.0,
+     "change_pct": 2.0,
+     "volume": 60,
+     "relative_volume": 0.5,
+     "flow": {
+      "symbol": "ADANIENT",
+      "estimated": true,
+      "since": "2026-10-29T04:30:00+00:00",
+      "buy_volume": 100,
+      "sell_volume": 0,
+      "unclassified_volume": 0,
+      "cvd": 100,
+      "cvd_pct": 100.0,
+      "classified_share": 1.0,
+      "quote_rule_share": 1.0,
+      "volume": 2100,
+      "last_price": 100.0,
+      "depth_imbalance": 0.6,
+      "depth_imbalance_avg": 0.6,
+      "divergence": null,
+      "updated": "2026-10-29T04:30:00+00:00"
+     },
+     "technical": {
+      "symbol": "ADANIENT",
+      "bars": 12,
+      "last_session": "2026-10-12",
+      "last_close": 100.0,
+      "sma20": null,
+      "sma50": null,
+      "rsi14": null,
+      "atr14": null,
+      "atr_pct": null,
+      "high20": null,
+      "low20": null,
+      "avg_volume20": null,
+      "trend": null,
+      "price_vs_sma20_pct": null,
+      "range_position": null,
+      "enough_history": false
+     }
+    },
+    {
+     "symbol": "ADANIPORTS",
+     "weight": 15.0,
+     "change_pct": 1.0,
+     "volume": 60,
+     "relative_volume": 0.5,
+     "flow": null,
+     "technical": {
+      "symbol": "ADANIPORTS",
+      "bars": 12,
+      "last_session": "2026-10-12",
+      "last_close": 100.0,
+      "sma20": null,
+      "sma50": null,
+      "rsi14": null,
+      "atr14": null,
+      "atr_pct": null,
+      "high20": null,
+      "low20": null,
+      "avg_volume20": null,
+      "trend": null,
+      "price_vs_sma20_pct": null,
+      "range_position": null,
+      "enough_history": false
+     }
+    },
+    {
+     "symbol": "APOLLOHOSP",
+     "weight": 10.0,
+     "change_pct": 1.0,
+     "volume": 60,
+     "relative_volume": 0.5,
+     "flow": null,
+     "technical": {
+      "symbol": "APOLLOHOSP",
+      "bars": 12,
+      "last_session": "2026-10-12",
+      "last_close": 100.0,
+      "sma20": null,
+      "sma50": null,
+      "rsi14": null,
+      "atr14": null,
+      "atr_pct": null,
+      "high20": null,
+      "low20": null,
+      "avg_volume20": null,
+      "trend": null,
+      "price_vs_sma20_pct": null,
+      "range_position": null,
+      "enough_history": false
+     }
+    },
+    {
+     "symbol": "BAJAJ-AUTO",
+     "weight": 10.0,
+     "change_pct": -2.0,
+     "volume": 60,
+     "relative_volume": 0.5,
+     "flow": null,
+     "technical": {
+      "symbol": "BAJAJ-AUTO",
+      "bars": 12,
+      "last_session": "2026-10-12",
+      "last_close": 100.0,
+      "sma20": null,
+      "sma50": null,
+      "rsi14": null,
+      "atr14": null,
+      "atr_pct": null,
+      "high20": null,
+      "low20": null,
+      "avg_volume20": null,
+      "trend": null,
+      "price_vs_sma20_pct": null,
+      "range_position": null,
+      "enough_history": false
+     }
+    }
+   ]
+  },
+  "baseline": {
+   "profile_sessions_futures": 0,
+   "futures_profile_ready": false,
+   "stock_profile_ready": false,
+   "needs_sessions": 5
   }
  },
  "sectors": {

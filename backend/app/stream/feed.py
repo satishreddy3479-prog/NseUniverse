@@ -124,6 +124,10 @@ def convert_sdk_message(msg: Any, now: datetime) -> FeedEvent | None:
         )
         return FeedEvent(kind="tick", tick=tick)
     full = kind == "scrip"
+    buy = list(getattr(msg, "buy", None) or []) if full else []
+    sell = list(getattr(msg, "sell", None) or []) if full else []
+    best_bid = _price(getattr(buy[0], "price", None)) if buy else None
+    best_ask = _price(getattr(sell[0], "price", None)) if sell else None
     tick = LiveTick(
         key=f"{seg}|{tok}",
         kind="scrip",
@@ -141,6 +145,14 @@ def convert_sdk_message(msg: Any, now: datetime) -> FeedEvent | None:
         net_change_pct=getattr(msg, "net_change_percent", None),
         last_trade_time_raw=_raw_time(getattr(msg, "last_trade_time", None)),
         last_update_time_raw=_raw_time(getattr(msg, "last_update_time", None)) if full else None,
+        bid=best_bid,
+        ask=best_ask,
+        bid_qty=sum(int(getattr(x, "quantity", 0) or 0) for x in buy) if buy else None,
+        ask_qty=sum(int(getattr(x, "quantity", 0) or 0) for x in sell) if sell else None,
+        total_buy_qty=_qty(getattr(msg, "total_buy_quantity", None)) if full else None,
+        total_sell_qty=_qty(getattr(msg, "total_sell_quantity", None)) if full else None,
+        last_trade_qty=_qty(getattr(msg, "last_trade_qty", None)) if full else None,
+        avg_price=_price(getattr(msg, "average_trade_price", None)) if full else None,
         received_at=now,
     )
     return FeedEvent(kind="tick", tick=tick)
@@ -192,11 +204,20 @@ class KotakFeed:
         from neo_api_client.websocket.feed import WsToken
 
         scrips = [
-            WsToken(t.exchange_segment, t.instrument_token) for t in tokens if t.kind == "scrip"
+            WsToken(t.exchange_segment, t.instrument_token)
+            for t in tokens
+            if t.kind == "scrip" and not t.depth
+        ]
+        depth = [
+            WsToken(t.exchange_segment, t.instrument_token)
+            for t in tokens
+            if t.kind == "scrip" and t.depth
         ]
         idx = [WsToken(t.exchange_segment, t.instrument_token) for t in tokens if t.kind == "index"]
         if scrips:
             await self._ws.subscribe_scrips(scrips)
+        if depth:
+            await self._ws.subscribe_depth(depth)
         if idx:
             await self._ws.subscribe_index(idx)
 

@@ -55,8 +55,8 @@ class Settings(BaseSettings):
     breadth_enabled: bool = True  # stock breadth, heavyweights, sectors (market-breadth-plan.md)
     eod_enabled: bool = True  # after-close archive, summary, manifest, backup (storage-plan.md)
     eod_backups: bool = True  # False on the server, where deploy/backup.sh already backs up nightly
-    snapshot_raw_keep_days: int = 0  # 0 = keep forever; set only with the owner's approval
-    snapshot_normalized_keep_days: int = 0  # same
+    snapshot_raw_keep_days: int = 7  # owner-approved retention (D58); 0 = keep forever
+    snapshot_normalized_keep_days: int = 14  # only days with a verified archive are ever removed
     backup_keep_daily: int = 7
     backup_keep_monthly: int = 6
     broker_daily_login: bool = True  # fresh broker sign-in every morning

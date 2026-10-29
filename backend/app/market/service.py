@@ -16,6 +16,7 @@ import contextlib
 import csv
 import io
 import logging
+import time as time_mod
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
@@ -23,6 +24,9 @@ from zoneinfo import ZoneInfo
 
 from app.logging_setup import log_event
 from app.market import metrics as m
+from app.market import technical as tech
+from app.market import weights as wmod
+from app.market.flow import FlowTracker, profile_fraction, volume_profile
 from app.market.sources import (
     BHAV_URL,
     LIST_URL,
@@ -31,6 +35,7 @@ from app.market.sources import (
     fetch_text,
     parse_bhavcopy,
     parse_index_list,
+    parse_nifty_future,
     parse_scrip_master,
 )
 from app.market.store import MarketStore
@@ -40,6 +45,7 @@ IST = ZoneInfo("Asia/Kolkata")
 logger = logging.getLogger(__name__)
 SESSION_OPEN, SESSION_CLOSE = time(9, 15), time(15, 30)
 INDEX_KEY = "nse_cm|Nifty 50"
+FUT_SYMBOL = "FUT:NIFTY"
 LISTS_AT, TOKENS_AT, BHAV_AT = time(7, 45), time(8, 5), time(19, 30)
 RETRY = timedelta(minutes=30)
 
@@ -57,19 +63,30 @@ class MarketService:
         store: MarketStore,
         *,
         ticks: Callable[[], dict[str, LiveTick]] = lambda: {},
-        scrip_master: Callable[[], Awaitable[list[dict[str, Any]]]] | None = None,
+        scrip_master: Callable[..., Awaitable[list[dict[str, Any]]]] | None = None,
+        monthly_expiry: Callable[[], date | None] = lambda: None,
         trading_day: Callable[[date], bool | None] = lambda d: d.weekday() < 5,
         approx_weights: Callable[[list[str], dict[str, float]], dict[str, float]] | None = None,
         enabled: bool = True,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self.store, self._ticks, self._scrip_master = store, ticks, scrip_master
-        self._trading_day, self._approx, self.enabled, self._clock = trading_day, approx_weights, enabled, clock
+        self._trading_day, self._approx, self.enabled, self._clock = (
+            trading_day,
+            approx_weights,
+            enabled,
+            clock,
+        )
         self._task: asyncio.Task[None] | None = None
         self._last_try: dict[str, datetime] = {}
         self._cache: tuple[float, dict[str, Any]] | None = None
         self._vol_cache: tuple[str, dict[str, float]] | None = None
         self.last_sample_note = "not started"
+        self._monthly_expiry = monthly_expiry
+        self.trackers: dict[str, FlowTracker] = {}
+        self._roles: tuple[float, dict[str, str]] | None = None
+        self._base_cache: tuple[str, dict[str, Any]] | None = None
+        self.future_note = "not looked up yet"
 
     # ----------------------------------------------------------------------------- universe
     def universe(self, index: str) -> list[m.Stock]:
@@ -89,7 +106,206 @@ class MarketService:
         """Stocks of NIFTY 500 (which contains NIFTY 50) that have a Kotak token."""
         tm = self.token_map()
         syms = {s.symbol for idx in ("nifty500", "nifty50") for s in self.universe(idx)}
-        return [FeedToken(exchange_segment="nse_cm", instrument_token=tm[s].token, kind="scrip") for s in sorted(syms) if s in tm]
+        heavy = set(self.heavy()[0])
+        out = [
+            FeedToken(
+                exchange_segment="nse_cm",
+                instrument_token=tm[s].token,
+                kind="scrip",
+                depth=s in heavy,
+            )
+            for s in sorted(syms)
+            if s in tm
+        ]
+        fut = tm.get(FUT_SYMBOL)
+        if fut is not None:
+            out.append(
+                FeedToken(
+                    exchange_segment="nse_fo", instrument_token=fut.token, kind="scrip", depth=True
+                )
+            )
+        return out
+
+    def heavy(self) -> tuple[list[str], str]:
+        """The five stocks followed in depth: the largest index weights, or (until weights exist) yesterday's traded value."""
+        syms = [x.symbol for x in self.universe("nifty50")]
+        wt = self.store.latest_weights("nifty50")
+        if wt and wt[0]:
+            top = sorted((k for k in wt[0] if k in syms), key=lambda k: -wt[0][k])[:5]
+            return top, "approximate index weights" if wt[2].startswith(
+                "approx"
+            ) else "official index weights"
+        tv = self.store.last_traded_value(syms)
+        return sorted(tv, key=lambda k: -tv[k])[
+            :5
+        ], "previous-session traded value (a liquidity proxy until weights exist)"
+
+    # ----------------------------------------------------------------------------- order flow (futures and top-5 stocks)
+    def _flow_roles(self) -> dict[str, str]:
+        now = time_mod.monotonic()
+        if self._roles and now - self._roles[0] < 60:
+            return self._roles[1]
+        roles = {
+            f"{t.exchange_segment}|{t.instrument_token}": (
+                "NIFTYFUT" if t.exchange_segment == "nse_fo" else ""
+            )
+            for t in self.stream_tokens()
+            if t.depth
+        }
+        by_token = {t.token: sym for sym, t in self.token_map().items()}
+        for k in list(roles):
+            if not roles[k]:
+                roles[k] = by_token.get(k.split("|", 1)[1], "")
+        roles = {k: v for k, v in roles.items() if v}
+        self._roles = (now, roles)
+        return roles
+
+    def on_tick(self, tick: LiveTick) -> None:
+        """Called for every breadth/depth tick; only the futures and the five heavyweights are tracked."""
+        name = self._flow_roles().get(tick.key)
+        if name is None:
+            return
+        t = tick.received_at.astimezone(IST)
+        if not SESSION_OPEN <= t.time() <= SESSION_CLOSE:
+            return
+        tr = self.trackers.get(name)
+        if tr is None:
+            tr = self.trackers[name] = FlowTracker(name)
+        tr.update(
+            tick.received_at,
+            t.strftime("%H:%M"),
+            t.date().isoformat(),
+            tick.volume,
+            tick.ltp,
+            tick.bid,
+            tick.ask,
+            tick.bid_qty,
+            tick.ask_qty,
+        )
+
+    def baselines(self, now: datetime) -> dict[str, Any]:
+        """Typical intraday volume curve and daily futures volume, from our own minute recordings of earlier sessions."""
+        today = now.astimezone(IST).date().isoformat()
+        if self._base_cache and self._base_cache[0] == today:
+            return self._base_cache[1]
+        since = (now - timedelta(days=40)).astimezone(UTC).isoformat()
+
+        def by_day(
+            kind: str, pick: Callable[[dict[str, Any]], float | None]
+        ) -> list[list[tuple[int, float]]]:
+            days: dict[str, list[tuple[int, float]]] = {}
+            for stamp, pl in self.store.samples_since(kind, since):
+                t = datetime.fromisoformat(stamp).astimezone(IST)
+                v = pick(pl)
+                if v is not None and t.date().isoformat() != today:
+                    days.setdefault(t.date().isoformat(), []).append(
+                        (
+                            int(
+                                (t - datetime.combine(t.date(), SESSION_OPEN, IST)).total_seconds()
+                                // 60
+                            ),
+                            v,
+                        )
+                    )
+            return list(days.values())
+
+        def pooled(pl: dict[str, Any]) -> float | None:
+            vols = [r[2] for r in pl.get("rows", []) if r[2] is not None]
+            return float(sum(vols)) if len(vols) >= 45 else None
+
+        fut = by_day("fut", lambda pl: pl.get("v"))
+        out = {
+            "fut_profile": volume_profile(fut),
+            "stock_profile": volume_profile(by_day("stocks50", pooled)),
+            "fut_avg": None,
+            "fut_sessions": len(fut),
+        }
+        finals = [max(v for _, v in d) for d in fut if d and max(t for t, _ in d) >= 360]
+        if len(finals) >= 5:
+            out["fut_avg"] = sum(finals[-20:]) / len(finals[-20:])
+        self._base_cache = (today, out)
+        return out
+
+    def flow_summary(
+        self,
+        now: datetime,
+        elapsed: float,
+        ticks: dict[str, m.StockTick],
+        table: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        base = self.baselines(now)
+        fut_tr = self.trackers.get("NIFTYFUT")
+        fut: dict[str, Any] | None = None
+        if fut_tr is not None and fut_tr.last_volume is not None:
+            fut = fut_tr.public()
+            frac = profile_fraction(base["fut_profile"], elapsed)
+            avg = base["fut_avg"]
+            fut["relative_volume"] = (
+                None
+                if not (frac and avg and elapsed >= 15)
+                else round(fut_tr.last_volume / (avg * frac), 2)
+            )
+            fut["relative_volume_reference"] = "profile" if frac else None
+        heavy, basis = self.heavy()
+        rows = {r["symbol"]: r for r in table}
+        stocks = []
+        for sym in heavy:
+            bars = [tech.Bar(*b) for b in self.store.daily_bars(sym, 80)]
+            tk = ticks.get(sym)
+            r = rows.get(sym, {})
+            tr = self.trackers.get(sym)
+            stocks.append({"symbol": sym, "weight": r.get("weight"), "change_pct": r.get("change_pct"), "volume": r.get("volume"),
+                           "relative_volume": r.get("relative_volume"), "flow": None if tr is None or tr.last_volume is None else tr.public(),
+                           "technical": tech.read(sym, bars, None if tk is None else tk.ltp)})  # fmt: skip
+        return {
+            "futures": fut,
+            "futures_contract": (
+                self.token_map().get(FUT_SYMBOL) or TokenInfo("", "", "")
+            ).trading_symbol
+            or None,
+            "futures_note": self.future_note,
+            "heavy5": {"basis": basis, "stocks": stocks},
+            "baseline": {
+                "profile_sessions_futures": base["fut_sessions"],
+                "futures_profile_ready": base["fut_profile"] is not None,
+                "stock_profile_ready": base["stock_profile"] is not None,
+                "needs_sessions": 5,
+            },
+        }
+
+    def estimate_weights(self, now: datetime | None = None) -> str:
+        """Weights recovered from the recorded index and stock changes (only while no official weights are loaded)."""
+        now = now or self._clock()
+        cur = self.store.latest_weights("nifty50")
+        if cur and not cur[2].startswith("approx"):
+            return "official weights loaded; nothing to estimate"
+        syms = [x.symbol for x in self.universe("nifty50")]
+        if not syms:
+            return "no NIFTY 50 list yet"
+        since = (now - timedelta(days=12)).astimezone(UTC).isoformat()
+        idx = {
+            a: p.get("idx")
+            for a, p in self.store.samples_since("nifty50", since)
+            if p.get("idx") is not None
+        }
+        rows: list[tuple[float, dict[str, float]]] = []
+        for a, p in self.store.samples_since("stocks50", since):
+            if a in idx:
+                x = {r[0]: float(r[1]) for r in p.get("rows", []) if r[1] is not None}
+                rows.append((float(idx[a]), x))
+        res = wmod.estimate(rows, syms)
+        if res is None:
+            self.store.attempt(
+                "weights_est", False, f"{len(rows)} minute rows; fit not accepted yet", now
+            )
+            return f"not enough clean data yet ({len(rows)} rows)"
+        w, rmse = res
+        self.store.save_weights(
+            "nifty50", w, now.astimezone(IST).date(), f"approx-regression rmse={rmse}", now
+        )
+        self.store.attempt("weights_est", True, f"{len(w)} weights, rmse {rmse}", now)
+        self._cache = None
+        return f"{len(w)} estimated weights (rmse {rmse} index points)"
 
     def stock_ticks(self) -> dict[str, m.StockTick]:
         by_token = {t.token: s for s, t in self.token_map().items()}
@@ -100,12 +316,20 @@ class MarketService:
             sym = by_token.get(lt.instrument_token)
             if sym is None:
                 continue
-            out[sym] = m.StockTick(sym, lt.ltp, lt.prev_close, lt.volume, lt.high, lt.low, lt.received_at)
+            out[sym] = m.StockTick(
+                sym, lt.ltp, lt.prev_close, lt.volume, lt.high, lt.low, lt.received_at
+            )
         return out
 
     def index_change(self) -> float | None:
         lt = self._ticks().get(INDEX_KEY)
-        return None if lt is None else m.change_pct(m.StockTick("NIFTY", lt.ltp, lt.prev_close, None, None, None, lt.received_at))
+        return (
+            None
+            if lt is None
+            else m.change_pct(
+                m.StockTick("NIFTY", lt.ltp, lt.prev_close, None, None, None, lt.received_at)
+            )
+        )
 
     def elapsed_minutes(self, now: datetime | None = None) -> float:
         t = (now or self._clock()).astimezone(IST)
@@ -132,39 +356,86 @@ class MarketService:
         vols = self.avg_volume()
         b50, b500 = m.breadth(u50, ticks, now), m.breadth(u500, ticks, now)
         c50 = m.contributions(u50, ticks, now)
-        v50 = m.relative_volume(u50, ticks, vols, elapsed, None, now) if vols else None
-        ref_change = idx if idx is not None else (c50.cap_weight_return if c50 and c50.cap_weight_return is not None else b50.equal_weight_return)
+        base = self.baselines(now)
+        frac = profile_fraction(base["stock_profile"], elapsed)
+        v50 = m.relative_volume(u50, ticks, vols, elapsed, frac, now) if vols else None
+        ref_change = (
+            idx
+            if idx is not None
+            else (
+                c50.cap_weight_return
+                if c50 and c50.cap_weight_return is not None
+                else b50.equal_weight_return
+            )
+        )
         q = m.move_quality(ref_change, b50 if u50 else None, c50, v50)
         chg50 = m.usable(u50, ticks, now)
         table = sorted(
-            ({"symbol": s.symbol, "sector": s.sector, "weight": s.weight, "change_pct": round(chg50[s.symbol], 3) if s.symbol in chg50 else None,
-              "contribution": None if s.weight is None or s.symbol not in chg50 else round(s.weight / 100 * chg50[s.symbol], 4),
-              "volume": getattr(ticks.get(s.symbol), "volume", None),
-              "relative_volume": None if (t := ticks.get(s.symbol)) is None or t.volume is None or not vols.get(s.symbol) or elapsed < 15 else round(t.volume / (vols[s.symbol] * min(1.0, elapsed / m.SESSION_MINUTES)), 2)}
-             for s in u50),
+            (
+                {
+                    "symbol": s.symbol,
+                    "sector": s.sector,
+                    "weight": s.weight,
+                    "change_pct": round(chg50[s.symbol], 3) if s.symbol in chg50 else None,
+                    "contribution": None
+                    if s.weight is None or s.symbol not in chg50
+                    else round(s.weight / 100 * chg50[s.symbol], 4),
+                    "volume": getattr(ticks.get(s.symbol), "volume", None),
+                    "relative_volume": None
+                    if (t := ticks.get(s.symbol)) is None
+                    or t.volume is None
+                    or not vols.get(s.symbol)
+                    or elapsed < 15
+                    else round(
+                        t.volume
+                        / (vols[s.symbol] * (frac or min(1.0, elapsed / m.SESSION_MINUTES))),
+                        2,
+                    ),
+                }
+                for s in u50
+            ),
             key=_rank_key,
         )
         sec50 = m.sector_table(u50, ticks, ref_change, None, vols or None, elapsed, now)
-        sec500 = m.sector_table(u500, ticks, ref_change, None, vols or None, elapsed, now, min_covered=3)
+        sec500 = m.sector_table(
+            u500, ticks, ref_change, None, vols or None, elapsed, now, min_covered=3
+        )
         prev = self.store.recent_samples("sectors", 1)
-        prev_ranks = {r["sector"]: r["rank"] for r in (prev[-1]["nifty500"] if prev else []) if r.get("rank")}
+        prev_ranks = {
+            r["sector"]: r["rank"] for r in (prev[-1]["nifty500"] if prev else []) if r.get("rank")
+        }
         wt = self.store.latest_weights("nifty50")
         return {
-            "generated_at": now.isoformat(), "elapsed_minutes": round(elapsed, 1), "index_change_pct": idx,
+            "generated_at": now.isoformat(),
+            "elapsed_minutes": round(elapsed, 1),
+            "index_change_pct": idx,
             "sources": self.sources(now),
             "nifty50": {
-                "breadth": b50.public(), "contribution": None if c50 is None else c50.public(),
-                "volume": None if v50 is None else v50.public(), "quality": q, "stocks": table[:50],
-                "weights": None if wt is None else {"as_of": wt[1], "source": wt[2], "approximate": wt[2].startswith("approx")},
+                "breadth": b50.public(),
+                "contribution": None if c50 is None else c50.public(),
+                "volume": None if v50 is None else v50.public(),
+                "quality": q,
+                "stocks": table[:50],
+                "weights": None
+                if wt is None
+                else {"as_of": wt[1], "source": wt[2], "approximate": wt[2].startswith("approx")},
             },
             "nifty500": {"breadth": b500.public()},
-            "sectors": {"nifty50": [r.public() for r in sec50], "nifty500": [r.public() for r in sec500],
-                        "rotation": m.rotation(prev_ranks, sec500)},  # fmt: skip
+            "flow": self.flow_summary(now, elapsed, ticks, table),
+            "sectors": {
+                "nifty50": [r.public() for r in sec50],
+                "nifty500": [r.public() for r in sec500],
+                "rotation": m.rotation(prev_ranks, sec500),
+            },  # fmt: skip
         }
 
     def sources(self, now: datetime | None = None) -> dict[str, Any]:
         l50, l500 = self.store.current_list("nifty50"), self.store.current_list("nifty500")
-        wt, tok, ses = self.store.latest_weights("nifty50"), self.store.latest_tokens(), self.store.bhav_sessions()
+        wt, tok, ses = (
+            self.store.latest_weights("nifty50"),
+            self.store.latest_tokens(),
+            self.store.bhav_sessions(),
+        )
         tm = self.token_map()
         ticks = self.stock_ticks()
         syms500 = [s.symbol for s in self.universe("nifty500")]
@@ -172,7 +443,8 @@ class MarketService:
             "lists": {"nifty50": l50 and {"stocks": len(l50[0]), **l50[1]}, "nifty500": l500 and {"stocks": len(l500[0]), **l500[1]}, "last_attempt": self.store.last_attempt("lists")},
             "tokens": {"day": tok and tok[1], "found": len([s for s in syms500 if s in tm]), "of": len(syms500), "last_attempt": self.store.last_attempt("tokens")},
             "weights": wt and {"as_of": wt[1], "source": wt[2], "stocks": len(wt[0]), "approximate": wt[2].startswith("approx")},
-            "volume_baseline": {"sessions": len(ses), "stocks": len(self.avg_volume()), "needs_sessions": 10, "last_attempt": self.store.last_attempt("bhav")},
+            "volume_baseline": {"sessions": len(ses), "stocks": len(self.avg_volume()), "needs_sessions": 10, "history_sessions": len(self.store.daily_sessions()), "last_attempt": self.store.last_attempt("bhav")},
+            "list_changes": self.store.list_changes(5),
             "live": {"stocks_with_ticks": len(ticks), "subscribed": len(self.stream_tokens())},
         }  # fmt: skip
 
@@ -206,9 +478,22 @@ class MarketService:
                 res[idx] = f"rejected: {e}"
                 continue
             assert f.body is not None
-            res[idx] = "new list stored" if self.store.save_list(idx, items, f.body, self._clock()) else "unchanged"
+            before = self.store.current_list(idx)
+            if self.store.save_list(idx, items, f.body, self._clock()):
+                res[idx] = "new list stored"
+                if before is not None:
+                    old, new = {c.symbol for c in before[0]}, {c.symbol for c in items}
+                    if old != new:
+                        self.store.save_list_change(
+                            idx, sorted(new - old), sorted(old - new), self._clock()
+                        )
+                        res[idx] = f"CHANGED: +{len(new - old)} -{len(old - new)}"
+            else:
+                res[idx] = "unchanged"
         ok = all(not v.startswith(("not fetched", "rejected")) for v in res.values())
-        self.store.attempt("lists", ok, "; ".join(f"{k}: {v}" for k, v in res.items()), self._clock())
+        self.store.attempt(
+            "lists", ok, "; ".join(f"{k}: {v}" for k, v in res.items()), self._clock()
+        )
         return res
 
     def refresh_bhav(self, session: date) -> str:
@@ -217,7 +502,9 @@ class MarketService:
             note = f"not published or not fetched ({f.error or f.status})"
             self.store.attempt("bhav", False, f"{session}: {note}", self._clock())
             return note
-        syms = {s.symbol for s in self.universe("nifty500")} | {s.symbol for s in self.universe("nifty50")}
+        syms = {s.symbol for s in self.universe("nifty500")} | {
+            s.symbol for s in self.universe("nifty50")
+        }
         try:
             rows = parse_bhavcopy(text, syms or None)
         except SourceError as e:
@@ -239,8 +526,26 @@ class MarketService:
             return f"failed: {type(e).__name__}"
         want = {s.symbol for idx in ("nifty500", "nifty50") for s in self.universe(idx)}
         keep = {k: v for k, v in tokens.items() if not want or k in want}
+        exp = self._monthly_expiry()
+        if exp is None:
+            self.future_note = "NIFTY futures not subscribed: the monthly expiry is not known yet"
+        else:
+            try:
+                fut = parse_nifty_future(await self._scrip_master("nse_fo"), exp.year, exp.month)
+            except Exception as e:  # noqa: BLE001
+                fut, self.future_note = None, f"NIFTY futures lookup failed: {type(e).__name__}"
+            else:
+                self.future_note = (
+                    f"NIFTY futures contract {fut.trading_symbol}"
+                    if fut
+                    else f"NIFTY futures for {exp:%Y-%m} not found in the F&O scrip master"
+                )
+            if fut:
+                keep[FUT_SYMBOL] = fut
         self.store.save_tokens(keep, self._clock().astimezone(IST).date())
-        self.store.attempt("tokens", bool(keep), f"{len(keep)} of {len(want)} stocks have a token", self._clock())
+        self.store.attempt(
+            "tokens", bool(keep), f"{len(keep)} of {len(want)} stocks have a token", self._clock()
+        )
         return f"{len(keep)} tokens"
 
     def import_weights(self, csv_text: str, as_of: date, source: str) -> dict[str, Any]:
@@ -248,7 +553,9 @@ class MarketService:
         rd = csv.DictReader(io.StringIO(csv_text.lstrip("﻿")))
         cols = {(c or "").strip().lower(): c for c in (rd.fieldnames or [])}
         sc = next((cols[k] for k in ("symbol",) if k in cols), None)
-        wc = next((cols[k] for k in ("weight", "weight_pct", "weightage", "weight(%)") if k in cols), None)
+        wc = next(
+            (cols[k] for k in ("weight", "weight_pct", "weightage", "weight(%)") if k in cols), None
+        )
         if sc is None or wc is None:
             raise SourceError("weights need columns symbol and weight")
         w: dict[str, float] = {}
@@ -265,7 +572,9 @@ class MarketService:
         if not 98.0 <= total <= 102.0:
             raise SourceError(f"weights sum to {total:.2f}%, expected about 100")
         n = self.store.save_weights("nifty50", w, as_of, source, self._clock())
-        self.store.attempt("weights", True, f"{n} weights from {source} as of {as_of}", self._clock())
+        self.store.attempt(
+            "weights", True, f"{n} weights from {source} as of {as_of}", self._clock()
+        )
         return {"stocks": len(w), "sum": round(total, 3), "stored": n}
 
     def refresh_weights_approx(self) -> str:
@@ -276,7 +585,10 @@ class MarketService:
         closes: dict[str, float] = {}
         with self.store._lock:  # noqa: SLF001 - one read of the newest closes
             for sym in syms:
-                r = self.store._db.execute("SELECT close FROM bhav WHERE symbol=? AND close IS NOT NULL ORDER BY session DESC LIMIT 1", (sym,)).fetchone()  # noqa: SLF001
+                r = self.store._db.execute(
+                    "SELECT close FROM bhav WHERE symbol=? AND close IS NOT NULL ORDER BY session DESC LIMIT 1",
+                    (sym,),
+                ).fetchone()  # noqa: SLF001
                 if r:
                     closes[sym] = float(r[0])
         try:
@@ -286,11 +598,22 @@ class MarketService:
             return f"failed: {type(e).__name__}"
         tot = sum(mcap.values())
         if len(mcap) < 45 or tot <= 0:
-            self.store.attempt("weights", False, f"only {len(mcap)} of {len(syms)} stocks had float shares", self._clock())
+            self.store.attempt(
+                "weights",
+                False,
+                f"only {len(mcap)} of {len(syms)} stocks had float shares",
+                self._clock(),
+            )
             return "too few stocks with float shares"
         w = {s: v / tot * 100 for s, v in mcap.items()}
         ses = self.store.bhav_sessions()
-        n = self.store.save_weights("nifty50", w, date.fromisoformat(ses[-1]) if ses else self._clock().astimezone(IST).date(), "approx-yahoo-float", self._clock())
+        n = self.store.save_weights(
+            "nifty50",
+            w,
+            date.fromisoformat(ses[-1]) if ses else self._clock().astimezone(IST).date(),
+            "approx-yahoo-float",
+            self._clock(),
+        )
         self.store.attempt("weights", True, f"{n} approximate weights", self._clock())
         return f"{n} approximate weights"
 
@@ -307,11 +630,59 @@ class MarketService:
         s = self.summary(now)
         stamp = now.astimezone(UTC).replace(second=0, microsecond=0).isoformat()
         b50, b500 = s["nifty50"]["breadth"], s["nifty500"]["breadth"]
-        keep = ("total", "covered", "advancing", "declining", "flat", "equal_weight_return", "at_high", "at_low")
-        self.store.record_sample("nifty50", stamp, {k: b50[k] for k in keep} | {"quality": s["nifty50"]["quality"]["state"], "cap_weight_return": (s["nifty50"]["contribution"] or {}).get("cap_weight_return"), "top5_share": (s["nifty50"]["contribution"] or {}).get("top5_share"), "weighted_rv": (s["nifty50"]["volume"] or {}).get("weighted_rv")})  # fmt: skip
+        keep = (
+            "total",
+            "covered",
+            "advancing",
+            "declining",
+            "flat",
+            "equal_weight_return",
+            "at_high",
+            "at_low",
+        )
+        self.store.record_sample("nifty50", stamp, {k: b50[k] for k in keep} | {"quality": s["nifty50"]["quality"]["state"], "cap_weight_return": (s["nifty50"]["contribution"] or {}).get("cap_weight_return"), "top5_share": (s["nifty50"]["contribution"] or {}).get("top5_share"), "weighted_rv": (s["nifty50"]["volume"] or {}).get("weighted_rv"), "idx": s["index_change_pct"]})  # fmt: skip
         self.store.record_sample("nifty500", stamp, {k: b500[k] for k in keep})
-        self.store.record_sample("sectors", stamp, {"nifty500": [{"sector": r["sector"], "rank": r["rank"], "ew": r["equal_weight_return"], "rs": r["relative_strength"]} for r in s["sectors"]["nifty500"]]})
-        self.store.record_sample("stocks50", stamp, {"rows": [[r["symbol"], r["change_pct"], r["volume"]] for r in s["nifty50"]["stocks"]]})
+        self.store.record_sample(
+            "sectors",
+            stamp,
+            {
+                "nifty500": [
+                    {
+                        "sector": r["sector"],
+                        "rank": r["rank"],
+                        "ew": r["equal_weight_return"],
+                        "rs": r["relative_strength"],
+                    }
+                    for r in s["sectors"]["nifty500"]
+                ]
+            },
+        )
+        self.store.record_sample(
+            "stocks50",
+            stamp,
+            {"rows": [[r["symbol"], r["change_pct"], r["volume"]] for r in s["nifty50"]["stocks"]]},
+        )
+        fut = self.trackers.get("NIFTYFUT")
+        if fut is not None and fut.last_volume is not None:
+            self.store.record_sample(
+                "fut",
+                stamp,
+                {
+                    "v": fut.last_volume,
+                    "cvd": fut.buy - fut.sell,
+                    "b": fut.buy,
+                    "s": fut.sell,
+                    "ltp": fut.last_ltp,
+                    "di": fut.last_imbalance,
+                },
+            )
+        rows = [
+            [k, tr.buy - tr.sell, tr.buy, tr.sell, tr.last_volume, tr.last_imbalance]
+            for k in self.heavy()[0]
+            if (tr := self.trackers.get(k)) and tr.last_volume is not None
+        ]
+        if rows:
+            self.store.record_sample("heavy5", stamp, {"rows": rows})
         return True
 
     def due(self, kind: str, now: datetime) -> bool:
@@ -320,24 +691,58 @@ class MarketService:
         if last and now - last < RETRY:
             return False
         if kind == "lists":
-            return self.store.current_list("nifty50") is None or self.store.current_list("nifty500") is None or (t.time() >= LISTS_AT and self.store.last_attempt("lists") is not None and self.store.last_attempt("lists")["at"][:10] < t.date().isoformat())  # type: ignore[index]
+            return (
+                self.store.current_list("nifty50") is None
+                or self.store.current_list("nifty500") is None
+                or (
+                    t.time() >= LISTS_AT
+                    and self.store.last_attempt("lists") is not None
+                    and self.store.last_attempt("lists")["at"][:10] < t.date().isoformat()
+                )
+            )  # type: ignore[index]
         if kind == "tokens":
             tok = self.store.latest_tokens()
-            return self.store.current_list("nifty500") is not None and (tok is None or (t.time() >= TOKENS_AT and tok[1] < t.date().isoformat()))
+            return self.store.current_list("nifty500") is not None and (
+                tok is None or (t.time() >= TOKENS_AT and tok[1] < t.date().isoformat())
+            )
         if kind == "bhav":
-            if t.time() < BHAV_AT or not self._trading_day(t.date()) or self.store.current_list("nifty500") is None:
+            if (
+                t.time() < BHAV_AT
+                or not self._trading_day(t.date())
+                or self.store.current_list("nifty500") is None
+            ):
                 return False
-            return t.date().isoformat() not in self.store.bhav_sessions() and (self.store.last_attempt("bhav") is None or self.store.last_attempt("bhav")["at"][:10] < t.date().isoformat() or not self.store.last_attempt("bhav")["ok"])  # type: ignore[index]
+            return t.date().isoformat() not in self.store.bhav_sessions() and (
+                self.store.last_attempt("bhav") is None
+                or self.store.last_attempt("bhav")["at"][:10] < t.date().isoformat()
+                or not self.store.last_attempt("bhav")["ok"]
+            )  # type: ignore[index]
         if kind == "bhav_backfill":
-            return len(self.store.bhav_sessions()) < 20 and self.store.current_list("nifty500") is not None
+            return (
+                len(self.store.daily_sessions()) < 55
+                and self.store.current_list("nifty500") is not None
+            )
+        if kind == "weights_est":
+            la = self.store.last_attempt("weights_est")
+            wt = self.store.latest_weights("nifty50")
+            return (
+                t.time() >= time(16, 15)
+                and bool(self._trading_day(t.date()))
+                and (wt is None or wt[2].startswith("approx"))
+                and (la is None or la["at"][:10] < t.date().isoformat())
+            )  # type: ignore[index]
         if kind == "weights":
-            return self.store.latest_weights("nifty50") is None and self._approx is not None and bool(self.store.bhav_sessions())
+            return (
+                self.store.latest_weights("nifty50") is None
+                and self._approx is not None
+                and bool(self.store.bhav_sessions())
+            )
         return False
 
     async def run_due(self) -> dict[str, str]:
         now = self._clock()
         out: dict[str, str] = {}
-        for kind in ("lists", "tokens", "bhav", "bhav_backfill", "weights"):
+        for kind in ("lists", "tokens", "bhav", "bhav_backfill", "weights", "weights_est"):
             if not self.due(kind, now):
                 continue
             self._last_try[kind] = now
@@ -349,16 +754,18 @@ class MarketService:
                 out[kind] = await asyncio.to_thread(self.refresh_bhav, now.astimezone(IST).date())
             elif kind == "bhav_backfill":
                 out[kind] = await asyncio.to_thread(self.backfill_bhav, now.astimezone(IST).date())
+            elif kind == "weights_est":
+                out[kind] = await asyncio.to_thread(self.estimate_weights)
             else:
                 out[kind] = await asyncio.to_thread(self.refresh_weights_approx)
         return out
 
-    def backfill_bhav(self, today: date, want: int = 22, max_requests: int = 6) -> str:
+    def backfill_bhav(self, today: date, want: int = 60, max_requests: int = 8) -> str:
         """Fetch missing recent sessions, newest first, a few per run (a polite pace); weekends are skipped."""
-        have = set(self.store.bhav_sessions())
+        have = set(self.store.daily_sessions())
         got = tried = 0
         d = today - timedelta(days=1)
-        while len(have) + got < want and tried < max_requests and (today - d).days < 45:
+        while len(have) + got < want and tried < max_requests and (today - d).days < 110:
             if d.weekday() < 5 and d.isoformat() not in have and self._trading_day(d) is not False:
                 tried += 1
                 if "rows stored" in self.refresh_bhav(d):
@@ -393,4 +800,9 @@ class MarketService:
             self._task = None
 
     def public_status(self) -> dict[str, Any]:
-        return {"enabled": self.enabled, "sample_note": self.last_sample_note, "sources": self.sources(), "counts": self.store.counts()}
+        return {
+            "enabled": self.enabled,
+            "sample_note": self.last_sample_note,
+            "sources": self.sources(),
+            "counts": self.store.counts(),
+        }

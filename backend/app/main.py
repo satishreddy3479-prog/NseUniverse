@@ -148,17 +148,24 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             market_store,
             ticks=stream.book.internal_ticks,
             scrip_master=scrip,
+            monthly_expiry=snapshot_service.cached_monthly_expiry,
             trading_day=lambda d: intraday.trading_day(d),
             enabled=settings.breadth_enabled,
         )
         app.state.market = market
+        stream.on_internal = market.on_tick
         intraday.market = market
         if settings.breadth_enabled:
             market_ref["m"] = market
             market.start()
         eod = EodService(
-            observations, intraday_store, history_store, settings.data_dir, settings.underlying,
-            log_dir=settings.log_dir, enabled=settings.eod_enabled,
+            observations,
+            intraday_store,
+            history_store,
+            settings.data_dir,
+            settings.underlying,
+            log_dir=settings.log_dir,
+            enabled=settings.eod_enabled,
             # the server's nightly timer (deploy/backup.sh) already backs up every database
             backups=settings.eod_backups and not Path("/var/backups/nse-universe").is_dir(),
             raw_keep_days=settings.snapshot_raw_keep_days,

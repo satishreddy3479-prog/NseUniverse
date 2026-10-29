@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -46,6 +47,9 @@ class BhavRow:
     close: float | None
     volume: int | None
     deliv_qty: int | None
+    open: float | None = None
+    high: float | None = None
+    low: float | None = None
 
 
 def _clean(text: str) -> str:
@@ -66,7 +70,14 @@ def parse_index_list(text: str, index: str) -> list[Constituent]:
         if not sym or (r.get(cols["series"]) or "").strip() != "EQ" or sym in seen:
             continue
         seen.add(sym)
-        out.append(Constituent(sym, (r.get(cols["company name"]) or "").strip(), (r.get(cols["industry"]) or "").strip(), (r.get(cols.get("isin code", "")) or "").strip()))
+        out.append(
+            Constituent(
+                sym,
+                (r.get(cols["company name"]) or "").strip(),
+                (r.get(cols["industry"]) or "").strip(),
+                (r.get(cols.get("isin code", "")) or "").strip(),
+            )
+        )
     lo, hi = INDEXES[index]
     if not lo <= len(out) <= hi:
         raise SourceError(f"{index} list has {len(out)} stocks, expected {lo}-{hi}")
@@ -110,7 +121,19 @@ def parse_bhavcopy(text: str, only: set[str] | None = None) -> list[BhavRow]:
             d = datetime.strptime(cells[idx["DATE1"]], "%d-%b-%Y").date()
         except ValueError:
             continue
-        out.append(BhavRow(d, sym, _num(cells[idx["PREV_CLOSE"]]), _num(cells[idx["CLOSE_PRICE"]]), _int(cells[idx["TTL_TRD_QNTY"]]), _int(cells[idx["DELIV_QTY"]]) if "DELIV_QTY" in idx else None))
+        out.append(
+            BhavRow(
+                d,
+                sym,
+                _num(cells[idx["PREV_CLOSE"]]),
+                _num(cells[idx["CLOSE_PRICE"]]),
+                _int(cells[idx["TTL_TRD_QNTY"]]),
+                _int(cells[idx["DELIV_QTY"]]) if "DELIV_QTY" in idx else None,
+                _num(cells[idx["OPEN_PRICE"]]) if "OPEN_PRICE" in idx else None,
+                _num(cells[idx["HIGH_PRICE"]]) if "HIGH_PRICE" in idx else None,
+                _num(cells[idx["LOW_PRICE"]]) if "LOW_PRICE" in idx else None,
+            )
+        )
     if not out and only is None:
         raise SourceError("bhavcopy holds no equity rows")
     return out
@@ -137,6 +160,26 @@ def parse_scrip_master(rows: Iterable[Mapping[str, Any]]) -> dict[str, TokenInfo
         sym = trd[:-3]
         out.setdefault(sym, TokenInfo(sym, tok, trd))
     return out
+
+
+_FUT = re.compile(r"^NIFTY(\d{2})([A-Z]{3})FUT$")
+_MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+
+
+def parse_nifty_future(
+    rows: Iterable[Mapping[str, Any]], year: int, month: int
+) -> TokenInfo | None:
+    """The NIFTY index-future contract of calendar month ``year``/``month`` from the F&O scrip master
+    (trading symbol like NIFTY26NOVFUT). Returns None when that contract is not in the file."""
+    want = f"NIFTY{year % 100:02d}{_MONTHS[month - 1]}FUT"
+    for r in rows:
+        low = {str(k).strip().lower(): v for k, v in r.items()}
+        trd = str(low.get("ptrdsymbol", "") or "").strip().upper()
+        tok = str(low.get("psymbol", "") or "").strip()
+        seg = str(low.get("pexchseg", "nse_fo") or "nse_fo").strip().lower()
+        if trd == want and tok and seg == "nse_fo":
+            return TokenInfo("FUT:NIFTY", tok, trd)
+    return None
 
 
 def fetch_text(url: str) -> tuple[Fetched, str | None]:

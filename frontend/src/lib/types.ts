@@ -510,13 +510,31 @@ export interface SectorRowT {
   sector: string; stocks: number; covered: number; advancing: number; declining: number; equal_weight_return: number | null;
   cap_weight_return: number | null; contribution_pts: number | null; relative_strength: number | null; rank: number | null; weighted_rv: number | null;
 }
+export interface FlowStats {
+  symbol: string; estimated: boolean; since: string | null; buy_volume: number; sell_volume: number; unclassified_volume: number;
+  cvd: number; cvd_pct: number | null; classified_share: number | null; quote_rule_share: number | null; volume: number | null; last_price: number | null;
+  depth_imbalance: number | null; depth_imbalance_avg: number | null; updated: string | null;
+  divergence: { window_minutes: number; price_change_pct: number; cvd_change: number; cvd_share_of_volume: number | null; state: string } | null;
+  relative_volume?: number | null; relative_volume_reference?: string | null;
+}
+export interface TechnicalRead {
+  symbol: string; bars: number; last_session: string | null; last_close: number | null; sma20: number | null; sma50: number | null; rsi14: number | null;
+  atr14: number | null; atr_pct: number | null; high20: number | null; low20: number | null; avg_volume20: number | null; trend: string | null;
+  price_vs_sma20_pct: number | null; range_position: number | null; enough_history: boolean;
+}
+export interface FlowBlock {
+  futures: FlowStats | null; futures_contract: string | null; futures_note: string;
+  heavy5: { basis: string; stocks: { symbol: string; weight: number | null; change_pct: number | null; volume: number | null; relative_volume: number | null; flow: FlowStats | null; technical: TechnicalRead }[] };
+  baseline: { profile_sessions_futures: number; futures_profile_ready: boolean; stock_profile_ready: boolean; needs_sessions: number };
+}
 export interface MarketSummary {
   generated_at: string; elapsed_minutes: number; index_change_pct: number | null;
   sources: {
     lists: { nifty50: { stocks: number; fetched_utc: string } | null; nifty500: { stocks: number; fetched_utc: string } | null };
     tokens: { day: string | null; found: number; of: number };
     weights: { as_of: string; source: string; stocks: number; approximate: boolean } | null;
-    volume_baseline: { sessions: number; stocks: number; needs_sessions: number };
+    volume_baseline: { sessions: number; stocks: number; needs_sessions: number; history_sessions?: number };
+    list_changes?: { index: string; detected: string; added: string[]; removed: string[] }[];
     live: { stocks_with_ticks: number; subscribed: number };
   };
   nifty50: {
@@ -528,6 +546,7 @@ export interface MarketSummary {
     weights: { as_of: string; source: string; approximate: boolean } | null;
   };
   nifty500: { breadth: BreadthBlock };
+  flow?: FlowBlock;
   sectors: { nifty50: SectorRowT[]; nifty500: SectorRowT[]; rotation: { sector: string; from_rank: number; to_rank: number; direction: string }[] };
 }
 export interface IntradayScoreRow { sample_utc: string; spot: number | null; score: number | null; label: string; coverage: number; regime: string | null }

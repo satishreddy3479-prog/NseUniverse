@@ -44,11 +44,28 @@ CREATE TABLE IF NOT EXISTS samples (
   sample_utc TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL,
   PRIMARY KEY (kind, sample_utc)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS daily (
+  session TEXT NOT NULL, symbol TEXT NOT NULL, open REAL, high REAL, low REAL, close REAL, volume INTEGER,
+  PRIMARY KEY (session, symbol)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS list_changes (
+  index_name TEXT NOT NULL, detected_utc TEXT NOT NULL, added TEXT NOT NULL, removed TEXT NOT NULL,
+  PRIMARY KEY (index_name, detected_utc)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS attempts (
   id INTEGER PRIMARY KEY AUTOINCREMENT, at_utc TEXT NOT NULL, kind TEXT NOT NULL, ok INTEGER NOT NULL, note TEXT
 );
 """
-_IMMUTABLE = ("raw_files", "constituents", "bhav", "weights", "tokens", "samples")
+_IMMUTABLE = (
+    "raw_files",
+    "constituents",
+    "bhav",
+    "weights",
+    "tokens",
+    "samples",
+    "daily",
+    "list_changes",
+)
 
 
 class MarketStore:
@@ -74,48 +91,117 @@ class MarketStore:
     # ---------------------------------------------------------------- attempts
     def attempt(self, kind: str, ok: bool, note: str = "", now: datetime | None = None) -> None:
         with self._lock:
-            self._db.execute("INSERT INTO attempts(at_utc, kind, ok, note) VALUES (?,?,?,?)", ((now or datetime.now(UTC)).isoformat(), kind, int(ok), note[:300]))
+            self._db.execute(
+                "INSERT INTO attempts(at_utc, kind, ok, note) VALUES (?,?,?,?)",
+                ((now or datetime.now(UTC)).isoformat(), kind, int(ok), note[:300]),
+            )
             self._db.commit()
 
     def last_attempt(self, kind: str) -> dict[str, Any] | None:
         with self._lock:
-            r = self._db.execute("SELECT at_utc, ok, note FROM attempts WHERE kind=? ORDER BY id DESC LIMIT 1", (kind,)).fetchone()
+            r = self._db.execute(
+                "SELECT at_utc, ok, note FROM attempts WHERE kind=? ORDER BY id DESC LIMIT 1",
+                (kind,),
+            ).fetchone()
         return None if r is None else {"at": r[0], "ok": bool(r[1]), "note": r[2]}
 
     # ---------------------------------------------------------------- constituent lists
-    def save_list(self, index: str, items: list[Constituent], raw: bytes, now: datetime | None = None) -> bool:
+    def save_list(
+        self, index: str, items: list[Constituent], raw: bytes, now: datetime | None = None
+    ) -> bool:
         """Store a list when its file is new. Returns True if it was new."""
         sha = hashlib.sha256(raw).hexdigest()
         stamp = (now or datetime.now(UTC)).isoformat()
         with self._lock:
-            if self._db.execute("SELECT 1 FROM raw_files WHERE kind=? AND sha256=?", (index, sha)).fetchone():
+            if self._db.execute(
+                "SELECT 1 FROM raw_files WHERE kind=? AND sha256=?", (index, sha)
+            ).fetchone():
                 return False
-            self._db.execute("INSERT INTO raw_files VALUES (?,?,?,?,?)", (index, stamp, sha, len(raw), gzip.compress(raw, mtime=0)))
-            self._db.executemany("INSERT INTO constituents VALUES (?,?,?,?,?,?,?)", [(index, sha, stamp, c.symbol, c.name, c.industry, c.isin) for c in items])
+            self._db.execute(
+                "INSERT INTO raw_files VALUES (?,?,?,?,?)",
+                (index, stamp, sha, len(raw), gzip.compress(raw, mtime=0)),
+            )
+            self._db.executemany(
+                "INSERT INTO constituents VALUES (?,?,?,?,?,?,?)",
+                [(index, sha, stamp, c.symbol, c.name, c.industry, c.isin) for c in items],
+            )
             self._db.commit()
         return True
 
     def current_list(self, index: str) -> tuple[list[Constituent], dict[str, str]] | None:
         with self._lock:
-            r = self._db.execute("SELECT list_sha, fetched_utc FROM constituents WHERE index_name=? ORDER BY fetched_utc DESC LIMIT 1", (index,)).fetchone()
+            r = self._db.execute(
+                "SELECT list_sha, fetched_utc FROM constituents WHERE index_name=? ORDER BY fetched_utc DESC LIMIT 1",
+                (index,),
+            ).fetchone()
             if r is None:
                 return None
-            rows = self._db.execute("SELECT symbol, name, industry, isin FROM constituents WHERE index_name=? AND list_sha=? ORDER BY symbol", (index, r[0])).fetchall()
+            rows = self._db.execute(
+                "SELECT symbol, name, industry, isin FROM constituents WHERE index_name=? AND list_sha=? ORDER BY symbol",
+                (index, r[0]),
+            ).fetchall()
         return [Constituent(*x) for x in rows], {"sha256": r[0], "fetched_utc": r[1]}
 
     # ---------------------------------------------------------------- bhavcopy
     def save_bhav(self, rows: list[BhavRow]) -> int:
         with self._lock:
             before = self._db.total_changes
-            self._db.executemany("INSERT OR IGNORE INTO bhav VALUES (?,?,?,?,?,?)", [(r.session.isoformat(), r.symbol, r.prev_close, r.close, r.volume, r.deliv_qty) for r in rows])
+            self._db.executemany(
+                "INSERT OR IGNORE INTO bhav VALUES (?,?,?,?,?,?)",
+                [
+                    (r.session.isoformat(), r.symbol, r.prev_close, r.close, r.volume, r.deliv_qty)
+                    for r in rows
+                ],
+            )
+            self._db.executemany(
+                "INSERT OR IGNORE INTO daily VALUES (?,?,?,?,?,?,?)",
+                [
+                    (r.session.isoformat(), r.symbol, r.open, r.high, r.low, r.close, r.volume)
+                    for r in rows
+                    if r.close is not None
+                ],
+            )
             self._db.commit()
             return self._db.total_changes - before
 
     def bhav_sessions(self) -> list[str]:
         with self._lock:
-            return [r[0] for r in self._db.execute("SELECT DISTINCT session FROM bhav ORDER BY session")]
+            return [
+                r[0] for r in self._db.execute("SELECT DISTINCT session FROM bhav ORDER BY session")
+            ]
 
-    def avg_volume(self, symbols: list[str], sessions: int = 20, min_sessions: int = 10) -> dict[str, float]:
+    def daily_sessions(self) -> list[str]:
+        with self._lock:
+            return [
+                r[0]
+                for r in self._db.execute("SELECT DISTINCT session FROM daily ORDER BY session")
+            ]
+
+    def daily_bars(
+        self, symbol: str, n: int = 80
+    ) -> list[tuple[str, float | None, float | None, float | None, float | None, int | None]]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT session, open, high, low, close, volume FROM daily WHERE symbol=? ORDER BY session DESC LIMIT ?",
+                (symbol, n),
+            ).fetchall()
+        return list(reversed(rows))
+
+    def last_traded_value(self, symbols: list[str]) -> dict[str, float]:
+        """close x volume of the newest session for each symbol (a liquidity ranking, not an index weight)."""
+        with self._lock:
+            r = self._db.execute("SELECT MAX(session) FROM bhav").fetchone()
+            if not r or r[0] is None:
+                return {}
+            rows = self._db.execute(
+                "SELECT symbol, close, volume FROM bhav WHERE session=?", (r[0],)
+            ).fetchall()
+        want = set(symbols)
+        return {s: float(c) * float(v) for s, c, v in rows if s in want and c and v}
+
+    def avg_volume(
+        self, symbols: list[str], sessions: int = 20, min_sessions: int = 10
+    ) -> dict[str, float]:
         """Mean traded quantity over the newest ``sessions`` sessions, per symbol with >= ``min_sessions`` of them."""
         days = self.bhav_sessions()[-sessions:]
         if len(days) < min_sessions:
@@ -130,11 +216,21 @@ class MarketStore:
         return {s: float(a) for s, a, n in rows if s in want and n >= min_sessions and a}
 
     # ---------------------------------------------------------------- weights
-    def save_weights(self, index: str, weights: dict[str, float], as_of: date, source: str, now: datetime | None = None) -> int:
+    def save_weights(
+        self,
+        index: str,
+        weights: dict[str, float],
+        as_of: date,
+        source: str,
+        now: datetime | None = None,
+    ) -> int:
         stamp = (now or datetime.now(UTC)).isoformat()
         with self._lock:
             before = self._db.total_changes
-            self._db.executemany("INSERT OR IGNORE INTO weights VALUES (?,?,?,?,?,?)", [(index, as_of.isoformat(), source, stamp, s, w) for s, w in weights.items()])
+            self._db.executemany(
+                "INSERT OR IGNORE INTO weights VALUES (?,?,?,?,?,?)",
+                [(index, as_of.isoformat(), source, stamp, s, w) for s, w in weights.items()],
+            )
             self._db.commit()
             return self._db.total_changes - before
 
@@ -142,18 +238,25 @@ class MarketStore:
         """(symbol -> weight %, as_of, source) of the newest weight set; official sources beat approximate ones of the same date."""
         with self._lock:
             r = self._db.execute(
-                "SELECT as_of, source FROM weights WHERE index_name=? GROUP BY as_of, source ORDER BY as_of DESC, (source LIKE 'approx%') ASC, source LIMIT 1", (index,)
+                "SELECT as_of, source FROM weights WHERE index_name=? GROUP BY as_of, source ORDER BY (source LIKE 'approx%') ASC, as_of DESC, source DESC LIMIT 1",
+                (index,),
             ).fetchone()
             if r is None:
                 return None
-            rows = self._db.execute("SELECT symbol, weight_pct FROM weights WHERE index_name=? AND as_of=? AND source=?", (index, r[0], r[1])).fetchall()
+            rows = self._db.execute(
+                "SELECT symbol, weight_pct FROM weights WHERE index_name=? AND as_of=? AND source=?",
+                (index, r[0], r[1]),
+            ).fetchall()
         return {s: float(w) for s, w in rows}, r[0], r[1]
 
     # ---------------------------------------------------------------- tokens
     def save_tokens(self, tokens: dict[str, TokenInfo], day: date) -> int:
         with self._lock:
             before = self._db.total_changes
-            self._db.executemany("INSERT OR IGNORE INTO tokens VALUES (?,?,?,?)", [(day.isoformat(), t.symbol, t.token, t.trading_symbol) for t in tokens.values()])
+            self._db.executemany(
+                "INSERT OR IGNORE INTO tokens VALUES (?,?,?,?)",
+                [(day.isoformat(), t.symbol, t.token, t.trading_symbol) for t in tokens.values()],
+            )
             self._db.commit()
             return self._db.total_changes - before
 
@@ -162,21 +265,66 @@ class MarketStore:
             r = self._db.execute("SELECT MAX(day) FROM tokens").fetchone()
             if not r or r[0] is None:
                 return None
-            rows = self._db.execute("SELECT symbol, token, trading_symbol FROM tokens WHERE day=?", (r[0],)).fetchall()
+            rows = self._db.execute(
+                "SELECT symbol, token, trading_symbol FROM tokens WHERE day=?", (r[0],)
+            ).fetchall()
         return {s: TokenInfo(s, t, ts) for s, t, ts in rows}, r[0]
 
     # ---------------------------------------------------------------- minute samples
     def record_sample(self, kind: str, sample_utc: str, payload: dict[str, Any]) -> bool:
         with self._lock:
-            cur = self._db.execute("INSERT OR IGNORE INTO samples VALUES (?,?,?)", (sample_utc, kind, json.dumps(payload, separators=(",", ":"), default=str)))
+            cur = self._db.execute(
+                "INSERT OR IGNORE INTO samples VALUES (?,?,?)",
+                (sample_utc, kind, json.dumps(payload, separators=(",", ":"), default=str)),
+            )
             self._db.commit()
             return cur.rowcount > 0
 
     def recent_samples(self, kind: str, limit: int = 120) -> list[dict[str, Any]]:
         with self._lock:
-            rows = self._db.execute("SELECT sample_utc, payload FROM samples WHERE kind=? ORDER BY sample_utc DESC LIMIT ?", (kind, limit)).fetchall()
+            rows = self._db.execute(
+                "SELECT sample_utc, payload FROM samples WHERE kind=? ORDER BY sample_utc DESC LIMIT ?",
+                (kind, limit),
+            ).fetchall()
         return [{"sample_utc": a, **json.loads(b)} for a, b in reversed(rows)]
+
+    def samples_since(self, kind: str, since_utc: str) -> list[tuple[str, dict[str, Any]]]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT sample_utc, payload FROM samples WHERE kind=? AND sample_utc>=? ORDER BY sample_utc",
+                (kind, since_utc),
+            ).fetchall()
+        return [(a, json.loads(b)) for a, b in rows]
+
+    def save_list_change(
+        self, index: str, added: list[str], removed: list[str], now: datetime
+    ) -> None:
+        with self._lock:
+            self._db.execute(
+                "INSERT OR IGNORE INTO list_changes VALUES (?,?,?,?)",
+                (index, now.isoformat(), ",".join(added), ",".join(removed)),
+            )
+            self._db.commit()
+
+    def list_changes(self, limit: int = 10) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT index_name, detected_utc, added, removed FROM list_changes ORDER BY detected_utc DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "index": a,
+                "detected": b,
+                "added": [x for x in c.split(",") if x],
+                "removed": [x for x in d.split(",") if x],
+            }
+            for a, b, c, d in rows
+        ]
 
     def counts(self) -> dict[str, int]:
         with self._lock:
-            return {t: int(self._db.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]) for t in (*_IMMUTABLE, "attempts")}  # noqa: S608 - fixed names
+            return {
+                t: int(self._db.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0])  # noqa: S608 - fixed names
+                for t in (*_IMMUTABLE, "attempts")
+            }

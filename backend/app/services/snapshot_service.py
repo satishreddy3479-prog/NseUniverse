@@ -75,6 +75,11 @@ class SnapshotService:
                 return await op()
             raise
 
+    def cached_monthly_expiry(self) -> date | None:
+        """Current-monthly expiry from the last expiry lookup (None before the first lookup)."""
+        c = self._expiry_cache
+        return None if c is None else c.monthly
+
     async def expiries(self, *, force: bool = False) -> ExpirySelection:
         async with self._expiry_lock:
             now = datetime.now(UTC)

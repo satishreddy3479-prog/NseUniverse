@@ -373,3 +373,105 @@ def test_the_intraday_summary_uses_stock_breadth_for_score_context_and_health(tm
     off = svc.summary(EXP)
     assert next(c for c in off["assessment"]["components"] if c["key"] == "breadth")["available"] is False
     assert off["stocks"] is None
+
+
+# ------------------------------------------------------------------------------------ futures, heavyweights, flow
+
+
+def depth_tick(key: str, sym: str, ltp: float, vol: int, bid: float, ask: float, kind_seg: str = "nse_cm", token: str | None = None) -> LiveTick:
+    tok = token or TOKENS[sym]
+    return LiveTick(key=key, kind="scrip", exchange_segment=kind_seg, instrument_token=tok, ltp=ltp, prev_close=100.0, volume=vol, bid=bid, ask=ask,
+                    bid_qty=800, ask_qty=200, received_at=NOW)  # fmt: skip
+
+
+def test_heavy_five_follow_the_weights_and_get_depth_tokens(tmp_path: Path) -> None:
+    svc = build(tmp_path, {s: 101.0 for s in SYMS})
+    svc.store.save_tokens({"FUT:NIFTY": TokenInfo("FUT:NIFTY", "55001", "NIFTY26NOVFUT")}, date(2026, 10, 29))
+    heavy, basis = svc.heavy()
+    assert heavy[:3] == ["AXISBANK", "ADANIENT", "ADANIPORTS"] and len(heavy) == 5 and basis == "official index weights"
+    toks = svc.stream_tokens()
+    depth = {t.key for t in toks if t.depth}
+    assert depth == {f"nse_cm|{TOKENS[s]}" for s in heavy} | {"nse_fo|55001"}
+    assert len([t for t in toks if t.exchange_segment == "nse_cm"]) == 8  # no duplicate subscription for the five
+
+
+def test_without_weights_the_five_are_chosen_by_traded_value_and_labelled_as_a_proxy(tmp_path: Path) -> None:
+    svc = build(tmp_path, {s: 101.0 for s in SYMS}, weights=False, volumes=False)
+    svc.store.save_bhav([sources.BhavRow(date(2026, 10, 28), s, 100.0, 100.0 + i, 1000 * (i + 1), None) for i, s in enumerate(SYMS)])
+    heavy, basis = svc.heavy()
+    assert heavy == ["BAJFINANCE", "BAJAJ-AUTO", "BSE", "AXISBANK", "ASIANPAINT"] and "proxy" in basis  # close x volume: 856000, 742000, 630000, 520000, 412000
+
+
+def test_depth_ticks_feed_the_flow_tracker_and_the_summary(tmp_path: Path) -> None:
+    svc = build(tmp_path, {s: 101.0 for s in SYMS})
+    k = f"nse_cm|{TOKENS['AXISBANK']}"
+    svc.on_tick(depth_tick(k, "AXISBANK", 100.0, 1000, 99.95, 100.0))
+    svc.on_tick(depth_tick(k, "AXISBANK", 100.0, 1300, 99.95, 100.0))  # traded at the ask: 300 buy
+    svc.on_tick(depth_tick("nse_cm|999", "ADANIENT", 100.0, 5, 99.0, 101.0, token="999"))  # not a depth stock: ignored
+    ax = next(r for r in svc.summary(NOW)["flow"]["heavy5"]["stocks"] if r["symbol"] == "AXISBANK")
+    assert ax["flow"]["buy_volume"] == 300 and ax["flow"]["cvd"] == 300 and ax["flow"]["depth_imbalance"] == pytest.approx(0.6)  # (800-200)/1000
+    assert ax["weight"] == 25.0 and ax["technical"]["bars"] == 12 and ax["technical"]["sma50"] is None  # 12 stored sessions: no 50-day average
+    assert "999" not in {t.symbol for t in svc.trackers.values()} and set(svc.trackers) == {"AXISBANK"}
+
+
+def test_futures_relative_volume_uses_the_profile_built_from_earlier_sessions(tmp_path: Path) -> None:
+    svc = build(tmp_path, {s: 101.0 for s in SYMS})
+    svc.store.save_tokens({"FUT:NIFTY": TokenInfo("FUT:NIFTY", "55001", "NIFTY26NOVFUT")}, date(2026, 10, 29))
+    # five earlier sessions of recorded futures volume, front-loaded: share done = sqrt(t/375), 1000 lots by the close
+    # (a formula-built stand-in series; real recordings accumulate from the first market-hours session)
+    for day in (22, 23, 26, 27, 28):
+        for t in range(0, 376):
+            at = datetime(2026, 10, day, 9, 15, tzinfo=UTC) - timedelta(hours=5, minutes=30) + timedelta(minutes=t)
+            svc.store.record_sample("fut", at.isoformat(), {"v": round(1000 * (t / 375) ** 0.5, 4)})
+    k = "nse_fo|55001"
+    svc.on_tick(depth_tick(k, "AXISBANK", 25000.0, 600, 24999.0, 25000.0, "nse_fo", "55001"))
+    svc.on_tick(depth_tick(k, "AXISBANK", 25000.0, 700, 24999.0, 25000.0, "nse_fo", "55001"))
+    f = svc.summary(NOW)["flow"]
+    assert f["futures"]["cvd"] == 100 and f["futures_contract"] == "NIFTY26NOVFUT"
+    # 10:00 IST = minute 45: expected share (45/375)^0.5 = 0.3464 of 1000 -> 700 / 346.4 = 2.02
+    assert f["futures"]["relative_volume"] == pytest.approx(700 / (1000 * (45 / 375) ** 0.5), abs=0.01)
+    assert f["futures"]["relative_volume_reference"] == "profile" and f["baseline"]["futures_profile_ready"] is True
+
+
+def test_futures_have_no_relative_volume_until_five_sessions_exist(tmp_path: Path) -> None:
+    svc = build(tmp_path, {s: 101.0 for s in SYMS})
+    svc.store.save_tokens({"FUT:NIFTY": TokenInfo("FUT:NIFTY", "55001", "NIFTY26NOVFUT")}, date(2026, 10, 29))
+    k = "nse_fo|55001"
+    svc.on_tick(depth_tick(k, "AXISBANK", 25000.0, 600, 24999.0, 25000.0, "nse_fo", "55001"))
+    svc.on_tick(depth_tick(k, "AXISBANK", 25000.0, 700, 24999.0, 25000.0, "nse_fo", "55001"))
+    fut = svc.summary(NOW)["flow"]["futures"]
+    assert fut["relative_volume"] is None and fut["cvd"] == 100  # flow works at once; the volume reference needs history
+
+
+def test_weights_are_estimated_from_recorded_minutes_and_never_replace_official_ones(tmp_path: Path) -> None:
+    """FORMULA CHECK: the recorded index change is built from known weights, then recovered."""
+    import random
+
+    random.seed(3)
+    svc = build(tmp_path, {s: 101.0 for s in SYMS}, weights=False)
+    assert svc.estimate_weights(NOW).startswith("not enough clean data")
+    for i in range(200):
+        chg = {s: random.gauss(0, 0.5) for s in SYMS}
+        idx = sum(WEIGHTS[s] / 100 * chg[s] for s in SYMS)
+        stamp = (NOW - timedelta(minutes=300 - i)).replace(second=0, microsecond=0).isoformat()
+        svc.store.record_sample("nifty50", stamp, {"idx": idx})
+        svc.store.record_sample("stocks50", stamp, {"rows": [[s, chg[s], 10] for s in SYMS]})
+    assert "estimated weights" in svc.estimate_weights(NOW)
+    w, _, src = svc.store.latest_weights("nifty50") or ({}, "", "")
+    assert src.startswith("approx-regression") and all(abs(w[s] - WEIGHTS[s]) < 0.1 for s in SYMS)
+    assert svc.summary(NOW)["nifty50"]["weights"]["approximate"] is True
+    svc.store.save_weights("nifty50", WEIGHTS, date(2026, 9, 1), "NSE factsheet", NOW)  # an older official file still wins
+    assert (svc.store.latest_weights("nifty50") or ({}, "", ""))[2] == "NSE factsheet"
+    assert "official weights loaded" in svc.estimate_weights(NOW)
+
+
+def test_a_changed_constituent_list_is_logged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    svc = build(tmp_path, {})
+    changed = LIST_TEXT.replace("BAJAJ-AUTO", "NEWSTOCK")
+    monkeypatch.setattr("app.market.service.fetch_text", lambda url: (SimpleNamespace(body=changed.encode(), status=200, error=None), changed))
+    res = svc.refresh_lists()
+    assert res["nifty50"] == "CHANGED: +1 -1"
+    assert svc.store.list_changes()[0]["added"] == ["NEWSTOCK"] and svc.store.list_changes()[0]["removed"] == ["BAJAJ-AUTO"]
+    assert svc.refresh_lists()["nifty50"] == "unchanged"

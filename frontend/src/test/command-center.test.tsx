@@ -100,7 +100,7 @@ describe("Market Sentiment Command Center", () => {
     await screen.findByTestId("cc-regime");
     expect(base.stocks).toBeNull();
     expect(screen.getByText("Stock breadth is turned off on this backend.")).toBeInTheDocument();
-    expect(screen.getAllByText("Stock breadth is turned off.", { selector: "p" })).toHaveLength(2); // heavyweights and sectors cards
+    expect(screen.getAllByText("Stock breadth is turned off.", { selector: "p" })).toHaveLength(3); // heavyweights, flow and sectors cards
   });
 
   it("shows breadth, move quality, heavyweights and sectors from the backend's numbers", async () => {
@@ -120,6 +120,30 @@ describe("Market Sentiment Command Center", () => {
     expect(hw.getByText(top.symbol)).toBeInTheDocument();
     const sec = within(screen.getByTestId("cc-sectors"));
     expect(sec.getByText("Financial Services")).toBeInTheDocument();
+  });
+
+  it("shows futures flow and the top-5 stocks, labelled as estimated, with missing values as dashes", async () => {
+    const stocks = standin as unknown as MarketSummary;
+    mock({ ...base, stocks });
+    renderCC();
+    const flow = within(await screen.findByTestId("cc-flow"));
+    expect(flow.getByText(/NIFTY current-month future \(NIFTY26NOVFUT\)/)).toBeInTheDocument();
+    expect(flow.getByText(/Net buying \(CVD, estimated\)/)).toBeInTheDocument();
+    const fut = stocks.flow!.futures!;
+    expect(flow.getAllByText(new RegExp(`${fut.cvd}`)).length).toBeGreaterThan(0);
+    expect(flow.getByText(/Volume vs normal needs 5 recorded sessions/)).toBeInTheDocument();
+    const t = within(screen.getByTestId("cc-heavy5"));
+    expect(t.getAllByRole("row").length).toBe(1 + stocks.flow!.heavy5.stocks.length);
+    expect(flow.getByText(/the 50-day trend needs 50 sessions/)).toBeInTheDocument();
+  });
+
+  it("explains that futures are not subscribed instead of inventing flow", async () => {
+    const stocks = JSON.parse(JSON.stringify(standin)) as MarketSummary;
+    stocks.flow!.futures = null;
+    stocks.flow!.futures_note = "NIFTY futures not subscribed: the monthly expiry is not known yet";
+    mock({ ...base, stocks });
+    renderCC();
+    expect(await screen.findByText(/NIFTY futures not subscribed: the monthly expiry is not known yet/)).toBeInTheDocument();
   });
 
   it("explains which source is missing when no stock prices are streaming", async () => {

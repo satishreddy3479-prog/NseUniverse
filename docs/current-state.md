@@ -6,6 +6,7 @@ _Last updated: 2026-10-29_
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
 ## Market breadth (built 2026-10-29, unverified live)
+- Added 29 Oct evening (D58): NIFTY futures flow/CVD, depth for the top-5 heavyweights, technical read from daily bars, estimated weights, own intraday volume profile (after 5 sessions), list-change log, snapshot retention enabled (raw 7 d, normalized 14 d, verified-archive days only). Offline-tested; Kotak depth fields and the F&O scrip master are unverified.
 - `/api/market/summary|status|coverage`, `POST /api/market/refresh`, `POST /api/market/weights/import`. NIFTY 50/500 breadth, heavyweight contribution, relative volume, sectors in the Command Center. Offline-tested only; needs a market-hours check of token coverage and tick fields. Weights not loaded. See D57.
 
 ## Implemented (Checkpoint 1)

@@ -63,6 +63,15 @@ class LiveTick(BaseModel):
     net_change_pct: float | None = None
     last_trade_time_raw: int | None = None
     last_update_time_raw: int | None = None
+    # depth fields: only for instruments subscribed with market depth
+    bid: float | None = None
+    ask: float | None = None
+    bid_qty: int | None = None  # total quantity over the visible bid levels
+    ask_qty: int | None = None
+    total_buy_qty: int | None = None
+    total_sell_qty: int | None = None
+    last_trade_qty: int | None = None
+    avg_price: float | None = None
     received_at: datetime
     seq: int = 0
     source: Literal["live"] = "live"
@@ -72,6 +81,7 @@ class FeedToken(BaseModel):
     exchange_segment: str
     instrument_token: str
     kind: Literal["scrip", "index"] = "scrip"
+    depth: bool = False  # subscribe with market depth (bid/ask levels) instead of the touch line
 
     @property
     def key(self) -> str:

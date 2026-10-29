@@ -73,7 +73,7 @@ A day missed because the machine was off is caught up, oldest first, at the next
 | Rule | State |
 |---|---|
 | Remove expired backup folders, old `exports/` files, stray `*.tmp` | in force (regenerable) |
-| Remove raw payloads / normalized snapshot files after N days | **not enabled** (`SNAPSHOT_RAW_KEEP_DAYS=0`, `SNAPSHOT_NORMALIZED_KEEP_DAYS=0`) until the owner picks the limits |
+| Remove raw payloads / normalized snapshot files after N days | **enabled 29 Oct (D58)**: raw 7 days, normalized 14 days, only days with a verified archive; set the env vars to 0 to disable |
 | Trim the observation database | **not enabled, not implemented** |
 
 ## Status and restore

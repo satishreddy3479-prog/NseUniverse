@@ -114,6 +114,8 @@ class StreamManager:
         self.last_market_data_at: datetime | None = None
         self.subscribed_tokens = 0
         self.market_message_count = 0
+        self.on_internal: Callable[[LiveTick], None] | None = None
+        self.on_internal_errors = 0
         self.market_subscribed = 0
         self.market_note = "not requested"
         self.acknowledged_tokens = 0
@@ -392,6 +394,11 @@ class StreamManager:
         if ev.kind == "tick" and ev.tick is not None and ev.tick.key in self.book.internal_keys:
             self.book.update_internal(ev.tick)
             self.market_message_count += 1
+            if self.on_internal is not None:
+                try:
+                    self.on_internal(ev.tick)
+                except Exception:  # noqa: BLE001 - analysis must never disturb the feed
+                    self.on_internal_errors += 1
             return
         if ev.kind == "tick" and ev.tick is not None:
             self.message_count += 1
