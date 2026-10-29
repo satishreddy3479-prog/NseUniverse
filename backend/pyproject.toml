@@ -31,6 +31,8 @@ ignore = ["S101"]
 [tool.ruff.lint.per-file-ignores]
 "app/prediction/news_service.py" = ["E501"]
 "app/prediction/daylog.py" = ["E501"]
+"app/strategy/**" = ["E501"]
+"tests/unit/test_strategy_backtest.py" = ["E501"]
 "app/prediction/news_store.py" = ["E501"]
 "app/prediction/events.py" = ["E501"]
 # intraday: formula strings and evidence text read better on one line

@@ -302,6 +302,18 @@ class ObservationStore:
             out[str(d)] = max(out.get(str(d), 0), int(n))
         return out
 
+    def lot_size(self, sample_id: int) -> int | None:
+        """Lot size stored with a sample (read-only); None when the broker response had none."""
+        with self._lock:
+            r = self._db.execute("SELECT lot_size FROM samples WHERE sample_id=?", (sample_id,)).fetchone()
+        return None if r is None or r[0] is None else int(r[0])
+
+    def last_sample_id(self) -> int:
+        """Highest sample id stored: with the per-day counts it fingerprints the data a backtest read (read-only)."""
+        with self._lock:
+            r = self._db.execute("SELECT MAX(sample_id) FROM samples").fetchone()
+        return int(r[0] or 0)
+
     def window_counts(self, underlying: str, start_ms: int, end_ms: int) -> tuple[int, int]:
         """(samples, contract rows) received in [start_ms, end_ms) (read-only; used to verify archives)."""
         with self._lock:

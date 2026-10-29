@@ -12,6 +12,7 @@ import { Settings } from "./pages/Settings";
 // Loaded on demand so the charting library is not part of the first page.
 const Analysis = lazy(() => import("./pages/Analysis"));
 const Prediction = lazy(() => import("./pages/Prediction"));
+const StrategyBuilder = lazy(() => import("./pages/StrategyBuilder"));
 
 export function makeQueryClient() {
   return new QueryClient({
@@ -33,6 +34,8 @@ export function AppRoutes() {
           <Suspense fallback={<p className="text-muted">Loading analysis…</p>}><Analysis /></Suspense>} />
         <Route path="prediction" element={
           <Suspense fallback={<p className="text-muted">Loading prediction…</p>}><Prediction /></Suspense>} />
+        <Route path="strategy" element={
+          <Suspense fallback={<p className="text-muted">Loading strategy builder…</p>}><StrategyBuilder /></Suspense>} />
         <Route path="charts" element={<Navigate to="/analysis" replace />} />
         <Route path="data" element={<DataSessions />} />
         <Route path="diagnostics" element={<Diagnostics />} />

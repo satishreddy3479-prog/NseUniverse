@@ -38,6 +38,7 @@ from app.services.snapshot_service import SnapshotService
 from app.services.state import AppState, ErrorEvent, SnapshotActivity
 from app.storage.observations import ObservationStore
 from app.storage.store import SnapshotStore, StorageError
+from app.strategy.backtest import BacktestConfig, backtest
 from app.stream.models import StreamStatusModel
 
 router = APIRouter(prefix="/api")
@@ -400,6 +401,33 @@ async def oi_series_route(
         each_side=_each_side(strikes), since=_time(since, "since"), until=_time(until, "until"),
         max_points=max_points,
     )  # fmt: skip
+
+
+@router.get("/strategy/availability")
+async def strategy_availability(request: Request) -> dict[str, Any]:
+    """Which stored sessions a strategy can be tested on, and their sample counts."""
+    from app.strategy.backtest import MIN_SAMPLES_PER_SESSION
+
+    counts = await asyncio.to_thread(_obs(request).session_sample_counts, _svc(request).underlying)
+    days = sorted(counts)
+    return {
+        "underlying": _svc(request).underlying,
+        "sessions": [
+            {"session": d, "samples": counts[d], "usable": counts[d] >= MIN_SAMPLES_PER_SESSION}
+            for d in days
+        ],
+        "min_samples_per_session": MIN_SAMPLES_PER_SESSION,
+        "source": (
+            "Option chains this app stored itself (Kotak last traded prices, about one a minute "
+            "in market hours). No older history exists."
+        ),
+    }
+
+
+@router.post("/strategy/backtest")
+async def strategy_backtest(request: Request, cfg: BacktestConfig) -> dict[str, Any]:
+    """Run a configured strategy over the stored sessions (read-only, reproducible)."""
+    return await asyncio.to_thread(backtest, _obs(request), cfg)
 
 
 @router.get("/market/summary")

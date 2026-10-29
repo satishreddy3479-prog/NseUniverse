@@ -6,6 +6,7 @@ export const NAV: { to: string; label: string; short: string; planned?: string }
   { to: "/option-chain", label: "Live option chain", short: "L" },
   { to: "/expiry-comparison", label: "Expiry comparison", short: "E", planned: "Checkpoint 3" },
   { to: "/analysis", label: "Intraday analysis", short: "A" },
+  { to: "/strategy", label: "Strategy builder", short: "B" },
   { to: "/prediction", label: "Prediction", short: "P" },
   { to: "/data", label: "Data & sessions", short: "D" },
   { to: "/diagnostics", label: "Connection diagnostics", short: "C" },
@@ -18,6 +19,7 @@ const ICONS: Record<string, string> = {
   "/option-chain": "M4 6h16M4 12h16M4 18h16M9 6v12M15 6v12",
   "/expiry-comparison": "M7 4v16M17 4v16M3 8h8M13 16h8",
   "/analysis": "M4 20V10M10 20V4M16 20v-8M22 20H2",
+  "/strategy": "M3 17l5-6 4 3 6-8 3 4M3 21h18",
   "/prediction": "M12 3l2.2 5.3L20 9l-4.3 3.8L17 19l-5-3-5 3 1.3-6.2L4 9l5.8-.7z",
   "/data": "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6",
   "/diagnostics": "M2 12h4l3-8 4 16 3-8h6",
@@ -27,7 +29,7 @@ const ICONS: Record<string, string> = {
 // One colour per destination so the rail reads at a glance.
 const TINT: Record<string, string> = {
   "/": "var(--info)", "/option-chain": "var(--up)", "/expiry-comparison": "var(--warn)", "/analysis": "var(--brass)",
-  "/prediction": "var(--accent)", "/data": "var(--info)", "/diagnostics": "var(--down)", "/settings": "var(--muted)",
+  "/strategy": "var(--info)", "/prediction": "var(--accent)", "/data": "var(--info)", "/diagnostics": "var(--down)", "/settings": "var(--muted)",
 };
 
 const PIN_KEY = "nse.nav.pinned";
