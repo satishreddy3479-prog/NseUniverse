@@ -272,6 +272,29 @@ class ObservationStore:
                 )
             }
 
+    def day_counts(self, underlying: str, start_ms: int, end_ms: int) -> list[tuple[str, int]]:
+        """(expiry, sample count) of samples received in [start_ms, end_ms] (read-only)."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT expiry, COUNT(*) FROM samples"
+                " WHERE underlying=? AND received_ms BETWEEN ? AND ?"
+                " GROUP BY expiry ORDER BY expiry",
+                (underlying, start_ms, end_ms),
+            ).fetchall()
+        return [(str(e), int(n)) for e, n in rows]
+
+    def session_sample_counts(self, underlying: str) -> dict[str, int]:
+        """IST date -> samples received 09:15-15:30 IST that day, over all expiries (read-only)."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT date(received_ms/1000 + 19800, 'unixepoch') AS d, COUNT(*) FROM samples"
+                " WHERE underlying=?"
+                " AND time(received_ms/1000 + 19800, 'unixepoch') BETWEEN '09:15:00' AND '15:30:59'"
+                " GROUP BY d",
+                (underlying,),
+            ).fetchall()
+        return {str(d): int(n) for d, n in rows}
+
     def stats(self) -> dict[str, Any]:
         with self._lock:
             n_s, n_c, first, last = self._db.execute(

@@ -1,5 +1,5 @@
 # Current state
-_Last updated: 2026-10-28_
+_Last updated: 2026-10-29_
 
 - **Objective:** NSE Universe — Indian market research platform; see [roadmap](roadmap.md).
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
@@ -42,3 +42,9 @@ See [audit-checkpoint1](audit-checkpoint1.md): real snapshot data confirmed, not
 
 ## Server deployment (2026-10-28)
 Deploy kit written and tested for update/rollback logic and backend startup with server-style settings; **not yet run on the VPS** (see docs/deployment-server.md). T+1 overnight and T+5 broad models, calibration, calls and the forward scoreboard are built; see docs/decisions.md D47.
+
+## Intraday analysis (2026-10-29)
+- `/analysis` renamed **Intraday analysis**; Market Sentiment Command Center added above the widgets (D52, [intraday](intraday.md)): overview header, rules-based sentiment with coverage, evidence breakdown (expandable formula/inputs/source), observed regime, qualitative scenarios (no probabilities), decision context, key levels with provenance, options positioning, data coverage and warnings, global/sector/FII-DII context, events, intraday-ML status, stored score history.
+- Backend `app/intraday/` + `GET /api/intraday/summary`, `GET /api/intraday/scores`; score ledger `data/intraday.sqlite3` (append-only), recorded each minute in market hours.
+- Tested in Claude's workspace: pytest 266 passed (26 new; plus a fix for a wall-clock leak in the history run log that broke a schedule test after 07:30 IST: features, scoring, leakage `until=now`, ledger immutability, API, real captured chain), ruff + mypy clean; vitest 156 passed (12 new), tsc, build; browser check at 1440 px and 390 px (no horizontal overflow) using a payload computed from the PC's real daily history and FII/DII data plus the real captured chain.
+- **Not verified live:** no market-hours sample existed before 29 Oct 2026 (0 complete sessions); the first live session is 29 Oct. Breadth, intraday sectors, news headlines, intraday ML, manifests/archive and the daily report are not built (see intraday.md).

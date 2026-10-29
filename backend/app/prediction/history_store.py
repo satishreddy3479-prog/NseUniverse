@@ -165,19 +165,23 @@ class HistoryStore:
             for s, a, b, n, r in rows
         ]
 
-    def start_run(self, run_id: str, source: str) -> None:
+    def start_run(self, run_id: str, source: str, now: datetime | None = None) -> None:
         with self._lock:
             self._db.execute(
                 "INSERT INTO fetch_runs(run_id, source, started_utc) VALUES (?,?,?)",
-                (run_id, source, datetime.now(UTC).isoformat()),
+                (run_id, source, (now or datetime.now(UTC)).astimezone(UTC).isoformat()),
             )
             self._db.commit()
 
-    def finish_run(self, run_id: str, summary: dict[str, Any]) -> None:
+    def finish_run(self, run_id: str, summary: dict[str, Any], now: datetime | None = None) -> None:
         with self._lock:
             self._db.execute(
                 "UPDATE fetch_runs SET finished_utc=?, summary=? WHERE run_id=?",
-                (datetime.now(UTC).isoformat(), json.dumps(summary, default=str), run_id),
+                (
+                    (now or datetime.now(UTC)).astimezone(UTC).isoformat(),
+                    json.dumps(summary, default=str),
+                    run_id,
+                ),
             )
             self._db.commit()
 

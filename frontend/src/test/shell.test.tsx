@@ -77,7 +77,7 @@ describe("side menu", () => {
     await userEvent.click(within(rail()).getByRole("button", { name: /Keep menu open/ }));
     expect(rail()).toHaveAttribute("data-expanded", "true");
     expect(localStorage.getItem("nse.nav.pinned")).toBe("1");
-    await userEvent.click(within(rail()).getByRole("link", { name: /Analysis/ }));
+    await userEvent.click(within(rail()).getByRole("link", { name: /Intraday analysis/ }));
     expect(rail()).toHaveAttribute("data-expanded", "true"); // pinned: no auto-close
     first.unmount();
     renderAt("/");
@@ -92,7 +92,7 @@ describe("side menu", () => {
     mockApi();
     renderAt("/");
     await screen.findByRole("heading", { name: "Overview" });
-    for (const name of ["Overview", "Live option chain", "Expiry comparison", "Analysis", "Data & sessions", "Connection diagnostics", "Settings"])
+    for (const name of ["Overview", "Live option chain", "Expiry comparison", "Intraday analysis", "Data & sessions", "Connection diagnostics", "Settings"])
       expect(within(rail()).getByRole("link", { name: new RegExp(name) })).toBeInTheDocument();
   });
 });

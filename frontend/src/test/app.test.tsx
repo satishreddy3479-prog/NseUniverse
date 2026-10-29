@@ -113,8 +113,8 @@ describe("dashboard", () => {
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     mockFetch(base);
     renderAt("/charts");
-    expect(await screen.findByRole("heading", { name: "Analysis" }, { timeout: 8000 })).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Analysis" }).length).toBeGreaterThan(0);
+    expect(await screen.findByRole("heading", { name: "Intraday analysis" }, { timeout: 8000 })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Intraday analysis" }).length).toBeGreaterThan(0);
   });
 
   it("opens the mobile navigation menu", async () => {

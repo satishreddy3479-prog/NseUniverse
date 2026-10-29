@@ -3,6 +3,7 @@ import { GridLayout, useContainerWidth, verticalCompactor, type Layout, type Lay
 import "react-grid-layout/css/styles.css";
 import { DashProvider, useDash, type Range } from "../components/dashboard/DashContext";
 import { DEFAULT_ACTIVE, WIDGETS, type WidgetDef } from "../components/dashboard/widgets";
+import { CommandCenter } from "../components/CommandCenter";
 import { StreamButtons } from "../components/LiveActivity";
 import { Button } from "../components/ui";
 import { fmtExpiry, fmtPct, fmtPrice, fmtSigned } from "../lib/format";
@@ -215,9 +216,9 @@ export function Analysis() {
       <div className="mx-auto flex max-w-[1700px] flex-col gap-3">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold">Analysis</h1>
+            <h1 className="text-xl font-semibold">Intraday analysis</h1>
             <p className="text-sm text-muted">
-              NIFTY 50 options, built from the stored Kotak Neo snapshot. When the stream runs, the same widgets update live.
+              NIFTY 50 session view from the Kotak Neo samples stored every minute in market hours. Sentiment is rules-based and provisional; widgets update live when the stream runs.
             </p>
           </div>
           <StreamButtons />
@@ -249,7 +250,11 @@ export function Analysis() {
         </div>
 
         <SamplerNote />
-        <Board />
+        <CommandCenter expiry={expiry} />
+        <div id="widgets" className="scroll-mt-4 flex flex-col gap-3">
+          <h2 className="text-base font-semibold text-paper">Option-chain widgets</h2>
+          <Board />
+        </div>
       </div>
     </DashProvider>
   );

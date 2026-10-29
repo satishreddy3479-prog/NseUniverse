@@ -1,0 +1,665 @@
+{
+ "generated_at": "2026-10-29T04:25:00+00:00",
+ "expiry": "2026-11-03",
+ "market": {
+  "date": "2026-10-29",
+  "phase": "morning",
+  "trading_day": true,
+  "calendar_note": null,
+  "prev_session": "2026-10-28",
+  "mode": "live",
+  "last_sample_at": "2026-10-29T04:24:00+00:00",
+  "age_seconds": 60.0,
+  "samples_today": 40,
+  "missing_spot": 0,
+  "spot_source": "Kotak option-chain fetch (spot at each ~60 s sample)"
+ },
+ "price": {
+  "samples": 40,
+  "last": 22698.85,
+  "last_at": "2026-10-29T04:24:00+00:00",
+  "prev_close": 22698.849609375,
+  "prev_close_source": "daily bar 2026-10-28",
+  "change": 0.0003906249985448085,
+  "change_pct": 1.7209021834457808e-06,
+  "first": 22698.85,
+  "first_at": "2026-10-29T03:45:00+00:00",
+  "sampled_high": 22698.85,
+  "sampled_low": 22698.85,
+  "or_high": 22698.85,
+  "or_low": 22698.85,
+  "or_samples": 15,
+  "gap_pct": 1.7209021763164856e-06,
+  "returns_pct": {
+   "5m": 0.0,
+   "15m": 0.0,
+   "30m": 0.0,
+   "60m": null
+  },
+  "er_30": null,
+  "er_session": null,
+  "rv_pct": 0.0,
+  "rv_ratio": 0.0,
+  "range_pct": 0.0,
+  "range_ratio": 0.0,
+  "position_in_range": null,
+  "max_gap_min": 1.0,
+  "vwap": null,
+  "vwap_reason": "NIFTY 50 is an index with no traded volume, so a VWAP is not defined for it."
+ },
+ "daily": {
+  "prev_session": "2026-10-28",
+  "prev_high": 22778.05078125,
+  "prev_low": 22497.69921875,
+  "prev_close": 22698.849609375,
+  "daily_sd_pct": 0.7050770516776035,
+  "avg_range_pct": 1.4560715675624896,
+  "sessions_used": 60
+ },
+ "options": {
+  "strikes": 21,
+  "atm_strike": 22700.0,
+  "ce_oi": 48194575.0,
+  "pe_oi": 45335615.0,
+  "ce_oi_chg": 17215900.0,
+  "pe_oi_chg": 18056870.0,
+  "ce_vol": 1349416185.0,
+  "pe_vol": 1172364115.0,
+  "pcr_oi": 0.94067880046665,
+  "pcr_vol": 0.8687935775722151,
+  "pcr_oi_first": 0.94067880046665,
+  "pcr_oi_change": 0.0,
+  "straddle": 358.45000000000005,
+  "straddle_first": 358.45000000000005,
+  "straddle_change_pct": 0.0,
+  "max_ce_oi_strike": 23000.0,
+  "max_pe_oi_strike": 22500.0,
+  "missing": {
+   "oi": 0,
+   "volume": 0,
+   "oi_change": 0
+  },
+  "universe": "ATM +/-10 listed strikes"
+ },
+ "assessment": {
+  "score": 0.07592667571203876,
+  "label": "Neutral / range-bound",
+  "direction": "Flat",
+  "coverage": 0.75,
+  "volatility": "Low",
+  "volatility_detail": "0.00x normal (realized volatility so far vs the typical daily sd scaled to elapsed time)",
+  "components": [
+   {
+    "key": "price",
+    "name": "NIFTY price action",
+    "weight": 0.35,
+    "available": true,
+    "score": 1.2203646249379448e-06,
+    "reason": "",
+    "formula": "mean of clip(change since previous close / 60-day daily sd) and clip(30-min return / (daily sd x sqrt(30/375)))",
+    "inputs": [
+     {
+      "name": "Change since previous close",
+      "value": 1.7209021834457808e-06,
+      "unit": "%"
+     },
+     {
+      "name": "Typical daily move (sd, 60 sessions)",
+      "value": 0.7050770516776035,
+      "unit": "%"
+     },
+     {
+      "name": "Last 30 min",
+      "value": 0.0,
+      "unit": "%"
+     }
+    ],
+    "source": "Kotak option-chain samples (spot at each fetch)",
+    "as_of": "2026-10-29T04:24:00+00:00",
+    "contribution": 4.2712761872828065e-07
+   },
+   {
+    "key": "breadth",
+    "name": "Market breadth",
+    "weight": 0.15,
+    "available": false,
+    "score": null,
+    "reason": "no NIFTY 50 constituent feed is collected yet (advances/declines unknown)",
+    "formula": "",
+    "inputs": [],
+    "source": "",
+    "as_of": null,
+    "contribution": null
+   },
+   {
+    "key": "sectors",
+    "name": "Sector participation",
+    "weight": 0.1,
+    "available": false,
+    "score": null,
+    "reason": "only previous-session daily sector closes are stored; no intraday sector data",
+    "formula": "",
+    "inputs": [],
+    "source": "",
+    "as_of": null,
+    "contribution": null
+   },
+   {
+    "key": "options",
+    "name": "Options positioning",
+    "weight": 0.2,
+    "available": true,
+    "score": 0.08991428329184406,
+    "reason": "",
+    "formula": "mean of clip(((put OI change - call OI change) / total OI) / 5%) and clip(PCR(OI) change since first sample / 0.20); reads added put OI as supportive and added call OI as capping (a convention, not trader intent)",
+    "inputs": [
+     {
+      "name": "Call OI change vs previous day",
+      "value": 17215900.0,
+      "unit": "units"
+     },
+     {
+      "name": "Put OI change vs previous day",
+      "value": 18056870.0,
+      "unit": "units"
+     },
+     {
+      "name": "PCR (OI) change since first sample",
+      "value": 0.0,
+      "unit": ""
+     },
+     {
+      "name": "PCR (OI)",
+      "value": 0.94067880046665,
+      "unit": ""
+     }
+    ],
+    "source": "Kotak option chain, ATM +/-10 strikes",
+    "as_of": "2026-10-29T04:24:00+00:00",
+    "contribution": 0.017982856658368813
+   },
+   {
+    "key": "global",
+    "name": "Global markets (overnight)",
+    "weight": 0.1,
+    "available": true,
+    "score": 0.10692107002156767,
+    "reason": "",
+    "formula": "mean of clip(S&P 500 return / its 60-day sd) and clip(-USD/INR return / its 60-day sd); last completed daily bars",
+    "inputs": [
+     {
+      "name": "S&P 500",
+      "value": 0.15266929419377462,
+      "unit": "%",
+      "session": "2026-10-28"
+     },
+     {
+      "name": "USD/INR",
+      "value": 0.024165721545155172,
+      "unit": "%",
+      "session": "2026-10-28"
+     }
+    ],
+    "source": "Yahoo Finance daily bars (stored)",
+    "as_of": "2026-10-28",
+    "contribution": 0.010692107002156767
+   },
+   {
+    "key": "institutional",
+    "name": "Institutional cash flows",
+    "weight": 0.1,
+    "available": true,
+    "score": 0.2826961599588476,
+    "reason": "",
+    "formula": "tanh(FII/FPI net cash / 3000 crore), previous session's official provisional figure",
+    "inputs": [
+     {
+      "name": "FII/FPI net (previous session)",
+      "value": 871.83,
+      "unit": "Rs cr"
+     },
+     {
+      "name": "DII net (context, not scored)",
+      "value": 643.35,
+      "unit": "Rs cr"
+     }
+    ],
+    "source": "NSE FII/DII provisional cash data (stored)",
+    "as_of": "2026-10-28",
+    "contribution": 0.02826961599588476
+   }
+  ],
+  "version": "intraday-rules-v1-eb55087c",
+  "provisional": true
+ },
+ "previous_score": null,
+ "changes": [],
+ "regime": {
+  "primary": "Sideways consolidation",
+  "tags": [
+   "Volatility contraction"
+  ],
+  "reason": "no price movement between samples; 60-min return n/a"
+ },
+ "scenarios": [
+  {
+   "name": "Range-bound consolidation",
+   "horizon": "rest of today's session",
+   "probability": null,
+   "status": "rules-based, no probability (no validated intraday model)",
+   "supporting": [],
+   "conflicting": [],
+   "levels": {
+    "range high": 22698.85,
+    "range low": 22698.85
+   },
+   "strengthens": "Price keeps rotating between 22,698.85 and 22,698.85",
+   "weakens": "A sustained move outside 22,698.85-22,698.85"
+  },
+  {
+   "name": "Bullish continuation / recovery",
+   "horizon": "rest of today's session",
+   "probability": null,
+   "status": "rules-based, no probability (no validated intraday model)",
+   "supporting": [
+    "Global markets (overnight): +0.11",
+    "Institutional cash flows: +0.28"
+   ],
+   "conflicting": [],
+   "levels": {
+    "trigger above": 22698.85,
+    "call OI concentration": 23000.0,
+    "previous day high": 22778.05078125
+   },
+   "strengthens": "Sustained trade above 22,698.85 with the score staying above +0.2",
+   "weakens": "Falls back below 22,698.85 (previous close) or below 22,698.85"
+  },
+  {
+   "name": "Bearish continuation / reversal",
+   "horizon": "rest of today's session",
+   "probability": null,
+   "status": "rules-based, no probability (no validated intraday model)",
+   "supporting": [],
+   "conflicting": [
+    "Global markets (overnight): +0.11",
+    "Institutional cash flows: +0.28"
+   ],
+   "levels": {
+    "trigger below": 22698.85,
+    "put OI concentration": 22500.0,
+    "previous day low": 22497.69921875
+   },
+   "strengthens": "Sustained trade below 22,698.85 with the score staying below -0.2",
+   "weakens": "Recovers above 22,698.85 (previous close) or above 22,698.85"
+  }
+ ],
+ "narrative": "Current assessment: Neutral / range-bound (score +0.08, coverage 75%, provisional rules). NIFTY 22,698.85 is +0.00% from the previous close. Last 30 minutes +0.00%. PCR (OI, ATM +/-10) 0.94, +0.00 since the first sample. Observed regime: Sideways consolidation; volatility low. Not included: market breadth, sector participation.",
+ "context": [
+  {
+   "question": "Trending or rotating?",
+   "answer": "Sideways consolidation (no price movement between samples; 60-min return n/a)"
+  },
+  {
+   "question": "Broad or concentrated participation?",
+   "answer": "Unknown: no constituent breadth data is collected yet."
+  },
+  {
+   "question": "Sectors confirming?",
+   "answer": "Unknown intraday: only previous-session sector closes are stored."
+  },
+  {
+   "question": "Options positioning vs price?",
+   "answer": "PCR (OI) +0.00 since the first sample, price +0.00% in 30 min: no change yet in one of them."
+  },
+  {
+   "question": "Volatility rising or falling?",
+   "answer": "Low realized (0.00x normal (realized volatility so far vs the typical daily sd scaled to elapsed time)); ATM straddle +0.0% since the first sample (includes time decay)."
+  },
+  {
+   "question": "Accepting or rejecting levels?",
+   "answer": "22,698.85 is inside the opening range 22,698.85-22,698.85."
+  },
+  {
+   "question": "Global conditions?",
+   "answer": "S&P 500 +0.15% on 2026-10-28."
+  },
+  {
+   "question": "Important event approaching?",
+   "answer": "US midterm elections (election day; results overnight into 4 Nov IST) at 03 Nov 10:30 IST"
+  },
+  {
+   "question": "Data fresh enough?",
+   "answer": "Yes."
+  }
+ ],
+ "levels": [
+  {
+   "name": "Previous day high",
+   "value": 22778.05078125,
+   "source": "Yahoo daily bar",
+   "method": "NIFTY 50 high on 2026-10-28",
+   "as_of": "2026-10-28"
+  },
+  {
+   "name": "Previous day low",
+   "value": 22497.69921875,
+   "source": "Yahoo daily bar",
+   "method": "NIFTY 50 low on 2026-10-28",
+   "as_of": "2026-10-28"
+  },
+  {
+   "name": "Previous close",
+   "value": 22698.849609375,
+   "source": "daily bar 2026-10-28",
+   "method": "official previous close",
+   "as_of": null
+  },
+  {
+   "name": "Sampled session high",
+   "value": 22698.85,
+   "source": "option-chain samples",
+   "method": "highest sampled spot today (ticks between samples not seen)",
+   "as_of": "2026-10-29T04:24:00+00:00"
+  },
+  {
+   "name": "Sampled session low",
+   "value": 22698.85,
+   "source": "option-chain samples",
+   "method": "lowest sampled spot today",
+   "as_of": "2026-10-29T04:24:00+00:00"
+  },
+  {
+   "name": "Opening range high",
+   "value": 22698.85,
+   "source": "option-chain samples",
+   "method": "highest sample 09:15-09:30",
+   "as_of": "2026-10-29T04:24:00+00:00"
+  },
+  {
+   "name": "Opening range low",
+   "value": 22698.85,
+   "source": "option-chain samples",
+   "method": "lowest sample 09:15-09:30",
+   "as_of": "2026-10-29T04:24:00+00:00"
+  },
+  {
+   "name": "VWAP",
+   "value": null,
+   "source": "",
+   "method": "NIFTY 50 is an index with no traded volume, so a VWAP is not defined for it.",
+   "as_of": null
+  },
+  {
+   "name": "ATM strike",
+   "value": 22700.0,
+   "source": "option chain",
+   "method": "listed strike nearest spot, expiry 2026-11-03",
+   "as_of": "2026-10-29T04:24:00+00:00"
+  },
+  {
+   "name": "ATM straddle",
+   "value": 358.45000000000005,
+   "source": "option chain",
+   "method": "ATM call LTP + ATM put LTP",
+   "as_of": "2026-10-29T04:24:00+00:00"
+  },
+  {
+   "name": "Largest call OI strike",
+   "value": 23000.0,
+   "source": "option chain",
+   "method": "positioning within ATM +/-10; not a guaranteed resistance",
+   "as_of": "2026-10-29T04:24:00+00:00"
+  },
+  {
+   "name": "Largest put OI strike",
+   "value": 22500.0,
+   "source": "option chain",
+   "method": "positioning within ATM +/-10; not a guaranteed support",
+   "as_of": "2026-10-29T04:24:00+00:00"
+  }
+ ],
+ "global": [
+  {
+   "key": "SPX",
+   "name": "S&P 500",
+   "session": "2026-10-28",
+   "ret_pct": 0.15266929419377462,
+   "sd_pct": 0.5872482852264734,
+   "fresh": true
+  },
+  {
+   "key": "NDX_COMP",
+   "name": "Nasdaq Composite",
+   "session": "2026-10-28",
+   "ret_pct": -0.038873942132711115,
+   "sd_pct": 0.930109528906587,
+   "fresh": true
+  },
+  {
+   "key": "VIX",
+   "name": "CBOE VIX",
+   "session": "2026-10-28",
+   "ret_pct": -0.684936279098225,
+   "sd_pct": 6.034683613006211,
+   "fresh": true
+  },
+  {
+   "key": "USDINR",
+   "name": "USD/INR",
+   "session": "2026-10-28",
+   "ret_pct": 0.024165721545155172,
+   "sd_pct": 0.5238400097933789,
+   "fresh": true
+  },
+  {
+   "key": "BRENT",
+   "name": "Brent crude",
+   "session": "2026-10-28",
+   "ret_pct": -1.650858182964654,
+   "sd_pct": 2.229985900551049,
+   "fresh": true
+  },
+  {
+   "key": "UST10Y",
+   "name": "US 10Y yield",
+   "session": "2026-10-28",
+   "ret_pct": 0.7810942137773669,
+   "sd_pct": 0.9780176872710493,
+   "fresh": true
+  },
+  {
+   "key": "GOLD",
+   "name": "Gold",
+   "session": "2026-10-28",
+   "ret_pct": -0.4589455373364526,
+   "sd_pct": 1.3048663940070513,
+   "fresh": true
+  },
+  {
+   "key": "N225",
+   "name": "Nikkei 225",
+   "session": "2026-10-27",
+   "ret_pct": 1.734569471532077,
+   "sd_pct": 1.6157012789889995,
+   "fresh": true
+  },
+  {
+   "key": "HSI",
+   "name": "Hang Seng",
+   "session": "2026-10-28",
+   "ret_pct": 0.23223393841702578,
+   "sd_pct": 0.948331881510713,
+   "fresh": true
+  },
+  {
+   "key": "DAX",
+   "name": "DAX",
+   "session": "2026-10-28",
+   "ret_pct": 0.2762760681684906,
+   "sd_pct": 0.7374798842052466,
+   "fresh": true
+  }
+ ],
+ "sectors": {
+  "rows": [
+   {
+    "key": "NIFTYAUTO",
+    "name": "NIFTY AUTO",
+    "session": "2026-10-28",
+    "ret_pct": 1.4464768942748396,
+    "rel_pct": null
+   },
+   {
+    "key": "NIFTYPHARMA",
+    "name": "NIFTY PHARMA",
+    "session": "2026-10-28",
+    "ret_pct": 1.0435032573832492,
+    "rel_pct": null
+   },
+   {
+    "key": "NIFTYBANK",
+    "name": "NIFTY BANK",
+    "session": "2026-10-28",
+    "ret_pct": 0.5419185741288635,
+    "rel_pct": null
+   },
+   {
+    "key": "NIFTYMETAL",
+    "name": "NIFTY METAL",
+    "session": "2026-10-28",
+    "ret_pct": -0.31635076117482175,
+    "rel_pct": null
+   },
+   {
+    "key": "NIFTYFMCG",
+    "name": "NIFTY FMCG",
+    "session": "2026-10-28",
+    "ret_pct": -0.5562561994604365,
+    "rel_pct": null
+   },
+   {
+    "key": "NIFTYREALTY",
+    "name": "NIFTY REALTY",
+    "session": "2026-10-28",
+    "ret_pct": -0.8943559177946203,
+    "rel_pct": null
+   },
+   {
+    "key": "NIFTYENERGY",
+    "name": "NIFTY ENERGY",
+    "session": "2026-10-28",
+    "ret_pct": -0.8948786500638017,
+    "rel_pct": null
+   },
+   {
+    "key": "NIFTYIT",
+    "name": "NIFTY IT",
+    "session": "2026-10-28",
+    "ret_pct": -1.9759543687827619,
+    "rel_pct": null
+   }
+  ],
+  "note": "Previous session's daily closes (Yahoo). Not intraday; not in the score."
+ },
+ "institutional": {
+  "session": "2026-10-28",
+  "fii_net": 871.83,
+  "dii_net": 643.35,
+  "fresh": true
+ },
+ "events": [
+  {
+   "id": "us-midterm-2026-11-03",
+   "name": "US midterm elections (election day; results overnight into 4 Nov IST)",
+   "kind": "election",
+   "impact": "high",
+   "start_ist": "2026-11-03T10:30:00+05:30",
+   "all_day": true,
+   "time_verified": true,
+   "tentative": false,
+   "source": "US federal election day is the Tuesday after the first Monday of November"
+  }
+ ],
+ "health": [
+  {
+   "source": "Option chain + spot",
+   "status": "fresh",
+   "detail": "last sample 60 s ago",
+   "as_of": "2026-10-29T04:24:00+00:00"
+  },
+  {
+   "source": "Previous close check",
+   "status": "warning",
+   "detail": "feed previous close 22,749.75 differs from the 2026-10-28 close 22,698.85 by 0.22%; using the 2026-10-28 close",
+   "as_of": null
+  },
+  {
+   "source": "NIFTY daily history",
+   "status": "fresh",
+   "detail": "last stored session 2026-10-28; previous trading session 2026-10-28",
+   "as_of": "2026-10-28"
+  },
+  {
+   "source": "Market breadth",
+   "status": "not_available",
+   "detail": "no constituent advance/decline feed is collected",
+   "as_of": null
+  },
+  {
+   "source": "Intraday sector data",
+   "status": "not_available",
+   "detail": "only daily sector closes are stored",
+   "as_of": null
+  },
+  {
+   "source": "FII/DII cash",
+   "status": "fresh",
+   "detail": "official provisional figure for 2026-10-28 (published after ~18:00 IST that day)",
+   "as_of": "2026-10-28"
+  },
+  {
+   "source": "Global markets",
+   "status": "fresh",
+   "detail": "latest S&P 500 daily bar 2026-10-28",
+   "as_of": "2026-10-28"
+  },
+  {
+   "source": "Economic calendar",
+   "status": "fresh",
+   "detail": "verified reference calendar loaded",
+   "as_of": null
+  },
+  {
+   "source": "Exchange calendar",
+   "status": "fresh",
+   "detail": "NSE holiday list covers today",
+   "as_of": null
+  },
+  {
+   "source": "Intraday ML model",
+   "status": "not_available",
+   "detail": "not trained: not enough complete intraday sessions",
+   "as_of": null
+  }
+ ],
+ "ml": {
+  "status": "not_trained",
+  "complete_sessions": 0,
+  "required_sessions": 60,
+  "sessions_with_samples": 1,
+  "reason": "0 complete market-hours sessions stored (need 60 with >= 300 samples each before a model is trained and walk-forward tested). The sentiment above is rules-based, not ML."
+ },
+ "config": {
+  "version": "intraday-rules-v1-eb55087c",
+  "weights": {
+   "price": 0.35,
+   "breadth": 0.15,
+   "sectors": 0.1,
+   "options": 0.2,
+   "global": 0.1,
+   "institutional": 0.1
+  },
+  "min_coverage": 0.45
+ },
+ "compute_ms": 323.1
+}

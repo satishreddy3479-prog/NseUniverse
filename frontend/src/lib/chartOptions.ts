@@ -3,7 +3,7 @@
 import type { EChartsCoreOption } from "echarts/core";
 import { compactIN, type Totals } from "./analytics";
 import { fmtDateTimeIST, fmtInt, fmtPrice, fmtTimeIST } from "./format";
-import type { Observation, OiChange, OiHeatmap, OptionChainRow } from "./types";
+import type { IntradayScoreRow, Observation, OiChange, OiHeatmap, OptionChainRow } from "./types";
 
 export interface ChartColors {
   up: string; down: string; brass: string; info: string; muted: string; rule: string; paper: string; slate: string;
@@ -254,5 +254,31 @@ export function oiHeatmapOption(h: OiHeatmap, c: ChartColors): EChartsCoreOption
       textStyle: { color: c.muted, fontSize: 11 }, inRange: { color: [c.brass, c.slate, c.info] }, formatter: (v: number) => compactIN(v) },
     series: [{ name: `OI change (${h.side})`, type: "heatmap", data, progressive: 0,
       itemStyle: { borderColor: c.slate, borderWidth: 1 }, emphasis: { itemStyle: { borderColor: c.paper } } }],
+  };
+}
+
+/**
+ * Stored rules-based sentiment scores through the session (left axis, -1..+1) with the sampled
+ * NIFTY spot at each score (right axis). Missing scores are gaps, never 0.
+ */
+export function sentimentHistoryOption(rows: IntradayScoreRow[], c: ChartColors): EChartsCoreOption {
+  const x = rows.map((r) => fmtTimeIST(r.sample_utc));
+  return {
+    animation: false,
+    grid: { left: 40, right: 56, top: 28, bottom: 24 },
+    legend: { top: 0, textStyle: axisText(c), data: ["Sentiment score", "NIFTY (sampled)"] },
+    tooltip: { trigger: "axis" },
+    xAxis: { type: "category", data: x, axisLabel: axisText(c), axisLine: { lineStyle: { color: c.rule } } },
+    yAxis: [
+      { type: "value", min: -1, max: 1, name: "score", nameTextStyle: axisText(c), axisLabel: axisText(c), splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
+      { type: "value", scale: true, name: "INR", nameTextStyle: axisText(c), axisLabel: { ...axisText(c), formatter: (v: number) => fmtPrice(v) }, splitLine: { show: false } },
+    ],
+    series: [
+      { name: "Sentiment score", type: "line", data: rows.map((r) => r.score), connectNulls: false, showSymbol: false,
+        lineStyle: { color: c.brass, width: 2 }, itemStyle: { color: c.brass },
+        markLine: { silent: true, symbol: "none", data: [{ yAxis: 0 }], lineStyle: { color: c.muted, type: "dashed" }, label: { show: false } } },
+      { name: "NIFTY (sampled)", type: "line", yAxisIndex: 1, data: rows.map((r) => r.spot), showSymbol: false,
+        lineStyle: { color: c.info, width: 1 }, itemStyle: { color: c.info } },
+    ],
   };
 }

@@ -5,7 +5,7 @@ import type {
   ConfigStatus,
   ErrorEvent,
   ExpirySelection,
-  EventItem, FlowsLatest, NewsStatus, FlowsStatus, HistoryFetchStatus, HistoryResponse, OiChange, OiHeatmap, PredictionSummary, SamplerStatus,
+  EventItem, FlowsLatest, IntradayScoreRow, IntradaySummary, NewsStatus, FlowsStatus, HistoryFetchStatus, HistoryResponse, OiChange, OiHeatmap, PredictionSummary, SamplerStatus,
   SessionInfo,
   SnapshotSummary,
 } from "./types";
@@ -70,6 +70,9 @@ export const api = {
       `/api/oi/heatmap?expiry=${encodeURIComponent(expiry)}&side=${side}&baseline=${baseline}&strikes=${strikes}`,
     ),
   predictionSummary: () => request<PredictionSummary>("/api/prediction/summary"),
+  intradaySummary: (expiry: string) => request<IntradaySummary>(`/api/intraday/summary?expiry=${encodeURIComponent(expiry)}`),
+  intradayScores: (expiry: string) =>
+    request<{ session: string; expiry: string; rows: IntradayScoreRow[] }>(`/api/intraday/scores?expiry=${encodeURIComponent(expiry)}`),
   flowsLatest: () => request<FlowsLatest>("/api/prediction/flows/latest?limit=15"),
   events: () => request<{ events: EventItem[] }>("/api/prediction/events?days=45"),
   newsStatus: () => request<NewsStatus>("/api/prediction/news/status"),

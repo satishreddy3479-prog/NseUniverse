@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  sentimentHistoryOption,
   decayOption, decaySeries, oiChangeBarOption, oiHeatmapOption, premiumOption, spotOption, straddleOption,
   strikeBarOption, totalsBarOption,
 } from "../lib/chartOptions";
@@ -171,5 +172,19 @@ describe("OI intelligence charts", () => {
     expect(o.visualMap.min).toBe(-20);
     expect(o.visualMap.max).toBe(20);
     expect(o.series[0]!.data).toContainEqual([2, 1, 20]); // [time index, strike index, change]
+  });
+});
+
+describe("sentimentHistoryOption", () => {
+  it("keeps missing scores as gaps and puts spot on the right axis", () => {
+    const c = { up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" };
+    const o = sentimentHistoryOption([
+      { sample_utc: "2026-10-29T03:50:00+00:00", spot: 22700, score: 0.1, label: "x", coverage: 0.7, regime: null },
+      { sample_utc: "2026-10-29T03:51:00+00:00", spot: null, score: null, label: "Insufficient data", coverage: 0.3, regime: null },
+    ], c) as { series: { data: (number | null)[]; yAxisIndex?: number }[]; yAxis: { min?: number; max?: number }[] };
+    expect(o.series[0]!.data).toEqual([0.1, null]);
+    expect(o.series[1]!.data).toEqual([22700, null]);
+    expect(o.series[1]!.yAxisIndex).toBe(1);
+    expect(o.yAxis[0]).toMatchObject({ min: -1, max: 1 });
   });
 });

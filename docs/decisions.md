@@ -154,3 +154,11 @@ Status: **Final** or **Proposed**. Date 2026-10-28 unless noted.
 - The owner asked for a browser-style User-Agent to fetch NSE's FII/DII feed; the tool runner refused that as bot-protection circumvention and it was NOT built. FII/DII cash stays imported through a scheduled task that reads NSE's page in a real browser on the owner's PC (18:47 IST weekdays) or the CSV import box.
 - NSDL's public FPI page (no stated restriction on automated access) is fetched once each evening by the app with an honest identifier: foreign equity activity (stock-exchange route and sub-total), validated (purchases - sales = net), rolling 7 sessions. It measures a different thing from NSE's FII figure and is shown separately.
 - History refresh retries every 10 minutes between 07:30 and 09:10 IST while any overnight series (S&P, VIX, Brent, dollar index, USD/INR, US 10y) is older than the last weekday, so the forecast window gets complete data whenever the source has it.
+
+## D52 — Intraday analysis page and command center (2026-10-29)
+- The Analysis page is now **Intraday analysis**; the Market Sentiment Command Center sits above the unchanged widgets ([intraday](intraday.md)).
+- Built on the existing stores only (observations, market history, flows, events); no new provider, no new dependency. One small append-only `intraday.sqlite3` holds score snapshots so the provisional rules can be evaluated later (no schema change to the existing databases).
+- Rules-based, versioned, provisional scoring; correlated price measures form one group; missing groups lower coverage and are never zero; no probabilities anywhere until a validated intraday model exists.
+- VWAP is reported as undefined for the NIFTY 50 index rather than approximated. Breadth and intraday sectors are shown as not available.
+- The feed's previous close is cross-checked against the stored close of the previous trading session; a mismatch above 0.05 % uses the stored close and shows a warning.
+- The master spec asks for the PC as the runtime and no external server; the VPS deployment (D48) was authorised earlier by the owner and is left as it is. Both run the same code.

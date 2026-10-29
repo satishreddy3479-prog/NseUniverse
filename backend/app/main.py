@@ -18,6 +18,8 @@ from app.api.routes import router
 from app.api.ws import router as ws_router
 from app.broker.base import MarketDataBroker
 from app.config import Settings, get_settings
+from app.intraday.service import IntradayService
+from app.intraday.store import IntradayStore
 from app.logging_setup import log_event, setup_logging
 from app.prediction.flows_service import FlowsService
 from app.prediction.flows_store import FlowsStore
@@ -118,6 +120,13 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         )
         app.state.flows = flows
         flows.start()
+        intraday_store = IntradayStore(settings.data_dir)
+        intraday = IntradayService(
+            observations, history_store, flows_store, intraday_store, settings.underlying
+        )
+        app.state.intraday = intraday
+        if settings.intraday_autoscore:
+            intraday.start()
         sampler = SnapshotSampler(
             snapshot_service,
             interval_s=settings.sampler_interval_seconds,
@@ -143,6 +152,8 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         finally:
             if not login_task.done():
                 login_task.cancel()
+            await intraday.stop()
+            intraday_store.close()
             await history.stop()
             await research.stop()
             await news.stop()

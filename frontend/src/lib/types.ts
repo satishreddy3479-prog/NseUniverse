@@ -438,3 +438,58 @@ export interface NewsStatus {
   themes: Record<string, string>;
   latest: Record<string, { day: string; tone: number | null; volume_pct: number | null }[]>;
 }
+
+// ---- Intraday command center (/api/intraday/summary). Rules-based, provisional; never ML.
+export interface IntradayComponent {
+  key: string; name: string; weight: number; available: boolean; score: number | null; contribution: number | null;
+  reason: string; formula: string; source: string; as_of: string | null;
+  inputs: { name: string; value: number | null; unit: string; session?: string; note?: string }[];
+}
+export interface IntradayHealth { source: string; status: string; detail: string; as_of: string | null }
+export interface IntradayScenario {
+  name: string; horizon: string; probability: null; status: string; supporting: string[]; conflicting: string[];
+  levels: Record<string, number | null>; strengthens: string; weakens: string;
+}
+export interface IntradayLevel { name: string; value: number | null; source: string; method: string; as_of: string | null }
+export interface IntradaySummary {
+  generated_at: string; expiry: string; compute_ms: number | null;
+  market: {
+    date: string; phase: string; trading_day: boolean | null; calendar_note: string | null; prev_session: string | null;
+    mode: "live" | "delayed" | "stale" | "historical" | "unavailable"; last_sample_at: string | null; age_seconds: number | null;
+    samples_today: number; missing_spot: number; spot_source: string;
+  };
+  price: {
+    samples: number; last: number | null; last_at: string | null; prev_close: number | null; prev_close_source: string | null;
+    change: number | null; change_pct: number | null; first: number | null; first_at: string | null;
+    sampled_high: number | null; sampled_low: number | null; or_high: number | null; or_low: number | null;
+    gap_pct: number | null; returns_pct: Record<string, number | null>; er_30: number | null; er_session: number | null;
+    rv_pct: number | null; rv_ratio: number | null; range_pct: number | null; range_ratio: number | null;
+    position_in_range: number | null; max_gap_min: number | null; vwap_reason: string;
+  };
+  daily: { prev_session: string | null; prev_high: number | null; prev_low: number | null; prev_close: number | null; daily_sd_pct: number | null; avg_range_pct: number | null };
+  options: {
+    strikes: number; atm_strike: number | null; ce_oi: number | null; pe_oi: number | null; ce_oi_chg: number | null; pe_oi_chg: number | null;
+    ce_vol: number | null; pe_vol: number | null; pcr_oi: number | null; pcr_vol: number | null; pcr_oi_change: number | null;
+    straddle: number | null; straddle_change_pct: number | null; max_ce_oi_strike: number | null; max_pe_oi_strike: number | null;
+    missing: Record<string, number>; universe: string;
+  };
+  assessment: {
+    score: number | null; label: string; direction: string; coverage: number; volatility: string; volatility_detail: string;
+    components: IntradayComponent[]; version: string; provisional: boolean;
+  };
+  previous_score: { sample_utc: string; score: number | null; label: string } | null;
+  changes: { component: string; delta: number }[];
+  regime: { primary: string; tags: string[]; reason: string };
+  scenarios: IntradayScenario[];
+  narrative: string;
+  context: { question: string; answer: string }[];
+  levels: IntradayLevel[];
+  global: { key: string; name: string; session: string; ret_pct: number | null; sd_pct: number | null; fresh: boolean }[];
+  sectors: { rows: { key: string; name: string; session: string; ret_pct: number }[]; note: string };
+  institutional: { session: string; fii_net: number | null; dii_net: number | null; fresh: boolean } | null;
+  events: EventItem[];
+  health: IntradayHealth[];
+  ml: { status: string; complete_sessions: number; required_sessions: number; sessions_with_samples: number; reason: string };
+  config: { version: string; weights: Record<string, number>; min_coverage: number };
+}
+export interface IntradayScoreRow { sample_utc: string; spot: number | null; score: number | null; label: string; coverage: number; regime: string | null }

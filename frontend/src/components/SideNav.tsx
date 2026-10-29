@@ -5,7 +5,7 @@ export const NAV: { to: string; label: string; short: string; planned?: string }
   { to: "/", label: "Overview", short: "O" },
   { to: "/option-chain", label: "Live option chain", short: "L" },
   { to: "/expiry-comparison", label: "Expiry comparison", short: "E", planned: "Checkpoint 3" },
-  { to: "/analysis", label: "Analysis", short: "A" },
+  { to: "/analysis", label: "Intraday analysis", short: "A" },
   { to: "/prediction", label: "Prediction", short: "P" },
   { to: "/data", label: "Data & sessions", short: "D" },
   { to: "/diagnostics", label: "Connection diagnostics", short: "C" },

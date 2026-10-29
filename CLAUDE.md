@@ -3,7 +3,7 @@
 ## Project identity
 - **Name:** NSE Universe — long-term Indian financial-market research platform.
 - **Vision:** reliable broker connectivity → live option-chain data → professional dashboard → OI/Greeks/IV analysis → historical research → more NSE instruments. See [roadmap](docs/roadmap.md).
-- **Current phase:** Phase 1. Live option chain, streaming overlay, Analysis dashboard and market-hours sampler built and tested on real captured payloads; live stream not yet verified in market hours. Status: [current-state](docs/current-state.md). Setup/run: [setup-windows](docs/setup-windows.md).
+- **Current phase:** Phase 1. Live option chain, streaming overlay, Intraday analysis page (rules-based command center + widgets, [intraday](docs/intraday.md)) and market-hours sampler built and tested on real captured payloads; live stream not yet verified in market hours. Status: [current-state](docs/current-state.md). Setup/run: [setup-windows](docs/setup-windows.md).
 - **Current priority:** Kotak Neo API integration + live NIFTY 50 option-chain streaming (weekly + current-monthly expiries).
 - **Out of scope until explicitly requested:** order placement, instruments other than NIFTY 50, Greeks/IV, swing/strategy/ML modules, backtesting, any later-phase roadmap item. (Already built: OI/volume/PCR/max-pain/straddle analytics on stored snapshots.)
 

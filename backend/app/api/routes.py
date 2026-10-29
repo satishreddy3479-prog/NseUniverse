@@ -27,6 +27,7 @@ from app.domain.models import (
     OptionChainSnapshot,
     SnapshotSummary,
 )
+from app.intraday.features import IST
 from app.services.history import HistoryResponse, build_history
 from app.services.sampler import SamplerStatus
 from app.services.snapshot_service import SnapshotService
@@ -361,6 +362,23 @@ async def oi_heatmap_route(
         each_side=_each_side(strikes), since=_time(since, "since"), until=_time(until, "until"),
         max_columns=max_columns,
     )  # fmt: skip
+
+
+@router.get("/intraday/summary")
+async def intraday_summary(request: Request, expiry: date) -> dict[str, Any]:
+    """Market Sentiment Command Center: rules-based intraday assessment from stored observations."""
+    return await asyncio.to_thread(request.app.state.intraday.summary, expiry.isoformat())
+
+
+@router.get("/intraday/scores")
+async def intraday_scores(
+    request: Request, expiry: date, session: date | None = None
+) -> dict[str, Any]:
+    """Stored score snapshots for one session (append-only ledger), oldest first."""
+    svc = request.app.state.intraday
+    day = (session or datetime.now(UTC).astimezone(IST).date()).isoformat()
+    rows = await asyncio.to_thread(svc.store.session_rows, day, expiry.isoformat())
+    return {"session": day, "expiry": expiry.isoformat(), "rows": rows}
 
 
 @router.get("/prediction/history/status")

@@ -78,7 +78,7 @@ class HistoryService:
 
     async def refresh(self) -> dict[str, Any]:
         run_id = f"{self._clock():%Y%m%dT%H%M%SZ}_{uuid.uuid4().hex[:6]}"
-        await asyncio.to_thread(self.store.start_run, run_id, SOURCE)
+        await asyncio.to_thread(self.store.start_run, run_id, SOURCE, self._clock())
         self.last_attempt = self._clock()
         results: list[dict[str, Any]] = []
         for i, spec in enumerate(self.symbols):
@@ -102,7 +102,7 @@ class HistoryService:
             "new_bars": sum(r.get("new", 0) for r in results),
             "disagreements": sum(r.get("changed", 0) for r in results), "results": results,
         }  # fmt: skip
-        await asyncio.to_thread(self.store.finish_run, run_id, summary)
+        await asyncio.to_thread(self.store.finish_run, run_id, summary, self._clock())
         log_event(logger, logging.INFO, "history_refreshed", ok=len(ok), new=summary["new_bars"])
         return summary
 
