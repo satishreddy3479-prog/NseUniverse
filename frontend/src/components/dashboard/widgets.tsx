@@ -615,38 +615,78 @@ export function PriceOiWidget() {
 const signedUnits = (v: number | null) => (v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${compactIN(Math.abs(v))}`);
 const fmt2 = (v: number | null) => (v == null ? "—" : v.toFixed(2));
 
-/** One StockMojo-style pair: calls and puts side by side, bars drawn to the same scale. */
+/** Calls and puts side by side, bars on one scale. Signed values grow up or down from a zero line. */
 function PairBars({ title, ce, pe, signed }: { title: string; ce: number | null; pe: number | null; signed: boolean }) {
   const top = Math.max(Math.abs(ce ?? 0), Math.abs(pe ?? 0));
-  const bar = (v: number | null, cls: string, label: string) => (
-    <div className="flex flex-1 flex-col items-center justify-end gap-1">
-      <span className="num text-sm text-paper">{v == null ? "—" : signed ? signedUnits(v) : compactIN(v)}</span>
-      <div className="flex h-20 w-full items-end justify-center">
-        {v != null && top > 0 && <div className={`w-3/5 rounded-t-sm ${cls}`} style={{ height: `${Math.max(2, (Math.abs(v) / top) * 100)}%` }} />}
+  const H = 88; // px available above (and, for signed values, below) the zero line
+  const bar = (v: number | null, cls: string, label: string) => {
+    const px = v == null || top <= 0 ? 0 : Math.max(2, (Math.abs(v) / top) * H);
+    const up = v == null || v >= 0;
+    return (
+      <div className="flex flex-1 flex-col items-center">
+        <div className="flex w-full items-end justify-center" style={{ height: H + 18 }}>
+          {up && <div className="flex flex-col items-center"><span className="num mb-0.5 text-sm text-paper">{v == null ? "—" : signed ? signedUnits(v) : compactIN(v)}</span>{v != null && <div className={`w-14 rounded-t-sm ${cls}`} style={{ height: px }} />}</div>}
+        </div>
+        {signed && (
+          <div className="flex w-full items-start justify-center border-t border-rule" style={{ height: H + 18 }}>
+            {!up && <div className="flex flex-col items-center"><div className={`w-14 rounded-b-sm ${cls}`} style={{ height: px }} /><span className="num mt-0.5 text-sm text-paper">{signedUnits(v)}</span></div>}
+          </div>
+        )}
+        <span className="mt-1 text-xs text-muted">{label}</span>
       </div>
-      <span className="text-xs text-muted">{label}</span>
-    </div>
-  );
+    );
+  };
   return (
-    <figure className="min-w-0 flex-1 rounded-sm border border-rule bg-slate-2 p-2" aria-label={title}>
+    <figure className="min-w-0 flex-1 basis-60 rounded-sm border border-rule bg-slate-2 p-2" aria-label={title}>
       <figcaption className="mb-1 text-xs font-medium text-paper">{title}</figcaption>
       <div className="flex gap-2">{bar(ce, "bg-up", "CALL")}{bar(pe, "bg-down", "PUT")}</div>
     </figure>
   );
 }
 
-/** Full view: totals, change and PCR for the chosen time slot, next to the strike chart. */
+/** Full view: change, total and PCR for the chosen time slot, on the same screen as the strike chart. */
 function OiCards({ st }: { st: ReturnType<typeof oiWindowStats> }) {
+  const tot = st.ceOi != null && st.peOi != null ? st.ceOi + st.peOi : 0;
+  const callShare = tot > 0 ? (st.ceOi as number) / tot : null;
+  const R = 52, C = 2 * Math.PI * R;
   return (
     <div className="flex flex-wrap gap-2" data-testid="oi-cards">
       <PairBars title="Open Interest Change" ce={st.ceChange} pe={st.peChange} signed />
       <PairBars title="Total Open Interest" ce={st.ceOi} pe={st.peOi} signed={false} />
-      <figure className="min-w-0 flex-1 rounded-sm border border-rule bg-slate-2 p-2" aria-label="Put/Call Ratio">
+      <figure className="min-w-0 flex-1 basis-60 rounded-sm border border-rule bg-slate-2 p-2" aria-label="Put/Call Ratio">
         <figcaption className="mb-1 text-xs font-medium text-paper">Put/Call Ratio</figcaption>
-        <p className="num text-2xl text-paper">{fmt2(st.pcr)}</p>
-        <p className="text-xs text-muted">PCR {st.pcrChange == null ? "change —" : `${st.pcrChange >= 0 ? "+" : "−"}${Math.abs(st.pcrChange).toFixed(2)} in slot`}</p>
-        <p className="mt-1 text-xs text-muted" title={st.pcrOiChangeNote ?? undefined}>PCR of OI change <span className="num text-paper">{fmt2(st.pcrOiChange)}</span></p>
+        <div className="flex items-center gap-3">
+          <svg viewBox="0 0 130 130" className="size-32 shrink-0" role="img" aria-label={callShare == null ? "No OI share" : `Call OI ${(callShare * 100).toFixed(0)}%, put OI ${((1 - callShare) * 100).toFixed(0)}%`}>
+            <circle cx="65" cy="65" r={R} fill="none" strokeWidth="16" className="stroke-down" />
+            {callShare != null && <circle cx="65" cy="65" r={R} fill="none" strokeWidth="16" className="stroke-up" strokeDasharray={`${callShare * C} ${C}`} transform="rotate(-90 65 65)" />}
+            <text x="65" y="60" textAnchor="middle" className="fill-muted" fontSize="11">PCR</text>
+            <text x="65" y="80" textAnchor="middle" className="fill-paper" fontSize="22" fontWeight="600">{fmt2(st.pcr)}</text>
+          </svg>
+          <div className="text-xs text-muted">
+            <p>Call OI {callShare == null ? "—" : `${(callShare * 100).toFixed(0)}%`} · Put OI {callShare == null ? "—" : `${((1 - callShare) * 100).toFixed(0)}%`}</p>
+            <p className="mt-1">PCR {st.pcrChange == null ? "change —" : `${st.pcrChange >= 0 ? "+" : "−"}${Math.abs(st.pcrChange).toFixed(2)} in slot`}</p>
+            <p className="mt-1" title={st.pcrOiChangeNote ?? undefined}>PCR of OI change <span className="num text-paper">{fmt2(st.pcrOiChange)}</span></p>
+          </div>
+        </div>
       </figure>
+    </div>
+  );
+}
+
+/** Which part of the session the chosen slot covers (read-only; the slot buttons set it). */
+function OiRangeTrack({ startIso, endIso, minutes }: { startIso: string | null; endIso: string | null; minutes: number | null }) {
+  if (!endIso) return null;
+  const istMin = (iso: string) => { const m = Math.floor(new Date(iso).getTime() / 60_000) + 330; return ((m % 1440) + 1440) % 1440; };
+  const O = 9 * 60 + 15, L = 375;
+  const e = Math.min(1, Math.max(0, (istMin(endIso) - O) / L));
+  const s = minutes == null || !startIso ? 0 : Math.min(e, Math.max(0, (istMin(startIso) - O) / L));
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted" data-testid="oi-range">
+      <span>{minutes == null ? "Session start" : startIso ? fmtTimeIST(startIso) : "—"}</span>
+      <div className="relative h-1.5 flex-1 rounded-full bg-rule" aria-hidden="true">
+        <div className="absolute inset-y-0 rounded-full bg-brass" style={{ left: `${s * 100}%`, width: `${Math.max(0.5, (e - s) * 100)}%` }} />
+      </div>
+      <span>{fmtTimeIST(endIso)}</span>
     </div>
   );
 }
@@ -674,13 +714,14 @@ function OiExplorerBody({ large, mode, setMode, win, setWin }: {
       <div role="group" aria-label="OI view" className="flex flex-wrap items-center gap-1">
         {OI_MODES.map((m) => <button key={m.id} type="button" title={m.title} aria-pressed={mode === m.id} onClick={() => setMode(m.id)} className={chip(mode === m.id)}>{m.label}</button>)}
       </div>
-      <div className={large ? "min-h-[380px] flex-1" : "min-h-0 flex-1"}>
+      <div className={large ? "min-h-[320px] flex-1" : "min-h-0 flex-1"}>
         {q.isPending && q.fetchStatus !== "idle" ? <p className="p-3 text-sm text-muted">Loading observations…</p>
           : q.error ? <EmptyState title="Could not load OI for this window">{String((q.error as Error).message)}</EmptyState>
           : !res || res.observations_available === 0 ? <EmptyState title="No observations stored for this expiry yet">Observations are stored each time a chain is fetched.</EmptyState>
           : opt ? <EChart option={opt} ariaLabel="Open interest by strike" onClick={(p) => { const k = Number(p.name); if (Number.isFinite(k)) d.select(k); }} />
           : null}
       </div>
+      {large && <OiRangeTrack startIso={at ?? null} endIso={newest} minutes={w.minutes} />}
       <div role="group" aria-label="OI window" className="flex flex-wrap items-center gap-1">
         {OI_WINDOWS.map((x) => <button key={x.id} type="button" aria-pressed={win === x.id} onClick={() => setWin(x.id)} className={chip(win === x.id)}>{x.label}</button>)}
       </div>

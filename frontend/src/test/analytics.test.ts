@@ -174,6 +174,10 @@ describe("windowEndIso", () => {
     const s = ["2026-10-29T09:58:00Z", "2026-10-29T09:59:02Z", "2026-10-29T14:51:00Z", "2026-10-29T18:11:00Z"];
     expect(windowEndIso(s)).toBe("2026-10-29T09:59:02Z");
   });
+  it("still finds the session when after-hours samples run past midnight IST", () => {
+    // 18:36Z on 29 Oct is 00:06 IST on 30 Oct
+    expect(windowEndIso(["2026-10-29T09:59:02Z", "2026-10-29T14:51:00Z", "2026-10-29T18:36:00Z"])).toBe("2026-10-29T09:59:02Z");
+  });
   it("falls back to the newest sample when nothing was taken in session that day; null when empty", () => {
     expect(windowEndIso(["2026-10-29T00:38:00Z"])).toBe("2026-10-29T00:38:00Z");
     expect(windowEndIso([])).toBeNull();

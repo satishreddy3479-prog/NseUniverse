@@ -173,7 +173,7 @@ export function windowStartIso(newestIso: string, minutes: number): string {
 
 /**
  * The instant the time slots count back from. While the session is running (or when nothing is stored for the day
- * inside 09:15-15:30 IST) it is the newest stored sample; after the close it is the last sample taken during the
+ * inside 09:15-15:30 IST) it is the newest stored sample; after the close (even past midnight) it is the last sample taken during the
  * session, so "Last 30 min" shows the final half hour of trading rather than an unchanged after-hours chain.
  */
 export function windowEndIso(sampleIsos: string[]): string | null {
@@ -184,13 +184,11 @@ export function windowEndIso(sampleIsos: string[]): string | null {
     return { day: Math.floor(m / 1440), min: ((m % 1440) + 1440) % 1440 };
   };
   const newest = sampleIsos[sampleIsos.length - 1]!;
-  const n = parts(newest);
-  if (n.min >= OPEN && n.min <= CLOSE) return newest;
+  const inSession = (iso: string) => { const m = parts(iso).min; return m >= OPEN && m <= CLOSE; };
+  if (inSession(newest)) return newest;
+  // newest is after hours (possibly past midnight IST): use the latest sample taken during any session
   let best: string | null = null;
-  for (const iso of sampleIsos) {
-    const p = parts(iso);
-    if (p.day === n.day && p.min >= OPEN && p.min <= CLOSE) best = iso;
-  }
+  for (const iso of sampleIsos) if (inSession(iso)) best = iso;
   return best ?? newest;
 }
 
