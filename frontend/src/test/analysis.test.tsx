@@ -50,7 +50,7 @@ function sampler(over: Partial<SamplerStatus> = {}): SamplerStatus {
 function mockApi(hist: HistoryResponse, extra: Record<string, unknown> = {}) {
   const routes: Record<string, unknown> = {
     "/api/status": status(), "/api/expiries": expiries, "/api/snapshots": [], "/api/sessions": [],
-    "/api/option-chain": bigChain(), "/api/history/observations": hist, ...extra,
+    "/api/option-chain": bigChain(), "/api/history/observations": hist, "/api/oi/change": oiRes(), ...extra,
   };
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const hit = routes[String(input).split("?")[0]!];
@@ -85,8 +85,9 @@ describe("analysis dashboard", () => {
     for (const t of ["Open interest by strike", "OI change by strike", "Option chain", "Total premium", "Premium decay", "Key levels"])
       expect(await widget(t)).toBeInTheDocument();
     const oi = await screen.findByRole("img", { name: "Open interest by strike" });
-    expect(oi.dataset.series).toBe("Calls (CE)|Puts (PE)");
-    expect(oi.dataset.points).toBe("7,7");
+    expect(oi.dataset.series).toBe("Call OI|Call OI increase|Call OI decrease|Put OI|Put OI increase|Put OI decrease");
+    for (const l of ["Last 3 min", "Last 5 min", "Last 10 min", "Last 30 min", "Last 1 hr", "All"])
+      expect(within(await widget("Open interest by strike")).getByRole("button", { name: l })).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/demo|synthetic|mock/i);
   });
 
@@ -94,22 +95,19 @@ describe("analysis dashboard", () => {
     mockApi(history([obs(1), obs(2)], 1));
     renderAnalysis();
     const oi = await widget("Open interest by strike");
-    expect(await within(oi).findByText("Snapshot")).toBeInTheDocument();
-    expect(within(oi).getByText(/03 Nov|3 Nov/)).toBeInTheDocument();
+    expect(await within(oi).findByText(/03 Nov|3 Nov/)).toBeInTheDocument();
+    expect(within(oi).getByText(/last sample/)).toBeInTheDocument();
     const prem = await widget("Total premium");
-    expect(await within(prem).findByText("Stored (last session)")).toBeInTheDocument();
     expect(within(prem).getByText(/last sample/)).toBeInTheDocument();
   });
 
-  it("tells a live-sampled chart from a delayed and a last-session one", async () => {
+  it("shows no live, sampled-live or mock labelling on stored-sample charts", async () => {
     const at = (secondsAgo: number) => new Date(Date.now() - secondsAgo * 1000).toISOString();
-    for (const [secs, text] of [[30, "Sampled live"], [400, "Sampling delayed"]] as const) {
-      mockApi(history([obs(1, { retrieved_at: at(secs + 60) }), obs(2, { retrieved_at: at(secs) })], 2));
-      const { unmount } = renderAnalysis();
-      const prem = await widget("Total premium");
-      expect(await within(prem).findByText(text)).toBeInTheDocument();
-      unmount();
-    }
+    mockApi(history([obs(1, { retrieved_at: at(120) }), obs(2, { retrieved_at: at(60) })], 2));
+    renderAnalysis();
+    const prem = await widget("Total premium");
+    expect(await within(prem).findByText(/last sample/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/Sampled live|Sampling delayed|Stored \(last session\)|mock|demo/i);
   });
 
   describe("time ranges and the full-size chart", () => {
@@ -185,7 +183,7 @@ describe("analysis dashboard", () => {
     renderAnalysis();
     await widget("Open interest by strike");
     await userEvent.click(screen.getByRole("checkbox", { name: "Calls" }));
-    expect((await screen.findByRole("img", { name: "Open interest by strike" })).dataset.series).toBe("Puts (PE)");
+    expect((await screen.findByRole("img", { name: "Open interest by strike" })).dataset.series).toBe("Put OI|Put OI increase|Put OI decrease");
     expect(screen.getByRole("img", { name: "Total premium over stored snapshots" }).dataset.series).toBe("PE total premium");
   });
 
@@ -266,8 +264,8 @@ describe("analysis dashboard", () => {
       "/api/status": status({ stream: streamStatus({ state: "streaming", effective_state: "streaming", freshness: "fresh" }) }),
     });
     renderAnalysis();
-    const oi = await widget("Open interest by strike");
-    await waitFor(() => expect(within(oi).getByText("Live")).toBeInTheDocument());
+    const chain = await widget("Option chain");
+    await waitFor(() => expect(within(chain).getByText("Live")).toBeInTheDocument());
     await act(async () => { /* settle throttled updates */ });
   });
 
@@ -351,7 +349,7 @@ const hmRes = (over: Partial<OiHeatmap> = {}): OiHeatmap => ({
 
 describe("OI explorer (change + total by window)", () => {
   async function open(urls: string[], over: Partial<OiChange> = {}) {
-    localStorage.setItem("nse.analysis.layout.v1", JSON.stringify({ active: ["oiExplorer"], layout: [{ i: "oiExplorer", x: 0, y: 0, w: 12, h: 14 }] }));
+    localStorage.setItem("nse.analysis.layout.v1", JSON.stringify({ active: ["oi"], layout: [{ i: "oi", x: 0, y: 0, w: 12, h: 14 }] }));
     mockApi(history([obs(1), obs(2)], 1), { "/api/oi/change": (u: string) => { urls.push(u); return oiRes(over); } });
     renderAnalysis();
     return await screen.findByTestId("oi-explorer");
@@ -378,7 +376,7 @@ describe("OI explorer (change + total by window)", () => {
 
   it("switches between OI change + total, OI change and total OI", async () => {
     const box = await open([]);
-    const chart = () => within(box).getByRole("img", { name: "Open interest by strike for the chosen window" });
+    const chart = () => within(box).getByRole("img", { name: "Open interest by strike" });
     await waitFor(() => expect(chart().dataset.series).toBe("Call OI|Call OI increase|Call OI decrease|Put OI|Put OI increase|Put OI decrease"));
     await userEvent.click(within(box).getByRole("button", { name: "OI change" }));
     expect(chart().dataset.series).toBe("Call OI change|Put OI change");
@@ -402,15 +400,6 @@ describe("OI explorer (change + total by window)", () => {
   it("says why there is no comparison instead of drawing zeros", async () => {
     const box = await open([], { rows: [], observations_available: 0 });
     expect(await within(box).findByText("No observations stored for this expiry yet")).toBeInTheDocument();
-  });
-
-  it("gives the strike-by-strike OI widget a full-size view too", async () => {
-    localStorage.setItem("nse.analysis.layout.v1", JSON.stringify({ active: ["oi"], layout: [{ i: "oi", x: 0, y: 0, w: 6, h: 9 }] }));
-    mockApi(history([obs(1), obs(2)], 1));
-    renderAnalysis();
-    await userEvent.click(await screen.findByRole("button", { name: "Open Open interest by strike full size" }));
-    const dlg = await screen.findByRole("dialog", { name: "Open interest by strike" });
-    expect(within(dlg).getByRole("img", { name: "Open interest by strike (full size)" })).toBeInTheDocument();
   });
 });
 

@@ -29,18 +29,8 @@ function useLastSample(): { at: string | null; age: number | null } {
 
 /** Time-series widgets are built from stored samples; say how fresh the newest one is. */
 function SampleTag() {
-  const { at, age } = useLastSample();
-  const fresh = age != null && age <= 180;
-  const late = age != null && age > 180 && age <= 600;
-  const cls = fresh ? "border-up/50 text-up" : late ? "border-warn/50 text-warn" : "border-info/50 text-info";
-  const text = fresh ? "Sampled live" : late ? "Sampling delayed" : "Stored (last session)";
-  return (
-    <>
-      <span className={`inline-flex items-center rounded-sm border px-1.5 py-px text-xs font-medium ${cls}`}
-        title="These charts plot the option-chain samples stored every minute in market hours (not individual ticks).">{text}</span>
-      {at && <span>last sample {fmtTimeIST(at)}</span>}
-    </>
-  );
+  const { at } = useLastSample();
+  return at ? <span title="Charts plot the option-chain samples stored every minute in market hours (not individual ticks).">last sample {fmtTimeIST(at)} IST</span> : null;
 }
 
 /** Source line printed under every widget: where the numbers come from and how fresh they are. */
@@ -146,7 +136,7 @@ function TotalsBars({ metric, label }: { metric: StrikeMetric; label: string }) 
   );
 }
 
-export const OiWidget = () => <StrikeBars metric="oi" label="Open interest" />;
+export const OiWidget = () => <OiExplorerWidget />;
 export const OiTotalWidget = () => <TotalsBars metric="oi" label="Total open interest, calls vs puts" />;
 export const OiChangeWidget = () => <StrikeBars metric="oiChange" label="OI change" />;
 export const OiChangeTotalWidget = () => <TotalsBars metric="oiChange" label="Total OI change, calls vs puts" />;
@@ -652,7 +642,7 @@ function OiExplorerBody({ large, mode, setMode, win, setWin }: {
         {q.isPending && q.fetchStatus !== "idle" ? <p className="p-3 text-sm text-muted">Loading observations…</p>
           : q.error ? <EmptyState title="Could not load OI for this window">{String((q.error as Error).message)}</EmptyState>
           : !res || res.observations_available === 0 ? <EmptyState title="No observations stored for this expiry yet">Observations are stored each time a chain is fetched.</EmptyState>
-          : opt ? <EChart option={opt} ariaLabel="Open interest by strike for the chosen window" onClick={(p) => { const k = Number(p.name); if (Number.isFinite(k)) d.select(k); }} />
+          : opt ? <EChart option={opt} ariaLabel="Open interest by strike" onClick={(p) => { const k = Number(p.name); if (Number.isFinite(k)) d.select(k); }} />
           : null}
       </div>
       <div role="group" aria-label="OI window" className="flex flex-wrap items-center gap-1">
@@ -728,7 +718,6 @@ export const WIDGETS: WidgetDef[] = [
   { id: "oiHeatmap", title: "OI change heatmap", render: () => <OiHeatmapWidget />, x: 6, y: 37, w: 6, h: 12, minW: 4, minH: 7 },
   { id: "oiConcentration", title: "OI concentration", render: () => <OiConcentrationWidget />, x: 0, y: 49, w: 5, h: 10, minW: 3, minH: 6 },
   { id: "priceOi", title: "Price and OI", render: () => <PriceOiWidget />, x: 5, y: 49, w: 7, h: 10, minW: 4, minH: 6 },
-  { id: "oiExplorer", title: "OI change + total by window", render: () => <OiExplorerWidget />, x: 0, y: 59, w: 12, h: 14, minW: 5, minH: 8 },
   { id: "detail", title: "Strike detail", render: () => <DetailWidget />, x: 9, y: 29, w: 3, h: 8, minW: 2, minH: 4 },
 ];
 
