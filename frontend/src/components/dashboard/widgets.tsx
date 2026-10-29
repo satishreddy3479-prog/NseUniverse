@@ -38,7 +38,7 @@ function SampleTag() {
     <>
       <span className={`inline-flex items-center rounded-sm border px-1.5 py-px text-xs font-medium ${cls}`}
         title="These charts plot the option-chain samples stored every minute in market hours (not individual ticks).">{text}</span>
-      {at && <span>last sample {fmtTimeIST(at)} IST</span>}
+      {at && <span>last sample {fmtTimeIST(at)}</span>}
     </>
   );
 }
