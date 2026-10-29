@@ -65,3 +65,6 @@ Deploy kit written and tested for update/rollback logic and backend startup with
 
 ## Intraday regime and ML plan (2026-10-29, D55)
 - Regime measure fixed (z-score of the move + 5-minute path efficiency); scenarios filtered by relevance; nightly labelled dataset (`feature_rows`, version if-1) built by the end-of-day job; page shows the ML stage. Not verified live: the first nightly dataset is built after the next full session; no intraday model exists yet.
+
+## Breadth and sectors (2026-10-29, D56)
+- Planned, not built: [market-breadth-plan](market-breadth-plan.md). Breadth and sector evidence groups and two decision-context questions read "Unknown" until phase 1-2 exist. First step: a market-hours capture of stock ticks to verify fields, rates and sources.

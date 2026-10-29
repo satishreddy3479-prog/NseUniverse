@@ -179,3 +179,8 @@ Status: **Final** or **Proposed**. Date 2026-10-28 unless noted.
 - The one-minute efficiency ratio called a +171 point, 1.6x-normal climb "sideways". The regime now uses a z-score of the move against the 60-session daily volatility and the 5-minute path efficiency.
 - Scenarios shown only when supported; the others are listed as ruled out with a reason.
 - Intraday ML is staged by labelled sessions (5 experimental, 20 paper-test, 60 eligible for "validated"), and a labelled feature/label dataset is built every night from day one ([intraday-ml-plan](intraday-ml-plan.md)). No model is trained yet; no probability is shown.
+
+## D56 — Market breadth, heavyweights, volume and sector analysis: plan (2026-10-29)
+- Plan in [market-breadth-plan](market-breadth-plan.md); nothing built. Breadth (0.15) and sector (0.10) score groups stay "not available" until it is.
+- Feasibility checked against Kotak's documentation: up to 3,000 subscribed tokens per connection, a scrip master and quotes API; our ticks already carry previous close and cumulative volume. Everything else (token coverage of NIFTY 500, tick rate, server load, weights/constituent sources and terms) is verified in a market-hours capture before any code depends on it.
+- "Is the move real" is answered by breadth (NIFTY 50 and 500), equal- vs cap-weighted return, heavyweight contribution, and relative volume; thresholds are provisional and will be checked against the labelled dataset.

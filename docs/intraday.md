@@ -24,7 +24,7 @@ widgets, which are unchanged. Backend: `backend/app/intraday/` · API `GET /api/
 | Events | `prediction/reference/events.json` | static, verified | event time (unconfirmed times flagged) | — | — |
 | Existing widgets | `/api/option-chain`, `/api/history/observations`, `/api/oi/*`, live overlay | as before | as before | as before | as before |
 
-Not collected yet (shown as **Not available**, never zero): market breadth (constituent
+Not collected yet - plan in [market-breadth-plan](market-breadth-plan.md) (shown as **Not available**, never zero): market breadth (constituent
 advances/declines), intraday sector data, VWAP (NIFTY 50 is an index without traded volume, so a
 VWAP is undefined; a futures VWAP would need a futures feed).
 
