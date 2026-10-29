@@ -23,7 +23,7 @@ beforeEach(() => {
     const chain = bigChain();
     chain.snapshot.underlying_ltp = 24050;
     const map: Record<string, unknown> = {
-      "/api/status": status(), "/api/expiries": expiries, "/api/snapshots": [summary()], "/api/option-chain": chain,
+      "/api/status": status(), "/api/expiries": { ...expiries, available: ["2026-11-03", "2026-11-10", "2026-11-17", "2026-11-24", "2026-12-29"] }, "/api/snapshots": [summary()], "/api/option-chain": chain,
     };
     return map[url] == null ? new Response("{}", { status: 404 }) : new Response(JSON.stringify(map[url]), { status: 200 });
   }));
@@ -56,7 +56,7 @@ describe("Strategy builder page", () => {
     expect(stats).toHaveTextContent("Max profitUnlimited");
     expect(stats).toHaveTextContent("23,850 · 24,250"); // 24050 -/+ 200
     expect(stats).toHaveTextContent("−₹15,000 debit");
-    expect(screen.getByRole("img", { name: "Strategy payoff" })).toHaveAttribute("data-series", "At expiry");
+    expect(screen.getByRole("img", { name: "Strategy payoff" })).toHaveAttribute("data-series", "At expiry|Profit|Loss|Markers");
   });
 
   it("every leg is editable: lots, duplicate, remove; bad input is explained", async () => {
@@ -101,6 +101,13 @@ describe("Strategy builder page", () => {
 });
 
 describe("Option chain inside the builder", () => {
+  it("offers only the weekly and monthly expiries we collect, however many dates the exchange lists", async () => {
+    mount();
+    const sel = await screen.findByLabelText("Expiry");
+    await waitFor(() => expect(within(sel).getAllByRole("option")).toHaveLength(2));
+    expect(within(sel).getAllByRole("option").map((o) => o.textContent)).toEqual(["2026-11-03 (weekly)", "2026-11-24 (monthly)"]);
+  });
+
   const row = (k: number) => screen.findByTestId(`chain-${k}`);
   const legTable = () => screen.findByRole("table", { name: "Strategy legs" });
 

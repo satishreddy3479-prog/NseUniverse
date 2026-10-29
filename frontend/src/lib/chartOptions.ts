@@ -380,6 +380,7 @@ export interface PayoffSeries {
 
 /** Payoff diagram at expiry: profit green, loss red, markers for the spot and each breakeven. */
 export function payoffOption(p: PayoffSeries, c: ChartColors): EChartsCoreOption {
+  const pts = [...p.expiry, ...p.breakevens.map((b) => ({ s: b, pnl: 0 }))].sort((x, y) => x.s - y.s);
   const marks = [
     { xAxis: p.spot, name: "Spot", lineStyle: { color: c.brass, type: "dashed", width: 1.5 }, label: { formatter: `Spot ${fmtInt(Math.round(p.spot))}`, color: c.brass, fontSize: 11 } },
     ...p.breakevens.map((b) => ({ xAxis: b, name: "BE", lineStyle: { color: c.muted, type: "dotted", width: 1 }, label: { formatter: `BE ${fmtInt(Math.round(b))}`, color: c.muted, fontSize: 10, position: "insideEndBottom" } })),
@@ -395,10 +396,14 @@ export function payoffOption(p: PayoffSeries, c: ChartColors): EChartsCoreOption
       } },
     xAxis: { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => fmtInt(Math.round(v)) }, axisLine: { lineStyle: { color: c.rule } }, splitLine: { show: false } },
     yAxis: { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => (v < 0 ? "−" : "") + compactIN(Math.abs(v)) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
-    visualMap: { show: false, seriesIndex: 0, dimension: 1, pieces: [{ lt: 0, color: c.down }, { gte: 0, color: c.up }] },
     dataZoom: [{ type: "inside", filterMode: "none" }],
+    // Profit and loss are two clipped area series with the exact breakeven points inserted, not a visualMap: a piecewise
+    // visualMap on this series makes ECharts throw ("reading 'coord'"), which blanked the whole page.
     series: [
-      { name: "At expiry", type: "line", showSymbol: false, lineStyle: { width: 2 }, areaStyle: { opacity: 0.18 }, data: p.expiry.map((x) => [x.s, x.pnl]),
+      { name: "At expiry", type: "line", showSymbol: false, itemStyle: { color: c.paper }, lineStyle: { width: 2, color: c.paper }, z: 3, data: pts.map((x) => [x.s, x.pnl]) },
+      { name: "Profit", type: "line", showSymbol: false, silent: true, tooltip: { show: false }, lineStyle: { width: 0 }, itemStyle: { color: c.up }, areaStyle: { color: c.up, opacity: 0.28 }, z: 1, data: pts.map((x) => [x.s, Math.max(x.pnl, 0)]) },
+      { name: "Loss", type: "line", showSymbol: false, silent: true, tooltip: { show: false }, lineStyle: { width: 0 }, itemStyle: { color: c.down }, areaStyle: { color: c.down, opacity: 0.28 }, z: 1, data: pts.map((x) => [x.s, Math.min(x.pnl, 0)]) },
+      { name: "Markers", type: "line", silent: true, showSymbol: false, data: [],
         markLine: { symbol: "none", silent: true, data: [{ yAxis: 0, lineStyle: { color: c.muted, type: "solid", width: 1 }, label: { show: false } }, ...marks] } },
     ],
   };

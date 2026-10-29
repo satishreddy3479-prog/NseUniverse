@@ -30,7 +30,8 @@ function Stat({ label, value, hint, cls = "" }: { label: string; value: string; 
 export default function StrategyBuilder() {
   const colors = useChartColors();
   const ex = useExpiries();
-  const available = ex.data?.available ?? [];
+  // only the two expiries this app collects (weekly and monthly), not every date the exchange lists
+  const available = useMemo(() => [...new Set([ex.data?.weekly, ex.data?.monthly].filter((e): e is string => !!e))], [ex.data]);
   const [picked, setPicked] = useState<string | null>(null);
   const expiry = picked ?? ex.data?.weekly ?? available[0] ?? null;
   const [legs, setLegs] = useState<Leg[]>([]);
