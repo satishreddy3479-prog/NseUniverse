@@ -86,6 +86,8 @@ export function DashProvider({ expiry, range, showCalls, showPuts, children }: {
     queryKey: ["chain", expiry],
     queryFn: () => api.optionChain(expiry!),
     enabled: !!expiry,
+    // the sampler stores a new snapshot every minute in market hours; pick it up so the page is never minutes behind
+    refetchInterval: 30_000,
     retry: false,
   });
   const snapshot = chain.data?.snapshot;

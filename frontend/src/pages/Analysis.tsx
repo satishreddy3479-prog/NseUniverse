@@ -87,7 +87,7 @@ function SpotBox() {
   const chg = spot != null && prev != null && prev > 0 ? spot - prev : null;
   return (
     <div className="flex items-baseline gap-2 rounded-sm border border-rule bg-slate-2 px-3 py-1.5" aria-label="Spot price">
-      <span className="text-xs text-muted">Spot {live ? "(live)" : "(snapshot)"}</span>
+      <span className="text-xs text-muted" title={live ? "From the live stream" : "From the latest stored snapshot"}>Spot {live ? "(live)" : d.snapshot ? `(snapshot ${fmtTimeIST(d.snapshot.retrieved_at)})` : "(snapshot)"}</span>
       <span className="num text-base font-semibold text-paper">{fmtPrice(spot)}</span>
       {chg != null && (
         <span className={`num text-xs font-medium ${chg >= 0 ? "text-up" : "text-down"}`}>
@@ -116,7 +116,7 @@ export function SamplerNote() {
   return (
     <p className={`text-xs ${tone}`} data-testid="sampler-note">
       {text}
-      {s.last_success_at && <> Last stored {fmtTimeIST(s.last_success_at)} IST · {s.samples_this_run} this run.</>}
+      {s.last_success_at && <> Last stored {fmtTimeIST(s.last_success_at)} · {s.samples_this_run} this run.</>}
       {s.skipped_unchanged > 0 && <> {s.skipped_unchanged} unchanged chain{s.skipped_unchanged === 1 ? "" : "s"} not re-stored.</>}
       {s.free_disk_gb != null && s.free_disk_gb < 5 && <span className="text-warn"> Disk: {s.free_disk_gb.toFixed(1)} GB free.</span>}
     </p>

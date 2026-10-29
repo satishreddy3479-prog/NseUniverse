@@ -7,6 +7,7 @@ is the ATM strike of that snapshot plus ``each_side`` listed strikes on both sid
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -18,7 +19,10 @@ DEFINITIONS = {
         "Strike carrying the broker's ATM label; if absent, the listed strike nearest the "
         "underlying price at capture."
     ),
-    "universe": "ATM strike plus N listed strikes either side (N = strikes_each_side).",
+    "universe": (
+        "ATM strike of the newest stored snapshot plus N listed strikes either side "
+        "(N = strikes_each_side). Every observation sums these same strikes, so totals compare."
+    ),
     "total_ce_premium": (
         "Sum of last traded price (INR per unit) over call contracts in the universe; contracts "
         "without an LTP are left out and counted in missing_ltp."
@@ -66,7 +70,8 @@ def _sum(values: list[float | None]) -> float | None:
     return sum(present) if present else None
 
 
-def observe(snap: OptionChainSnapshot, each_side: int) -> Observation:
+def _universe(snap: OptionChainSnapshot, each_side: int) -> tuple[list[Any], Any]:
+    """ATM +/- each_side rows of one snapshot and its ATM row (all rows when there is no ATM)."""
     rows = snap.rows
     atm_idx = next(
         (
@@ -79,11 +84,19 @@ def observe(snap: OptionChainSnapshot, each_side: int) -> Observation:
     if atm_idx is None and rows and snap.underlying_ltp is not None:
         atm_idx = min(range(len(rows)), key=lambda i: abs(rows[i].strike - snap.underlying_ltp))  # type: ignore[operator]
     if atm_idx is None:
-        uni = rows
-        atm_row = None
-    else:
-        uni = rows[max(0, atm_idx - each_side) : atm_idx + each_side + 1]
-        atm_row = rows[atm_idx]
+        return list(rows), None
+    return rows[max(0, atm_idx - each_side) : atm_idx + each_side + 1], rows[atm_idx]
+
+
+def observe(
+    snap: OptionChainSnapshot, each_side: int, fixed: frozenset[float] | None = None
+) -> Observation:
+    """One observation. ``fixed`` = the strikes to sum; without it the universe re-centres on this
+    snapshot's ATM, so totals from different snapshots would cover different strikes."""
+    rows = snap.rows
+    uni, atm_row = _universe(snap, each_side)
+    if fixed is not None:
+        uni = [r for r in rows if r.strike in fixed]
     ce = [r.call for r in uni if r.call]
     pe = [r.put for r in uni if r.put]
     call_ltp = atm_row.call.ltp if atm_row and atm_row.call else None
@@ -116,8 +129,20 @@ _COMPARE = (
 
 
 # A stored snapshot is immutable, so its observation is computed once (a day holds hundreds).
-_CACHE: dict[tuple[str, int], Observation] = {}
+_CACHE: dict[tuple[str, int, frozenset[float] | None], Observation] = {}
 _CACHE_MAX = 20000
+
+
+def _fixed_strikes(
+    store: SnapshotStore, items: list[Any], each_side: int
+) -> frozenset[float] | None:
+    """ATM +/- each_side strikes of the newest snapshot, summed by every observation."""
+    if not items:
+        return None
+    newest = store.load(items[-1].snapshot_id)
+    if newest is None:
+        return None
+    return frozenset(r.strike for r in _universe(newest, each_side)[0])
 
 
 def build_history(
@@ -129,15 +154,16 @@ def build_history(
         if s.completeness.value != "empty"
     ]
     items.sort(key=lambda s: s.retrieved_at)  # list() is newest-first
+    fixed = _fixed_strikes(store, items, each_side)
     obs: list[Observation] = []
     for s in items:
-        key = (s.snapshot_id, each_side)
+        key = (s.snapshot_id, each_side, fixed)
         cached = _CACHE.get(key)
         if cached is None:
             snap = store.load(s.snapshot_id)
             if snap is None:
                 continue
-            cached = observe(snap, each_side)
+            cached = observe(snap, each_side, fixed)
             if len(_CACHE) >= _CACHE_MAX:
                 _CACHE.clear()
             _CACHE[key] = cached

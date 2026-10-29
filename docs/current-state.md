@@ -13,6 +13,10 @@ _Last updated: 2026-10-29_
 - Open items: no stored sample at 15:30 itself (sampler's last in-session sample was 15:29); post-close fetches show deep-OTM contracts with OI 0 and LTP 0.0, which is not a real quote.
 - New (29 Oct): the PCR widget (ATM strike, strikes in view, whole chain; shown once to saved layouts), dark change segments in the OI explorer, and a Full-view table of every time slot.
 
+## Total premium and spot fixes (30 Oct 2026)
+- Total premium, total OI and volume in `/api/history/observations` summed ATM ±N re-centred on each snapshot, so the lines mixed different strikes as NIFTY moved. They now sum the ATM ±N strikes of the newest snapshot at every point (`observe(..., fixed)`); the ATM straddle still follows each snapshot's own ATM, which is its definition. Test: `TestFixedUniverse`.
+- Spot mismatch (29 Oct screenshot): the Analysis page's option-chain query never refetched, so "Spot (snapshot)" showed the snapshot loaded earlier (22,822) while the header and the Command Center showed newer ones (22,869). The chain now refetches every 30 s and the label says which snapshot time it shows. The live stream tick, the last 60-second sample and the page's snapshot can still differ by seconds; each now carries its own time.
+
 ## PCR / OI trend widgets (30 Oct 2026)
 - New widgets (offered once to saved layouts): "Put-call ratio over time", "OI change over time (call vs put)", "Total OI over time (call vs put)" (NIFTY dotted on the left axis, metric on the right; strike picker defaults to all listed strikes) and "PCR donut: overall and ATM" (outer ring whole chain, inner ring ATM strike), plus the earlier PCR table. Backed by `/api/history/oi-series`: the same strikes at every point, OI change = OI minus the broker's previous-day OI (strikes lacking either are left out and counted). Not yet checked against live data.
 

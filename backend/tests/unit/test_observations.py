@@ -22,6 +22,7 @@ from app.domain.models import (
     OptionQuote,
 )
 from app.services.backfill import backfill_observations
+from app.services.history import observe
 from app.storage.observations import ObservationStore
 from app.storage.store import SnapshotStore
 from tests.conftest import make_app
@@ -414,3 +415,19 @@ class TestOiSeries:
     def test_no_data_is_reported(self, tmp_path: Path) -> None:
         r = oi_series(ObservationStore(tmp_path), "NIFTY", EXP)
         assert r.times == [] and r.warnings
+
+
+class TestFixedUniverse:
+    def test_totals_sum_the_same_strikes_whatever_the_atm_was(self) -> None:
+        ce = {100: (15, 50, 50), 110: (8, 40, 40), 120: (3, 30, 30)}
+        pe = {100: (2, 10, 10), 110: (6, 20, 20), 120: (14, 30, 30)}
+        low = snap("f1", A, 99.0, ce, pe)  # ATM would be 100
+        high = snap("f2", B, 121.0, ce, pe)  # ATM would be 120
+        free_low, free_high = observe(low, 0), observe(high, 0)
+        assert free_low.total_ce_premium == 15 and free_high.total_ce_premium == 3  # sliding: different strikes
+        fixed = frozenset({110.0, 120.0})
+        a, b = observe(low, 0, fixed), observe(high, 0, fixed)
+        assert a.total_ce_premium == b.total_ce_premium == 8 + 3  # same two strikes in both
+        assert a.total_pe_premium == b.total_pe_premium == 6 + 14
+        assert a.total_ce_oi == 70 and a.strikes_in_universe == 2
+        assert a.atm_strike == 100.0 and b.atm_strike == 120.0  # the ATM itself still follows the snapshot
