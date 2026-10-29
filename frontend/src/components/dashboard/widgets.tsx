@@ -618,18 +618,18 @@ const fmt2 = (v: number | null) => (v == null ? "—" : v.toFixed(2));
 /** Calls and puts side by side, bars on one scale. Signed values grow up or down from a zero line. */
 function PairBars({ title, ce, pe, signed }: { title: string; ce: number | null; pe: number | null; signed: boolean }) {
   const top = Math.max(Math.abs(ce ?? 0), Math.abs(pe ?? 0));
-  const H = 88; // px available above (and, for signed values, below) the zero line
+  const H = 44; // px available above (and, for signed values, below) the zero line
   const bar = (v: number | null, cls: string, label: string) => {
     const px = v == null || top <= 0 ? 0 : Math.max(2, (Math.abs(v) / top) * H);
     const up = v == null || v >= 0;
     return (
       <div className="flex flex-1 flex-col items-center">
         <div className="flex w-full items-end justify-center" style={{ height: H + 18 }}>
-          {up && <div className="flex flex-col items-center"><span className="num mb-0.5 text-sm text-paper">{v == null ? "—" : signed ? signedUnits(v) : compactIN(v)}</span>{v != null && <div className={`w-14 rounded-t-sm ${cls}`} style={{ height: px }} />}</div>}
+          {up && <div className="flex flex-col items-center"><span className="num mb-0.5 text-sm text-paper">{v == null ? "—" : signed ? signedUnits(v) : compactIN(v)}</span>{v != null && <div className={`w-12 rounded-t-sm ${cls}`} style={{ height: px }} />}</div>}
         </div>
         {signed && (
           <div className="flex w-full items-start justify-center border-t border-rule" style={{ height: H + 18 }}>
-            {!up && <div className="flex flex-col items-center"><div className={`w-14 rounded-b-sm ${cls}`} style={{ height: px }} /><span className="num mt-0.5 text-sm text-paper">{signedUnits(v)}</span></div>}
+            {!up && <div className="flex flex-col items-center"><div className={`w-12 rounded-b-sm ${cls}`} style={{ height: px }} /><span className="num mt-0.5 text-sm text-paper">{signedUnits(v)}</span></div>}
           </div>
         )}
         <span className="mt-1 text-xs text-muted">{label}</span>
@@ -656,7 +656,7 @@ function OiCards({ st }: { st: ReturnType<typeof oiWindowStats> }) {
       <figure className="min-w-0 flex-1 basis-60 rounded-sm border border-rule bg-slate-2 p-2" aria-label="Put/Call Ratio">
         <figcaption className="mb-1 text-xs font-medium text-paper">Put/Call Ratio</figcaption>
         <div className="flex items-center gap-3">
-          <svg viewBox="0 0 130 130" className="size-32 shrink-0" role="img" aria-label={callShare == null ? "No OI share" : `Call OI ${(callShare * 100).toFixed(0)}%, put OI ${((1 - callShare) * 100).toFixed(0)}%`}>
+          <svg viewBox="0 0 130 130" className="size-24 shrink-0" role="img" aria-label={callShare == null ? "No OI share" : `Call OI ${(callShare * 100).toFixed(0)}%, put OI ${((1 - callShare) * 100).toFixed(0)}%`}>
             <circle cx="65" cy="65" r={R} fill="none" strokeWidth="16" className="stroke-down" />
             {callShare != null && <circle cx="65" cy="65" r={R} fill="none" strokeWidth="16" className="stroke-up" strokeDasharray={`${callShare * C} ${C}`} transform="rotate(-90 65 65)" />}
             <text x="65" y="60" textAnchor="middle" className="fill-muted" fontSize="11">PCR</text>
@@ -714,7 +714,7 @@ function OiExplorerBody({ large, mode, setMode, win, setWin }: {
       <div role="group" aria-label="OI view" className="flex flex-wrap items-center gap-1">
         {OI_MODES.map((m) => <button key={m.id} type="button" title={m.title} aria-pressed={mode === m.id} onClick={() => setMode(m.id)} className={chip(mode === m.id)}>{m.label}</button>)}
       </div>
-      <div className={large ? "min-h-[320px] flex-1" : "min-h-0 flex-1"}>
+      <div className={large ? "min-h-[240px] flex-1" : "min-h-0 flex-1"}>
         {q.isPending && q.fetchStatus !== "idle" ? <p className="p-3 text-sm text-muted">Loading observations…</p>
           : q.error ? <EmptyState title="Could not load OI for this window">{String((q.error as Error).message)}</EmptyState>
           : !res || res.observations_available === 0 ? <EmptyState title="No observations stored for this expiry yet">Observations are stored each time a chain is fetched.</EmptyState>
