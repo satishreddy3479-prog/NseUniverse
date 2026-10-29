@@ -88,3 +88,37 @@ re-imported by reading the JSONL lines (`t=sample` rows, then their `t=c` contra
 Daily research report, Parquet format (not needed at this size), intraday ML targets and training (needs 60
 complete sessions), automatic off-server copy of the archive (recommended: copy `archive/` and `manifests/`
 off the server weekly).
+
+
+## Server audit of 29 Oct 2026 and the plan from it
+
+Source: the owner's read-only audit of the server (Claude cannot reach it: SSH is blocked from its environment). Disk 19 GB, 5.9 GB used,
+12 GB free (33 %); RAM 969 MB, 539 MB available; swap 1 GB unused. Application data is 180 MB: `observations.sqlite3` 3.5 MB,
+`market.sqlite3` 3 MB (+1.1 MB WAL), snapshots and archives 18 MB, user caches 136 MB. Everything else is operating system,
+packages and build tooling (about 5.7 GB) that the app does not control.
+
+### What grows (per trading day; per-component estimates, to be re-measured on the server after a week)
+| Component | Per day | Per year | Rule |
+|---|---|---|---|
+| Observation DB (`observations.sqlite3`) | 5.5 MB | 1.4 GB | kept forever; replay, paper trading and research read it |
+| Verified archive (`archive/`, `manifests/`) | 1.4 MB | 0.35 GB | kept forever; the only off-DB copy of each day |
+| `intraday.sqlite3` (scores, daily summaries, `if-2` feature rows) | ~1.7 MB | ~0.45 GB | immutable, kept |
+| `market.sqlite3` (minute breadth/flow/futures recordings, lists, weights, daily bars) | ~1.3 MB | ~0.4 GB | append-only, kept |
+| Snapshot files (raw + normalized) | 16 MB | 0 net | **pruned**: raw 7 days, normalized 14 days, verified-archive days only; steady state about 0.2 GB |
+| Other databases (prices, flows, forecasts, news) | <0.1 MB | <50 MB | kept |
+| Backups (`/var/backups/nse-universe`, 14 daily folders, observation DB weekly) | grows with the DBs | about 2.5 GB per year of data held | **the next real risk**, see below |
+
+Permanent data grows about 2.6 GB a year. The backups keep 14 daily gzip copies of every database except the observation DB (weekly), so
+they grow in step with the databases and, at today's rule, would match the data itself within a year (rough estimate: 2.5 GB per year of
+history). Usable space is 12 GB minus the 2 GB where the sampler pauses, so the current rules last about 1.8 years, not 3.
+
+### Plan (owner approval needed only where marked)
+1. **Now:** nothing to delete. Retention for snapshot files is already on (D58). Keep observations, archives and the ledgers forever.
+2. **Verify the backups exist** (the audit does not list `/var/backups/nse-universe`): run `ls -la /var/backups/nse-universe` and `systemctl list-timers | grep -i nse`. If missing, backups are not running.
+3. **Change backup retention (approval):** daily copies for 7 days plus one weekly copy for 4 weeks plus one monthly copy for 6 months instead of 14 daily folders; observation DB stays weekly with 2 copies. This roughly halves backup growth. Only backup copies are removed, never stored market data.
+4. **Off-server copy (approval, your PC or any storage you control):** copy `archive/`, `manifests/` and the newest backup monthly. The raw payloads are not backed up anywhere, and a single disk is the only copy of the research data.
+5. **Do not trim the observation DB:** the replay, paper-trading and research views read it directly, so deleting old rows would break them for those sessions. At 1.4 GB a year it is affordable.
+6. **Reserve for later (approval, only if free space < 5 GB):** compact the `if-2` feature rows of sessions older than 90 days to every 5th sample; move the oldest `market.sqlite3` minute recordings into the verified archive format.
+7. **Thresholds:** `/api/storage/status` pressure: watch below 6 GB free, low below 4 GB, critical below 2.5 GB; the sampler pauses at 2 GB. Check the storage card after the first full week and re-measure the table above.
+8. **Housekeeping the app does not own (optional, owner decides, about 0.6 GB):** `apt clean` (153 MB), old disabled snap revisions (174 MB), journal size cap (81 MB), `/opt/nse-universe/cache` build cache (253 MB) and user caches (136 MB). None is needed today.
+9. **Pending security reboot:** the running kernel (5.15.0-46) is older than the installed one (-198); reboot after 16:00 on a trading day and confirm the service returns.
