@@ -36,6 +36,9 @@ class FlowTracker:
     depth_n: int = 0
     last_imbalance: float | None = None
     last_update: datetime | None = None
+    last_atp: float | None = (
+        None  # the exchange's own day VWAP of the contract (average traded price)
+    )
     minutes: dict[str, tuple[int, float, int]] = field(
         default_factory=dict
     )  # minute -> (cvd, ltp, volume)
@@ -58,11 +61,14 @@ class FlowTracker:
         ask: float | None = None,
         bid_qty: int | None = None,
         ask_qty: int | None = None,
+        atp: float | None = None,
     ) -> None:
         if self.day is not None and day != self.day:
             self.reset()
         self.day = day
         self.last_update = at
+        if atp is not None and atp > 0:
+            self.last_atp = atp
         if bid_qty is not None and ask_qty is not None and bid_qty + ask_qty > 0:
             self.last_imbalance = (bid_qty - ask_qty) / (bid_qty + ask_qty)
             self.depth_sum += self.last_imbalance

@@ -485,6 +485,8 @@ export interface IntradaySummary {
   scenarios_ruled_out: { name: string; reason: string }[];
   /** Stock breadth, heavyweights, volume and sectors; null when the breadth service is off. */
   stocks: MarketSummary | null;
+  structure?: PriceStructure;
+  vwap?: FutureVwap | null;
   narrative: string;
   context: { question: string; answer: string }[];
   levels: IntradayLevel[];
@@ -509,6 +511,21 @@ export interface BreadthBlock {
 export interface SectorRowT {
   sector: string; stocks: number; covered: number; advancing: number; declining: number; equal_weight_return: number | null;
   cap_weight_return: number | null; contribution_pts: number | null; relative_strength: number | null; rank: number | null; weighted_rv: number | null;
+}
+export interface BreakoutQuality { score: number | null; coverage: number; components: Record<string, number | null>; missing: string[]; weights: Record<string, number>; is_probability: boolean }
+export interface BreakoutState {
+  direction: "up" | "down"; status: "UNCONFIRMED" | "DEVELOPING" | "CONFIRMED" | "FAILED" | "INVALIDATED" | "EXPIRED";
+  first_minute: number; beyond: number; clear: number; extension_ow: number | null; last_price: number | null; invalidation: number; or_minutes: number;
+  previous?: string; quality: BreakoutQuality;
+}
+export interface OpeningRange { minutes: number; state: "forming" | "complete" | "no_data"; high: number | null; low: number | null; mid: number | null; width: number | null }
+export interface PriceStructure {
+  as_of: string; data: "LIVE" | "HISTORICAL"; completed_minutes: number; candle_note: string; ranges: OpeningRange[]; breakout: BreakoutState | null;
+  structure: { label: string; last_swing_high: number | null; last_swing_low: number | null; break: string | null; swing_rule: string } | null;
+}
+export interface FutureVwap {
+  price: number; vwap: number; distance_pts: number; distance_pct: number; distance_atr: number | null; side: "above" | "below" | "at";
+  slope_pts_per_15m: number | null; crosses: number; minutes_above: number; minutes_below: number; events: { event: string; minute: number }[]; samples: number; note: string;
 }
 export interface FlowStats {
   symbol: string; estimated: boolean; since: string | null; buy_volume: number; sell_volume: number; unclassified_volume: number;

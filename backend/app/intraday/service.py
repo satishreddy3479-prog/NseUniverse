@@ -19,6 +19,7 @@ from datetime import UTC, date, datetime, timedelta
 from statistics import pstdev
 from typing import Any
 
+from app.intraday import price_structure
 from app.intraday.features import (
     CLOSE,
     IST,
@@ -91,6 +92,9 @@ def _iso(dt: datetime | None) -> str | None:
 
 def _health(name: str, status: str, detail: str, as_of: str | None = None) -> dict[str, Any]:
     return {"source": name, "status": status, "detail": detail, "as_of": as_of}
+
+
+STRUCTURE_MAX_AGE_S = 180  # a breakout call needs a spot sample this fresh
 
 
 class IntradayService:
@@ -435,9 +439,24 @@ class IntradayService:
                 "components": [{"key": c.key, "score": c.score, "contribution": c.contribution, "available": c.available} for c in a.components],
             }, now=now)  # fmt: skip
         mark("record")
+        result["structure"], result["vwap"] = self._structure(mk, pts, now, live and age is not None and age <= STRUCTURE_MAX_AGE_S)
+        mark("structure")
         result["compute_ms"] = round((_time.perf_counter() - t0) * 1000, 1)
         result["timings_ms"] = marks
         return result
+
+    def _structure(self, mk: dict[str, Any] | None, pts: list[Any], now: datetime, live: bool) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        """Opening-range breakout state, quality and swing structure; futures VWAP. Needs fresh spot samples to give a breakout call."""
+        vb = self.market.vwap_block(now) if (self.market is not None and live) else None
+        fut = ((mk or {}).get("flow") or {}).get("futures") or {}
+        ad = ((mk or {}).get("nifty50") or {}).get("breadth", {}).get("ad_balance")
+        side = None if not vb else {"above": "up", "below": "down"}.get(vb["side"])
+        st = price_structure.analyze(pts, now, vwap_side=side, rel_volume=fut.get("relative_volume"), ad_balance=ad, live=live)
+        b = st["breakout"]
+        if b is not None and self.market is not None:
+            stamp = now.astimezone(UTC).replace(second=0, microsecond=0).isoformat()
+            self.market.store.record_sample("breakout", stamp, {"or": b["or_minutes"], "dir": b["direction"], "status": b["status"], "q": b["quality"]["score"], "ext": b["extension_ow"], "px": b["last_price"]})  # fmt: skip
+        return st, vb
 
     def _ml_status(self, complete_sessions: int, sessions_with_samples: int) -> dict[str, Any]:
         """Where the intraday model effort stands, from the labelled sessions actually stored."""

@@ -8,7 +8,7 @@ import { compactIN } from "../lib/analytics";
 import { sentimentHistoryOption } from "../lib/chartOptions";
 import { fmtDateTimeIST, fmtPct, fmtPrice, fmtTimeIST, MISSING } from "../lib/format";
 import { useLiveSpot } from "../lib/useLive";
-import type { BreadthBlock, FlowStats, IntradayComponent, IntradaySummary, MarketSummary } from "../lib/types";
+import type { BreadthBlock, BreakoutState, FlowStats, IntradayComponent, IntradaySummary, MarketSummary } from "../lib/types";
 import { EChart, useChartColors } from "./EChart";
 
 const PHASE: Record<string, string> = {
@@ -377,6 +377,41 @@ function FlowLine({ f }: { f: FlowStats }) {
   );
 }
 
+const BREAKOUT_TONE: Record<string, string> = {
+  CONFIRMED: "text-up", DEVELOPING: "text-warn", UNCONFIRMED: "text-muted", FAILED: "text-down", INVALIDATED: "text-down", EXPIRED: "text-muted",
+};
+
+function Breakout({ d }: { d: IntradaySummary }) {
+  const st = d.structure;
+  const v = d.vwap;
+  const b: BreakoutState | null = st?.breakout ?? null;
+  const or = st?.ranges.find((r) => r.minutes === (b?.or_minutes ?? 15)) ?? st?.ranges[0];
+  return (
+    <Card title="Breakout intelligence" className="lg:col-span-6" right={<span className="text-[11px] text-muted">{st ? st.data : "no data"} · rule-based, not a prediction</span>}>
+      {!st ? <p className="text-sm text-muted">Price structure is not available.</p> : (
+        <div className="space-y-3 text-xs" data-testid="cc-breakout">
+          <div>
+            <div className="text-[11px] text-muted">Opening range ({or?.minutes ?? 15} min) · {or?.state ?? MISSING}</div>
+            <div className="num text-paper">{or?.high == null ? MISSING : `${or.high.toFixed(2)} high · ${or.low?.toFixed(2)} low · width ${or.width?.toFixed(1)}`}</div>
+          </div>
+          {b ? (
+            <div data-testid="cc-breakout-status">
+              <div className="text-sm"><span className={`font-semibold ${BREAKOUT_TONE[b.status] ?? ""}`}>{b.status}</span> <span className="text-muted">{b.direction === "up" ? "break above" : "break below"} the range · {b.beyond} closes beyond, {b.clear} clear of the buffer</span></div>
+              <div className="mt-1 num text-paper">Quality {b.quality.score == null ? `${MISSING} (needs ≥50% of inputs, has ${Math.round(b.quality.coverage * 100)}%)` : `${b.quality.score.toFixed(0)} / 100`} <span className="text-muted">· a score, not a probability</span></div>
+              <div className="mt-1 text-[11px] text-muted">Invalid if a close returns through {b.invalidation.toFixed(2)}. {b.quality.missing.length > 0 ? `Not available: ${b.quality.missing.join(", ")}.` : ""}{b.previous ? ` Earlier: ${b.previous}.` : ""}</div>
+            </div>
+          ) : <p className="text-muted">{st.data === "HISTORICAL" ? "Stored data only: no breakout call." : or?.state === "complete" ? "No close outside the opening range yet." : "Opening range still forming."}</p>}
+          {st.structure && <div><span className="text-muted">Structure: </span><span className="text-paper">{st.structure.label}</span>{st.structure.break ? <span className="text-warn"> · {st.structure.break.replaceAll("_", " ")}</span> : null}</div>}
+          <div data-testid="cc-vwap">
+            <span className="text-muted">NIFTY future vs its day VWAP: </span>
+            {v ? <span className="num text-paper">{v.side} by {Math.abs(v.distance_pts).toFixed(1)} pts ({v.distance_pct.toFixed(2)}%) · {v.crosses} crosses{v.slope_pts_per_15m == null ? "" : ` · VWAP ${v.slope_pts_per_15m >= 0 ? "+" : "−"}${Math.abs(v.slope_pts_per_15m).toFixed(1)} in 15 min`}</span> : <span className="text-muted">not available (no futures feed)</span>}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function FlowCard({ d }: { d: IntradaySummary }) {
   const fl = d.stocks?.flow;
   const fut = fl?.futures ?? null;
@@ -666,6 +701,7 @@ export function CommandCenter({ expiry }: { expiry: string | null }) {
             <Regime d={d} />
             <Breadth d={d} />
             <Heavyweights d={d} />
+            <Breakout d={d} />
             <FlowCard d={d} />
             <Sectors d={d} />
             <Context d={d} />

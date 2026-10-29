@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo
 from app.logging_setup import log_event
 from app.market import metrics as m
 from app.market import technical as tech
+from app.market import vwap as vwapmod
 from app.market import weights as wmod
 from app.market.flow import FlowTracker, profile_fraction, volume_profile
 from app.market.sources import (
@@ -237,6 +238,7 @@ class MarketService:
             tick.ask,
             tick.bid_qty,
             tick.ask_qty,
+            tick.avg_price,
         )
 
     def baselines(self, now: datetime) -> dict[str, Any]:
@@ -328,6 +330,27 @@ class MarketService:
                 "needs_sessions": 5,
             },
         }
+
+    def vwap_block(self, now: datetime) -> dict[str, Any] | None:
+        """Day-VWAP description of the NIFTY future from today's minute recordings plus the live tick."""
+        t = now.astimezone(IST)
+        day_start = datetime.combine(t.date(), SESSION_OPEN, IST)
+        rows = self.store.samples_since("fut", day_start.astimezone(UTC).isoformat())
+        series = []
+        for stamp, pl in rows:
+            at = datetime.fromisoformat(stamp).astimezone(IST)
+            if pl.get("ltp") and pl.get("atp"):
+                series.append(
+                    (
+                        int((at - day_start).total_seconds() // 60),
+                        float(pl["ltp"]),
+                        float(pl["atp"]),
+                    )
+                )
+        tr = self.trackers.get("NIFTYFUT")
+        if tr is not None and tr.last_ltp and tr.last_atp and tr.day == t.date().isoformat():
+            series.append((int((t - day_start).total_seconds() // 60), tr.last_ltp, tr.last_atp))
+        return vwapmod.describe(series)
 
     def estimate_weights(self, now: datetime | None = None) -> str:
         """Weights recovered from the recorded index and stock changes (only while no official weights are loaded)."""
@@ -735,6 +758,7 @@ class MarketService:
                     "s": fut.sell,
                     "ltp": fut.last_ltp,
                     "di": fut.last_imbalance,
+                    "atp": fut.last_atp,
                 },
             )
         rows = [

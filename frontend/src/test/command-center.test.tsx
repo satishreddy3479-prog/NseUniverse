@@ -137,6 +137,33 @@ describe("Market Sentiment Command Center", () => {
     expect(flow.getByText(/the 50-day trend needs 50 sessions/)).toBeInTheDocument();
   });
 
+  it("shows the opening-range breakout status, quality and VWAP, and says when inputs are missing", async () => {
+    const structure = {
+      as_of: "2026-10-29T05:00:00Z", data: "LIVE", completed_minutes: 20, candle_note: "sampled",
+      ranges: [{ minutes: 15, state: "complete", high: 102, low: 100, mid: 101, width: 2 }],
+      breakout: { direction: "up", status: "CONFIRMED", first_minute: 15, beyond: 4, clear: 4, extension_ow: 1.45, last_price: 104.9, invalidation: 102, or_minutes: 15,
+        quality: { score: 94.1, coverage: 0.85, components: {}, missing: ["volume"], weights: {}, is_probability: false } },
+      structure: { label: "uptrend (higher highs, higher lows)", last_swing_high: 16, last_swing_low: 11, break: null, swing_rule: "x" },
+    };
+    const vwap = { price: 24990, vwap: 24950, distance_pts: 40, distance_pct: 0.16, distance_atr: null, side: "above", slope_pts_per_15m: 3.5, crosses: 2, minutes_above: 30, minutes_below: 10, events: [], samples: 40, note: "" };
+    mock({ ...base, structure, vwap } as never);
+    renderCC();
+    const st = within(await screen.findByTestId("cc-breakout-status"));
+    expect(st.getByText("CONFIRMED")).toBeInTheDocument();
+    expect(st.getByText(/Quality 94 \/ 100/)).toBeInTheDocument();
+    expect(st.getByText(/a score, not a probability/)).toBeInTheDocument();
+    expect(st.getByText(/Invalid if a close returns through 102.00. Not available: volume./)).toBeInTheDocument();
+    expect(screen.getByTestId("cc-vwap")).toHaveTextContent("above by 40.0 pts (0.16%) · 2 crosses · VWAP +3.5 in 15 min");
+  });
+
+  it("gives no breakout call for stored data and no VWAP without a futures feed", async () => {
+    const structure = { as_of: "x", data: "HISTORICAL", completed_minutes: 0, candle_note: "", ranges: [{ minutes: 15, state: "complete", high: 102, low: 100, mid: 101, width: 2 }], breakout: null, structure: null };
+    mock({ ...base, structure, vwap: null } as never);
+    renderCC();
+    expect(await screen.findByText("Stored data only: no breakout call.")).toBeInTheDocument();
+    expect(screen.getByTestId("cc-vwap")).toHaveTextContent("not available (no futures feed)");
+  });
+
   it("explains that futures are not subscribed instead of inventing flow", async () => {
     const stocks = JSON.parse(JSON.stringify(standin)) as MarketSummary;
     stocks.flow!.futures = null;

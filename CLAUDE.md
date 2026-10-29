@@ -5,7 +5,7 @@
 - **Vision:** reliable broker connectivity → live option-chain data → professional dashboard → OI/Greeks/IV analysis → historical research → more NSE instruments. See [roadmap](docs/roadmap.md).
 - **Current phase:** Phase 1. Live option chain, streaming overlay, Intraday analysis page (rules-based command center + widgets, [intraday](docs/intraday.md)) and market-hours sampler built and tested on real captured payloads; live stream not yet verified in market hours. Status: [current-state](docs/current-state.md). Setup/run: [setup-windows](docs/setup-windows.md).
 - **Current priority:** Kotak Neo API integration + live NIFTY 50 option-chain streaming (weekly + current-monthly expiries).
-- **Out of scope until explicitly requested:** order placement, instruments other than NIFTY 50, Greeks/IV, swing/strategy/ML modules, backtesting, any later-phase roadmap item. (Already built: OI/volume/PCR/max-pain/straddle analytics on stored snapshots.)
+- **Requested 29 Oct 2026 (phased, see [intraday-engine-status](docs/intraday-engine-status.md)):** price structure, breakout intelligence, IV/Greeks, prediction engine, setup/risk (read-only), backtesting. **Still out of scope:** order placement, instruments other than NIFTY 50. (Already built: OI/volume/PCR/max-pain/straddle analytics on stored snapshots.)
 
 ## Architecture principles
 - Separate backend, frontend, market-data services, storage, analytics. Details: [architecture](docs/architecture.md).
