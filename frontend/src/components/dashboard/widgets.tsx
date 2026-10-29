@@ -6,11 +6,10 @@ import { ChainTable } from "../ChainTable";
 import { Button, EmptyState, SourceTag } from "../ui";
 import { useDash } from "./DashContext";
 import { FullChart } from "./FullChart";
-import { atmStraddle, compactIN, maxPain, pcr, rangeObservations, TS_RANGES } from "../../lib/analytics";
+import { atmStraddle, compactIN, maxPain, OI_MODES, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, TS_RANGES, windowStartIso, type OiMode } from "../../lib/analytics";
 import {
   decayOption, oiChangeBarOption, oiHeatmapOption, premiumOption, spotOption, straddleOption, strikeBarOption,
-  totalsBarOption, type StrikeMetric,
-} from "../../lib/chartOptions";
+  oiExplorerOption, totalsBarOption, type StrikeMetric } from "../../lib/chartOptions";
 import { ageSeconds, fmtDateTimeIST, fmtExpiry, fmtTimeIST, fmtInt, fmtPct, fmtPrice, fmtSigned } from "../../lib/format";
 import { useLiveSpot } from "../../lib/useLive";
 import type { BaselineKind, Observation, OiChange, OptionChainRow } from "../../lib/types";
@@ -104,12 +103,29 @@ function StrikeBars({ metric, label }: { metric: StrikeMetric; label: string }) 
     [d.view, metric, d.atmStrike, d.selected, d.showCalls, d.showPuts, colors],
   );
   const baseline = metric === "oiChange" ? <span>OI change = current OI − previous-day OI (computed here)</span> : null;
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
   return (
     <ChainGuard>
       <Body footer={<Meta kind="chain">{baseline}</Meta>}>
-        <EChart option={opt} ariaLabel={`${label} by strike`}
-          onClick={(p) => { const s = Number(p.name); if (Number.isFinite(s)) d.select(s); }} />
+        <div className="flex h-full flex-col">
+          <div className="mb-1 flex justify-end">
+            <button type="button" onClick={() => setOpen(true)} aria-label={`Open ${label} by strike full size`} title="Open this chart full size"
+              className="widget-nodrag inline-flex min-h-6 items-center rounded-sm border border-rule bg-slate-2 px-2 text-xs text-muted hover:border-brass hover:text-paper">⤢ Full</button>
+          </div>
+          <div className="min-h-0 flex-1">
+            <EChart option={opt} ariaLabel={`${label} by strike`}
+              onClick={(p) => { const s = Number(p.name); if (Number.isFinite(s)) d.select(s); }} />
+          </div>
+        </div>
       </Body>
+      {open && (
+        <FullChart title={`${label} by strike`} onClose={close}
+          footer={<>{fmtExpiry(d.expiry)} · {d.universeLabel}. Drag the bar below the chart or scroll to zoom; hover for exact values; click a bar to select its strike.</>}>
+          <EChart option={opt} ariaLabel={`${label} by strike (full size)`}
+            onClick={(p) => { const s = Number(p.name); if (Number.isFinite(s)) d.select(s); }} />
+        </FullChart>
+      )}
     </ChainGuard>
   );
 }
@@ -603,6 +619,91 @@ export function PriceOiWidget() {
 
 // ---------- registry ----------
 
+
+// ---------- OI by strike over a chosen window (change + total), with totals and PCR ----------
+
+const signedUnits = (v: number | null) => (v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${compactIN(Math.abs(v))}`);
+const fmt2 = (v: number | null) => (v == null ? "—" : v.toFixed(2));
+
+function OiExplorerBody({ large, mode, setMode, win, setWin }: {
+  large: boolean; mode: OiMode; setMode: (m: OiMode) => void; win: string; setWin: (w: string) => void;
+}) {
+  const d = useDash();
+  const colors = useChartColors();
+  const obs = d.history.data?.observations ?? [];
+  const newest = obs.length ? obs[obs.length - 1]!.retrieved_at : null;
+  const w = OI_WINDOWS.find((x) => x.id === win)!;
+  const at = w.minutes == null || !newest ? undefined : windowStartIso(newest, w.minutes);
+  const q = useQuery({
+    queryKey: ["oiWindow", d.expiry, win, at, d.range],
+    queryFn: () => api.oiChange(d.expiry!, w.minutes == null ? "session_open" : "at", strikesParam(d.range), at),
+    enabled: !!d.expiry && (w.minutes == null || !!newest), refetchInterval: 30_000, retry: false,
+  });
+  const res = q.data;
+  const opt = useMemo(() => (res ? oiExplorerOption(res, mode, d.showCalls, d.showPuts, d.selected, colors) : null), [res, mode, d.showCalls, d.showPuts, d.selected, colors]);
+  const st = res ? oiWindowStats(res.totals) : null;
+  const chip = (on: boolean) => `widget-nodrag rounded-sm border px-2 ${large ? "min-h-9 text-sm" : "min-h-7 text-xs"} ${on ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`;
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-1" data-testid="oi-explorer">
+      <div role="group" aria-label="OI view" className="flex flex-wrap items-center gap-1">
+        {OI_MODES.map((m) => <button key={m.id} type="button" title={m.title} aria-pressed={mode === m.id} onClick={() => setMode(m.id)} className={chip(mode === m.id)}>{m.label}</button>)}
+      </div>
+      <div className="min-h-0 flex-1">
+        {q.isPending && q.fetchStatus !== "idle" ? <p className="p-3 text-sm text-muted">Loading observations…</p>
+          : q.error ? <EmptyState title="Could not load OI for this window">{String((q.error as Error).message)}</EmptyState>
+          : !res || res.observations_available === 0 ? <EmptyState title="No observations stored for this expiry yet">Observations are stored each time a chain is fetched.</EmptyState>
+          : opt ? <EChart option={opt} ariaLabel="Open interest by strike for the chosen window" onClick={(p) => { const k = Number(p.name); if (Number.isFinite(k)) d.select(k); }} />
+          : null}
+      </div>
+      <div role="group" aria-label="OI window" className="flex flex-wrap items-center gap-1">
+        {OI_WINDOWS.map((x) => <button key={x.id} type="button" aria-pressed={win === x.id} onClick={() => setWin(x.id)} className={chip(win === x.id)}>{x.label}</button>)}
+      </div>
+      {res && st && (
+        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs sm:grid-cols-4" data-testid="oi-window-stats">
+          <div><span className="text-muted">Call OI </span><span className="num text-paper">{compactIN(st.ceOi)}</span> <span className="num text-muted">({signedUnits(st.ceChange)})</span></div>
+          <div><span className="text-muted">Put OI </span><span className="num text-paper">{compactIN(st.peOi)}</span> <span className="num text-muted">({signedUnits(st.peChange)})</span></div>
+          <div><span className="text-muted">PCR </span><span className="num text-paper">{fmt2(st.pcr)}</span> <span className="num text-muted">({st.pcrChange == null ? "—" : `${st.pcrChange >= 0 ? "+" : "−"}${Math.abs(st.pcrChange).toFixed(2)}`} in window)</span></div>
+          <div title={st.pcrOiChangeNote ?? "Put OI change divided by call OI change"}><span className="text-muted">PCR of OI change </span><span className="num text-paper">{fmt2(st.pcrOiChange)}</span></div>
+        </div>
+      )}
+      {res && (
+        <p className="text-[11px] text-muted" data-testid="oi-window-note">
+          {w.label}: compared with the stored sample at {res.baseline.at ? fmtTimeIST(res.baseline.at) : "—"} IST, now {res.current_at ? fmtTimeIST(res.current_at) : "—"} IST
+          {res.underlying_change != null && <> · NIFTY {res.underlying_change >= 0 ? "+" : "−"}{fmtPrice(Math.abs(res.underlying_change))}</>}.
+          {" "}Samples are stored about once a minute.{st?.pcrOiChangeNote ? ` PCR of OI change: ${st.pcrOiChangeNote}.` : ""}
+          {res.warnings.map((x) => <span key={x} className="text-warn"> {x}</span>)}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function OiExplorerWidget() {
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<OiMode>("both");
+  const [win, setWin] = useState("all"); // the same choice is kept when the chart is opened full size
+  const close = useCallback(() => setOpen(false), []);
+  return (
+    <ChainGuard>
+      <Body footer={<Meta kind="history"><span>click a bar to select a strike</span></Meta>}>
+        <div className="flex h-full flex-col">
+          <div className="mb-1 flex justify-end">
+            <button type="button" onClick={() => setOpen(true)} aria-label="Open OI explorer full size" title="Open this chart full size"
+              className="widget-nodrag inline-flex min-h-6 items-center rounded-sm border border-rule bg-slate-2 px-2 text-xs text-muted hover:border-brass hover:text-paper">⤢ Full</button>
+          </div>
+          <div className="min-h-0 flex-1">{!open && <OiExplorerBody large={false} mode={mode} setMode={setMode} win={win} setWin={setWin} />}</div>
+        </div>
+      </Body>
+      {open && (
+        <FullChart title="Open interest: change and total by window" onClose={close}
+          footer="Pick a window to compare the OI now with the OI that long ago; the totals and PCR below the chart follow the same window.">
+          <OiExplorerBody large mode={mode} setMode={setMode} win={win} setWin={setWin} />
+        </FullChart>
+      )}
+    </ChainGuard>
+  );
+}
+
 export interface WidgetDef {
   id: string;
   title: string;
@@ -627,6 +728,7 @@ export const WIDGETS: WidgetDef[] = [
   { id: "oiHeatmap", title: "OI change heatmap", render: () => <OiHeatmapWidget />, x: 6, y: 37, w: 6, h: 12, minW: 4, minH: 7 },
   { id: "oiConcentration", title: "OI concentration", render: () => <OiConcentrationWidget />, x: 0, y: 49, w: 5, h: 10, minW: 3, minH: 6 },
   { id: "priceOi", title: "Price and OI", render: () => <PriceOiWidget />, x: 5, y: 49, w: 7, h: 10, minW: 4, minH: 6 },
+  { id: "oiExplorer", title: "OI change + total by window", render: () => <OiExplorerWidget />, x: 0, y: 59, w: 12, h: 14, minW: 5, minH: 8 },
   { id: "detail", title: "Strike detail", render: () => <DetailWidget />, x: 9, y: 29, w: 3, h: 8, minW: 2, minH: 4 },
 ];
 

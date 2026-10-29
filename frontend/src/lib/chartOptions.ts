@@ -282,3 +282,60 @@ export function sentimentHistoryOption(rows: IntradayScoreRow[], c: ChartColors)
     ],
   };
 }
+
+
+/**
+ * OI per strike over a window, three ways. "both": each side is one stacked bar whose height is the OI at the start of the
+ * window plus any increase (lighter fill) and, for a decrease, an outlined segment up to where the OI used to be.
+ * "change": only the change. "total": only the OI now. A strike without a baseline shows its total as a plain bar.
+ */
+export function oiExplorerOption(
+  res: OiChange, mode: "both" | "change" | "total", showCalls: boolean, showPuts: boolean, selectedStrike: number | null, c: ChartColors,
+): EChartsCoreOption {
+  const strikes = [...new Set(res.rows.map((r) => r.strike))].sort((a, b) => a - b);
+  const row = (k: number, side: "CE" | "PE") => res.rows.find((r) => r.strike === k && r.side === side);
+  const lines: { xAxis: string; name: string; lineStyle: object; label: object }[] = [];
+  const mark = (k: number | null, name: string, color: string) => {
+    if (k != null && strikes.includes(k)) lines.push({ xAxis: String(k), name, lineStyle: { color, type: "dashed", width: 1.5 }, label: { formatter: `${name} ${fmtInt(k)}`, color, fontSize: 11 } });
+  };
+  mark(res.atm_strike, "ATM", c.brass);
+  if (selectedStrike !== res.atm_strike) mark(selectedStrike, "Selected", c.info);
+  const sides = [{ side: "CE" as const, name: "Call", color: c.up, show: showCalls }, { side: "PE" as const, name: "Put", color: c.down, show: showPuts }].filter((s) => s.show);
+  const series: object[] = [];
+  sides.forEach((s, si) => {
+    const r = strikes.map((k) => row(k, s.side));
+    const first = si === 0 && lines.length ? { markLine: { symbol: "none", silent: true, data: lines } } : {};
+    const common = { type: "bar", barMaxWidth: 16, barGap: "8%", stack: s.side };
+    if (mode === "total") {
+      series.push({ ...common, name: `${s.name} OI`, data: r.map((x) => x?.oi ?? null), itemStyle: { color: s.color }, ...first });
+    } else if (mode === "change") {
+      series.push({ ...common, stack: undefined, name: `${s.name} OI change`, data: r.map((x) => x?.change ?? null), itemStyle: { color: s.color }, ...first });
+    } else {
+      series.push(
+        { ...common, name: `${s.name} OI`, data: r.map((x) => (x == null || x.oi == null ? null : x.baseline_oi == null ? x.oi : Math.min(x.oi, x.baseline_oi))), itemStyle: { color: s.color }, ...first },
+        { ...common, name: `${s.name} OI increase`, data: r.map((x) => (x?.change != null && x.change > 0 ? x.change : null)), itemStyle: { color: s.color, opacity: 0.45, borderColor: s.color, borderWidth: 1 } },
+        { ...common, name: `${s.name} OI decrease`, data: r.map((x) => (x?.change != null && x.change < 0 ? -x.change : null)), itemStyle: { color: "transparent", borderColor: s.color, borderWidth: 1, borderType: "dashed" } },
+      );
+    }
+  });
+  const signed = (v: number | null) => (v == null ? "no baseline" : (v > 0 ? "+" : v < 0 ? "−" : "") + fmtInt(Math.abs(v)));
+  return {
+    animation: false,
+    grid: { left: 62, right: 14, top: 34, bottom: 56 },
+    legend: { top: 0, right: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 },
+      formatter: (params: unknown) => {
+        const ps = params as { axisValue: string }[];
+        const k = Number(ps[0]?.axisValue);
+        const line = (side: "CE" | "PE", name: string) => {
+          const x = row(k, side);
+          return x ? `${name}: OI ${x.oi == null ? "—" : fmtInt(x.oi)} · change ${signed(x.change)}` : `${name}: no contract`;
+        };
+        return `<b>Strike ${fmtInt(k)}</b><br/>${[showCalls ? line("CE", "Call") : "", showPuts ? line("PE", "Put") : ""].filter(Boolean).join("<br/>")}`;
+      } },
+    xAxis: { type: "category", data: strikes.map(String), axisLabel: { ...axisText(c), hideOverlap: true }, axisLine: { lineStyle: { color: c.rule } } },
+    yAxis: { type: "value", axisLabel: { ...axisText(c), formatter: (v: number) => compactIN(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
+    dataZoom: [{ type: "inside", filterMode: "none" }, { type: "slider", height: 14, bottom: 6, borderColor: c.rule, textStyle: { color: c.muted } }],
+    series,
+  };
+}

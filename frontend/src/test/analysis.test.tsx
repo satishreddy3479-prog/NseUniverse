@@ -349,6 +349,71 @@ const hmRes = (over: Partial<OiHeatmap> = {}): OiHeatmap => ({
   stride: 1, atm_strike: 24050, missing_cells: 1, warnings: [], ...over,
 });
 
+describe("OI explorer (change + total by window)", () => {
+  async function open(urls: string[], over: Partial<OiChange> = {}) {
+    localStorage.setItem("nse.analysis.layout.v1", JSON.stringify({ active: ["oiExplorer"], layout: [{ i: "oiExplorer", x: 0, y: 0, w: 12, h: 14 }] }));
+    mockApi(history([obs(1), obs(2)], 1), { "/api/oi/change": (u: string) => { urls.push(u); return oiRes(over); } });
+    renderAnalysis();
+    return await screen.findByTestId("oi-explorer");
+  }
+
+  it("asks for the window against the newest stored sample and shows the totals and PCR of that window", async () => {
+    const urls: string[] = [];
+    const box = await open(urls);
+    await waitFor(() => expect(urls.length).toBeGreaterThan(0));
+    expect(urls.at(-1)).toContain("baseline=session_open"); // "All" is the default
+    expect(urls.at(-1)).not.toContain("&at=");
+    await userEvent.click(within(box).getByRole("button", { name: "Last 30 min" }));
+    // newest stored sample is 2026-10-28T02:00:00Z, so the window starts at 01:30Z
+    await waitFor(() => expect(urls.at(-1)).toContain("baseline=at&strikes=10&at=2026-10-28T01%3A30%3A00.000Z"));
+    const stats = await within(box).findByTestId("oi-window-stats");
+    expect(stats).toHaveTextContent("Call OI 210 (+60)");
+    expect(stats).toHaveTextContent("Put OI 90 (−30)");
+    expect(stats).toHaveTextContent("PCR 0.43"); // 90 / 210
+    expect(stats).toHaveTextContent("−0.37 in window"); // 0.4286 - 0.8
+    expect(stats).toHaveTextContent("PCR of OI change -0.50"); // -30 / +60
+    expect(within(box).getByRole("button", { name: "Last 30 min" })).toHaveAttribute("aria-pressed", "true");
+    for (const l of ["Last 3 min", "Last 5 min", "Last 10 min", "Last 15 min", "Last 1 hr", "Last 2 hr", "Last 3 hr", "All"]) expect(within(box).getByRole("button", { name: l })).toBeInTheDocument();
+  });
+
+  it("switches between OI change + total, OI change and total OI", async () => {
+    const box = await open([]);
+    const chart = () => within(box).getByRole("img", { name: "Open interest by strike for the chosen window" });
+    await waitFor(() => expect(chart().dataset.series).toBe("Call OI|Call OI increase|Call OI decrease|Put OI|Put OI increase|Put OI decrease"));
+    await userEvent.click(within(box).getByRole("button", { name: "OI change" }));
+    expect(chart().dataset.series).toBe("Call OI change|Put OI change");
+    await userEvent.click(within(box).getByRole("button", { name: "Total OI" }));
+    expect(chart().dataset.series).toBe("Call OI|Put OI");
+  });
+
+  it("opens full size with the same window and mode, and closes with Escape", async () => {
+    const box = await open([]);
+    await userEvent.click(within(box).getByRole("button", { name: "Last 15 min" }));
+    await userEvent.click(within(box).getByRole("button", { name: "OI change" }));
+    await userEvent.click(screen.getByRole("button", { name: "Open OI explorer full size" }));
+    const dlg = await screen.findByRole("dialog", { name: "Open interest: change and total by window" });
+    expect(within(dlg).getByRole("button", { name: "Last 15 min" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(dlg).getByRole("button", { name: "OI change" })).toHaveAttribute("aria-pressed", "true");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(within(await screen.findByTestId("oi-explorer")).getByRole("button", { name: "Last 15 min" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("says why there is no comparison instead of drawing zeros", async () => {
+    const box = await open([], { rows: [], observations_available: 0 });
+    expect(await within(box).findByText("No observations stored for this expiry yet")).toBeInTheDocument();
+  });
+
+  it("gives the strike-by-strike OI widget a full-size view too", async () => {
+    localStorage.setItem("nse.analysis.layout.v1", JSON.stringify({ active: ["oi"], layout: [{ i: "oi", x: 0, y: 0, w: 6, h: 9 }] }));
+    mockApi(history([obs(1), obs(2)], 1));
+    renderAnalysis();
+    await userEvent.click(await screen.findByRole("button", { name: "Open Open interest by strike full size" }));
+    const dlg = await screen.findByRole("dialog", { name: "Open interest by strike" });
+    expect(within(dlg).getByRole("img", { name: "Open interest by strike (full size)" })).toBeInTheDocument();
+  });
+});
+
 describe("OI intelligence widgets", () => {
   async function open(ids: string[], routes: Record<string, unknown>) {
     localStorage.setItem("nse.analysis.layout.v1", JSON.stringify({ active: ids, layout: ids.map((id, i) => ({ i: id, x: 0, y: i * 12, w: 12, h: 12 })) }));

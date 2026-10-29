@@ -148,3 +148,48 @@ export function rangeObservations<T extends { retrieved_at: string }>(obs: T[], 
   if (inSession.length > 0) return { rows: inSession, note: null };
   return { rows: sameDay, note: `No sample from 09:15–15:30 on ${day}; showing every sample of that day.` };
 }
+
+
+// ---------- OI by window (Last 3 min ... All) ----------
+
+export type OiMode = "both" | "change" | "total";
+export const OI_MODES: { id: OiMode; label: string; title: string }[] = [
+  { id: "both", label: "OI change + total", title: "Total OI per strike, split into the part that was already there, the increase and the decrease over the window" },
+  { id: "change", label: "OI change", title: "Only the change in OI over the window (negative = OI was removed)" },
+  { id: "total", label: "Total OI", title: "Total OI per strike now" },
+];
+export interface OiWindow { id: string; label: string; minutes: number | null }
+/** minutes = null means "since the first stored sample of the session" (the backend's session_open baseline). */
+export const OI_WINDOWS: OiWindow[] = [
+  { id: "3m", label: "Last 3 min", minutes: 3 }, { id: "5m", label: "Last 5 min", minutes: 5 }, { id: "10m", label: "Last 10 min", minutes: 10 },
+  { id: "15m", label: "Last 15 min", minutes: 15 }, { id: "30m", label: "Last 30 min", minutes: 30 }, { id: "1h", label: "Last 1 hr", minutes: 60 },
+  { id: "2h", label: "Last 2 hr", minutes: 120 }, { id: "3h", label: "Last 3 hr", minutes: 180 }, { id: "all", label: "All", minutes: null },
+];
+
+/** The instant the window starts: the newest stored sample minus the window length. */
+export function windowStartIso(newestIso: string, minutes: number): string {
+  return new Date(new Date(newestIso).getTime() - minutes * 60_000).toISOString();
+}
+
+export interface OiWindowStats {
+  ceOi: number | null; peOi: number | null; ceChange: number | null; peChange: number | null;
+  pcr: number | null; pcrBaseline: number | null; pcrChange: number | null;
+  /** put OI change / call OI change; only defined when the call OI change is positive. */
+  pcrOiChange: number | null; pcrOiChangeNote: string | null;
+}
+
+const ratio = (a: number | null, b: number | null): number | null => (a == null || b == null || b <= 0 ? null : a / b);
+
+/** Totals over the strikes shown and the PCR figures that go with them. Nothing missing is turned into zero. */
+export function oiWindowStats(t: { ce_oi: number | null; pe_oi: number | null; ce_change: number | null; pe_change: number | null }): OiWindowStats {
+  const baseCe = t.ce_oi != null && t.ce_change != null ? t.ce_oi - t.ce_change : null;
+  const basePe = t.pe_oi != null && t.pe_change != null ? t.pe_oi - t.pe_change : null;
+  const pcr = ratio(t.pe_oi, t.ce_oi), pcrBaseline = ratio(basePe, baseCe);
+  let note: string | null = null;
+  let pcrOiChange: number | null = null;
+  if (t.ce_change == null || t.pe_change == null) note = "no baseline OI for the window";
+  else if (t.ce_change <= 0) note = "call OI did not increase, so the ratio is not meaningful";
+  else pcrOiChange = t.pe_change / t.ce_change;
+  return { ceOi: t.ce_oi, peOi: t.pe_oi, ceChange: t.ce_change, peChange: t.pe_change, pcr, pcrBaseline,
+    pcrChange: pcr != null && pcrBaseline != null ? pcr - pcrBaseline : null, pcrOiChange, pcrOiChangeNote: note };
+}

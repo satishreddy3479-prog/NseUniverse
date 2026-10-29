@@ -5,6 +5,9 @@ _Last updated: 2026-10-29_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## OI explorer (29 Oct 2026)
+- Analysis page, widget "OI change + total by window" (add it from "Add widget"): per-strike OI with the part that was there, the increase and the decrease; modes OI change + total / OI change / Total OI; windows Last 3/5/10/15/30 min, 1/2/3 hr and All (compared with the stored sample that long before the newest one, from `/api/oi/change`); call/put OI, change, PCR and PCR of OI change for the same window; a ⤢ Full view that keeps the choice. The strike-by-strike OI, OI change and volume widgets also got ⤢ Full. Not built: a draggable time slider and Replay toggle (the Session replay card covers replay).
+
 ## Intraday engine audit (29 Oct 2026)
 - Strict audit done (docs/audit-2026-10-29.md): 15 defects fixed with regression tests, backend 508 / frontend 185 tests, ruff and mypy clean. Still never run on live Kotak data: check `/api/market/coverage`, `/api/market/status` and the Command Center in the first market session. No probabilities are shown until 60 labelled sessions pass the gate.
 

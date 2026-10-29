@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   sentimentHistoryOption,
-  decayOption, decaySeries, oiChangeBarOption, oiHeatmapOption, premiumOption, spotOption, straddleOption,
+  decayOption, decaySeries, oiChangeBarOption, oiExplorerOption, oiHeatmapOption, premiumOption, spotOption, straddleOption,
   strikeBarOption, totalsBarOption,
 } from "../lib/chartOptions";
 import { computeTotals } from "../lib/analytics";
@@ -186,5 +186,37 @@ describe("sentimentHistoryOption", () => {
     expect(o.series[1]!.data).toEqual([22700, null]);
     expect(o.series[1]!.yAxisIndex).toBe(1);
     expect(o.yAxis[0]).toMatchObject({ min: -1, max: 1 });
+  });
+});
+
+
+describe("OI explorer option", () => {
+  const rows = (strike: number, side: "CE" | "PE", oi: number, base: number | null) => ({ strike, side, oi, baseline_oi: base, change: base == null ? null : oi - base });
+  const res = {
+    atm_strike: 24050,
+    rows: [rows(24050, "CE", 160, 100), rows(24050, "PE", 90, 120), rows(24100, "CE", 50, null)],
+  } as unknown as OiChange;
+  type S = { name: string; data: (number | null)[]; stack?: string };
+  const get = (mode: "both" | "change" | "total", calls = true, puts = true) => (oiExplorerOption(res, mode, calls, puts, null, colors) as { series: S[] }).series;
+
+  it("splits each bar into what was there, the increase and the decrease (hand calculated)", () => {
+    const s = get("both");
+    expect(s.map((x) => x.name)).toEqual(["Call OI", "Call OI increase", "Call OI decrease", "Put OI", "Put OI increase", "Put OI decrease"]);
+    // strikes 24050, 24100. Call 24050: 160 now, 100 before -> 100 stays + 60 added. Call 24100 has no baseline -> plain total 50.
+    expect(s[0]!.data).toEqual([100, 50]);
+    expect(s[1]!.data).toEqual([60, null]);
+    expect(s[2]!.data).toEqual([null, null]);
+    // Put 24050: 90 now, 120 before -> 90 stays and 30 was removed; no put contract at 24100
+    expect(s[3]!.data).toEqual([90, null]);
+    expect(s[4]!.data).toEqual([null, null]);
+    expect(s[5]!.data).toEqual([30, null]);
+    expect(s[0]!.stack).toBe("CE");
+    expect(s[3]!.stack).toBe("PE");
+  });
+
+  it("shows only the change, or only the total, and leaves a missing baseline as a gap", () => {
+    expect(get("change").map((x) => x.data)).toEqual([[60, null], [-30, null]]);
+    expect(get("total").map((x) => x.data)).toEqual([[160, 50], [90, null]]);
+    expect(get("total", false, true).map((x) => x.name)).toEqual(["Put OI"]);
   });
 });

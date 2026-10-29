@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { atmStraddle, compactIN, computeTotals, maxPain, pcr, rangeObservations, universeRows } from "../lib/analytics";
+import { atmStraddle, compactIN, computeTotals, maxPain, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, universeRows, windowStartIso } from "../lib/analytics";
 import type { OptionChainRow, OptionQuote } from "../lib/types";
 
 const q = (over: Partial<OptionQuote> = {}): OptionQuote => ({
@@ -133,5 +133,34 @@ describe("rangeObservations", () => {
     const r = rangeObservations(pre, "session");
     expect(tags(r)).toEqual(["29@8:40", "29@9:5"]);
     expect(r.note).toMatch(/No sample from 09:15–15:30 on 2026-10-29/);
+  });
+});
+
+
+describe("OI by window", () => {
+  it("starts the window at the newest stored sample minus its length", () => {
+    expect(windowStartIso("2026-10-28T04:45:00.000Z", 30)).toBe("2026-10-28T04:15:00.000Z");
+    expect(windowStartIso("2026-10-28T04:45:00Z", 180)).toBe("2026-10-28T01:45:00.000Z");
+    expect(OI_WINDOWS.map((w) => w.minutes)).toEqual([3, 5, 10, 15, 30, 60, 120, 180, null]);
+  });
+
+  it("derives totals, PCR and PCR of OI change by hand", () => {
+    // calls 210 now (+60 -> 150 before), puts 90 now (-30 -> 120 before)
+    const s = oiWindowStats({ ce_oi: 210, pe_oi: 90, ce_change: 60, pe_change: -30 });
+    expect(s.pcr).toBeCloseTo(90 / 210, 10);
+    expect(s.pcrBaseline).toBeCloseTo(120 / 150, 10);
+    expect(s.pcrChange).toBeCloseTo(90 / 210 - 0.8, 10);
+    expect(s.pcrOiChange).toBe(-0.5); // put change -30 / call change +60
+  });
+
+  it("leaves a ratio empty instead of dividing by zero or inventing a baseline", () => {
+    expect(oiWindowStats({ ce_oi: 100, pe_oi: 80, ce_change: 0, pe_change: 20 })).toMatchObject({ pcrOiChange: null, pcrOiChangeNote: "call OI did not increase, so the ratio is not meaningful" });
+    expect(oiWindowStats({ ce_oi: 100, pe_oi: 80, ce_change: -5, pe_change: 20 }).pcrOiChange).toBeNull();
+    const none = oiWindowStats({ ce_oi: 100, pe_oi: 80, ce_change: null, pe_change: null });
+    expect(none.pcrBaseline).toBeNull();
+    expect(none.pcrChange).toBeNull();
+    expect(none.pcrOiChangeNote).toBe("no baseline OI for the window");
+    expect(oiWindowStats({ ce_oi: 0, pe_oi: 80, ce_change: null, pe_change: null }).pcr).toBeNull();
+    expect(oiWindowStats({ ce_oi: null, pe_oi: null, ce_change: null, pe_change: null }).pcr).toBeNull();
   });
 });
