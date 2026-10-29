@@ -30,9 +30,11 @@ GROUPS: dict[str, tuple[str, ...]] = {
 }  # fmt: skip
 FEATURES = tuple(f for g in GROUPS.values() for f in g)
 MIN_SESSIONS_EXPERIMENTAL = 5
-MIN_SESSIONS_VALIDATED = 20
+MIN_SESSIONS_VALIDATED = 60  # the staged plan (docs/intraday-ml-plan.md): 5 experimental, 20 paper-test, 60 eligible to be called validated
 GATE_BEAT_SHARE = 0.6
 GATE_MAX_ECE = 0.05
+GATE_MAX_SIGN_P = 0.05
+GATE_MIN_GAIN = 0.005  # nats of log loss per sample
 EPS = 1e-9
 
 Row = dict[str, Any]
@@ -103,7 +105,7 @@ def state_model(train: Sequence[Row], state: Callable[[Mapping[str, float | None
     for r in train:
         by.setdefault(state(r["features"]), []).append(r["outcome"])
     base = _freq([r["outcome"] for r in train])
-    table = {k: _freq(v) for k, v in by.items() if k is not None}
+    table: dict[str | None, list[float]] = {k: _freq(v) for k, v in by.items() if k is not None}
     return lambda f: list(table.get(state(f), base))
 
 
@@ -132,20 +134,20 @@ def _softmax(z: list[float]) -> list[float]:
 def logistic(train: Sequence[Row], names: Sequence[str] = FEATURES, l2: float = 1.0, iters: int = 200, lr: float = 0.3) -> Predictor:
     """Multinomial logistic regression on standardised features; missing values take the training mean and, for features
     that are ever missing in training, add an indicator column. Full-batch gradient descent with L2 on the weights."""
-    names = [n for n in names if any(r["features"].get(n) is not None for r in train)]
+    names = [nm for nm in names if any(r["features"].get(nm) is not None for r in train)]
     stats: dict[str, tuple[float, float]] = {}
     miss: list[str] = []
-    for n in names:
-        vals = [r["features"][n] for r in train if r["features"].get(n) is not None]
+    for nm in names:
+        vals = [r["features"][nm] for r in train if r["features"].get(nm) is not None]
         mu = sum(vals) / len(vals)
         sd = math.sqrt(sum((v - mu) ** 2 for v in vals) / len(vals)) or 1.0
-        stats[n] = (mu, sd)
+        stats[nm] = (mu, sd)
         if len(vals) < len(train):
-            miss.append(n)
+            miss.append(nm)
 
     def vec(f: Mapping[str, float | None]) -> list[float]:
-        x = [((f.get(n) if f.get(n) is not None else stats[n][0]) - stats[n][0]) / stats[n][1] for n in names]  # type: ignore[operator]
-        return [1.0, *x, *[1.0 if f.get(n) is None else 0.0 for n in miss]]
+        x = [((f.get(nm) if f.get(nm) is not None else stats[nm][0]) - stats[nm][0]) / stats[nm][1] for nm in names]  # type: ignore[operator]
+        return [1.0, *x, *[1.0 if f.get(nm) is None else 0.0 for nm in miss]]
 
     xs = [vec(r["features"]) for r in train]
     ys = [CLASSES.index(r["outcome"]) for r in train]
@@ -168,6 +170,10 @@ def logistic(train: Sequence[Row], names: Sequence[str] = FEATURES, l2: float = 
 
 
 # ----------------------------------------------------------------------------------------------- walk-forward
+def _price_plus(cols: tuple[str, ...]) -> Callable[[Sequence[Row]], Predictor]:
+    return lambda tr: logistic(tr, (*GROUPS["price"], *cols), iters=100)
+
+
 def walk_forward(rows: Sequence[Row], min_train_sessions: int = 3, stride: int = 1, has_vwap: bool = False, group_tests: bool = False) -> dict[str, Any]:
     sessions = sorted({r["session"] for r in rows})
     result: dict[str, Any] = {"sessions": len(sessions), "rows": len(rows)}
@@ -185,7 +191,7 @@ def walk_forward(rows: Sequence[Row], min_train_sessions: int = 3, stride: int =
         makers["logistic_price"] = lambda tr: logistic(tr, GROUPS["price"], iters=100)
         for g, cols in GROUPS.items():
             if g != "price" and sum(1 for r in rows if any(r["features"].get(c) is not None for c in cols)) >= 0.2 * len(rows):
-                makers[f"logistic_price+{g}"] = lambda tr, _c=cols: logistic(tr, (*GROUPS["price"], *_c), iters=100)
+                makers[f"logistic_price+{g}"] = _price_plus(cols)
     pooled: dict[str, tuple[list[list[float]], list[str]]] = {k: ([], []) for k in makers}
     per_session: list[dict[str, Any]] = []
     for i in range(min_train_sessions, len(sessions)):
@@ -215,6 +221,13 @@ def walk_forward(rows: Sequence[Row], min_train_sessions: int = 3, stride: int =
     return result
 
 
+def sign_test_p(wins: int, n: int) -> float:
+    """One-sided p-value of at least ``wins`` wins in ``n`` fair coin flips (sessions are the independent units)."""
+    if n == 0:
+        return 1.0
+    return float(sum(math.comb(n, k) for k in range(wins, n + 1)) / 2**n)
+
+
 def gate(res: Mapping[str, Any]) -> dict[str, Any]:
     """Whether probabilities may be shown. 'insufficient' / 'experimental' (labelled, not validated) / 'validated'."""
     n = res["sessions"]
@@ -224,8 +237,15 @@ def gate(res: Mapping[str, Any]) -> dict[str, Any]:
     ps = res["per_session_log_loss"]
     baselines = [k for k in models if k in ("majority", "momentum", "opening_range", "vwap")]
     beat = sum(1 for s in ps if all(s["logistic"] < s[b] for b in baselines)) / len(ps) if ps else 0.0
+    gains = [min(s[b] for b in baselines) - s["logistic"] for s in ps] if baselines else []
+    mean_gain = sum(gains) / len(gains) if gains else 0.0
+    p_sign = sign_test_p(sum(1 for g in gains if g > 0), len(gains))
     ece = models["logistic"]["calibration"]["ece"]
     reasons = []
+    if p_sign > GATE_MAX_SIGN_P:
+        reasons.append(f"the edge over the best baseline is not statistically convincing (sign test p = {p_sign:.3f}, needs <= {GATE_MAX_SIGN_P})")
+    if mean_gain < GATE_MIN_GAIN:
+        reasons.append(f"mean log-loss gain over the best baseline is {mean_gain:.4f} (needs >= {GATE_MIN_GAIN})")
     if n < MIN_SESSIONS_VALIDATED:
         reasons.append(f"only {n} labelled sessions (validation needs {MIN_SESSIONS_VALIDATED})")
     if beat < GATE_BEAT_SHARE:
@@ -234,4 +254,4 @@ def gate(res: Mapping[str, Any]) -> dict[str, Any]:
         reasons.append(f"calibration error {ece:.3f} exceeds {GATE_MAX_ECE}")
     ok = not reasons
     status = "validated" if ok else ("experimental" if n >= MIN_SESSIONS_EXPERIMENTAL else "insufficient")
-    return {"status": status, "show_probabilities": ok, "beat_share": round(beat, 3), "ece": ece, "reasons": reasons, "label": None if ok else "EXPERIMENTAL MODEL: PROBABILITIES NOT VALIDATED"}
+    return {"status": status, "show_probabilities": ok, "beat_share": round(beat, 3), "mean_log_loss_gain": round(mean_gain, 5), "sign_test_p": round(p_sign, 4), "ece": ece, "reasons": reasons, "label": None if ok else "EXPERIMENTAL MODEL: PROBABILITIES NOT VALIDATED"}

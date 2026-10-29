@@ -33,7 +33,7 @@ def _asof(series: Series, times: list[datetime], at: datetime, max_age_min: floa
 def _bal(p: Mapping[str, Any] | None) -> float | None:
     if not p or p.get("advancing") is None or p.get("declining") is None or p["advancing"] + p["declining"] == 0:
         return None
-    return (p["advancing"] - p["declining"]) / (p["advancing"] + p["declining"])
+    return float((p["advancing"] - p["declining"]) / (p["advancing"] + p["declining"]))
 
 
 class Enricher:

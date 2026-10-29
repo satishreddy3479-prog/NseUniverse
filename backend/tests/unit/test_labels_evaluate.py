@@ -139,7 +139,7 @@ def test_a_real_signal_beats_the_baselines_and_noise_does_not_pass_the_gate() ->
 
 
 def test_the_gate_validates_only_with_enough_sessions_a_clear_edge_and_calibration() -> None:
-    base = {"sessions": 25, "models": {"logistic": {"calibration": {"ece": 0.03}}, "majority": {}}, "per_session_log_loss": [{"logistic": 0.5, "majority": 1.0}] * 5}
+    base = {"sessions": 65, "models": {"logistic": {"calibration": {"ece": 0.03}}, "majority": {}}, "per_session_log_loss": [{"logistic": 0.5, "majority": 1.0}] * 5}
     assert ev.gate(base)["status"] == "validated" and ev.gate(base)["show_probabilities"] is True
     assert ev.gate(base | {"sessions": 12})["status"] == "experimental"
     assert ev.gate(base | {"sessions": 3})["status"] == "insufficient"
@@ -165,3 +165,4 @@ def test_research_endpoint_reports_insufficient_data_and_validates_input(tmp_pat
         assert body["status"] == "insufficient" and body["sessions"] == 0 and body["horizon_minutes"] == 15
         assert c.get("/api/intraday/research", params={"horizon": 7}).status_code == 422
         assert c.get("/api/intraday/research", params={"k": 5}).status_code == 422
+        assert c.get("/api/intraday/research", params={"k": 0.37}).status_code == 422  # only the fixed menu of barrier multiples

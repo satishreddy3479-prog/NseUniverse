@@ -397,8 +397,14 @@ class StreamManager:
             if self.on_internal is not None:
                 try:
                     self.on_internal(ev.tick)
-                except Exception:  # noqa: BLE001 - analysis must never disturb the feed
+                except Exception as e:  # noqa: BLE001 - analysis must never disturb the feed
                     self.on_internal_errors += 1
+                    n = self.on_internal_errors
+                    if n in (1, 10, 100) or n % 1000 == 0:
+                        log_event(
+                            logger, logging.WARNING, "market_tick_handler_failed",
+                            error=type(e).__name__, count=n,
+                        )  # fmt: skip
             return
         if ev.kind == "tick" and ev.tick is not None:
             self.message_count += 1

@@ -36,6 +36,8 @@ def label_at(points: Sequence[Point], i: int, horizon_min: int, daily_sd_pct: fl
     if daily_sd_pct is None or daily_sd_pct <= 0:
         return {"outcome": "missing", "reason": "no daily volatility scale"}
     t0 = points[i]
+    if not t0.spot > 0:
+        return {"outcome": "missing", "reason": "no valid price at the sample"}
     width = barrier_pts(t0.spot, daily_sd_pct, horizon_min, k)
     up, dn = t0.spot + width, t0.spot - width
     end = t0.at + timedelta(minutes=horizon_min)

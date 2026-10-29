@@ -116,15 +116,12 @@ def scan_breakout(
             cand["beyond"] += 1
             cand["clear"] = cand["clear"] + 1 if _clear(c.price, d, hi, lo, buf) else 0
             cand["max_ext"] = max(cand["max_ext"], _ext(c.price, d, hi, lo))
-            cand["status"] = (
-                "CONFIRMED"
-                if cand["clear"] >= CONFIRM_CLOSES
-                else "DEVELOPING"
-                if cand["beyond"] >= 2
-                else "UNCONFIRMED"
-            )
+            if cand["clear"] >= CONFIRM_CLOSES:
+                cand["confirmed"] = True  # once confirmed it stays confirmed until it fails or is invalidated
+            cand["status"] = "CONFIRMED" if cand.get("confirmed") else "DEVELOPING" if cand["beyond"] >= 2 else "UNCONFIRMED"
         elif side is None:
             cand["status"] = "FAILED"  # back inside the range after leaving it
+            cand["rearm"] = True  # this close is already inside: the next break is a new candidate
             cand["failed_minute"] = c.minute
         else:
             cand["status"] = "INVALIDATED"
@@ -197,8 +194,11 @@ def quality(
 def swings(closes: Sequence[Close]) -> list[dict[str, Any]]:
     """Swing highs/lows on 5-minute closes, each confirmed only after SWING_K later points (no look-ahead)."""
     pts: dict[int, float] = {}
+    last_minute = closes[-1].minute if closes else -1
     for c in closes:
-        pts[c.minute // STRUCTURE_STEP_MIN] = c.price
+        k = c.minute // STRUCTURE_STEP_MIN
+        if (k + 1) * STRUCTURE_STEP_MIN - 1 <= last_minute:  # a bucket still filling would repaint: left out until complete
+            pts[k] = c.price
     ks = sorted(pts)
     v = [pts[k] for k in ks]
     out: list[dict[str, Any]] = []

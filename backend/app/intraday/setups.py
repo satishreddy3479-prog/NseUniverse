@@ -107,6 +107,8 @@ def _cand(ctx: Context, risk: RiskConfig, costs: CostModel, name: str, direction
 def detect(ctx: Context, risk: RiskConfig | None = None, costs: CostModel | None = None) -> dict[str, Any]:
     risk, costs = risk or RiskConfig(), costs or CostModel()
     out: list[dict[str, Any]] = []
+    if not ctx.spot > 0:
+        return {"candidates": [], "decision": "NO TRADE: INSUFFICIENT EVIDENCE", "active": 0, "global_blockers": ["no valid price"], "read_only": True, "note": "No valid price."}
     st = ctx.structure
     b = st.get("breakout")
     rng = next((r for r in st.get("ranges", []) if r.get("state") == "complete" and r.get("width")), None)

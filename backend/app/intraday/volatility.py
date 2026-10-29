@@ -58,7 +58,7 @@ def price(side: int, f: float, k: float, t: float, sigma: float, r: float = DEFA
 
 def implied_vol(side: int, mkt: float | None, f: float, k: float, t: float, r: float = DEFAULT_RATE) -> float | None:
     """Annualised implied volatility (0.15 = 15 %), or None when the price admits none."""
-    if mkt is None or mkt <= 0 or f <= 0 or k <= 0 or t <= 0:
+    if mkt is None or not math.isfinite(mkt) or mkt <= 0 or not (math.isfinite(f) and math.isfinite(k) and math.isfinite(t)) or f <= 0 or k <= 0 or t <= 0:
         return None
     df = math.exp(-r * t)
     intrinsic = df * (max(f - k, 0.0) if side == CALL else max(k - f, 0.0))
@@ -206,15 +206,16 @@ def interpret(spot_change_pct: float | None, iv_change_pts: float | None, stradd
 FLAT_TERM_PTS = 0.3
 
 
-def term_structure(points: Sequence[tuple[date, float, float | None]]) -> dict[str, Any]:
+def term_structure(points: Sequence[tuple[date, float | None, float | None]]) -> dict[str, Any]:
     """points = [(expiry, days to expiry, ATM IV %)]. Slope in IV points per 30 days between the nearest and farthest expiry
     that have a value; 'flat' inside +/- FLAT_TERM_PTS points in total."""
-    have = sorted((p for p in points if p[2] is not None), key=lambda p: p[1])
-    rows = [{"expiry": e.isoformat(), "days": round(d, 2), "atm_iv": iv} for e, d, iv in sorted(points, key=lambda p: p[1])]
+    have = sorted((p for p in points if p[2] is not None and p[1] is not None), key=lambda p: p[1] or 0.0)
+    rows = [{"expiry": e.isoformat(), "days": None if d is None else round(d, 2), "atm_iv": iv} for e, d, iv in sorted(points, key=lambda p: (p[1] is None, p[1] or 0.0))]
     if len(have) < 2:
         return {"rows": rows, "shape": None, "reason": "needs ATM IV for at least two expiries"}
     (_, d0, iv0), (_, d1, iv1) = have[0], have[-1]
-    diff = iv1 - iv0  # type: ignore[operator]
+    assert d0 is not None and d1 is not None and iv0 is not None and iv1 is not None
+    diff = iv1 - iv0
     shape = "flat" if abs(diff) < FLAT_TERM_PTS else ("upward (far expiry richer)" if diff > 0 else "inverted (near expiry richer)")
     return {"rows": rows, "shape": shape, "iv_far_minus_near": round(diff, 3), "slope_per_30d": None if d1 == d0 else round(diff / (d1 - d0) * 30, 3), "reason": None,
             "note": "Near-expiry IV carries event and expiry-day effects; a difference is an observation, not a signal."}  # fmt: skip

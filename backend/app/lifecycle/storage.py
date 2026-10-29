@@ -24,6 +24,7 @@ CATEGORIES: dict[str, tuple[tuple[str, ...], str, str]] = {
     "snapshot index": (("index.sqlite3*",), "core", "kept forever"),
     "daily prices": (("market_history.sqlite3*",), "core", "kept forever (append-only)"),
     "institutional flows": (("nse_flows.sqlite3*",), "core", "rolling 7-session windows by approved policy"),
+    "market breadth recordings": (("market.sqlite3*",), "core", "append-only minute aggregates, lists, weights, daily files; about 1 MB a day, kept"),
     "forecast ledger": (("forecasts.sqlite3*",), "core", "immutable; kept forever"),
     "news": (("news.sqlite3*",), "core", "kept forever (append-only)"),
     "intraday scores and summaries": (("intraday.sqlite3*",), "core", "immutable; kept forever"),

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time as _time
 from collections.abc import Callable
 from dataclasses import asdict
@@ -97,6 +98,7 @@ def _health(name: str, status: str, detail: str, as_of: str | None = None) -> di
     return {"source": name, "status": status, "detail": detail, "as_of": as_of}
 
 
+DATA_STATUS = {"fresh": "LIVE", "delayed": "DELAYED", "stale": "STALE", "historical": "HISTORICAL", "not_available": "INSUFFICIENT DATA"}
 STRUCTURE_MAX_AGE_S = 180  # a breakout call needs a spot sample this fresh
 
 
@@ -113,9 +115,11 @@ class IntradayService:
         clock: Any = None,
         market: Any = None,
     ) -> None:
+        self._heavy = threading.Lock()  # one research / paper computation at a time (they are cached; this bounds the CPU a caller can cause)
         self.risk = setups.RiskConfig()  # RISK_* settings
         self.costs = CostModel()  # COST_* settings
         self.risk_free_rate = volmod.DEFAULT_RATE  # assumed discount rate (RISK_FREE_RATE); affects IV only through e^{-rT}
+        self.market_error: str | None = None  # last failure of the stock-breadth summary (shown, never hidden as 'turned off')
         self.market = market  # optional MarketService: stock breadth, heavyweights, sectors
         self.obs, self.history, self.flows, self.store = observations, history, flows, store
         self.underlying = underlying
@@ -150,9 +154,11 @@ class IntradayService:
             return None
         try:
             out: dict[str, Any] = self.market.summary(now)
+            self.market_error = None
             return out
         except Exception as e:  # noqa: BLE001 - breadth must never break the rest of the page
             logger.warning("market summary failed: %s", type(e).__name__)
+            self.market_error = f"{type(e).__name__}: {e}"[:200]
             return None
 
     def trading_day(self, d: date) -> bool | None:
@@ -225,8 +231,10 @@ class IntradayService:
                         "ret_pct": r, "rel_pct": None if nifty_ret is None else r - nifty_ret})  # fmt: skip
         return sorted(out, key=lambda x: -x["ret_pct"])
 
-    def _flows(self, prev: date | None) -> FlowInput | None:
-        rows = self.flows.cash_rows()
+    def _flows(self, prev: date | None, today: date) -> FlowInput | None:
+        # only sessions before ``today``: a figure published after the close of ``today`` is not known during it, and a replay of an
+        # earlier day must not see later publications
+        rows = [r for r in self.flows.cash_rows() if r["session"] < today.isoformat()]
         if not rows:
             return None
         latest = max(r["session"] for r in rows)
@@ -356,7 +364,7 @@ class IntradayService:
         )
         mk = None if replay else self._market_summary(now)  # a replay never reads today's live stock ticks
         glob = self._global(today)
-        flow = self._flows(prev_session)
+        flow = self._flows(prev_session, today)
         comps = [
             price_component(p, ctx),
             breadth_component(mk),
@@ -448,9 +456,9 @@ class IntradayService:
         fresh = live and age is not None and age <= STRUCTURE_MAX_AGE_S
         result["structure"], result["vwap"] = self._structure(mk, pts, now, fresh, replay)
         mark("structure")
-        result["volatility"] = self._volatility(expiry, now, latest, session_samples, pts, live)
+        result["volatility"] = self._volatility(expiry, now, latest, session_samples, pts, chain_status)
         mark("volatility")
-        result["positioning"] = self._positioning(chain, first_chain, latest, session_samples)
+        result["positioning"] = self._positioning(chain, first_chain, latest, session_samples, chain_status)
         result["volatility"]["term_structure"] = self._term_structure(expiry, now, latest, result["volatility"])
         mark("positioning")
         spread = ((((mk or {}).get("flow") or {}).get("futures")) or {}).get("spread_pts")
@@ -466,7 +474,13 @@ class IntradayService:
 
     def _structure(self, mk: dict[str, Any] | None, pts: list[Any], now: datetime, live: bool, replay: bool = False) -> tuple[dict[str, Any], dict[str, Any] | None]:
         """Opening-range breakout state, quality and swing structure; futures VWAP. Needs fresh spot samples to give a breakout call."""
-        vb = self.market.vwap_block(now) if (self.market is not None and live and not replay) else None
+        vb = None
+        if self.market is not None and live and not replay:
+            try:
+                vb = self.market.vwap_block(now)
+            except Exception as e:  # noqa: BLE001 - the futures VWAP must never break the page; the failure is shown
+                logger.warning("futures VWAP failed: %s", type(e).__name__)
+                self.market_error = f"futures VWAP: {type(e).__name__}: {e}"[:200]
         fut = ((mk or {}).get("flow") or {}).get("futures") or {}
         ad = ((mk or {}).get("nifty50") or {}).get("breadth", {}).get("ad_balance")
         side = None if not vb else {"above": "up", "below": "down"}.get(vb["side"])
@@ -481,7 +495,7 @@ class IntradayService:
         prices = {k: c.ltp for k, c in self.obs.contracts(sample.values_from).items()}
         return volmod.surface(prices, sample.spot, expiry_d, at, self.risk_free_rate)
 
-    def _volatility(self, expiry: str, now: datetime, latest: Any, session_samples: list[Any], pts: list[Any], live: bool) -> dict[str, Any]:
+    def _volatility(self, expiry: str, now: datetime, latest: Any, session_samples: list[Any], pts: list[Any], chain_status: str) -> dict[str, Any]:
         """ATM IV, skew, Greeks and expected move from the latest stored chain; IV change against earlier samples of the same session."""
         if latest is None:
             return {"status": "not computed: no option-chain sample"}
@@ -491,7 +505,7 @@ class IntradayService:
             return {"status": "not computed: bad expiry"}
         at = latest.received_at
         now_s = self._surface_of(latest, exp_d, at)
-        out: dict[str, Any] = now_s | {"data": "LIVE" if live else "HISTORICAL", "as_of": at.isoformat()}
+        out: dict[str, Any] = now_s | {"data": DATA_STATUS[chain_status], "as_of": at.isoformat()}
         if now_s.get("status") != "ok" or now_s.get("atm_iv") is None:
             return out
         changes: dict[str, Any] = {}
@@ -512,7 +526,7 @@ class IntradayService:
         rv = volmod.realized_annualised([(p.at, p.spot) for p in pts if p.at >= at - timedelta(minutes=60)])
         out["realized_vol_60m"] = None if rv is None else round(rv, 2)
         out["iv_minus_realized"] = None if rv is None else round(now_s["atm_iv"] - rv, 2)
-        out["interpretation"] = volmod.interpret(spot_chg, changes.get("15"), straddle_chg) if live else []
+        out["interpretation"] = volmod.interpret(spot_chg, changes.get("15"), straddle_chg) if chain_status == "fresh" else []
         return out
 
     def research(self, horizon: int = 15, k: float = labels.DEFAULT_K) -> dict[str, Any]:
@@ -521,7 +535,13 @@ class IntradayService:
         from app.intraday.dataset import FEATURE_VERSION
 
         key = ("research", horizon, k, len(self.store.feature_sessions(FEATURE_VERSION)))
-        hit = self._slow.get(key)  # type: ignore[arg-type]
+        with self._heavy:
+            return self._research_locked(key, horizon, k)
+
+    def _research_locked(self, key: Any, horizon: int, k: float) -> dict[str, Any]:
+        from app.intraday.dataset import FEATURE_VERSION
+
+        hit = self._slow.get(key)
         if hit and _time.monotonic() - hit[0] < 600:
             return hit[1]  # type: ignore[no-any-return]
         rows: list[dict[str, Any]] = []
@@ -546,7 +566,7 @@ class IntradayService:
         res = evaluate.walk_forward(rows, stride=max(1, horizon // 3), has_vwap=has_vwap, group_tests=True)
         res |= {"horizon_minutes": horizon, "barrier_k": k, "dropped": dropped, "effective_observations": round(len(rows) / max(1, horizon)),
                 "features_version": FEATURE_VERSION, "note": "Barrier = k x daily sd x sqrt(h/375) from earlier sessions. Overlapping samples are not independent; the gate counts sessions."}  # fmt: skip
-        self._slow[key] = (_time.monotonic(), res)  # type: ignore[index]
+        self._slow[key] = (_time.monotonic(), res)
         return res
 
     def replay_sessions(self) -> dict[str, Any]:
@@ -567,6 +587,7 @@ class IntradayService:
         if not samples:
             return {"status": "no samples at or before that time", "session": session, "at": at.isoformat()}
         out = self._build(expiry, at, samples, replay=True)
+        out.pop("ml", None)  # readiness counts reflect the present, not that moment
         full = self.obs.samples(self.underlying, expiry, since=datetime.combine(day, OPEN, IST), until=datetime.combine(day, CLOSE, IST), limit=5000)
         pts = in_session([Point(x.received_at, x.spot) for x in full if x.spot is not None], day)
         sd = daily_context([b for b in self._daily("NIFTY50") if b.session < day], day).daily_sd_pct
@@ -578,7 +599,11 @@ class IntradayService:
     def paper(self) -> dict[str, Any]:
         """Cost-aware paper trading of the rule-based setups over every stored session (spot-path rules only)."""
         key = ("paper", len(self.obs.session_sample_counts(self.underlying)), self.risk, self.costs)
-        hit = self._slow.get(key)  # type: ignore[arg-type]
+        with self._heavy:
+            return self._paper_locked(key)
+
+    def _paper_locked(self, key: Any) -> dict[str, Any]:
+        hit = self._slow.get(key)
         if hit and _time.monotonic() - hit[0] < 600:
             return hit[1]  # type: ignore[no-any-return]
         trades: list[dict[str, Any]] = []
@@ -596,13 +621,13 @@ class IntradayService:
             n_sessions += 1
             trades += [t | {"session": d} for t in paper.simulate_session(pts, sd, self.risk, self.costs)]
         res = paper.summarize(trades, n_sessions) | {"trades_list": trades[-50:], "assumptions": {"instrument": "NIFTY future proxied by the index spot path", "lot_size": self.costs.lot_size, "slippage_pts_per_side": self.costs.slippage_pts, "risk": asdict(self.risk) | {"cutoff": f"{self.risk.cutoff:%H:%M}"}}}  # fmt: skip
-        self._slow[key] = (_time.monotonic(), res)  # type: ignore[index]
+        self._slow[key] = (_time.monotonic(), res)
         return res
 
     def _chain_of(self, sample: Any) -> dict[Any, Quote]:
         return {k: Quote(c.ltp, c.oi, c.oi_prev, c.volume) for k, c in self.obs.contracts(sample.values_from).items()}
 
-    def _positioning(self, chain: dict[Any, Quote] | None, first_chain: dict[Any, Quote] | None, latest: Any, session_samples: list[Any]) -> dict[str, Any]:
+    def _positioning(self, chain: dict[Any, Quote] | None, first_chain: dict[Any, Quote] | None, latest: Any, session_samples: list[Any], chain_status: str = "fresh") -> dict[str, Any]:
         """Window PCRs, premium/OI classification against the sample 15 minutes earlier, OI concentration and its shift since the open."""
         if latest is None or not chain:
             return {"status": "not available: no option-chain sample"}
@@ -611,7 +636,7 @@ class IntradayService:
         ref_chain = None if ref is None or (at - timedelta(minutes=15) - ref.received_at) > timedelta(minutes=3) else self._chain_of(ref)
         spot = latest.spot
         return {
-            "status": "ok", "as_of": at.isoformat(), "reference_minutes": 15,
+            "status": "ok", "data": DATA_STATUS[chain_status], "as_of": at.isoformat(), "reference_minutes": 15,
             "pcr_windows": positioning.window_pcr(chain, spot),
             "oi_change_pcr_since_open": positioning.oi_change_pcr(chain, first_chain, spot),
             "classification": positioning.side_classification(chain, ref_chain, spot),
@@ -623,7 +648,7 @@ class IntradayService:
         """ATM IV of every expiry that has a sample within 5 minutes of the main one (same session, same moment)."""
         if latest is None or vol.get("atm_iv") is None:
             return {"rows": [], "shape": None, "reason": "no ATM IV for the selected expiry"}
-        pts: list[tuple[date, float, float | None]] = [(date.fromisoformat(expiry), vol["time_to_expiry_days"], vol["atm_iv"])]
+        pts: list[tuple[date, float | None, float | None]] = [(date.fromisoformat(expiry), vol["time_to_expiry_days"], vol["atm_iv"])]
         at = latest.received_at
         for other in self.expiries_today():
             if other == expiry:
@@ -632,7 +657,7 @@ class IntradayService:
             if not ss or ss[-1].spot is None:
                 continue
             sf = self._surface_of(ss[-1], date.fromisoformat(other), ss[-1].received_at)
-            pts.append((date.fromisoformat(other), sf.get("time_to_expiry_days") or 0.0, sf.get("atm_iv") if sf.get("status") == "ok" else None))
+            pts.append((date.fromisoformat(other), sf.get("time_to_expiry_days"), sf.get("atm_iv") if sf.get("status") == "ok" else None))
         return volmod.term_structure(pts)
 
     def _ml_status(self, complete_sessions: int, sessions_with_samples: int) -> dict[str, Any]:
@@ -725,10 +750,12 @@ class IntradayService:
         )
         return h
 
-    @staticmethod
-    def _market_health(mk: dict[str, Any] | None) -> list[dict[str, Any]]:
+    def _market_health(self, mk: dict[str, Any] | None) -> list[dict[str, Any]]:
         if mk is None:
-            return [_health("Market breadth", "not_available", "stock breadth is turned off"), _health("Intraday sector data", "not_available", "stock breadth is turned off")]
+            err = self.market_error
+            why = f"stock breadth failed: {err}" if err else "stock breadth is turned off"
+            st = "api_failure" if err else "not_available"
+            return [_health("Market breadth", st, why), _health("Intraday sector data", st, why)]
         why = _no_stocks_reason(mk)
         b50, b5 = mk["nifty50"]["breadth"], mk["nifty500"]["breadth"]
         out = []

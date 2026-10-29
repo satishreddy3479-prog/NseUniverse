@@ -138,7 +138,7 @@ class IntradayStore:
     def feature_session_rows(self, version: str) -> dict[str, tuple[str, list[tuple[str, dict[str, Any]]]]]:
         """session -> (expiry with the most rows, [(sample_utc, features)]) for one feature version."""
         with self._lock:
-            best = {}
+            best: dict[str, tuple[str, int]] = {}
             for sess, exp, n in self._db.execute("SELECT session, expiry, COUNT(*) FROM feature_rows WHERE version=? GROUP BY session, expiry", (version,)).fetchall():
                 if sess not in best or n > best[sess][1]:
                     best[sess] = (exp, n)

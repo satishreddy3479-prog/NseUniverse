@@ -37,17 +37,17 @@ def rsi(closes: list[float], n: int = 14) -> float | None:
 
 def atr(bars: list[Bar], n: int = 14) -> float | None:
     """Wilder's average true range; needs n+1 complete bars."""
-    ok = [b for b in bars if None not in (b.high, b.low, b.close)]
+    ok = [b for b in bars if b.high is not None and b.low is not None and b.close is not None]
     if len(ok) < n + 1:
         return None
-    trs = [
-        max(b.high - b.low, abs(b.high - a.close), abs(b.low - a.close))
-        for a, b in zip(ok, ok[1:], strict=False)
-    ]  # type: ignore[operator]
+    trs: list[float] = []
+    for a, b in zip(ok, ok[1:], strict=False):
+        assert a.close is not None and b.high is not None and b.low is not None
+        trs.append(max(b.high - b.low, abs(b.high - a.close), abs(b.low - a.close)))
     cur = sum(trs[:n]) / n
     for t in trs[n:]:
         cur = (cur * (n - 1) + t) / n
-    return cur
+    return float(cur)
 
 
 def read(symbol: str, bars: list[Bar], live_price: float | None = None) -> dict[str, Any]:

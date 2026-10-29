@@ -62,7 +62,11 @@ def oi_change_pcr(now: Chain, ref: Chain | None, spot: float | None, each: int =
     ks = [k for k in strike_universe(now, spot, each) if (k, CALL) in ref and (k, PUT) in ref]
 
     def d(side: int) -> float | None:
-        vals = [now[(k, side)].oi - ref[(k, side)].oi for k in ks if (k, side) in now and now[(k, side)].oi is not None and ref[(k, side)].oi is not None]
+        vals: list[float] = []
+        for k in ks:
+            a, b = now.get((k, side)), ref.get((k, side))
+            if a is not None and b is not None and a.oi is not None and b.oi is not None:
+                vals.append(float(a.oi - b.oi))
         return float(sum(vals)) if vals else None
 
     dc, dp = d(CALL), d(PUT)
@@ -81,9 +85,9 @@ def _dir(change: float, ref: float) -> str | None:
 
 
 def classify(prem_now: float | None, prem_ref: float | None, oi_now: float | None, oi_ref: float | None) -> dict[str, Any]:
-    if None in (prem_now, prem_ref, oi_now, oi_ref):
+    if prem_now is None or prem_ref is None or oi_now is None or oi_ref is None:
         return {"label": None, "reading": None, "reason": "a value is missing in one of the samples"}
-    pd_, od = _dir(prem_now - prem_ref, prem_ref), _dir(oi_now - oi_ref, oi_ref)  # type: ignore[operator]
+    pd_, od = _dir(prem_now - prem_ref, prem_ref), _dir(oi_now - oi_ref, oi_ref)
     if pd_ is None or od is None:
         return {"label": "Unchanged", "reading": None, "reason": f"{'premium' if pd_ is None else 'OI'} changed by less than {FLAT_PCT}%"}
     label, reading = READING[(pd_, od)]
@@ -98,12 +102,16 @@ def side_classification(now: Chain, ref: Chain | None, spot: float | None, each:
     res: dict[str, Any] = {"available": True, "limits": LIMITS, "strikes": len(ks)}
     for name, side in (("calls", CALL), ("puts", PUT)):
         pairs = [(now.get((k, side)), ref.get((k, side))) for k in ks]
-        ok = [(a, b) for a, b in pairs if a and b and a.ltp is not None and b.ltp is not None and a.oi is not None and b.oi is not None]
+        ok = [(a, b) for a, b in pairs if a is not None and b is not None and a.ltp is not None and b.ltp is not None and a.oi is not None and b.oi is not None]
         if not ok:
             res[name] = {"label": None, "reading": None, "reason": "no strike has both samples"}
             continue
-        c = classify(sum(a.ltp for a, _ in ok), sum(b.ltp for _, b in ok), sum(a.oi for a, _ in ok), sum(b.oi for _, b in ok))  # type: ignore[misc]
-        res[name] = c | {"strikes_used": len(ok), "premium_change": round(sum(a.ltp - b.ltp for a, b in ok), 2), "oi_change": sum(a.oi - b.oi for a, b in ok)}  # type: ignore[operator]
+        p_now = sum(float(a.ltp) for a, _ in ok if a.ltp is not None)
+        p_ref = sum(float(b.ltp) for _, b in ok if b.ltp is not None)
+        o_now = sum(float(a.oi) for a, _ in ok if a.oi is not None)
+        o_ref = sum(float(b.oi) for _, b in ok if b.oi is not None)
+        c = classify(p_now, p_ref, o_now, o_ref)
+        res[name] = c | {"strikes_used": len(ok), "premium_change": round(p_now - p_ref, 2), "oi_change": o_now - o_ref}
     atm = nearest_strike(ks, spot) if ks and spot is not None else None
     rows = []
     for k in ks:

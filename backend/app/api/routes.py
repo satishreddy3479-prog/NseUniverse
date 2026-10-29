@@ -384,6 +384,7 @@ async def market_status(request: Request) -> dict[str, Any]:
         "note": stream.market_note,
         "subscribed": stream.market_subscribed,
         "messages": stream.market_message_count,
+        "handler_errors": stream.on_internal_errors,
     }
     return out
 
@@ -462,12 +463,15 @@ async def intraday_summary(request: Request, expiry: date) -> dict[str, Any]:
     return await asyncio.to_thread(request.app.state.intraday.summary, expiry.isoformat())
 
 
+RESEARCH_K = (0.25, 0.5, 1.0)  # a fixed menu keeps the (cached) evaluation workload bounded
+
+
 @router.get("/intraday/research")
 async def intraday_research(request: Request, horizon: int = 15, k: float = 0.5) -> dict[str, Any]:
     """Walk-forward evaluation of the intraday model against baselines (read-only)."""
-    if horizon not in (5, 15, 30, 60) or not 0.1 <= k <= 2.0:
+    if horizon not in (5, 15, 30, 60) or k not in RESEARCH_K:
         raise HTTPException(
-            status_code=422, detail="horizon must be 5, 15, 30 or 60 and k between 0.1 and 2"
+            status_code=422, detail="horizon must be 5, 15, 30 or 60; k one of 0.25, 0.5, 1"
         )
     return await asyncio.to_thread(request.app.state.intraday.research, horizon, k)
 

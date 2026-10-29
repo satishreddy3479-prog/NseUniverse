@@ -39,6 +39,8 @@ class CostModel:
 
     def round_trip(self, entry: float, exit_: float, lots: int, direction: str, slippage_pts: float | None = None) -> dict[str, Any]:
         """Gross and net result in points and rupees for one trade; slippage is paid on both sides against the trader."""
+        if lots < 1 or not entry > 0 or not exit_ > 0:
+            raise ValueError("a trade needs at least one lot and positive prices")
         slip = self.slippage_pts if slippage_pts is None else slippage_pts
         buy, sell = (entry, exit_) if direction == "long" else (exit_, entry)
         charges = self.leg(buy, lots, "buy") + self.leg(sell, lots, "sell")
@@ -51,5 +53,7 @@ class CostModel:
 
     def cost_points(self, price: float, lots: int = 1, slippage_pts: float | None = None) -> float:
         """Round-trip cost expressed in index points at ``price`` (charges + two-sided slippage)."""
+        if not price > 0:
+            raise ValueError("price must be positive")
         rt = self.round_trip(price, price, lots, "long", slippage_pts)
-        return round(-rt["net_points"], 3)
+        return round(-float(rt["net_points"]), 3)

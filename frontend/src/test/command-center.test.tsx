@@ -238,7 +238,7 @@ describe("Market Sentiment Command Center", () => {
   it("labels an unvalidated model as experimental and lists the baselines it is compared with", async () => {
     research = {
       status: "experimental", sessions: 8, rows: 960, horizon_minutes: 15,
-      gate: { status: "experimental", show_probabilities: false, reasons: ["only 8 labelled sessions (validation needs 20)"], label: "EXPERIMENTAL MODEL: PROBABILITIES NOT VALIDATED" },
+      gate: { status: "experimental", show_probabilities: false, reasons: ["only 8 labelled sessions (validation needs 60)"], label: "EXPERIMENTAL MODEL: PROBABILITIES NOT VALIDATED" },
       models: { majority: { log_loss: 1.097, brier: 0.66, accuracy: 0.37, balanced_accuracy: 0.333, n: 600, calibration: { ece: 0.01 } }, logistic: { log_loss: 0.295, brier: 0.15, accuracy: 0.977, balanced_accuracy: 0.97, n: 600, calibration: { ece: 0.14 } } },
       note: "Overlapping samples are not independent.",
     };

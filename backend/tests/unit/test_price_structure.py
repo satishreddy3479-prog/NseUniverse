@@ -142,7 +142,7 @@ def test_historical_data_gives_no_breakout_call() -> None:
 
 def test_swing_structure_labels_and_confirmation_lag() -> None:
     v = [10, 12, 15, 12, 10, 12, 14, 12, 11, 13, 16, 14, 12]  # one 5-minute close per step
-    closes = [ps.Close(i * 5, p, p, p) for i, p in enumerate(v)]
+    closes = [ps.Close(i * 5 + 4, p, p, p) for i, p in enumerate(v)]  # the close of each completed 5-minute bucket
     s = ps.structure(closes)
     assert [x["price"] for x in s["swing_highs"]] == [15, 14, 16] and [
         x["price"] for x in s["swing_lows"]
@@ -152,7 +152,7 @@ def test_swing_structure_labels_and_confirmation_lag() -> None:
     assert all(
         x["minute"] <= (len(v) - 1 - ps.SWING_K) * 5 for x in s["swing_highs"] + s["swing_lows"]
     )
-    up = ps.structure([*closes, ps.Close(65, 17, 17, 17)])
+    up = ps.structure([*closes, ps.Close(69, 17, 17, 17)])
     assert up["break"] == "break_of_structure_up"
     down_then_up = ps.structure(
         [

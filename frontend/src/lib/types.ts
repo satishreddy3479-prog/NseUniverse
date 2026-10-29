@@ -528,7 +528,7 @@ export interface PriceStructure {
 }
 export interface SideClass { label: string | null; reading: string | null; reason: string | null; premium_change?: number; oi_change?: number; strikes_used?: number }
 export interface PositioningBlock {
-  status: string; as_of?: string; reference_minutes?: number;
+  status: string; data?: string; as_of?: string; reference_minutes?: number;
   pcr_windows?: Record<string, { strikes: number; pcr_oi: number | null; pcr_volume: number | null; ce_oi: number | null; pe_oi: number | null }>;
   oi_change_pcr_since_open?: { value: number | null; reason: string | null; ce_change?: number | null; pe_change?: number | null };
   classification?: { available: boolean; reason?: string; limits: string; calls?: SideClass; puts?: SideClass };
@@ -537,7 +537,7 @@ export interface PositioningBlock {
 }
 export interface GreekRow { strike: number; side: "CE" | "PE"; price: number | null; otm: boolean; iv: number | null; delta: number | null; gamma: number | null; theta_day: number | null; vega_pt: number | null }
 export interface VolatilityBlock {
-  status: string; model?: string; rate_assumed?: number; dividends?: string; time_to_expiry_days?: number | null; data?: "LIVE" | "HISTORICAL"; as_of?: string;
+  status: string; model?: string; rate_assumed?: number; dividends?: string; time_to_expiry_days?: number | null; data?: string; as_of?: string;
   forward?: number; forward_source?: string; atm_strike?: number; atm_iv?: number | null; atm_call_iv?: number | null; atm_put_iv?: number | null; near_atm_iv?: number | null;
   skew_25d_put_minus_call?: number | null; rows?: GreekRow[]; straddle?: number | null; expected_move_straddle_pts?: number | null; expected_move_iv_1sd_pts?: number | null;
   expected_move_note?: string;

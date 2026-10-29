@@ -275,7 +275,7 @@ class MarketService:
             return float(sum(vols)) if len(vols) >= 45 else None
 
         fut = by_day("fut", lambda pl: pl.get("v"))
-        out = {
+        out: dict[str, Any] = {
             "fut_profile": volume_profile(fut),
             "stock_profile": volume_profile(by_day("stocks50", pooled)),
             "fut_avg": None,
@@ -420,16 +420,15 @@ class MarketService:
         if not syms:
             return "no NIFTY 50 list yet"
         since = (now - timedelta(days=12)).astimezone(UTC).isoformat()
-        idx = {
-            a: p.get("idx")
-            for a, p in self.store.samples_since("nifty50", since)
-            if p.get("idx") is not None
-        }
+        idx: dict[str, float] = {}
+        for a, p in self.store.samples_since("nifty50", since):
+            if p.get("idx") is not None:
+                idx[a] = float(p["idx"])
         rows: list[tuple[float, dict[str, float]]] = []
         for a, p in self.store.samples_since("stocks50", since):
             if a in idx:
                 x = {r[0]: float(r[1]) for r in p.get("rows", []) if r[1] is not None}
-                rows.append((float(idx[a]), x))
+                rows.append((idx[a], x))
         res = wmod.estimate(rows, syms)
         if res is None:
             self.store.attempt(
@@ -840,10 +839,10 @@ class MarketService:
                 or self.store.current_list("nifty500") is None
                 or (
                     t.time() >= LISTS_AT
-                    and self.store.last_attempt("lists") is not None
-                    and self.store.last_attempt("lists")["at"][:10] < t.date().isoformat()
+                    and (la := self.store.last_attempt("lists")) is not None
+                    and la["at"][:10] < t.date().isoformat()
                 )
-            )  # type: ignore[index]
+            )
         if kind == "tokens":
             tok = self.store.latest_tokens()
             return self.store.current_list("nifty500") is not None and (
@@ -856,11 +855,10 @@ class MarketService:
                 or self.store.current_list("nifty500") is None
             ):
                 return False
+            lb_ = self.store.last_attempt("bhav")
             return t.date().isoformat() not in self.store.bhav_sessions() and (
-                self.store.last_attempt("bhav") is None
-                or self.store.last_attempt("bhav")["at"][:10] < t.date().isoformat()
-                or not self.store.last_attempt("bhav")["ok"]
-            )  # type: ignore[index]
+                lb_ is None or lb_["at"][:10] < t.date().isoformat() or not lb_["ok"]
+            )
         if kind == "bhav_backfill":
             return (
                 len(self.store.daily_sessions()) < 55
@@ -877,7 +875,7 @@ class MarketService:
                 and bool(self._trading_day(t.date()))
                 and (wt is None or wt[2].startswith("approx"))
                 and (la is None or la["at"][:10] < t.date().isoformat())
-            )  # type: ignore[index]
+            )
         if kind == "weights":
             return (
                 self.store.latest_weights("nifty50") is None

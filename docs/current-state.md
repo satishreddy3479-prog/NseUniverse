@@ -5,6 +5,9 @@ _Last updated: 2026-10-29_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Intraday engine audit (29 Oct 2026)
+- Strict audit done (docs/audit-2026-10-29.md): 15 defects fixed with regression tests, backend 508 / frontend 185 tests, ruff and mypy clean. Still never run on live Kotak data: check `/api/market/coverage`, `/api/market/status` and the Command Center in the first market session. No probabilities are shown until 60 labelled sessions pass the gate.
+
 ## Market breadth (built 2026-10-29, unverified live)
 - Official NIFTY 50 weights loaded (D59): NSE index tracker, 29 Oct close, rolled forward with price; top-5 are now HDFCBANK, ICICIBANK, RELIANCE, BHARTIARTL, LT. Compare with the page's advance/decline (39/11 on 29 Oct) after the next session.
 - Added 29 Oct evening (D58): NIFTY futures flow/CVD, depth for the top-5 heavyweights, technical read from daily bars, estimated weights, own intraday volume profile (after 5 sessions), list-change log, snapshot retention enabled (raw 7 d, normalized 14 d, verified-archive days only). Offline-tested; Kotak depth fields and the F&O scrip master are unverified.

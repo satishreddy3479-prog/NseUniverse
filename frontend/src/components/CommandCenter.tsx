@@ -521,7 +521,7 @@ function Positioning({ d }: { d: IntradaySummary }) {
   const fmt = (x: number | null | undefined) => (x == null ? MISSING : x.toFixed(2));
   const cls = (c?: SideClass) => (!c ? MISSING : c.label ? `${c.label}${c.reading ? ` (${c.reading})` : ""}` : c.reason ?? MISSING);
   return (
-    <Card title="Options positioning detail" className="lg:col-span-6" right={<span className="text-[11px] text-muted">tentative readings, not signals</span>}>
+    <Card title="Options positioning detail" className="lg:col-span-6" right={<span className="text-[11px] text-muted">{p?.data ?? "no data"} · tentative readings, not signals</span>}>
       {!p || p.status !== "ok" ? <p className="text-sm text-muted" data-testid="cc-pos-missing">{p?.status ?? "Not available."}</p> : (
         <div className="space-y-3 text-xs" data-testid="cc-pos">
           <table className="w-full text-xs">
