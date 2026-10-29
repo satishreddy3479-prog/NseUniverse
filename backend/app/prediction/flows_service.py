@@ -168,7 +168,7 @@ class FlowsService:
             self.last_cash_date = today  # one attempt a day, success or not
             self.progress = "FII/DII cash"
             self._cash_once(summary)
-        if self.last_nsdl_date != today and evening:
+        if self.last_nsdl_date != today:  # NSDL keeps the latest day on its page, so any time works
             self.last_nsdl_date = today  # one attempt a day, success or not
             self.progress = "NSDL FPI"
             self._nsdl_once(summary)
