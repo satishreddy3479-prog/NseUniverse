@@ -489,6 +489,7 @@ export interface IntradaySummary {
   vwap?: FutureVwap | null;
   volatility?: VolatilityBlock;
   positioning?: PositioningBlock;
+  setups?: SetupsBlock;
   narrative: string;
   context: { question: string; answer: string }[];
   levels: IntradayLevel[];
@@ -616,4 +617,26 @@ export interface ResearchReport {
   status: "insufficient" | "experimental" | "validated"; sessions: number; rows: number; horizon_minutes: number; reason?: string;
   test_sessions?: number; models?: Record<string, ModelMetrics>; dropped?: { ambiguous: number; missing: number }; effective_observations?: number;
   gate?: { status: string; show_probabilities: boolean; reasons: string[]; label: string | null; beat_share?: number; ece?: number }; note?: string;
+}
+
+// ---- Setup monitor (read-only decision support), replay and paper trading
+export interface SetupCandidate {
+  setup: string; direction: "long" | "short" | null; status: "ACTIVE" | "WATCH" | "BLOCKED" | "REJECTED"; entry_condition: string; entry_ref?: number; stop?: number; target?: number;
+  risk_pts?: number; reward_pts?: number; reward_risk?: number | null; net_reward_after_costs_pts?: number; costs_pts?: number; lots?: number; max_loss_rs?: number;
+  holding_horizon_min?: number; probability: null; probability_note: string; liquidity?: { spread_pts: number } | null; data_quality: string; reason: string; invalidation: string;
+  rejected_because?: string[]; blocked_because?: string[]; levels?: number[];
+}
+export interface SetupsBlock {
+  candidates: SetupCandidate[]; decision: string; active: number; global_blockers: string[]; read_only: boolean; note?: string;
+  risk?: { max_loss_per_trade_rs: number; max_daily_loss_rs: number; max_trades: number; max_consecutive_losses: number; min_reward_risk: number; cutoff: string };
+}
+export interface ReplaySessions { sessions: { session: string; samples: number; expiries: string[] }[] }
+export interface ReplayResult {
+  status: string; replay?: boolean; session: string; at: string; last_sample_at?: string; summary?: IntradaySummary;
+  after_the_fact?: Record<string, { outcome: string; reason?: string; minutes_to_touch?: number; barrier_pts?: number; mfe_pts?: number; mae_pts?: number } | undefined> | null; after_the_fact_note?: string;
+}
+export interface PaperReport {
+  sessions: number; trades: number; min_trades_for_a_conclusion: number; conclusion: string; net_rupees: number; gross_rupees_before_costs?: number; costs_and_slippage_rupees?: number;
+  win_rate?: number; expectancy_rupees?: number; profit_factor?: number | null; max_drawdown_rupees?: number; by_setup?: Record<string, { trades: number; net_rupees: number; wins: number }>;
+  assumptions?: { instrument: string; lot_size: number; slippage_pts_per_side: number };
 }

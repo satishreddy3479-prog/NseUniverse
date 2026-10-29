@@ -20,7 +20,15 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 CLASSES = ("up", "down", "none")
-FEATURES = ("ret_5m", "ret_15m", "ret_30m", "from_prev_close_pct", "er_5m", "position_in_range", "above_or_high", "below_or_low", "pcr_oi", "straddle_change_pct", "oi_imbalance", "minutes_since_open")  # fmt: skip
+GROUPS: dict[str, tuple[str, ...]] = {
+    "price": ("ret_5m", "ret_15m", "ret_30m", "from_prev_close_pct", "er_5m", "position_in_range", "above_or_high", "below_or_low", "minutes_since_open"),
+    "options": ("pcr_oi", "straddle_change_pct", "oi_imbalance"),
+    "volatility": ("iv_atm", "iv_chg_15m", "skew_25d"),
+    "vwap_flow": ("fut_vwap_dist_pct", "fut_cvd_share", "fut_depth_imb"),
+    "breadth": ("ad_balance", "breadth_mom_15m", "breadth_eq_return"),
+    "breakout": ("breakout_state", "breakout_quality"),
+}  # fmt: skip
+FEATURES = tuple(f for g in GROUPS.values() for f in g)
 MIN_SESSIONS_EXPERIMENTAL = 5
 MIN_SESSIONS_VALIDATED = 20
 GATE_BEAT_SHARE = 0.6
@@ -110,7 +118,7 @@ def opening_range_state(f: Mapping[str, float | None]) -> str | None:
 
 
 def vwap_state(f: Mapping[str, float | None]) -> str | None:
-    d = f.get("vwap_distance_pct")
+    d = f.get("fut_vwap_dist_pct")
     return None if d is None else ("above" if d > 0.02 else "below" if d < -0.02 else "at")
 
 
@@ -160,7 +168,7 @@ def logistic(train: Sequence[Row], names: Sequence[str] = FEATURES, l2: float = 
 
 
 # ----------------------------------------------------------------------------------------------- walk-forward
-def walk_forward(rows: Sequence[Row], min_train_sessions: int = 3, stride: int = 1, has_vwap: bool = False) -> dict[str, Any]:
+def walk_forward(rows: Sequence[Row], min_train_sessions: int = 3, stride: int = 1, has_vwap: bool = False, group_tests: bool = False) -> dict[str, Any]:
     sessions = sorted({r["session"] for r in rows})
     result: dict[str, Any] = {"sessions": len(sessions), "rows": len(rows)}
     if len(sessions) <= min_train_sessions:
@@ -173,6 +181,11 @@ def walk_forward(rows: Sequence[Row], min_train_sessions: int = 3, stride: int =
     }
     if has_vwap:
         makers["vwap"] = lambda tr: state_model(tr, vwap_state)
+    if group_tests:  # does each evidence group add anything to price alone?
+        makers["logistic_price"] = lambda tr: logistic(tr, GROUPS["price"], iters=100)
+        for g, cols in GROUPS.items():
+            if g != "price" and sum(1 for r in rows if any(r["features"].get(c) is not None for c in cols)) >= 0.2 * len(rows):
+                makers[f"logistic_price+{g}"] = lambda tr, _c=cols: logistic(tr, (*GROUPS["price"], *_c), iters=100)
     pooled: dict[str, tuple[list[list[float]], list[str]]] = {k: ([], []) for k in makers}
     per_session: list[dict[str, Any]] = []
     for i in range(min_train_sessions, len(sessions)):
@@ -193,6 +206,9 @@ def walk_forward(rows: Sequence[Row], min_train_sessions: int = 3, stride: int =
     for name, (probs, outs) in pooled.items():
         if outs:
             report[name] = {"log_loss": round(log_loss(probs, outs), 5), "brier": round(brier(probs, outs), 5), **accuracy_stats(probs, outs), "calibration": calibration(probs, outs), "n": len(outs)}
+    if group_tests and "logistic_price" in report:
+        result["feature_groups"] = {k.split("+", 1)[1]: {"log_loss": report[k]["log_loss"], "delta_vs_price_only": round(report[k]["log_loss"] - report["logistic_price"]["log_loss"], 5)}
+                                    for k in report if k.startswith("logistic_price+")}  # fmt: skip
     result |= {"models": report, "per_session_log_loss": per_session, "test_sessions": len(per_session)}
     result["gate"] = gate(result)
     result["status"] = result["gate"]["status"]
@@ -206,7 +222,7 @@ def gate(res: Mapping[str, Any]) -> dict[str, Any]:
     if "logistic" not in models:
         return {"status": "insufficient", "show_probabilities": False, "reasons": ["no test predictions"]}
     ps = res["per_session_log_loss"]
-    baselines = [k for k in models if k != "logistic"]
+    baselines = [k for k in models if k in ("majority", "momentum", "opening_range", "vwap")]
     beat = sum(1 for s in ps if all(s["logistic"] < s[b] for b in baselines)) / len(ps) if ps else 0.0
     ece = models["logistic"]["calibration"]["ece"]
     reasons = []

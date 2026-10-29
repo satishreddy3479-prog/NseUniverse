@@ -472,6 +472,32 @@ async def intraday_research(request: Request, horizon: int = 15, k: float = 0.5)
     return await asyncio.to_thread(request.app.state.intraday.research, horizon, k)
 
 
+@router.get("/intraday/replay")
+async def intraday_replay(
+    request: Request, session: date | None = None, expiry: date | None = None, at: str | None = None
+) -> dict[str, Any]:
+    """Past sessions, or the dashboard as it stood at ``at`` (HH:MM IST). Read-only."""
+    svc = request.app.state.intraday
+    if session is None:
+        return await asyncio.to_thread(svc.replay_sessions)
+    if (
+        expiry is None
+        or at is None
+        or len(at) != 5
+        or at[2] != ":"
+        or not (at[:2] + at[3:]).isdigit()
+        or not (0 <= int(at[:2]) < 24 and 0 <= int(at[3:]) < 60)
+    ):
+        raise HTTPException(status_code=422, detail="expiry and at (HH:MM) are required")
+    return await asyncio.to_thread(svc.replay, session.isoformat(), expiry.isoformat(), at)
+
+
+@router.get("/intraday/paper")
+async def intraday_paper(request: Request) -> dict[str, Any]:
+    """Cost-aware paper trading of the rule-based setups on stored sessions."""
+    return await asyncio.to_thread(request.app.state.intraday.paper)
+
+
 @router.get("/intraday/scores")
 async def intraday_scores(
     request: Request, expiry: date, session: date | None = None

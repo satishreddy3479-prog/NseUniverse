@@ -30,7 +30,7 @@ from app.intraday.features import (
     price_features,
 )
 
-FEATURE_VERSION = "if-1"
+FEATURE_VERSION = "if-2"  # if-2 adds implied volatility, futures VWAP/flow, breadth and breakout-state columns (enrich.py)
 HORIZONS = (5, 15, 30, 60)  # minutes
 WARMUP_SAMPLES = 15
 LABEL_SLACK_MIN = 3.0  # a target time needs a sample within 3 minutes at or before it
@@ -64,6 +64,7 @@ def build_rows(
     ctx: DailyContext,
     expiry: date,
     day: date,
+    extra: Callable[[int], dict[str, float | None]] | None = None,
 ) -> list[dict[str, Any]]:
     """One row per sample from the warm-up on. ``points`` are the day's in-session samples, oldest first;
     ``chain_at(i)`` returns the option chain of sample i (never called with an index after the row's own)."""
@@ -98,6 +99,8 @@ def build_rows(
             "straddle_change_pct": _r(o.straddle_change_pct),
             "oi_imbalance": _r(None if tot is None or o.ce_oi_chg is None or o.pe_oi_chg is None or tot == 0 else (o.pe_oi_chg - o.ce_oi_chg) / tot),
         }  # fmt: skip
+        if extra is not None:
+            feats |= extra(i)  # as-of i only (enrich.py)
         rows.append({"sample_utc": t.at.isoformat(), "spot": t.spot, "features": feats, "labels": labels_for(points, i)})
     return rows
 

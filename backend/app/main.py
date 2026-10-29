@@ -19,7 +19,9 @@ from app.api.routes import router
 from app.api.ws import router as ws_router
 from app.broker.base import MarketDataBroker
 from app.config import Settings, get_settings
+from app.intraday.costs import CostModel
 from app.intraday.service import IntradayService
+from app.intraday.setups import RiskConfig
 from app.intraday.store import IntradayStore
 from app.lifecycle.eod import EodService
 from app.logging_setup import log_event, setup_logging
@@ -156,6 +158,24 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         stream.on_internal = market.on_tick
         intraday.market = market
         intraday.risk_free_rate = settings.risk_free_rate
+        hh, mm = (int(x) for x in settings.risk_cutoff.split(":"))
+        intraday.risk = RiskConfig(
+            max_loss_per_trade_rs=settings.risk_max_loss_per_trade_rs,
+            max_daily_loss_rs=settings.risk_max_daily_loss_rs,
+            max_trades_per_day=settings.risk_max_trades_per_day,
+            max_consecutive_losses=settings.risk_max_consecutive_losses,
+            min_reward_risk=settings.risk_min_reward_risk,
+            max_spread_pts=settings.risk_max_spread_pts,
+            max_lots=settings.risk_max_lots,
+            cutoff=time(hh, mm),
+        )
+        intraday.costs = CostModel(
+            lot_size=settings.cost_lot_size,
+            brokerage_per_order=settings.cost_brokerage_per_order,
+            stt_sell_pct=settings.cost_stt_futures_sell_pct,
+            exchange_pct=settings.cost_exchange_pct,
+            slippage_pts=settings.cost_slippage_pts,
+        )
         if settings.breadth_enabled:
             market_ref["m"] = market
             market.start()
@@ -169,6 +189,8 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             enabled=settings.eod_enabled,
             # the server's nightly timer (deploy/backup.sh) already backs up every database
             backups=settings.eod_backups and not Path("/var/backups/nse-universe").is_dir(),
+            market=market_store,
+            risk_free_rate=settings.risk_free_rate,
             raw_keep_days=settings.snapshot_raw_keep_days,
             normalized_keep_days=settings.snapshot_normalized_keep_days,
             keep_daily_backups=settings.backup_keep_daily,

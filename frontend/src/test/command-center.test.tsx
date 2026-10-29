@@ -18,6 +18,8 @@ vi.mock("../components/EChart", () => ({
 
 const base = real as unknown as IntradaySummary;
 
+let paper: unknown = { sessions: 0, trades: 0, min_trades_for_a_conclusion: 30, conclusion: "no trades were triggered on the stored sessions", net_rupees: 0 };
+let replayResult: unknown = {};
 let research: unknown = { status: "insufficient", sessions: 1, rows: 0, horizon_minutes: 15, reason: "needs more than 3 labelled sessions to test on a later one (has 1)" };
 
 function mock(summary: IntradaySummary | null, scores: unknown[] = []) {
@@ -27,6 +29,9 @@ function mock(summary: IntradaySummary | null, scores: unknown[] = []) {
       return summary ? new Response(JSON.stringify(summary), { status: 200 })
         : new Response(JSON.stringify({ detail: { code: "internal_error", message: "internal server error" } }), { status: 500 });
     }
+    if (url.startsWith("/api/intraday/paper")) return new Response(JSON.stringify(paper), { status: 200 });
+    if (url.startsWith("/api/intraday/replay?session")) return new Response(JSON.stringify(replayResult), { status: 200 });
+    if (url.startsWith("/api/intraday/replay")) return new Response(JSON.stringify({ sessions: [{ session: "2026-10-28", samples: 320, expiries: ["2026-11-03"] }] }), { status: 200 });
     if (url.startsWith("/api/intraday/research")) return new Response(JSON.stringify(research), { status: 200 });
     if (url.startsWith("/api/intraday/scores")) return new Response(JSON.stringify({ session: "2026-10-29", expiry: "2026-11-03", rows: scores }), { status: 200 });
     return new Response(JSON.stringify({ detail: { code: "nf", message: "nf" } }), { status: 404 });
@@ -245,6 +250,49 @@ describe("Market Sentiment Command Center", () => {
     expect(box.getByText("majority")).toBeInTheDocument();
     expect(box.getByText("0.295")).toBeInTheDocument();
     research = { status: "insufficient", sessions: 1, rows: 0, horizon_minutes: 15, reason: "needs more than 3 labelled sessions to test on a later one (has 1)" };
+  });
+
+  it("shows the setup monitor as read-only, with the reasons a rule was not taken and no probability", async () => {
+    const setups = { decision: "NO TRADE: INSUFFICIENT EVIDENCE", active: 0, read_only: true, global_blockers: ["daily trade limit (4) reached"], note: "Rule-based decision support. No orders are placed.",
+      candidates: [{ setup: "OR_BREAKOUT", direction: "long", status: "BLOCKED", entry_condition: "already confirmed", entry_ref: 24047, stop: 24040, target: 24080, reward_risk: 4.71, lots: 4, max_loss_rs: 1820, costs_pts: 15.4,
+        probability: null, probability_note: "not shown: no validated model", data_quality: "LIVE", reason: "break confirmed", invalidation: "a close back through 24040.00", rejected_because: [], blocked_because: ["daily trade limit (4) reached"] }] };
+    mock({ ...base, setups } as never);
+    renderCC();
+    const box = within(await screen.findByTestId("cc-setups"));
+    expect(box.getByTestId("cc-setup-decision")).toHaveTextContent("NO TRADE: INSUFFICIENT EVIDENCE");
+    const row = within(box.getByTestId("cc-setup"));
+    expect(row.getByText("BLOCKED")).toBeInTheDocument();
+    expect(row.getByText(/Entry ~24047 · stop 24040 · target 24080 · reward\/risk 4.71 · 4 lot\(s\), max loss ₹1820/)).toBeInTheDocument();
+    expect(row.getByText(/Not taken: daily trade limit \(4\) reached/)).toBeInTheDocument();
+    expect(box.getByText(/No orders are placed/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/probability of|% chance/i);
+  });
+
+  it("shows paper-trading results with the no-conclusion rule", async () => {
+    paper = { sessions: 6, trades: 4, min_trades_for_a_conclusion: 30, conclusion: "no conclusion: 4 trades is fewer than 30; the result below is noise-sized", net_rupees: -1250, gross_rupees_before_costs: 900, costs_and_slippage_rupees: 2150, win_rate: 0.25, expectancy_rupees: -312.5, profit_factor: 0.4, max_drawdown_rupees: 2000 };
+    mock(base);
+    renderCC();
+    const box = within(await screen.findByTestId("cc-paper"));
+    expect(box.getByText(/4 trade\(s\) over 6 session\(s\)/)).toBeInTheDocument();
+    expect(box.getByText(/no conclusion: 4 trades is fewer than 30/)).toBeInTheDocument();
+    expect(box.getByText(/Net ₹-1250 \(₹900 before ₹2150 of costs and slippage\)/)).toBeInTheDocument();
+    paper = { sessions: 0, trades: 0, min_trades_for_a_conclusion: 30, conclusion: "no trades were triggered on the stored sessions", net_rupees: 0 };
+  });
+
+  it("replays a past moment and keeps what happened afterwards visibly separate", async () => {
+    replayResult = { status: "ok", replay: true, session: "2026-10-28", at: "2026-10-28T10:30:00+05:30", last_sample_at: "2026-10-28T10:30:00+05:30",
+      summary: { ...base, structure: { ...(base.structure ?? {}), breakout: null }, setups: { decision: "NO TRADE: INSUFFICIENT EVIDENCE", active: 0, candidates: [], global_blockers: [], read_only: true } },
+      after_the_fact: { "5": { outcome: "none" }, "15": { outcome: "up", minutes_to_touch: 7 }, "30": { outcome: "ambiguous", reason: "9.0 minute gap before the touch" } }, after_the_fact_note: "none of it was known" };
+    mock(base);
+    renderCC();
+    await screen.findByTestId("cc-replay");
+    const btn = await screen.findByRole("button", { name: "Show the dashboard as it was" });
+    btn.click();
+    const out = within(await screen.findByTestId("cc-replay-result"));
+    expect(out.getByText(/After the fact \(not known at the time shown\)/)).toBeInTheDocument();
+    expect(out.getByText(/15 min: up after 7 min/)).toBeInTheDocument();
+    expect(out.getByText(/30 min: ambiguous \(9.0 minute gap before the touch\)/)).toBeInTheDocument();
+    replayResult = {};
   });
 
   it("explains that futures are not subscribed instead of inventing flow", async () => {

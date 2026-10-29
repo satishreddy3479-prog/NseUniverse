@@ -35,6 +35,7 @@ class FlowTracker:
     depth_sum: float = 0.0
     depth_n: int = 0
     last_imbalance: float | None = None
+    last_spread: float | None = None  # best ask - best bid in points
     last_update: datetime | None = None
     last_atp: float | None = (
         None  # the exchange's own day VWAP of the contract (average traded price)
@@ -67,6 +68,8 @@ class FlowTracker:
             self.reset()
         self.day = day
         self.last_update = at
+        if bid is not None and ask is not None and ask >= bid:
+            self.last_spread = ask - bid
         if atp is not None and atp > 0:
             self.last_atp = atp
         if bid_qty is not None and ask_qty is not None and bid_qty + ask_qty > 0:

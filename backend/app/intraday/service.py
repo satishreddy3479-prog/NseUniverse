@@ -15,12 +15,13 @@ import logging
 import time as _time
 from collections.abc import Callable
 from dataclasses import asdict
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from statistics import pstdev
 from typing import Any
 
-from app.intraday import evaluate, labels, positioning, price_structure
+from app.intraday import evaluate, labels, paper, positioning, price_structure, setups
 from app.intraday import volatility as volmod
+from app.intraday.costs import CostModel
 from app.intraday.features import (
     CLOSE,
     IST,
@@ -30,6 +31,7 @@ from app.intraday.features import (
     Quote,
     daily_context,
     in_session,
+    minutes_elapsed,
     options_features,
     price_features,
     session_phase,
@@ -111,6 +113,8 @@ class IntradayService:
         clock: Any = None,
         market: Any = None,
     ) -> None:
+        self.risk = setups.RiskConfig()  # RISK_* settings
+        self.costs = CostModel()  # COST_* settings
         self.risk_free_rate = volmod.DEFAULT_RATE  # assumed discount rate (RISK_FREE_RATE); affects IV only through e^{-rT}
         self.market = market  # optional MarketService: stock breadth, heavyweights, sectors
         self.obs, self.history, self.flows, self.store = observations, history, flows, store
@@ -265,7 +269,7 @@ class IntradayService:
         self._cache = {key: out}
         return out
 
-    def _build(self, expiry: str, now: datetime, samples: list[Any]) -> dict[str, Any]:  # noqa: PLR0915
+    def _build(self, expiry: str, now: datetime, samples: list[Any], replay: bool = False) -> dict[str, Any]:  # noqa: PLR0915
         t0 = _time.perf_counter()
         marks: dict[str, float] = {}
         last_mark = [t0]
@@ -350,7 +354,7 @@ class IntradayService:
             and latest.received_at.astimezone(IST).date() == today
             and bool(session_samples)
         )
-        mk = self._market_summary(now)
+        mk = None if replay else self._market_summary(now)  # a replay never reads today's live stock ticks
         glob = self._global(today)
         flow = self._flows(prev_session)
         comps = [
@@ -432,7 +436,7 @@ class IntradayService:
             "config": {"version": SCORE_VERSION, "weights": SCORE_CONFIG["weights"], "min_coverage": SCORE_CONFIG["min_coverage"]},
             "compute_ms": None,
         }  # fmt: skip
-        if latest is not None and opt_today and live and a.score is not None:
+        if not replay and latest is not None and opt_today and live and a.score is not None:
             self.store.record({
                 "session": today.isoformat(), "expiry": expiry, "sample_id": latest.sample_id,
                 "sample_utc": latest.received_at.astimezone(UTC).isoformat(), "version": SCORE_VERSION,
@@ -441,26 +445,34 @@ class IntradayService:
                 "components": [{"key": c.key, "score": c.score, "contribution": c.contribution, "available": c.available} for c in a.components],
             }, now=now)  # fmt: skip
         mark("record")
-        result["structure"], result["vwap"] = self._structure(mk, pts, now, live and age is not None and age <= STRUCTURE_MAX_AGE_S)
+        fresh = live and age is not None and age <= STRUCTURE_MAX_AGE_S
+        result["structure"], result["vwap"] = self._structure(mk, pts, now, fresh, replay)
         mark("structure")
         result["volatility"] = self._volatility(expiry, now, latest, session_samples, pts, live)
         mark("volatility")
         result["positioning"] = self._positioning(chain, first_chain, latest, session_samples)
         result["volatility"]["term_structure"] = self._term_structure(expiry, now, latest, result["volatility"])
         mark("positioning")
+        spread = ((((mk or {}).get("flow") or {}).get("futures")) or {}).get("spread_pts")
+        sctx = setups.Context(
+            spot=latest.spot if latest and latest.spot else 0.0, minute=max(0, int(minutes_elapsed(now)) - 1), clock=t.time(), structure=result["structure"],
+            regime=reg["primary"], daily_sd_pct=ctx.daily_sd_pct, data_live=bool(fresh), vwap=result["vwap"], spread_pts=spread, event_risk=event_today,
+        )  # fmt: skip
+        result["setups"] = setups.detect(sctx, self.risk, self.costs) if latest is not None and latest.spot else {"candidates": [], "decision": "NO TRADE: INSUFFICIENT EVIDENCE", "active": 0, "global_blockers": ["no spot sample"], "read_only": True}
+        mark("setups")
         result["compute_ms"] = round((_time.perf_counter() - t0) * 1000, 1)
         result["timings_ms"] = marks
         return result
 
-    def _structure(self, mk: dict[str, Any] | None, pts: list[Any], now: datetime, live: bool) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    def _structure(self, mk: dict[str, Any] | None, pts: list[Any], now: datetime, live: bool, replay: bool = False) -> tuple[dict[str, Any], dict[str, Any] | None]:
         """Opening-range breakout state, quality and swing structure; futures VWAP. Needs fresh spot samples to give a breakout call."""
-        vb = self.market.vwap_block(now) if (self.market is not None and live) else None
+        vb = self.market.vwap_block(now) if (self.market is not None and live and not replay) else None
         fut = ((mk or {}).get("flow") or {}).get("futures") or {}
         ad = ((mk or {}).get("nifty50") or {}).get("breadth", {}).get("ad_balance")
         side = None if not vb else {"above": "up", "below": "down"}.get(vb["side"])
         st = price_structure.analyze(pts, now, vwap_side=side, rel_volume=fut.get("relative_volume"), ad_balance=ad, live=live)
         b = st["breakout"]
-        if b is not None and self.market is not None:
+        if b is not None and self.market is not None and not replay:
             stamp = now.astimezone(UTC).replace(second=0, microsecond=0).isoformat()
             self.market.store.record_sample("breakout", stamp, {"or": b["or_minutes"], "dir": b["direction"], "status": b["status"], "q": b["quality"]["score"], "ext": b["extension_ow"], "px": b["last_price"]})  # fmt: skip
         return st, vb
@@ -530,9 +542,60 @@ class IntradayService:
                     rows.append({"session": sess, "features": feats, "outcome": lab["outcome"]})
                 else:
                     dropped[lab["outcome"]] += 1
-        res = evaluate.walk_forward(rows, stride=max(1, horizon // 3))
+        has_vwap = any(r["features"].get("fut_vwap_dist_pct") is not None for r in rows)
+        res = evaluate.walk_forward(rows, stride=max(1, horizon // 3), has_vwap=has_vwap, group_tests=True)
         res |= {"horizon_minutes": horizon, "barrier_k": k, "dropped": dropped, "effective_observations": round(len(rows) / max(1, horizon)),
                 "features_version": FEATURE_VERSION, "note": "Barrier = k x daily sd x sqrt(h/375) from earlier sessions. Overlapping samples are not independent; the gate counts sessions."}  # fmt: skip
+        self._slow[key] = (_time.monotonic(), res)  # type: ignore[index]
+        return res
+
+    def replay_sessions(self) -> dict[str, Any]:
+        out = []
+        for d, n in sorted(self.obs.session_sample_counts(self.underlying).items()):
+            day = date.fromisoformat(d)
+            lo, hi = datetime.combine(day, OPEN, IST), datetime.combine(day, CLOSE, IST)
+            out.append({"session": d, "samples": n, "expiries": [e for e, _ in self.obs.day_counts(self.underlying, to_ms(lo), to_ms(hi))]})
+        return {"sessions": out}
+
+    def replay(self, session: str, expiry: str, at_hhmm: str) -> dict[str, Any]:
+        """The dashboard as it stood at a past time, built only from samples stored at or before it (read-only, no live ticks, nothing recorded).
+        What happened afterwards is returned separately under ``after_the_fact``."""
+        day = date.fromisoformat(session)
+        hh, mm = (int(x) for x in at_hhmm.split(":"))
+        at = datetime.combine(day, time(hh, mm), IST)
+        samples = self.obs.samples(self.underlying, expiry, since=datetime.combine(day, OPEN, IST) - timedelta(days=4), until=at, limit=5000)
+        if not samples:
+            return {"status": "no samples at or before that time", "session": session, "at": at.isoformat()}
+        out = self._build(expiry, at, samples, replay=True)
+        full = self.obs.samples(self.underlying, expiry, since=datetime.combine(day, OPEN, IST), until=datetime.combine(day, CLOSE, IST), limit=5000)
+        pts = in_session([Point(x.received_at, x.spot) for x in full if x.spot is not None], day)
+        sd = daily_context([b for b in self._daily("NIFTY50") if b.session < day], day).daily_sd_pct
+        i = next((k for k in range(len(pts) - 1, -1, -1) if pts[k].at <= at), None)
+        after = None if i is None else {str(h): labels.label_at(pts, i, h, sd) for h in labels.HORIZONS}
+        return {"status": "ok", "replay": True, "session": session, "at": at.isoformat(), "last_sample_at": samples[-1].received_at.isoformat(), "summary": out,
+                "after_the_fact": after, "after_the_fact_note": "Barrier outcomes after this time; none of it was known at the time shown."}  # fmt: skip
+
+    def paper(self) -> dict[str, Any]:
+        """Cost-aware paper trading of the rule-based setups over every stored session (spot-path rules only)."""
+        key = ("paper", len(self.obs.session_sample_counts(self.underlying)), self.risk, self.costs)
+        hit = self._slow.get(key)  # type: ignore[arg-type]
+        if hit and _time.monotonic() - hit[0] < 600:
+            return hit[1]  # type: ignore[no-any-return]
+        trades: list[dict[str, Any]] = []
+        n_sessions = 0
+        for d, n in sorted(self.obs.session_sample_counts(self.underlying).items()):
+            day = date.fromisoformat(d)
+            if n < 60 or day >= self._clock().astimezone(IST).date():
+                continue  # unfinished or too short
+            exp = max(self.obs.day_counts(self.underlying, to_ms(datetime.combine(day, OPEN, IST)), to_ms(datetime.combine(day, CLOSE, IST))), key=lambda x: x[1], default=None)
+            if exp is None:
+                continue
+            full = self.obs.samples(self.underlying, exp[0], since=datetime.combine(day, OPEN, IST), until=datetime.combine(day, CLOSE, IST), limit=5000)
+            pts = in_session([Point(x.received_at, x.spot) for x in full if x.spot is not None], day)
+            sd = daily_context([b for b in self._daily("NIFTY50") if b.session < day], day).daily_sd_pct
+            n_sessions += 1
+            trades += [t | {"session": d} for t in paper.simulate_session(pts, sd, self.risk, self.costs)]
+        res = paper.summarize(trades, n_sessions) | {"trades_list": trades[-50:], "assumptions": {"instrument": "NIFTY future proxied by the index spot path", "lot_size": self.costs.lot_size, "slippage_pts_per_side": self.costs.slippage_pts, "risk": asdict(self.risk) | {"cutoff": f"{self.risk.cutoff:%H:%M}"}}}  # fmt: skip
         self._slow[key] = (_time.monotonic(), res)  # type: ignore[index]
         return res
 

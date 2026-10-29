@@ -1,4 +1,7 @@
 import type {
+  PaperReport,
+  ReplayResult,
+  ReplaySessions,
   ResearchReport,
   AppStatus,
   StreamStatus,
@@ -73,6 +76,9 @@ export const api = {
   storageStatus: () => request<StorageStatus>("/api/storage/status"),
   predictionSummary: () => request<PredictionSummary>("/api/prediction/summary"),
   intradayResearch: (horizon: number) => request<ResearchReport>(`/api/intraday/research?horizon=${horizon}`),
+  intradayReplaySessions: () => request<ReplaySessions>("/api/intraday/replay"),
+  intradayReplay: (session: string, expiry: string, at: string) => request<ReplayResult>(`/api/intraday/replay?session=${session}&expiry=${expiry}&at=${encodeURIComponent(at)}`),
+  intradayPaper: () => request<PaperReport>("/api/intraday/paper"),
   intradaySummary: (expiry: string) => request<IntradaySummary>(`/api/intraday/summary?expiry=${encodeURIComponent(expiry)}`),
   intradayScores: (expiry: string) =>
     request<{ session: string; expiry: string; rows: IntradayScoreRow[] }>(`/api/intraday/scores?expiry=${encodeURIComponent(expiry)}`),

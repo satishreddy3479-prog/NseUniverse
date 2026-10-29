@@ -527,3 +527,43 @@ class TestRegime:
 
     def test_too_few_samples_are_unclassified(self) -> None:
         assert self.run([22700.0 + i for i in range(10)])[0]["primary"] == "Unclassified"
+
+
+class TestReplay:
+    """Replay is read-only: it sees only samples stored at or before the chosen time and records nothing."""
+
+    def make(self, tmp: Path) -> IntradayService:
+        times = [ist(9, 15) + timedelta(minutes=i) for i in range(60)]
+        return IntradayService(seed(tmp, times), HistoryStore(tmp), FlowsStore(tmp), IntradayStore(tmp), clock=lambda: ist(16, 0).astimezone(UTC))  # fmt: skip
+
+    def test_replay_uses_only_samples_up_to_the_chosen_time_and_writes_nothing(self, tmp_path: Path) -> None:
+        svc = self.make(tmp_path)
+        r = svc.replay("2026-10-29", EXP, "09:40")
+        assert r["status"] == "ok" and r["replay"] is True
+        assert datetime.fromisoformat(r["last_sample_at"]) == ist(9, 40)  # the 09:40 sample is the newest it may use
+        s = r["summary"]
+        assert s["stocks"] is None and s["vwap"] is None  # no live ticks of today leak into a past moment
+        assert s["market"]["samples_today"] == 26  # 09:15..09:40 inclusive
+        assert svc.store.count() == 0  # the score ledger was not touched
+        assert set(r["after_the_fact"]) == {"5", "15", "30", "60"} and "none of it was known" in r["after_the_fact_note"]
+        assert r["after_the_fact"]["15"]["outcome"] in ("none", "missing", "up", "down", "ambiguous")
+
+    def test_replay_before_any_sample_and_the_session_list(self, tmp_path: Path) -> None:
+        svc = self.make(tmp_path)
+        assert svc.replay("2026-10-29", EXP, "09:00")["status"].startswith("no samples")
+        sess = svc.replay_sessions()["sessions"]
+        assert sess == [{"session": "2026-10-29", "samples": 60, "expiries": [EXP]}]
+
+    def test_the_live_dashboard_carries_setups_that_say_no_trade_without_evidence(self, tmp_path: Path) -> None:
+        svc = self.make(tmp_path)
+        out = svc.summary(EXP)
+        assert out["setups"]["read_only"] is True and out["setups"]["decision"].startswith("NO TRADE")
+        assert all(c["probability"] is None for c in out["setups"]["candidates"])
+
+    def test_replay_and_paper_api(self, tmp_path: Path) -> None:
+        with TestClient(make_app(tmp_path)) as c:
+            assert c.get("/api/intraday/replay").json() == {"sessions": []}
+            assert c.get("/api/intraday/replay", params={"session": "2026-10-29"}).status_code == 422  # needs expiry and time
+            assert c.get("/api/intraday/replay", params={"session": "2026-10-29", "expiry": EXP, "at": "25:61"}).status_code == 422
+            p = c.get("/api/intraday/paper")
+            assert p.status_code == 200 and p.json()["trades"] == 0 and "no trades" in p.json()["conclusion"]

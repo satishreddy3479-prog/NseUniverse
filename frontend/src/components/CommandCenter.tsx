@@ -8,7 +8,7 @@ import { compactIN } from "../lib/analytics";
 import { sentimentHistoryOption } from "../lib/chartOptions";
 import { fmtDateTimeIST, fmtPct, fmtPrice, fmtTimeIST, MISSING } from "../lib/format";
 import { useLiveSpot } from "../lib/useLive";
-import type { BreadthBlock, BreakoutState, FlowStats, IntradayComponent, IntradaySummary, MarketSummary, SideClass } from "../lib/types";
+import type { BreadthBlock, BreakoutState, FlowStats, IntradayComponent, IntradaySummary, MarketSummary, SetupCandidate, SideClass } from "../lib/types";
 import { EChart, useChartColors } from "./EChart";
 
 const PHASE: Record<string, string> = {
@@ -576,6 +576,90 @@ function ModelResearch() {
   );
 }
 
+const SETUP_TONE: Record<string, string> = { ACTIVE: "text-up", WATCH: "text-warn", BLOCKED: "text-down", REJECTED: "text-muted" };
+
+function SetupRow({ c }: { c: SetupCandidate }) {
+  const why = [...(c.rejected_because ?? []), ...(c.blocked_because ?? [])];
+  return (
+    <li className="border-t border-rule/50 py-2" data-testid="cc-setup">
+      <div><span className={`font-semibold ${SETUP_TONE[c.status] ?? ""}`}>{c.status}</span> <span className="text-paper">{c.setup.replaceAll("_", " ")}{c.direction ? ` · ${c.direction}` : ""}</span></div>
+      <div className="text-muted">{c.entry_condition}</div>
+      {c.entry_ref != null && <div className="num text-paper">Entry ~{c.entry_ref} · stop {c.stop} · target {c.target} · reward/risk {c.reward_risk ?? MISSING} · {c.lots} lot(s), max loss ₹{c.max_loss_rs} · costs ≈ {c.costs_pts} pts</div>}
+      {c.levels && <div className="num text-paper">Range edges {c.levels.join(" – ")}</div>}
+      <div className="text-[11px] text-muted">{c.reason}. Invalid if {c.invalidation}. {why.length > 0 ? `Not taken: ${why.join("; ")}.` : ""}</div>
+    </li>
+  );
+}
+
+function SetupMonitor({ d }: { d: IntradaySummary }) {
+  const s = d.setups;
+  return (
+    <Card title="Setup monitor" className="lg:col-span-6" right={<span className="text-[11px] text-muted">read-only · no orders · no probabilities</span>}>
+      {!s ? <p className="text-sm text-muted">Setups are not available.</p> : (
+        <div className="space-y-2 text-xs" data-testid="cc-setups">
+          <p className="text-sm font-semibold text-paper" data-testid="cc-setup-decision">{s.decision}</p>
+          {s.global_blockers.length > 0 && <p className="text-muted">Controls active: {s.global_blockers.join("; ")}.</p>}
+          {s.candidates.length === 0 ? <p className="text-muted">No rule is met right now.</p> : <ul>{s.candidates.map((c) => <SetupRow key={`${c.setup}${c.direction}`} c={c} />)}</ul>}
+          <p className="text-[11px] text-muted">{s.note}</p>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function PaperResults() {
+  const q = useQuery({ queryKey: ["intradayPaper"], queryFn: () => api.intradayPaper(), refetchInterval: 600_000, retry: false });
+  const r = q.data;
+  return (
+    <Card title="Paper trading of the setups (after costs)" className="lg:col-span-6" right={<span className="text-[11px] text-muted">stored sessions · nothing is sent to a broker</span>}>
+      {!r ? <p className="text-sm text-muted">{q.isLoading ? "Loading…" : "Paper results are unavailable."}</p> : (
+        <div className="space-y-1 text-xs" data-testid="cc-paper">
+          <p className="text-paper">{r.trades} trade(s) over {r.sessions} session(s). <span className="text-muted">{r.conclusion}.</span></p>
+          {r.trades > 0 && <p className="num text-muted">Net ₹{r.net_rupees} (₹{r.gross_rupees_before_costs} before ₹{r.costs_and_slippage_rupees} of costs and slippage) · win rate {r.win_rate} · expectancy ₹{r.expectancy_rupees} per trade · profit factor {r.profit_factor ?? MISSING} · max drawdown ₹{r.max_drawdown_rupees}</p>}
+          <p className="text-[11px] text-muted">Rules that can be rebuilt from the index path only (opening-range breakout and failed breakout); the index stands in for the future; {r.min_trades_for_a_conclusion} trades are needed before any conclusion.</p>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function Replay({ expiry }: { expiry: string }) {
+  const sessions = useQuery({ queryKey: ["replaySessions"], queryFn: () => api.intradayReplaySessions(), retry: false });
+  const [pick, setPick] = useState<{ session: string; at: string } | null>(null);
+  const [session, setSession] = useState("");
+  const [at, setAt] = useState("10:30");
+  const list = sessions.data?.sessions ?? [];
+  const chosen = session || list[list.length - 1]?.session || "";
+  const res = useQuery({ queryKey: ["replay", pick?.session, expiry, pick?.at], queryFn: () => api.intradayReplay(pick!.session, expiry, pick!.at), enabled: !!pick, retry: false });
+  const r = res.data;
+  const s = r?.summary;
+  return (
+    <Card title="Session replay" className="lg:col-span-12" right={<span className="text-[11px] text-muted">only what was stored at that time</span>}>
+      <div className="space-y-2 text-xs" data-testid="cc-replay">
+        {list.length === 0 ? <p className="text-muted">No stored session to replay yet.</p> : (
+          <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); setPick({ session: chosen, at }); }}>
+            <label className="text-muted">Session <select aria-label="Replay session" className="ml-1 rounded border border-rule bg-slate px-1 py-0.5 text-paper" value={chosen} onChange={(e) => setSession(e.target.value)}>{list.map((x) => <option key={x.session} value={x.session}>{x.session} ({x.samples})</option>)}</select></label>
+            <label className="text-muted">Time (IST) <input aria-label="Replay time" type="time" min="09:15" max="15:30" className="ml-1 rounded border border-rule bg-slate px-1 py-0.5 text-paper" value={at} onChange={(e) => setAt(e.target.value)} /></label>
+            <button type="submit" className="rounded border border-rule px-2 py-0.5 text-paper hover:bg-slate">Show the dashboard as it was</button>
+          </form>
+        )}
+        {res.isLoading && <p className="text-muted">Loading…</p>}
+        {r && r.status !== "ok" && <p className="text-warn">{r.status}</p>}
+        {r && s && (
+          <div className="space-y-1" data-testid="cc-replay-result">
+            <p className="text-paper">As of {fmtDateTimeIST(r.at)} (newest sample {fmtTimeIST(r.last_sample_at ?? r.at)}): <span className="font-semibold">{s.assessment.label}</span>{s.regime?.primary ? ` · ${s.regime.primary}` : ""}</p>
+            <p className="num text-muted">Spot {s.market.last_sample_at ? "" : MISSING}{s.price?.last == null ? "" : fmtPrice(s.price.last)} · breakout {s.structure?.breakout?.status ?? "none"} · setups: {s.setups?.decision ?? MISSING}</p>
+            <div className="mt-1 border-t border-rule/50 pt-1">
+              <p className="text-warn">After the fact (not known at the time shown):</p>
+              <ul className="num text-muted">{Object.entries(r.after_the_fact ?? {}).map(([h, o]) => <li key={h}>{h} min: {o?.outcome ?? MISSING}{o?.minutes_to_touch != null ? ` after ${o.minutes_to_touch} min` : ""}{o?.reason ? ` (${o.reason})` : ""}</li>)}</ul>
+            </div>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function Sectors({ d }: { d: IntradaySummary }) {
   const m = d.stocks;
   const rows = (m?.sectors.nifty500 ?? []).filter((r) => r.equal_weight_return != null);
@@ -822,11 +906,14 @@ export function CommandCenter({ expiry }: { expiry: string | null }) {
             <Breadth d={d} />
             <Heavyweights d={d} />
             <Breakout d={d} />
+            <SetupMonitor d={d} />
             <Volatility d={d} />
             <Positioning d={d} />
             <FlowCard d={d} />
             <Sectors d={d} />
             <ModelResearch />
+            <PaperResults />
+            <Replay expiry={d.expiry} />
             <Context d={d} />
             <Levels d={d} />
             <Options d={d} />

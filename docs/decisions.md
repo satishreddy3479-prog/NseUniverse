@@ -223,3 +223,10 @@ Owner direction (29 Oct): breadth for NIFTY 500 is only the advance/decline coun
 - `intraday/labels.py`: barrier = k (0.5) x daily sd x sqrt(h/375) x spot, daily sd from earlier sessions only; first sampled touch decides; a touch after a gap over 3 minutes is `ambiguous`, uncovered horizons are `missing`; neither is resolved for either side.
 - `intraday/evaluate.py`: whole-session walk-forward (expanding window, so no horizon crosses the split), baselines fitted on training sessions only, log loss, Brier, balanced accuracy, calibration (ECE). Gate: probabilities are shown only with >= 20 sessions, the model beating every baseline on log loss in >= 60 % of test sessions and ECE <= 0.05; with 5-19 sessions the label is EXPERIMENTAL MODEL: PROBABILITIES NOT VALIDATED, with fewer it says insufficient. Overlapping minute samples are not independent, so sessions (not rows) are what the gate counts.
 - No probability is produced for the dashboard yet. Until the evaluation passes there is nothing to show; the research card reports exactly that.
+
+## D63 — if-2 dataset, replay, setups, paper testing (2026-10-29)
+- `FEATURE_VERSION` is now `if-2` (enrich.py adds implied volatility, futures VWAP/CVD/depth, breadth and breakout state read as-of each sample, max age 3 minutes; missing stays missing). Older sessions are rebuilt under the new version at the next end-of-day run (`features_missing_days`); rows are append-only and keyed by version.
+- Replay rebuilds the dashboard from samples stored at or before the chosen time with no live ticks and no writes; outcomes after that time are returned separately.
+- Setups never carry a probability. Position size comes from the loss limit and the stop distance. Costs: futures STT 0.05 % sell side (in force from 1 April 2026), other charges are configurable assumptions to be replaced from the broker contract note.
+- Paper rules use signal on completed minutes, fill on the next sample, gaps suffered at the sample price, and no conclusion under 30 trades.
+- Feature development stops here; the next step is a strict audit (see docs/audit-2026-10-29.md).

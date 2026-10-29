@@ -53,6 +53,20 @@ class Settings(BaseSettings):
     flows_history_days: int = 10  # NSE files are collected from this many days back, then daily
     news_autofetch: bool = True  # GDELT daily tone/volume (headline aggregates only)
     risk_free_rate: float = 0.06  # annual discount rate for the IV model; an assumption
+    # decision-support risk and cost assumptions (paper trading only; no orders are ever placed)
+    risk_max_loss_per_trade_rs: float = 2000.0
+    risk_max_daily_loss_rs: float = 5000.0
+    risk_max_trades_per_day: int = 4
+    risk_max_consecutive_losses: int = 2
+    risk_min_reward_risk: float = 1.5
+    risk_max_spread_pts: float = 2.0
+    risk_max_lots: int = 10
+    risk_cutoff: str = "15:00"  # IST, HH:MM
+    cost_lot_size: int = 65
+    cost_brokerage_per_order: float = 20.0
+    cost_stt_futures_sell_pct: float = 0.05
+    cost_exchange_pct: float = 0.00183
+    cost_slippage_pts: float = 0.5
     breadth_enabled: bool = True  # stock breadth, heavyweights, sectors (market-breadth-plan.md)
     eod_enabled: bool = True  # after-close archive, summary, manifest, backup (storage-plan.md)
     eod_backups: bool = True  # False on the server, where deploy/backup.sh already backs up nightly
