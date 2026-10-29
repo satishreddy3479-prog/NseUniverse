@@ -236,3 +236,16 @@ def test_a_manual_compute_is_allowed_in_market_hours(tmp_path: Path) -> None:
     assert svc.summary(block=True).get("paused") is True  # the schedule waits for the close
     s = svc.summary(force=True, block=True, trigger="manual")
     assert s["ready"] is True and "last_manual" in s["runs"]["T1"]
+
+
+def test_the_morning_run_waits_for_the_overnight_bars_instead_of_giving_the_day_up(tmp_path: Path) -> None:
+    last = _walk(560, 1)[-1].session
+    nxt = _Cal().next_session(last)
+    late, _ = _service(tmp_path, 560, _at(nxt, 8, 50), series_end_offset=1)  # overnight bars not in yet
+    assert late.morning_ready(_at(nxt, 8, 50)) is False  # in the window, but a stale run would only be a preview
+    ready, _ = _service(tmp_path / "b", 560, _at(nxt, 8, 50))
+    assert ready.morning_ready(_at(nxt, 8, 50)) is True
+    assert ready.morning_ready(_at(nxt, 8, 20)) is False  # before 08:35
+    assert ready.morning_ready(_at(nxt, 9, 20)) is False  # after 09:10
+    ready._morning_done = nxt
+    assert ready.morning_ready(_at(nxt, 8, 50)) is False  # already done today

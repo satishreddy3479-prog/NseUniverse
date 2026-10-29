@@ -593,12 +593,21 @@ class PredictionResearch:
         ist = now.astimezone(IST)
         return ist.weekday() < 5 and WINDOW[0] <= (ist.hour, ist.minute) < WINDOW[1]
 
+    def morning_ready(self, now: datetime) -> bool:
+        """Inside the 08:35-09:10 window, not yet recorded today, and every overnight series has its final bar."""
+        if not self._window_due(now) or self._morning_done == now.astimezone(IST).date():
+            return False
+        bars = self._complete_bars(now)
+        return bool(bars) and self._fresh(self._others(), bars[-1].session, now)[0]
+
     async def _loop(self) -> None:
         await asyncio.sleep(30)
         while True:
             try:
                 now = self._clock()
-                if self._window_due(now) and self._morning_done != now.astimezone(IST).date():
+                # Train and record only when the overnight data is complete. If a series is late, look again in
+                # four minutes until the window closes instead of giving the day up (a stale run is only a preview).
+                if self.morning_ready(now):
                     self._morning_done = now.astimezone(IST).date()
                     await asyncio.to_thread(self.summary, True, True)  # force: new overnight data must be used
             except Exception:  # noqa: BLE001 - the scheduler must survive
