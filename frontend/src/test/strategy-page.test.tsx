@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -237,5 +237,52 @@ describe("Target and stop-loss per leg", () => {
     await userEvent.clear(screen.getByLabelText("Target premium"));
     await userEvent.type(screen.getByLabelText("Target premium"), "120");
     expect(await screen.findByText("Target must be below the entry.")).toBeInTheDocument();
+  });
+});
+
+describe("Strategy analysis panel", () => {
+  it("reads the strategy back in words from the exact numbers", async () => {
+    mount();
+    await loaded();
+    await userEvent.click(await screen.findByRole("button", { name: "Sell CE 24100" }));
+    const panel = await screen.findByTestId("insights");
+    expect(panel).toHaveTextContent("Loss is unlimited if NIFTY rises");
+    expect(panel).toHaveTextContent("No stop-loss is set on any short leg.");
+    expect(panel).toHaveTextContent("not advice");
+  });
+});
+
+describe("What-if, scenarios and model inputs", () => {
+  it("the NIFTY what-if slider reports an exact expiry P&L at the chosen level (long 24100 call at 100, lot 75)", async () => {
+    mount();
+    await loaded();
+    await userEvent.click(await screen.findByRole("button", { name: "Buy CE 24100" }));
+    const slider = await screen.findByLabelText("NIFTY what-if");
+    fireEvent.change(slider, { target: { value: "2" } }); // 24050 x 1.02 = 24531
+    const out = await screen.findByTestId("whatif-readout");
+    // exact: (24531 - 24100 - 100) x 75
+    expect(out).toHaveTextContent("if held to expiry +₹24,825");
+    expect(out).toHaveTextContent("(model)");
+  });
+
+  it("the Scenarios tab shows sigma rows with an exact expiry column", async () => {
+    mount();
+    await loaded();
+    await userEvent.click(await screen.findByRole("button", { name: "Buy CE 24100" }));
+    await userEvent.click(screen.getByRole("button", { name: "Scenarios" }));
+    const t = await screen.findByRole("table", { name: "Scenario P&L" });
+    expect(t).toHaveTextContent("Expiry (exact)");
+    expect(within(t).getAllByRole("row")).toHaveLength(8); // header + 7 sigma rows
+    expect(t).toHaveTextContent("-2σ");
+    expect(t).toHaveTextContent("+2σ");
+  });
+
+  it("says where the forward and the volatilities come from, never silently", async () => {
+    mount();
+    await loaded();
+    await userEvent.click(await screen.findByRole("button", { name: "Buy CE 24100" }));
+    const m = await screen.findByTestId("model-inputs");
+    expect(m).toHaveTextContent("Forward:");
+    expect(m).toHaveTextContent("Volatility:");
   });
 });

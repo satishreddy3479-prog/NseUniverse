@@ -384,7 +384,7 @@ export interface PayoffSeries {
   /** open interest per strike drawn faintly behind the payoff */
   oi: { strike: number; call: number | null; put: number | null }[] | null;
   /** NIFTY levels where a leg is modelled to hit its target or stop (estimates) */
-  levels?: { s: number; kind: "target" | "stop"; label: string }[];
+  levels?: { s: number; kind: "target" | "stop" | "whatif"; label: string }[];
 }
 
 const lerp = (pts: { s: number; pnl: number | null }[], x: number): number | null => {
@@ -430,7 +430,7 @@ export function payoffOption(p: PayoffSeries, c: ChartColors): EChartsCoreOption
     ...p.breakevens.map((b) => mk(b, "BE", c.info, `BE ${fmtInt(Math.round(b))}`, "dotted", "bottom")),
     ...(p.bands ? ([["−2σ", p.bands.m2], ["−1σ", p.bands.m1], ["+1σ", p.bands.p1], ["+2σ", p.bands.p2]] as [string, number][]).map(([t, x]) => ({
       ...mk(x, "SD", c.muted, t, "dotted", "mid"), label: { show: true, formatter: t, color: c.muted, fontSize: 10, rotate: 90, position: "insideStartBottom" } })) : []),
-    ...(p.levels ?? []).map((l) => mk(l.s, l.kind === "target" ? "Target" : "Stop", l.kind === "target" ? c.up : c.down, `${l.kind === "target" ? "Target" : "Stop"} ${l.label} ${fmtInt(Math.round(l.s))}`, "dashed", "bottom", 1.2)),
+    ...(p.levels ?? []).map((l) => mk(l.s, l.kind, l.kind === "target" ? c.up : l.kind === "stop" ? c.down : c.info, `${l.kind === "target" ? "Target" : l.kind === "stop" ? "Stop" : "What-if"} ${l.label} ${fmtInt(Math.round(l.s))}`.replace("  ", " "), "dashed", "bottom", 1.4)),
   ];
   const areas = p.bands ? [
     [{ xAxis: p.bands.m2, itemStyle: { color: c.brass, opacity: 0.05 } }, { xAxis: p.bands.p2 }],

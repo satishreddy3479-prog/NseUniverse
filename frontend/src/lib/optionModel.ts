@@ -72,17 +72,22 @@ export function expiryEnd(expiry: string): number {
 export interface Valuation {
   spotNow: number;
   nowMs: number;
+  /** risk-free rate for discounting only */
   rate: number;
+  /** continuous cost of carry: forward = spot * e^(carry * t). Read from put-call parity in the stored chain when it can be; else the rate. */
+  carry?: number;
   /** added to every leg's volatility, in volatility points (0.02 = +2 vol points) */
   ivShift: number;
 }
 
 /** Volatility used for a leg: the manual override, else the one implied by its entry premium at the current spot. */
+const carryOf = (v: { rate: number; carry?: number }) => v.carry ?? v.rate;
+
 export function legIv(l: Leg, v: Valuation): { iv: number | null; source: "manual" | "implied from entry premium" | "unavailable" } {
   if (l.iv != null && l.iv > 0) return { iv: l.iv, source: "manual" };
   if (l.premium == null) return { iv: null, source: "unavailable" };
   const t = (expiryEnd(l.expiry) - v.nowMs) / YEAR_MS;
-  const iv = impliedVol(l.type, l.premium, v.spotNow * Math.exp(v.rate * t), l.strike, t, v.rate);
+  const iv = impliedVol(l.type, l.premium, v.spotNow * Math.exp(carryOf(v) * t), l.strike, t, v.rate);
   return iv == null ? { iv: null, source: "unavailable" } : { iv, source: "implied from entry premium" };
 }
 
@@ -92,7 +97,7 @@ export function legTheoreticalValue(l: Leg, s: number, atMs: number, v: Valuatio
   if (t <= 0) return intrinsic(l, s);
   const { iv } = legIv(l, v);
   if (iv == null) return null;
-  return black76(l.type, s * Math.exp(v.rate * t), l.strike, t, Math.max(iv + v.ivShift, 1e-4), v.rate);
+  return black76(l.type, s * Math.exp(carryOf(v) * t), l.strike, t, Math.max(iv + v.ivShift, 1e-4), v.rate);
 }
 
 /** Estimated strategy P&L at spot s on a date before expiry (before costs). Null if any leg cannot be valued. */
@@ -119,10 +124,12 @@ export function netGreeks(legs: Leg[], lotSize: number, v: Valuation): NetGreeks
     const sigma = Math.max(iv + v.ivShift, 1e-4);
     const q = sign(l.action) * l.lots * lotSize;
     const vt = sigma * Math.sqrt(t);
-    const d1 = (Math.log(v.spotNow / l.strike) + (v.rate + 0.5 * sigma * sigma) * t) / vt; // Black-Scholes d1 with S fixed
-    out.delta += q * (l.type === "CE" ? cnd(d1) : cnd(d1) - 1);
-    out.gamma += (q * pdf(d1)) / (v.spotNow * vt);
-    const val = (tt: number, sg: number) => black76(l.type, v.spotNow * Math.exp(v.rate * tt), l.strike, tt, sg, v.rate);
+    const cr = carryOf(v);
+    const d1 = (Math.log(v.spotNow / l.strike) + (cr + 0.5 * sigma * sigma) * t) / vt;
+    const k = Math.exp((cr - v.rate) * t); // d(price)/d(spot) = e^(-rt) * e^(carry t) * N(d1)
+    out.delta += q * k * (l.type === "CE" ? cnd(d1) : cnd(d1) - 1);
+    out.gamma += (q * k * pdf(d1)) / (v.spotNow * vt);
+    const val = (tt: number, sg: number) => black76(l.type, v.spotNow * Math.exp(cr * tt), l.strike, tt, sg, v.rate);
     out.thetaDay += q * ((t > 1 / 365 ? val(t - 1 / 365, sigma) : intrinsic(l, v.spotNow)) - val(t, sigma));
     out.vegaPt += q * (val(t, sigma + 0.01) - val(t, sigma));
   }
@@ -131,24 +138,25 @@ export function netGreeks(legs: Leg[], lotSize: number, v: Valuation): NetGreeks
 
 
 /** Black-76 delta of one contract with respect to the forward-adjusted spot (call N(d1), put N(d1)-1), or null when no volatility fits the price. */
-export function contractDelta(type: OptionType, price: number | null, spot: number, strike: number, expiry: string, nowMs: number, rate: number): { delta: number; iv: number } | null {
+export function contractDelta(type: OptionType, price: number | null, spot: number, strike: number, expiry: string, nowMs: number, rate: number, carry: number = rate): { delta: number; iv: number } | null {
   if (price == null) return null;
   const t = (expiryEnd(expiry) - nowMs) / YEAR_MS;
   if (t <= 0) return null;
-  const iv = impliedVol(type, price, spot * Math.exp(rate * t), strike, t, rate);
+  const iv = impliedVol(type, price, spot * Math.exp(carry * t), strike, t, rate);
   if (iv == null) return null;
-  const d1 = (Math.log(spot / strike) + (rate + 0.5 * iv * iv) * t) / (iv * Math.sqrt(t));
-  return { delta: type === "CE" ? cnd(d1) : cnd(d1) - 1, iv };
+  const d1 = (Math.log(spot / strike) + (carry + 0.5 * iv * iv) * t) / (iv * Math.sqrt(t));
+  const k = Math.exp((carry - rate) * t);
+  return { delta: k * (type === "CE" ? cnd(d1) : cnd(d1) - 1), iv };
 }
 
 /**
  * Probability that the strategy ends in profit at expiry if NIFTY follows a lognormal distribution with the given
  * volatility (zero drift beyond the interest rate). A model estimate; it is not a forecast.
  */
-export function probabilityOfProfit(legs: Leg[], lotSize: number, spot: number, sigma: number, expiry: string, nowMs: number, rate: number): number | null {
+export function probabilityOfProfit(legs: Leg[], lotSize: number, spot: number, sigma: number, expiry: string, nowMs: number, carry: number): number | null {
   const t = (expiryEnd(expiry) - nowMs) / YEAR_MS;
   if (!(t > 0) || !(sigma > 0) || !(spot > 0)) return null;
-  const mu = Math.log(spot * Math.exp(rate * t)) - 0.5 * sigma * sigma * t, sd = sigma * Math.sqrt(t);
+  const mu = Math.log(spot * Math.exp(carry * t)) - 0.5 * sigma * sigma * t, sd = sigma * Math.sqrt(t);
   const lo = spot * Math.exp(-6 * sd), hi = spot * Math.exp(6 * sd), n = 4000;
   const dx = (hi - lo) / n;
   let p = 0;
@@ -164,12 +172,56 @@ export function probabilityOfProfit(legs: Leg[], lotSize: number, spot: number, 
   return Math.min(1, p);
 }
 
-/** Spot levels one and two standard deviations away at expiry for the given volatility. */
-export function sdBands(spot: number, sigma: number, expiry: string, nowMs: number): { m2: number; m1: number; p1: number; p2: number } | null {
+/**
+ * Spot levels at expiry for the model's lognormal distribution with the given volatility and carry: the quantiles at
+ * one and two standard deviations of ln(S), F * exp(-sigma^2 t / 2 +/- k sigma sqrt(t)), F = spot * e^(carry t).
+ * The same distribution `probabilityOfProfit` integrates, so the markers and the POP agree.
+ */
+export function sdBands(spot: number, sigma: number, expiry: string, nowMs: number, carry: number): { m2: number; m1: number; p1: number; p2: number } | null {
   const t = (expiryEnd(expiry) - nowMs) / YEAR_MS;
-  if (!(t > 0) || !(sigma > 0)) return null;
-  const sd = spot * sigma * Math.sqrt(t);
-  return { m2: spot - 2 * sd, m1: spot - sd, p1: spot + sd, p2: spot + 2 * sd };
+  if (!(t > 0) || !(sigma > 0) || !(spot > 0)) return null;
+  const q = (k: number) => lognormalLevel(spot, sigma, expiry, nowMs, carry, k) as number;
+  return { m2: q(-2), m1: q(-1), p1: q(1), p2: q(2) };
+}
+
+/** The level k standard deviations (of ln S) from the median expiry distribution; see sdBands. */
+export function lognormalLevel(spot: number, sigma: number, expiry: string, nowMs: number, carry: number, k: number): number | null {
+  const t = (expiryEnd(expiry) - nowMs) / YEAR_MS;
+  if (!(t > 0) || !(sigma > 0) || !(spot > 0)) return null;
+  return Math.exp(Math.log(spot) + carry * t - 0.5 * sigma * sigma * t + k * sigma * Math.sqrt(t));
+}
+
+export interface ImpliedForward { forward: number; n: number; spread: number }
+/**
+ * Forward price of NIFTY for the expiry read from put-call parity in the stored chain: C - P = e^(-rt) (F - K), so
+ * F = K + (C - P) e^(rt) at each strike with both prices. The median over the `count` strikes nearest the spot is
+ * returned with the number of strikes used and the spread between the highest and lowest estimate, so noisy stored
+ * prices show up. Null with fewer than three usable strikes.
+ */
+export function impliedForward(rows: { strike: number; call: number | null; put: number | null }[], spot: number, expiry: string, nowMs: number, rate: number, count = 5): ImpliedForward | null {
+  const t = (expiryEnd(expiry) - nowMs) / YEAR_MS;
+  if (!(t > 0)) return null;
+  const grow = Math.exp(rate * t);
+  const near = rows.filter((r) => r.call != null && r.put != null && r.call > 0 && r.put > 0)
+    .sort((a, b) => Math.abs(a.strike - spot) - Math.abs(b.strike - spot)).slice(0, count);
+  if (near.length < 3) return null;
+  const f = near.map((r) => r.strike + ((r.call as number) - (r.put as number)) * grow).sort((a, b) => a - b);
+  const mid = f.length % 2 ? f[(f.length - 1) / 2]! : (f[f.length / 2 - 1]! + f[f.length / 2]!) / 2;
+  return { forward: mid, n: f.length, spread: f[f.length - 1]! - f[0]! };
+}
+
+/** Continuous carry that makes spot grow to the forward over t years. */
+export function carryFromForward(spot: number, forward: number, expiry: string, nowMs: number): number | null {
+  const t = (expiryEnd(expiry) - nowMs) / YEAR_MS;
+  return t > 0 && spot > 0 && forward > 0 ? Math.log(forward / spot) / t : null;
+}
+
+/** Model strategy P&L grid: rows are spot levels, columns are dates (the last may be expiry, valued exactly). Null cells could not be valued. */
+export function scenarioGrid(legs: Leg[], lotSize: number, spots: number[], dates: number[], v: Valuation): (number | null)[][] {
+  return spots.map((s) => dates.map((d) => {
+    const expiryAll = legs.length > 0 && legs.every((l) => d >= expiryEnd(l.expiry));
+    return expiryAll ? expiryPnl(legs, s, lotSize) : theoreticalPnl(legs, s, d, lotSize, v);
+  }));
 }
 
 /**

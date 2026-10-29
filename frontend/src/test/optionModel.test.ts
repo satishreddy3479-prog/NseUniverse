@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import vectors from "./vectors/black76.json";
-import { black76, cnd, contractDelta, expiryEnd, impliedVol, netGreeks, probabilityOfProfit, sdBands, spotAtPremium, legTheoreticalValue, theoreticalPnl, type Valuation } from "../lib/optionModel";
+import { black76, cnd, contractDelta, expiryEnd, impliedVol, netGreeks, probabilityOfProfit, sdBands, spotAtPremium, legTheoreticalValue, impliedForward, carryFromForward, scenarioGrid, theoreticalPnl, type Valuation } from "../lib/optionModel";
 import { expiryPnl, type Leg } from "../lib/strategy";
 
 const LOT = 65;
@@ -87,12 +87,49 @@ describe("probability of profit and standard-deviation bands", () => {
     expect(probabilityOfProfit([leg("BUY", "CE", 24000, 100)], LOT, 24000, 0.2, "2026-11-03", Date.UTC(2026, 10, 4), 0.06)).toBeNull();
     expect(probabilityOfProfit([leg("BUY", "CE", 24000, null)], LOT, 24000, 0.2, "2026-11-03", NOW, 0.06)).toBeNull();
   });
-  it("one standard deviation = spot x volatility x sqrt(time)", () => {
+  it("sd bands are lognormal quantiles: ln S = ln(spot) + carry t - sigma^2 t / 2 +/- k sigma sqrt(t) (hand calculation)", () => {
     const t = (expiryEnd("2026-11-03") - NOW) / (365 * 86_400_000);
-    const b = sdBands(24000, 0.16, "2026-11-03", NOW)!;
-    expect(b.p1 - 24000).toBeCloseTo(24000 * 0.16 * Math.sqrt(t), 6);
-    expect(b.p2 - 24000).toBeCloseTo(2 * (b.p1 - 24000), 9);
-    expect(b.m1 - 24000).toBeCloseTo(-(b.p1 - 24000), 9);
+    const sigma = 0.16, carry = 0.05;
+    const b = sdBands(24000, sigma, "2026-11-03", NOW, carry)!;
+    const mid = Math.log(24000) + carry * t - 0.5 * sigma * sigma * t, sd = sigma * Math.sqrt(t);
+    expect(Math.log(b.p1)).toBeCloseTo(mid + sd, 10);
+    expect(Math.log(b.m2)).toBeCloseTo(mid - 2 * sd, 10);
+    expect(Math.log(b.p2) - Math.log(b.p1)).toBeCloseTo(sd, 10);
+  });
+  it("the sd markers and the probability of profit are one distribution: a nearly free call struck at +1 sd wins about 15.9 %", () => {
+    const sigma = 0.18, carry = 0.04;
+    const b = sdBands(24000, sigma, "2026-11-03", NOW, carry)!;
+    const pop = probabilityOfProfit([leg("BUY", "CE", b.p1, 0.0001)], LOT, 24000, sigma, "2026-11-03", NOW, carry)!;
+    expect(pop).toBeCloseTo(1 - cnd(1), 3);
+  });
+  it("implied forward from put-call parity recovers the forward that generated the prices", () => {
+    const t = (expiryEnd("2026-11-03") - NOW) / (365 * 86_400_000);
+    const F = 24037, r = 0.06;
+    const rows = [23900, 23950, 24000, 24050, 24100, 24150, 24200].map((k) => ({ strike: k, call: black76("CE", F, k, t, 0.15 + k / 1e6, r), put: black76("PE", F, k, t, 0.15 + k / 1e6, r) }));
+    const f = impliedForward(rows, 24020, "2026-11-03", NOW, r)!;
+    expect(f.forward).toBeCloseTo(F, 6);
+    expect(f.n).toBe(5);
+    expect(f.spread).toBeLessThan(1e-6);
+    expect(carryFromForward(24020, F, "2026-11-03", NOW)!).toBeCloseTo(Math.log(F / 24020) / t, 12);
+    expect(impliedForward(rows.slice(0, 2), 24020, "2026-11-03", NOW, r)).toBeNull(); // too few strikes: not guessed
+    expect(impliedForward(rows.map((x) => ({ ...x, put: null })), 24020, "2026-11-03", NOW, r)).toBeNull(); // missing stays missing
+  });
+  it("a model calibrated to the market reproduces the market price at the snapshot: valuation at today's spot equals the stored price", () => {
+    const t = (expiryEnd("2026-11-03") - NOW) / (365 * 86_400_000);
+    const carry = 0.013, F = 24000 * Math.exp(carry * t);
+    const price = black76("CE", F, 24100, t, 0.17, 0.06);
+    const l = { ...leg("BUY", "CE", 24100, price), iv: null };
+    const v: Valuation = { spotNow: 24000, nowMs: NOW, rate: 0.06, carry, ivShift: 0 };
+    expect(legTheoreticalValue(l, 24000, NOW, v)!).toBeCloseTo(price, 4);
+    expect(theoreticalPnl([l], 24000, NOW, LOT, v)!).toBeCloseTo(0, 1);
+  });
+  it("scenario grid: the expiry column is the exact payoff, the other columns are model values", () => {
+    const l = leg("BUY", "CE", 24000, 100);
+    const v: Valuation = { spotNow: 24000, nowMs: NOW, rate: 0.06, ivShift: 0 };
+    const g = scenarioGrid([{ ...l, iv: 0.15 }], LOT, [23900, 24200], [NOW, expiryEnd("2026-11-03")], v);
+    expect(g[0]![1]).toBe(-100 * LOT); // below the strike at expiry: lose the premium
+    expect(g[1]![1]).toBe((200 - 100) * LOT);
+    expect(g[1]![0]!).toBeGreaterThan(g[0]![0]!);
   });
   it("contract delta: call delta between 0 and 1, put delta between -1 and 0, parity delta_c - delta_p = 1", () => {
     const t = (expiryEnd("2026-11-03") - NOW) / (365 * 86_400_000);

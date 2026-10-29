@@ -5,9 +5,10 @@ import { Button } from "../components/ui";
 import { payoffOption } from "../lib/chartOptions";
 import { api } from "../lib/api";
 import { compactIN } from "../lib/analytics";
+import { strategyInsights } from "../lib/strategyInsights";
 import { fmtDateTimeIST, fmtInt, fmtPrice } from "../lib/format";
 import { useExpiries } from "../lib/hooks";
-import { contractDelta, expiryEnd, netGreeks, probabilityOfProfit, sdBands, spotAtPremium, theoreticalPnl, type Valuation } from "../lib/optionModel";
+import { carryFromForward, contractDelta, expiryEnd, impliedForward, lognormalLevel, netGreeks, probabilityOfProfit, scenarioGrid, sdBands, spotAtPremium, theoreticalPnl, type Valuation } from "../lib/optionModel";
 import {
   analyzeExpiry, expiryPnl, newLegId, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds,
   type Action, type Bias, type Leg, type OptionType, type Template,
@@ -63,12 +64,14 @@ export default function StrategyBuilder() {
   const [width, setWidth] = useState<(typeof WIDTHS)[number]>(10);
   const [sel, setSel] = useState<number | null>(null);
   const [mult, setMult] = useState(1);
-  const [tab, setTab] = useState<"positions" | "greeks">("positions");
+  const [tab, setTab] = useState<"positions" | "greeks" | "scenarios">("positions");
   const [bias, setBias] = useState<Bias>("Neutral");
   const [rate, setRate] = useState(6);
   const [days, setDays] = useState(0);
   const [showOi, setShowOi] = useState(true);
   const [showSd, setShowSd] = useState(true);
+  const [ivPts, setIvPts] = useState(0);
+  const [whatPct, setWhatPct] = useState(0);
   const [saved, setSaved] = useState<Saved[]>(loadSaved);
   const [name, setName] = useState("");
 
@@ -86,21 +89,31 @@ export default function StrategyBuilder() {
     return q?.ltp != null && q.ltp > 0 ? q.ltp : null;
   };
   const r = rate / 100;
+  // forward from put-call parity in the stored chain; the carry that reproduces it replaces the assumed rate in the model
+  const fwd = useMemo(() => (expiry && spot != null ? impliedForward(rows.map((x) => ({ strike: x.strike, call: x.call?.ltp ?? null, put: x.put?.ltp ?? null })), spot, expiry, snapMs, r) : null), [rows, expiry, spot, snapMs, r]);
+  const fwdCarry = fwd && expiry && spot != null ? carryFromForward(spot, fwd.forward, expiry, snapMs) : null;
+  const carry = fwdCarry ?? r;
   const deltas = useMemo(() => {
     const m = new Map<number, { ce: number | null; pe: number | null; ceIv: number | null; peIv: number | null }>();
     if (!expiry || spot == null) return m;
     for (const row of rows) {
-      const c = contractDelta("CE", row.call?.ltp != null && row.call.ltp > 0 ? row.call.ltp : null, spot, row.strike, expiry, snapMs, r);
-      const p = contractDelta("PE", row.put?.ltp != null && row.put.ltp > 0 ? row.put.ltp : null, spot, row.strike, expiry, snapMs, r);
+      const c = contractDelta("CE", row.call?.ltp != null && row.call.ltp > 0 ? row.call.ltp : null, spot, row.strike, expiry, snapMs, r, carry);
+      const p = contractDelta("PE", row.put?.ltp != null && row.put.ltp > 0 ? row.put.ltp : null, spot, row.strike, expiry, snapMs, r, carry);
       m.set(row.strike, { ce: c?.delta ?? null, pe: p?.delta ?? null, ceIv: c?.iv ?? null, peIv: p?.iv ?? null });
     }
     return m;
-  }, [rows, expiry, spot, snapMs, r]);
+  }, [rows, expiry, spot, snapMs, r, carry]);
+  // the at-the-money strike for volatility is the one nearest the forward, where call and put are both closest to at-the-money
+  const atmK = useMemo(() => {
+    const ref = fwd?.forward ?? spot;
+    return ref == null || strikes.length === 0 ? null : strikes.reduce((b, k) => (Math.abs(k - ref) < Math.abs(b - ref) ? k : b), strikes[0]!);
+  }, [strikes, fwd, spot]);
   const atmIv = useMemo(() => {
-    const d = atm == null ? undefined : deltas.get(atm);
+    const d = atmK == null ? undefined : deltas.get(atmK);
     const v = [d?.ceIv, d?.peIv].filter((x): x is number => x != null);
     return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
-  }, [deltas, atm]);
+  }, [deltas, atmK]);
+  const straddle = atmK != null && ltp(atmK, "CE") != null && ltp(atmK, "PE") != null ? (ltp(atmK, "CE") as number) + (ltp(atmK, "PE") as number) : null;
   const shown = useMemo(() => {
     if (width === "all" || atm == null) return rows;
     const i = rows.findIndex((x) => x.strike === atm);
@@ -119,8 +132,14 @@ export default function StrategyBuilder() {
   const a = useMemo(() => (lotSize && live.length ? analyzeExpiry(live, lotSize) : null), [live, lotSize]);
   const dte = expiry ? Math.max(0, dayDiff(expiry, snapMs)) : 0;
   const targetMs = snapMs + Math.min(days, dte) * 86_400_000;
-  const val: Valuation = { spotNow: spot ?? 0, nowMs: snapMs, rate: r, ivShift: 0 };
-  const bands = expiry && spot && atmIv ? sdBands(spot, atmIv, expiry, snapMs) : null;
+  const val0: Valuation = { spotNow: spot ?? 0, nowMs: snapMs, rate: r, carry, ivShift: 0 };
+  const val: Valuation = { ...val0, ivShift: ivPts / 100 };
+  // every model leg uses the volatility the stored market price of its own strike implies, not one backed out of the entry premium you typed
+  const marketIv = (l: Leg) => { const d = deltas.get(l.strike); return (l.type === "CE" ? d?.ceIv : d?.peIv) ?? null; };
+  const mlegs = useMemo(() => live.map((l) => ({ ...l, iv: l.iv ?? marketIv(l) })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [live, deltas]);
+  const bands = expiry && spot && atmIv ? sdBands(spot, atmIv, expiry, snapMs, carry) : null;
   const curve = useMemo(() => {
     if (!ready || !a?.defined || !lotSize || !spot) return null;
     const ks = live.map((l) => l.strike);
@@ -131,30 +150,31 @@ export default function StrategyBuilder() {
     const step = Math.max(1, Math.round((hi - lo) / 240));
     return payoffCurve(live, lotSize, Math.floor(lo / step) * step, hi, step);
   }, [ready, a, lotSize, spot, live, bands]);
-  const target = useMemo(() => (curve && lotSize ? curve.map((p) => ({ s: p.s, pnl: theoreticalPnl(live, p.s, targetMs, lotSize, val) })) : null),
+  const target = useMemo(() => (curve && lotSize ? curve.map((p) => ({ s: p.s, pnl: theoreticalPnl(mlegs, p.s, targetMs, lotSize, val) })) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [curve, live, lotSize, targetMs, r]);
+    [curve, mlegs, lotSize, targetMs, r, carry, ivPts]);
   const levels = useMemo(() => {
     if (!curve?.length || !spot) return [];
     const lo = curve[0]!.s, hi = curve[curve.length - 1]!.s;
-    const out: { s: number; kind: "target" | "stop"; label: string }[] = [];
-    for (const l of live) for (const kind of ["target", "stop"] as const) {
+    const out: { s: number; kind: "target" | "stop" | "whatif"; label: string }[] = [];
+    for (const l of mlegs) for (const kind of ["target", "stop"] as const) {
       const px = kind === "target" ? l.target : l.stop;
       if (px == null || px <= 0) continue;
       const x = spotAtPremium(l, px, targetMs, val, lo, hi);
       if (x != null) out.push({ s: x, kind, label: `${l.strike}${l.type}` });
     }
+    if (whatPct !== 0) out.push({ s: spot * (1 + whatPct / 100), kind: "whatif", label: `${whatPct > 0 ? "+" : ""}${whatPct}%` });
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curve, live, targetMs, r, spot]);
+  }, [curve, mlegs, targetMs, r, carry, ivPts, spot, whatPct]);
   const chart = useMemo(() => (curve?.length && a?.defined && spot ? payoffOption({
     expiry: curve, target: target && target.some((x) => x.pnl != null) ? target : null,
-    targetLabel: days > 0 ? `Estimated in ${Math.min(days, dte)} day${days === 1 ? "" : "s"} (model)` : "Estimated at the snapshot time (model)",
+    targetLabel: `${days > 0 ? `Estimated in ${Math.min(days, dte)} day${days === 1 ? "" : "s"}` : "Estimated at the snapshot time"}${ivPts ? `, IV ${ivPts > 0 ? "+" : ""}${ivPts} pts` : ""} (model)`,
     spot, breakevens: a.breakevens, bands: showSd ? bands : null, levels,
     oi: showOi ? shown.map((x) => ({ strike: x.strike, call: x.call?.oi ?? null, put: x.put?.oi ?? null })) : null,
-  }, colors) : null), [curve, target, a, spot, days, dte, bands, showSd, showOi, shown, colors, levels]);
-  const pop = ready && a?.defined && lotSize && spot && atmIv && expiry ? probabilityOfProfit(live, lotSize, spot, atmIv, expiry, snapMs, r) : null;
-  const greeks = ready && lotSize && spot ? netGreeks(live, lotSize, val) : null;
+  }, colors) : null), [curve, target, a, spot, days, dte, bands, showSd, showOi, shown, colors, levels, ivPts]);
+  const pop = ready && a?.defined && lotSize && spot && atmIv && expiry ? probabilityOfProfit(live, lotSize, spot, atmIv, expiry, snapMs, carry) : null;
+  const greeks = ready && lotSize && spot ? netGreeks(mlegs, lotSize, val0) : null;
   const unreal = (l: Leg, mkt: number | null) => (mkt == null || l.premium == null || !lotSize ? null : sign(l.action) * (mkt - l.premium) * l.lots * mult * lotSize);
   const totalPnl = lotSize && live.length && live.every((l) => l.premium != null && ltp(l.strike, l.type) != null)
     ? live.reduce((s, l) => s + (unreal({ ...l, lots: l.lots / mult }, ltp(l.strike, l.type)) ?? 0), 0) : null;
@@ -166,6 +186,28 @@ export default function StrategyBuilder() {
     return { v: withPx.reduce((t, l) => t + sign(l.action) * (((kind === "target" ? l.target : l.stop) as number) - (l.premium as number)) * l.lots * lotSize, 0), n: withPx.length };
   };
   const ifTarget = exitPnl("target"), ifStop = exitPnl("stop");
+  const whatSpot = spot == null ? null : spot * (1 + whatPct / 100);
+  const whatEst = whatSpot != null && lotSize && ready ? theoreticalPnl(mlegs, whatSpot, targetMs, lotSize, val) : null;
+  const whatExp = whatSpot != null && lotSize && ready ? expiryPnl(live, whatSpot, lotSize) : null;
+  // scenario grid: spot rows at standard deviations of the model distribution, date columns from the snapshot to expiry
+  const grid = useMemo(() => {
+    if (!ready || !lotSize || !expiry || !spot || !atmIv || tab !== "scenarios") return null;
+    const ks = [-2, -1, -0.5, 0, 0.5, 1, 2];
+    const spots = ks.map((k) => lognormalLevel(spot, atmIv, expiry, snapMs, carry, k)).filter((x): x is number => x != null);
+    if (spots.length !== ks.length) return null;
+    const dayOffsets = [...new Set(Array.from({ length: Math.min(dte, 5) + 1 }, (_, i) => Math.round((i * dte) / Math.max(1, Math.min(dte, 5)))))];
+    const dates = dayOffsets.map((d) => (d >= dte ? expiryEnd(expiry) : snapMs + d * 86_400_000));
+    return { ks, spots, dayOffsets, cells: scenarioGrid(mlegs, lotSize, spots, dates, val) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, lotSize, expiry, spot, atmIv, tab, dte, snapMs, carry, mlegs, ivPts, r]);
+  const insights = useMemo(() => (ready && a?.defined && spot ? strategyInsights({
+    legs: live, spot, maxProfit: a.maxProfit, maxLoss: a.maxLoss, profitUnlimited: a.profitUnlimited, lossUnlimited: a.lossUnlimited,
+    breakevens: a.breakevens, pop, delta: greeks && greeks.unavailable.length === 0 ? greeks.delta : null, thetaDay: greeks && greeks.unavailable.length === 0 ? greeks.thetaDay : null,
+    bands, oi: shown.map((x) => ({ strike: x.strike, call: x.call?.oi ?? null, put: x.put?.oi ?? null })), stale: !!chain.data?.stale,
+    missingQuote: live.filter((l) => ltp(l.strike, l.type) == null).length,
+  }) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ready, a, live, spot, pop, greeks, bands, shown, chain.data?.stale, rows]);
   const rr = a?.defined && a.maxProfit != null && a.maxLoss != null && a.maxLoss < 0 ? a.maxProfit / -a.maxLoss : null;
 
   const update = (id: string, patch: Partial<Leg>) => setLegs((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -239,12 +281,12 @@ export default function StrategyBuilder() {
         <span className="ml-auto text-xs text-muted" title="Premiums are the last traded prices in this stored snapshot, not live quotes">Snapshot <span className={`num ${chain.data?.stale ? "text-warn" : "text-paper"}`}>{snap ? fmtDateTimeIST(snap.retrieved_at) : "—"}</span>{chain.data?.stale ? " · stale" : ""}</span>
       </div>
 
-      <div className="grid gap-3 xl:grid-cols-[minmax(520px,43%)_1fr]">
+      <div className="grid gap-3 xl:grid-cols-[minmax(480px,36%)_1fr]">
         {/* ------------------------------------------------------------ chain */}
         <section aria-label="Option chain" className="flex h-fit flex-col rounded-[var(--radius-panel)] border border-rule bg-slate">
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-rule px-3 py-2 text-sm">
             <span className="text-xs text-muted">SPOT <span className="num text-[15px] font-semibold text-paper">{spot == null ? "—" : fmtPrice(spot)}</span></span>
-            <span className="text-xs text-muted" title="Average implied volatility of the ATM call and put (model, from stored prices)">ATM IV <span className="num text-paper">{atmIv == null ? "—" : `${(atmIv * 100).toFixed(1)}%`}</span></span>
+            <span className="text-xs text-muted" title="Average implied volatility of the call and put at the strike nearest the forward, from their stored prices (model)">ATM IV <span className="num text-paper">{atmIv == null ? "—" : `${(atmIv * 100).toFixed(1)}%`}</span></span>
             <span className="text-xs text-muted" title="From the broker's instrument data in the stored chain">LOT <span className="num text-paper">{lotSize ?? "—"}</span></span>
             <details className="ml-auto text-xs">
               <summary className="cursor-pointer text-info">Settings</summary>
@@ -337,8 +379,8 @@ export default function StrategyBuilder() {
             ) : !ready || !a?.defined ? (
               <p className="p-3 text-sm text-muted" data-testid="payoff-empty">{lotSize == null ? "Waiting for a stored chain with a lot size." : errors.length ? "Fix the highlighted legs to see the payoff." : live.length === 0 ? "Tick at least one leg." : a?.reason ?? "Enter the entry premium of every leg."}</p>
             ) : (
-              <div className="grid lg:grid-cols-[210px_1fr]">
-                <dl className="border-b border-rule lg:border-b-0 lg:border-r" data-testid="risk-stats">
+              <div className="flex flex-col">
+                <dl className="grid grid-cols-2 border-b border-rule sm:grid-cols-4 2xl:grid-cols-7 [&>div]:border-r [&>div]:border-rule/60" data-testid="risk-stats">
                   <Stat label="P&L now (vs entry)" value={money(totalPnl)} cls={tone(totalPnl)} hint="Stored last traded prices minus your entry premiums" />
                   <Stat label="POP (model estimate)" value={pop == null ? "—" : `${(pop * 100).toFixed(0)}%`} hint="Chance of ending in profit at expiry if NIFTY moves like a lognormal with the ATM implied volatility. A model, not a forecast." />
                   <Stat label="Reward : Risk" value={rr == null ? "N/A" : `${rr.toFixed(2)} : 1`} />
@@ -350,26 +392,49 @@ export default function StrategyBuilder() {
                   <Stat label="Net premium" value={netPremium == null ? "—" : `${money(netPremium)} ${netPremium >= 0 ? "credit" : "debit"}`} cls={tone(netPremium)} />
                 </dl>
                 <div className="min-w-0 p-2">
-                  <div className="h-[380px]">{chart ? <EChart option={chart} ariaLabel="Strategy payoff" /> : null}</div>
-                  <details className="px-2 pb-2 text-xs">
-                    <summary className="cursor-pointer text-info">Payoff setting</summary>
-                    <div className="mt-2 flex flex-wrap items-center gap-4 text-muted">
-                      <label className="flex items-center gap-1"><input type="checkbox" checked={showOi} onChange={(e) => setShowOi(e.target.checked)} /> OI bars</label>
-                      <label className="flex items-center gap-1"><input type="checkbox" checked={showSd} onChange={(e) => setShowSd(e.target.checked)} /> ±SD markers</label>
-                      <label className="flex items-center gap-2">Dashed estimate for day <span className="num text-paper">{Math.min(days, dte)}</span> of {dte}
-                        <input type="range" min={0} max={dte} step={1} value={Math.min(days, dte)} onChange={(e) => setDays(Number(e.target.value))} aria-label="Days from snapshot" /></label>
-                    </div>
+                  <div className="h-[440px]">{chart ? <EChart option={chart} ariaLabel="Strategy payoff" /> : null}</div>
+                  <div className="grid gap-3 border-t border-rule px-2 py-3 text-xs text-muted md:grid-cols-3" data-testid="whatif">
+                    <label className="flex flex-col gap-1">Day for the dashed estimate: <span className="num text-paper">{Math.min(days, dte) === 0 ? "snapshot" : `day ${Math.min(days, dte)} of ${dte}`}</span>
+                      <input type="range" min={0} max={dte} step={1} value={Math.min(days, dte)} onChange={(e) => setDays(Number(e.target.value))} aria-label="Days from snapshot" /></label>
+                    <label className="flex flex-col gap-1">Implied volatility shift: <span className="num text-paper">{ivPts > 0 ? "+" : ""}{ivPts} vol points</span>
+                      <input type="range" min={-10} max={10} step={0.5} value={ivPts} onChange={(e) => setIvPts(Number(e.target.value))} aria-label="IV shift" /></label>
+                    <label className="flex flex-col gap-1">What if NIFTY is: <span className="num text-paper">{whatSpot == null ? "—" : `${fmtInt(Math.round(whatSpot))} (${whatPct > 0 ? "+" : ""}${whatPct.toFixed(1)}%)`}</span>
+                      <input type="range" min={-5} max={5} step={0.1} value={whatPct} onChange={(e) => setWhatPct(Number(e.target.value))} aria-label="NIFTY what-if" /></label>
+                    <p className="md:col-span-3" data-testid="whatif-readout">{whatPct === 0 ? "Move the NIFTY slider to see the P&L at a level." : <>At NIFTY <span className="num text-paper">{fmtInt(Math.round(whatSpot ?? 0))}</span>: estimated on the chosen day <span className={`num ${tone(whatEst)}`}>{money(whatEst)}</span> (model) · if held to expiry <span className={`num ${tone(whatExp)}`}>{money(whatExp)}</span> (exact)</>}</p>
+                  </div>
+                  <details className="px-2 pb-2 text-xs" data-testid="model-inputs">
+                    <summary className="cursor-pointer text-info">Model inputs (where every estimate comes from)</summary>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-muted">
+                      <li>Forward: {fwd ? <><span className="num text-paper">{fmtPrice(fwd.forward)}</span> from put-call parity at the {fwd.n} strikes nearest spot (spread between them {fwd.spread.toFixed(1)} pts); implied carry <span className="num text-paper">{(carry * 100).toFixed(2)}%</span> a year</> : <>not available (fewer than 3 strikes with both a stored call and put price), so spot grown at the {rate}% rate you set is used</>}.</li>
+                      <li>Rate {rate}% is used only to discount; change it in Settings.</li>
+                      <li>Volatility: each leg uses the implied volatility of its own strike's stored price ({mlegs.filter((l) => marketIv(l) != null).length} of {mlegs.length} legs; the rest fall back to the entry premium). The ±σ markers and POP use the ATM implied volatility <span className="num text-paper">{atmIv == null ? "—" : `${(atmIv * 100).toFixed(1)}%`}</span> at strike {atmK ?? "—"}.</li>
+                      <li>Distribution: lognormal around the forward, σ√T with T the calendar time to the expiry close ({dte} days). {straddle != null && spot ? <>For a model-free cross-check the ATM straddle costs <span className="num text-paper">{fmtPrice(straddle)}</span> ({((straddle / spot) * 100).toFixed(2)}% of spot) against a ±1σ move of {bands ? <span className="num text-paper">{fmtInt(Math.round((bands.p1 - bands.m1) / 2))}</span> : "—"} points.</> : null}</li>
+                    </ul>
                   </details>
+                  <div className="flex flex-wrap items-center gap-4 px-2 pb-1 text-xs text-muted">
+                    <label className="flex items-center gap-1"><input type="checkbox" checked={showOi} onChange={(e) => setShowOi(e.target.checked)} /> OI bars</label>
+                    <label className="flex items-center gap-1"><input type="checkbox" checked={showSd} onChange={(e) => setShowSd(e.target.checked)} /> σ markers and corridors</label>
+                  </div>
                   <p className="px-2 pb-2 text-[11px] text-muted">Solid: exact P&L at expiry on your entry premiums, before brokerage, taxes and charges. Dashed: Black-76 model estimate for the chosen day, never a market price.</p>
                 </div>
               </div>
             )}
           </section>
 
+          {insights.length > 0 && (
+            <section aria-label="Strategy analysis" data-testid="insights" className="rounded-[var(--radius-panel)] border border-rule bg-slate">
+              <div className="flex items-baseline gap-2 border-b border-rule px-3 py-2"><h2 className="text-sm font-semibold text-paper">Strategy analysis</h2>
+                <span className="text-[11px] text-muted" title="Each line is a rule applied to the exact payoff, the stored chain and the labelled model values. It is not an external AI service and not advice.">rules on your numbers · not advice</span></div>
+              <ul className="flex flex-col gap-1.5 p-3 text-sm">
+                {insights.map((x, n) => <li key={n} className="flex gap-2"><span aria-hidden="true" className={x.level === "warn" ? "text-warn" : x.level === "good" ? "text-up" : "text-info"}>{x.level === "warn" ? "▲" : x.level === "good" ? "●" : "◆"}</span><span className={x.level === "warn" ? "text-paper" : "text-paper/90"}>{x.text}</span></li>)}
+              </ul>
+            </section>
+          )}
+
           {legs.length > 0 && (
             <section aria-label="Positions" className="rounded-[var(--radius-panel)] border border-rule bg-slate">
               <div className="flex flex-wrap items-center gap-3 border-b border-rule px-3 py-2 text-sm">
-                {(["positions", "greeks"] as const).map((t) => <button key={t} type="button" aria-pressed={tab === t} onClick={() => setTab(t)} className={`rounded-sm px-3 py-1 ${tab === t ? "bg-info/15 text-info" : "text-muted hover:text-paper"}`}>{t === "positions" ? "Positions" : "Greeks"}</button>)}
+                {(["positions", "greeks", "scenarios"] as const).map((t) => <button key={t} type="button" aria-pressed={tab === t} onClick={() => setTab(t)} className={`rounded-sm px-3 py-1 ${tab === t ? "bg-info/15 text-info" : "text-muted hover:text-paper"}`}>{t === "positions" ? "Positions" : t === "greeks" ? "Greeks" : "Scenarios"}</button>)}
                 <div className="ml-auto flex flex-wrap items-center gap-3 text-xs text-muted">
                   <span>Multiplier <button type="button" aria-label="Decrease multiplier" className="mx-1 rounded-sm border border-rule px-2" onClick={() => setMult((m) => Math.max(1, m - 1))}>−</button><span className="num text-paper" data-testid="mult">{mult}</span><button type="button" aria-label="Increase multiplier" className="mx-1 rounded-sm border border-rule px-2" onClick={() => setMult((m) => m + 1)}>+</button></span>
                   <span>Qty per lot <span className="num text-paper">{lotSize ?? "—"}</span></span>
@@ -411,13 +476,13 @@ export default function StrategyBuilder() {
                     </tbody>
                   </table>
                 </div>
-              ) : (
+              ) : tab === "greeks" ? (
                 <div className="overflow-x-auto p-2" data-testid="greeks">
                   <table className="w-full text-sm" aria-label="Greeks">
                     <thead className="text-xs text-muted"><tr><th className="px-1 py-1 text-left font-normal">Leg</th><th className="px-1 py-1 text-right font-normal">IV</th><th className="px-1 py-1 text-right font-normal">Delta</th><th className="px-1 py-1 text-right font-normal">Gamma</th><th className="px-1 py-1 text-right font-normal">Theta / day</th><th className="px-1 py-1 text-right font-normal">Vega / vol pt</th></tr></thead>
                     <tbody>
-                      {live.map((l) => {
-                        const g = lotSize && spot ? netGreeks([l], lotSize, val) : null;
+                      {mlegs.map((l) => {
+                        const g = lotSize && spot ? netGreeks([l], lotSize, val0) : null;
                         const unavailable = !g || g.unavailable.length > 0;
                         return <tr key={l.id} className="num border-t border-rule/50"><td className="px-1 py-1">{l.action} {l.lots}× {fmtInt(l.strike)} {l.type}</td><td className="px-1 text-right">{(() => { const d = deltas.get(l.strike); const v = l.type === "CE" ? d?.ceIv : d?.peIv; return v == null ? "—" : `${(v * 100).toFixed(1)}%`; })()}</td>
                           {unavailable ? <td colSpan={4} className="px-1 text-right text-xs text-muted">unavailable: no volatility fits the premium</td> : <><td className="px-1 text-right">{g.delta.toFixed(1)}</td><td className="px-1 text-right">{g.gamma.toFixed(4)}</td><td className={`px-1 text-right ${tone(g.thetaDay)}`}>{money(g.thetaDay)}</td><td className={`px-1 text-right ${tone(g.vegaPt)}`}>{money(g.vegaPt)}</td></>}</tr>;
@@ -425,7 +490,27 @@ export default function StrategyBuilder() {
                       {greeks && <tr className="num border-t border-rule font-medium"><td className="px-1 py-1">Net</td><td /><td className="px-1 text-right">{greeks.delta.toFixed(1)}</td><td className="px-1 text-right">{greeks.gamma.toFixed(4)}</td><td className={`px-1 text-right ${tone(greeks.thetaDay)}`}>{money(greeks.thetaDay)}</td><td className={`px-1 text-right ${tone(greeks.vegaPt)}`}>{money(greeks.vegaPt)}</td></tr>}
                     </tbody>
                   </table>
-                  <p className="mt-2 text-[11px] text-muted">Model values (Black-76, volatility implied by each leg's premium at the snapshot, rate {rate}%). Delta is rupees of P&L per 1-point NIFTY move; theta is the change from one day passing.</p>
+                  <p className="mt-2 text-[11px] text-muted">Model values (Black-76). Each leg uses the volatility implied by the stored market price of its own strike, forward {fwd ? `${fmtPrice(fwd.forward)} read from put-call parity` : `from the ${rate}% rate assumption (parity unavailable)`}. Delta is rupees of P&L per 1-point NIFTY move; theta is the change from one day passing.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto p-2" data-testid="scenarios">
+                  {grid ? (
+                    <table className="w-full text-sm" aria-label="Scenario P&L">
+                      <thead className="text-xs text-muted"><tr><th className="px-2 py-1 text-left font-normal">NIFTY at expiry distribution</th>{grid.dayOffsets.map((d) => <th key={d} className="px-2 py-1 text-right font-normal">{d >= dte ? "Expiry (exact)" : d === 0 ? "Snapshot" : `Day ${d}`}</th>)}</tr></thead>
+                      <tbody>
+                        {grid.spots.map((sp, i) => {
+                          const peak = Math.max(1, ...grid.cells.flat().map((c) => Math.abs(c ?? 0)));
+                          return (
+                            <tr key={grid.ks[i]} className="num border-t border-rule/50">
+                              <td className="px-2 py-1 text-left">{fmtInt(Math.round(sp))} <span className="text-[11px] text-muted">{grid.ks[i]! > 0 ? "+" : ""}{grid.ks[i]}σ · {(((sp / (spot as number)) - 1) * 100).toFixed(2)}%</span></td>
+                              {grid.cells[i]!.map((c, j) => <td key={j} className={`px-2 py-1 text-right ${tone(c)}`} style={c == null ? undefined : { background: `color-mix(in srgb, ${c >= 0 ? "var(--up)" : "var(--down)"} ${Math.round((Math.abs(c) / peak) * 28)}%, transparent)` }}>{money(c)}</td>)}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  ) : <p className="text-sm text-muted">{ready ? "Needs an at-the-money implied volatility from the stored chain." : "Enter the entry premium of every leg."}</p>}
+                  <p className="mt-2 text-[11px] text-muted">Rows are NIFTY levels at -2σ to +2σ of the model distribution (ATM implied volatility {atmIv == null ? "—" : `${(atmIv * 100).toFixed(1)}%`}). Columns before expiry are Black-76 model estimates{ivPts ? ` with implied volatility ${ivPts > 0 ? "+" : ""}${ivPts} points` : ""}; the expiry column is the exact payoff. Entry premiums are yours; nothing here is a forecast.</p>
                 </div>
               )}
             </section>
