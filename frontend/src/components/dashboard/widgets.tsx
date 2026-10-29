@@ -192,7 +192,7 @@ function TimeSeries({ build, label, note }: {
   const close = useCallback(() => setOpen(false), []);
   return (
     <ChainGuard>
-      <Body footer={<Meta kind="history"><span>{obs.length} sample{obs.length === 1 ? "" : "s"} · {rangeLabel}{all.length !== obs.length ? ` of ${all.length} stored` : ""}</span></Meta>}>
+      <Body footer={<Meta kind="history"><span>{obs.length} sample{obs.length === 1 ? "" : "s"} · {rangeLabel}{all.length !== obs.length ? ` of ${all.length} stored` : ""}</span>{note && <span className="basis-full" data-testid="series-note">{note}</span>}</Meta>}>
         {d.history.isPending ? (
           <p className="p-3 text-sm text-muted">Loading stored snapshots…</p>
         ) : all.length < 2 ? (
@@ -238,8 +238,25 @@ export function PremiumWidget() {
 }
 export function DecayWidget() {
   const d = useDash();
-  const build = useMemo(() => (o: Observation[], c: ReturnType<typeof useChartColors>) => decayOption(o, c, d.showCalls, d.showPuts), [d.showCalls, d.showPuts]);
-  return <TimeSeries build={build} label="Premium decay versus first sample in range" note="Baseline = the first sample in the chosen range." />;
+  const all = d.history.data?.observations;
+  const since = useMemo(() => rangeObservations(all ?? [], d.tsRange).rows[0]?.retrieved_at, [all, d.tsRange]);
+  const q = useQuery({
+    queryKey: ["premiumDecay", d.expiry, d.range, since],
+    queryFn: () => api.premiumDecay(d.expiry!, strikesParam(d.range), since),
+    enabled: !!d.expiry && !!since, refetchInterval: 30_000, retry: false,
+  });
+  const res = q.data;
+  const build = useMemo(
+    () => (_o: Observation[], c: ReturnType<typeof useChartColors>) => (res ? decayOption(res, c, d.showCalls, d.showPuts) : { animation: false, series: [] }),
+    [res, d.showCalls, d.showPuts],
+  );
+  return (
+    <>
+      <TimeSeries build={build} label="Premium decay versus first sample in range"
+        note={`Same ${res?.strikes.length ?? ""} strikes at every point (ATM as of the newest sample); premium now minus premium at the first sample in range.${res?.warnings.length ? ` ${res.warnings.join(" ")}` : ""}`} />
+      {q.error && <p className="sr-only">Could not load the premium decay: {String((q.error as Error).message)}</p>}
+    </>
+  );
 }
 export const StraddleWidget = () => <TimeSeries build={straddleOption} label="ATM straddle over stored snapshots" />;
 export const SpotWidget = () => <TimeSeries build={spotOption} label="NIFTY 50 at each stored snapshot" />;

@@ -407,6 +407,108 @@ def oi_heatmap(
     )  # fmt: skip
 
 
+class PremiumDecay(BaseModel):
+    underlying: str
+    expiry: str
+    baseline_at: datetime | None
+    #: the strikes summed at every point: chosen once, from the newest sample, so the same contracts are compared
+    strikes: list[float]
+    atm_strike: float | None
+    times: list[datetime]
+    spot: list[float | None]
+    #: sum over the fixed strikes of (price now - price at the baseline); None when no strike has both prices
+    ce: list[float | None]
+    pe: list[float | None]
+    ce_strikes_used: list[int]
+    pe_strikes_used: list[int]
+    stride: int
+    warnings: list[str] = []
+    definitions: dict[str, str] = {}
+
+
+DECAY_DEFINITIONS = {
+    "ce": (
+        "Sum over the listed strikes of (call price now - call price at the baseline sample). "
+        "The strikes are fixed for the whole series, so the same contracts are compared at every point. "
+        "A strike is left out of a point when either price is missing or not above zero."
+    ),
+    "pe": "Same for puts.",
+}
+
+
+def premium_decay(
+    obs: ObservationStore,
+    underlying: str,
+    expiry: str,
+    *,
+    each_side: int | None = 10,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    max_points: int = 400,
+) -> PremiumDecay:
+    """Premium change of a fixed set of contracts since the first sample in range."""
+    samples = obs.samples(underlying, expiry, until=until)
+    empty = PremiumDecay(
+        underlying=underlying, expiry=expiry, baseline_at=None, strikes=[], atm_strike=None, times=[],
+        spot=[], ce=[], pe=[], ce_strikes_used=[], pe_strikes_used=[], stride=1,
+        definitions=DECAY_DEFINITIONS,
+    )  # fmt: skip
+    if not samples:
+        empty.warnings.append("No observations are stored for this expiry.")
+        return empty
+    last = samples[-1]
+    cache: dict[int, dict[tuple[float, int], Contract]] = {}
+
+    def contracts_of(s: Sample) -> dict[tuple[float, int], Contract]:
+        if s.values_from not in cache:
+            cache[s.values_from] = obs.contracts(s.values_from)
+        return cache[s.values_from]
+
+    strikes = universe(sorted({k for k, _ in contracts_of(last)}), last.spot, each_side)
+    atm = _nearest(strikes, last.spot) if strikes and last.spot is not None else None
+    shown = [s for s in samples if since is None or s.received_at >= since]
+    if len(shown) < 2:
+        empty.strikes, empty.atm_strike = strikes, atm
+        empty.warnings.append("Fewer than two samples in the chosen range.")
+        return empty
+    stride = max(1, -(-len(shown) // max_points))
+    cols = shown[::stride]
+    if cols[-1].sample_id != shown[-1].sample_id:
+        cols.append(shown[-1])
+    base = contracts_of(shown[0])
+
+    def price(c: Contract | None) -> float | None:
+        return c.ltp if c is not None and c.ltp is not None and c.ltp > 0 else None
+
+    ce: list[float | None] = []
+    pe: list[float | None] = []
+    ce_n: list[int] = []
+    pe_n: list[int] = []
+    for s in cols:
+        cur = contracts_of(s)
+        for side_i, out, used in ((CALL, ce, ce_n), (PUT, pe, pe_n)):
+            diffs = []
+            for k in strikes:
+                a, b = price(cur.get((k, side_i))), price(base.get((k, side_i)))
+                if a is not None and b is not None:
+                    diffs.append(a - b)
+            out.append(round(sum(diffs), 2) if diffs else None)
+            used.append(len(diffs))
+    warnings: list[str] = []
+    if stride > 1:
+        warnings.append(f"Showing every {stride}th observation ({len(shown)} stored).")
+    thin = min(ce_n + pe_n) if ce_n else 0
+    if thin < len(strikes):
+        warnings.append(
+            f"Some points use fewer than {len(strikes)} strikes because a price was missing (fewest: {thin})."
+        )
+    return PremiumDecay(
+        underlying=underlying, expiry=expiry, baseline_at=shown[0].received_at, strikes=strikes, atm_strike=atm,
+        times=[s.received_at for s in cols], spot=[s.spot for s in cols], ce=ce, pe=pe,
+        ce_strikes_used=ce_n, pe_strikes_used=pe_n, stride=stride, warnings=warnings, definitions=DECAY_DEFINITIONS,
+    )  # fmt: skip
+
+
 def parse_time(v: str | None) -> datetime | None:
     if not v:
         return None

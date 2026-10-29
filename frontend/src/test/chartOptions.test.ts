@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   sentimentHistoryOption,
-  decayOption, decaySeries, oiChangeBarOption, oiExplorerOption, oiHeatmapOption, premiumOption, spotOption, straddleOption,
+  decayOption, oiChangeBarOption, oiExplorerOption, oiHeatmapOption, premiumOption, spotOption, straddleOption,
   strikeBarOption, totalsBarOption,
 } from "../lib/chartOptions";
 import { computeTotals } from "../lib/analytics";
 import { bigChain } from "./fixtures";
-import type { Observation, OiChange, OiHeatmap, OiRow } from "../lib/types";
+import type { Observation, OiChange, OiHeatmap, OiRow, PremiumDecay } from "../lib/types";
 
 const colors = { up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" };
 const rows = bigChain().snapshot.rows;
@@ -95,27 +95,17 @@ describe("time series from stored snapshots", () => {
     expect((s[0]!.data[1] as [number, number | null])[1]).toBeNull();
   });
 
-  it("decay is the change from the first complete observation", () => {
-    const d = decaySeries(list);
-    expect(d.ce).toEqual([0, -10, -20]);
-    expect(d.pe).toEqual([0, -20, -40]);
-    expect(d.baselineAt).toBe(list[0]!.retrieved_at);
-  });
-
-  it("decay baseline skips leading observations that lack premium", () => {
-    const d = decaySeries([obs(1, { total_pe_premium: null }), obs(2), obs(3)]);
-    expect(d.baselineAt).toBe("2026-10-28T02:00:00Z");
-    expect(d.pe[0]).toBeNull(); // the leading point has no PE premium: a gap, not a zero
-    expect(d.ce[0]).toBe(10); // its CE premium (990) is still measured against the baseline (980)
-    expect(d.ce[2]).toBe(-10);
-  });
-
-  it("decay has no baseline when nothing is complete", () => {
-    expect(decaySeries([obs(1, { total_ce_premium: null })]).baselineAt).toBeNull();
+  it("decay plots the server's fixed-strike sums against their sample times and leaves gaps as gaps", () => {
+    const res = { times: ["2026-10-28T02:00:00Z", "2026-10-28T02:30:00Z", "2026-10-28T03:00:00Z"], ce: [0, 2.5, null], pe: [0, -2, -3] } as unknown as PremiumDecay;
+    const s = series(decayOption(res, colors));
+    expect(s.map((x) => x.name)).toEqual(["CE premium change", "PE premium change"]);
+    expect(s[0]!.data).toEqual([[Date.parse("2026-10-28T02:00:00Z"), 0], [Date.parse("2026-10-28T02:30:00Z"), 2.5], [Date.parse("2026-10-28T03:00:00Z"), null]]);
+    expect((s[1]!.data[2] as [number, number])[1]).toBe(-3);
   });
 
   it("decay and premium honour the CE/PE toggles", () => {
-    expect(series(decayOption(list, colors, true, false)).map((x) => x.name)).toEqual(["CE premium change"]);
+    const none = { times: [], ce: [], pe: [] } as unknown as PremiumDecay;
+    expect(series(decayOption(none, colors, true, false)).map((x) => x.name)).toEqual(["CE premium change"]);
     expect(series(premiumOption(list, colors, false, true)).map((x) => x.name)).toEqual(["PE total premium"]);
   });
 

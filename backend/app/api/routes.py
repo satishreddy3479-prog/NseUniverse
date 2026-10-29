@@ -14,10 +14,12 @@ from app.analytics.oi import (
     BaselineKind,
     Heatmap,
     OiChange,
+    PremiumDecay,
     Side,
     oi_change,
     oi_heatmap,
     parse_time,
+    premium_decay,
 )
 from app.api.security import require_local_control
 from app.broker.base import AuthStatus, BrokerError
@@ -361,6 +363,23 @@ async def oi_heatmap_route(
         baseline,  # type: ignore[arg-type]
         each_side=_each_side(strikes), since=_time(since, "since"), until=_time(until, "until"),
         max_columns=max_columns,
+    )  # fmt: skip
+
+
+@router.get("/history/premium-decay", response_model=PremiumDecay)
+async def premium_decay_route(
+    request: Request,
+    expiry: date,
+    since: str | None = None,
+    until: str | None = None,
+    strikes: str = "10",
+    max_points: Annotated[int, Query(ge=20, le=1000)] = 400,
+) -> PremiumDecay:
+    """Premium change since the first sample in range, summed over a fixed set of strikes."""
+    return await asyncio.to_thread(
+        premium_decay, _obs(request), _svc(request).underlying, expiry.isoformat(),
+        each_side=_each_side(strikes), since=_time(since, "since"), until=_time(until, "until"),
+        max_points=max_points,
     )  # fmt: skip
 
 

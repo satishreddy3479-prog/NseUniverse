@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.analytics.oi import oi_change, oi_heatmap, universe
+from app.analytics.oi import oi_change, oi_heatmap, premium_decay, universe
 from app.domain.models import (
     Completeness,
     DataSource,
@@ -337,3 +337,53 @@ class TestApi:
             assert (
                 c.get("/api/oi/heatmap", params={"expiry": EXP, "baseline": "x"}).status_code == 422
             )
+
+
+class TestPremiumDecay:
+    def test_sums_the_price_change_of_the_same_contracts(self, obs: ObservationStore) -> None:
+        r = premium_decay(obs, "NIFTY", EXP, each_side=None, since=B)
+        assert r.times == [B, C, D] and r.baseline_at == B and r.spot == [109.0, 109.0, 111.0]
+        # calls D-B: 16-14, 10-9, 3-3.5 = +2 +1 -0.5 ; puts D-B: 2-2.5, 4.5-5, 12-13 = -0.5 -0.5 -1
+        assert r.ce == [0.0, 0.0, 2.5] and r.pe == [0.0, 0.0, -2.0]
+        assert r.ce_strikes_used == [3, 3, 3] and r.warnings == []
+
+    def test_the_strike_set_is_fixed_not_re_centred_on_each_sample(
+        self, obs: ObservationStore
+    ) -> None:
+        # newest spot 111 -> nearest strike 110. Only that strike is summed at every point, even though
+        # the spot at B was 109 (also nearest to 110 here); calls 10-9 = +1, puts 4.5-5 = -0.5
+        r = premium_decay(obs, "NIFTY", EXP, each_side=0, since=B)
+        assert r.strikes == [110.0] and r.ce == [0.0, 0.0, 1.0] and r.pe == [0.0, 0.0, -0.5]
+
+    def test_missing_or_zero_prices_are_left_out_and_counted_never_zero_filled(
+        self, tmp_path: Path
+    ) -> None:
+        o = ObservationStore(tmp_path)
+        o.record_snapshot(
+            snap(
+                "y1",
+                B,
+                100.0,
+                {100: (5.0, 10, None), 110: (3.0, 10, None)},
+                {100: (4.0, 10, None), 110: (6.0, 10, None)},
+            ),
+            unchanged=False,
+        )
+        o.record_snapshot(
+            snap(
+                "y2",
+                D,
+                100.0,
+                {100: (7.0, 10, None), 110: (None, 10, None)},
+                {100: (0.0, 10, None), 110: (7.0, 10, None)},
+            ),
+            unchanged=False,
+        )
+        r = premium_decay(o, "NIFTY", EXP, each_side=None, since=B)
+        # calls at D: strike 110 has no price -> only 100: 7-5 = +2 ; puts at D: strike 100 price 0 -> only 110: 7-6 = +1
+        assert r.ce == [0.0, 2.0] and r.pe == [0.0, 1.0]
+        assert r.ce_strikes_used == [2, 1] and r.pe_strikes_used == [2, 1] and r.warnings
+
+    def test_needs_two_samples(self, obs: ObservationStore) -> None:
+        r = premium_decay(obs, "NIFTY", EXP, since=D)
+        assert r.times == [] and r.warnings

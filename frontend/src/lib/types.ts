@@ -640,3 +640,20 @@ export interface PaperReport {
   win_rate?: number; expectancy_rupees?: number; profit_factor?: number | null; max_drawdown_rupees?: number; by_setup?: Record<string, { trades: number; net_rupees: number; wins: number }>;
   assumptions?: { instrument: string; lot_size: number; slippage_pts_per_side: number };
 }
+
+export interface PremiumDecay {
+  underlying: string;
+  expiry: string;
+  baseline_at: string | null;
+  strikes: number[];
+  atm_strike: number | null;
+  times: string[];
+  spot: (number | null)[];
+  ce: (number | null)[];
+  pe: (number | null)[];
+  ce_strikes_used: number[];
+  pe_strikes_used: number[];
+  stride: number;
+  warnings: string[];
+  definitions: Record<string, string>;
+}

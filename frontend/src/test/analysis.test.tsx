@@ -50,7 +50,7 @@ function sampler(over: Partial<SamplerStatus> = {}): SamplerStatus {
 function mockApi(hist: HistoryResponse, extra: Record<string, unknown> = {}) {
   const routes: Record<string, unknown> = {
     "/api/status": status(), "/api/expiries": expiries, "/api/snapshots": [], "/api/sessions": [],
-    "/api/option-chain": bigChain(), "/api/history/observations": hist, "/api/oi/change": oiRes(), ...extra,
+    "/api/option-chain": bigChain(), "/api/history/observations": hist, "/api/oi/change": oiRes(), "/api/history/premium-decay": decayRes(), ...extra,
   };
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const hit = routes[String(input).split("?")[0]!];
@@ -317,6 +317,11 @@ describe("analysis dashboard", () => {
   });
 });
 
+function decayRes() {
+  return { underlying: "NIFTY", expiry: "2026-11-03", baseline_at: "2026-10-28T02:00:00Z", strikes: [24000, 24050, 24100], atm_strike: 24050,
+    times: ["2026-10-28T02:00:00Z", "2026-10-28T02:30:00Z"], spot: [24040, 24060], ce: [0, 12.5], pe: [0, -9], ce_strikes_used: [3, 3], pe_strikes_used: [3, 3],
+    stride: 1, warnings: [], definitions: {} };
+}
 function oiRes(over: Partial<OiChange> = {}): OiChange {
   const row = (strike: number, side: "CE" | "PE", oi: number, base: number | null, ltp: number, bl: number | null) => ({
     strike, side, oi, baseline_oi: base, change: base == null ? null : oi - base,
@@ -536,5 +541,18 @@ describe("PCR widget and the Full time-slot table", () => {
     expect(within(cards).getByLabelText("Put/Call Ratio")).toHaveTextContent("0.43");
     expect(within(cards).getByLabelText("Put/Call Ratio")).toHaveTextContent("-0.50");
     expect(within(dlg).queryByTestId("oi-slot-table")).toBeNull();
+  });
+});
+
+describe("Premium decay widget", () => {
+  it("plots the fixed-strike series from the server and says which strikes it sums", async () => {
+    localStorage.setItem("nse.analysis.layout.v1", JSON.stringify({ active: ["decay"], layout: [{ i: "decay", x: 0, y: 0, w: 12, h: 10 }] }));
+    mockApi(history([obs(1), obs(2)], 1));
+    renderAnalysis();
+    const box = await widget("Premium decay");
+    const chart = await within(box).findByRole("img", { name: "Premium decay versus first sample in range" });
+    await waitFor(() => expect(chart.dataset.series).toBe("CE premium change|PE premium change"));
+    expect(chart.dataset.points).toBe("2,2");
+    expect(within(box).getByTestId("series-note")).toHaveTextContent("Same 3 strikes at every point");
   });
 });

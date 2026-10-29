@@ -3,7 +3,7 @@
 import type { EChartsCoreOption } from "echarts/core";
 import { compactIN, type Totals } from "./analytics";
 import { fmtDateTimeIST, fmtInt, fmtPrice, fmtTimeIST } from "./format";
-import type { IntradayScoreRow, Observation, OiChange, OiHeatmap, OptionChainRow } from "./types";
+import type { IntradayScoreRow, Observation, OiChange, OiHeatmap, OptionChainRow, PremiumDecay } from "./types";
 
 export interface ChartColors {
   up: string; down: string; brass: string; info: string; muted: string; rule: string; paper: string; slate: string;
@@ -137,30 +137,23 @@ export function premiumOption(obs: Observation[], c: ChartColors, showCalls = tr
 }
 
 /** Change in total premium relative to the first observation passed in (the baseline of the chosen range). */
-export function decaySeries(obs: Observation[]): { baselineAt: string | null; ce: (number | null)[]; pe: (number | null)[] } {
-  const base = obs.find((o) => o.total_ce_premium != null && o.total_pe_premium != null);
-  if (!base) return { baselineAt: null, ce: obs.map(() => null), pe: obs.map(() => null) };
-  const d = (v: number | null, b: number | null) => (v == null || b == null ? null : v - b);
-  return {
-    baselineAt: base.retrieved_at,
-    ce: obs.map((o) => d(o.total_ce_premium, base.total_ce_premium)),
-    pe: obs.map((o) => d(o.total_pe_premium, base.total_pe_premium)),
-  };
-}
-
-export function decayOption(obs: Observation[], c: ChartColors, showCalls = true, showPuts = true): EChartsCoreOption {
-  const s = decaySeries(obs);
+/**
+ * Premium change of a FIXED set of strikes since the first sample in range (server side sums the same contracts at
+ * every point). A point with no usable strike is a gap.
+ */
+export function decayOption(res: PremiumDecay, c: ChartColors, showCalls = true, showPuts = true): EChartsCoreOption {
+  const times = res.times.map((x) => new Date(x).getTime());
   const area = (name: string, color: string, vals: (number | null)[]) => ({
-    name, type: "line", showSymbol: obs.length <= 80, symbolSize: 5, itemStyle: { color }, lineStyle: { color, width: 1.5 },
-    areaStyle: { color, opacity: 0.25 }, data: obs.map((o, i) => [t(o), vals[i]]),
+    name, type: "line", showSymbol: times.length <= 80, symbolSize: 5, itemStyle: { color }, lineStyle: { color, width: 1.5 },
+    areaStyle: { color, opacity: 0.25 }, data: times.map((x, i) => [x, vals[i] ?? null]),
     markLine: { symbol: "none", silent: true, lineStyle: { color: c.muted, type: "dashed" }, label: { show: false }, data: [{ yAxis: 0 }] },
   });
   return {
     ...tsBase(c, (v) => `${v >= 0 ? "+" : "−"}${fmtPrice(Math.abs(v))}`),
     yAxis: { type: "value", scale: true, minInterval: 1, axisLabel: { ...axisText(c), formatter: (v: number) => fmtInt(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
     series: [
-      ...(showCalls ? [area("CE premium change", c.up, s.ce)] : []),
-      ...(showPuts ? [area("PE premium change", c.down, s.pe)] : []),
+      ...(showCalls ? [area("CE premium change", c.up, res.ce)] : []),
+      ...(showPuts ? [area("PE premium change", c.down, res.pe)] : []),
     ],
   };
 }

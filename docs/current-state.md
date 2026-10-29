@@ -13,6 +13,9 @@ _Last updated: 2026-10-29_
 - Open items: no stored sample at 15:30 itself (sampler's last in-session sample was 15:29); post-close fetches show deep-OTM contracts with OI 0 and LTP 0.0, which is not a real quote.
 - New (29 Oct): the PCR widget (ATM strike, strikes in view, whole chain; shown once to saved layouts), dark change segments in the OI explorer, and a Full-view table of every time slot.
 
+## Premium decay fixed (30 Oct 2026)
+- The old decay line summed prices over "ATM ±10" re-centred at every sample, so strikes entered and left the sum as NIFTY moved (calls fell while NIFTY rose). `/api/history/premium-decay` now sums the price change of the SAME strikes (ATM ±N of the newest sample) against the first sample in range; a price that is missing or not above zero drops that strike from the point and is counted. Hand-calculated tests in `test_observations.py`. The Total premium widget still shows the sliding-universe total and says so.
+
 ## OI explorer, StockMojo-style single screen (30 Oct 2026)
 - Time slots count back from the last stored sample of the session (after the close, including past midnight IST: the last sample taken 09:15-15:30 IST) and pass `until` to `/api/oi/change`, so after hours "Last 30 min" shows the final half hour of trading. Full view shows Open Interest Change, Total Open Interest and PCR cards for the chosen slot, next to the strike chart; the table was removed. OI-decrease segments no longer have a border. StockMojo's page (29 Oct 15:40:59 data) shows PCR 1.03, the same as ours. Not yet checked in a live session.
 
