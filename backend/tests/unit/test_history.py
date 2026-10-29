@@ -249,3 +249,17 @@ def test_api_status_and_refresh_endpoints(tmp_path: Path) -> None:
         assert (
             remote.post("/api/prediction/history/refresh").status_code == 403
         )  # local control only
+
+
+class TestMorningRetry:
+    async def test_late_overnight_bars_are_retried_every_ten_minutes_until_the_window(self, tmp_path: Path) -> None:
+        svc, dl, clock = make(tmp_path)
+        await svc.refresh()
+        # Thursday 29 Oct 2026, 07:45 IST; the store only has bars up to the evening of 28 Oct, so US bars (dated 28 Oct) are in...
+        clock.now = datetime(2026, 10, 29, 2, 15, tzinfo=UTC)
+        svc.last_attempt = clock.now - timedelta(minutes=11)
+        svc.store.last_success_utc = lambda: clock.now - timedelta(minutes=11)  # type: ignore[method-assign]
+        missing = svc.overnight_missing(clock.now)
+        assert svc.due() == bool(missing)  # retries only while something overnight is missing
+        svc.last_attempt = clock.now - timedelta(minutes=3)
+        assert not svc.due()  # but never faster than every 10 minutes

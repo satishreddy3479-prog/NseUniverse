@@ -19,6 +19,7 @@ export function CashPanel() {
     onError: (e) => setMsg({ ok: false, text: e instanceof ApiError ? e.message : "Import failed" }),
   });
   const days = [...new Set(q.data?.rows.map((r) => r.session) ?? [])];
+  const nsdl = (d: string) => q.data?.rows.find((r) => r.session === d && r.category.startsWith("FPI equity (stock"));
   const get = (d: string, c: string) => q.data?.rows.find((r) => r.session === d && r.category.toUpperCase().startsWith(c));
   return (
     <Panel title="FII / DII cash activity — newest 7 sessions (₹ crore)">
@@ -29,7 +30,7 @@ export function CashPanel() {
           : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm" aria-label="FII DII cash">
-                <thead className="text-xs text-muted"><tr><th className="text-left font-normal">Session</th><th className="text-right font-normal">FII buy</th><th className="text-right font-normal">FII sell</th><th className="text-right font-normal">FII net</th><th className="text-right font-normal">DII net</th><th className="text-right font-normal">Total net</th></tr></thead>
+                <thead className="text-xs text-muted"><tr><th className="text-left font-normal">Session</th><th className="text-right font-normal">FII buy</th><th className="text-right font-normal">FII sell</th><th className="text-right font-normal">FII net</th><th className="text-right font-normal">DII net</th><th className="text-right font-normal">Total net</th><th className="text-right font-normal">FPI equity net (NSDL)</th></tr></thead>
                 <tbody>
                   {days.map((d) => {
                     const f = get(d, "FII"), di = get(d, "DII");
@@ -39,6 +40,7 @@ export function CashPanel() {
                         <td>{d}</td><td className="text-right">{f ? fmtInt(f.buy) : "—"}</td><td className="text-right">{f ? fmtInt(f.sell) : "—"}</td>
                         <td className={`text-right ${f ? tone(f.net) : ""}`}>{f ? fmtInt(f.net) : "—"}</td><td className={`text-right ${di ? tone(di.net) : ""}`}>{di ? fmtInt(di.net) : "—"}</td>
                         <td className={`text-right ${f && di ? tone(tot) : ""}`}>{f && di ? fmtInt(tot) : "—"}</td>
+                        <td className={`text-right ${nsdl(d) ? tone(nsdl(d)!.net) : ""}`}>{nsdl(d) ? fmtInt(nsdl(d)!.net) : "—"}</td>
                       </tr>
                     );
                   })}
@@ -54,7 +56,7 @@ export function CashPanel() {
               <Button disabled={!text.trim() || imp.isPending} onClick={() => imp.mutate(text)}>Import</Button>
               {msg && <p role={msg.ok ? "status" : "alert"} className={`text-sm ${msg.ok ? "text-up" : "text-down"}`}>{msg.text}</p>}
             </div>
-            <p className="text-xs text-muted">Only the newest 7 sessions are kept; each time you import, older sessions are removed. Every row must satisfy buy − sell = net, otherwise the whole file is rejected and nothing is stored.</p>
+            <p className="text-xs text-muted">The NSDL column (foreign equity, stock-exchange route, provisional) is fetched by the app itself every evening; it measures a different thing from NSE's FII figure and is shown separately. Only the newest 7 sessions are kept; each time you import, older sessions are removed. Every row must satisfy buy − sell = net, otherwise the whole file is rejected and nothing is stored.</p>
           </div>
         </details>
       </div>

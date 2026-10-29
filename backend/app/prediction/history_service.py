@@ -28,6 +28,9 @@ OVERLAP_DAYS = 10
 RUN_AFTER = (18, 30)  # IST: Indian closing data is settled
 RUN_MORNING = (7, 30)  # IST: the US close (01:30 IST) and overnight settlements are in
 RETRY_AFTER = timedelta(hours=1)
+MORNING_RETRY = timedelta(minutes=10)  # while overnight bars are missing before the forecast
+MORNING_END = (9, 10)  # IST
+OVERNIGHT_KEYS = ("SPX", "VIX", "BRENT", "DXY", "USDINR", "UST10Y")
 POLL_S = 300.0
 _COV_FIELDS = ("first", "last", "bars", "disagreements")
 
@@ -115,10 +118,23 @@ class HistoryService:
         return self._running is not None and not self._running.done()
 
     # ------------------------------------------------------------------ schedule
+    def overnight_missing(self, now: datetime) -> list[str]:
+        """Overnight series whose newest bar is older than the last weekday (US session date)."""
+        d = now.astimezone(IST).date() - timedelta(days=1)
+        while d.weekday() >= 5:
+            d -= timedelta(days=1)
+        last = {c["symbol"]: c["last"] for c in self.store.coverage()}
+        return [k for k in OVERNIGHT_KEYS if (last.get(k) or "") < str(d)]
+
     def due(self, now: datetime | None = None) -> bool:
         now = now or self._clock()
         if not self.enabled or self.running:
             return False
+        t0 = now.astimezone(IST)
+        morning = t0.weekday() < 5 and RUN_MORNING <= (t0.hour, t0.minute) < MORNING_END
+        retry_gap = self.last_attempt is not None and now - self.last_attempt >= MORNING_RETRY
+        if morning and retry_gap and self.overnight_missing(now):
+            return True  # overnight bars are late: retry every 10 minutes until the forecast window
         if self.last_attempt and now - self.last_attempt < RETRY_AFTER:
             return False
         ok = self.store.last_success_utc()

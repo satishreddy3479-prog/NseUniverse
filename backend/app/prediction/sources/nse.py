@@ -16,6 +16,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import date, datetime
+from html.parser import HTMLParser
 from typing import Any
 
 USER_AGENT = "NSEUniverse-personal-research/1.0 (single user, low rate)"
@@ -175,4 +176,81 @@ def parse_cash_csv(text: str) -> list[dict[str, Any]]:
         if abs((buy - sell) - net) > 0.05 * max(1.0, abs(net)) + 1:
             raise NseParseError(f"{r[ic]} {r[idt]}: buy - sell does not equal net")
         out.append({"category": r[ic].strip().rstrip("*").strip(), "session": _parse_date(r[idt]), "buy": buy, "sell": sell, "net": net})
+    return out
+
+
+NSDL_URL = "https://www.fpi.nsdl.co.in/web/Reports/Latest.aspx"
+
+
+class _Tables(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.tables: list[list[list[str]]] = []
+        self._row: list[str] | None = None
+        self._cell: list[str] | None = None
+        self._depth = 0
+
+    def handle_starttag(self, tag: str, attrs: Any) -> None:
+        if tag == "table":
+            self._depth += 1
+            if self._depth == 1:
+                self.tables.append([])
+        elif tag == "tr" and self._depth >= 1:
+            self._row = []
+        elif tag in {"td", "th"} and self._row is not None:
+            self._cell = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"td", "th"} and self._cell is not None and self._row is not None:
+            self._row.append(" ".join("".join(self._cell).split()))
+            self._cell = None
+        elif tag == "tr" and self._row is not None:
+            if self._row and self.tables:
+                self.tables[-1].append(self._row)
+            self._row = None
+        elif tag == "table":
+            self._depth = max(0, self._depth - 1)
+
+    def handle_data(self, data: str) -> None:
+        if self._cell is not None:
+            self._cell.append(data)
+
+
+def _paren(text: str) -> float:
+    t = text.strip().replace(",", "")
+    neg = t.startswith("(") and t.endswith(")")
+    try:
+        v = float(t.strip("()"))
+    except ValueError as e:
+        raise NseParseError(f"not a number: {text!r}") from e
+    return -v if neg else v
+
+
+def parse_nsdl_fpi(body: bytes) -> list[dict[str, Any]]:
+    """Daily FPI equity activity from NSDL (Rs crore): the stock-exchange route and the equity sub-total.
+
+    The first data row carries the reporting date; the equity sub-total follows the equity rows. Every
+    row must satisfy purchases - sales = net, otherwise the page is rejected.
+    """
+    parser = _Tables()
+    parser.feed(body.decode("utf-8", errors="replace"))
+    rows = next((t for t in parser.tables if any("Reporting Date" in c for r in t for c in r)), None)
+    if rows is None:
+        raise NseParseError("FPI investment table not found")
+    first = next((r for r in rows if r and re.fullmatch(r"\d{1,2}-[A-Za-z]{3}-\d{4}", r[0])), None)
+    if first is None or len(first) < 6 or first[1].lower() != "equity":
+        raise NseParseError("equity row not found")
+    session = _parse_date(first[0])
+    i = rows.index(first)
+    exch: dict[str, Any] = {"category": "FPI equity (stock exchange)", "buy": _paren(first[3]), "sell": _paren(first[4]), "net": _paren(first[5])}
+    sub = next((r for r in rows[i + 1 : i + 4] if r and r[0].lower().startswith("sub-total")), None)
+    if sub is None or len(sub) < 4:
+        raise NseParseError("equity sub-total not found")
+    total: dict[str, Any] = {"category": "FPI equity (incl. primary market)", "buy": _paren(sub[1]), "sell": _paren(sub[2]), "net": _paren(sub[3])}
+    out: list[dict[str, Any]] = []
+    for r in (exch, total):
+        buy, sell, net = float(r["buy"]), float(r["sell"]), float(r["net"])
+        if abs((buy - sell) - net) > 0.05 * max(1.0, abs(net)) + 1:
+            raise NseParseError(f"{r['category']}: purchases - sales does not equal net")
+        out.append({**r, "session": session})
     return out

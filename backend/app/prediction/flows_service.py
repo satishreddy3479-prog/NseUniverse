@@ -27,17 +27,20 @@ from app.prediction.sources.nse import (
     FII_DII_API,
     FII_DII_PAGE,
     KINDS,
+    NSDL_URL,
     Fetched,
     NseParseError,
     fetch,
     file_url,
     parse_cash_csv,
     parse_fii_dii,
+    parse_nsdl_fpi,
     parse_participant,
 )
 
 logger = logging.getLogger(__name__)
 RUN_AFTER = (19, 30)
+CASH_AFTER = (18, 45)  # IST: the exchanges post provisional FII/DII figures after about 18:00
 STOP_AFTER_FINAL_404 = 40  # consecutive known trading days without a file => the history starts later
 BLOCK_STATUSES = {403, 429}
 MAX_NETWORK_ERRORS = 5
@@ -55,12 +58,14 @@ class FlowsService:
         *,
         fetcher: Fetcher = fetch,
         cash_fetcher: Callable[[], Fetched] | None = None,
+        nsdl_fetcher: Callable[[], Fetched] | None = None,
         enabled: bool = True,
         pause_s: float = 0.7,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self.store, self._sessions, self._fetch = store, sessions, fetcher
         self._cash = cash_fetcher or self._fetch_cash
+        self._nsdl = nsdl_fetcher or (lambda: fetch(NSDL_URL))
         self.enabled, self._pause, self._clock = enabled, pause_s, clock
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
@@ -68,8 +73,11 @@ class FlowsService:
         self.progress = ""
         self.blocked: str | None = None
         self.cash_note: str | None = None
+        self.nsdl_note: str | None = None
         self.last_run: dict[str, Any] | None = None
         self.last_attempt: datetime | None = None
+        self.last_cash_date: date | None = None
+        self.last_nsdl_date: date | None = None
 
     # ------------------------------------------------------------------ fetching
     @staticmethod
@@ -80,6 +88,20 @@ class FlowsService:
         if first.status != 200:
             return first
         return fetch(FII_DII_API, opener=opener, headers={"Referer": FII_DII_PAGE, "Accept": "application/json"})
+
+    def _nsdl_once(self, summary: dict[str, Any]) -> None:
+        res = self._nsdl()
+        if res.status != 200 or res.body is None:
+            self.nsdl_note = f"NSDL FPI page unavailable ({res.error or res.status}); not stored"
+            return
+        try:
+            rows = parse_nsdl_fpi(res.body)
+        except NseParseError as e:
+            self.nsdl_note = f"NSDL FPI page rejected: {e}"
+            return
+        summary["fpi_new"] = self.store.save_cash(rows, now=self._clock())
+        self.store.prune_cash(CASH_KEEP_SESSIONS)
+        self.nsdl_note = None
 
     def _final_404(self, session: date) -> bool:
         return session < self._clock().astimezone(IST).date() - timedelta(days=RECENT_DAYS)
@@ -139,8 +161,17 @@ class FlowsService:
                     time.sleep(self._pause)
         if net_errors >= MAX_NETWORK_ERRORS and not self.blocked:
             self.blocked = "repeated network errors; stopped"
-        self.progress = "FII/DII cash"
-        self._cash_once(summary)
+        now_ist = self._clock().astimezone(IST)
+        today = now_ist.date()
+        evening = (now_ist.hour, now_ist.minute) >= CASH_AFTER
+        if self.last_cash_date != today and evening:
+            self.last_cash_date = today  # one attempt a day, success or not
+            self.progress = "FII/DII cash"
+            self._cash_once(summary)
+        if self.last_nsdl_date != today and evening:
+            self.last_nsdl_date = today  # one attempt a day, success or not
+            self.progress = "NSDL FPI"
+            self._nsdl_once(summary)
         self.progress = "trimming to the rolling window"
         try:
             summary["pruned"] = self.store.prune_participant(PARTICIPANT_KEEP_SESSIONS, self.store.path.parent / "backups")
@@ -213,7 +244,7 @@ class FlowsService:
     def status(self) -> dict[str, Any]:
         return {
             "enabled": self.enabled, "running": self.running(), "progress": self.progress,
-            "blocked": self.blocked, "cash_note": self.cash_note, "last_run": self.last_run,
+            "blocked": self.blocked, "cash_note": self.cash_note, "nsdl_note": self.nsdl_note, "last_run": self.last_run,
             "coverage": self.store.coverage(),
             "source": "NSE public archive files (archives.nseindia.com) and the NSE FII/DII feed; personal research use, low rate",
         }  # fmt: skip

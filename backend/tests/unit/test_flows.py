@@ -151,3 +151,40 @@ def test_participant_window_backs_up_first_then_keeps_only_the_newest_sessions(t
     assert again["deleted_files"] == 0
     with pytest.raises(sqlite3.DatabaseError):
         s.store._db.execute("DELETE FROM raw_files")  # the protection is back after pruning
+
+
+NSDL_HTML = b"""<html><body><table><tr><td>note</td></tr></table>
+<table>
+<tr><th>Reporting Date</th><th>Debt/Debt-VRR/Equity/Hybrid</th><th>Investment Route</th><th>Gross Purchases(Rs. Crore)</th><th>Gross Sales (Rs. Crore)</th><th>Net Investment (Rs. Crore)</th><th>US$</th><th>Conv</th></tr>
+<tr><td rowspan="3">28-Oct-2026</td><td rowspan="3">Equity</td><td>Stock Exchange</td><td>24478.57</td><td>20280.67</td><td>4197.90</td><td>441.13</td><td>Rs.95.1623</td></tr>
+<tr><td>Primary market &amp; others</td><td>6390.22</td><td>4.22</td><td>6386.00</td><td>671.06</td></tr>
+<tr><td>Sub-total</td><td>30868.79</td><td>20284.89</td><td>10583.90</td><td>1112.19</td></tr>
+<tr><td>Debt-FAR</td><td>Stock Exchange</td><td>813.00</td><td>3395.87</td><td>(2582.87)</td><td>(271.42)</td></tr>
+</table></body></html>"""
+
+
+def test_nsdl_fpi_page_is_parsed_from_the_real_layout_and_validated() -> None:
+    from app.prediction.sources.nse import parse_nsdl_fpi
+
+    rows = parse_nsdl_fpi(NSDL_HTML)
+    assert rows[0]["category"] == "FPI equity (stock exchange)" and rows[0]["net"] == 4197.90 and rows[0]["session"] == date(2026, 10, 28)
+    assert rows[1]["net"] == 10583.90 and rows[1]["buy"] == 30868.79
+    with pytest.raises(NseParseError, match="does not equal"):
+        parse_nsdl_fpi(NSDL_HTML.replace(b"4197.90", b"9999.90"))
+    with pytest.raises(NseParseError, match="not found"):
+        parse_nsdl_fpi(b"<html><body><table><tr><td>x</td></tr></table></body></html>")
+
+
+def test_nsdl_is_fetched_once_a_day_and_stored_beside_the_nse_figures(tmp_path: Path) -> None:
+    calls: list[int] = []
+
+    def nsdl() -> Fetched:
+        calls.append(1)
+        return Fetched(200, NSDL_HTML)
+
+    evening = datetime(2026, 10, 28, 13, 30, tzinfo=UTC)
+    s = FlowsService(FlowsStore(tmp_path), lambda: [], fetcher=Fake(set()), cash_fetcher=lambda: Fetched(0, None, "offline"), nsdl_fetcher=nsdl, pause_s=0, clock=lambda: evening)
+    s.run()
+    s.run()
+    assert len(calls) == 1 and s.nsdl_note is None
+    assert {r["category"] for r in s.store.cash_rows()} == {"FPI equity (stock exchange)", "FPI equity (incl. primary market)"}
