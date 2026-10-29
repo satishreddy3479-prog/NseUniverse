@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from app.intraday import volatility as v
-from app.intraday.volatility import CALL, PUT, IST
+from app.intraday.volatility import CALL, IST, PUT
 
 NOW = datetime(2026, 10, 29, 10, 0, tzinfo=IST)
 EXPIRY = date(2026, 11, 3)
