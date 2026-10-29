@@ -33,6 +33,21 @@ CREATE TABLE IF NOT EXISTS scores (
   UNIQUE (expiry, sample_id, version)
 );
 CREATE INDEX IF NOT EXISTS ix_scores_session ON scores(session, expiry);
+CREATE TABLE IF NOT EXISTS daily_summaries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_utc TEXT NOT NULL,
+  session TEXT NOT NULL,
+  expiry TEXT NOT NULL,
+  version TEXT NOT NULL,
+  status TEXT NOT NULL,
+  samples INTEGER NOT NULL,
+  payload TEXT NOT NULL,
+  UNIQUE (session, expiry, version)
+);
+CREATE TRIGGER IF NOT EXISTS summaries_no_update BEFORE UPDATE ON daily_summaries
+  BEGIN SELECT RAISE(ABORT, 'stored summaries are never changed'); END;
+CREATE TRIGGER IF NOT EXISTS summaries_no_delete BEFORE DELETE ON daily_summaries
+  BEGIN SELECT RAISE(ABORT, 'stored summaries are never deleted'); END;
 CREATE TRIGGER IF NOT EXISTS scores_no_update BEFORE UPDATE ON scores
   BEGIN SELECT RAISE(ABORT, 'stored scores are never changed'); END;
 CREATE TRIGGER IF NOT EXISTS scores_no_delete BEFORE DELETE ON scores
@@ -69,6 +84,26 @@ class IntradayStore:
             )  # fmt: skip
             self._db.commit()
             return cur.rowcount > 0
+
+    def record_summary(self, session: str, expiry: str, version: str, status: str, samples: int, payload: dict[str, Any], now: datetime | None = None) -> bool:
+        """Store one end-of-day summary; a second call for the same session/expiry/version is ignored."""
+        with self._lock:
+            cur = self._db.execute(
+                "INSERT OR IGNORE INTO daily_summaries (created_utc, session, expiry, version, status, samples, payload)"
+                " VALUES (?,?,?,?,?,?,?)",
+                ((now or datetime.now(UTC)).isoformat(), session, expiry, version, status, samples, json.dumps(payload, separators=(",", ":"))),
+            )
+            self._db.commit()
+            return cur.rowcount > 0
+
+    def summaries(self, limit: int = 60) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT session, expiry, version, status, samples, payload, created_utc FROM daily_summaries"
+                " ORDER BY session DESC, expiry LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [{"session": a, "expiry": b, "version": c, "status": d, "samples": e, **json.loads(f), "created_utc": g} for a, b, c, d, e, f, g in rows]
 
     def session_rows(self, session: str, expiry: str, limit: int = 500) -> list[dict[str, Any]]:
         with self._lock:

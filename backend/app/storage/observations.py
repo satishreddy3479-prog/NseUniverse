@@ -14,7 +14,7 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 import threading
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -284,16 +284,70 @@ class ObservationStore:
         return [(str(e), int(n)) for e, n in rows]
 
     def session_sample_counts(self, underlying: str) -> dict[str, int]:
-        """IST date -> samples received 09:15-15:30 IST that day, over all expiries (read-only)."""
+        """IST date -> in-session samples (09:15-15:30 IST) of the best-covered expiry that day.
+
+        The maximum over expiries, not the sum: two half-covered expiries must not look like one full
+        session (read-only).
+        """
         with self._lock:
             rows = self._db.execute(
-                "SELECT date(received_ms/1000 + 19800, 'unixepoch') AS d, COUNT(*) FROM samples"
+                "SELECT date(received_ms/1000 + 19800, 'unixepoch') AS d, expiry, COUNT(*) FROM samples"
                 " WHERE underlying=?"
                 " AND time(received_ms/1000 + 19800, 'unixepoch') BETWEEN '09:15:00' AND '15:30:59'"
-                " GROUP BY d",
+                " GROUP BY d, expiry",
                 (underlying,),
             ).fetchall()
-        return {str(d): int(n) for d, n in rows}
+        out: dict[str, int] = {}
+        for d, _, n in rows:
+            out[str(d)] = max(out.get(str(d), 0), int(n))
+        return out
+
+    def window_counts(self, underlying: str, start_ms: int, end_ms: int) -> tuple[int, int]:
+        """(samples, contract rows) received in [start_ms, end_ms) (read-only; used to verify archives)."""
+        with self._lock:
+            n_s = self._db.execute(
+                "SELECT COUNT(*) FROM samples WHERE underlying=? AND received_ms>=? AND received_ms<?",
+                (underlying, start_ms, end_ms),
+            ).fetchone()[0]
+            n_c = self._db.execute(
+                "SELECT COUNT(*) FROM contracts WHERE sample_id IN (SELECT sample_id FROM samples"
+                " WHERE underlying=? AND received_ms>=? AND received_ms<?)",
+                (underlying, start_ms, end_ms),
+            ).fetchone()[0]
+        return int(n_s), int(n_c)
+
+    def export_rows(self, underlying: str, start_ms: int, end_ms: int) -> Iterator[dict[str, Any]]:
+        """Every sample of the window followed by its contract rows, oldest first (read-only).
+
+        Contracts are read one sample at a time so memory stays small and writers are never blocked
+        for long. Values are exactly as stored (prices in paise, missing = None).
+        """
+        with self._lock:
+            heads = self._db.execute(
+                "SELECT sample_id, snapshot_id, session_id, underlying, expiry, received_ms, provider_ms,"
+                " spot_p, prev_close_p, lot_size, unchanged, source, fp FROM samples"
+                " WHERE underlying=? AND received_ms>=? AND received_ms<? ORDER BY received_ms, sample_id",
+                (underlying, start_ms, end_ms),
+            ).fetchall()
+        keys = ("sample_id", "snapshot_id", "session_id", "underlying", "expiry", "received_ms", "provider_ms",
+                "spot_p", "prev_close_p", "lot_size", "unchanged", "source", "fp")  # fmt: skip
+        for h in heads:
+            yield {"t": "sample", **dict(zip(keys, h, strict=True))}
+            with self._lock:
+                cs = self._db.execute(
+                    "SELECT strike, side, ltp_p, oi, oi_prev, volume FROM contracts WHERE sample_id=?"
+                    " ORDER BY strike, side",
+                    (h[0],),
+                ).fetchall()
+            for k, d, ltp, oi, prev, vol in cs:
+                rec = {"t": "c", "s": h[0], "k": k, "d": d, "ltp_p": ltp}
+                rec |= {"oi": oi, "oi_prev": prev, "v": vol}
+                yield rec
+
+    def checkpoint(self) -> None:
+        """Fold the write-ahead log into the database file (no data is removed)."""
+        with self._lock:
+            self._db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     def stats(self) -> dict[str, Any]:
         with self._lock:

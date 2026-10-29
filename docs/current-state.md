@@ -56,3 +56,9 @@ Deploy kit written and tested for update/rollback logic and backend startup with
 
 ## Daily broker sign-in (2026-10-29)
 - The backend signs in to Kotak Neo every day at 08:30 IST (`BROKER_DAILY_LOGIN`, `BROKER_LOGIN_TIME`), retries every 5 minutes until 09:10 on failure, and restarts the live stream afterwards if it was running so it uses the new session. Status: `GET /api/broker/daily-login`. Tested with a stand-in broker (schedule, retry, once per day); the first real 08:30 run is 29 Oct.
+
+## Storage and end-of-day lifecycle (2026-10-29, D54)
+- Built and tested (pytest 306 passed in Claude's workspace; vitest 168): `backend/app/lifecycle` (verified daily archive, session manifests, daily summaries with the close-of-day chain, verified backups with bounded retention, regenerable-file tidy, snapshot retention with safety checks, storage report), `GET /api/storage/status`, `POST /api/storage/eod/run`, Settings -> Storage panel. Plan and numbers: [storage-plan.md](storage-plan.md).
+- **Not enabled until the owner approves limits:** removal of snapshot files. Defaults keep everything.
+- **Open finding:** the PC stopped collecting at 09:49 IST on 29 Oct (the log ends there without an error, consistent with the computer sleeping). Only the server should be relied on for full sessions; its first full session has not been checked from here.
+- Not verified live: the end-of-day run has not yet executed on a real full session (the first one after deploy is the next trading day).

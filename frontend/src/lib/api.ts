@@ -5,7 +5,7 @@ import type {
   ConfigStatus,
   ErrorEvent,
   ExpirySelection,
-  EventItem, FlowsLatest, IntradayScoreRow, IntradaySummary, NewsStatus, FlowsStatus, HistoryFetchStatus, HistoryResponse, OiChange, OiHeatmap, PredictionSummary, SamplerStatus,
+  EventItem, FlowsLatest, StorageStatus, IntradayScoreRow, IntradaySummary, NewsStatus, FlowsStatus, HistoryFetchStatus, HistoryResponse, OiChange, OiHeatmap, PredictionSummary, SamplerStatus,
   SessionInfo,
   SnapshotSummary,
 } from "./types";
@@ -69,6 +69,7 @@ export const api = {
     request<OiHeatmap>(
       `/api/oi/heatmap?expiry=${encodeURIComponent(expiry)}&side=${side}&baseline=${baseline}&strikes=${strikes}`,
     ),
+  storageStatus: () => request<StorageStatus>("/api/storage/status"),
   predictionSummary: () => request<PredictionSummary>("/api/prediction/summary"),
   intradaySummary: (expiry: string) => request<IntradaySummary>(`/api/intraday/summary?expiry=${encodeURIComponent(expiry)}`),
   intradayScores: (expiry: string) =>

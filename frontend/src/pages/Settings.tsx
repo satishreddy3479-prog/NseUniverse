@@ -8,6 +8,7 @@ import { applyTheme, loadTheme, type Theme } from "../lib/theme";
 import { SignalChain } from "../components/SignalChain";
 import { PredictionData } from "../components/PredictionData";
 import { PredictionFlows } from "../components/PredictionFlows";
+import { StoragePanel } from "../components/StoragePanel";
 import { Button, Panel } from "../components/ui";
 
 export function Settings() {
@@ -54,6 +55,7 @@ export function Settings() {
       </div>
       <PredictionData />
       <PredictionFlows />
+      <StoragePanel />
       <Panel title="Theme">
         <fieldset className="flex gap-4">
           <legend className="sr-only">Theme</legend>

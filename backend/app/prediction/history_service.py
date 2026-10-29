@@ -52,7 +52,9 @@ class HistoryService:
         symbols: list[SymbolSpec] | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         pause_between_s: float = 1.0,
+        after_refresh: Callable[[], object] | None = None,
     ) -> None:
+        self._after_refresh = after_refresh
         self.store = store
         self._download = downloader
         self.start_date = start
@@ -117,6 +119,12 @@ class HistoryService:
         }  # fmt: skip
         await asyncio.to_thread(self.store.finish_run, run_id, summary, self._clock())
         log_event(logger, logging.INFO, "history_refreshed", ok=len(ok), new=summary["new_bars"])
+        if self._after_refresh is not None and (summary["new_bars"] or summary["corrected_bars"]):
+            # new final bars: the daily models train on them (the callback starts the work, returns)
+            try:
+                await asyncio.to_thread(self._after_refresh)
+            except Exception as e:  # noqa: BLE001 - a model problem must never fail the data run
+                log_event(logger, logging.WARNING, "after_refresh_failed", error=type(e).__name__)
         return summary
 
     def trigger(self) -> bool:

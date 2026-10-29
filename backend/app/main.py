@@ -8,6 +8,7 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time, timedelta
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -20,6 +21,7 @@ from app.broker.base import MarketDataBroker
 from app.config import Settings, get_settings
 from app.intraday.service import IntradayService
 from app.intraday.store import IntradayStore
+from app.lifecycle.eod import EodService
 from app.logging_setup import log_event, setup_logging
 from app.prediction.flows_service import FlowsService
 from app.prediction.flows_store import FlowsStore
@@ -94,8 +96,13 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         )
         app.state.stream = stream
         history_store = HistoryStore(settings.data_dir)
+        research_ref: dict[str, PredictionResearch] = {}
         history = HistoryService(
-            history_store, enabled=settings.history_autofetch, start=settings.history_start
+            history_store,
+            enabled=settings.history_autofetch,
+            start=settings.history_start,
+            # new final price bars -> the daily T+1/T+5 models retrain (never in market hours)
+            after_refresh=lambda: research_ref["r"].summary() if "r" in research_ref else None,
         )
         app.state.history = history
         ledger = ForecastLedger(settings.data_dir)
@@ -109,6 +116,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             history_store, ledger, cache_dir=settings.data_dir, flows=flows_store
         )
         app.state.research = research
+        research_ref["r"] = research
         research.start()
         flows = FlowsService(
             flows_store,
@@ -128,6 +136,18 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         app.state.intraday = intraday
         if settings.intraday_autoscore:
             intraday.start()
+        eod = EodService(
+            observations, intraday_store, history_store, settings.data_dir, settings.underlying,
+            log_dir=settings.log_dir, enabled=settings.eod_enabled,
+            # the server's nightly timer (deploy/backup.sh) already backs up every database
+            backups=settings.eod_backups and not Path("/var/backups/nse-universe").is_dir(),
+            raw_keep_days=settings.snapshot_raw_keep_days,
+            normalized_keep_days=settings.snapshot_normalized_keep_days,
+            keep_daily_backups=settings.backup_keep_daily,
+            keep_monthly_backups=settings.backup_keep_monthly,
+        )
+        app.state.eod = eod
+        eod.start()
         sampler = SnapshotSampler(
             snapshot_service,
             interval_s=settings.sampler_interval_seconds,
@@ -166,6 +186,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         finally:
             if not login_task.done():
                 login_task.cancel()
+            await eod.stop()
             await daily_login.stop()
             await intraday.stop()
             intraday_store.close()

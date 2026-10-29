@@ -364,6 +364,34 @@ async def oi_heatmap_route(
     )  # fmt: skip
 
 
+@router.get("/storage/status")
+async def storage_status(request: Request) -> dict[str, Any]:
+    """Storage sizes, growth and runway, backups, end-of-day status and the pruning dry run."""
+    from app.lifecycle import storage as st
+
+    eod = request.app.state.eod
+    s = request.app.state.settings
+
+    def build() -> dict[str, Any]:
+        today = datetime.now(UTC).astimezone(IST).date()
+        return {
+            **st.report(s.data_dir, s.log_dir, today, archived_days=eod.archived_days()),
+            "end_of_day": eod.status(),
+            "daily_models": {
+                "when": "retrained on each new final daily bar, after 18:30 IST, off market hours",
+                "intraday_model": "not trained: needs 60 complete sessions",
+            },
+        }
+
+    return await asyncio.to_thread(build)
+
+
+@router.post("/storage/eod/run", dependencies=[Depends(require_local_control)])
+async def storage_eod_run(request: Request) -> dict[str, Any]:
+    """Run the end-of-day pipeline now for every finished day that has no manifest (idempotent)."""
+    return await asyncio.to_thread(request.app.state.eod.run)
+
+
 @router.get("/broker/daily-login")
 async def daily_login_status(request: Request) -> dict[str, Any]:
     """Morning broker sign-in schedule and the result of today's attempt."""

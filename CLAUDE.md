@@ -46,7 +46,7 @@ Full rules: [security](.claude/rules/security.md).
 Pure function in `frontend/src/lib/analytics.ts` (missing values skipped and counted, never zero) -> option builder in `chartOptions.ts` -> widget in `components/dashboard/widgets.tsx` (register in `WIDGETS`; show source, expiry and empty states) -> tests built from real captured data, with an independent hand calculation. Time series use stored snapshots only (`/api/history/observations`).
 
 ## Storage
-Snapshots are gzip files plus a SQLite index; the sampler stores every 60 s in market hours, skips unchanged chains, and pauses below 2 GB free. Measure before changing sampling or formats; never delete stored data without approval. Server rules: skills `nse-universe-project-rules`, `nse-trading-desk-master`.
+Snapshots are gzip files plus a SQLite index; the sampler stores every 60 s in market hours, skips unchanged chains, and pauses below 2 GB free. Measure before changing sampling or formats; never delete stored data without approval. Plan, sizes and approvals: [storage-plan](docs/storage-plan.md). Server rules: skills `nse-universe-project-rules`, `nse-trading-desk-master`.
 - Control endpoints trust loopback clients: do not put the backend behind a reverse proxy until they are authenticated.
 
 ## Prediction work

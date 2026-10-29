@@ -29,6 +29,7 @@ def make_settings(tmp_path: Path, **overrides: Any) -> Settings:
         "flows_autofetch": False,
         "news_autofetch": False,
         "intraday_autoscore": False,
+        "eod_enabled": False,
         **CREDS,
     }
     base.update(overrides)

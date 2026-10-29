@@ -211,6 +211,8 @@ class SnapshotStore:
                 with gzip.open(path, "rt", encoding="utf-8") as f:
                     return OptionChainSnapshot.model_validate_json(f.read())
             return OptionChainSnapshot.model_validate_json(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None  # removed by the approved retention policy (the day stays in the archive)
         except (OSError, EOFError) as e:
             raise StorageError(f"failed to read snapshot: {type(e).__name__}") from e
 

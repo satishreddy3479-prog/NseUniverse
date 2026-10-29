@@ -493,3 +493,20 @@ export interface IntradaySummary {
   config: { version: string; weights: Record<string, number>; min_coverage: number };
 }
 export interface IntradayScoreRow { sample_utc: string; spot: number | null; score: number | null; label: string; coverage: number; regime: string | null }
+
+// ---- Storage and end-of-day (/api/storage/status)
+export interface StorageStatus {
+  data_dir_bytes: number; logs_bytes: number;
+  categories: { name: string; class: string; files: number; bytes: number; rule: string }[];
+  disk: { free_bytes: number; total_bytes: number; free_gb: number };
+  growth_bytes_per_day: number; runway_days: number | null; growth_note: string;
+  pressure: "ok" | "watch" | "low" | "critical";
+  snapshot_pruning_plan: { executed: boolean; approved: boolean; older_than_days: number; eligible_days: number; files: number; bytes: number; blocked: { day: string; reason: string }[] };
+  end_of_day: {
+    enabled: boolean; runs_after_ist: string; backup_after_ist: string; pending_days: string[]; sessions_archived: number; complete_sessions: number;
+    last_attempt_at: string | null; last_result: { state: string; [k: string]: unknown };
+    last_backup: { day: string; ok: boolean; files: number; removed: string[]; problems: string[] } | null; last_tidy: { files_removed: number; bytes_freed: number } | null;
+    backups_enabled: boolean; snapshot_retention: { raw_days: number; normalized_days: number; last_run: { raw_files: number; normalized_files: number } | null };
+  };
+  daily_models: { when: string; intraday_model: string };
+}

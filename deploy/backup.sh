@@ -16,8 +16,14 @@ mkdir -p "$tmp"
 trap 'rm -rf "$tmp"' EXIT
 n=0
 shopt -s nullglob
+# The observation database is the big one (about 5 MB a day) and every finished day is also kept in a
+# verified compressed archive, so it is copied weekly (Sunday, or when no copy exists yet) instead of daily.
 for db in "$DATA"/*.sqlite3; do
   name=$(basename "$db")
+  if [ "$name" = "observations.sqlite3" ] && [ "$(date -u +%u)" != "7" ] \
+     && [ -n "$(find "$DEST" -mindepth 2 -maxdepth 2 -name 'observations.sqlite3.gz' -mtime -8 2>/dev/null | head -1)" ]; then
+    continue
+  fi
   sqlite3 "$db" ".backup '$tmp/$name'"
   [ "$(sqlite3 "$tmp/$name" 'PRAGMA quick_check;')" = "ok" ] || { echo "backup: integrity check FAILED for $name; nothing replaced"; exit 1; }
   gzip -f "$tmp/$name"

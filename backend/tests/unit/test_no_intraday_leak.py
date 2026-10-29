@@ -28,7 +28,7 @@ from tests.unit.test_research import _at, _Cal, _service, _walk
 APP = Path(__file__).resolve().parents[2] / "app"
 FORBIDDEN = (
     "app.intraday", "app.storage", "app.stream", "app.services", "app.broker", "app.api",
-    "app.main", "app.domain",
+    "app.main", "app.domain", "app.lifecycle",
 )  # fmt: skip
 D = date.fromisoformat
 
@@ -62,9 +62,9 @@ def test_prediction_code_never_names_the_intraday_or_observation_databases() -> 
 
 
 def test_intraday_package_never_imports_the_model_code() -> None:
-    """The reverse direction: the intraday view may read stored daily data, but never the models."""
+    """The reverse direction: intraday and lifecycle code may read stored daily data, never the models."""
     models = ("app.prediction.research", "app.prediction.models", "app.prediction.features", "app.prediction.features_multi", "app.prediction.ledger")
-    for f in (APP / "intraday").rglob("*.py"):
+    for f in [*(APP / "intraday").rglob("*.py"), *(APP / "lifecycle").rglob("*.py")]:
         assert not [m for m in _imports(f) if m in models], f.name
 
 
