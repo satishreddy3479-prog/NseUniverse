@@ -35,6 +35,8 @@ ignore = ["S101"]
 # intraday: formula strings and evidence text read better on one line
 "app/intraday/**" = ["E501"]
 "app/lifecycle/**" = ["E501"]
+"app/market/**" = ["E501"]
+"tests/unit/test_market*.py" = ["E501"]
 "app/storage/observations.py" = ["E501"]
 "tests/unit/test_lifecycle.py" = ["E501"]
 "tests/unit/test_intraday_dataset.py" = ["E501"]

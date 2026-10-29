@@ -23,6 +23,8 @@ from app.intraday.service import IntradayService
 from app.intraday.store import IntradayStore
 from app.lifecycle.eod import EodService
 from app.logging_setup import log_event, setup_logging
+from app.market.service import MarketService
+from app.market.store import MarketStore
 from app.prediction.flows_service import FlowsService
 from app.prediction.flows_store import FlowsStore
 from app.prediction.history_service import HistoryService
@@ -79,9 +81,13 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             observations,
         )
         app.state.snapshot_service = snapshot_service
+        market_ref: dict[str, MarketService] = {}
         stream = StreamManager(
             feed_factory=b.create_feed,
-            universe_provider=lambda: build_universe(snapshot_service),
+            universe_provider=lambda: build_universe(
+                snapshot_service,
+                lambda: market_ref["m"].stream_tokens() if "m" in market_ref else [],
+            ),
             config=StreamConfig(
                 stale_after_seconds=settings.stream_stale_after_seconds,
                 broadcast_interval_ms=settings.stream_broadcast_interval_ms,
@@ -136,6 +142,20 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         app.state.intraday = intraday
         if settings.intraday_autoscore:
             intraday.start()
+        market_store = MarketStore(settings.data_dir)
+        scrip = getattr(b, "scrip_master_rows", None)
+        market = MarketService(
+            market_store,
+            ticks=stream.book.internal_ticks,
+            scrip_master=scrip,
+            trading_day=lambda d: intraday.trading_day(d),
+            enabled=settings.breadth_enabled,
+        )
+        app.state.market = market
+        intraday.market = market
+        if settings.breadth_enabled:
+            market_ref["m"] = market
+            market.start()
         eod = EodService(
             observations, intraday_store, history_store, settings.data_dir, settings.underlying,
             log_dir=settings.log_dir, enabled=settings.eod_enabled,
@@ -186,6 +206,8 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         finally:
             if not login_task.done():
                 login_task.cancel()
+            await market.stop()
+            market_store.close()
             await eod.stop()
             await daily_login.stop()
             await intraday.stop()

@@ -11,6 +11,10 @@ class LiveBook:
         self._pending: dict[str, LiveTick] = {}
         self._seq = 0
         self.tick_count = 0
+        # breadth stocks: kept for the analysis, never broadcast to browsers, never counted as
+        # option-feed activity
+        self.internal_keys: set[str] = set()
+        self._internal: dict[str, LiveTick] = {}
 
     @staticmethod
     def _same(a: LiveTick, b: LiveTick) -> bool:
@@ -29,6 +33,12 @@ class LiveBook:
         self.tick_count += 1
         return tick
 
+    def update_internal(self, tick: LiveTick) -> None:
+        self._internal[tick.key] = tick
+
+    def internal_ticks(self) -> dict[str, LiveTick]:
+        return dict(self._internal)
+
     def drain_pending(self) -> list[LiveTick]:
         out = list(self._pending.values())
         self._pending.clear()
@@ -46,3 +56,4 @@ class LiveBook:
     def clear(self) -> None:
         self._ticks.clear()
         self._pending.clear()
+        self._internal.clear()

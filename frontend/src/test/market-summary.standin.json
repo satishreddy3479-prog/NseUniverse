@@ -1,0 +1,462 @@
+{
+ "generated_at": "2026-10-29T04:30:00+00:00",
+ "elapsed_minutes": 45.0,
+ "index_change_pct": 1.0000000000000009,
+ "sources": {
+  "lists": {
+   "nifty50": {
+    "stocks": 8,
+    "sha256": "5c67948ac4e76a85431096fba4530fa1c8850a7a6040401c22af33d1778d8e46",
+    "fetched_utc": "2026-10-29T04:30:00+00:00"
+   },
+   "nifty500": {
+    "stocks": 8,
+    "sha256": "3866da450f20002f560f199a0c1b0296b1a41ff4057b00e079f6427a669f49e2",
+    "fetched_utc": "2026-10-29T04:30:00+00:00"
+   },
+   "last_attempt": null
+  },
+  "tokens": {
+   "day": "2026-10-29",
+   "found": 8,
+   "of": 8,
+   "last_attempt": null
+  },
+  "weights": {
+   "as_of": "2026-09-30",
+   "source": "NSE factsheet",
+   "stocks": 8,
+   "approximate": false
+  },
+  "volume_baseline": {
+   "sessions": 12,
+   "stocks": 8,
+   "needs_sessions": 10,
+   "last_attempt": null
+  },
+  "live": {
+   "stocks_with_ticks": 8,
+   "subscribed": 8
+  }
+ },
+ "nifty50": {
+  "breadth": {
+   "total": 8,
+   "covered": 8,
+   "advancing": 6,
+   "declining": 2,
+   "flat": 0,
+   "ad_ratio": 3.0,
+   "ad_balance": 0.5,
+   "pct_advancing": 75.0,
+   "equal_weight_return": 0.49999999999999767,
+   "at_high": 8,
+   "at_low": 2,
+   "pct_at_high": 100.0,
+   "pct_at_low": 25.0,
+   "gainers": [
+    [
+     "ADANIENT",
+     2.0
+    ],
+    [
+     "AXISBANK",
+     1.5
+    ],
+    [
+     "BSE",
+     1.0
+    ],
+    [
+     "APOLLOHOSP",
+     1.0
+    ],
+    [
+     "ADANIPORTS",
+     1.0
+    ]
+   ],
+   "losers": [
+    [
+     "BAJAJ-AUTO",
+     -2.0
+    ],
+    [
+     "ASIANPAINT",
+     -1.0
+    ]
+   ],
+   "coverage": 1.0
+  },
+  "contribution": {
+   "weight_covered": 100.0,
+   "weight_loaded": 100.0,
+   "cap_weight_return": 0.8749999999999969,
+   "net_points_pct": 0.8749999999999969,
+   "top": [
+    [
+     "ADANIENT",
+     0.4
+    ],
+    [
+     "AXISBANK",
+     0.375
+    ],
+    [
+     "BAJAJ-AUTO",
+     -0.2
+    ],
+    [
+     "ADANIPORTS",
+     0.15
+    ],
+    [
+     "APOLLOHOSP",
+     0.1
+    ],
+    [
+     "ASIANPAINT",
+     -0.05
+    ],
+    [
+     "BSE",
+     0.05
+    ],
+    [
+     "BAJFINANCE",
+     0.05
+    ]
+   ],
+   "top5_share": 1.2285714285714309,
+   "top10_share": 1.285714285714287,
+   "stocks_for_half": 2
+  },
+  "volume": {
+   "covered": 8,
+   "weighted_rv": 0.5,
+   "reference": "linear",
+   "up_volume_share": 0.75,
+   "low_volume_names": [
+    "ADANIENT",
+    "ADANIPORTS",
+    "APOLLOHOSP",
+    "ASIANPAINT",
+    "AXISBANK",
+    "BAJAJ-AUTO",
+    "BAJFINANCE",
+    "BSE"
+   ]
+  },
+  "quality": {
+   "state": "thin",
+   "reasons": [
+    "volume is 0.50x normal for this time (linear reference)"
+   ],
+   "provisional": true
+  },
+  "stocks": [
+   {
+    "symbol": "ADANIENT",
+    "sector": "Metals & Mining",
+    "weight": 20.0,
+    "change_pct": 2.0,
+    "contribution": 0.4,
+    "volume": 60,
+    "relative_volume": 0.5
+   },
+   {
+    "symbol": "AXISBANK",
+    "sector": "Financial Services",
+    "weight": 25.0,
+    "change_pct": 1.5,
+    "contribution": 0.375,
+    "volume": 60,
+    "relative_volume": 0.5
+   },
+   {
+    "symbol": "BAJAJ-AUTO",
+    "sector": "Automobile and Auto Components",
+    "weight": 10.0,
+    "change_pct": -2.0,
+    "contribution": -0.2,
+    "volume": 60,
+    "relative_volume": 0.5
+   },
+   {
+    "symbol": "ADANIPORTS",
+    "sector": "Services",
+    "weight": 15.0,
+    "change_pct": 1.0,
+    "contribution": 0.15,
+    "volume": 60,
+    "relative_volume": 0.5
+   },
+   {
+    "symbol": "APOLLOHOSP",
+    "sector": "Healthcare",
+    "weight": 10.0,
+    "change_pct": 1.0,
+    "contribution": 0.1,
+    "volume": 60,
+    "relative_volume": 0.5
+   },
+   {
+    "symbol": "ASIANPAINT",
+    "sector": "Consumer Durables",
+    "weight": 5.0,
+    "change_pct": -1.0,
+    "contribution": -0.05,
+    "volume": 60,
+    "relative_volume": 0.5
+   },
+   {
+    "symbol": "BAJFINANCE",
+    "sector": "Financial Services",
+    "weight": 10.0,
+    "change_pct": 0.5,
+    "contribution": 0.05,
+    "volume": 60,
+    "relative_volume": 0.5
+   },
+   {
+    "symbol": "BSE",
+    "sector": "Financial Services",
+    "weight": 5.0,
+    "change_pct": 1.0,
+    "contribution": 0.05,
+    "volume": 60,
+    "relative_volume": 0.5
+   }
+  ],
+  "weights": {
+   "as_of": "2026-09-30",
+   "source": "NSE factsheet",
+   "approximate": false
+  }
+ },
+ "nifty500": {
+  "breadth": {
+   "total": 8,
+   "covered": 8,
+   "advancing": 6,
+   "declining": 2,
+   "flat": 0,
+   "ad_ratio": 3.0,
+   "ad_balance": 0.5,
+   "pct_advancing": 75.0,
+   "equal_weight_return": 0.49999999999999767,
+   "at_high": 8,
+   "at_low": 2,
+   "pct_at_high": 100.0,
+   "pct_at_low": 25.0,
+   "gainers": [
+    [
+     "ADANIENT",
+     2.0
+    ],
+    [
+     "AXISBANK",
+     1.5
+    ],
+    [
+     "BSE",
+     1.0
+    ],
+    [
+     "APOLLOHOSP",
+     1.0
+    ],
+    [
+     "ADANIPORTS",
+     1.0
+    ]
+   ],
+   "losers": [
+    [
+     "BAJAJ-AUTO",
+     -2.0
+    ],
+    [
+     "ASIANPAINT",
+     -1.0
+    ]
+   ],
+   "coverage": 1.0
+  }
+ },
+ "sectors": {
+  "nifty50": [
+   {
+    "sector": "Financial Services",
+    "stocks": 3,
+    "covered": 3,
+    "advancing": 3,
+    "declining": 0,
+    "equal_weight_return": 0.9999999999999934,
+    "cap_weight_return": 1.1874999999999916,
+    "contribution_pts": 0.47499999999999654,
+    "index_return": null,
+    "relative_strength": 0.18749999999999067,
+    "rank": 1,
+    "weighted_rv": 0.5
+   },
+   {
+    "sector": "Metals & Mining",
+    "stocks": 1,
+    "covered": 1,
+    "advancing": 1,
+    "declining": 0,
+    "equal_weight_return": null,
+    "cap_weight_return": null,
+    "contribution_pts": null,
+    "index_return": null,
+    "relative_strength": null,
+    "rank": null,
+    "weighted_rv": null
+   },
+   {
+    "sector": "Services",
+    "stocks": 1,
+    "covered": 1,
+    "advancing": 1,
+    "declining": 0,
+    "equal_weight_return": null,
+    "cap_weight_return": null,
+    "contribution_pts": null,
+    "index_return": null,
+    "relative_strength": null,
+    "rank": null,
+    "weighted_rv": null
+   },
+   {
+    "sector": "Healthcare",
+    "stocks": 1,
+    "covered": 1,
+    "advancing": 1,
+    "declining": 0,
+    "equal_weight_return": null,
+    "cap_weight_return": null,
+    "contribution_pts": null,
+    "index_return": null,
+    "relative_strength": null,
+    "rank": null,
+    "weighted_rv": null
+   },
+   {
+    "sector": "Consumer Durables",
+    "stocks": 1,
+    "covered": 1,
+    "advancing": 0,
+    "declining": 1,
+    "equal_weight_return": null,
+    "cap_weight_return": null,
+    "contribution_pts": null,
+    "index_return": null,
+    "relative_strength": null,
+    "rank": null,
+    "weighted_rv": null
+   },
+   {
+    "sector": "Automobile and Auto Components",
+    "stocks": 1,
+    "covered": 1,
+    "advancing": 0,
+    "declining": 1,
+    "equal_weight_return": null,
+    "cap_weight_return": null,
+    "contribution_pts": null,
+    "index_return": null,
+    "relative_strength": null,
+    "rank": null,
+    "weighted_rv": null
+   }
+  ],
+  "nifty500": [
+   {
+    "sector": "Financial Services",
+    "stocks": 3,
+    "covered": 3,
+    "advancing": 3,
+    "declining": 0,
+    "equal_weight_return": 0.9999999999999934,
+    "cap_weight_return": null,
+    "contribution_pts": null,
+    "index_return": null,
+    "relative_strength": -7.438494264988549e-15,
+    "rank": 1,
+    "weighted_rv": 0.5
+   },
+   {
+    "sector": "Metals & Mining",
+    "stocks": 1,
+    "covered": 1,
+    "advancing": 1,
+    "declining": 0,
+    "equal_weight_return": null,
+    "cap_weight_return": null,
+    "contribution_pts": null,
+    "index_return": null,
+    "relative_strength": null,
+    "rank": null,
+    "weighted_rv": null
+   },
+   {
+    "sector": "Services",
+    "stocks": 1,
+    "covered": 1,
+    "advancing": 1,
+    "declining": 0,
+    "equal_weight_return": null,
+    "cap_weight_return": null,
+    "contribution_pts": null,
+    "index_return": null,
+    "relative_strength": null,
+    "rank": null,
+    "weighted_rv": null
+   },
+   {
+    "sector": "Healthcare",
+    "stocks": 1,
+    "covered": 1,
+    "advancing": 1,
+    "declining": 0,
+    "equal_weight_return": null,
+    "cap_weight_return": null,
+    "contribution_pts": null,
+    "index_return": null,
+    "relative_strength": null,
+    "rank": null,
+    "weighted_rv": null
+   },
+   {
+    "sector": "Consumer Durables",
+    "stocks": 1,
+    "covered": 1,
+    "advancing": 0,
+    "declining": 1,
+    "equal_weight_return": null,
+    "cap_weight_return": null,
+    "contribution_pts": null,
+    "index_return": null,
+    "relative_strength": null,
+    "rank": null,
+    "weighted_rv": null
+   },
+   {
+    "sector": "Automobile and Auto Components",
+    "stocks": 1,
+    "covered": 1,
+    "advancing": 0,
+    "declining": 1,
+    "equal_weight_return": null,
+    "cap_weight_return": null,
+    "contribution_pts": null,
+    "index_return": null,
+    "relative_strength": null,
+    "rank": null,
+    "weighted_rv": null
+   }
+  ],
+  "rotation": []
+ }
+}

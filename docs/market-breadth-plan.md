@@ -1,6 +1,6 @@
 # Market breadth, heavyweights, volume and sectors: plan
 
-Status: **plan only, nothing built yet.** Purpose: tell whether a NIFTY move is *real* (broad, backed by the
+Status: **Phases 1-3 built and tested offline (2026-10-29); NOT verified against live stock ticks.** Build: `backend/app/market/`, API `/api/market/*`, Command Center cards (Breadth, Heavyweights, Sectors). Open until a market-hours check: Kotak scrip-master format and NIFTY 500 token coverage, tick rate, server load (`/api/market/coverage`, `/api/market/status`); index weights are not loaded (import official CSV via `POST /api/market/weights/import`); volume baseline needs 10 bhavcopy sessions (auto backfill); volume reference is linear (no intraday profile yet). Original plan: Purpose: tell whether a NIFTY move is *real* (broad, backed by the
 heavyweight stocks and by volume) or *thin* (a few stocks, little volume), and feed that into the intraday
 sentiment, the scenarios and the intraday ML dataset.
 

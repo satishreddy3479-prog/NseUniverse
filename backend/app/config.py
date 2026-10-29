@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     history_autofetch: bool = True
     flows_history_days: int = 10  # NSE files are collected from this many days back, then daily
     news_autofetch: bool = True  # GDELT daily tone/volume (headline aggregates only)
+    breadth_enabled: bool = True  # stock breadth, heavyweights, sectors (market-breadth-plan.md)
     eod_enabled: bool = True  # after-close archive, summary, manifest, backup (storage-plan.md)
     eod_backups: bool = True  # False on the server, where deploy/backup.sh already backs up nightly
     snapshot_raw_keep_days: int = 0  # 0 = keep forever; set only with the owner's approval

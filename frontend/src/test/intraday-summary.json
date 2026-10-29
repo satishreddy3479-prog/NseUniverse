@@ -127,10 +127,10 @@
     "weight": 0.15,
     "available": false,
     "score": null,
-    "reason": "no NIFTY 50 constituent feed is collected yet (advances/declines unknown)",
-    "formula": "",
+    "reason": "stock breadth is turned off or not running",
+    "formula": "mean of (advancing - declining) / (advancing + declining) for NIFTY 50 and NIFTY 500, live price vs previous close; each needs >= 70% of its stocks priced",
     "inputs": [],
-    "source": "",
+    "source": "Kotak live stock prices",
     "as_of": null,
     "contribution": null
    },
@@ -140,10 +140,10 @@
     "weight": 0.1,
     "available": false,
     "score": null,
-    "reason": "only previous-session daily sector closes are stored; no intraday sector data",
-    "formula": "",
+    "reason": "stock breadth is turned off or not running",
+    "formula": "(sectors up - sectors down) / sectors with a return, equal-weighted NIFTY 500 sector returns; needs >= 6 sectors with >= 3 priced stocks",
     "inputs": [],
-    "source": "",
+    "source": "Kotak live stock prices, NSE industry classification",
     "as_of": null,
     "contribution": null
    },
@@ -294,11 +294,11 @@
   },
   {
    "question": "Broad or concentrated participation?",
-   "answer": "Unknown: no constituent breadth data is collected yet."
+   "answer": "Unknown: stock breadth is turned off or not running."
   },
   {
    "question": "Sectors confirming?",
-   "answer": "Unknown intraday: only previous-session sector closes are stored."
+   "answer": "Unknown: stock breadth is turned off or not running."
   },
   {
    "question": "Options positioning vs price?",
@@ -325,6 +325,7 @@
    "answer": "Yes."
   }
  ],
+ "stocks": null,
  "levels": [
   {
    "name": "Previous day high",
@@ -595,13 +596,13 @@
   {
    "source": "Market breadth",
    "status": "not_available",
-   "detail": "no constituent advance/decline feed is collected",
+   "detail": "stock breadth is turned off",
    "as_of": null
   },
   {
    "source": "Intraday sector data",
    "status": "not_available",
-   "detail": "only daily sector closes are stored",
+   "detail": "stock breadth is turned off",
    "as_of": null
   },
   {
@@ -687,15 +688,15 @@
   },
   "min_coverage": 0.45
  },
- "compute_ms": 404.9,
+ "compute_ms": 327.4,
  "timings_ms": {
-  "samples_query": 0.6,
+  "samples_query": 0.5,
   "calendar": 0.2,
-  "daily_history": 23.2,
-  "price_and_options": 2.1,
-  "global_flows": 231.6,
-  "assess_regime_store": 0.9,
-  "health_counts": 145.8,
+  "daily_history": 21.4,
+  "price_and_options": 1.9,
+  "global_flows": 223.4,
+  "assess_regime_store": 0.6,
+  "health_counts": 78.7,
   "record": 1.2
  }
 }

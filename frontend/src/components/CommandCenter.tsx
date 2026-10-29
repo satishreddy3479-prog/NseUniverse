@@ -8,7 +8,7 @@ import { compactIN } from "../lib/analytics";
 import { sentimentHistoryOption } from "../lib/chartOptions";
 import { fmtDateTimeIST, fmtPct, fmtPrice, fmtTimeIST, MISSING } from "../lib/format";
 import { useLiveSpot } from "../lib/useLive";
-import type { IntradayComponent, IntradaySummary } from "../lib/types";
+import type { BreadthBlock, IntradayComponent, IntradaySummary, MarketSummary } from "../lib/types";
 import { EChart, useChartColors } from "./EChart";
 
 const PHASE: Record<string, string> = {
@@ -238,6 +238,155 @@ function Regime({ d }: { d: IntradaySummary }) {
   );
 }
 
+const QUALITY: Record<string, { text: string; cls: string }> = {
+  broad_confirmed: { text: "Broad, volume-confirmed", cls: "border-up/60 text-up" },
+  broad: { text: "Broad (volume not confirmed)", cls: "border-up/50 text-up" },
+  narrow: { text: "Narrow: few stocks carry it", cls: "border-warn/60 text-warn" },
+  thin: { text: "Thin: low volume", cls: "border-warn/60 text-warn" },
+  mixed: { text: "Mixed", cls: "border-info/60 text-info" },
+  no_move: { text: "No real index move yet", cls: "border-rule text-muted" },
+  unknown: { text: "Not enough stocks priced", cls: "border-rule text-muted" },
+};
+
+/** Stacked up / flat / down bar for a breadth block. */
+export function BreadthBar({ b, label }: { b: BreadthBlock; label: string }) {
+  const n = Math.max(1, b.covered);
+  return (
+    <div role="img" aria-label={`${label}: ${b.advancing} up, ${b.flat} flat, ${b.declining} down of ${b.covered} priced`} className="flex h-2.5 w-full overflow-hidden rounded-sm bg-slate-2">
+      <div className="bg-up" style={{ width: `${(b.advancing / n) * 100}%` }} />
+      <div className="bg-muted/50" style={{ width: `${(b.flat / n) * 100}%` }} />
+      <div className="bg-down" style={{ width: `${(b.declining / n) * 100}%` }} />
+    </div>
+  );
+}
+
+function BreadthRow({ label, b }: { label: string; b: BreadthBlock }) {
+  return (
+    <div className="mb-3 last:mb-0">
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-3 text-xs">
+        <span className="font-semibold text-paper">{label}</span>
+        <span className="num text-muted">
+          <span className="text-up">{b.advancing} up</span> · <span className="text-down">{b.declining} down</span> · {b.flat} flat · {b.covered}/{b.total} priced
+        </span>
+      </div>
+      {b.covered === 0 ? <p className="text-xs text-muted">No priced stocks yet.</p> : <BreadthBar b={b} label={label} />}
+      {b.covered > 0 && (
+        <p className="num mt-1 text-[11px] text-muted">
+          equal-weighted {fmtPct(b.equal_weight_return)} · A/D ratio {b.ad_ratio == null ? MISSING : b.ad_ratio.toFixed(2)} · at session high {b.at_high} / low {b.at_low}
+          {b.coverage < 0.9 && <span className="text-warn"> · coverage {Math.round(b.coverage * 100)}%</span>}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SourceChecklist({ s }: { s: MarketSummary["sources"] }) {
+  const rows: [string, boolean, string][] = [
+    ["NIFTY 50 / NIFTY 500 lists", !!s.lists.nifty50 && !!s.lists.nifty500, s.lists.nifty50 ? `${s.lists.nifty50.stocks} / ${s.lists.nifty500?.stocks ?? 0} stocks` : "not downloaded yet"],
+    ["Kotak stock tokens", s.tokens.found > 0, `${s.tokens.found} of ${s.tokens.of} found`],
+    ["Live stock prices", s.live.stocks_with_ticks > 0, `${s.live.stocks_with_ticks} of ${s.live.subscribed} streaming`],
+    ["Index weights", !!s.weights, s.weights ? `${s.weights.source}, as of ${s.weights.as_of}${s.weights.approximate ? " (approximate)" : ""}` : "not loaded"],
+    ["Volume baseline", s.volume_baseline.stocks > 0, `${s.volume_baseline.sessions} of ${s.volume_baseline.needs_sessions} sessions stored`],
+  ];
+  return (
+    <ul className="space-y-1 text-xs" data-testid="cc-breadth-sources">
+      {rows.map(([name, ok, detail]) => (
+        <li key={name} className="flex justify-between gap-2"><span className="text-paper">{ok ? "✓" : "○"} {name}</span><span className={ok ? "text-muted" : "text-warn"}>{detail}</span></li>
+      ))}
+    </ul>
+  );
+}
+
+function Breadth({ d }: { d: IntradaySummary }) {
+  const m = d.stocks;
+  const q = m ? QUALITY[m.nifty50.quality.state] ?? QUALITY.unknown! : null;
+  const hasStocks = !!m && m.nifty50.breadth.covered > 0;
+  return (
+    <Card title="Market breadth & move quality" className="lg:col-span-6" right={q && hasStocks ? <Chip cls={q.cls} title="Provisional rule, not validated">{q.text}</Chip> : <Chip>Not available</Chip>}>
+      {!m ? <p className="text-sm text-muted">Stock breadth is turned off on this backend.</p> : !hasStocks ? (
+        <>
+          <p className="mb-2 text-sm text-muted">No stock prices are streaming yet, so breadth cannot be measured. It is not guessed.</p>
+          <SourceChecklist s={m.sources} />
+        </>
+      ) : (
+        <>
+          <BreadthRow label="NIFTY 50" b={m.nifty50.breadth} />
+          <BreadthRow label="NIFTY 500" b={m.nifty500.breadth} />
+          <div className="mt-2 rounded-sm bg-slate-2 p-2 text-xs" data-testid="cc-move-quality">
+            <div className="font-semibold text-paper">Is the move real? <span className="font-normal text-muted">(provisional rule)</span></div>
+            <ul className="mt-1 list-inside list-disc text-muted">{m.nifty50.quality.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+            {m.nifty50.contribution?.top5_share != null && (
+              <p className="num mt-1 text-muted">Top 5 stocks explain {Math.round(m.nifty50.contribution.top5_share * 100)}% of the NIFTY 50 move; {m.nifty50.contribution.stocks_for_half ?? MISSING} stock(s) explain half. Weights {m.nifty50.weights?.approximate ? "approximate" : "official"}, as of {m.nifty50.weights?.as_of}.</p>
+            )}
+            {m.nifty50.volume?.weighted_rv != null && (
+              <p className="num mt-1 text-muted">Volume {m.nifty50.volume.weighted_rv.toFixed(2)}x normal so far ({m.nifty50.volume.reference === "profile" ? "against the typical intraday profile" : "linear time reference: early volume is front-loaded, so this can show thin but not confirm strong"}).</p>
+            )}
+          </div>
+          <details className="mt-2 text-xs text-muted"><summary className="cursor-pointer">Data sources</summary><div className="mt-1"><SourceChecklist s={m.sources} /></div></details>
+        </>
+      )}
+    </Card>
+  );
+}
+
+function Heavyweights({ d }: { d: IntradaySummary }) {
+  const m = d.stocks;
+  const rows = (m?.nifty50.stocks ?? []).filter((s) => s.change_pct != null).slice(0, 10);
+  return (
+    <Card title="NIFTY 50 heavyweights" className="lg:col-span-6" right={<span className="text-[11px] text-muted">by contribution to the index move</span>}>
+      {rows.length === 0 ? <p className="text-sm text-muted">{m ? "No priced NIFTY 50 stocks yet." : "Stock breadth is turned off."}</p> : (
+        <table className="w-full text-xs" data-testid="cc-heavyweights">
+          <thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Stock</th><th className="py-1 text-right font-normal">Weight</th><th className="py-1 text-right font-normal">Change</th><th className="py-1 text-right font-normal">Contribution</th><th className="py-1 text-right font-normal">Volume vs normal</th></tr></thead>
+          <tbody>
+            {rows.map((s) => (
+              <tr key={s.symbol} className="border-t border-rule/50">
+                <td className="py-1 text-paper" title={s.sector ?? ""}>{s.symbol}</td>
+                <td className="num py-1 text-right text-muted">{s.weight == null ? MISSING : `${s.weight.toFixed(1)}%`}</td>
+                <td className={`num py-1 text-right ${tone(s.change_pct)}`}>{fmtPct(s.change_pct)}</td>
+                <td className={`num py-1 text-right ${tone(s.contribution)}`}>{s.contribution == null ? MISSING : `${s.contribution >= 0 ? "+" : "−"}${Math.abs(s.contribution).toFixed(3)} pt`}</td>
+                <td className={`num py-1 text-right ${s.relative_volume != null && s.relative_volume < 0.7 ? "text-warn" : "text-muted"}`}>{s.relative_volume == null ? MISSING : `${s.relative_volume.toFixed(2)}x`}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {m && !m.nifty50.weights && rows.length > 0 && <p className="mt-2 text-[11px] text-warn">Index weights are not loaded, so contribution cannot be shown (breadth counts still work).</p>}
+    </Card>
+  );
+}
+
+function Sectors({ d }: { d: IntradaySummary }) {
+  const m = d.stocks;
+  const rows = (m?.sectors.nifty500 ?? []).filter((r) => r.equal_weight_return != null);
+  return (
+    <Card title="Sectors" className="lg:col-span-12" right={<span className="text-[11px] text-muted">equal-weighted NIFTY 500 stocks · ranked by strength against the index</span>}>
+      {rows.length === 0 ? <p className="text-sm text-muted">{m ? "No sector has enough priced stocks yet." : "Stock breadth is turned off."}</p> : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[34rem] text-xs" data-testid="cc-sectors">
+            <thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">#</th><th className="py-1 font-normal">Sector</th><th className="py-1 text-right font-normal">Return</th><th className="py-1 text-right font-normal">vs index</th><th className="py-1 text-right font-normal">Up / down</th><th className="py-1 text-right font-normal">Volume vs normal</th><th className="py-1 text-right font-normal">Priced</th></tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.sector} className="border-t border-rule/50">
+                  <td className="num py-1 text-muted">{r.rank ?? MISSING}</td>
+                  <td className="py-1 text-paper">{r.sector}</td>
+                  <td className={`num py-1 text-right ${tone(r.equal_weight_return)}`}>{fmtPct(r.equal_weight_return)}</td>
+                  <td className={`num py-1 text-right ${tone(r.relative_strength)}`}>{r.relative_strength == null ? MISSING : `${r.relative_strength >= 0 ? "+" : "−"}${Math.abs(r.relative_strength).toFixed(2)}`}</td>
+                  <td className="num py-1 text-right text-muted">{r.advancing} / {r.declining}</td>
+                  <td className={`num py-1 text-right ${r.weighted_rv != null && r.weighted_rv < 0.7 ? "text-warn" : "text-muted"}`}>{r.weighted_rv == null ? MISSING : `${r.weighted_rv.toFixed(2)}x`}</td>
+                  <td className="num py-1 text-right text-muted">{r.covered}/{r.stocks}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {m && m.sectors.rotation.length > 0 && (
+        <p className="mt-2 text-xs text-muted" data-testid="cc-rotation">Rotation since the last sample: {m.sectors.rotation.map((r) => `${r.sector} ${r.direction === "up" ? "▲" : "▼"} ${r.from_rank}→${r.to_rank}`).join(", ")}.</p>
+      )}
+    </Card>
+  );
+}
+
 function Context({ d }: { d: IntradaySummary }) {
   return (
     <Card title="Intraday decision context" className="lg:col-span-4">
@@ -449,6 +598,9 @@ export function CommandCenter({ expiry }: { expiry: string | null }) {
             <Sentiment d={d} />
             <Evidence d={d} />
             <Regime d={d} />
+            <Breadth d={d} />
+            <Heavyweights d={d} />
+            <Sectors d={d} />
             <Context d={d} />
             <Levels d={d} />
             <Options d={d} />

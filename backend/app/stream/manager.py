@@ -46,6 +46,8 @@ class Universe:
     tokens: list[FeedToken]
     test_tokens: list[FeedToken]
     expiries: list[str] = field(default_factory=list)
+    #: breadth stocks: subscribed after the option universe, best effort, kept off the browser feed
+    market_tokens: list[FeedToken] = field(default_factory=list)
 
 
 class FeedAuthError(Exception):
@@ -111,6 +113,9 @@ class StreamManager:
         self.last_message_at: datetime | None = None
         self.last_market_data_at: datetime | None = None
         self.subscribed_tokens = 0
+        self.market_message_count = 0
+        self.market_subscribed = 0
+        self.market_note = "not requested"
         self.acknowledged_tokens = 0
         self.expiries: list[str] = []
         self.market = MarketStatus()
@@ -333,6 +338,7 @@ class StreamManager:
             self.acknowledged_tokens = feed.acknowledged_count
             if self.state is not StreamState.STREAMING:
                 self._set(StreamState.WAITING_FOR_DATA)
+            await self._subscribe_market(feed, universe)
             self._emit(
                 "stream_subscribed",
                 f"tokens={self.subscribed_tokens} acknowledged={self.acknowledged_tokens}"
@@ -353,6 +359,27 @@ class StreamManager:
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await consumer
 
+    async def _subscribe_market(self, feed: FeedSession, universe: Universe) -> None:
+        """Breadth stocks. Best effort: a failure is recorded and the option feed carries on."""
+        if not universe.market_tokens:
+            self.market_note = "not requested"
+            return
+        self.book.internal_keys = {t.key for t in universe.market_tokens}
+        done = 0
+        try:
+            for i in range(0, len(universe.market_tokens), SUBSCRIBE_CHUNK):
+                chunk = universe.market_tokens[i : i + SUBSCRIBE_CHUNK]
+                await feed.subscribe(chunk)
+                done += len(chunk)
+            self.market_note = f"subscribed {done} stocks"
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001 - never let this reach the option feed
+            total = len(universe.market_tokens)
+            self.market_note = f"stopped after {done} of {total} stocks: {type(e).__name__}"
+            self._emit("market_subscribe_failed", self.market_note)
+        self.market_subscribed = done
+
     async def _consume(self, feed: FeedSession) -> None:
         async for ev in feed.events():
             self._handle(ev, feed)
@@ -362,6 +389,10 @@ class StreamManager:
     # ----------------------------------------------------------------- events
     def _handle(self, ev: FeedEvent, feed: FeedSession) -> None:
         now = self._now()
+        if ev.kind == "tick" and ev.tick is not None and ev.tick.key in self.book.internal_keys:
+            self.book.update_internal(ev.tick)
+            self.market_message_count += 1
+            return
         if ev.kind == "tick" and ev.tick is not None:
             self.message_count += 1
             self.last_message_at = now

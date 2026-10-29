@@ -200,6 +200,60 @@ def institutional_component(f: FlowInput | None) -> Component:
     return c
 
 
+def _no_stocks_reason(mk: dict[str, Any] | None) -> str:
+    """Why stock-based evidence is missing, from the market service's own source report."""
+    if mk is None:
+        return "stock breadth is turned off or not running"
+    s = mk.get("sources", {})
+    lists, tokens, live = s.get("lists", {}), s.get("tokens", {}), s.get("live", {})
+    if not lists.get("nifty50") or not lists.get("nifty500"):
+        return "the NIFTY 50 / NIFTY 500 constituent lists have not been downloaded yet"
+    if not tokens.get("found"):
+        return "no Kotak instrument tokens for the stocks yet (scrip master not loaded)"
+    if not live.get("stocks_with_ticks"):
+        return "no live stock prices (market closed, or the stocks are not subscribed yet)"
+    return "too few stocks have a fresh price"
+
+
+def breadth_component(mk: dict[str, Any] | None) -> Component:
+    c = Component("breadth", "Market breadth", SCORE_CONFIG["weights"]["breadth"], False,
+                  formula="mean of (advancing - declining) / (advancing + declining) for NIFTY 50 and NIFTY 500, live price vs previous close; each needs >= 70% of its stocks priced",
+                  source="Kotak live stock prices", as_of=None if mk is None else mk.get("generated_at"))  # fmt: skip
+    parts: list[float] = []
+    for key, label in (("nifty50", "NIFTY 50"), ("nifty500", "NIFTY 500")):
+        b = (mk or {}).get(key, {}).get("breadth")
+        if not b or not b.get("total") or b.get("coverage", 0) < 0.7 or b.get("ad_balance") is None:
+            continue
+        parts.append(clip(b["ad_balance"]))
+        c.inputs.append({"name": f"{label}: advancing / declining", "value": b["ad_balance"], "unit": f"{b['advancing']} / {b['declining']} of {b['covered']}"})
+    if not parts:
+        c.reason = _no_stocks_reason(mk)
+        return c
+    c.available, c.score = True, sum(parts) / len(parts)
+    return c
+
+
+def sectors_component(mk: dict[str, Any] | None) -> Component:
+    c = Component("sectors", "Sector participation", SCORE_CONFIG["weights"]["sectors"], False,
+                  formula="(sectors up - sectors down) / sectors with a return, equal-weighted NIFTY 500 sector returns; needs >= 6 sectors with >= 3 priced stocks",
+                  source="Kotak live stock prices, NSE industry classification", as_of=None if mk is None else mk.get("generated_at"))  # fmt: skip
+    rows = [r for r in (mk or {}).get("sectors", {}).get("nifty500", []) if r.get("equal_weight_return") is not None]
+    if len(rows) < 6:
+        c.reason = _no_stocks_reason(mk) if not rows else f"only {len(rows)} sectors have a return so far (need 6)"
+        return c
+    up = sum(1 for r in rows if r["equal_weight_return"] > FLAT_BAND)
+    dn = sum(1 for r in rows if r["equal_weight_return"] < -FLAT_BAND)
+    c.inputs += [{"name": "Sectors up / down / flat", "value": None, "unit": f"{up} / {dn} / {len(rows) - up - dn} of {len(rows)}"}]
+    if up + dn == 0:
+        c.available, c.score = True, 0.0
+        return c
+    c.available, c.score = True, (up - dn) / (up + dn)
+    return c
+
+
+FLAT_BAND = 0.05  # percent: a sector within this of 0 is flat
+
+
 def unavailable(key: str, name: str, reason: str) -> Component:
     return Component(key, name, SCORE_CONFIG["weights"][key], False, reason=reason)
 

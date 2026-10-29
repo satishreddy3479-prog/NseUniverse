@@ -6,8 +6,10 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CommandCenter, ScoreBar } from "../components/CommandCenter";
-import type { IntradaySummary } from "../lib/types";
+import type { IntradaySummary, MarketSummary } from "../lib/types";
 import real from "./intraday-summary.json";
+// STAND-IN stock prices (layout and arithmetic only; no real stock ticks have been captured yet)
+import standin from "./market-summary.standin.json";
 
 vi.mock("../components/EChart", () => ({
   useChartColors: () => ({ up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" }),
@@ -54,7 +56,7 @@ describe("Market Sentiment Command Center", () => {
     mock(base);
     renderCC();
     const ev = await screen.findByTestId("cc-evidence");
-    expect(within(ev).getByText(/Unavailable — no NIFTY 50 constituent feed/)).toBeInTheDocument();
+    expect(within(ev).getAllByText(/Unavailable — stock breadth is turned off or not running/)).toHaveLength(2); // breadth and sectors
     expect(screen.getByText(/Missing from the score: Market breadth, Sector participation/)).toBeInTheDocument();
   });
 
@@ -90,6 +92,48 @@ describe("Market Sentiment Command Center", () => {
     }
     // a ruled-out scenario is not also drawn as a card
     expect(screen.queryAllByText(base.scenarios_ruled_out[0]!.name, { selector: "span.text-sm" })).toHaveLength(0);
+  });
+
+  it("says stock breadth is off when the backend does not provide it", async () => {
+    mock(base);
+    renderCC();
+    await screen.findByTestId("cc-regime");
+    expect(base.stocks).toBeNull();
+    expect(screen.getByText("Stock breadth is turned off on this backend.")).toBeInTheDocument();
+    expect(screen.getAllByText("Stock breadth is turned off.", { selector: "p" })).toHaveLength(2); // heavyweights and sectors cards
+  });
+
+  it("shows breadth, move quality, heavyweights and sectors from the backend's numbers", async () => {
+    const stocks = standin as unknown as MarketSummary;
+    mock({ ...base, stocks });
+    renderCC();
+    await screen.findByTestId("cc-regime");
+    expect(screen.getByRole("img", { name: /NIFTY 50: 6 up, 0 flat, 2 down of 8 priced/ })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /NIFTY 500: 6 up, 0 flat, 2 down of 8 priced/ })).toBeInTheDocument();
+    const mq = screen.getByTestId("cc-move-quality");
+    expect(mq).toHaveTextContent(stocks.nifty50.quality.reasons[0]!);
+    expect(mq).toHaveTextContent("provisional rule");
+    expect(screen.getByText("Thin: low volume")).toBeInTheDocument();
+    const hw = within(screen.getByTestId("cc-heavyweights"));
+    expect(hw.getAllByRole("row").length).toBe(1 + stocks.nifty50.stocks.filter((x) => x.change_pct != null).slice(0, 10).length);
+    const top = stocks.nifty50.stocks[0]!;
+    expect(hw.getByText(top.symbol)).toBeInTheDocument();
+    const sec = within(screen.getByTestId("cc-sectors"));
+    expect(sec.getByText("Financial Services")).toBeInTheDocument();
+  });
+
+  it("explains which source is missing when no stock prices are streaming", async () => {
+    const stocks = JSON.parse(JSON.stringify(standin)) as MarketSummary;
+    stocks.nifty50.breadth = { ...stocks.nifty50.breadth, covered: 0, advancing: 0, declining: 0, flat: 0 };
+    stocks.sources.live = { stocks_with_ticks: 0, subscribed: 508 };
+    stocks.sources.weights = null;
+    mock({ ...base, stocks });
+    renderCC();
+    const list = within(await screen.findByTestId("cc-breadth-sources"));
+    expect(list.getByText("○ Live stock prices")).toBeInTheDocument();
+    expect(list.getByText("0 of 508 streaming")).toBeInTheDocument();
+    expect(list.getByText("○ Index weights")).toBeInTheDocument();
+    expect(screen.getByText(/breadth cannot be measured. It is not guessed/)).toBeInTheDocument();
   });
 
   it("shows VWAP as not available for an index", async () => {

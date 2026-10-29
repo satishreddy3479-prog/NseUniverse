@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time as _time
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import UTC, date, datetime, timedelta
 from statistics import pstdev
@@ -36,7 +37,9 @@ from app.intraday.sentiment import (
     SCORE_VERSION,
     FlowInput,
     GlobalInput,
+    _no_stocks_reason,
     assess,
+    breadth_component,
     global_component,
     institutional_component,
     narrative,
@@ -44,6 +47,7 @@ from app.intraday.sentiment import (
     price_component,
     regime,
     scenarios,
+    sectors_component,
     unavailable,
 )
 from app.intraday.store import IntradayStore
@@ -100,7 +104,9 @@ class IntradayService:
         calendar: TradingCalendar | None = None,
         events: EventCalendar | None = None,
         clock: Any = None,
+        market: Any = None,
     ) -> None:
+        self.market = market  # optional MarketService: stock breadth, heavyweights, sectors
         self.obs, self.history, self.flows, self.store = observations, history, flows, store
         self.underlying = underlying
         self._cal = calendar
@@ -128,6 +134,20 @@ class IntradayService:
             except Exception as e:  # noqa: BLE001
                 logger.warning("event calendar unavailable: %s", e)
         return self._events
+
+    def _market_summary(self, now: datetime) -> dict[str, Any] | None:
+        if self.market is None or not getattr(self.market, "enabled", False):
+            return None
+        try:
+            out: dict[str, Any] = self.market.summary(now)
+            return out
+        except Exception as e:  # noqa: BLE001 - breadth must never break the rest of the page
+            logger.warning("market summary failed: %s", type(e).__name__)
+            return None
+
+    def trading_day(self, d: date) -> bool | None:
+        """Exchange-calendar answer for a date (None when the calendar has no entry)."""
+        return self._trading(d)
 
     def _trading(self, d: date) -> bool | None:
         cal = self.calendar()
@@ -324,12 +344,13 @@ class IntradayService:
             and latest.received_at.astimezone(IST).date() == today
             and bool(session_samples)
         )
+        mk = self._market_summary(now)
         glob = self._global(today)
         flow = self._flows(prev_session)
         comps = [
             price_component(p, ctx),
-            unavailable("breadth", "Market breadth", "no NIFTY 50 constituent feed is collected yet (advances/declines unknown)"),
-            unavailable("sectors", "Sector participation", "only previous-session daily sector closes are stored; no intraday sector data"),
+            breadth_component(mk),
+            sectors_component(mk),
             options_component(o, _iso(latest.received_at) if latest else None) if opt_today
             else unavailable("options", "Options positioning", "no option-chain sample in today's session for this expiry"),
             global_component(glob),
@@ -364,7 +385,7 @@ class IntradayService:
         mark("assess_regime_store")
         levels = self._levels(p, o, ctx, expiry, latest)
         health = self._health_list(
-            phase, chain_status, age, latest, p, ctx, prev_session, glob, flow, ev, trading
+            mk, phase, chain_status, age, latest, p, ctx, prev_session, glob, flow, ev, trading
         )
         if prev_check:
             health.insert(1, prev_check)
@@ -393,7 +414,8 @@ class IntradayService:
             "scenarios": scen,
             "scenarios_ruled_out": scen_ruled_out,
             "narrative": narrative(a, p, o, reg),
-            "context": self._context(a, p, o, reg, glob, upcoming, chain_status),
+            "context": self._context(a, p, o, reg, glob, upcoming, chain_status, mk),
+            "stocks": mk,
             "levels": levels,
             "global": [asdict(g) for g in glob],
             "sectors": {"rows": sectors, "note": "Previous session's daily closes (Yahoo). Not intraday; not in the score."},
@@ -456,7 +478,7 @@ class IntradayService:
             {"name": n, "value": v, "source": s, "method": m, "as_of": a} for n, v, s, m, a in rows
         ]
 
-    def _health_list(self, phase: str, chain_status: str, age: float | None, latest: Any, p: Any, ctx: Any,
+    def _health_list(self, mk: dict[str, Any] | None, phase: str, chain_status: str, age: float | None, latest: Any, p: Any, ctx: Any,
                      prev: date | None, glob: list[GlobalInput], flow: FlowInput | None, ev: Any, trading: bool | None) -> list[dict[str, Any]]:  # fmt: skip
         h = []
         if latest is None:
@@ -480,16 +502,7 @@ class IntradayService:
         last_bar = ctx.prev_session
         h.append(_health("NIFTY daily history", "fresh" if last_bar and prev and last_bar >= prev else "stale",
                          f"last stored session {last_bar}; previous trading session {prev}", str(last_bar) if last_bar else None))  # fmt: skip
-        h.append(
-            _health(
-                "Market breadth",
-                "not_available",
-                "no constituent advance/decline feed is collected",
-            )
-        )
-        h.append(
-            _health("Intraday sector data", "not_available", "only daily sector closes are stored")
-        )
+        h.extend(self._market_health(mk))
         if flow is None:
             h.append(_health("FII/DII cash", "not_available", "nothing stored yet"))
         else:
@@ -516,6 +529,52 @@ class IntradayService:
         )
         return h
 
+    @staticmethod
+    def _market_health(mk: dict[str, Any] | None) -> list[dict[str, Any]]:
+        if mk is None:
+            return [_health("Market breadth", "not_available", "stock breadth is turned off"), _health("Intraday sector data", "not_available", "stock breadth is turned off")]
+        why = _no_stocks_reason(mk)
+        b50, b5 = mk["nifty50"]["breadth"], mk["nifty500"]["breadth"]
+        out = []
+        if b50["covered"]:
+            status = "fresh" if b50["coverage"] >= 0.9 else "warning"
+            out.append(_health("Market breadth", status, f"NIFTY 50: {b50['covered']}/{b50['total']} priced; NIFTY 500: {b5['covered']}/{b5['total']} priced", mk["generated_at"]))
+            n_sec = sum(1 for r in mk["sectors"]["nifty500"] if r.get("equal_weight_return") is not None)
+            out.append(_health("Intraday sector data", "fresh" if n_sec >= 6 else "warning", f"{n_sec} sectors with a return (equal-weighted NIFTY 500 stocks)", mk["generated_at"]))
+        else:
+            out += [_health("Market breadth", "not_available", why), _health("Intraday sector data", "not_available", why)]
+        w = mk["nifty50"].get("weights")
+        out.append(_health("Index weights", "fresh" if w and not w["approximate"] else "warning" if w else "not_available",
+                           f"{'approximate' if w and w['approximate'] else 'official'} weights as of {w['as_of']}" if w else "no weights loaded: heavyweight contribution is not shown", w["as_of"] if w else None))  # fmt: skip
+        vb = mk["sources"]["volume_baseline"]
+        out.append(_health("Volume baseline", "fresh" if vb["stocks"] else "not_available", f"{vb['stocks']} stocks with a 20-day average ({vb['sessions']} of {vb['needs_sessions']} sessions needed)"))  # fmt: skip
+        return out
+
+    @staticmethod
+    def _breadth_answer(mk: dict[str, Any] | None, q: Callable[[str, str], dict[str, str]]) -> dict[str, str]:
+        title = "Broad or concentrated participation?"
+        n50 = (mk or {}).get("nifty50")
+        if not n50 or n50["breadth"]["covered"] == 0:
+            return q(title, f"Unknown: {_no_stocks_reason(mk)}.")
+        b, qual = n50["breadth"], n50["quality"]
+        head = f"NIFTY 50: {b['advancing']} up, {b['declining']} down, {b['flat']} flat of {b['covered']} priced"
+        b5 = mk["nifty500"]["breadth"] if mk else None
+        if b5 and b5["covered"]:
+            head += f"; NIFTY 500: {b5['advancing']} up / {b5['declining']} down of {b5['covered']}"
+        label = {"broad_confirmed": "broad and confirmed by volume", "broad": "broad (volume not confirmed)", "narrow": "narrow, a few stocks carry it",
+                 "thin": "thin, volume below normal", "mixed": "mixed", "no_move": "no real index move yet", "unknown": "not enough stocks priced"}[qual["state"]]  # fmt: skip
+        return q(title, f"{head}. Move quality: {label}" + (f" ({'; '.join(qual['reasons'])})" if qual["reasons"] else "") + " (provisional rule).")
+
+    @staticmethod
+    def _sector_answer(mk: dict[str, Any] | None, q: Callable[[str, str], dict[str, str]]) -> dict[str, str]:
+        title = "Sectors confirming?"
+        rows = [r for r in (mk or {}).get("sectors", {}).get("nifty500", []) if r.get("equal_weight_return") is not None]
+        if len(rows) < 3:
+            return q(title, f"Unknown: {_no_stocks_reason(mk)}.")
+        lead, lag = rows[0], rows[-1]
+        up = sum(1 for r in rows if r["equal_weight_return"] > 0)
+        return q(title, f"{up} of {len(rows)} sectors are up. Leading: {lead['sector']} {lead['equal_weight_return']:+.2f}%; lagging: {lag['sector']} {lag['equal_weight_return']:+.2f}% (equal-weighted NIFTY 500 stocks).")
+
     def _context(
         self,
         a: Any,
@@ -525,6 +584,7 @@ class IntradayService:
         glob: list[GlobalInput],
         upcoming: list[Any],
         chain_status: str,
+        mk: dict[str, Any] | None = None,
     ) -> list[dict[str, str]]:
         def q(question: str, answer: str) -> dict[str, str]:
             return {"question": question, "answer": answer}
@@ -532,14 +592,8 @@ class IntradayService:
         r30 = p.returns_pct.get(30)
         out = [
             q("Trending or rotating?", f"{reg['primary']} ({reg['reason']})"),
-            q(
-                "Broad or concentrated participation?",
-                "Unknown: no constituent breadth data is collected yet.",
-            ),
-            q(
-                "Sectors confirming?",
-                "Unknown intraday: only previous-session sector closes are stored.",
-            ),
+            self._breadth_answer(mk, q),
+            self._sector_answer(mk, q),
         ]
         if o.pcr_oi_change is not None and r30 is not None:
             if o.pcr_oi_change == 0 or r30 == 0:

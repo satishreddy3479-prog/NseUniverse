@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 
 from app.broker.base import BrokerError
@@ -63,7 +64,9 @@ def tokens_from_snapshots(snaps: list[OptionChainSnapshot], underlying: str) -> 
     )
 
 
-async def build_universe(svc: SnapshotService) -> Universe:
+async def build_universe(
+    svc: SnapshotService, market_tokens: Callable[[], list[FeedToken]] | None = None
+) -> Universe:
     sel = await svc.expiries()
     targets: list[date] = []
     for d in (sel.weekly, sel.monthly):
@@ -84,4 +87,11 @@ async def build_universe(svc: SnapshotService) -> Universe:
         if snap is None or snap.completeness.value == "empty":
             raise BrokerError(f"no usable option chain for {exp}", code="no_snapshot")
         snaps.append(snap)
-    return tokens_from_snapshots(snaps, svc.underlying)
+    uni = tokens_from_snapshots(snaps, svc.underlying)
+    if market_tokens is not None:
+        try:
+            have = {x.key for x in uni.tokens}
+            uni.market_tokens = [t for t in market_tokens() if t.key not in have]
+        except Exception:  # noqa: BLE001 - the breadth inputs must never block the option stream
+            uni.market_tokens = []
+    return uni

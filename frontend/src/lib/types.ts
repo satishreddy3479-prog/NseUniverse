@@ -483,6 +483,8 @@ export interface IntradaySummary {
   scenarios: IntradayScenario[];
   /** Scenarios evaluated and ruled out by the current evidence, with the reason. */
   scenarios_ruled_out: { name: string; reason: string }[];
+  /** Stock breadth, heavyweights, volume and sectors; null when the breadth service is off. */
+  stocks: MarketSummary | null;
   narrative: string;
   context: { question: string; answer: string }[];
   levels: IntradayLevel[];
@@ -498,6 +500,35 @@ export interface IntradaySummary {
     model_trained: boolean; reason: string;
   };
   config: { version: string; weights: Record<string, number>; min_coverage: number };
+}
+export interface BreadthBlock {
+  total: number; covered: number; coverage: number; advancing: number; declining: number; flat: number;
+  ad_ratio: number | null; ad_balance: number | null; pct_advancing: number | null; equal_weight_return: number | null;
+  at_high: number; at_low: number; gainers: [string, number][]; losers: [string, number][];
+}
+export interface SectorRowT {
+  sector: string; stocks: number; covered: number; advancing: number; declining: number; equal_weight_return: number | null;
+  cap_weight_return: number | null; contribution_pts: number | null; relative_strength: number | null; rank: number | null; weighted_rv: number | null;
+}
+export interface MarketSummary {
+  generated_at: string; elapsed_minutes: number; index_change_pct: number | null;
+  sources: {
+    lists: { nifty50: { stocks: number; fetched_utc: string } | null; nifty500: { stocks: number; fetched_utc: string } | null };
+    tokens: { day: string | null; found: number; of: number };
+    weights: { as_of: string; source: string; stocks: number; approximate: boolean } | null;
+    volume_baseline: { sessions: number; stocks: number; needs_sessions: number };
+    live: { stocks_with_ticks: number; subscribed: number };
+  };
+  nifty50: {
+    breadth: BreadthBlock;
+    contribution: { weight_covered: number; weight_loaded: number; cap_weight_return: number | null; net_points_pct: number | null; top5_share: number | null; top10_share: number | null; stocks_for_half: number | null } | null;
+    volume: { covered: number; weighted_rv: number | null; reference: string; up_volume_share: number | null; low_volume_names: string[] } | null;
+    quality: { state: string; reasons: string[]; provisional: boolean };
+    stocks: { symbol: string; sector: string | null; weight: number | null; change_pct: number | null; contribution: number | null; volume: number | null; relative_volume: number | null }[];
+    weights: { as_of: string; source: string; approximate: boolean } | null;
+  };
+  nifty500: { breadth: BreadthBlock };
+  sectors: { nifty50: SectorRowT[]; nifty500: SectorRowT[]; rotation: { sector: string; from_rank: number; to_rank: number; direction: string }[] };
 }
 export interface IntradayScoreRow { sample_utc: string; spot: number | null; score: number | null; label: string; coverage: number; regime: string | null }
 

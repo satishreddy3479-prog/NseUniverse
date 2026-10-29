@@ -184,3 +184,8 @@ Status: **Final** or **Proposed**. Date 2026-10-28 unless noted.
 - Plan in [market-breadth-plan](market-breadth-plan.md); nothing built. Breadth (0.15) and sector (0.10) score groups stay "not available" until it is.
 - Feasibility checked against Kotak's documentation: up to 3,000 subscribed tokens per connection, a scrip master and quotes API; our ticks already carry previous close and cumulative volume. Everything else (token coverage of NIFTY 500, tick rate, server load, weights/constituent sources and terms) is verified in a market-hours capture before any code depends on it.
 - "Is the move real" is answered by breadth (NIFTY 50 and 500), equal- vs cap-weighted return, heavyweight contribution, and relative volume; thresholds are provisional and will be checked against the labelled dataset.
+
+## D57 — Market breadth, heavyweights, volume and sectors built (2026-10-29)
+- New `backend/app/market/` (pure `metrics.py`, `sources.py`, append-only `store.py` -> `data/market.sqlite3`, `service.py`). Constituent lists from NSE archive CSVs, bhavcopy for the volume baseline (>=10 sessions), tokens from the Kotak scrip master, weights only from an official import (never invented). Ticks for these tokens go to an internal book and never touch option-chain freshness or broadcasts.
+- Breadth and sector evidence feed the intraday score only when coverage >= 0.7 (breadth) or >= 6 sectors (sectors); otherwise missing, not zero. Move quality is a provisional rule; linear relative volume can show thin but never confirm strong.
+- Status: tested on real NSE file lines, hand calculations and labelled stand-in stock prices. Unverified against live Kotak stock ticks. Flag `BREADTH_ENABLED`.

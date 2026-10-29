@@ -217,6 +217,20 @@ class KotakBroker:
             raise BrokerError("option_chain returned a non-object", code="bad_response")
         return resp
 
+    async def scrip_master_rows(self, exchange_segment: str = "nse_cm") -> list[dict[str, str]]:
+        """Rows of Kotak's scrip master for one segment (token and trading symbol per instrument).
+
+        The SDK returns the location(s) of the CSV file(s); they are downloaded here. Not exercised
+        against the live service yet: the first market-hours capture verifies it.
+        """
+        await self.ensure_login()
+        resp = await self._call("scrip_master", exchange_segment=exchange_segment)
+        found = _scrip_master_urls(resp)
+        urls = [u for u in found if exchange_segment in u.lower()] or found[:1]
+        if not urls:
+            raise BrokerError("scrip master returned no file location", code="bad_response")
+        return await asyncio.to_thread(_download_csv_rows, urls[0])
+
     async def create_feed(self) -> FeedSession:
         await self.ensure_login()
         if self._auth.state is not AuthState.AUTHENTICATED:
@@ -231,3 +245,31 @@ class KotakBroker:
 
     async def close(self) -> None:
         self._client = None
+
+
+def _scrip_master_urls(resp: Any) -> list[str]:
+    """File locations from the SDK answer (a string, a list, or a mapping holding either)."""
+    if isinstance(resp, str):
+        return [resp] if resp.startswith("http") else []
+    if isinstance(resp, Mapping):
+        out: list[str] = []
+        for key in ("filesPaths", "files", "data", "url", "path"):
+            if key in resp:
+                out += _scrip_master_urls(resp[key])
+        return out
+    if isinstance(resp, list):
+        out = []
+        for item in resp:
+            out += _scrip_master_urls(item)
+        return out
+    return []
+
+
+def _download_csv_rows(url: str) -> list[dict[str, str]]:
+    import csv
+    import io
+    import urllib.request
+
+    with urllib.request.urlopen(url, timeout=60) as r:  # noqa: S310 - location from the broker SDK
+        text = r.read().decode("utf-8-sig", errors="replace")
+    return [dict(row) for row in csv.DictReader(io.StringIO(text))]

@@ -364,6 +364,64 @@ async def oi_heatmap_route(
     )  # fmt: skip
 
 
+@router.get("/market/summary")
+async def market_summary(request: Request) -> dict[str, Any]:
+    """Stock breadth, heavyweight contribution, relative volume, move quality and sectors."""
+    mk = request.app.state.market
+    if not mk.enabled:
+        raise HTTPException(
+            status_code=404, detail={"code": "disabled", "message": "stock breadth is turned off"}
+        )
+    return await asyncio.to_thread(mk.summary)
+
+
+@router.get("/market/status")
+async def market_status(request: Request) -> dict[str, Any]:
+    """Sources, counts and the live subscription of the breadth analysis."""
+    mk, stream = request.app.state.market, request.app.state.stream
+    out: dict[str, Any] = await asyncio.to_thread(mk.public_status)
+    out["stream"] = {
+        "note": stream.market_note,
+        "subscribed": stream.market_subscribed,
+        "messages": stream.market_message_count,
+    }
+    return out
+
+
+@router.get("/market/coverage")
+async def market_coverage(request: Request) -> dict[str, Any]:
+    """Per index: how many stocks have a token, a tick, a price, a previous close and volume."""
+    return await asyncio.to_thread(request.app.state.market.coverage_report)
+
+
+@router.post("/market/refresh", dependencies=[Depends(require_local_control)])
+async def market_refresh(request: Request) -> dict[str, Any]:
+    """Run the due downloads now (constituent lists, tokens, bhavcopy, weights)."""
+    mk = request.app.state.market
+    mk._last_try.clear()  # noqa: SLF001 - an explicit request overrides the retry pause
+    return await mk.run_due()  # type: ignore[no-any-return]
+
+
+class WeightsImport(BaseModel):
+    csv: str
+    as_of: date
+    source: str
+
+
+@router.post("/market/weights/import", dependencies=[Depends(require_local_control)])
+async def market_weights_import(request: Request, body: WeightsImport) -> dict[str, Any]:
+    """Official NIFTY 50 weights supplied as CSV (columns symbol, weight in percent)."""
+    from app.market.sources import SourceError
+
+    try:
+        mk = request.app.state.market
+        return await asyncio.to_thread(mk.import_weights, body.csv, body.as_of, body.source)
+    except SourceError as e:
+        raise HTTPException(
+            status_code=422, detail={"code": "bad_weights", "message": str(e)}
+        ) from None
+
+
 @router.get("/storage/status")
 async def storage_status(request: Request) -> dict[str, Any]:
     """Storage sizes, growth and runway, backups, end-of-day status and the pruning dry run."""
