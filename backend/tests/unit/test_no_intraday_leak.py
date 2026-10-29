@@ -72,8 +72,8 @@ def test_intraday_package_never_imports_the_model_code() -> None:
 
 
 def test_completion_times_are_per_exchange() -> None:
-    # India closes 15:30 IST -> final 16:00 IST = 10:30 UTC
-    assert complete_after(BY_KEY["NIFTY50"], D("2026-10-28")) == datetime(2026, 10, 28, 10, 30, tzinfo=UTC)
+    # India (derivatives and index) close 15:40 IST -> final 16:10 IST = 10:40 UTC
+    assert complete_after(BY_KEY["NIFTY50"], D("2026-10-28")) == datetime(2026, 10, 28, 10, 40, tzinfo=UTC)
     # S&P closes 16:00 New York (EDT, UTC-4 until 1 Nov) -> final 16:30 ET = 20:30 UTC
     assert complete_after(BY_KEY["SPX"], D("2026-10-28")) == datetime(2026, 10, 28, 20, 30, tzinfo=UTC)
     # futures-style series (no regular close) -> 17:00 New York + buffer

@@ -91,7 +91,8 @@ class TestSession:
         assert session_phase(ist(12, 0), True) == "midday"
         assert session_phase(ist(14, 0), True) == "afternoon"
         assert session_phase(ist(15, 10), True) == "closing"
-        assert session_phase(ist(15, 30), True) == "post_market"
+        assert session_phase(ist(15, 35), True) == "closing"  # derivatives trade until 15:40 since 3 Aug 2026
+        assert session_phase(ist(15, 40), True) == "post_market"
 
     def test_holiday_from_the_exchange_calendar_is_closed(self) -> None:
         cal = TradingCalendar.load()
@@ -104,7 +105,7 @@ class TestSession:
         assert session_phase(ist(11, 0, date(2026, 10, 31)), None) == "closed"  # Saturday
 
     def test_in_session_keeps_only_today_regular_hours_sorted_unique(self) -> None:
-        p = [Point(ist(9, 16), 1.0), Point(ist(9, 10), 2.0), Point(ist(15, 31), 3.0),
+        p = [Point(ist(9, 16), 1.0), Point(ist(9, 10), 2.0), Point(ist(15, 41), 3.0),
              Point(ist(9, 16), 4.0), Point(ist(10, 0, date(2026, 10, 28)), 5.0), Point(ist(9, 15), 6.0)]  # fmt: skip
         assert [x.spot for x in in_session(p, date(2026, 10, 29))] == [6.0, 1.0]
 

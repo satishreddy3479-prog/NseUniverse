@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from app.domain.session import SESSION_CLOSE, SESSION_OPEN
 from app.logging_setup import log_event
 from app.market import metrics as m
 from app.market import participation as part
@@ -46,7 +47,6 @@ from app.stream.models import FeedToken, LiveTick
 
 IST = ZoneInfo("Asia/Kolkata")
 logger = logging.getLogger(__name__)
-SESSION_OPEN, SESSION_CLOSE = time(9, 15), time(15, 30)
 INDEX_KEY = "nse_cm|Nifty 50"
 FUT_SYMBOL = "FUT:NIFTY"
 LISTS_AT, TOKENS_AT, BHAV_AT = time(7, 45), time(8, 5), time(19, 30)

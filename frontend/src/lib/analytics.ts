@@ -1,5 +1,6 @@
 // Pure analytics over option-chain rows. Missing values are skipped and counted, never treated as 0.
 import type { OptionChainRow, OptionQuote } from "./types";
+import { SESSION_CLOSE_MIN, SESSION_LABEL, SESSION_OPEN_MIN } from "./session";
 
 export interface Totals {
   ceOi: number | null;
@@ -120,19 +121,19 @@ export type TsRange = "30m" | "1h" | "session" | "all";
 export const TS_RANGES: { id: TsRange; label: string; title: string }[] = [
   { id: "30m", label: "30 min", title: "The 30 minutes up to the newest stored sample" },
   { id: "1h", label: "1 hour", title: "The hour up to the newest stored sample" },
-  { id: "session", label: "Session", title: "Today's session, 09:15–15:30 IST (the last session when the market is closed)" },
+  { id: "session", label: "Session", title: `Today's session, ${SESSION_LABEL} IST (the last session when the market is closed)` },
   { id: "all", label: "All", title: "Every stored sample returned for this expiry" },
 ];
 
 const IST_MS = 5.5 * 3600_000;
 const istDay = (ms: number) => new Date(ms + IST_MS).toISOString().slice(0, 10);
 const istMinute = (ms: number) => Math.floor((((ms + IST_MS) % 86400_000) + 86400_000) % 86400_000 / 60_000);
-const SESSION_FROM = 9 * 60 + 15, SESSION_TO = 15 * 60 + 30;
+const SESSION_FROM = SESSION_OPEN_MIN, SESSION_TO = SESSION_CLOSE_MIN;
 
 /**
  * Restrict stored observations to a range. Ranges are measured from the newest sample, not from the
  * wall clock, so they also work after the close. "session" = the IST day of the newest sample,
- * 09:15-15:30; if that day has no in-session sample the whole day is shown and the note says so.
+ * 09:15-15:40; if that day has no in-session sample the whole day is shown and the note says so.
  */
 export function rangeObservations<T extends { retrieved_at: string }>(obs: T[], range: TsRange): { rows: T[]; note: string | null } {
   if (obs.length === 0 || range === "all") return { rows: obs, note: null };
@@ -146,7 +147,7 @@ export function rangeObservations<T extends { retrieved_at: string }>(obs: T[], 
   const sameDay = obs.filter((o) => istDay(ms(o)) === day);
   const inSession = sameDay.filter((o) => istMinute(ms(o)) >= SESSION_FROM && istMinute(ms(o)) <= SESSION_TO);
   if (inSession.length > 0) return { rows: inSession, note: null };
-  return { rows: sameDay, note: `No sample from 09:15–15:30 on ${day}; showing every sample of that day.` };
+  return { rows: sameDay, note: `No sample from ${SESSION_LABEL} on ${day}; showing every sample of that day.` };
 }
 
 
@@ -173,12 +174,12 @@ export function windowStartIso(newestIso: string, minutes: number): string {
 
 /**
  * The instant the time slots count back from. While the session is running (or when nothing is stored for the day
- * inside 09:15-15:30 IST) it is the newest stored sample; after the close (even past midnight) it is the last sample taken during the
+ * inside 09:15-15:40 IST) it is the newest stored sample; after the close (even past midnight) it is the last sample taken during the
  * session, so "Last 30 min" shows the final half hour of trading rather than an unchanged after-hours chain.
  */
 export function windowEndIso(sampleIsos: string[]): string | null {
   if (!sampleIsos.length) return null;
-  const IST = 330, OPEN = 9 * 60 + 15, CLOSE = 15 * 60 + 30;
+  const IST = 330, OPEN = SESSION_OPEN_MIN, CLOSE = SESSION_CLOSE_MIN;
   const parts = (iso: string) => {
     const m = Math.floor(new Date(iso).getTime() / 60_000) + IST;
     return { day: Math.floor(m / 1440), min: ((m % 1440) + 1440) % 1440 };

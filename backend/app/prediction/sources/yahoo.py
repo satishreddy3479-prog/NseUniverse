@@ -35,23 +35,23 @@ class SymbolSpec:
 
 
 SYMBOLS: list[SymbolSpec] = [
-    SymbolSpec("NIFTY50", "^NSEI", "NIFTY 50", "india_index", "Asia/Kolkata", time(15, 30), True),
-    SymbolSpec("INDIAVIX", "^INDIAVIX", "India VIX", "india_vix", "Asia/Kolkata", time(15, 30)),
-    SymbolSpec("NIFTYBANK", "^NSEBANK", "NIFTY Bank", "india_index", "Asia/Kolkata", time(15, 30)),
-    SymbolSpec("NIFTYIT", "^CNXIT", "NIFTY IT", "india_index", "Asia/Kolkata", time(15, 30)),
-    SymbolSpec("NIFTYAUTO", "^CNXAUTO", "NIFTY Auto", "india_index", "Asia/Kolkata", time(15, 30)),
+    SymbolSpec("NIFTY50", "^NSEI", "NIFTY 50", "india_index", "Asia/Kolkata", time(15, 40), True),
+    SymbolSpec("INDIAVIX", "^INDIAVIX", "India VIX", "india_vix", "Asia/Kolkata", time(15, 40)),
+    SymbolSpec("NIFTYBANK", "^NSEBANK", "NIFTY Bank", "india_index", "Asia/Kolkata", time(15, 40)),
+    SymbolSpec("NIFTYIT", "^CNXIT", "NIFTY IT", "india_index", "Asia/Kolkata", time(15, 40)),
+    SymbolSpec("NIFTYAUTO", "^CNXAUTO", "NIFTY Auto", "india_index", "Asia/Kolkata", time(15, 40)),
     SymbolSpec(
-        "NIFTYPHARMA", "^CNXPHARMA", "NIFTY Pharma", "india_index", "Asia/Kolkata", time(15, 30)
+        "NIFTYPHARMA", "^CNXPHARMA", "NIFTY Pharma", "india_index", "Asia/Kolkata", time(15, 40)
     ),
-    SymbolSpec("NIFTYFMCG", "^CNXFMCG", "NIFTY FMCG", "india_index", "Asia/Kolkata", time(15, 30)),
+    SymbolSpec("NIFTYFMCG", "^CNXFMCG", "NIFTY FMCG", "india_index", "Asia/Kolkata", time(15, 40)),
     SymbolSpec(
-        "NIFTYMETAL", "^CNXMETAL", "NIFTY Metal", "india_index", "Asia/Kolkata", time(15, 30)
-    ),
-    SymbolSpec(
-        "NIFTYENERGY", "^CNXENERGY", "NIFTY Energy", "india_index", "Asia/Kolkata", time(15, 30)
+        "NIFTYMETAL", "^CNXMETAL", "NIFTY Metal", "india_index", "Asia/Kolkata", time(15, 40)
     ),
     SymbolSpec(
-        "NIFTYREALTY", "^CNXREALTY", "NIFTY Realty", "india_index", "Asia/Kolkata", time(15, 30)
+        "NIFTYENERGY", "^CNXENERGY", "NIFTY Energy", "india_index", "Asia/Kolkata", time(15, 40)
+    ),
+    SymbolSpec(
+        "NIFTYREALTY", "^CNXREALTY", "NIFTY Realty", "india_index", "Asia/Kolkata", time(15, 40)
     ),
     SymbolSpec("SPX", "^GSPC", "S&P 500", "global_index", "America/New_York", time(16, 0)),
     SymbolSpec(

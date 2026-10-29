@@ -6,7 +6,7 @@ no dividend or carry assumption. Only the discount factor e^{-rT} uses an assume
 ``DEFAULT_RATE``); for the days to expiry involved it moves prices by far less than a tick of IV.
 If parity cannot be formed the forward falls back to spot x e^{rT} (no dividend) and the result says so.
 
-T = calendar time from now to 15:30 IST on the expiry date, in years of 365 days. Closer than ``MIN_T_MINUTES`` to
+T = calendar time from now to the session close (15:40 IST) on the expiry date, in years of 365 days. Closer than ``MIN_T_MINUTES`` to
 expiry nothing is computed: theta and gamma explode and the market price is mostly noise.
 Greeks are per forward: delta is with respect to F; theta per calendar day; vega per one volatility point (1 %).
 Implied volatility is solved by bisection on the option price; a price outside its no-arbitrage bounds gives None.
@@ -17,12 +17,14 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from app.domain.session import SESSION_CLOSE
+
 IST = ZoneInfo("Asia/Kolkata")
-EXPIRY_TIME = time(15, 30)
+EXPIRY_TIME = SESSION_CLOSE
 DEFAULT_RATE = 0.06
 MIN_T_MINUTES = 15
 MAX_IV = 3.0

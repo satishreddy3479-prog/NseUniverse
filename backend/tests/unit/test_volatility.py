@@ -25,8 +25,8 @@ def test_price_matches_the_hand_solved_value_and_put_call_parity() -> None:
 
 
 def test_time_to_expiry_is_calendar_time_to_the_close_of_expiry_day() -> None:
-    # 29 Oct 10:00 -> 3 Nov 15:30 IST = 5 days 5.5 hours = 5.229166 days
-    assert T * 365 == pytest.approx(5 + 5.5 / 24, abs=1e-9)
+    # 29 Oct 10:00 -> 3 Nov 15:40 IST (derivatives close) = 5 days 5 h 40 min = 5.236111 days
+    assert T * 365 == pytest.approx(5 + (5 + 40 / 60) / 24, abs=1e-9)
 
 
 @pytest.mark.parametrize("side", [CALL, PUT])
@@ -92,7 +92,7 @@ def test_surface_reads_atm_iv_skew_and_expected_move() -> None:
 
 def test_expiry_day_and_missing_data_are_reported_not_invented() -> None:
     prices = {(24000.0, CALL): 50.0, (24000.0, PUT): 48.0}
-    close = datetime(2026, 11, 3, 15, 20, tzinfo=IST)  # 10 minutes before expiry
+    close = datetime(2026, 11, 3, 15, 30, tzinfo=IST)  # 10 minutes before the 15:40 close
     assert v.surface(prices, 24000.0, EXPIRY, close)["status"].startswith("not computed: less than 15 minutes")
     assert v.surface(prices, 24000.0, EXPIRY, datetime(2026, 11, 3, 16, 0, tzinfo=IST))["status"].startswith("not computed")  # expired
     assert v.surface(prices, None, EXPIRY, NOW)["status"] == "not computed: no spot price"

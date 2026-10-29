@@ -6,6 +6,7 @@ import { ChainTable } from "../ChainTable";
 import { Button, EmptyState, SourceTag } from "../ui";
 import { useDash } from "./DashContext";
 import { FullChart } from "./FullChart";
+import { SESSION_CLOSE_MIN, SESSION_OPEN_MIN } from "../../lib/session";
 import { atmStraddle, compactIN, computeTotals, maxPain, OI_MODES, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, TS_RANGES, windowEndIso, windowStartIso, type OiMode } from "../../lib/analytics";
 import {
   decayOption, oiChangeBarOption, oiSeriesOption, type OiSeriesKind, oiHeatmapOption, premiumOption, spotOption, straddleOption, strikeBarOption,
@@ -787,7 +788,7 @@ function OiCards({ st }: { st: ReturnType<typeof oiWindowStats> }) {
 function OiRangeTrack({ startIso, endIso, minutes }: { startIso: string | null; endIso: string | null; minutes: number | null }) {
   if (!endIso) return null;
   const istMin = (iso: string) => { const m = Math.floor(new Date(iso).getTime() / 60_000) + 330; return ((m % 1440) + 1440) % 1440; };
-  const O = 9 * 60 + 15, L = 375;
+  const O = SESSION_OPEN_MIN, L = SESSION_CLOSE_MIN - SESSION_OPEN_MIN;
   const e = Math.min(1, Math.max(0, (istMin(endIso) - O) / L));
   const s = minutes == null || !startIso ? 0 : Math.min(e, Math.max(0, (istMin(startIso) - O) / L));
   return (

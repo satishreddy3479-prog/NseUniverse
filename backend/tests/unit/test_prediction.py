@@ -399,10 +399,10 @@ class TestLedger:
         fid = led.record(fc())
         with pytest.raises(LedgerError, match="not completed"):
             led.attach_outcome("T1", fid, {"close_to_close": 0.004})
-        clock.now = forecast_cutoff(T1_TGT, 15, 29)
+        clock.now = forecast_cutoff(T1_TGT, 15, 39)
         with pytest.raises(LedgerError, match="not completed"):
             led.attach_outcome("T1", fid, {"close_to_close": 0.004})
-        clock.now = forecast_cutoff(T1_TGT, 15, 31)
+        clock.now = forecast_cutoff(T1_TGT, 15, 41)
         led.attach_outcome("T1", fid, {"close_to_close": 0.004})
         assert led.get("T1", fid)["outcome"]["realized"] == {"close_to_close": 0.004}  # type: ignore[index]
         with pytest.raises(LedgerError, match="already attached"):

@@ -26,7 +26,7 @@ from app.prediction.pit import IST
 Horizon = Literal["T1", "T5"]
 HORIZONS: tuple[Horizon, ...] = ("T1", "T5")
 OPEN_TIME = (9, 15)  # regular session open, IST
-CLOSE_TIME = (15, 30)  # regular session close, IST
+CLOSE_TIME = (15, 40)  # derivatives session close since 3 Aug 2026, IST
 
 
 class LedgerError(Exception):

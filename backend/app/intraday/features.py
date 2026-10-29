@@ -6,7 +6,7 @@ bars in market_history. Nothing here invents a candle: price features use the sa
 they are, and every feature that needs more points than exist returns ``None`` with a reason.
 
 Conventions
-* Times are aware datetimes; the session clock is Asia/Kolkata 09:15-15:30.
+* Times are aware datetimes; the session clock is Asia/Kolkata 09:15-15:40 (app/domain/session.py).
 * "Sampled high/low" are the extremes of the sampled points, not exchange highs/lows (ticks between
   samples are not seen).
 * NIFTY 50 is an index and has no traded volume, so a VWAP cannot be computed for it. VWAP is
@@ -24,8 +24,10 @@ from statistics import pstdev
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
+from app.domain.session import SESSION_CLOSE, SESSION_OPEN
+
 IST = ZoneInfo("Asia/Kolkata")
-OPEN, CLOSE = time(9, 15), time(15, 30)
+OPEN, CLOSE = SESSION_OPEN, SESSION_CLOSE
 SESSION_MINUTES = 375
 OPENING_RANGE_MIN = 15
 #: a return over h minutes needs an anchor sample no older than h + this many minutes
@@ -43,7 +45,7 @@ PHASES: list[tuple[time, time, Phase]] = [
     (time(9, 45), time(11, 30), "morning"),
     (time(11, 30), time(13, 30), "midday"),
     (time(13, 30), time(15, 0), "afternoon"),
-    (time(15, 0), time(15, 30), "closing"),
+    (time(15, 0), SESSION_CLOSE, "closing"),
 ]
 
 
@@ -74,7 +76,7 @@ class Point:
 
 
 def in_session(points: Sequence[Point], day: date) -> list[Point]:
-    """Points of one IST date inside 09:15-15:30, sorted, one per timestamp (first kept)."""
+    """Points of one IST date inside the session, sorted, one per timestamp (first kept)."""
     out: dict[datetime, Point] = {}
     for p in points:
         t = p.at.astimezone(IST)

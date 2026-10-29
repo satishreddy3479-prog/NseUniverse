@@ -57,12 +57,14 @@ def test_a_label_without_a_sample_near_its_target_is_missing_not_filled() -> Non
     assert near_end["fwd_5m"] is not None and near_end["fwd_15m"] is None and near_end["fwd_60m"] is None
 
 
-def test_close_label_needs_a_sample_at_or_after_1525() -> None:
-    vals = [22700 + 0.1 * i for i in range(375)]
-    p = pts(vals)  # 09:15 .. 15:29
+def test_close_label_needs_a_sample_in_the_last_five_minutes() -> None:
+    vals = [22700 + 0.1 * i for i in range(385)]
+    p = pts(vals)  # 09:15 .. 15:39 (derivatives close at 15:40)
     row = rows_of(p)[0]
     assert row["labels"]["fwd_close"] == pytest.approx((vals[-1] / vals[WARMUP_SAMPLES] - 1) * 100, abs=1e-6)
     short = rows_of(pts(vals[:300]))[0]  # ends 14:14
+    almost = rows_of(pts(vals[:380]))[0]  # ends 15:34, before the last five minutes
+    assert almost["labels"]["fwd_close"] is None
     assert short["labels"]["fwd_close"] is None
 
 

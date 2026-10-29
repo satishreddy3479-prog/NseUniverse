@@ -17,6 +17,7 @@ from collections.abc import Callable, Sequence
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from app.domain.session import SESSION_CLOSE
 from app.intraday.features import (
     CLOSE,
     IST,
@@ -34,7 +35,7 @@ FEATURE_VERSION = "if-2"  # if-2 adds implied volatility, futures VWAP/flow, bre
 HORIZONS = (5, 15, 30, 60)  # minutes
 WARMUP_SAMPLES = 15
 LABEL_SLACK_MIN = 3.0  # a target time needs a sample within 3 minutes at or before it
-CLOSE_MIN_AT = (15, 25)  # the "to the close" label needs a sample at or after 15:25 IST
+CLOSE_MIN_AT = (SESSION_CLOSE.hour, SESSION_CLOSE.minute - 5)  # the "to the close" label needs a sample in the last 5 minutes
 
 
 def _r(v: float | None, n: int = 6) -> float | None:

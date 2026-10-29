@@ -54,7 +54,8 @@ class TestSessionClock:
             (9, 15, True),
             (12, 0, True),
             (15, 30, True),
-            (15, 31, False),
+            (15, 40, True),
+            (15, 41, False),
             (3, 0, False),
         ],
     )

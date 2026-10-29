@@ -68,7 +68,7 @@ FRESH_KEYS = ("SPX", "VIX", "BRENT", "DXY", "USDINR", "UST10Y")  # must have a b
 WINDOW = ((8, 35), (9, 10))  # IST: forecasts are recorded only inside this window
 #: no model training or evaluation while the cash market is open (keeps the models away from the
 #: live session and leaves the CPU to the collectors); the cached report is still served
-MARKET_HOURS = ((9, 15), (15, 45))  # IST, weekdays that are trading sessions
+MARKET_HOURS = ((9, 15), (15, 50))  # IST, weekdays that are trading sessions
 EXCLUDED = [
     "news tone (collection started 29 Oct; too little history to train on)",
     "scheduled events (shown as risk flags, not model inputs)",
@@ -403,7 +403,7 @@ class PredictionResearch:
             if body is not None:
                 self._cache = (tuple(key), body)
             elif self._pause_in_market_hours and self.market_hours(now) and trigger != "manual":
-                return {"ready": False, "paused": True, "reason": "Models are trained and evaluated only after the market closes (09:15-15:45 IST is excluded); the report will be computed then."}
+                return {"ready": False, "paused": True, "reason": "Models are trained and evaluated only after the market closes (09:15-15:50 IST is excluded); the report will be computed then."}
             elif self._worker is None or not self._worker.is_alive():
                 self._error = None
                 base = None if only is None else (self._cache[1] if self._cache and list(self._cache[0]) == key else self._read_disk(key))
@@ -507,9 +507,9 @@ class PredictionResearch:
         except Exception as e:  # noqa: BLE001 - e.g. calendar coverage; reported, not hidden
             return {**out, "recorded": False, "reason": f"target session unknown: {e}"}
         out.update(first_target_session=str(first), target_session=str(target))
-        ref_close = datetime(ref.session.year, ref.session.month, ref.session.day, 15, 30, tzinfo=IST)
+        ref_close = datetime(ref.session.year, ref.session.month, ref.session.day, 15, 40, tzinfo=IST)
         end_day = first if h == "T1" else target
-        window_end = datetime(end_day.year, end_day.month, end_day.day, 15, 30, tzinfo=IST)
+        window_end = datetime(end_day.year, end_day.month, end_day.day, 15, 40, tzinfo=IST)
         risk = [e.public() for e in self._events.between(ref_close, window_end)]
         payload["event_risk"] = risk
         high = [e for e in risk if e["impact"] == "high"]

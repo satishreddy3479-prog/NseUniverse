@@ -13,7 +13,7 @@ import { EChart, useChartColors } from "./EChart";
 
 const PHASE: Record<string, string> = {
   closed: "Closed (no session today)", pre_market: "Pre-market", pre_open: "Pre-open (09:00–09:15)", opening: "Opening (09:15–09:45)",
-  morning: "Morning", midday: "Midday", afternoon: "Afternoon", closing: "Closing (15:00–15:30)", post_market: "Post-market",
+  morning: "Morning", midday: "Midday", afternoon: "Afternoon", closing: "Closing (15:00–15:40)", post_market: "Post-market",
 };
 const MODE: Record<string, { text: string; cls: string }> = {
   live: { text: "Live samples", cls: "border-up/60 text-up" },
@@ -639,7 +639,7 @@ function Replay({ expiry }: { expiry: string }) {
         {list.length === 0 ? <p className="text-muted">No stored session to replay yet.</p> : (
           <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); setPick({ session: chosen, at }); }}>
             <label className="text-muted">Session <select aria-label="Replay session" className="ml-1 rounded border border-rule bg-slate px-1 py-0.5 text-paper" value={chosen} onChange={(e) => setSession(e.target.value)}>{list.map((x) => <option key={x.session} value={x.session}>{x.session} ({x.samples})</option>)}</select></label>
-            <label className="text-muted">Time (IST) <input aria-label="Replay time" type="time" min="09:15" max="15:30" className="ml-1 rounded border border-rule bg-slate px-1 py-0.5 text-paper" value={at} onChange={(e) => setAt(e.target.value)} /></label>
+            <label className="text-muted">Time (IST) <input aria-label="Replay time" type="time" min="09:15" max="15:40" className="ml-1 rounded border border-rule bg-slate px-1 py-0.5 text-paper" value={at} onChange={(e) => setAt(e.target.value)} /></label>
             <button type="submit" className="rounded border border-rule px-2 py-0.5 text-paper hover:bg-slate">Show the dashboard as it was</button>
           </form>
         )}

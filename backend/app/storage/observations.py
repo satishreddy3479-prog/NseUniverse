@@ -284,7 +284,7 @@ class ObservationStore:
         return [(str(e), int(n)) for e, n in rows]
 
     def session_sample_counts(self, underlying: str) -> dict[str, int]:
-        """IST date -> in-session samples (09:15-15:30 IST) of the best-covered expiry that day.
+        """IST date -> in-session samples (09:15-15:40 IST) of the best-covered expiry that day.
 
         The maximum over expiries, not the sum: two half-covered expiries must not look like one full
         session (read-only).
@@ -293,7 +293,7 @@ class ObservationStore:
             rows = self._db.execute(
                 "SELECT date(received_ms/1000 + 19800, 'unixepoch') AS d, expiry, COUNT(*) FROM samples"
                 " WHERE underlying=?"
-                " AND time(received_ms/1000 + 19800, 'unixepoch') BETWEEN '09:15:00' AND '15:30:59'"
+                " AND time(received_ms/1000 + 19800, 'unixepoch') BETWEEN '09:15:00' AND '15:40:59'"
                 " GROUP BY d, expiry",
                 (underlying,),
             ).fetchall()
