@@ -18,3 +18,10 @@ Long call, long put, short call, short put, long and short straddle, long and sh
 
 ## Validation
 Lots whole and at least 1; strike positive and listed for the expiry; expiry listed and not past; premium not negative; a missing premium blocks the payoff and is asked for; duplicate legs are warned about.
+
+## Layout update (30 Oct 2026): StockMojo-style
+Learned from the public StockMojo strategy builder. Left card: spot, ATM IV, lot size, weekly/monthly expiry chips (days to expiry), chain with Call Δ, LTP, OI bars, Strike, OI bars, LTP, Put Δ and B/S buttons per side. Right card: Payoff tab; with no legs a gallery of ready-made strategies by outlook (Bullish/Bearish/Neutral/Other, payoff thumbnails from the real templates); with legs a stats column (P&L now, POP, Reward:Risk, Max profit/loss, Breakevens with % from spot, net premium), the payoff chart and a Positions/Greeks table (include checkbox, B/S, lots, strike, type, entry, LTP, P&L, refresh, copy, remove; multiplier and total P&L).
+- Exact: expiry payoff, max profit/loss, breakevens, reward:risk, P&L now (stored LTP minus entry).
+- Model estimates, always labelled: dashed curve, Δ, Greeks, POP (lognormal, ATM IV), ±1/±2 SD markers. Formulas verified against vectors from backend volatility.py (`optionModel.test.ts`).
+- Not shown because the data does not exist here: margin, VIX tick, futures price. Login-only Opstra features dropped.
+- Guard: `payoff-render.test.ts` renders every variant (OI bars, estimate, SD bands, none) through real ECharts.

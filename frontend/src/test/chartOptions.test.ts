@@ -231,11 +231,10 @@ describe("oiSeriesOption", () => {
 describe("payoffOption", () => {
   it("draws the exact expiry payoff with markers for the spot and each breakeven", async () => {
     const { payoffOption } = await import("../lib/chartOptions");
-    const o = payoffOption({ expiry: [{ s: 23900, pnl: -100 }, { s: 24100, pnl: 100 }], spot: 24000, breakevens: [24000] }, colors) as unknown as { series: { name: string; data: [number, number][]; markLine: { data: { name?: string }[] } }[] };
-    expect(o.series.map((x) => x.name)).toEqual(["At expiry", "Profit", "Loss", "Markers"]);
-    expect(o.series[0]!.data).toEqual([[23900, -100], [24000, 0], [24100, 100]]); // breakevens are inserted at P&L 0
-    expect(o.series[1]!.data.map((d) => d[1])).toEqual([0, 0, 100]); // profit only
-    expect(o.series[2]!.data.map((d) => d[1])).toEqual([-100, 0, 0]); // loss only
-    expect(o.series[3]!.markLine.data.map((d) => d.name).filter(Boolean)).toEqual(["Spot", "BE"]);
+    const o = payoffOption({ expiry: [{ s: 23900, pnl: -100 }, { s: 24100, pnl: 100 }], spot: 24000, breakevens: [24000], target: null, targetLabel: "", bands: null, oi: null }, colors) as unknown as { series: { name: string; data: [number, number][]; markLine: { data: { name?: string }[] } }[] };
+    expect(o.series.map((x) => x.name)).toEqual(["Profit", "Loss", "Markers"]);
+    expect(o.series[0]!.data).toEqual([[23900, null], [24000, 0], [24100, 100]]); // breakevens are inserted at P&L 0
+    expect(o.series[1]!.data).toEqual([[23900, -100], [24000, 0], [24100, null]]);
+    expect(o.series[2]!.markLine.data.map((d) => d.name).filter(Boolean)).toEqual(["Spot", "BE"]);
   });
 });

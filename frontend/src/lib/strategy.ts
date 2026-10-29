@@ -15,12 +15,16 @@ export interface Leg {
   lots: number; // whole lots
   premium: number | null; // entry premium per unit; null = not entered
   premiumSource: "market" | "manual" | null;
+  /** false = kept in the table but left out of the payoff (the checkbox); default true */
+  enabled?: boolean;
+  /** manual implied volatility override for the model estimates, 0.15 = 15 % */
+  iv?: number | null;
 }
 
 export const sign = (a: Action) => (a === "BUY" ? 1 : -1);
 
 // ---------------------------------------------------------------- expiry payoff
-const intrinsic = (l: Pick<Leg, "type" | "strike">, s: number) => Math.max(l.type === "CE" ? s - l.strike : l.strike - s, 0);
+export const intrinsic = (l: Pick<Leg, "type" | "strike">, s: number) => Math.max(l.type === "CE" ? s - l.strike : l.strike - s, 0);
 
 /** P&L of one leg at expiry, before costs. Null while the premium is missing. */
 export function legExpiryPnl(l: Leg, s: number, lotSize: number): number | null {
@@ -182,3 +186,12 @@ export const TEMPLATES: Template[] = [
 let counter = 0;
 export const newLegId = () => `leg-${Date.now().toString(36)}-${(counter++).toString(36)}`;
 export const withIds = (drafts: Draft[]): Leg[] => drafts.map((d) => ({ ...d, id: newLegId() }));
+
+export type Bias = "Bullish" | "Bearish" | "Neutral" | "Other";
+/** Which tab of the ready-made gallery each template sits under. */
+export const TEMPLATE_BIAS: Record<string, Bias> = {
+  long_call: "Bullish", short_put: "Bullish", bull_call_spread: "Bullish", bull_put_spread: "Bullish",
+  long_put: "Bearish", short_call: "Bearish", bear_put_spread: "Bearish", bear_call_spread: "Bearish",
+  short_straddle: "Neutral", short_strangle: "Neutral", iron_condor: "Neutral", iron_butterfly: "Neutral", butterfly: "Neutral",
+  long_straddle: "Other", long_strangle: "Other", ratio_spread: "Other",
+};

@@ -120,3 +120,6 @@ Deploy kit written and tested for update/rollback logic and backend startup with
 
 ## Breadth and sectors (2026-10-29, D56)
 - Planned, not built: [market-breadth-plan](market-breadth-plan.md). Breadth and sector evidence groups and two decision-context questions read "Unknown" until phase 1-2 exist. First step: a market-hours capture of stock ticks to verify fields, rates and sources.
+
+## 30 Oct 2026: strategy builder redesigned (StockMojo-style)
+New layout, ready-made gallery, POP/Reward:Risk/breakeven % stats, dashed model estimate, ±SD markers, OI bars on the payoff, Positions/Greeks tabs, multiplier, include checkboxes. `optionModel.ts` restored with `contractDelta`, `probabilityOfProfit`, `sdBands`. 270+ frontend tests, tsc and build pass. Live check after deploy still to be done by eye.

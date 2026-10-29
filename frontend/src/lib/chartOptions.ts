@@ -374,37 +374,75 @@ export function oiSeriesOption(res: OiSeries, kind: OiSeriesKind, c: ChartColors
 
 export interface PayoffSeries {
   expiry: { s: number; pnl: number }[];
+  /** model estimate on another date: null points are gaps where a leg could not be valued */
+  target: { s: number; pnl: number | null }[] | null;
+  targetLabel: string;
   spot: number;
   breakevens: number[];
+  /** +-1 and 2 standard deviations at expiry (model) */
+  bands: { m2: number; m1: number; p1: number; p2: number } | null;
+  /** open interest per strike drawn faintly behind the payoff */
+  oi: { strike: number; call: number | null; put: number | null }[] | null;
 }
 
-/** Payoff diagram at expiry: profit green, loss red, markers for the spot and each breakeven. */
+const lerp = (pts: { s: number; pnl: number | null }[], x: number): number | null => {
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1]!, b = pts[i]!;
+    if (x >= a.s && x <= b.s) {
+      if (a.pnl == null || b.pnl == null) return null;
+      return b.s === a.s ? b.pnl : a.pnl + ((b.pnl - a.pnl) * (x - a.s)) / (b.s - a.s);
+    }
+  }
+  return null;
+};
+
+/**
+ * Payoff diagram: exact P&L at expiry (profit green, loss red), an optional dashed model estimate for another date,
+ * markers for the spot, breakevens and standard deviations, and faint open-interest bars. Profit and loss are separate
+ * series with the exact breakeven points inserted, not a visualMap: a piecewise visualMap on this series makes ECharts
+ * throw ("reading 'coord'"), which once blanked the whole page.
+ */
 export function payoffOption(p: PayoffSeries, c: ChartColors): EChartsCoreOption {
   const pts = [...p.expiry, ...p.breakevens.map((b) => ({ s: b, pnl: 0 }))].sort((x, y) => x.s - y.s);
+  const line = (label: string, color: string, keep: (v: number) => boolean) => ({
+    name: label, type: "line", showSymbol: false, itemStyle: { color }, lineStyle: { width: 2.4, color }, z: 3,
+    areaStyle: { color, opacity: 0.16 }, data: pts.map((x) => [x.s, keep(x.pnl) ? x.pnl : null]),
+  });
+  const mk = (xAxis: number, name: string, color: string, text: string, type: "dashed" | "dotted", top = false) => ({
+    xAxis, name, lineStyle: { color, type, width: 1.2 }, label: { formatter: text, color, fontSize: 10, position: top ? "start" : "insideEndBottom" },
+  });
   const marks = [
-    { xAxis: p.spot, name: "Spot", lineStyle: { color: c.brass, type: "dashed", width: 1.5 }, label: { formatter: `Spot ${fmtInt(Math.round(p.spot))}`, color: c.brass, fontSize: 11 } },
-    ...p.breakevens.map((b) => ({ xAxis: b, name: "BE", lineStyle: { color: c.muted, type: "dotted", width: 1 }, label: { formatter: `BE ${fmtInt(Math.round(b))}`, color: c.muted, fontSize: 10, position: "insideEndBottom" } })),
+    { yAxis: 0, lineStyle: { color: c.muted, type: "solid", width: 1 }, label: { show: false } },
+    mk(p.spot, "Spot", c.brass, `Spot: ${fmtPrice(p.spot)}`, "dashed", true),
+    ...p.breakevens.map((b) => mk(b, "BE", c.muted, `BE ${fmtInt(Math.round(b))}`, "dotted")),
+    ...(p.bands ? ([["-2SD", p.bands.m2], ["-1SD", p.bands.m1], ["+1SD", p.bands.p1], ["+2SD", p.bands.p2]] as [string, number][]).map(([t, x]) => mk(x, "SD", c.muted, t, "dotted", true)) : []),
   ];
-  const signed = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}₹${fmtInt(Math.round(Math.abs(v)))}`;
+  const signed = (v: number | null) => (v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}₹${fmtInt(Math.round(Math.abs(v)))}`);
+  const maxOi = Math.max(1, ...(p.oi ?? []).map((o) => Math.max(o.call ?? 0, o.put ?? 0)));
   return {
     animation: false,
-    grid: { left: 70, right: 18, top: 20, bottom: 40 },
+    grid: { left: 70, right: 18, top: 30, bottom: 40 },
     tooltip: { trigger: "axis", backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 },
       formatter: (params: unknown) => {
-        const ps = params as { axisValue: number; value: [number, number] }[];
-        return `<b>NIFTY at expiry ${fmtInt(Math.round(ps[0]!.axisValue))}</b><br/>P&L ${signed(ps[0]!.value[1])}`;
+        const x = (params as { axisValue: number }[])[0]!.axisValue;
+        const est = p.target ? `<br/>${p.targetLabel}: ${signed(lerp(p.target, x))}` : "";
+        return `<b>NIFTY ${fmtInt(Math.round(x))}</b><br/>At expiry: ${signed(lerp(pts, x))}${est}`;
       } },
     xAxis: { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => fmtInt(Math.round(v)) }, axisLine: { lineStyle: { color: c.rule } }, splitLine: { show: false } },
-    yAxis: { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => (v < 0 ? "−" : "") + compactIN(Math.abs(v)) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
+    yAxis: [
+      { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => (v < 0 ? "−" : "") + compactIN(Math.abs(v)) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
+      { type: "value", show: false, min: 0, max: maxOi * 3.2 },
+    ],
     dataZoom: [{ type: "inside", filterMode: "none" }],
-    // Profit and loss are two clipped area series with the exact breakeven points inserted, not a visualMap: a piecewise
-    // visualMap on this series makes ECharts throw ("reading 'coord'"), which blanked the whole page.
     series: [
-      { name: "At expiry", type: "line", showSymbol: false, itemStyle: { color: c.paper }, lineStyle: { width: 2, color: c.paper }, z: 3, data: pts.map((x) => [x.s, x.pnl]) },
-      { name: "Profit", type: "line", showSymbol: false, silent: true, tooltip: { show: false }, lineStyle: { width: 0 }, itemStyle: { color: c.up }, areaStyle: { color: c.up, opacity: 0.28 }, z: 1, data: pts.map((x) => [x.s, Math.max(x.pnl, 0)]) },
-      { name: "Loss", type: "line", showSymbol: false, silent: true, tooltip: { show: false }, lineStyle: { width: 0 }, itemStyle: { color: c.down }, areaStyle: { color: c.down, opacity: 0.28 }, z: 1, data: pts.map((x) => [x.s, Math.min(x.pnl, 0)]) },
-      { name: "Markers", type: "line", silent: true, showSymbol: false, data: [],
-        markLine: { symbol: "none", silent: true, data: [{ yAxis: 0, lineStyle: { color: c.muted, type: "solid", width: 1 }, label: { show: false } }, ...marks] } },
+      ...(p.oi ? [
+        { name: "Call OI", type: "bar", yAxisIndex: 1, barWidth: 5, silent: true, tooltip: { show: false }, itemStyle: { color: c.up, opacity: 0.28 }, z: 0, data: p.oi.map((o) => [o.strike, o.call]) },
+        { name: "Put OI", type: "bar", yAxisIndex: 1, barWidth: 5, silent: true, tooltip: { show: false }, itemStyle: { color: c.down, opacity: 0.28 }, z: 0, data: p.oi.map((o) => [o.strike, o.put]) },
+      ] : []),
+      line("Profit", c.up, (v) => v >= 0),
+      line("Loss", c.down, (v) => v <= 0),
+      ...(p.target ? [{ name: p.targetLabel, type: "line", showSymbol: false, itemStyle: { color: c.info }, lineStyle: { color: c.info, width: 1.6, type: "dashed" }, z: 4, connectNulls: false, data: p.target.map((x) => [x.s, x.pnl]) }] : []),
+      { name: "Markers", type: "line", silent: true, showSymbol: false, data: [], markLine: { symbol: "none", silent: true, data: marks } },
     ],
   };
 }

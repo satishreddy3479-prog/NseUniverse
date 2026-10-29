@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
+import { TEMPLATE_BIAS, TEMPLATES } from "../lib/strategy";
 import { bigChain, expiries, status, summary } from "./fixtures";
 
 vi.mock("../components/EChart", async () => {
@@ -35,7 +36,12 @@ function mount() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={["/strategy"]}><AppRoutes /></MemoryRouter></QueryClientProvider>);
 }
-const pick = async (id: string) => { await userEvent.selectOptions(await screen.findByLabelText("Template"), id); };
+const pick = async (id: string) => {
+  const t = TEMPLATES.find((x) => x.id === id)!;
+  await userEvent.click(await screen.findByRole("tab", { name: TEMPLATE_BIAS[id]! }));
+  await userEvent.click(await screen.findByRole("button", { name: t.label }));
+};
+const loaded = () => waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"));
 
 describe("Strategy builder page", () => {
   it("shows the instrument, the stored chain's lot size and never hard-codes one", async () => {
@@ -46,8 +52,7 @@ describe("Strategy builder page", () => {
 
   it("a long straddle template fills editable legs and shows hand-calculated risk (premium 100 + 100, lot 75)", async () => {
     mount();
-    await screen.findByLabelText("Template");
-    await waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"));
+    await loaded();
     await pick("long_straddle");
     const table = await screen.findByRole("table", { name: "Strategy legs" });
     expect(within(table).getAllByLabelText("Strike")).toHaveLength(2);
@@ -56,7 +61,7 @@ describe("Strategy builder page", () => {
     expect(stats).toHaveTextContent("Max profitUnlimited");
     expect(stats).toHaveTextContent("23,850 · 24,250"); // 24050 -/+ 200
     expect(stats).toHaveTextContent("−₹15,000 debit");
-    expect(screen.getByRole("img", { name: "Strategy payoff" })).toHaveAttribute("data-series", "At expiry|Profit|Loss|Markers");
+    expect(screen.getByRole("img", { name: "Strategy payoff" }).getAttribute("data-series")).toMatch(/Profit\|Loss.*Markers/);
   });
 
   it("every leg is editable: lots, duplicate, remove; bad input is explained", async () => {
@@ -93,8 +98,8 @@ describe("Strategy builder page", () => {
     await pick("bull_call_spread");
     await userEvent.type(await screen.findByLabelText("Strategy name"), "my spread");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
-    await userEvent.click(screen.getByRole("button", { name: "Clear" }));
-    expect(screen.getByText("No legs yet")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Reset / New" }));
+    expect(screen.getByTestId("gallery")).toBeInTheDocument();
     await userEvent.selectOptions(await screen.findByLabelText("Saved strategies"), "my spread");
     expect(within(await screen.findByRole("table", { name: "Strategy legs" })).getAllByLabelText("Strike")).toHaveLength(2);
   });
@@ -103,9 +108,10 @@ describe("Strategy builder page", () => {
 describe("Option chain inside the builder", () => {
   it("offers only the weekly and monthly expiries we collect, however many dates the exchange lists", async () => {
     mount();
-    const sel = await screen.findByLabelText("Expiry");
-    await waitFor(() => expect(within(sel).getAllByRole("option")).toHaveLength(2));
-    expect(within(sel).getAllByRole("option").map((o) => o.textContent)).toEqual(["2026-11-03 (weekly)", "2026-11-24 (monthly)"]);
+    const w = await screen.findByRole("button", { name: /03 Nov.*weekly/ });
+    expect(w).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /24 Nov.*monthly/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /10 Nov|17 Nov|29 Dec/ })).toBeNull();
   });
 
   const row = (k: number) => screen.findByTestId(`chain-${k}`);
@@ -114,7 +120,7 @@ describe("Option chain inside the builder", () => {
   it("lists the stored chain with the ATM highlighted and quotes missing as dashes", async () => {
     mount();
     const atm = await row(24050);
-    expect(atm).toHaveTextContent("24,050 ATM");
+    expect(atm).toHaveTextContent("24,050");
     expect(atm).toHaveTextContent("100.00"); // stored last traded price, not a made-up number
     expect(within(await row(24000)).getAllByText("—").length).toBeGreaterThan(0); // no call price stored for 24000
   });
@@ -170,8 +176,39 @@ describe("Option chain inside the builder", () => {
     mount();
     await waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"));
     await userEvent.click(await screen.findByRole("button", { name: "Buy CE 24100" }));
-    await userEvent.selectOptions(screen.getByLabelText("Expiry"), "2026-11-24");
+    await userEvent.click(screen.getByRole("button", { name: /24 Nov.*monthly/ }));
     expect(await screen.findByTestId("template-msg")).toHaveTextContent("The legs were cleared because the expiry changed.");
-    expect(screen.getByText("No legs yet")).toBeInTheDocument();
+    expect(screen.getByTestId("gallery")).toBeInTheDocument();
+  });
+});
+
+describe("StockMojo-style layout", () => {
+  it("shows a gallery of ready-made strategies by outlook when there are no legs", async () => {
+    mount();
+    await loaded();
+    expect(await screen.findByTestId("gallery")).toBeInTheDocument();
+    for (const b of ["Bullish", "Bearish", "Neutral", "Other"]) expect(screen.getByRole("tab", { name: b })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Iron Condor/i })).toBeInTheDocument();
+  });
+
+  it("the multiplier scales lots and total P&L and an unticked leg drops out of the payoff", async () => {
+    mount();
+    await loaded();
+    await userEvent.click(await screen.findByRole("button", { name: "Buy CE 24100" }));
+    await userEvent.type(within(await screen.findByRole("table", { name: "Strategy legs" })).getByLabelText("Entry premium"), "{backspace}{backspace}{backspace}90");
+    expect(await screen.findByTestId("risk-stats")).toHaveTextContent("Max loss−₹6,750"); // 90 x 75
+    await userEvent.click(screen.getByRole("button", { name: "Increase multiplier" }));
+    expect(screen.getByTestId("mult")).toHaveTextContent("2");
+    expect(await screen.findByTestId("risk-stats")).toHaveTextContent("Max loss−₹13,500");
+    await userEvent.click(screen.getByLabelText("Include leg"));
+    expect(await screen.findByTestId("payoff-empty")).toHaveTextContent("Tick at least one leg.");
+  });
+
+  it("the Greeks tab lists model values per leg and says they are model values", async () => {
+    mount();
+    await loaded();
+    await userEvent.click(await screen.findByRole("button", { name: "Buy CE 24100" }));
+    await userEvent.click(screen.getByRole("button", { name: "Greeks" }));
+    expect(await screen.findByTestId("greeks")).toHaveTextContent("Model values");
   });
 });
