@@ -56,7 +56,7 @@ def test_news_collection_is_append_only_and_reports_failures(tmp_path: Path) -> 
 
     def getter(url: str) -> Fetched:
         calls.append(url)
-        return Fetched(429, None, "HTTP 429") if "us_fed" in url or "Federal" in url else Fetched(200, GDELT)
+        return Fetched(500, None, "HTTP 500") if "us_fed" in url or "Federal" in url else Fetched(200, GDELT)
 
     now = datetime(2026, 10, 29, 3, 0, tzinfo=UTC)
     svc = NewsService(NewsStore(tmp_path), getter=getter, pause_s=0, clock=lambda: now)
@@ -70,3 +70,15 @@ def test_news_collection_is_append_only_and_reports_failures(tmp_path: Path) -> 
     assert latest[0]["day"] == "2026-10-28" and latest[0]["tone"] == -2.25
     with pytest.raises(Exception, match="never changed"):
         svc.store._db.execute("UPDATE gdelt_daily SET tone=0")
+
+
+def test_one_429_is_retried_once(tmp_path: Path) -> None:
+    seen: list[str] = []
+
+    def getter(url: str) -> Fetched:
+        seen.append(url)
+        return Fetched(429, None, "HTTP 429") if len(seen) == 1 else Fetched(200, GDELT)
+
+    svc = NewsService(NewsStore(tmp_path), getter=getter, pause_s=0, clock=lambda: datetime(2026, 10, 29, 3, 0, tzinfo=UTC))
+    assert svc.run()["problems"] == []
+    assert len(seen) == 11  # ten requests plus the one retry

@@ -69,6 +69,10 @@ class NewsService:
             for mode, target in (("timelinetone", tone), ("timelinevol", vol)):
                 res = self._get(_url(query, mode))
                 time.sleep(self._pause)
+                if res.status == 429:  # GDELT asks for spacing between requests: wait once, then try once more
+                    time.sleep(self._pause * 3)
+                    res = self._get(_url(query, mode))
+                    time.sleep(self._pause)
                 if res.status != 200 or not res.body:
                     self.notes.append(f"{key} {mode}: {res.error or res.status}")
                     continue
