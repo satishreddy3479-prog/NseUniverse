@@ -143,6 +143,14 @@ const tn = (v: number | undefined): Tile["tone"] => (v == null || v === 0 ? unde
 /** What the models are looking at right now (values from the same rows the models use). */
 function InputsPanel({ inputs, last }: { inputs: PredictionSummaryReady["data"]["inputs"]; last: string }) {
   const a = inputs?.T1 ?? {}, b = inputs?.T5 ?? {};
+  if (!inputs?.T1) {
+    return (
+      <section aria-label="Model inputs" className={`${CARD} p-4`} data-testid="inputs-missing">
+        <p className={MONO}>Model inputs</p>
+        <p className="mt-1 text-sm text-muted">The stored report does not contain the input snapshot yet; it is recomputed automatically (about a minute). Refresh shortly.</p>
+      </section>
+    );
+  }
   const tiles: Tile[] = [
     { label: "NIFTY 1D / 5D", value: `${sg(a.nifty_ret_1d)} / ${sg(a.nifty_ret_5d)}`, sub: `20D ${sg(b.nifty_ret_20d)}`, tone: tn(a.nifty_ret_1d) },
     { label: "Trend vs 20D / 50D avg", value: `${sg(a.nifty_dist_sma20)} / ${sg(b.nifty_dist_sma50)}`, sub: `60D drawdown ${sg(b.nifty_drawdown_60d)}`, tone: tn(a.nifty_dist_sma20) },

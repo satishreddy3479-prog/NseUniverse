@@ -132,3 +132,22 @@ def test_cash_window_keeps_only_the_newest_seven_sessions(tmp_path: Path) -> Non
         r = s.import_cash_csv(text)
     days = sorted({row["session"] for row in s.store.cash_rows()})
     assert days == [f"2026-10-{d:02d}" for d in range(5, 12)] and r["sessions_kept"] == 7
+
+
+def test_participant_window_backs_up_first_then_keeps_only_the_newest_sessions(tmp_path: Path) -> None:
+    import sqlite3
+
+    days = [date(2026, 10, d) for d in range(1, 15) if date(2026, 10, d).weekday() < 5]  # 10 weekdays
+    have = {d.strftime("%d%m%Y") for d in days}
+    s = _svc(tmp_path, Fake(have), days)
+    s.run()
+    assert s.store.coverage()["fao_participant_oi"]["files"] == 7  # run() already trimmed to the window
+    backups = list((tmp_path / "backups").glob("nse_flows_before_prune_*.sqlite3"))
+    assert len(backups) == 1
+    old = sqlite3.connect(backups[0])
+    assert old.execute("SELECT COUNT(*) FROM raw_files WHERE kind='fao_participant_oi'").fetchone()[0] == 10  # nothing lost
+    assert sorted(s.store.participant_rows("fao_participant_oi"))[0] == days[-7]
+    again = s.store.prune_participant(7, tmp_path / "backups")
+    assert again["deleted_files"] == 0
+    with pytest.raises(sqlite3.DatabaseError):
+        s.store._db.execute("DELETE FROM raw_files")  # the protection is back after pruning

@@ -196,3 +196,19 @@ def test_a_high_impact_event_before_the_t1_close_withholds_the_call_only_for_t1(
     assert t1["event_risk"] and t1["event_risk"][0]["name"] == "Test central bank decision"
     assert t1["call"] is None
     assert s["forecasts"]["T5"]["models"]["ensemble"]["payload"]["event_risk"]  # still listed for T+5
+
+
+def test_a_cached_report_from_an_older_schema_is_recomputed(tmp_path: Path) -> None:
+    import json as _json
+
+    last = _walk(560, 1)[-1].session
+    now = _at(_Cal().next_session(last), 8, 50)
+    first, _ = _service(tmp_path, 560, now)
+    first.summary(block=True)
+    f = tmp_path / "prediction_report.json"
+    doc = _json.loads(f.read_text())
+    doc["key"][3] = 3  # pretend an older program wrote this report
+    del doc["body"]["data"]["inputs"]
+    f.write_text(_json.dumps(doc))
+    second = PredictionResearch(first._store, first._ledger, calendar=_Cal(), clock=lambda: now, initial_train=200, test_size=60, cache_dir=tmp_path)
+    assert second.summary(block=True)["data"]["inputs"]  # recomputed, so the new field is present

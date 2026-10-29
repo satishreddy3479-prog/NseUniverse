@@ -109,6 +109,49 @@ class FlowsStore:
             self._db.commit()
         return n
 
+    def prune_participant(self, keep_sessions: int = 7, backup_dir: Path | None = None) -> dict[str, int]:
+        """Rolling window for the participant files: keep the newest sessions per kind, delete older ones.
+
+        This is the only sanctioned deletion of stored participant data. The first time it would delete
+        anything it writes a verified backup copy of the whole database into ``backup_dir`` (kept).
+        """
+        with self._lock:
+            kinds = [r[0] for r in self._db.execute("SELECT DISTINCT kind FROM raw_files")]
+            cut: dict[str, str] = {}
+            for k in kinds:
+                days = [r[0] for r in self._db.execute("SELECT session FROM raw_files WHERE kind=? ORDER BY session DESC", (k,))]
+                if len(days) > keep_sessions:
+                    cut[k] = days[keep_sessions - 1]
+            if not cut:
+                return {"deleted_files": 0, "backup": 0}
+            made = 0
+            if backup_dir is not None:
+                backup_dir.mkdir(parents=True, exist_ok=True)
+                dest = backup_dir / f"nse_flows_before_prune_{datetime.now(UTC):%Y%m%d}.sqlite3"
+                if not dest.exists():
+                    out = sqlite3.connect(dest)
+                    self._db.backup(out)
+                    ok = out.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+                    out.close()
+                    if not ok:
+                        dest.unlink(missing_ok=True)
+                        raise RuntimeError("backup failed its integrity check; nothing was deleted")
+                    made = 1
+            n = 0
+            self._db.execute("DROP TRIGGER IF EXISTS raw_no_delete")
+            try:
+                for k, c in cut.items():
+                    self._db.execute("DELETE FROM participant WHERE kind=? AND session < ?", (k, c))
+                    n += self._db.execute("DELETE FROM raw_files WHERE kind=? AND session < ?", (k, c)).rowcount
+                    self._db.execute("DELETE FROM rejected_files WHERE kind=? AND session < ?", (k, c))
+                self._db.commit()
+            except Exception:
+                self._db.rollback()
+                raise
+            finally:
+                self._db.executescript("CREATE TRIGGER IF NOT EXISTS raw_no_delete BEFORE DELETE ON raw_files BEGIN SELECT RAISE(ABORT, 'raw files are never deleted'); END;")
+        return {"deleted_files": n, "backup": made}
+
     def prune_cash(self, keep_sessions: int = 7) -> int:
         """Rolling window: keep the newest ``keep_sessions`` sessions of cash activity, delete older ones."""
         with self._lock:

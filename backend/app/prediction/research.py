@@ -55,6 +55,7 @@ from app.prediction.sources.yahoo import SYMBOLS
 from app.prediction.targets import Bar, make_labels
 
 MODEL_VERSION = "3"
+REPORT_SCHEMA = 4  # bump whenever the stored report gains or changes fields, so an older cached report is recomputed
 INITIAL_TRAIN = 1000
 TEST_SIZE = 250
 HORIZON_N: dict[str, int] = {"T1": 1, "T5": 5}
@@ -343,7 +344,7 @@ class PredictionResearch:
         others = self._store.coverage()
         stamp = sorted((c["symbol"], c["last"], c["bars"]) for c in others)
         fl = self._flows_store.coverage()["fao_participant_oi"] if self._flows_store is not None else {}
-        key = [str(bars[-1].session), len(bars), MODEL_VERSION, T1_VERSION, T5_VERSION, stamp, (fl.get("files") or 0) // 100]  # flows: re-evaluate only every ~100 new files
+        key = [str(bars[-1].session), len(bars), MODEL_VERSION, REPORT_SCHEMA, T1_VERSION, T5_VERSION, stamp, (fl.get("files") or 0) // 100]  # flows: re-evaluate only every ~100 new files
         out: list[Any] = json.loads(json.dumps(key))  # plain lists: equal after a JSON round trip
         return out
 

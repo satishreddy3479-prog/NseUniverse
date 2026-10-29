@@ -42,6 +42,7 @@ STOP_AFTER_FINAL_404 = 40  # consecutive known trading days without a file => th
 BLOCK_STATUSES = {403, 429}
 MAX_NETWORK_ERRORS = 5
 CASH_KEEP_SESSIONS = 7  # rolling window for FII/DII cash activity
+PARTICIPANT_KEEP_SESSIONS = 7  # rolling window for the NSE participant files (user-approved 2026-10-29)
 RECENT_DAYS = 3  # a 404 this recent may just mean "not published yet"
 Fetcher = Callable[[str], Fetched]
 
@@ -140,6 +141,11 @@ class FlowsService:
             self.blocked = "repeated network errors; stopped"
         self.progress = "FII/DII cash"
         self._cash_once(summary)
+        self.progress = "trimming to the rolling window"
+        try:
+            summary["pruned"] = self.store.prune_participant(PARTICIPANT_KEEP_SESSIONS, self.store.path.parent / "backups")
+        except Exception as e:  # noqa: BLE001 - a failed trim must never stop collection; nothing is deleted on failure
+            summary["pruned"] = {"error": f"{type(e).__name__}: {e}"}
         self.progress = ""
         summary["finished_utc"] = self._clock().isoformat()
         self.last_run = summary
