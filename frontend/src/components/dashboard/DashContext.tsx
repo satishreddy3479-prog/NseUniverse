@@ -46,7 +46,7 @@ export function useDash(): DashState {
 }
 
 /** Re-render at most every `ms` while ticks arrive; aggregates over many instruments do not need 4 Hz. */
-function useThrottledVersion(ms: number): number {
+export function useThrottledVersion(ms: number): number {
   const [v, setV] = useState(liveStore.getVersion());
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;

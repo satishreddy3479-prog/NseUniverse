@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { mergeRows, type LiveMode } from "../components/ChainTable";
+import { useThrottledVersion } from "../components/dashboard/DashContext";
+import { useLiveSpot, useStreamStatus } from "../lib/useLive";
 import { EChart, useChartColors } from "../components/EChart";
 import { Button } from "../components/ui";
 import { payoffOption } from "../lib/chartOptions";
@@ -96,14 +99,21 @@ export default function StrategyBuilder() {
   const [opened, setOpened] = useState<Closed | null>(null);
   const [confirmAll, setConfirmAll] = useState<"saved" | "closed" | null>(null);
 
-  const chain = useQuery({ queryKey: ["chain", expiry], queryFn: () => api.optionChain(expiry!), enabled: !!expiry, retry: false, staleTime: 15_000, refetchInterval: 30_000 });
+  const chain = useQuery({ queryKey: ["chain", expiry], queryFn: () => api.optionChain(expiry!), enabled: !!expiry, retry: false, staleTime: 5_000, refetchInterval: 15_000 });
   const snap = chain.data?.snapshot;
   const lotSize = snap?.lot_size ?? null;
-  const spot = snap?.underlying_ltp ?? null;
-  // prices are valued at the market time they belong to: a chain fetched after the close holds the close's prices
+  // Same live feed as the Option chain page: streamed prices overlay the stored snapshot while the stream is fresh.
+  const { stream } = useStreamStatus();
+  const streamActive = !!stream && ["streaming", "waiting_for_data", "reconnecting"].includes(stream.state);
+  const liveMode: LiveMode = !streamActive || !snap ? "off" : stream.effective_state === "streaming" ? "fresh" : "stale";
+  const liveVersion = useThrottledVersion(400);
+  const liveSpot = useLiveSpot();
+  const spot = liveMode === "fresh" && liveSpot.live ? liveSpot.ltp : snap?.underlying_ltp ?? null;
+  // prices are valued at the market time they belong to: live prices now, a stored chain at the time it was fetched
   const fetchedMs = snap ? Date.parse(snap.retrieved_at) : Date.now();
-  const snapMs = marketClockMs(fetchedMs);
-  const rows = useMemo(() => snap?.rows ?? [], [snap]);
+  const snapMs = marketClockMs(liveMode === "fresh" ? Date.now() : fetchedMs);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const rows = useMemo(() => (snap ? mergeRows(snap.rows, liveMode) : []), [snap, liveMode, liveVersion]);
   const strikes = useMemo(() => rows.map((r) => r.strike), [rows]);
   const atm = useMemo(() => (spot == null || strikes.length === 0 ? null : strikes.reduce((b, k) => (Math.abs(k - spot) < Math.abs(b - spot) ? k : b), strikes[0]!)), [strikes, spot]);
   const ltp = (k: number, t: OptionType): number | null => {
@@ -383,7 +393,7 @@ export default function StrategyBuilder() {
           </div>
         </details>
         <Button onClick={() => { setLegs([]); setNote(null); setSel(null); setMult(1); setDays(0); setLoaded(null); }} disabled={legs.length === 0}>Reset / New</Button>
-        <span className="ml-auto text-xs text-muted" title="Premiums are the last traded prices in this stored snapshot, not live quotes">Snapshot <span className={`num ${chain.data?.stale ? "text-warn" : "text-paper"}`}>{snap ? fmtDateTimeIST(snap.retrieved_at) : "—"}</span>{chain.data?.stale ? " · stale" : ""}</span>
+        <span className="ml-auto text-xs text-muted" title={liveMode === "fresh" ? "Streamed last traded prices overlay the stored snapshot, as on the Option chain page" : "Premiums are the last traded prices in this stored snapshot, not live quotes"}>{liveMode === "fresh" ? <span className="mr-2 rounded-sm border border-up/60 px-1 text-up">LIVE</span> : null}Snapshot <span className={`num ${chain.data?.stale ? "text-warn" : "text-paper"}`}>{snap ? fmtDateTimeIST(snap.retrieved_at) : "—"}</span>{chain.data?.stale ? " · stale" : ""}</span>
       </div>
 
       <div className={`grid gap-3 ${wide ? "" : "xl:grid-cols-[minmax(480px,36%)_1fr]"}`}>

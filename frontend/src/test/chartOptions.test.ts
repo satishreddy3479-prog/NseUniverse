@@ -95,6 +95,12 @@ describe("time series from stored snapshots", () => {
     expect((s[0]!.data[1] as [number, number | null])[1]).toBeNull();
   });
 
+  it("a sample that sums fewer contracts than the best one is a gap, not a jump; no dots are drawn", () => {
+    const s = series(premiumOption([obs(1, { missing_ltp: 0 }), obs(2, { missing_ltp: 3 }), obs(3, { missing_ltp: 0 })], colors));
+    expect(s[0]!.data.map((d) => (d as [number, number | null])[1] === null)).toEqual([false, true, false]);
+    expect((s[0] as unknown as { showSymbol: boolean }).showSymbol).toBe(false);
+  });
+
   it("decay plots the server's fixed-strike sums against their sample times and leaves gaps as gaps", () => {
     const res = { times: ["2026-10-28T02:00:00Z", "2026-10-28T02:30:00Z", "2026-10-28T03:00:00Z"], ce: [0, 2.5, null], pe: [0, -2, -3] } as unknown as PremiumDecay;
     const s = series(decayOption(res, colors));
@@ -261,7 +267,8 @@ describe("sessionize", () => {
     expect(out.series[0]!.data).toEqual([[ist(29, 15, 40), 10], [ist(30, 9, 15) - 1, null], [ist(30, 9, 15), 12], [ist(30, 9, 16), 13]]);
     expect(out.series[1]!.data).toEqual([1, 2, 3]); // not a time series: untouched
     expect(out.xAxis.min).toBe(b.min);
-    expect(out.xAxis.max).toBe(b.max);
+    // newest sample 09:16: the axis ends just after it (10 min), not at the 15:40 close, while the session runs
+    expect(out.xAxis.max).toBe(ist(30, 9, 26));
   });
 
   it("marks the first sample of each later day with a labelled divider and keeps the series' own marks", async () => {

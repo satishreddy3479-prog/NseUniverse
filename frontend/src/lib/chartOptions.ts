@@ -116,7 +116,8 @@ function tsBase(c: ChartColors, valueFormatter: (v: number) => string) {
     grid: { left: 58, right: 16, top: 34, bottom: 44 },
     legend: { top: 0, right: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
     tooltip: { trigger: "axis", backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 },
-      axisPointer: { type: "cross", label: { backgroundColor: c.slate } },
+      axisPointer: { type: "line", lineStyle: { color: c.muted, type: "dashed" }, label: { backgroundColor: c.slate } },
+      extraCssText: "border-radius:4px;box-shadow:0 4px 14px rgba(0,0,0,.35)",
       formatter: (params: unknown) => {
         const ps = params as { axisValue: number; seriesName: string; value: [number, number | null] }[];
         return `<b>${fmtDateTimeIST(new Date(ps[0]!.axisValue).toISOString())}</b><br/>` +
@@ -128,8 +129,15 @@ function tsBase(c: ChartColors, valueFormatter: (v: number) => string) {
 }
 
 export function premiumOption(obs: Observation[], c: ChartColors, showCalls = true, showPuts = true): EChartsCoreOption {
-  const line = (name: string, color: string, pick: (o: Observation) => number | null) => ({
-    name, type: "line", showSymbol: obs.length <= 80, symbolSize: 6, itemStyle: { color }, lineStyle: { color, width: 2 },
+  // A sample with more contracts missing a price than the best sample sums fewer contracts, so its total would
+  // jump for a reason that is not the market: draw it as a gap instead of a misleading point.
+  const fewestMissing = Math.min(...obs.map((o) => o.missing_ltp));
+  const line = (name: string, color: string, rawPick: (o: Observation) => number | null) => {
+    const pick = (o: Observation) => (o.missing_ltp > fewestMissing ? null : rawPick(o));
+    return lineOf(name, color, pick);
+  };
+  const lineOf = (name: string, color: string, pick: (o: Observation) => number | null) => ({
+    name, type: "line", showSymbol: false, emphasis: { focus: "series" }, itemStyle: { color }, lineStyle: { color, width: 2 },
     areaStyle: fade(color, 0.14), data: obs.map((o) => [t(o), pick(o)]),
   });
   return {
@@ -150,7 +158,7 @@ export function premiumOption(obs: Observation[], c: ChartColors, showCalls = tr
 export function decayOption(res: PremiumDecay, c: ChartColors, showCalls = true, showPuts = true): EChartsCoreOption {
   const times = res.times.map((x) => new Date(x).getTime());
   const area = (name: string, color: string, vals: (number | null)[]) => ({
-    name, type: "line", showSymbol: times.length <= 80, symbolSize: 5, itemStyle: { color }, lineStyle: { color, width: 1.5 },
+    name, type: "line", showSymbol: false, itemStyle: { color }, lineStyle: { color, width: 1.8 },
     areaStyle: { color, opacity: 0.25 }, data: times.map((x, i) => [x, vals[i] ?? null]),
     markLine: { symbol: "none", silent: true, lineStyle: { color: c.muted, type: "dashed" }, label: { show: false }, data: [{ yAxis: 0 }] },
   });
@@ -175,7 +183,7 @@ export function spotOption(obs: Observation[], c: ChartColors): EChartsCoreOptio
     ...tsBase(c, (v) => fmtPrice(v)),
     yAxis: { type: "value", scale: true, ...fit, axisLabel: { ...axisText(c), formatter: (v: number) => fmtInt(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
     series: [{
-      name: "NIFTY 50 at snapshot", type: "line", showSymbol: obs.length <= 80, symbolSize: 7, itemStyle: { color: c.info }, lineStyle: { color: c.info, width: 2 },
+      name: "NIFTY 50 at snapshot", type: "line", showSymbol: false, itemStyle: { color: c.info }, lineStyle: { color: c.info, width: 2 },
       areaStyle: fade(c.info, 0.14),
       data: obs.map((o) => [t(o), o.underlying_ltp]),
       markLine: prev == null ? undefined : { symbol: "none", silent: true, lineStyle: { color: c.muted, type: "dashed" },
@@ -189,7 +197,7 @@ export function straddleOption(obs: Observation[], c: ChartColors): EChartsCoreO
     ...tsBase(c, (v) => fmtPrice(v)),
     yAxis: { type: "value", scale: true, minInterval: 1, axisLabel: { ...axisText(c), formatter: (v: number) => fmtInt(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
     series: [{
-      name: "ATM straddle", type: "line", showSymbol: obs.length <= 80, symbolSize: 6, itemStyle: { color: c.brass }, lineStyle: { color: c.brass, width: 2 },
+      name: "ATM straddle", type: "line", showSymbol: false, itemStyle: { color: c.brass }, lineStyle: { color: c.brass, width: 2 },
       areaStyle: fade(c.brass, 0.14),
       data: obs.map((o) => ({ value: [t(o), o.straddle], atm: o.atm_strike })),
       tooltip: { formatter: (p: unknown) => { const x = p as { value: [number, number | null]; data: { atm: number | null } }; return `ATM ${x.data.atm ?? "—"}: ${x.value[1] == null ? "—" : fmtPrice(x.value[1])}`; } },
@@ -523,6 +531,20 @@ export function divergingBarOption(rows: { name: string; value: number }[], c: C
  * are dropped, a gap is left between days instead of a line across the night, and for the Session range the axis is
  * fixed to that session. Works on any series whose data are [timeMs, value] pairs; other series are untouched.
  */
+/**
+ * Right edge of a session chart: the session close once the day is done, but while it is still running only a
+ * little past the newest sample, so a morning's data fills the chart instead of hugging the left edge.
+ */
+function fitMax(bounds: { min: number; max: number }, series: { data?: unknown }[]): number {
+  let last = -Infinity;
+  for (const s of series) {
+    if (!Array.isArray(s.data)) continue;
+    for (const d of s.data as unknown[]) if (Array.isArray(d) && typeof d[0] === "number" && d[1] != null && d[0] > last) last = d[0];
+  }
+  if (!Number.isFinite(last) || last >= bounds.max) return bounds.max;
+  return Math.min(bounds.max, last + Math.max(10 * 60_000, (last - bounds.min) * 0.1));
+}
+
 export function sessionize(option: EChartsCoreOption, bounds: { min: number; max: number } | null): EChartsCoreOption {
   const o = option as { series?: { data?: unknown }[]; xAxis?: Record<string, unknown> };
   if (!Array.isArray(o.series)) return option;
@@ -559,7 +581,7 @@ export function sessionize(option: EChartsCoreOption, bounds: { min: number; max
   }
   return {
     ...(option as object),
-    ...(bounds && o.xAxis ? { xAxis: { ...o.xAxis, min: bounds.min, max: bounds.max } } : {}),
+    ...(bounds && o.xAxis ? { xAxis: { ...o.xAxis, min: bounds.min, max: fitMax(bounds, clipped) } } : {}),
     series: clipped,
   } as EChartsCoreOption;
 }
