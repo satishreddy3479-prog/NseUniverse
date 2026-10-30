@@ -44,6 +44,9 @@ describe("deriveSignals", () => {
     const s = deriveSignals(st, false, undefined, T);
     expect(s[0]).toMatchObject({ value: "Sign-in failed", tone: "bad", detail: "bad MPIN" });
     expect(s[1]).toMatchObject({ value: "Last fetch failed", tone: "bad" });
+    // the same failure right after a good fetch is a retry, shown as a warning
+    const hiccup = deriveSignals(status({ snapshots: { last_attempt_at: null, last_success_at: new Date(T - 90_000).toISOString(), last_error: "ApiException", in_progress: false, captured_count: 5 } }), false, undefined, T);
+    expect(hiccup[1]).toMatchObject({ value: "Retrying", tone: "warn" });
     expect(s[2]?.value).toBe("Not started");
   });
 

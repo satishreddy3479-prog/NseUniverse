@@ -18,6 +18,9 @@ export interface LiveInput {
   linkOpen: boolean;
 }
 
+/** A successful snapshot within the last 5 minutes: a failure since then is probably a passing hiccup. */
+const recentSuccess = (at: string | null, now: number): boolean => at != null && now - Date.parse(at) < 5 * 60_000;
+
 export function deriveSignals(
   status: AppStatus | undefined,
   backendDown: boolean,
@@ -53,8 +56,11 @@ export function deriveSignals(
   const snapshot: Signal = s.in_progress
     ? { key: "snapshot", label: "Snapshot", value: "Fetching", tone: "pending", detail: "" }
     : s.last_error
-      ? { key: "snapshot", label: "Snapshot", value: "Last fetch failed", tone: "bad",
-          detail: s.last_error }
+      ? recentSuccess(s.last_success_at, now)
+        // one failed call between good ones (the broker times out now and then) is a retry, not an outage
+        ? { key: "snapshot", label: "Snapshot", value: "Retrying", tone: "warn",
+            detail: `The last fetch failed (${s.last_error}); the one before it worked ${Math.round((now - Date.parse(s.last_success_at as string)) / 1000)}s ago and the sampler tries again every minute.` }
+        : { key: "snapshot", label: "Snapshot", value: "Last fetch failed", tone: "bad", detail: s.last_error }
       : s.last_success_at
         ? { key: "snapshot", label: "Snapshot", value: "Last fetch OK", tone: "ok", detail: "" }
         : { key: "snapshot", label: "Snapshot", value: "None this session", tone: "idle",

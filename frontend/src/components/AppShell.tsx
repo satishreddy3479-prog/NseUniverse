@@ -17,7 +17,7 @@ export function AppShell() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 border-b border-rule bg-slate px-3 py-1.5">
+      <header className="grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-b border-rule bg-slate px-3 py-1.5 md:flex md:flex-wrap">
         <button
           type="button"
           className="rounded-sm border border-rule px-2 py-1 text-sm md:hidden"
@@ -27,12 +27,12 @@ export function AppShell() {
         >
           Menu
         </button>
-        <div className="flex shrink-0 flex-col leading-tight">
+        <div className="flex min-w-0 shrink-0 flex-col leading-tight">
           <span className="text-[15px] font-semibold tracking-tight text-paper">NSE Universe</span>
-          <span className="text-xs text-muted">{underlying} 50 options</span>
+          <span className="hidden text-xs text-muted sm:block md:block">{underlying} 50 options</span>
         </div>
-        <SpotBadge latest={spotSnapshot ?? latest} />
-        <div className="ml-auto">
+        <SpotBadge latest={spotSnapshot ?? latest} className="col-span-3 row-start-2 md:col-auto md:row-auto" />
+        <div className="col-start-3 row-start-1 justify-self-end md:ml-auto">
           <StatusPill signals={signals} />
         </div>
       </header>

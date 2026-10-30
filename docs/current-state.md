@@ -5,6 +5,10 @@ _Last updated: 2026-10-29_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Top bar (30 Oct 2026)
+- Live check at 11:28 IST: one `option_chain` call to the broker failed at 11:25:39 IST (ApiException) and the next fetch worked about 3 minutes later; the header showed that moment as a red "Snapshot: Last fetch failed". A failure within 5 minutes of a successful fetch now shows amber "Retrying" with the reason on hover; red stays for failures with no recent success.
+- Phone header: Menu, name and status pill on one row, NIFTY price and change on the second row (nothing cut off); the pill truncates instead of overflowing. Desktop: price, change and time on one line.
+
 ## Strategy builder: Update, Reset/New, server-save fix, layout (30 Oct 2026)
 - **Server save 404:** strategy names such as "straddle - range bound -30/10/2026" contain slashes; the proxy split them into path parts so PUT/DELETE did not match any route. The name now travels in the body (`PUT /api/strategies/{kind}` `{key, doc}`) or query (`DELETE /api/strategies/{kind}?key=`). Tested with a slashed name.
 - **Update** moved beside Exit all in the Positions header (shows a dot while there are unsaved changes). **Reset** (undo edits back to the built/loaded strategy and default what-if/date/IV/multiplier/zoom) and **New** (blank strategy, clears name and loaded state) are now separate buttons, each disabled when it has nothing to do.
