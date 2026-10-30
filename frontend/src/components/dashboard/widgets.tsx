@@ -315,7 +315,7 @@ export const OiChangeTrendWidget = () => <OiSeriesWidget kind="change" label="OI
 export const OiTotalTrendWidget = () => <OiSeriesWidget kind="total" label="Total OI (call vs put) through the session" />;
 
 /** Overall and ATM PCR in one donut: outer ring = whole chain, inner ring = ATM strike; green = call OI, red = put OI. */
-export function PcrDonutWidget() {
+function PcrDonut() {
   const d = useDash();
   const overall = computeTotals(d.rows);
   const atm = computeTotals(d.rows.filter((r) => r.strike === d.atmStrike));
@@ -333,9 +333,7 @@ export function PcrDonutWidget() {
   const f = (v: number | null) => (v == null ? "—" : v.toFixed(2));
   const pAll = pcr(overall.peOi, overall.ceOi), pAtm = pcr(atm.peOi, atm.ceOi);
   return (
-    <ChainGuard>
-      <Body footer={<Meta kind="chain" />}>
-        <div className="flex h-full flex-wrap items-center justify-center gap-4 overflow-auto" data-testid="pcr-donut">
+        <div className="flex shrink-0 flex-wrap items-center justify-center gap-4" data-testid="pcr-donut">
           <svg viewBox="0 0 180 180" className="size-44 shrink-0" role="img" aria-label={`PCR overall ${f(pAll)}, at the money ${f(pAtm)}`}>
             {ring(overall, 76)}
             {ring(atm, 56)}
@@ -348,8 +346,6 @@ export function PcrDonutWidget() {
             <p className="mt-2 text-[11px] text-muted"><span className="text-up">Green</span> = call OI, <span className="text-down">red</span> = put OI.</p>
           </dl>
         </div>
-      </Body>
-    </ChainGuard>
   );
 }
 export const StraddleWidget = () => <TimeSeries build={straddleOption} label="ATM straddle over stored snapshots" />;
@@ -909,7 +905,9 @@ export function PcrWidget() {
   return (
     <ChainGuard>
       <Body footer={<Meta kind="chain" />}>
-        <div className="h-full overflow-auto" data-testid="pcr-widget">
+        <div className="flex h-full flex-wrap items-start gap-x-6 gap-y-3 overflow-auto" data-testid="pcr-widget">
+          <PcrDonut />
+          <div className="min-w-[22rem] flex-1">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-muted">
@@ -933,6 +931,7 @@ export function PcrWidget() {
             </tbody>
           </table>
           <p className="px-2 pt-1 text-[11px] text-muted">PCR = total put ÷ total call. A value is "—" when the data is missing, never zero.</p>
+          </div>
         </div>
       </Body>
     </ChainGuard>
@@ -958,8 +957,7 @@ export const WIDGETS: WidgetDef[] = [
   { id: "oiChangeTotal", title: "Total OI change — calls vs puts", render: () => <OiChangeTotalWidget />, x: 3, y: 21, w: 3, h: 8, minW: 2, minH: 5 },
   { id: "volume", title: "Volume by strike", render: () => <VolumeWidget />, x: 0, y: 29, w: 6, h: 8, minW: 3, minH: 5 },
   { id: "straddle", title: "ATM straddle", render: () => <StraddleWidget />, x: 0, y: 29, w: 4, h: 8, minW: 3, minH: 5 },
-  { id: "pcr", title: "PCR: ATM and overall", render: () => <PcrWidget />, x: 0, y: 29, w: 6, h: 7, minW: 4, minH: 5 },
-  { id: "pcrDonut", title: "PCR donut: overall and ATM", render: () => <PcrDonutWidget />, x: 6, y: 36, w: 6, h: 9, minW: 3, minH: 6 },
+  { id: "pcr", title: "PCR: ATM and overall", render: () => <PcrWidget />, x: 0, y: 29, w: 12, h: 9, minW: 4, minH: 6 },
   { id: "pcrTrend", title: "Put-call ratio over time", render: () => <PcrTrendWidget />, x: 0, y: 45, w: 6, h: 10, minW: 4, minH: 6 },
   { id: "oiChangeTrend", title: "OI change over time (call vs put)", render: () => <OiChangeTrendWidget />, x: 6, y: 45, w: 6, h: 10, minW: 4, minH: 6 },
   { id: "oiTotalTrend", title: "Total OI over time (call vs put)", render: () => <OiTotalTrendWidget />, x: 0, y: 55, w: 6, h: 10, minW: 4, minH: 6 },
@@ -972,7 +970,7 @@ export const WIDGETS: WidgetDef[] = [
 ];
 
 /** First screen: the nine widgets of the reference layout; the rest are one click away in "Add widget". */
-export const DEFAULT_ACTIVE = ["spot", "oi", "oiChange", "chain", "premium", "decay", "oiTotal", "oiChangeTotal", "levels", "pcr", "pcrDonut", "pcrTrend", "oiChangeTrend", "oiTotalTrend"];
+export const DEFAULT_ACTIVE = ["spot", "oi", "oiChange", "chain", "premium", "decay", "oiTotal", "oiChangeTotal", "levels", "pcr", "pcrTrend", "oiChangeTrend", "oiTotalTrend"];
 
 /** Widgets added after the first release: offered once to layouts saved earlier, so they are not hidden behind "Add widget". */
-export const NEW_DEFAULT_WIDGETS = ["pcr", "pcrDonut", "pcrTrend", "oiChangeTrend", "oiTotalTrend"];
+export const NEW_DEFAULT_WIDGETS = ["pcr", "pcrTrend", "oiChangeTrend", "oiTotalTrend"];

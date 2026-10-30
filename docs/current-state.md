@@ -156,3 +156,6 @@ Solid blue "on target date" line, SD labels across the top, boxed "Current price
 
 ## 30 Oct 2026: time-series charts are session-only
 `rangeObservations` keeps only samples taken on a weekday between 09:15 and the 15:40 close (IST); overnight and weekend fetches hold the last close and drew a flat line across the night. Ranges (30 min, 1 hour) are measured back from the newest in-session sample; Session fixes the x axis to that day's 09:15-15:40; All shows only session samples with a gap (null) between days. `sessionize()` applies the same rule to every time-series chart, including premium decay and the OI series, whose data come from the backend with overnight points. If a stored set has no in-session sample at all, the after-hours samples are shown with a note. Exchange holidays are not known to the frontend, so a manual fetch on a weekday holiday would count as a session sample. The 15:40 close (CAS) lives in `lib/session.ts` and `app/domain/session.py`; change both if NSE reverts.
+
+## 30 Oct 2026: PCR widgets merged
+"PCR: ATM and overall" now holds the donut (outer ring overall, inner ring ATM) beside the PCR table; the separate "PCR donut" widget is gone (a saved layout that still lists it simply drops it).

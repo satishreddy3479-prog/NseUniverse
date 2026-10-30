@@ -577,7 +577,7 @@ describe("Premium decay widget", () => {
   });
 });
 
-describe("OI trend widgets and the PCR donut", () => {
+describe("OI trend widgets and the PCR donut inside the PCR widget", () => {
   it("draws PCR, OI change and total OI through time, with NIFTY, from the server series", async () => {
     const ids = ["pcrTrend", "oiChangeTrend", "oiTotalTrend"];
     localStorage.setItem("nse.analysis.layout.v1", JSON.stringify({ active: ids, layout: ids.map((id, i) => ({ i: id, x: 0, y: i * 10, w: 12, h: 10 })) }));
@@ -594,7 +594,7 @@ describe("OI trend widgets and the PCR donut", () => {
     // ATM 24050: put OI 1500 vs call OI 1000; the other six strikes 1000 vs 1000 -> ATM 1.50, overall 7500/7000 = 1.07
     const chain = bigChain();
     chain.snapshot.rows.find((r) => r.strike === 24050)!.put!.oi = 1500;
-    localStorage.setItem("nse.analysis.layout.v1", JSON.stringify({ active: ["pcrDonut"], layout: [{ i: "pcrDonut", x: 0, y: 0, w: 6, h: 9 }] }));
+    localStorage.setItem("nse.analysis.layout.v1", JSON.stringify({ active: ["pcr"], layout: [{ i: "pcr", x: 0, y: 0, w: 12, h: 9 }] }));
     mockApi(history([obs(1), obs(2)], 1), { "/api/option-chain": chain });
     renderAnalysis();
     const box = await screen.findByTestId("pcr-donut");
