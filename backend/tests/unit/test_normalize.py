@@ -287,3 +287,10 @@ def test_bad_spot_is_missing_with_warning() -> None:
     s = norm(raw, count=2)
     assert s.underlying_ltp is None and s.underlying_prev_close is None
     assert any("spot" in w for w in s.warnings)
+
+
+@pytest.mark.parametrize("raw", [2.23e17, 8.4e18, "223000000000000000"])
+def test_absurd_values_seen_in_real_payloads_are_flagged_not_kept(raw: Any) -> None:
+    # Real corrupt OI values seen on 30 Oct 2026 (22100 CE, 24800 CE) must read as invalid.
+    assert parse_number(raw) == (None, True)
+    assert parse_number(9_000_000) == (9_000_000.0, False)  # a large but real OI is kept

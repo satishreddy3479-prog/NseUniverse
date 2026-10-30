@@ -81,6 +81,11 @@ def _paise(v: float | None) -> int | None:
     return None if v is None else round(v * 100)
 
 
+def _sane(v: int | None) -> int | None:
+    """Stored values beyond any plausible OI/volume read as missing (rows are never altered)."""
+    return None if v is None or abs(v) >= 2**53 else v
+
+
 def _int(v: float | None) -> int | None:
     return None if v is None else round(v)
 
@@ -248,7 +253,7 @@ class ObservationStore:
                 (sample_id,),
             ).fetchall()
         return {
-            (float(s), int(side)): Contract(None if p is None else p / 100, oi, oi_prev, vol)
+            (float(s), int(side)): Contract(None if p is None else p / 100, _sane(oi), _sane(oi_prev), _sane(vol))
             for s, side, p, oi, oi_prev, vol in rows
         }
 

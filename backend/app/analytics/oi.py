@@ -9,7 +9,7 @@ Missing values stay None; a missing baseline gives "Insufficient data", never a 
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -436,6 +436,10 @@ DECAY_DEFINITIONS = {
 }
 
 
+def _ist_day(at: datetime) -> str:
+    return (at.astimezone(UTC) + timedelta(hours=5, minutes=30)).date().isoformat()
+
+
 def premium_decay(
     obs: ObservationStore,
     underlying: str,
@@ -475,7 +479,11 @@ def premium_decay(
     cols = shown[::stride]
     if cols[-1].sample_id != shown[-1].sample_id:
         cols.append(shown[-1])
-    base = contracts_of(shown[0])
+    # Baseline = the first sample of the same IST day, so a multi-day range never measures
+    # today's premium against yesterday's close (the overnight gap is not decay).
+    day_first: dict[str, Sample] = {}
+    for s in shown:
+        day_first.setdefault(_ist_day(s.received_at), s)
 
     def price(c: Contract | None) -> float | None:
         return c.ltp if c is not None and c.ltp is not None and c.ltp > 0 else None
@@ -486,6 +494,7 @@ def premium_decay(
     pe_n: list[int] = []
     for s in cols:
         cur = contracts_of(s)
+        base = contracts_of(day_first[_ist_day(s.received_at)])
         for side_i, out, used in ((CALL, ce, ce_n), (PUT, pe, pe_n)):
             diffs = []
             for k in strikes:

@@ -5,6 +5,10 @@ _Last updated: 2026-10-29_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Chart integrity and data-handling plan, 30 Oct 2026
+- Cause of broken PCR / OI-change charts: two stored samples held absurd OI (2.23e17, 8.4e18). Now flagged at ingest and read as missing; stored rows untouched. Premium decay baselines per IST day. Backend tests for both added. Not yet verified on the live server (needs deploy).
+- Retention plan written in `docs/storage-plan.md` (intraday section). Nothing deleted; deletions need owner approval.
+
 ## StockMojo comparison, 29 Oct 2026 (read-only check of the server's stored samples)
 - Our widgets match our own API to the unit (±10 strikes around ATM 22,950: call OI 6.610 Cr, put OI 6.838 Cr, change +33.11 L / +3.95 Cr). StockMojo showed 6.58 / 6.79 Cr and +29.71 L / +3.9 Cr.
 - The gap is in the *current* OI, not the baseline: our OI minus StockMojo's is about 3 L (calls) and 5 L (puts), and the change gap is the same size, so both tools use the same previous-day baseline.

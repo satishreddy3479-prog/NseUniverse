@@ -120,6 +120,20 @@ class TestStore:
         ce = o.contracts(sample.sample_id)[(100.0, 0)]
         assert (ce.ltp, ce.oi, ce.oi_prev) == (None, None, None)
 
+    def test_stored_garbage_reads_as_missing_without_altering_the_row(self, tmp_path: Path) -> None:
+        o = ObservationStore(tmp_path)
+        s = snap("g", B, 100.0, {100: (5.0, 7, 6)}, {100: (5.0, 7, 6)})
+        sid = o.record_snapshot(s, unchanged=False)
+        assert sid is not None
+        bad = 223_000_000_000_000_000  # real corrupt OI seen on 30 Oct 2026
+        o._db.execute("UPDATE contracts SET oi=? WHERE sample_id=? AND side=0", (bad, sid))
+        o._db.commit()
+        c = o.contracts(sid)
+        assert c[(100.0, 0)].oi is None  # reads as missing, not as 2.23e17
+        assert c[(100.0, 1)].oi == 7  # neighbours untouched
+        row = o._db.execute("SELECT oi FROM contracts WHERE sample_id=? AND side=0", (sid,)).fetchone()
+        assert row[0] == bad  # stored row never modified
+
     def test_data_survives_a_restart_and_events_are_logged(self, tmp_path: Path) -> None:
         o = ObservationStore(tmp_path)
         o.record_snapshot(

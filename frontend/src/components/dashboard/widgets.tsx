@@ -274,8 +274,8 @@ export function DecayWidget() {
   const extra = <StrikePicker value={strikes} onChange={setSel} />;
   return (
     <>
-      <TimeSeries build={build} label="Premium decay versus first sample in range" extra={extra}
-        note={`Same ${res?.strikes.length ?? ""} strikes at every point (ATM as of the newest sample); premium now minus premium at the first sample in range.${res?.warnings.length ? ` ${res.warnings.join(" ")}` : ""}`} />
+      <TimeSeries build={build} label="Premium decay versus first sample of each day" extra={extra}
+        note={`Same ${res?.strikes.length ?? ""} strikes at every point (ATM as of the newest sample); premium now minus premium at the first sample of the same day.${res?.warnings.length ? ` ${res.warnings.join(" ")}` : ""}`} />
       {q.error && <p className="sr-only">Could not load the premium decay: {String((q.error as Error).message)}</p>}
     </>
   );

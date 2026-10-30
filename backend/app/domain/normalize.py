@@ -36,6 +36,10 @@ class ChainFormatError(ValueError):
     """The response does not look like an option chain at all."""
 
 
+# Largest value any price/OI/volume field can plausibly take (2**53 is exact in a float).
+MAX_PLAUSIBLE = float(2**53)
+
+
 def parse_number(value: Any, *, allow_negative: bool = False) -> tuple[float | None, bool]:
     """Return (number, invalid). Missing -> (None, False); invalid -> (None, True)."""
     if value is None:
@@ -55,6 +59,8 @@ def parse_number(value: Any, *, allow_negative: bool = False) -> tuple[float | N
     else:
         return None, True
     if math.isnan(num) or math.isinf(num):
+        return None, True
+    if abs(num) >= MAX_PLAUSIBLE:  # corrupt payload (seen: OI 2.2e17): flag, never store
         return None, True
     if num < 0 and not allow_negative:
         return None, True

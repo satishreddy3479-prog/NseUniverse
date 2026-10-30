@@ -556,7 +556,7 @@ describe("Premium decay widget", () => {
     mockApi(history([obs(1), obs(2)], 1));
     renderAnalysis();
     const box = await widget("Premium decay");
-    const chart = await within(box).findByRole("img", { name: "Premium decay versus first sample in range" });
+    const chart = await within(box).findByRole("img", { name: "Premium decay versus first sample of each day" });
     await waitFor(() => expect(chart.dataset.series).toBe("CE premium change|PE premium change"));
     expect(chart.dataset.points).toBe("2,2");
     expect(within(box).getByTestId("series-note")).toHaveTextContent("Same 3 strikes at every point");

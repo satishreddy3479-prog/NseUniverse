@@ -122,3 +122,35 @@ history). Usable space is 12 GB minus the 2 GB where the sampler pauses, so the 
 7. **Thresholds:** `/api/storage/status` pressure: watch below 6 GB free, low below 4 GB, critical below 2.5 GB; the sampler pauses at 2 GB. Check the storage card after the first full week and re-measure the table above.
 8. **Housekeeping the app does not own (optional, owner decides, about 0.6 GB):** `apt clean` (153 MB), old disabled snap revisions (174 MB), journal size cap (81 MB), `/opt/nse-universe/cache` build cache (253 MB) and user caches (136 MB). None is needed today.
 9. **Pending security reboot:** the running kernel (5.15.0-46) is older than the installed one (-198); reboot after 16:00 on a trading day and confirm the service returns.
+
+## Intraday data handling plan (30 Oct 2026) - keep what the ML needs, drop the rest after the nightly job
+
+Trigger: charts showed yesterday's data and two corrupt contract values (22100 CE OI 2.23e17, 24800 CE OI 8.4e18) that broke PCR and OI-change charts.
+**Nothing below is deleted without owner approval; code changes in this step only change how stored values are read.**
+
+### Three phases of the day
+
+| Phase | What is kept | Why |
+|---|---|---|
+| Market hours (09:15-15:30) | Snapshots every 60 s to the observation DB (needed for live charts and the intraday model's features) | Intraday ML and the dashboard read these |
+| 15:50 EOD job | Verified daily archive of the day; intraday model trains on the day's feature rows, labels from the 1-minute spot path; scores and summary appended | Training is done once, after close |
+| After the job (approval needed) | Keep: feature rows, labels, 1-min spot path, scores, daily summary, verified archive. Drop (after archive verified): raw payloads, normalized snapshots, per-contract observation rows older than the chart window | These are re-derivable from the archive or no longer read |
+
+### What each consumer needs
+
+| Consumer | Needs | Retain |
+|---|---|---|
+| Intraday ML training | feature rows (append-only), labels, 1-min spot path | forever (small) |
+| Forward test / audit | scores, forecast ledger | forever (append-only) |
+| Dashboard charts | today's per-contract rows | today + previous session only |
+| Research / backtests | verified daily archive | forever (about 2.6 GB a year) |
+
+### Integrity rules added today
+- Ingest: any price/OI/volume value of 2**53 or more is flagged invalid and stored as missing (`parse_number`).
+- Read: already-stored values of 2**53 or more read as missing (`ObservationStore.contracts`); stored rows are not modified. Tests use the two real cases.
+- Premium decay is measured from the first sample of each IST day, never across the overnight gap.
+
+### Approvals needed
+1. Delete per-contract rows older than 2 sessions once their daily archive is verified (est. saves ~5 MB/day of growth).
+2. Backup retention change already listed above.
+Measured on the server: data 47-50 MB, growth about 7.5 MB/day, 12 GB free; at this rate the full-keep policy still has years of room, so approvals 1-2 are optional tidy-ups, not urgent.
