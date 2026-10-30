@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     eod_backups: bool = True  # False on the server, where deploy/backup.sh already backs up nightly
     snapshot_raw_keep_days: int = 7  # owner-approved retention (D58); 0 = keep forever
     snapshot_normalized_keep_days: int = 14  # only days with a verified archive are ever removed
+    # per-contract rows of older sessions, removable once their archive is verified (0 = keep all)
+    observation_keep_sessions: int = 2
+    observation_prune_dry_run: bool = True  # report only; False needs owner approval
     backup_keep_daily: int = 7
     backup_keep_monthly: int = 6
     broker_daily_login: bool = True  # fresh broker sign-in every morning

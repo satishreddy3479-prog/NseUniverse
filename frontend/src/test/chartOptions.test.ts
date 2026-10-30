@@ -263,4 +263,16 @@ describe("sessionize", () => {
     expect(out.xAxis.min).toBe(b.min);
     expect(out.xAxis.max).toBe(b.max);
   });
+
+  it("marks the first sample of each later day with a labelled divider and keeps the series' own marks", async () => {
+    const { sessionize } = await import("../lib/chartOptions");
+    const own = { data: [{ yAxis: 0 }] };
+    const opt = { xAxis: { type: "time" }, series: [{ markLine: own, data: [[ist(29, 10, 0), 1], [ist(29, 10, 1), 2], [ist(30, 9, 15), 3]] }] };
+    const out = sessionize(opt as never, null) as unknown as { series: { markLine: { data: { xAxis?: number; yAxis?: number; label?: { formatter: string } }[] } }[] };
+    const marks = out.series[0]!.markLine.data;
+    expect(marks[0]).toEqual({ yAxis: 0 });
+    expect(marks).toHaveLength(2); // one divider: 30 Oct is the only day after the first
+    expect(marks[1]!.xAxis).toBe(ist(30, 9, 15));
+    expect(marks[1]!.label!.formatter).toBe("30/10");
+  });
 });

@@ -150,7 +150,12 @@ Trigger: charts showed yesterday's data and two corrupt contract values (22100 C
 - Read: already-stored values of 2**53 or more read as missing (`ObservationStore.contracts`); stored rows are not modified. Tests use the two real cases.
 - Premium decay is measured from the first sample of each IST day, never across the overnight gap.
 
+### Built 30 Oct 2026: per-contract row pruning (`ObservationStore.plan_contract_pruning`, run by the nightly EOD job)
+- Keeps the 2 most recent sessions (`observation_keep_sessions`, 0 = keep all). Older days qualify only if their verified archive holds at least as many contract rows as the database; otherwise the day is reported as blocked.
+- The newest changed sample of each day stays (about 100 rows per day) because later "unchanged" samples resolve their values through it. Sample rows (time, spot) are never removed, so history timelines still draw.
+- **Dry run by default** (`observation_prune_dry_run=True`): each night it only reports what it would remove (EOD result and `/api/lifecycle` as `observation_retention`). Real deletion starts only when the owner sets `OBSERVATION_PRUNE_DRY_RUN=false` on the server. The SQLite file is not vacuumed (freed pages are reused; a vacuum needs temporary space and locks the file).
+
 ### Approvals needed
-1. Delete per-contract rows older than 2 sessions once their daily archive is verified (est. saves ~5 MB/day of growth).
+1. Switch the pruning from dry run to real deletion (review a few nights of dry-run reports first).
 2. Backup retention change already listed above.
 Measured on the server: data 47-50 MB, growth about 7.5 MB/day, 12 GB free; at this rate the full-keep policy still has years of room, so approvals 1-2 are optional tidy-ups, not urgent.

@@ -268,6 +268,53 @@ class ObservationStore:
             for ts, s, k, d in rows
         ]
 
+    def plan_contract_pruning(
+        self, keep_sessions: int, archived: dict[str, int], *, delete: bool = False
+    ) -> dict[str, Any]:
+        """Per-contract rows of old IST days, removable once the day's archive is verified.
+
+        Keeps the ``keep_sessions`` most recent days that have samples. A day is eligible only if
+        its verified archive holds at least as many contract rows as the database does for it, so
+        nothing that is not in the archive is ever removed. The newest changed sample before the
+        cut stays per expiry: later 'unchanged' samples resolve their values through it. Sample
+        rows (time, spot) are never removed. Returns what was (or, if not ``delete``, would be) removed.
+        """
+        out: dict[str, Any] = {"dry_run": not delete, "keep_sessions": keep_sessions, "days": [], "rows": 0,
+                               "blocked": []}  # fmt: skip
+        if keep_sessions <= 0:
+            return out
+        day_sql = "date(received_ms/1000 + 19800, 'unixepoch')"
+        with self._lock:
+            days = [r[0] for r in self._db.execute(f"SELECT DISTINCT {day_sql} d FROM samples ORDER BY d DESC")]  # noqa: S608 - constants only
+            for day in days[keep_sessions:]:
+                counts = self._db.execute(
+                    f"SELECT count(*) FROM contracts c JOIN samples s USING(sample_id) WHERE {day_sql}=?", (day,)  # noqa: S608
+                ).fetchone()[0]
+                if counts == 0:
+                    continue
+                if day not in archived:
+                    out["blocked"].append({"day": day, "reason": "no verified archive"})
+                    continue
+                if archived[day] < counts:
+                    out["blocked"].append({"day": day, "reason": f"archive holds {archived[day]} rows, database {counts}"})
+                    continue
+                keep = {  # anchors: newest changed sample of each expiry on or before this day
+                    r[0] for r in self._db.execute(
+                        "SELECT max(sample_id) FROM samples WHERE unchanged=0 AND "  # noqa: S608
+                        f"{day_sql}<=? GROUP BY underlying, expiry", (day,))  # noqa: S608
+                }  # fmt: skip
+                marks = ",".join("?" * len(keep)) or "NULL"
+                where = f"sample_id IN (SELECT sample_id FROM samples WHERE {day_sql}=?) AND sample_id NOT IN ({marks})"  # noqa: S608 - constants only
+                n = self._db.execute(f"SELECT count(*) FROM contracts WHERE {where}", (day, *keep)).fetchone()[0]  # noqa: S608 - constants only
+                if n:
+                    out["days"].append(day)
+                    out["rows"] += n
+                    if delete:
+                        self._db.execute(f"DELETE FROM contracts WHERE {where}", (day, *keep))  # noqa: S608 - constants only
+            if delete:
+                self._db.commit()
+        return out
+
     def known_snapshot_ids(self) -> set[str]:
         with self._lock:
             return {

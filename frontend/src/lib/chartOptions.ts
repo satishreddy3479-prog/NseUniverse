@@ -100,6 +100,12 @@ export function totalsBarOption(i: TotalsInput): EChartsCoreOption {
 // ----------------------------------------------------------------- time series from stored snapshots
 const t = (o: Observation) => new Date(o.retrieved_at).getTime();
 
+/** Soft fill under a line: the same colour fading to nothing, so the level reads at a glance. */
+const fade = (color: string, top = 0.22) => ({
+  color: { type: "linear", x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color }, { offset: 1, color: "rgba(0,0,0,0)" }] },
+  opacity: top,
+});
+
 function timeAxis(c: ChartColors) {
   return { type: "time", axisLabel: { ...axisText(c), hideOverlap: true }, axisLine: { lineStyle: { color: c.rule } }, splitLine: { show: false } };
 }
@@ -124,7 +130,7 @@ function tsBase(c: ChartColors, valueFormatter: (v: number) => string) {
 export function premiumOption(obs: Observation[], c: ChartColors, showCalls = true, showPuts = true): EChartsCoreOption {
   const line = (name: string, color: string, pick: (o: Observation) => number | null) => ({
     name, type: "line", showSymbol: obs.length <= 80, symbolSize: 6, itemStyle: { color }, lineStyle: { color, width: 2 },
-    data: obs.map((o) => [t(o), pick(o)]),
+    areaStyle: fade(color, 0.14), data: obs.map((o) => [t(o), pick(o)]),
   });
   return {
     ...tsBase(c, (v) => fmtPrice(v)),
@@ -170,6 +176,7 @@ export function spotOption(obs: Observation[], c: ChartColors): EChartsCoreOptio
     yAxis: { type: "value", scale: true, ...fit, axisLabel: { ...axisText(c), formatter: (v: number) => fmtInt(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
     series: [{
       name: "NIFTY 50 at snapshot", type: "line", showSymbol: obs.length <= 80, symbolSize: 7, itemStyle: { color: c.info }, lineStyle: { color: c.info, width: 2 },
+      areaStyle: fade(c.info, 0.14),
       data: obs.map((o) => [t(o), o.underlying_ltp]),
       markLine: prev == null ? undefined : { symbol: "none", silent: true, lineStyle: { color: c.muted, type: "dashed" },
         label: { formatter: `Prev close ${fmtPrice(prev)}`, color: c.muted, fontSize: 11, position: "insideEndTop" }, data: [{ yAxis: prev }] },
@@ -183,6 +190,7 @@ export function straddleOption(obs: Observation[], c: ChartColors): EChartsCoreO
     yAxis: { type: "value", scale: true, minInterval: 1, axisLabel: { ...axisText(c), formatter: (v: number) => fmtInt(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
     series: [{
       name: "ATM straddle", type: "line", showSymbol: obs.length <= 80, symbolSize: 6, itemStyle: { color: c.brass }, lineStyle: { color: c.brass, width: 2 },
+      areaStyle: fade(c.brass, 0.14),
       data: obs.map((o) => ({ value: [t(o), o.straddle], atm: o.atm_strike })),
       tooltip: { formatter: (p: unknown) => { const x = p as { value: [number, number | null]; data: { atm: number | null } }; return `ATM ${x.data.atm ?? "—"}: ${x.value[1] == null ? "—" : fmtPrice(x.value[1])}`; } },
     }],
@@ -349,7 +357,13 @@ export function oiSeriesOption(res: OiSeries, kind: OiSeriesKind, c: ChartColors
   const fmt = (name: string, v: number) => (name === "NIFTY" ? fmtPrice(v) : kind === "pcr" ? v.toFixed(3) : (v < 0 ? "−" : kind === "change" && v > 0 ? "+" : "") + compactIN(Math.abs(v)));
   const main =
     kind === "pcr"
-      ? [line("Put-call ratio", c.info, res.pcr, 1)]
+      ? [{
+          ...line("Put-call ratio", c.info, res.pcr, 1),
+          areaStyle: fade(c.info, 0.12),
+          // 1.0 = as many put contracts open as call contracts; a reference, not a signal
+          markLine: { symbol: "none", silent: true, lineStyle: { color: c.muted, type: "dashed" },
+            label: { formatter: "PCR 1.0", color: c.muted, fontSize: 10, position: "insideEndTop" }, data: [{ yAxis: 1 }] },
+        }]
       : [
           ...(showCalls ? [line(kind === "change" ? "Call OI change" : "Call OI", c.up, kind === "change" ? res.ce_change : res.ce_oi, 1)] : []),
           ...(showPuts ? [line(kind === "change" ? "Put OI change" : "Put OI", c.down, kind === "change" ? res.pe_change : res.pe_oi, 1)] : []),
@@ -525,10 +539,28 @@ export function sessionize(option: EChartsCoreOption, bounds: { min: number; max
     }
     return out;
   };
+  const clipped = o.series.map((s) => ({ ...s, data: clip(s.data) }));
+  // A labelled divider at the first sample of every later day, so a multi-day range reads as separate sessions.
+  const firsts = new Map<string, number>();
+  for (const d of (clipped[0]?.data as [number, unknown][] | undefined) ?? []) {
+    if (!Array.isArray(d) || typeof d[0] !== "number" || d[1] == null) continue;
+    const day = new Date(d[0] + 330 * 60_000).toISOString().slice(0, 10);
+    if (!firsts.has(day)) firsts.set(day, d[0]);
+  }
+  const dividers = [...firsts.entries()].slice(1).map(([day, x]) => ({
+    xAxis: x, label: { show: true, formatter: day.slice(8) + "/" + day.slice(5, 7), color: "#8a8f98", fontSize: 10, position: "insideStartTop" },
+  }));
+  if (dividers.length && clipped[0]) {
+    const own = (clipped[0] as { markLine?: { data?: unknown[] } }).markLine;
+    (clipped[0] as Record<string, unknown>).markLine = {
+      symbol: "none", silent: true, lineStyle: { color: "#8a8f98", type: "dotted", opacity: 0.7 }, ...own,
+      data: [...(own?.data ?? []), ...dividers],
+    };
+  }
   return {
     ...(option as object),
     ...(bounds && o.xAxis ? { xAxis: { ...o.xAxis, min: bounds.min, max: bounds.max } } : {}),
-    series: o.series.map((s) => ({ ...s, data: clip(s.data) })),
+    series: clipped,
   } as EChartsCoreOption;
 }
 

@@ -69,6 +69,8 @@ class EodService:
         backups: bool = True,
         raw_keep_days: int = 0,
         normalized_keep_days: int = 0,
+        observation_keep_sessions: int = 0,
+        observation_prune_dry_run: bool = True,
         market: Any = None,
         risk_free_rate: float = 0.06,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
@@ -79,7 +81,9 @@ class EodService:
         self.enabled, self._clock = enabled, clock
         self.keep_daily, self.keep_monthly = keep_daily_backups, keep_monthly_backups
         self.backups, self.raw_keep, self.norm_keep = backups, raw_keep_days, normalized_keep_days
+        self.obs_keep, self.obs_dry_run = observation_keep_sessions, observation_prune_dry_run
         self.last_prune: dict[str, Any] | None = None
+        self.last_obs_prune: dict[str, Any] | None = None
         self._pruned_on: date | None = None
         self.manifests = data_dir / "manifests"
         self._lock = threading.Lock()
@@ -134,7 +138,7 @@ class EodService:
 
     def prune_due(self, now: datetime) -> bool:
         t = now.astimezone(IST)
-        return (self.raw_keep > 0 or self.norm_keep > 0) and t.time() >= RUN_AFTER and self._pruned_on != t.date()
+        return (self.raw_keep > 0 or self.norm_keep > 0 or self.obs_keep > 0) and t.time() >= RUN_AFTER and self._pruned_on != t.date()
 
     def backup_due(self, now: datetime) -> bool:
         t = now.astimezone(IST)
@@ -298,6 +302,12 @@ class EodService:
                     self.archived_days(), self.obs.known_snapshot_ids(), dry_run=False,
                 )  # fmt: skip
                 out["prune"] = self.last_prune
+                if self.obs_keep > 0:  # per-contract rows of old sessions: archive-verified, dry run unless approved
+                    self.last_obs_prune = self.obs.plan_contract_pruning(
+                        self.obs_keep, self.archived_contracts(), delete=not self.obs_dry_run
+                    )
+                    out["observation_prune"] = self.last_obs_prune
+                    log_event(logger, logging.INFO, "observation_prune", **{k: v for k, v in self.last_obs_prune.items() if k in ("dry_run", "rows", "keep_sessions")})
             self.last_result = out
             log_event(logger, logging.INFO if out["state"] == "ok" else logging.WARNING, "eod_run", state=out["state"], days=len(out["days"]))
             return out
@@ -310,14 +320,17 @@ class EodService:
 
     # ------------------------------------------------------------------ views
     def archived_days(self) -> set[str]:
-        """Days whose archive exists and matches its manifest (re-checked, not assumed)."""
-        out = set()
+        return set(self.archived_contracts())
+
+    def archived_contracts(self) -> dict[str, int]:
+        """Day -> contract rows held, for days whose archive exists and matches its manifest (re-checked)."""
+        out: dict[str, int] = {}
         for m in sorted(self.manifests.glob("session=*.json")) if self.manifests.exists() else []:
             try:
                 doc = json.loads(m.read_text("utf-8"))
                 a = doc["archive"]
                 if verify_archive(self.data_dir / a["path"], a["sha256"], a["samples"], a["contracts"]) is None:
-                    out.add(doc["day"])
+                    out[doc["day"]] = int(a["contracts"])
             except (OSError, KeyError, json.JSONDecodeError):
                 continue
         return out
@@ -335,6 +348,7 @@ class EodService:
             "last_attempt_at": self.last_attempt.isoformat() if self.last_attempt else None, "last_result": self.last_result,
             "last_backup": self.last_backup, "last_tidy": self.last_tidy, "backups_enabled": self.backups,
             "snapshot_retention": {"raw_days": self.raw_keep, "normalized_days": self.norm_keep, "last_run": self.last_prune},
+            "observation_retention": {"keep_sessions": self.obs_keep, "dry_run": self.obs_dry_run, "last_run": self.last_obs_prune},
         }  # fmt: skip
 
     async def _loop(self) -> None:

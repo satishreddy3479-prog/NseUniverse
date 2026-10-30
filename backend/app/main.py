@@ -197,6 +197,8 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             risk_free_rate=settings.risk_free_rate,
             raw_keep_days=settings.snapshot_raw_keep_days,
             normalized_keep_days=settings.snapshot_normalized_keep_days,
+            observation_keep_sessions=settings.observation_keep_sessions,
+            observation_prune_dry_run=settings.observation_prune_dry_run,
             keep_daily_backups=settings.backup_keep_daily,
             keep_monthly_backups=settings.backup_keep_monthly,
         )

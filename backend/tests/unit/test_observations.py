@@ -134,6 +134,39 @@ class TestStore:
         row = o._db.execute("SELECT oi FROM contracts WHERE sample_id=? AND side=0", (sid,)).fetchone()
         assert row[0] == bad  # stored row never modified
 
+    def test_old_contract_rows_pruned_only_with_matching_archive_and_anchor_kept(
+        self, tmp_path: Path
+    ) -> None:
+        o = ObservationStore(tmp_path)
+        z1_at = datetime(2026, 10, 26, 10, 0, tzinfo=UTC)
+        z2_at = datetime(2026, 10, 26, 10, 5, tzinfo=UTC)
+        args = ({100: 50, 110: 40, 120: 30}, {100: 10, 110: 20, 120: 30},
+                {100: 15, 110: 8, 120: 3}, {100: 2, 110: 6, 120: 14})  # fmt: skip
+        z1 = o.record_snapshot(chain("z1", z1_at, 108.0, *args), unchanged=False)
+        z2 = o.record_snapshot(chain("z2", z2_at, 108.5, *args), unchanged=False)
+        o.record_snapshot(chain("a", A, 108.0, *args), unchanged=False)
+        o.record_snapshot(chain("b", B, 109.0, *args), unchanged=False)
+        day = "2026-10-26"
+
+        def rows(sid: int | None) -> int:
+            return len(o.contracts(sid or 0))
+
+        # 3 days stored, keep 2: only 26 Oct is old. Without an archive nothing goes.
+        res = o.plan_contract_pruning(2, {}, delete=True)
+        assert res["rows"] == 0 and res["blocked"] == [{"day": day, "reason": "no verified archive"}]
+        # an archive that holds fewer rows than the database blocks it as well
+        assert o.plan_contract_pruning(2, {day: 11}, delete=True)["rows"] == 0
+        # dry run reports 6 rows (z1: 3 strikes x 2 sides) and removes nothing
+        dry = o.plan_contract_pruning(2, {day: 12})
+        assert dry["dry_run"] and dry["rows"] == 6 and dry["days"] == [day] and rows(z1) == 6
+        # real run removes z1's rows, keeps z2 (newest changed sample of the day, anchor) and later days
+        done = o.plan_contract_pruning(2, {day: 12}, delete=True)
+        assert not done["dry_run"] and done["rows"] == 6
+        assert rows(z1) == 0 and rows(z2) == 6
+        assert len(o.samples("NIFTY", EXP)) == 4  # sample rows (time, spot) are never removed
+        assert o.plan_contract_pruning(2, {day: 12}, delete=True)["rows"] == 0  # idempotent
+        assert o.plan_contract_pruning(0, {day: 12}, delete=True)["rows"] == 0  # 0 = keep everything
+
     def test_data_survives_a_restart_and_events_are_logged(self, tmp_path: Path) -> None:
         o = ObservationStore(tmp_path)
         o.record_snapshot(
