@@ -16,6 +16,10 @@ import {
 
 const SAVE_KEY = "nse.strategies.v1";
 interface Saved { name: string; savedAt: string; expiry: string; legs: Leg[] }
+const CLOSED_KEY = "nse.closed.v1";
+interface ClosedLeg extends Leg { exit: number }
+interface Closed { id: string; name: string; closedAt: string; snapshotAt: string; expiry: string; lotSize: number; pnl: number; legs: ClosedLeg[] }
+const loadClosed = (): Closed[] => { try { return JSON.parse(localStorage.getItem(CLOSED_KEY) ?? "[]") as Closed[]; } catch { return []; } };
 const loadSaved = (): Saved[] => { try { return JSON.parse(localStorage.getItem(SAVE_KEY) ?? "[]") as Saved[]; } catch { return []; } };
 const money = (v: number | null, signed = true) => (v == null ? "—" : `${v < 0 ? "−" : v > 0 && signed ? "+" : ""}₹${fmtInt(Math.round(Math.abs(v)))}`);
 const tone = (v: number | null) => (v == null || v === 0 ? "text-paper" : v > 0 ? "text-up" : "text-down");
@@ -85,6 +89,8 @@ export default function StrategyBuilder() {
   const [whatPct, setWhatPct] = useState(0);
   const [saved, setSaved] = useState<Saved[]>(loadSaved);
   const [name, setName] = useState("");
+  const [closed, setClosed] = useState<Closed[]>(loadClosed);
+  const [opened, setOpened] = useState<Closed | null>(null);
 
   const chain = useQuery({ queryKey: ["chain", expiry], queryFn: () => api.optionChain(expiry!), enabled: !!expiry, retry: false, staleTime: 15_000, refetchInterval: 30_000 });
   const snap = chain.data?.snapshot;
@@ -284,6 +290,21 @@ export default function StrategyBuilder() {
       </div>
     );
   };
+  const persistClosed = (c: Closed[]) => { setClosed(c); try { localStorage.setItem(CLOSED_KEY, JSON.stringify(c)); } catch { /* storage unavailable: kept for this visit only */ } };
+  /** Exit every active leg at its stored price, record the realised P&L as a closed trade and clear the builder. Nothing is sent to any broker. */
+  const exitAll = () => {
+    if (!expiry || !lotSize || !snap) return;
+    const active = legs.filter((l) => l.enabled !== false);
+    const missing = active.filter((l) => ltp(l.strike, l.type) == null || l.premium == null);
+    if (active.length === 0) return;
+    if (missing.length) { setNote(`Cannot exit: no stored price or no entry premium for ${missing.map((l) => `${l.strike} ${l.type}`).join(", ")}. Untick or remove those legs, or enter the entry premium.`); return; }
+    const out: ClosedLeg[] = active.map((l) => ({ ...l, lots: l.lots * mult, exit: ltp(l.strike, l.type) as number }));
+    const pnl = out.reduce((t, l) => t + sign(l.action) * (l.exit - (l.premium as number)) * l.lots * lotSize, 0);
+    const at = new Date();
+    persistClosed([{ id: newLegId(), name: name.trim() || `Strategy ${at.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`, closedAt: at.toISOString(), snapshotAt: snap.retrieved_at, expiry, lotSize, pnl, legs: out }, ...closed]);
+    setLegs([]); setNote(null); setSel(null); setMult(1); setDays(0); setName(""); setOpened(null);
+  };
+  const openClosed = (c: Closed) => { setPicked(c.expiry); setLegs(c.legs.map(({ exit: _e, ...l }) => ({ ...l, id: newLegId() }))); setMult(1); setNote(null); setOpened(c); };
   const persist = (s: Saved[]) => { setSaved(s); try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch { /* storage unavailable: kept for this visit only */ } };
   const net = (k: number, t: OptionType) => legs.filter((l) => l.strike === k && l.type === t).reduce((s, l) => s + sign(l.action) * l.lots, 0);
   const gallery = useMemo(() => TEMPLATES.filter((t) => TEMPLATE_BIAS[t.id] === bias), [bias]);
@@ -298,6 +319,25 @@ export default function StrategyBuilder() {
         <select className={field} aria-label="Saved strategies" value="" disabled={saved.length === 0} onChange={(e) => { const s = saved.find((x) => x.name === e.target.value); if (s) { setPicked(s.expiry); setLegs(s.legs.map((l) => ({ ...l, id: newLegId() }))); } }}>
           <option value="">{saved.length ? `Saved (${saved.length})…` : "Saved (none)"}</option>{saved.map((s) => <option key={s.name} value={s.name}>{s.name} · {s.legs.length} legs · {s.expiry}</option>)}
         </select>
+        <details className="relative text-sm" data-testid="closed-menu">
+          <summary className={`${field} flex cursor-pointer items-center`} aria-label="Closed strategies">Closed ({closed.length})</summary>
+          <div className="absolute left-0 z-20 mt-1 w-80 max-w-[90vw] rounded-sm border border-rule bg-slate p-1 shadow-lg">
+            {closed.length === 0 ? <p className="p-2 text-xs text-muted">No closed trades yet. Exit all in the positions card saves one here.</p> : (
+              <ul className="max-h-72 overflow-auto">
+                {closed.map((c) => (
+                  <li key={c.id} className="flex items-center gap-1 border-b border-rule/40 last:border-0">
+                    <button type="button" className="flex-1 rounded-sm p-2 text-left hover:bg-slate-2" onClick={(e) => { openClosed(c); (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open"); }}>
+                      <div className="text-paper">{c.name}</div>
+                      <div className="text-[11px] text-muted">{c.legs.length} legs · expiry {c.expiry} · closed {new Date(c.closedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}</div>
+                      <div className={`num text-xs ${tone(c.pnl)}`}>Realised {money(c.pnl)}</div>
+                    </button>
+                    <button type="button" aria-label={`Delete closed trade ${c.name}`} title="Remove from the closed list" className="px-2 text-xs text-muted hover:text-down" onClick={() => persistClosed(closed.filter((x) => x.id !== c.id))}>✕</button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </details>
         {saved.length > 0 && <button type="button" className="text-xs text-muted hover:text-down" onClick={() => persist([])} title="Delete every saved strategy from this browser">delete saved</button>}
         <Button onClick={() => { setLegs([]); setNote(null); setSel(null); setMult(1); setDays(0); }} disabled={legs.length === 0}>Reset / New</Button>
         <span className="ml-auto text-xs text-muted" title="Premiums are the last traded prices in this stored snapshot, not live quotes">Snapshot <span className={`num ${chain.data?.stale ? "text-warn" : "text-paper"}`}>{snap ? fmtDateTimeIST(snap.retrieved_at) : "—"}</span>{chain.data?.stale ? " · stale" : ""}</span>
@@ -400,6 +440,14 @@ export default function StrategyBuilder() {
           <section aria-label="Payoff" className="rounded-[var(--radius-panel)] border border-rule bg-slate">
             <div className="flex border-b border-rule px-3 py-2 text-sm"><span className="rounded-sm bg-info/15 px-3 py-1 text-info">Payoff</span><span className="ml-auto text-xs text-muted">{expiry ? `expiry ${expiry} · ${dte}d` : ""}</span></div>
             {note && <p role="alert" className="px-3 pt-2 text-sm text-warn" data-testid="template-msg">{note}</p>}
+            {opened && (
+              <div className="mx-3 mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-sm border border-info/50 bg-info/10 px-3 py-2 text-xs" data-testid="opened-closed">
+                <span className="text-paper">Opened closed trade <b>{opened.name}</b>, closed {new Date(opened.closedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST</span>
+                <span>Realised <span className={`num ${tone(opened.pnl)}`}>{money(opened.pnl)}</span></span>
+                <span className="text-muted">Exits: {opened.legs.map((l) => `${l.action === "BUY" ? "B" : "S"} ${l.strike}${l.type} ${l.premium} → ${l.exit}`).join(" · ")}</span>
+                <button type="button" className="ml-auto text-info hover:underline" onClick={() => setOpened(null)}>Dismiss</button>
+              </div>
+            )}
             {legs.length === 0 ? (
               <div className="p-3" data-testid="gallery">
                 <h2 className="mb-2 text-sm font-semibold text-paper">Ready-made strategies</h2>
@@ -474,6 +522,7 @@ export default function StrategyBuilder() {
                   <span>Multiplier <button type="button" aria-label="Decrease multiplier" className="mx-1 rounded-sm border border-rule px-2" onClick={() => setMult((m) => Math.max(1, m - 1))}>−</button><span className="num text-paper" data-testid="mult">{mult}</span><button type="button" aria-label="Increase multiplier" className="mx-1 rounded-sm border border-rule px-2" onClick={() => setMult((m) => m + 1)}>+</button></span>
                   <span>Qty per lot <span className="num text-paper">{lotSize ?? "—"}</span></span>
                   <span>Total P&L <span className={`num ${tone(totalPnl)}`}>{money(totalPnl)}</span></span>
+                  <button type="button" onClick={exitAll} disabled={!lotSize || legs.every((l) => l.enabled === false)} title="Exit every ticked leg at its stored price and save the result to Closed. Nothing is sent to a broker." className="rounded-sm border border-down bg-down/15 px-3 py-1 font-semibold text-down hover:bg-down/25 disabled:opacity-40">Exit all</button>
                 </div>
               </div>
               {tab === "positions" ? (

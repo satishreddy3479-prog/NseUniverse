@@ -337,3 +337,30 @@ describe("Plus and minus on a held strike", () => {
   });
 });
 
+describe("Exit all and closed strategies", () => {
+  it("exit all closes every leg at its stored price, saves the realised P&L and clearing the builder; the closed trade can be reopened", async () => {
+    mount();
+    await loaded();
+    await userEvent.click(await screen.findByRole("button", { name: "Sell CE 24100" })); // entry 100, stored 100
+    await userEvent.clear(screen.getByLabelText("Entry premium"));
+    await userEvent.type(screen.getByLabelText("Entry premium"), "130"); // sold at 130, stored LTP 100: +30 x 75
+    await userEvent.click(screen.getByRole("button", { name: "Exit all" }));
+    expect(await screen.findByTestId("gallery")).toBeInTheDocument();
+    const menu = screen.getByTestId("closed-menu");
+    expect(menu).toHaveTextContent("Closed (1)");
+    expect(menu).toHaveTextContent("Realised +₹2,250");
+    await userEvent.click(within(menu).getByText(/Realised/));
+    expect(await screen.findByTestId("opened-closed")).toHaveTextContent("S 24100CE 130 → 100");
+    expect(screen.getByRole("table", { name: "Strategy legs" })).toBeInTheDocument();
+  });
+
+  it("will not exit a leg that has no stored price: missing stays missing", async () => {
+    mount();
+    await loaded();
+    await userEvent.click(await screen.findByRole("button", { name: "Buy CE 24000" })); // the fixture has no call price at 24000
+    await userEvent.click(screen.getByRole("button", { name: "Exit all" }));
+    expect(await screen.findByTestId("template-msg")).toHaveTextContent("Cannot exit");
+    expect(screen.getByTestId("closed-menu")).toHaveTextContent("Closed (0)");
+  });
+});
+
