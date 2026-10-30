@@ -159,3 +159,6 @@ Solid blue "on target date" line, SD labels across the top, boxed "Current price
 
 ## 30 Oct 2026: PCR widgets merged
 "PCR: ATM and overall" now holds the donut (outer ring overall, inner ring ATM) beside the PCR table; the separate "PCR donut" widget is gone (a saved layout that still lists it simply drops it).
+
+## 30 Oct 2026: Prediction page, visual pass
+Compute now is a highlighted accent button in its own strip with the last automatic / manual run as pills. Each forecast has a "Reading of this forecast" written from its own numbers (`readingLines`: distance from the base rate in points, whether the models agree, the call or why none, the historical ranges as prices, event risk; nothing fixed about the market). New graphics (`PredictionViz.tsx`): model dots against the base rate, historical range bar around the last close, holdout gain with 95% intervals per model, reliability plot in the model detail, hit-rate interval in the forward scoreboard.

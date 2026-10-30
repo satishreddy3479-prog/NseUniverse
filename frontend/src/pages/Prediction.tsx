@@ -1,6 +1,7 @@
+import { ConeBar, GainBars, HitInterval, ModelDots, ReliabilityPlot, readingLines } from "../components/PredictionViz";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Button, Panel } from "../components/ui";
+import { Panel } from "../components/ui";
 import { EventsNewsPanel } from "../components/EventsNewsPanel";
 import { CashPanel } from "../components/CashPanel";
 import { FlowsPanel } from "../components/FlowsPanel";
@@ -77,11 +78,15 @@ function CallBanner({ calls, hz }: { calls: NonNullable<PredictionSummaryReady["
 
 function ComputeBar({ hz, runs, computing, onCompute }: { hz: "T1" | "T5"; runs: PredictionSummaryReady["runs"]; computing: boolean; onCompute: () => void }) {
   const r = runs?.[hz];
+  const pill = "rounded-md border border-rule bg-ink/60 px-2.5 py-1";
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted" data-testid={`compute-${hz}`}>
-      <Button disabled={computing} onClick={onCompute} title="Retrain this model now with the data stored so far (allowed in market hours too)">{computing ? "Computing…" : "Compute now"}</Button>
-      <span>Last automatic run: <span className="num text-paper">{r?.last_auto ? fmtDateTimeIST(r.last_auto.at) : "none yet"}</span></span>
-      <span>Last manual run: <span className="num text-paper">{r?.last_manual ? fmtDateTimeIST(r.last_manual.at) : "none yet"}</span></span>
+    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent/10 p-2.5 text-xs text-muted" data-testid={`compute-${hz}`}>
+      <button type="button" disabled={computing} onClick={onCompute} title="Retrain this model now with the data stored so far (allowed in market hours too)"
+        className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-accent px-4 text-sm font-semibold text-ink shadow-md transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60">
+        <span aria-hidden="true" className={computing ? "inline-block animate-spin" : "inline-block"}>⟳</span>{computing ? "Computing…" : "Compute now"}
+      </button>
+      <span className={pill}>Last automatic run: <span className="num ml-1 text-paper">{r?.last_auto ? fmtDateTimeIST(r.last_auto.at) : "none yet"}</span></span>
+      <span className={pill}>Last manual run: <span className="num ml-1 text-paper">{r?.last_manual ? fmtDateTimeIST(r.last_manual.at) : "none yet"}</span></span>
     </div>
   );
 }
@@ -112,6 +117,13 @@ function ForecastCard({ hz, f, evs, runs, computing, onCompute }: { hz: "T1" | "
           <p className={`mt-3 font-mono text-3xl font-bold tracking-tight ${leanTone}`}>{lean}</p>
           <p className="mb-2 text-sm text-muted"><span className="num font-mono text-xl font-semibold text-paper">{pct(p.p_up_model)}</span> chance of closing up · {label(head!)} (calibrated)</p>
           <SplitBar p={p.p_up_model} base={p.p_up_climatology} />
+          <div className="mt-3 rounded-xl border border-info/30 bg-info/5 p-3" data-testid={`reading-${hz}`}>
+            <p className={MONO}>Reading of this forecast</p>
+            <ul className="mt-1 space-y-1 text-sm text-paper">
+              {readingLines({ horizon: hz, model: head!, p: p.p_up_model, base: p.p_up_climatology, models: entries.filter(([, mf]) => mf.payload).map(([n, mf]) => ({ name: n, p: mf.payload!.p_up_model })), target: m!.target_session ?? null,
+                call: f.calls ? { call: f.calls.call, reason: f.calls.reason } : null, close: m!.reference_close, q: q ?? null, events: (p.event_risk ?? []).map((e) => e.name) }).map((t) => <li key={t} className="flex gap-2"><span aria-hidden="true" className="text-info">▸</span><span>{t}</span></li>)}
+            </ul>
+          </div>
           {f.calls && <div className="mt-3"><CallBanner calls={f.calls} hz={hz} /></div>}
           {p.event_risk && p.event_risk.length > 0 && (
             <p className="mt-2 rounded-lg border border-warn/50 px-3 py-1.5 text-sm text-warn" data-testid={`event-risk-${hz}`}>
@@ -120,13 +132,17 @@ function ForecastCard({ hz, f, evs, runs, computing, onCompute }: { hz: "T1" | "
           )}
           <p className="mt-3 text-sm text-muted">{VERDICT[evOf(head!)].text}</p>
           {q && (
+            <div className="mt-3 rounded-xl border border-rule bg-ink/40 p-3"><p className={MONO}>Where the close could land (history)</p><ConeBar close={m!.reference_close} q={q} /></div>
+          )}
+          {q && (
             <div className="mt-3 grid grid-cols-2 gap-2">
               <Cone title="50% range (unconditional)" lo={q["0.25"]!} hi={q["0.75"]!} close={m!.reference_close} />
               <Cone title="90% range (unconditional)" lo={q["0.05"]!} hi={q["0.95"]!} close={m!.reference_close} />
             </div>
           )}
           <p className="mt-1 font-mono text-[11px] text-muted">Ranges come from the last 750 realised {hz === "T1" ? "1-day" : "5-day"} returns; they are not model-specific.</p>
-          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="mt-4 rounded-xl border border-rule bg-ink/40 p-3"><p className={MONO}>Models against the base rate</p><ModelDots models={entries.map(([n, mf]) => ({ name: n, p: mf.payload?.p_up_model ?? null }))} base={p.p_up_climatology} head={head} /></div>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
             {entries.map(([name, mf]) => {
               const mv = evOf(name);
               return (
@@ -308,6 +324,10 @@ function Leaderboard({ hz, ev, sel, onSel }: { hz: Hz; ev: HorizonEval; sel: str
           Settings and the probability calibration were fitted only on {ev.tuning_period?.[0]} → {ev.tuning_period?.[1]}; every figure below is from later data the tuning never saw ({rows[0]![1].holdout.n} predictions each).
           Base rate Brier: <span className="num text-paper">{num(ev.base.brier_holdout)}</span> (coin flip {num(ev.base.brier_coin_flip)}).
         </p>
+        <div className="rounded-xl border border-rule bg-ink/40 p-3">
+          <p className={MONO}>Gain over the base rate on the holdout (95% interval)</p>
+          <GainBars rows={rows.map(([name, m]) => ({ name, gain: m.holdout.gain, lo: m.holdout.gain_ci95[0], hi: m.holdout.gain_ci95[1], head: name === ev.best_on_tuning }))} />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm" aria-label={`Metrics ${hz}`}>
             <thead className="text-xs text-muted">
@@ -342,6 +362,7 @@ function ModelDetail({ hz, name, m }: { hz: Hz; name: string; m: ModelEval }) {
       <p className="text-sm font-medium">{label(name)}: {m.description}</p>
       <details>
         <summary className="cursor-pointer text-sm text-info">Reliability on the holdout (when it said X%, how often was it up?)</summary>
+        <div className="mt-2"><ReliabilityPlot bins={m.calibration} /></div>
         <table className="mt-2 w-full text-sm" aria-label={`Calibration ${hz}`}>
           <thead className="text-xs text-muted"><tr><th className="text-left font-normal">Said</th><th className="text-right font-normal">Cases</th><th className="text-right font-normal">Mean said</th><th className="text-right font-normal">Actually up</th></tr></thead>
           <tbody>{m.calibration.map((b) => (
@@ -377,7 +398,7 @@ function ForwardPanel({ board }: { board: PredictionSummaryReady["ledger"]["scor
                 <tr key={`${h}${m}`} className="num border-t border-rule/50">
                   <td>{h}</td><td>{label(m)}</td><td className="text-right">{s.n}</td>
                   <td className={`text-right ${s.brier < s.brier_base ? "text-up" : "text-down"}`}>{num(s.brier)}</td><td className="text-right text-muted">{num(s.brier_base)}</td>
-                  <td className="text-right">{pct(s.hit)} <span className="text-muted">({pct(s.hit_ci[0])}–{pct(s.hit_ci[1])})</span></td>
+                  <td className="text-right">{pct(s.hit)} <span className="text-muted">({pct(s.hit_ci[0])}–{pct(s.hit_ci[1])})</span><HitInterval hit={s.hit} ci={s.hit_ci as [number, number]} /></td>
                 </tr>
               ))}
             </tbody>
