@@ -18,7 +18,7 @@ const SAVE_KEY = "nse.strategies.v1";
 interface Saved { name: string; savedAt: string; expiry: string; legs: Leg[] }
 const CLOSED_KEY = "nse.closed.v1";
 interface ClosedLeg extends Leg { exit: number }
-interface Closed { id: string; name: string; closedAt: string; snapshotAt: string; expiry: string; lotSize: number; pnl: number; legs: ClosedLeg[] }
+interface Closed { id: string; name: string; closedAt: string; snapshotAt: string; expiry: string; lotSize: number; pnl: number; legs: ClosedLeg[]; /** the stored chain was stale when the exit prices were read */ stale?: boolean }
 const loadClosed = (): Closed[] => { try { return JSON.parse(localStorage.getItem(CLOSED_KEY) ?? "[]") as Closed[]; } catch { return []; } };
 const loadSaved = (): Saved[] => { try { return JSON.parse(localStorage.getItem(SAVE_KEY) ?? "[]") as Saved[]; } catch { return []; } };
 const money = (v: number | null, signed = true) => (v == null ? "—" : `${v < 0 ? "−" : v > 0 && signed ? "+" : ""}₹${fmtInt(Math.round(Math.abs(v)))}`);
@@ -304,7 +304,7 @@ export default function StrategyBuilder() {
     const out: ClosedLeg[] = active.map((l) => ({ ...l, lots: l.lots * mult, exit: ltp(l.strike, l.type) as number }));
     const pnl = out.reduce((t, l) => t + sign(l.action) * (l.exit - (l.premium as number)) * l.lots * lotSize, 0);
     const at = new Date();
-    persistClosed([{ id: newLegId(), name: name.trim() || `Strategy ${at.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`, closedAt: at.toISOString(), snapshotAt: snap.retrieved_at, expiry, lotSize, pnl, legs: out }, ...closed]);
+    persistClosed([{ id: newLegId(), name: name.trim() || `Strategy ${at.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`, closedAt: at.toISOString(), snapshotAt: snap.retrieved_at, expiry, lotSize, pnl, legs: out, stale: !!chain.data?.stale }, ...closed]);
     setLegs([]); setNote(null); setSel(null); setMult(1); setDays(0); setName(""); setOpened(null);
   };
   const openClosed = (c: Closed) => { setPicked(c.expiry); setLegs(c.legs.map(({ exit: _e, ...l }) => ({ ...l, id: newLegId() }))); setMult(1); setNote(null); setOpened(c); };
@@ -351,7 +351,7 @@ export default function StrategyBuilder() {
                     <button type="button" className="flex-1 rounded-sm p-2 text-left hover:bg-slate-2" onClick={(e) => { openClosed(c); (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open"); }}>
                       <div className="text-paper">{c.name}</div>
                       <div className="text-[11px] text-muted">{c.legs.length} legs · expiry {c.expiry} · closed {new Date(c.closedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}</div>
-                      <div className={`num text-xs ${tone(c.pnl)}`}>Realised {money(c.pnl)}</div>
+                      <div className={`num text-xs ${tone(c.pnl)}`}>Realised {money(c.pnl)}{c.stale && <span className="ml-2 text-warn" title={`Exit prices were the stored prices from ${fmtDateTimeIST(c.snapshotAt)}, which were stale (not live)`}>at stale prices</span>}</div>
                     </button>
                     <button type="button" aria-label={`Delete closed trade ${c.name}`} title="Remove from the closed list" className="px-2 text-xs text-muted hover:text-down" onClick={() => persistClosed(closed.filter((x) => x.id !== c.id))}>✕</button>
                   </li>
@@ -466,7 +466,7 @@ export default function StrategyBuilder() {
             {opened && (
               <div className="mx-3 mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-sm border border-info/50 bg-info/10 px-3 py-2 text-xs" data-testid="opened-closed">
                 <span className="text-paper">Opened closed trade <b>{opened.name}</b>, closed {new Date(opened.closedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST</span>
-                <span>Realised <span className={`num ${tone(opened.pnl)}`}>{money(opened.pnl)}</span></span>
+                <span>Realised <span className={`num ${tone(opened.pnl)}`}>{money(opened.pnl)}</span>{opened.stale && <span className="ml-2 text-warn">at stale stored prices from {fmtDateTimeIST(opened.snapshotAt)}, not live fills</span>}</span>
                 <span className="text-muted">Exits: {opened.legs.map((l) => `${l.action === "BUY" ? "B" : "S"} ${l.strike}${l.type} ${l.premium} → ${l.exit}`).join(" · ")}</span>
                 <button type="button" className="ml-auto text-info hover:underline" onClick={() => setOpened(null)}>Dismiss</button>
               </div>

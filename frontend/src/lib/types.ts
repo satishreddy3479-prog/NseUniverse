@@ -550,7 +550,7 @@ export interface PositioningBlock {
 }
 export interface GreekRow { strike: number; side: "CE" | "PE"; price: number | null; otm: boolean; iv: number | null; delta: number | null; gamma: number | null; theta_day: number | null; vega_pt: number | null }
 export interface VolatilityBlock {
-  status: string; model?: string; rate_assumed?: number; dividends?: string; time_to_expiry_days?: number | null; data?: string; as_of?: string;
+  status: string; model?: string; rate_assumed?: number; valued_at?: string | null; dividends?: string; time_to_expiry_days?: number | null; data?: string; as_of?: string;
   forward?: number; forward_source?: string; atm_strike?: number; atm_iv?: number | null; atm_call_iv?: number | null; atm_put_iv?: number | null; near_atm_iv?: number | null;
   skew_25d_put_minus_call?: number | null; rows?: GreekRow[]; straddle?: number | null; expected_move_straddle_pts?: number | null; expected_move_iv_1sd_pts?: number | null;
   expected_move_note?: string;

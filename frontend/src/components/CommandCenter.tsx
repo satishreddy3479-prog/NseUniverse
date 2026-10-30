@@ -522,7 +522,7 @@ function Volatility({ d }: { d: IntradaySummary }) {
             </table>
           </div>
           {(v.interpretation ?? []).map((t) => <p key={t} className="text-muted">Context: {t}</p>)}
-          <p className="text-[11px] text-muted">{v.model}. Forward {v.forward?.toFixed(2)} ({v.forward_source}). Discount rate assumed {((v.rate_assumed ?? 0) * 100).toFixed(1)}%; not validated against a broker reference.</p>
+          <p className="text-[11px] text-muted">{v.model}. Forward {v.forward?.toFixed(2)} ({v.forward_source}). {v.rate_assumed == null ? "Discount rate not reported." : `Discount rate assumed ${(v.rate_assumed * 100).toFixed(1)}%;`} not validated against a broker reference.{v.valued_at ? ` Time to expiry is counted from ${fmtDateTimeIST(v.valued_at)}, the market time of these prices${v.as_of && v.valued_at !== v.as_of ? " (the chain was fetched later, after the close)" : ""}.` : ""}</p>
         </div>
       )}
     </Card>

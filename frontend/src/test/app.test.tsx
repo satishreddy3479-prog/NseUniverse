@@ -156,4 +156,22 @@ describe("older backend still running", () => {
     expect(await screen.findByRole("heading", { name: "Connection diagnostics" })).toBeInTheDocument();
     expect(await screen.findByText("The running backend is an older version")).toBeInTheDocument();
   });
+
+  it("Diagnostics never says there are no errors when the error list could not be read", async () => {
+    mockFetch({ ...base, "/api/errors": () => new Response(JSON.stringify({ detail: { code: "boom", message: "boom" } }), { status: 500 }) });
+    renderAt("/diagnostics");
+    expect(await screen.findByText("The error list could not be read")).toBeInTheDocument();
+    expect(screen.queryByText("No errors this session")).toBeNull();
+  });
+
+  it("Diagnostics shows the provider the backend reports and what each data job says, with no judgement of its own", async () => {
+    mockFetch({ ...base, "/api/errors": [],
+      "/api/prediction/flows/status": { enabled: true, running: false, progress: "", blocked: null, cash_note: null, source: "nse", last_run: { requests: 3, stored: 2, missing: 1, errors: 0, rejected: [] }, coverage: {}, expected_session: "2026-10-29", missing_expected: ["fao_participant_vol"], last_attempt_utc: "2026-10-29T13:00:00Z" } });
+    renderAt("/diagnostics");
+    const jobs = await screen.findByTestId("diag-jobs");
+    expect(await within(jobs).findByText("missing for 2026-10-29: fao_participant_vol")).toBeInTheDocument();
+    expect(within(jobs).getAllByText("Unknown").length).toBeGreaterThan(0); // the jobs whose status endpoint answered 404 stay unknown, not green
+    expect(screen.getByText(status().broker)).toBeInTheDocument();
+  });
 });
+

@@ -313,6 +313,10 @@ function DayLogPanel({ days }: { days: NonNullable<PredictionSummaryReady["days"
 
 function PostMortem({ rows }: { rows: (PredictionLedgerRow & { hz: "T1" | "T5" })[] }) {
   const done = rows.filter((r) => r.outcome && r.model === "ensemble").slice(0, 12);
+  // a forecast without a stored probability or a realised return is listed but never scored: missing stays missing
+  const ret = (r: (typeof done)[number]) => r.outcome!.realized.close_to_close ?? r.outcome!.realized.ret5 ?? null;
+  const scored = done.filter((r) => r.p_up_model != null && ret(r) != null);
+  const isRight = (r: (typeof done)[number]) => (r.p_up_model as number) > 0.5 === r.outcome!.realized.positive;
   return (
     <Panel title="Post-mortem — what was right and wrong">
       {done.length === 0 ? (
@@ -320,8 +324,8 @@ function PostMortem({ rows }: { rows: (PredictionLedgerRow & { hz: "T1" | "T5" }
       ) : (
         <>
         <div className="mb-3 rounded-xl border border-rule bg-ink/40 p-3">
-          <p className="num mb-1 text-xs text-muted">{done.filter((r) => (r.p_up_model ?? 0.5) > 0.5 === r.outcome!.realized.positive).length} of {done.length} right · bar = what the market did, mark = whether the forecast pointed that way</p>
-          <ReturnBars rows={[...done].reverse().map((r) => ({ label: r.target_session, ret: r.outcome!.realized.close_to_close ?? r.outcome!.realized.ret5 ?? 0, right: (r.p_up_model ?? 0.5) > 0.5 === r.outcome!.realized.positive }))} />
+          <p className="num mb-1 text-xs text-muted">{scored.filter(isRight).length} of {scored.length} scored right{scored.length < done.length ? ` (${done.length - scored.length} without a stored probability or return, not scored)` : ""} · bar = what the market did, mark = whether the forecast pointed that way</p>
+          <ReturnBars rows={[...scored].reverse().map((r) => ({ label: r.target_session, ret: ret(r) as number, right: isRight(r) }))} />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm" aria-label="Post-mortem">
@@ -329,12 +333,12 @@ function PostMortem({ rows }: { rows: (PredictionLedgerRow & { hz: "T1" | "T5" }
             <tbody>
               {done.map((r) => {
                 const up = r.outcome!.realized.positive;
-                const right = (r.p_up_model ?? 0.5) > 0.5 === up;
+                const right = r.p_up_model == null ? null : r.p_up_model > 0.5 === up;
                 return (
                   <tr key={r.forecast_id} className="num border-t border-rule/50">
                     <td>{r.hz}</td><td>{r.target_session}</td><td className="text-right">{pct(r.p_up_model)}</td>
-                    <td className={`text-right ${up ? "text-up" : "text-down"}`}>{up ? "Up" : "Not up"} {sgn(r.outcome!.realized.close_to_close ?? r.outcome!.realized.ret5 ?? 0)}</td>
-                    <td className={`pl-4 font-medium ${right ? "text-up" : "text-down"}`}>{right ? "Right" : "Wrong"}</td>
+                    <td className={`text-right ${up ? "text-up" : "text-down"}`}>{up ? "Up" : "Not up"} {ret(r) == null ? "—" : sgn(ret(r) as number)}</td>
+                    <td className={`pl-4 font-medium ${right == null ? "text-muted" : right ? "text-up" : "text-down"}`}>{right == null ? "—" : right ? "Right" : "Wrong"}</td>
                     <td className="pl-4 text-xs text-muted">{(r.drivers ?? []).slice(0, 3).map((d) => `${d.feature.replaceAll("_", " ")} ${d.log_odds >= 0 ? "+" : "−"}${Math.abs(d.log_odds).toFixed(2)}`).join(" · ") || "—"}</td>
                   </tr>
                 );

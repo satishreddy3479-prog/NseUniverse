@@ -20,6 +20,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from statistics import pstdev
 from typing import Any
 
+from app.domain.session import market_time
 from app.intraday import evaluate, labels, paper, positioning, price_structure, setups
 from app.intraday import volatility as volmod
 from app.intraday.costs import CostModel
@@ -493,7 +494,8 @@ class IntradayService:
 
     def _surface_of(self, sample: Any, expiry_d: date, at: datetime) -> dict[str, Any]:
         prices = {k: c.ltp for k, c in self.obs.contracts(sample.values_from).items()}
-        return volmod.surface(prices, sample.spot, expiry_d, at, self.risk_free_rate)
+        # time to expiry counts from the market time the prices belong to, not from an after-hours fetch
+        return volmod.surface(prices, sample.spot, expiry_d, market_time(at, self._trading), self.risk_free_rate)
 
     def _volatility(self, expiry: str, now: datetime, latest: Any, session_samples: list[Any], pts: list[Any], chain_status: str) -> dict[str, Any]:
         """ATM IV, skew, Greeks and expected move from the latest stored chain; IV change against earlier samples of the same session."""
@@ -505,7 +507,7 @@ class IntradayService:
             return {"status": "not computed: bad expiry"}
         at = latest.received_at
         now_s = self._surface_of(latest, exp_d, at)
-        out: dict[str, Any] = now_s | {"data": DATA_STATUS[chain_status], "as_of": at.isoformat()}
+        out: dict[str, Any] = now_s | {"data": DATA_STATUS[chain_status], "as_of": at.isoformat(), "valued_at": market_time(at, self._trading).isoformat()}
         if now_s.get("status") != "ok" or now_s.get("atm_iv") is None:
             return out
         changes: dict[str, Any] = {}
