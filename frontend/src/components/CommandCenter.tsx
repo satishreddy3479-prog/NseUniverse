@@ -5,11 +5,12 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { compactIN } from "../lib/analytics";
-import { sentimentHistoryOption } from "../lib/chartOptions";
+import { divergingBarOption, ivSmileOption, sentimentHistoryOption } from "../lib/chartOptions";
 import { fmtDateTimeIST, fmtPct, fmtPrice, fmtTimeIST, MISSING } from "../lib/format";
 import { useLiveSpot } from "../lib/useLive";
 import type { BreadthBlock, BreakoutState, FlowStats, IntradayComponent, IntradaySummary, MarketSummary, SetupCandidate, SideClass } from "../lib/types";
 import { EChart, useChartColors } from "./EChart";
+import { FillBar, Gauge, Ladder, MiniBar, RangeBar, SplitBar, Tile } from "./viz";
 
 const PHASE: Record<string, string> = {
   closed: "Closed (no session today)", pre_market: "Pre-market", pre_open: "Pre-open (09:00–09:15)", opening: "Opening (09:15–09:45)",
@@ -46,15 +47,17 @@ function labelTone(label: string): string {
 
 function Card({ title, children, right, className = "" }: { title: string; children: ReactNode; right?: ReactNode; className?: string }) {
   return (
-    <section aria-label={title} className={`min-w-0 rounded-[var(--radius-panel)] border border-rule bg-slate ${className}`}>
-      <header className="flex min-h-9 items-center justify-between gap-2 border-b border-rule px-3 py-1.5">
-        <h3 className="text-[13px] font-semibold uppercase tracking-wide text-muted">{title}</h3>
+    <section aria-label={title} className={`min-w-0 overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate shadow-[0_1px_0_rgba(255,255,255,0.03)_inset] ${className}`}>
+      <header className="flex min-h-10 items-center justify-between gap-2 border-b border-rule bg-gradient-to-r from-slate-2/80 to-transparent px-3 py-1.5">
+        <h3 className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-paper/90"><span aria-hidden="true" className="inline-block h-3.5 w-1 rounded-sm bg-info" />{title}</h3>
         {right}
       </header>
       <div className="p-3">{children}</div>
     </section>
   );
 }
+
+const lvl = (d: IntradaySummary, name: string): number | null => d.levels.find((l) => l.name === name)?.value ?? null;
 
 function Chip({ children, cls = "border-rule text-muted", title }: { children: ReactNode; cls?: string; title?: string }) {
   return <span title={title} className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-xs font-medium ${cls}`}>{children}</span>;
@@ -77,7 +80,7 @@ export function ScoreBar({ value, label }: { value: number | null; label: string
 
 function Stat({ label, value, sub, cls = "text-paper" }: { label: string; value: ReactNode; sub?: ReactNode; cls?: string }) {
   return (
-    <div className="min-w-0">
+    <div className="min-w-0 rounded-sm bg-slate-2/50 px-2.5 py-1.5">
       <div className="text-[11px] uppercase tracking-wide text-muted">{label}</div>
       <div className={`num truncate text-sm font-semibold ${cls}`}>{value}</div>
       {sub && <div className="truncate text-[11px] text-muted">{sub}</div>}
@@ -361,7 +364,7 @@ function Heavyweights({ d }: { d: IntradaySummary }) {
               <tr key={s.symbol} className="border-t border-rule/50">
                 <td className="py-1 text-paper" title={s.sector ?? ""}>{s.symbol}</td>
                 <td className="num py-1 text-right text-muted">{s.weight == null ? MISSING : `${s.weight.toFixed(1)}%`}</td>
-                <td className={`num py-1 text-right ${tone(s.change_pct)}`}>{fmtPct(s.change_pct)}</td>
+                <td className={`num py-1 text-right ${tone(s.change_pct)}`}><span className="mr-2">{fmtPct(s.change_pct)}</span><MiniBar value={s.change_pct} scale={2} /></td>
                 <td className={`num py-1 text-right ${tone(s.contribution)}`}>{s.contribution == null ? MISSING : `${s.contribution >= 0 ? "+" : "−"}${Math.abs(s.contribution).toFixed(3)} pt`}</td>
                 <td className={`num py-1 text-right ${s.relative_volume != null && s.relative_volume < 0.7 ? "text-warn" : "text-muted"}`}>{s.relative_volume == null ? MISSING : `${s.relative_volume.toFixed(2)}x`}</td>
               </tr>
@@ -412,6 +415,14 @@ function Breakout({ d }: { d: IntradaySummary }) {
           <div>
             <div className="text-[11px] text-muted">Opening range ({or?.minutes ?? 15} min) · {or?.state ?? MISSING}</div>
             <div className="num text-paper">{or?.high == null ? MISSING : `${or.high.toFixed(2)} high · ${or.low?.toFixed(2)} low · width ${or.width?.toFixed(1)}`}</div>
+            <div className="mt-2" data-testid="cc-range-bar">
+              {or?.high != null && or.low != null
+                ? <RangeBar label="Opening range with the current price" low={or.low} high={or.high} marks={[{ v: d.price.last, label: `Now ${d.price.last?.toFixed(0)}`, cls: "text-brass" }, { v: lvl(d, "Previous day high"), label: "Prev high", cls: "text-up" }, { v: lvl(d, "Previous day low"), label: "Prev low", cls: "text-down" }]} />
+                : <>
+                    <RangeBar label="Previous day range with the current price" low={lvl(d, "Previous day low")} high={lvl(d, "Previous day high")} marks={[{ v: d.price.last, label: `Last ${d.price.last?.toFixed(0)}`, cls: "text-brass" }, { v: lvl(d, "Previous close"), label: "Prev close", cls: "text-info" }]} />
+                    <div className="text-[10px] text-muted">Shaded: previous session's high to low (no opening range stored for today).</div>
+                  </>}
+            </div>
           </div>
           {b ? (
             <div data-testid="cc-breakout-status">
@@ -456,12 +467,12 @@ function FlowCard({ d }: { d: IntradaySummary }) {
                 {fl.heavy5.stocks.map((s) => (
                   <tr key={s.symbol} className="border-t border-rule/50">
                     <td className="py-1 text-paper">{s.symbol}</td>
-                    <td className={`num py-1 text-right ${tone(s.change_pct)}`}>{fmtPct(s.change_pct)}</td>
+                    <td className={`num py-1 text-right ${tone(s.change_pct)}`}><span className="mr-2">{fmtPct(s.change_pct)}</span><MiniBar value={s.change_pct} scale={2} /></td>
                     <td className={`num py-1 text-right ${s.relative_volume != null && s.relative_volume < 0.7 ? "text-warn" : "text-muted"}`}>{s.relative_volume == null ? MISSING : `${s.relative_volume.toFixed(2)}x`}</td>
                     <td className={`num py-1 text-right ${tone(s.flow?.cvd)}`}>{s.flow ? fmtQty(s.flow.cvd) : MISSING}</td>
                     <td className={`num py-1 text-right ${tone(s.flow?.depth_imbalance)}`}>{s.flow?.depth_imbalance == null ? MISSING : s.flow.depth_imbalance.toFixed(2)}</td>
-                    <td className="py-1 text-right text-muted">{s.technical.trend ?? MISSING}</td>
-                    <td className="num py-1 text-right text-muted">{s.technical.rsi14 == null ? MISSING : s.technical.rsi14.toFixed(0)}</td>
+                    <td className="py-1 text-right"><span className={`rounded-sm border px-1.5 py-px text-[11px] ${s.technical.trend === "uptrend" ? "border-up/50 text-up" : s.technical.trend === "downtrend" ? "border-down/50 text-down" : "border-rule text-muted"}`}>{s.technical.trend ?? MISSING}</span></td>
+                    <td className="num py-1 text-right text-muted"><span className="mr-2">{s.technical.rsi14 == null ? MISSING : s.technical.rsi14.toFixed(0)}</span><FillBar value={s.technical.rsi14} max={100} color={(s.technical.rsi14 ?? 50) >= 70 ? "bg-warn" : (s.technical.rsi14 ?? 50) <= 30 ? "bg-info" : "bg-muted/60"} /></td>
                     <td className={`num py-1 text-right ${tone(s.technical.price_vs_sma20_pct)}`}>{fmtPct(s.technical.price_vs_sma20_pct)}</td>
                   </tr>
                 ))}
@@ -476,6 +487,7 @@ function FlowCard({ d }: { d: IntradaySummary }) {
 }
 
 function Volatility({ d }: { d: IntradaySummary }) {
+  const colors = useChartColors();
   const v = d.volatility;
   const ok = v?.status === "ok" && v.atm_iv != null;
   const chg = (k: string) => { const x = v?.iv_change_pts?.[k]; return x == null ? MISSING : `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(2)}`; };
@@ -485,10 +497,14 @@ function Volatility({ d }: { d: IntradaySummary }) {
       {!ok ? <p className="text-sm text-muted" data-testid="cc-vol-missing">{v ? v.status : "Not available."}</p> : (
         <div className="space-y-3 text-xs" data-testid="cc-vol">
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
-            <div><div className="text-[11px] text-muted">ATM IV (strike {v.atm_strike})</div><div className="num text-sm font-semibold text-paper">{v.atm_iv?.toFixed(2)}%</div></div>
+            <div><div className="text-[11px] text-muted">ATM IV (strike {v.atm_strike})</div><div className="num text-xl font-semibold text-paper">{v.atm_iv?.toFixed(2)}%</div></div>
             <div><div className="text-[11px] text-muted">IV change 5 / 15 / 30 min</div><div className="num text-paper">{chg("5")} / {chg("15")} / {chg("30")} pts</div></div>
             <div><div className="text-[11px] text-muted">Put − call IV (≈25Δ)</div><div className="num text-paper">{v.skew_25d_put_minus_call == null ? MISSING : `${v.skew_25d_put_minus_call.toFixed(2)} pts`}</div></div>
             <div><div className="text-[11px] text-muted">IV − realised (60 min)</div><div className="num text-paper">{v.iv_minus_realized == null ? MISSING : `${v.iv_minus_realized >= 0 ? "+" : "−"}${Math.abs(v.iv_minus_realized).toFixed(1)} pts`}</div></div>
+          </div>
+          <div className="rounded-sm bg-slate-2/40 p-2" data-testid="cc-smile">
+            <div className="mb-1 flex items-center justify-between text-[11px] text-muted"><span>Implied volatility by strike (out-of-the-money options)</span><span><span className="text-down">● puts</span> <span className="text-up">● calls</span></span></div>
+            <div className="h-36"><EChart option={ivSmileOption(near.length >= 3 ? near : (v?.rows ?? []).filter((r) => r.otm && r.iv != null), v.atm_strike ?? null, colors)} ariaLabel="Implied volatility smile" /></div>
           </div>
           <div className="text-muted">Implied move to expiry ({v.time_to_expiry_days?.toFixed(1)} days): ATM straddle <span className="num text-paper">{v.expected_move_straddle_pts?.toFixed(0) ?? MISSING} pts</span> · one standard deviation from IV <span className="num text-paper">{v.expected_move_iv_1sd_pts?.toFixed(0) ?? MISSING} pts</span>. Implied, not a forecast.</div>
           <div className="overflow-x-auto">
@@ -528,7 +544,7 @@ function Positioning({ d }: { d: IntradaySummary }) {
             <thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Window</th><th className="py-1 text-right font-normal">PCR (OI)</th><th className="py-1 text-right font-normal">PCR (volume)</th></tr></thead>
             <tbody>
               {Object.entries(p.pcr_windows ?? {}).map(([k, w]) => (
-                <tr key={k} className="border-t border-rule/50"><td className="py-1 text-paper">{WINDOW_NAMES[k] ?? k}</td><td className="num py-1 text-right">{fmt(w.pcr_oi)}</td><td className="num py-1 text-right">{fmt(w.pcr_volume)}</td></tr>
+                <tr key={k} className="border-t border-rule/50"><td className="py-1 text-paper">{WINDOW_NAMES[k] ?? k}</td><td className="num py-1 text-right"><span className="mr-2">{fmt(w.pcr_oi)}</span><MiniBar value={w.pcr_oi == null ? null : w.pcr_oi - 1} scale={0.6} /></td><td className="num py-1 text-right">{fmt(w.pcr_volume)}</td></tr>
               ))}
             </tbody>
           </table>
@@ -540,6 +556,12 @@ function Positioning({ d }: { d: IntradaySummary }) {
             ) : <p className="text-muted">{p.classification?.reason ?? "Not available."}</p>}
             <p className="mt-1 text-[11px] text-muted">{p.classification?.limits}</p>
           </div>
+          {p.concentration?.calls.top3_share != null && p.concentration.puts.top3_share != null && (
+            <div className="grid grid-cols-[3.5rem_1fr] items-center gap-x-2 gap-y-1 text-[11px] text-muted" aria-hidden="true" data-testid="cc-concentration">
+              <span>Calls</span><span className="flex items-center gap-2"><FillBar value={p.concentration.calls.top3_share} max={1} color="bg-up" className="w-full" /><span className="num w-9 text-right text-paper">{Math.round(p.concentration.calls.top3_share * 100)}%</span></span>
+              <span>Puts</span><span className="flex items-center gap-2"><FillBar value={p.concentration.puts.top3_share} max={1} color="bg-down" className="w-full" /><span className="num w-9 text-right text-paper">{Math.round(p.concentration.puts.top3_share * 100)}%</span></span>
+            </div>
+          )}
           <p className="num text-muted">OI concentration (top-3 strikes): calls {p.concentration?.calls.top3_share == null ? MISSING : `${Math.round(p.concentration.calls.top3_share * 100)}%`} (largest {p.concentration?.calls.max_strike ?? MISSING}) · puts {p.concentration?.puts.top3_share == null ? MISSING : `${Math.round(p.concentration.puts.top3_share * 100)}%`} (largest {p.concentration?.puts.max_strike ?? MISSING}). A hypothesis for a reaction zone, not support or resistance.</p>
           <p className="text-muted" data-testid="cc-term">IV term structure: {ts?.shape ? `${ts.shape}, far minus near ${ts.iv_far_minus_near?.toFixed(2)} pts (${ts.rows.map((r) => `${r.expiry} ${r.atm_iv?.toFixed(1)}%`).join(", ")})` : (ts?.reason ?? MISSING)}</p>
         </div>
@@ -582,7 +604,7 @@ function SetupRow({ c }: { c: SetupCandidate }) {
   const why = [...(c.rejected_because ?? []), ...(c.blocked_because ?? [])];
   return (
     <li className="border-t border-rule/50 py-2" data-testid="cc-setup">
-      <div><span className={`font-semibold ${SETUP_TONE[c.status] ?? ""}`}>{c.status}</span> <span className="text-paper">{c.setup.replaceAll("_", " ")}{c.direction ? ` · ${c.direction}` : ""}</span></div>
+      <div><span className={`mr-1 rounded-sm border px-1.5 py-px text-[11px] font-semibold ${SETUP_TONE[c.status] ?? ""} ${c.status === "ACTIVE" ? "border-up/50 bg-up/10" : c.status === "WATCH" ? "border-warn/50 bg-warn/10" : c.status === "BLOCKED" ? "border-down/50 bg-down/10" : "border-rule"}`}>{c.status}</span> <span className="text-paper">{c.setup.replaceAll("_", " ")}{c.direction ? ` · ${c.direction}` : ""}</span></div>
       <div className="text-muted">{c.entry_condition}</div>
       {c.entry_ref != null && <div className="num text-paper">Entry ~{c.entry_ref} · stop {c.stop} · target {c.target} · reward/risk {c.reward_risk ?? MISSING} · {c.lots} lot(s), max loss ₹{c.max_loss_rs} · costs ≈ {c.costs_pts} pts</div>}
       {c.levels && <div className="num text-paper">Range edges {c.levels.join(" – ")}</div>}
@@ -597,8 +619,8 @@ function SetupMonitor({ d }: { d: IntradaySummary }) {
     <Card title="Setup monitor" className="lg:col-span-6" right={<span className="text-[11px] text-muted">read-only · no orders · no probabilities</span>}>
       {!s ? <p className="text-sm text-muted">Setups are not available.</p> : (
         <div className="space-y-2 text-xs" data-testid="cc-setups">
-          <p className="text-sm font-semibold text-paper" data-testid="cc-setup-decision">{s.decision}</p>
-          {s.global_blockers.length > 0 && <p className="text-muted">Controls active: {s.global_blockers.join("; ")}.</p>}
+          <p className={`flex items-center gap-2 rounded-sm border px-3 py-2 text-sm font-semibold ${s.decision.startsWith("NO TRADE") ? "border-warn/50 bg-warn/10 text-warn" : s.decision.includes("WATCH") ? "border-info/50 bg-info/10 text-info" : "border-up/50 bg-up/10 text-up"}`} data-testid="cc-setup-decision"><span aria-hidden="true" className="inline-block size-2.5 rounded-full bg-current" />{s.decision}</p>
+          {s.global_blockers.length > 0 && <div className="flex flex-wrap items-center gap-1.5"><span className="text-muted">Controls active:</span>{s.global_blockers.map((b) => <span key={b} className="rounded-sm border border-rule bg-slate-2 px-2 py-0.5 text-[11px] text-paper">{b}.</span>)}</div>}
           {s.candidates.length === 0 ? <p className="text-muted">No rule is met right now.</p> : <ul>{s.candidates.map((c) => <SetupRow key={`${c.setup}${c.direction}`} c={c} />)}</ul>}
           <p className="text-[11px] text-muted">{s.note}</p>
         </div>
@@ -606,6 +628,8 @@ function SetupMonitor({ d }: { d: IntradaySummary }) {
     </Card>
   );
 }
+
+const rs = (v: number | null | undefined) => (v == null ? MISSING : `${v < 0 ? "−" : ""}₹${Math.abs(Math.round(v)).toLocaleString("en-IN")}`);
 
 function PaperResults() {
   const q = useQuery({ queryKey: ["intradayPaper"], queryFn: () => api.intradayPaper(), refetchInterval: 600_000, retry: false });
@@ -615,6 +639,15 @@ function PaperResults() {
       {!r ? <p className="text-sm text-muted">{q.isLoading ? "Loading…" : "Paper results are unavailable."}</p> : (
         <div className="space-y-1 text-xs" data-testid="cc-paper">
           <p className="text-paper">{r.trades} trade(s) over {r.sessions} session(s). <span className="text-muted">{r.conclusion}.</span></p>
+          {r.trades > 0 && (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5" data-testid="cc-paper-tiles" aria-hidden="true">
+              <Tile label="Net after costs" value={rs(r.net_rupees)} valueCls={tone(r.net_rupees)} accent={r.net_rupees >= 0 ? "border-l-up" : "border-l-down"} />
+              <Tile label="Win rate" value={`${Math.round(Number(r.win_rate) * 100)}%`}><FillBar value={Number(r.win_rate)} max={1} color="bg-info" className="mt-1 w-full" /></Tile>
+              <Tile label="Expectancy" value={rs(r.expectancy_rupees)} sub="per trade" valueCls={tone(r.expectancy_rupees)} />
+              <Tile label="Profit factor" value={r.profit_factor == null ? MISSING : String(r.profit_factor)} />
+              <Tile label="Max drawdown" value={rs(r.max_drawdown_rupees)} valueCls="text-down" />
+            </div>
+          )}
           {r.trades > 0 && <p className="num text-muted">Net ₹{r.net_rupees} (₹{r.gross_rupees_before_costs} before ₹{r.costs_and_slippage_rupees} of costs and slippage) · win rate {r.win_rate} · expectancy ₹{r.expectancy_rupees} per trade · profit factor {r.profit_factor ?? MISSING} · max drawdown ₹{r.max_drawdown_rupees}</p>}
           <p className="text-[11px] text-muted">Rules that can be rebuilt from the index path only (opening-range breakout and failed breakout); the index stands in for the future; {r.min_trades_for_a_conclusion} trades are needed before any conclusion.</p>
         </div>
@@ -661,11 +694,14 @@ function Replay({ expiry }: { expiry: string }) {
 }
 
 function Sectors({ d }: { d: IntradaySummary }) {
+  const colors = useChartColors();
   const m = d.stocks;
   const rows = (m?.sectors.nifty500 ?? []).filter((r) => r.equal_weight_return != null);
   return (
     <Card title="Sectors" className="lg:col-span-12" right={<span className="text-[11px] text-muted">equal-weighted NIFTY 500 stocks · ranked by strength against the index</span>}>
       {rows.length === 0 ? <p className="text-sm text-muted">{m ? "No sector has enough priced stocks yet." : "Stock breadth is turned off."}</p> : (
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+          <div style={{ height: Math.max(160, rows.length * 24 + 12) }}><EChart option={divergingBarOption(rows.map((r) => ({ name: r.sector, value: r.equal_weight_return as number })), colors)} ariaLabel="Sector returns, equal-weighted" /></div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[34rem] text-xs" data-testid="cc-sectors">
             <thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">#</th><th className="py-1 font-normal">Sector</th><th className="py-1 text-right font-normal">Return</th><th className="py-1 text-right font-normal">vs index</th><th className="py-1 text-right font-normal">Up / down</th><th className="py-1 text-right font-normal">Volume vs normal</th><th className="py-1 text-right font-normal">Priced</th></tr></thead>
@@ -684,6 +720,7 @@ function Sectors({ d }: { d: IntradaySummary }) {
             </tbody>
           </table>
         </div>
+        </div>
       )}
       {m && m.sectors.rotation.length > 0 && (
         <p className="mt-2 text-xs text-muted" data-testid="cc-rotation">Rotation since the last sample: {m.sectors.rotation.map((r) => `${r.sector} ${r.direction === "up" ? "▲" : "▼"} ${r.from_rank}→${r.to_rank}`).join(", ")}.</p>
@@ -697,7 +734,7 @@ function Context({ d }: { d: IntradaySummary }) {
     <Card title="Intraday decision context" className="lg:col-span-4">
       <dl className="space-y-2">
         {d.context.map((c) => (
-          <div key={c.question}>
+          <div key={c.question} className={`rounded-sm border-l-2 bg-slate-2/40 px-2.5 py-1.5 ${/^(Unclassified|Not enough|Not available|n\/a)/i.test(c.answer) ? "border-rule" : "border-info/70"}`}>
             <dt className="text-xs font-semibold text-paper">{c.question}</dt>
             <dd className="text-xs text-muted">{c.answer}</dd>
           </div>
@@ -710,7 +747,8 @@ function Context({ d }: { d: IntradaySummary }) {
 function Levels({ d }: { d: IntradaySummary }) {
   return (
     <Card title="Key levels" className="lg:col-span-4">
-      <table className="w-full text-xs">
+      <Ladder levels={d.levels} price={d.price.last} />
+      <table className="mt-2 w-full text-xs">
         <tbody>
           {d.levels.map((l) => (
             <tr key={l.name} className="border-b border-rule/50 last:border-0" title={`${l.method}${l.source ? ` · ${l.source}` : ""}${l.as_of ? ` · ${l.as_of}` : ""}`}>
@@ -729,6 +767,13 @@ function Options({ d }: { d: IntradaySummary }) {
   const o = d.options;
   return (
     <Card title="Options positioning" className="lg:col-span-4" right={<span className="text-[11px] text-muted">{o.universe} · {d.expiry}</span>}>
+      <div className="mb-3 grid grid-cols-2 items-center gap-3" data-testid="cc-options-visual">
+        <Gauge label="Put-call ratio (OI)" value={o.pcr_oi} min={0.4} max={1.6} zones={[{ to: 0.7, color: "var(--down)" }, { to: 1.0, color: "var(--muted)" }, { to: 1.3, color: "var(--info)" }, { to: 1.6, color: "var(--up)" }]} text={o.pcr_oi == null ? MISSING : o.pcr_oi.toFixed(2)} sub="PCR (OI) · a ratio, not a signal" />
+        <div className="space-y-2 text-[11px] text-muted">
+          <div>Total OI: call vs put<SplitBar a={o.ce_oi} b={o.pe_oi} label="Total call OI versus put OI" /></div>
+          <div>Change vs prev day (size)<SplitBar a={o.ce_oi_chg == null ? null : Math.abs(o.ce_oi_chg)} b={o.pe_oi_chg == null ? null : Math.abs(o.pe_oi_chg)} label="Call OI change versus put OI change" /></div>
+        </div>
+      </div>
       <dl className="grid grid-cols-2 gap-3">
         <Stat label="PCR (OI)" value={o.pcr_oi == null ? MISSING : o.pcr_oi.toFixed(2)} sub={o.pcr_oi_change == null ? "change: needs 2 samples" : `${o.pcr_oi_change >= 0 ? "+" : ""}${o.pcr_oi_change.toFixed(2)} since first sample`} />
         <Stat label="PCR (volume)" value={o.pcr_vol == null ? MISSING : o.pcr_vol.toFixed(2)} />
@@ -768,7 +813,7 @@ function Markets({ d }: { d: IntradaySummary }) {
             {d.global.map((g) => (
               <tr key={g.key} className="border-b border-rule/40 last:border-0">
                 <td className="py-0.5 pr-2 text-muted">{g.name}</td>
-                <td className={`num py-0.5 text-right ${tone(g.ret_pct)}`}>{fmtPct(g.ret_pct)}</td>
+                <td className={`num py-0.5 text-right ${tone(g.ret_pct)}`}><span className="mr-2">{fmtPct(g.ret_pct)}</span><MiniBar value={g.ret_pct} scale={3} className="w-14" /></td>
                 <td className={`py-0.5 pl-2 text-right text-[10px] ${g.fresh ? "text-muted" : "text-warn"}`}>{g.session.slice(5)}</td>
               </tr>
             ))}
@@ -781,7 +826,7 @@ function Markets({ d }: { d: IntradaySummary }) {
             {d.sectors.rows.map((s) => (
               <tr key={s.key} className="border-b border-rule/40 last:border-0">
                 <td className="py-0.5 pr-2 text-muted">{s.name}</td>
-                <td className={`num py-0.5 text-right ${tone(s.ret_pct)}`}>{fmtPct(s.ret_pct)}</td>
+                <td className={`num py-0.5 text-right ${tone(s.ret_pct)}`}><span className="mr-2">{fmtPct(s.ret_pct)}</span><MiniBar value={s.ret_pct} scale={3} className="w-14" /></td>
               </tr>
             ))}
             {d.sectors.rows.length === 0 && <tr><td className="text-muted">No stored sector bars.</td></tr>}

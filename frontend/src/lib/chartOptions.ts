@@ -476,3 +476,30 @@ export function payoffOption(p: PayoffSeries, c: ChartColors): EChartsCoreOption
     ],
   };
 }
+
+/** Implied-volatility smile: out-of-the-money puts (left) and calls (right) against strike, from the stored prices. */
+export function ivSmileOption(rows: { strike: number; side: string; iv: number | null }[], atm: number | null, c: ChartColors): EChartsCoreOption {
+  const pts = (side: string) => rows.filter((r) => r.side === side && r.iv != null).sort((a, b) => a.strike - b.strike).map((r) => [r.strike, r.iv as number]);
+  const ser = (name: string, side: string, color: string) => ({ name, type: "line", showSymbol: true, symbolSize: 5, itemStyle: { color }, lineStyle: { color, width: 2 }, data: pts(side),
+    ...(side === "CE" && atm != null ? { markLine: { silent: true, symbol: "none", lineStyle: { color: c.brass, type: "dashed" }, label: { formatter: `ATM ${atm}`, color: c.brass, fontSize: 10 }, data: [{ xAxis: atm }] } } : {}) });
+  return {
+    animation: false, grid: { left: 44, right: 12, top: 18, bottom: 26 },
+    tooltip: { trigger: "axis", backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: unknown) => `${Number(v).toFixed(2)}%` },
+    xAxis: { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => fmtInt(Math.round(v)) }, splitLine: { show: false } },
+    yAxis: { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => `${v}%` }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
+    series: [ser("Puts", "PE", c.down), ser("Calls", "CE", c.up)],
+  };
+}
+
+/** Diverging horizontal bars, largest first: sector returns, global moves. */
+export function divergingBarOption(rows: { name: string; value: number }[], c: ChartColors, unit = "%"): EChartsCoreOption {
+  const sorted = [...rows].sort((a, b) => a.value - b.value); // category axis draws bottom-up
+  return {
+    animation: false, grid: { left: 130, right: 56, top: 6, bottom: 6, containLabel: false },
+    tooltip: { trigger: "item", backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, formatter: (p: unknown) => { const q = p as { name: string; value: number }; return `${q.name}: ${q.value >= 0 ? "+" : "−"}${Math.abs(q.value).toFixed(2)}${unit}`; } },
+    xAxis: { type: "value", show: false },
+    yAxis: { type: "category", data: sorted.map((r) => r.name), axisLine: { show: false, onZero: false }, axisTick: { show: false }, axisLabel: { color: c.paper, fontSize: 11, width: 120, overflow: "truncate" } },
+    series: [{ type: "bar", barMaxWidth: 14, data: sorted.map((r) => ({ value: r.value, itemStyle: { color: r.value >= 0 ? c.up : c.down, borderRadius: r.value >= 0 ? [0, 3, 3, 0] : [3, 0, 0, 3] }, label: { position: r.value >= 0 ? "right" : "left" } })),
+      label: { show: true, position: "right", color: c.muted, fontSize: 10, formatter: (p: unknown) => { const v = (p as { value: number }).value; return `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}${unit}`; } } }],
+  };
+}
