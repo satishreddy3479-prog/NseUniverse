@@ -321,3 +321,19 @@ describe("Greeks in the chain, highlighted legs and steppers", () => {
     expect(screen.queryByTestId("insights")).toBeNull();
   });
 });
+
+describe("Plus and minus on a held strike", () => {
+  it("+ adds a lot in the held direction, - removes one and drops the leg with its last lot", async () => {
+    mount();
+    await loaded();
+    expect(screen.queryByRole("button", { name: "Add one lot CE 24100" })).toBeNull(); // nothing held, no stepper
+    await userEvent.click(await screen.findByRole("button", { name: "Sell CE 24100" }));
+    await userEvent.click(screen.getByRole("button", { name: "Add one lot CE 24100" }));
+    expect((screen.getByLabelText("Lots") as HTMLInputElement).value).toBe("2");
+    expect(screen.getByTestId("held-24100")).toHaveTextContent("−2 lots");
+    await userEvent.click(screen.getByRole("button", { name: "Remove one lot CE 24100" }));
+    await userEvent.click(screen.getByRole("button", { name: "Remove one lot CE 24100" }));
+    expect(screen.getByTestId("gallery")).toBeInTheDocument(); // the last lot took the leg with it
+  });
+});
+
