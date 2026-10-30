@@ -411,6 +411,11 @@ export type PredictionSummary =
   | {
       ready: true;
       computing?: boolean;
+      /** when the running training started, and which part it covers ("all", "T1" or "T5") */
+      computing_since?: string | null;
+      computing_scope?: string | null;
+      /** an automatic retrain is holding off until the input data stops changing; the report shown is the previous one */
+      waiting_for_data?: boolean;
       runs?: Record<string, { last_auto?: { at: string }; last_manual?: { at: string } }>;
       days?: ForecastDay[];
       generated_at: string;

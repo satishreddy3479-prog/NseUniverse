@@ -1,6 +1,6 @@
 import { ConeBar, DotTimeline, GainBars, HitInterval, ModelDots, PairBar, ReliabilityPlot, ReturnBars, readingLines } from "../components/PredictionViz";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Panel } from "../components/ui";
 import { MiniBar } from "../components/viz";
 import { EventsNewsPanel } from "../components/EventsNewsPanel";
@@ -40,6 +40,19 @@ function Badge({ v }: { v: Verdict }) {
   return <span className={`inline-flex items-center whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold ${VERDICT[v].cls}`}>{VERDICT[v].badge}</span>;
 }
 
+/** The line under the headline: the leading side of the forecast, written for this horizon and target date. */
+export function chanceText(hz: "T1" | "T5", pUp: number, base: number, close: number, target: string | null, model: string): { number: string; text: string } {
+  const up = pUp >= 0.5, lead = up ? pUp : 1 - pUp;
+  const dt = target ? new Date(`${target}T00:00:00Z`) : null;
+  const day = dt ? `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][dt.getUTCDay()]} ${dt.getUTCDate()} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][dt.getUTCMonth()]}` : null;
+  const level = `₹${Math.round(close).toLocaleString("en-IN")}`;
+  const when = hz === "T1" ? (day ? `on ${day}` : "next session") : (day ? `on ${day}` : "in 5 sessions");
+  const what = up ? `NIFTY 50 closes above ${level} ${when}` : `NIFTY 50 does not close above ${level} ${when}`;
+  const coin = Math.abs(pUp - 0.5) < 0.05 ? " · close to a coin flip" : "";
+  const vs = ` · history says ${pct(base)} of the time it rises`;
+  return { number: pct(lead), text: `chance ${what} · ${model} (calibrated)${vs}${coin}` };
+}
+
 const MONO = "font-mono text-[11px] uppercase tracking-wider text-muted";
 const CARD = "rounded-2xl border border-rule bg-gradient-to-b from-slate-2/60 to-slate";
 
@@ -77,22 +90,38 @@ function CallBanner({ calls, hz }: { calls: NonNullable<PredictionSummaryReady["
   );
 }
 
-function ComputeBar({ hz, runs, computing, onCompute }: { hz: "T1" | "T5"; runs: PredictionSummaryReady["runs"]; computing: boolean; onCompute: () => void }) {
+type Busy = { mine: boolean; other: boolean; since: string | null; waiting: boolean };
+
+function Elapsed({ since }: { since: string | null }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  if (!since) return null;
+  const sec = Math.max(0, Math.round((now - new Date(since).getTime()) / 1000));
+  return <span className="num ml-1 tabular-nums">{Math.floor(sec / 60)}:{String(sec % 60).padStart(2, "0")}</span>;
+}
+
+function ComputeBar({ hz, runs, busy, onCompute }: { hz: "T1" | "T5"; runs: PredictionSummaryReady["runs"]; busy: Busy; onCompute: () => void }) {
   const r = runs?.[hz];
   const pill = "rounded-md border border-rule bg-ink/60 px-2.5 py-1";
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent/10 p-2.5 text-xs text-muted" data-testid={`compute-${hz}`}>
-      <button type="button" disabled={computing} onClick={onCompute} title="Retrain this model now with the data stored so far (allowed in market hours too)"
-        className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-accent px-4 text-sm font-semibold text-ink shadow-md transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60">
-        <span aria-hidden="true" className={computing ? "inline-block animate-spin" : "inline-block"}>⟳</span>{computing ? "Computing…" : "Compute now"}
-      </button>
-      <span className={pill}>Last automatic run: <span className="num ml-1 text-paper">{r?.last_auto ? fmtDateTimeIST(r.last_auto.at) : "none yet"}</span></span>
-      <span className={pill}>Last manual run: <span className="num ml-1 text-paper">{r?.last_manual ? fmtDateTimeIST(r.last_manual.at) : "none yet"}</span></span>
+    <div className="mt-3 rounded-xl border border-accent/40 bg-accent/10 p-2.5 text-xs text-muted" data-testid={`compute-${hz}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" disabled={busy.mine || busy.other} onClick={onCompute} title="Retrain this model now with the data stored so far (allowed in market hours too)"
+          className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-accent px-4 text-sm font-semibold text-ink shadow-md transition hover:brightness-110 disabled:cursor-wait disabled:opacity-60">
+          <span aria-hidden="true" className={busy.mine ? "inline-block animate-spin" : "inline-block"}>⟳</span>
+          {busy.mine ? <>Computing…<Elapsed since={busy.since} /></> : "Compute now"}
+        </button>
+        <span className={pill}>Last automatic run: <span className="num ml-1 text-paper">{r?.last_auto ? fmtDateTimeIST(r.last_auto.at) : "none yet"}</span></span>
+        <span className={pill}>Last manual run: <span className="num ml-1 text-paper">{r?.last_manual ? fmtDateTimeIST(r.last_manual.at) : "none yet"}</span></span>
+      </div>
+      {busy.mine && <p className="mt-2" data-testid={`compute-note-${hz}`}>Training runs on the server and takes a few minutes. The numbers below stay as they were until it finishes; this page updates by itself.</p>}
+      {!busy.mine && busy.other && <p className="mt-2">The other horizon is training; only one training runs at a time, so this button is back when it finishes.</p>}
+      {!busy.mine && !busy.other && busy.waiting && <p className="mt-2" data-testid={`compute-wait-${hz}`}>New input data is still arriving; the models retrain automatically once it has stopped changing. Showing the previous report.</p>}
     </div>
   );
 }
 
-function ForecastCard({ hz, f, evs, runs, computing, onCompute }: { hz: "T1" | "T5"; f: PredictionSummaryReady["forecasts"]["T1"]; evs: Record<Hz, HorizonEval>; runs: PredictionSummaryReady["runs"]; computing: boolean; onCompute: () => void }) {
+function ForecastCard({ hz, f, evs, runs, busy, onCompute }: { hz: "T1" | "T5"; f: PredictionSummaryReady["forecasts"]["T1"]; evs: Record<Hz, HorizonEval>; runs: PredictionSummaryReady["runs"]; busy: Busy; onCompute: () => void }) {
   const entries = Object.entries(f.models);
   const head = f.headline_model && f.models[f.headline_model] ? f.headline_model : entries[0]?.[0];
   const m = head ? f.models[head] : undefined;
@@ -109,14 +138,14 @@ function ForecastCard({ hz, f, evs, runs, computing, onCompute }: { hz: "T1" | "
         {head && <Badge v={evOf(head)} />}
       </div>
       <h2 className="mt-2 text-lg font-semibold text-paper">{H[hz]}</h2>
-      <ComputeBar hz={hz} runs={runs} computing={computing} onCompute={onCompute} />
+      <ComputeBar hz={hz} runs={runs} busy={busy} onCompute={onCompute} />
       <p className="text-sm text-muted">{m ? `From the ${m.reference_session} close (₹${fmtPrice(m.reference_close)}). ${m.target_session ? `Target: ${m.target_session}` : m.reason ?? ""}` : "No forecast available."}</p>
       <p className="mt-1 text-xs text-muted">{SUB[hz]}</p>
       {preview && <p className="mt-2 rounded-lg border border-warn/50 px-3 py-1.5 text-sm text-warn" data-testid={`preview-${hz}`}>{m?.reason}. The number below is a preview and is not recorded.</p>}
       {p ? (
         <>
           <p className={`mt-3 font-mono text-3xl font-bold tracking-tight ${leanTone}`}>{lean}</p>
-          <p className="mb-2 text-sm text-muted"><span className="num font-mono text-xl font-semibold text-paper">{pct(p.p_up_model)}</span> chance of closing up · {label(head!)} (calibrated)</p>
+          <p className="mb-2 text-sm text-muted" data-testid={`chance-${hz}`}>{(() => { const c = chanceText(hz, p.p_up_model, p.p_up_climatology, m!.reference_close, m!.target_session ?? null, label(head!)); return <><span className="num font-mono text-xl font-semibold text-paper">{c.number}</span> {c.text}</>; })()}</p>
           <SplitBar p={p.p_up_model} base={p.p_up_climatology} />
           <div className="mt-3 rounded-xl border border-info/30 bg-info/5 p-3" data-testid={`reading-${hz}`}>
             <p className={MONO}>Reading of this forecast</p>
@@ -491,8 +520,12 @@ export default function Prediction() {
           return (
             <>
               <div className="flex flex-col gap-5 lg:flex-row">
-                <ForecastCard hz="T1" f={d.forecasts.T1} evs={evs} runs={d.runs} computing={!!d.computing || compute.isPending} onCompute={() => compute.mutate("T1")} />
-                <ForecastCard hz="T5" f={d.forecasts.T5} evs={evs} runs={d.runs} computing={!!d.computing || compute.isPending} onCompute={() => compute.mutate("T5")} />
+                {(["T1", "T5"] as const).map((h) => {
+                  const any = !!d.computing || compute.isPending;
+                  const scope = d.computing ? d.computing_scope ?? "all" : compute.isPending ? (compute.variables ?? "all") : null;
+                  const mine = any && (scope === "all" || scope === h);
+                  return <ForecastCard key={h} hz={h} f={d.forecasts[h]} evs={evs} runs={d.runs} busy={{ mine, other: any && !mine, since: d.computing_since ?? null, waiting: !!d.waiting_for_data }} onCompute={() => compute.mutate(h)} />;
+                })}
               </div>
               <SummaryStrip d={d} />
               <InputsPanel inputs={d.data.inputs} last={d.data.last} />

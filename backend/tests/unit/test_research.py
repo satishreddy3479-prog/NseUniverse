@@ -294,3 +294,21 @@ def test_a_logged_day_cannot_be_changed(tmp_path: Path) -> None:
     svc.log_day(_at(_Cal().next_session(_walk(560, 1)[-1].session), 9, 20))
     with pytest.raises(sqlite3.DatabaseError):
         svc._days._db.execute("UPDATE days SET status='recorded'")
+
+
+def test_automatic_training_waits_for_the_data_to_settle_but_a_manual_run_does_not(tmp_path: Path) -> None:
+    last = _walk(560, 1)[-1].session
+    nxt = _Cal().next_session(last)
+    svc, _ = _service(tmp_path, 560, _at(nxt, 8, 50))
+    svc._settle_s = 3600.0  # the data just changed, so an automatic run must hold off
+    first = svc.summary()
+    assert first["ready"] is False and first["computing"] is True
+    assert "Waiting for the data refresh" in first["reason"]
+    assert svc._worker is None  # no training was started
+    svc.summary(block=False, trigger="auto")
+    assert svc._worker is None
+    manual = svc.summary(force=True, trigger="manual")  # "Compute now" is never held back
+    assert manual["computing"] is True and svc._worker is not None
+    svc._worker.join()
+    done = svc.summary(trigger="auto")
+    assert done["ready"] is True and done["computing"] is False and done.get("computing_since") is None

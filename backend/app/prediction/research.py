@@ -21,6 +21,7 @@ import contextlib
 import json
 import math
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -309,8 +310,16 @@ class PredictionResearch:
         flows: Any = None,
         events: EventCalendar | None = None,
         pause_in_market_hours: bool = True,
+        settle_seconds: float = 0.0,
     ) -> None:
         self._pause_in_market_hours = pause_in_market_hours
+        # an automatic retrain waits until the input data has stopped changing for this long, so a refresh that updates
+        # several series one after another trains once, not once per series
+        self._settle_s = settle_seconds
+        self._seen_key: list[Any] | None = None
+        self._seen_at = 0.0
+        self._run_started: datetime | None = None
+        self._run_scope: str | None = None
         self._store, self._ledger, self._clock, self._flows_store = store, ledger, clock, flows
         self._calendar = calendar
         self._events = events if events is not None else EventCalendar.load()
@@ -398,27 +407,39 @@ class PredictionResearch:
         if len(bars) < need:
             return {"ready": False, "reason": f"only {len(bars)} NIFTY 50 bars stored (need {need}); refresh the price history in Settings first"}
         key = self._key(bars)
+        settling = False
         with self._lock:
+            if not force and key != self._seen_key:
+                self._seen_key, self._seen_at = key, time.monotonic()
             body = None if force else (self._cache[1] if self._cache and list(self._cache[0]) == key else self._read_disk(key))
             if body is not None:
                 self._cache = (tuple(key), body)
             elif self._pause_in_market_hours and self.market_hours(now) and trigger != "manual":
                 return {"ready": False, "paused": True, "reason": "Models are trained and evaluated only after the market closes (09:15-15:50 IST is excluded); the report will be computed then."}
+            elif not force and trigger == "auto" and time.monotonic() - self._seen_at < self._settle_s and (self._worker is None or not self._worker.is_alive()):
+                settling = True
             elif self._worker is None or not self._worker.is_alive():
                 self._error = None
                 base = None if only is None else (self._cache[1] if self._cache and list(self._cache[0]) == key else self._read_disk(key))
                 self._worker = threading.Thread(target=self._run, args=(bars, key, now, trigger, only if base is not None else None, base), daemon=True, name="prediction-research")
+                self._run_started, self._run_scope = now, (only if base is not None else None) or "all"
                 self._worker.start()
             worker = self._worker
+        if body is None and settling:
+            old = self._cache[1] if self._cache else None
+            if old is None:
+                return {"ready": False, "computing": True, "reason": "Waiting for the data refresh to finish before training the models."}
+            self._settle(bars)
+            return {**old, "ledger": self._ledger_view(), "generated_at": now.isoformat(), "runs": self._runs, "computing": False, "waiting_for_data": True, "days": self._days_view(bars)}
         if body is None:
             if block and worker is not None:
                 worker.join()
                 return self.summary()
             if self._error:
                 raise RuntimeError(self._error)
-            return {"ready": False, "computing": True, "reason": "Training and evaluating models on the stored data. This takes a few minutes the first time and is then cached."}
+            return {"ready": False, "computing": True, "computing_since": self._run_started.isoformat() if self._run_started else None, "reason": "Training and evaluating models on the stored data. This takes a few minutes the first time and is then cached."}
         self._settle(bars)
-        return {**body, "ledger": self._ledger_view(), "generated_at": now.isoformat(), "runs": self._runs, "computing": worker is not None and worker.is_alive(), "days": self._days_view(bars)}
+        return {**body, "ledger": self._ledger_view(), "generated_at": now.isoformat(), "runs": self._runs, "computing": worker is not None and worker.is_alive(), "computing_since": self._run_started.isoformat() if self._run_started and worker is not None and worker.is_alive() else None, "computing_scope": self._run_scope if worker is not None and worker.is_alive() else None, "days": self._days_view(bars)}
 
     def _run(self, bars: list[Bar], key: list[Any], now: datetime, trigger: str = "auto", only: str | None = None, base: dict[str, Any] | None = None) -> None:
         try:

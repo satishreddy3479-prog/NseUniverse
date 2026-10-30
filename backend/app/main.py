@@ -121,7 +121,11 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         app.state.news = news
         news.start()
         research = PredictionResearch(
-            history_store, ledger, cache_dir=settings.data_dir, flows=flows_store
+            history_store,
+            ledger,
+            cache_dir=settings.data_dir,
+            flows=flows_store,
+            settle_seconds=120.0,
         )
         app.state.research = research
         research_ref["r"] = research

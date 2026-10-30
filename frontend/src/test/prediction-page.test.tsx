@@ -206,3 +206,30 @@ describe("Prediction page graphics", () => {
     expect(within(t1).getByTestId("compute-T1")).toHaveTextContent("Compute now");
   });
 });
+
+describe("Compute now state", () => {
+  const mountWith = (patch: Record<string, unknown>) => {
+    const d = { ...(data() as object), ...patch };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input).split("?")[0]!;
+      const map: Record<string, unknown> = { "/api/status": status(), "/api/expiries": expiries, "/api/snapshots": [summary()], "/api/prediction/summary": d };
+      return map[url] == null ? new Response("{}", { status: 404 }) : new Response(JSON.stringify(map[url]), { status: 200 });
+    }));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={["/prediction"]}><AppRoutes /></MemoryRouter></QueryClientProvider>);
+  };
+  it("only the horizon being trained says Computing, with a running clock; the other waits", async () => {
+    mountWith({ computing: true, computing_scope: "T1", computing_since: new Date(Date.now() - 125_000).toISOString() });
+    const t1 = await screen.findByTestId("compute-T1");
+    expect(t1).toHaveTextContent(/Computing…\s*2:0\d/);
+    expect(within(screen.getByTestId("compute-T5")).getByRole("button")).toHaveTextContent("Compute now");
+    expect(within(screen.getByTestId("compute-T5")).getByRole("button")).toBeDisabled();
+    expect(screen.getByTestId("compute-T5")).toHaveTextContent("The other horizon is training");
+  });
+  it("when nothing is running both buttons are free; a held-back automatic retrain says why", async () => {
+    mountWith({ computing: false, waiting_for_data: true });
+    const t1 = await screen.findByTestId("compute-T1");
+    expect(within(t1).getByRole("button")).toBeEnabled();
+    expect(screen.getByTestId("compute-wait-T1")).toHaveTextContent("retrain automatically once it has stopped changing");
+  });
+});

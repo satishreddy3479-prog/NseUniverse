@@ -26,3 +26,22 @@ describe("readingLines writes the statement from the forecast's own numbers", ()
     expect(l[1]).toBe("Event risk before the target close: US midterm elections.");
   });
 });
+
+import { chanceText } from "../pages/Prediction";
+describe("chanceText follows the forecast", () => {
+  it("a lean down is stated as the chance of NOT closing above the last close, for the target date (51.3% = 100 - 48.7)", () => {
+    const c = chanceText("T1", 0.487, 0.529, 22936.75, "2026-10-30", "ensemble");
+    expect(c.number).toBe("51.3%");
+    expect(c.text).toBe("chance NIFTY 50 does not close above ₹22,937 on Fri 30 Oct · ensemble (calibrated) · history says 52.9% of the time it rises · close to a coin flip");
+  });
+  it("a lean up for five sessions names the target date and carries no coin-flip remark when far from 50%", () => {
+    const c = chanceText("T5", 0.65, 0.566, 22936.75, "2026-11-05", "logit core");
+    expect(c.number).toBe("65.0%");
+    expect(c.text).toContain("closes above ₹22,937 on Thu 5 Nov");
+    expect(c.text).not.toContain("coin flip");
+  });
+  it("without a target date it still says which horizon", () => {
+    expect(chanceText("T1", 0.6, 0.5, 100, null, "m").text).toContain("next session");
+    expect(chanceText("T5", 0.6, 0.5, 100, null, "m").text).toContain("in 5 sessions");
+  });
+});
