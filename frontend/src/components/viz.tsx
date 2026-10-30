@@ -92,7 +92,8 @@ export function Tile({ label, value, sub, accent = "border-rule", valueCls = "te
 
 /** Vertical price ladder: levels positioned by value between the lowest and highest, with the current price marked. */
 export function Ladder({ levels, price }: { levels: { name: string; value: number | null }[]; price: number | null }) {
-  const have = levels.filter((l): l is { name: string; value: number } => l.value != null);
+  // only price levels belong on a price ladder: a straddle premium or similar is not one (kept out when far from the current price)
+  const have = levels.filter((l): l is { name: string; value: number } => l.value != null && (price == null || Math.abs(l.value / price - 1) < 0.1));
   const all = [...have.map((l) => l.value), ...(price != null ? [price] : [])];
   if (have.length < 2 || all.length < 2) return null;
   const lo = Math.min(...all), hi = Math.max(...all), H = 220;
