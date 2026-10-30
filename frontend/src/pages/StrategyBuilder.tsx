@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { mergeRows, type LiveMode } from "../components/ChainTable";
 import { useThrottledVersion } from "../components/dashboard/DashContext";
@@ -96,6 +96,32 @@ export default function StrategyBuilder() {
   /** Name of the saved strategy currently loaded in the builder (the one the Update button overwrites). */
   const [loaded, setLoaded] = useState<string | null>(null);
   const [closed, setClosed] = useState<Closed[]>(loadClosed);
+  /** "server": kept on the server; "browser": the server could not be reached, this browser's copy is all there is. */
+  const [sync, setSync] = useState<"checking" | "server" | "browser">("checking");
+  const [syncProblem, setSyncProblem] = useState<string | null>(null);
+  // The server is the source of truth. Strategies only this browser knows about (from before server storage) move up once.
+  useEffect(() => {
+    let off = false;
+    void (async () => {
+      try {
+        let got = await api.strategies();
+        const onServer = (list: Record<string, unknown>[], key: string) => new Set(list.map((x) => String(x[key])));
+        const sKeys = onServer(got.saved, "name"), cKeys = onServer(got.closed, "id");
+        const localSaved = loadSaved().filter((x) => !sKeys.has(x.name)), localClosed = loadClosed().filter((x) => !cKeys.has(x.id));
+        if (localSaved.length || localClosed.length) {
+          await api.importStrategies(Object.fromEntries(localSaved.map((x) => [x.name, x])), Object.fromEntries(localClosed.map((x) => [x.id, x])));
+          got = await api.strategies();
+        }
+        if (off) return;
+        const sv = got.saved as unknown as Saved[], cl = got.closed as unknown as Closed[];
+        setSaved(sv); setClosed(cl); setSync("server");
+        try { localStorage.setItem(SAVE_KEY, JSON.stringify(sv)); localStorage.setItem(CLOSED_KEY, JSON.stringify(cl)); } catch { /* cache only */ }
+      } catch {
+        if (!off) setSync("browser");
+      }
+    })();
+    return () => { off = true; };
+  }, []);
   const [opened, setOpened] = useState<Closed | null>(null);
   const [confirmAll, setConfirmAll] = useState<"saved" | "closed" | null>(null);
 
@@ -313,7 +339,18 @@ export default function StrategyBuilder() {
       </div>
     );
   };
-  const persistClosed = (c: Closed[]) => { setClosed(c); try { localStorage.setItem(CLOSED_KEY, JSON.stringify(c)); } catch { /* storage unavailable: kept for this visit only */ } };
+  /** Send what changed between two lists to the server (new/changed -> save, missing -> delete). */
+  const pushDiff = <T,>(kind: "saved" | "closed", before: T[], after: T[], keyOf: (x: T) => string) => {
+    if (sync === "browser") return; // server unreachable: kept in this browser, moved up when it is reachable again
+    const old = new Map(before.map((x) => [keyOf(x), JSON.stringify(x)]));
+    const now = new Set(after.map(keyOf));
+    const jobs: Promise<unknown>[] = [];
+    for (const x of after) if (old.get(keyOf(x)) !== JSON.stringify(x)) jobs.push(api.putStrategy(kind, keyOf(x), x));
+    for (const k of old.keys()) if (!now.has(k)) jobs.push(api.deleteStrategy(kind, k));
+    if (jobs.length === 0) return;
+    void Promise.all(jobs).then(() => setSyncProblem(null), (e: unknown) => setSyncProblem(e instanceof Error ? e.message : "the server did not accept the change"));
+  };
+  const persistClosed = (c: Closed[]) => { pushDiff("closed", closed, c, (x) => x.id); setClosed(c); try { localStorage.setItem(CLOSED_KEY, JSON.stringify(c)); } catch { /* storage unavailable: kept for this visit only */ } };
   /** Exit every active leg at its stored price, record the realised P&L as a closed trade and clear the builder. Nothing is sent to any broker. */
   const exitAll = () => {
     if (!expiry || !lotSize || !snap) return;
@@ -328,7 +365,7 @@ export default function StrategyBuilder() {
     setLegs([]); setNote(null); setSel(null); setMult(1); setDays(0); setName(""); setOpened(null); setLoaded(null);
   };
   const openClosed = (c: Closed) => { setPicked(c.expiry); setLegs(c.legs.map(({ exit: _e, ...l }) => ({ ...l, id: newLegId() }))); setMult(1); setNote(null); setOpened(c); setLoaded(null); };
-  const persist = (s: Saved[]) => { setSaved(s); try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch { /* storage unavailable: kept for this visit only */ } };
+  const persist = (s: Saved[]) => { pushDiff("saved", saved, s, (x) => x.name); setSaved(s); try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch { /* storage unavailable: kept for this visit only */ } };
   const net = (k: number, t: OptionType) => legs.filter((l) => l.strike === k && l.type === t).reduce((s, l) => s + sign(l.action) * l.lots, 0);
   const savedEntry = loaded ? saved.find((x) => x.name === loaded) : undefined;
   const sig = (ls: Leg[]) => JSON.stringify(ls.map(({ id: _i, ...r }) => r));
@@ -349,6 +386,10 @@ export default function StrategyBuilder() {
             <span className={`text-xs ${dirty ? "text-warn" : "text-muted"}`} data-testid="saved-state">{dirty ? "Unsaved changes" : "Saved"}</span>
           </>
         )}
+        <span data-testid="sync-state" className={`text-[11px] ${sync === "browser" || syncProblem ? "text-warn" : "text-muted"}`}
+          title={sync === "server" ? "Saved and closed strategies are stored on the server and kept in its nightly backups" : "The server could not be reached: strategies are held in this browser only and move to the server the next time it is reachable"}>
+          {syncProblem ? `Not saved on server: ${syncProblem}` : sync === "server" ? "Stored on server" : sync === "browser" ? "Browser only (server unreachable)" : "Checking server…"}
+        </span>
         <details className="relative text-sm" data-testid="saved-menu">
           <summary className={`${field} flex cursor-pointer items-center`} aria-label="Saved strategies">Saved ({saved.length})</summary>
           <div className="absolute left-0 z-20 mt-1 w-80 max-w-[90vw] rounded-sm border border-rule bg-slate p-1 shadow-lg">

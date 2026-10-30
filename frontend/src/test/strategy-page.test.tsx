@@ -129,6 +129,59 @@ describe("Updating a saved strategy", () => {
   });
 });
 
+describe("Strategies kept on the server", () => {
+  const sv = (name: string) => ({ name, savedAt: "2026-10-30T04:00:00Z", expiry: "2026-11-03", legs: [] });
+  function serverFake(initial: unknown[]) {
+    const calls: { method: string; url: string; body?: unknown }[] = [];
+    let saved = [...initial] as { name: string }[];
+    const base = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (!url.startsWith("/api/strategies")) return base(input, init);
+      const method = init?.method ?? "GET";
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      calls.push({ method, url, body });
+      if (url === "/api/strategies/import") {
+        const add = Object.values(body.saved) as { name: string }[];
+        saved = [...saved, ...add];
+        return new Response(JSON.stringify({ added: add.length }), { status: 200 });
+      }
+      if (method === "DELETE") { saved = saved.filter((x) => `/api/strategies/saved/${encodeURIComponent(x.name)}` !== url); return new Response(JSON.stringify({ ok: true, deleted: true }), { status: 200 }); }
+      if (method === "PUT") return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      return new Response(JSON.stringify({ saved, closed: [] }), { status: 200 });
+    }));
+    return calls;
+  }
+
+  it("lists what the server holds, moves browser-only strategies up once, and sends deletes to the server", async () => {
+    localStorage.setItem("nse.strategies.v1", JSON.stringify([sv("only here")]));
+    const calls = serverFake([sv("on server")]);
+    mount();
+    const menu = await screen.findByTestId("saved-menu");
+    await waitFor(() => expect(menu).toHaveTextContent("Saved (2)"));
+    expect(screen.getByTestId("sync-state")).toHaveTextContent("Stored on server");
+    const imp = calls.find((c) => c.url === "/api/strategies/import")!;
+    expect(Object.keys((imp.body as { saved: object }).saved)).toEqual(["only here"]); // not the one the server already had
+    await userEvent.click(within(menu).getByRole("button", { name: "Delete saved strategy on server" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url.endsWith("/saved/on%20server"))).toBe(true));
+    expect(menu).toHaveTextContent("Saved (1)");
+  });
+
+  it("saving and updating write to the server; an unreachable server is shown, not hidden", async () => {
+    const calls = serverFake([]);
+    mount();
+    await waitFor(() => expect(screen.getByTestId("sync-state")).toHaveTextContent("Stored on server"));
+    await waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"));
+    await pick("bull_call_spread");
+    await userEvent.type(await screen.findByLabelText("Strategy name"), "persist me");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/saved/persist%20me"))).toBe(true));
+    const put = calls.find((c) => c.method === "PUT")!.body as { doc: { name: string; legs: unknown[] } };
+    expect(put.doc.name).toBe("persist me");
+    expect(put.doc.legs).toHaveLength(2);
+  });
+});
+
 describe("Option chain inside the builder", () => {
   it("offers only the weekly and monthly expiries we collect, however many dates the exchange lists", async () => {
     mount();

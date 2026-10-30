@@ -47,7 +47,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+export interface StoredStrategies { saved: Record<string, unknown>[]; closed: Record<string, unknown>[] }
+
 export const api = {
+  strategies: () => request<StoredStrategies>("/api/strategies"),
+  putStrategy: (kind: "saved" | "closed", key: string, doc: unknown) =>
+    request<{ ok: boolean }>(`/api/strategies/${kind}/${encodeURIComponent(key)}`, {
+      method: "PUT", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ doc }),
+    }),
+  deleteStrategy: (kind: "saved" | "closed", key: string) =>
+    request<{ ok: boolean; deleted: boolean }>(`/api/strategies/${kind}/${encodeURIComponent(key)}`, { method: "DELETE" }),
+  importStrategies: (saved: Record<string, unknown>, closed: Record<string, unknown>) =>
+    request<{ added: number }>("/api/strategies/import", {
+      method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ saved, closed }),
+    }),
   status: () => request<AppStatus>("/api/status"),
   config: () => request<ConfigStatus>("/api/config/status"),
   errors: () => request<ErrorEvent[]>("/api/errors"),

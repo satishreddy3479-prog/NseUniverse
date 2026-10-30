@@ -38,6 +38,7 @@ from app.services.snapshot_service import SnapshotService
 from app.services.state import AppState, ErrorEvent, SnapshotActivity
 from app.storage.observations import ObservationStore
 from app.storage.store import SnapshotStore, StorageError
+from app.storage.strategies import StrategyError, StrategyStore
 from app.stream.models import StreamStatusModel
 
 router = APIRouter(prefix="/api")
@@ -660,3 +661,69 @@ async def flows_cash_import(request: Request, body: CashImport) -> dict[str, Any
 async def flows_cash(request: Request) -> dict[str, Any]:
     rows = await asyncio.to_thread(request.app.state.flows.store.cash_rows)
     return {"rows": rows, "window_sessions": 7}
+
+
+# ----------------------------------------------------------------- saved and closed strategies
+class StrategyDoc(BaseModel):
+    doc: dict[str, Any]
+
+
+class StrategyImport(BaseModel):
+    saved: dict[str, dict[str, Any]] = {}
+    closed: dict[str, dict[str, Any]] = {}
+
+
+def _strategies(request: Request) -> StrategyStore:
+    store: StrategyStore = request.app.state.strategies
+    return store
+
+
+def _bad_strategy(e: StrategyError) -> HTTPException:
+    return HTTPException(422, {"code": "validation_error", "message": str(e)})
+
+
+@router.get("/strategies")
+async def strategies_list(request: Request) -> dict[str, Any]:
+    """Every saved and closed strategy that has not been deleted, newest change first."""
+    st = _strategies(request)
+    return {
+        "saved": await asyncio.to_thread(st.list, "saved"),
+        "closed": await asyncio.to_thread(st.list, "closed"),
+    }
+
+
+@router.put("/strategies/{kind}/{key}")
+async def strategies_put(kind: str, key: str, body: StrategyDoc, request: Request) -> dict[str, Any]:  # noqa: E501
+    try:
+        await asyncio.to_thread(_strategies(request).put, kind, key, body.doc)
+    except StrategyError as e:
+        raise _bad_strategy(e) from e
+    return {"ok": True}
+
+
+@router.delete("/strategies/{kind}/{key}")
+async def strategies_delete(kind: str, key: str, request: Request) -> dict[str, Any]:
+    """Marks the strategy deleted (it is no longer listed); its history is kept."""
+    try:
+        done = await asyncio.to_thread(_strategies(request).delete, kind, key)
+    except StrategyError as e:
+        raise _bad_strategy(e) from e
+    return {"ok": True, "deleted": done}
+
+
+@router.post("/strategies/import")
+async def strategies_import(body: StrategyImport, request: Request) -> dict[str, Any]:
+    """One-time move of a browser's own saved/closed strategies to the server. Existing keys are untouched."""  # noqa: E501
+    st = _strategies(request)
+
+    def run() -> dict[str, int]:
+        added = 0
+        for kind, items in (("saved", body.saved), ("closed", body.closed)):
+            for key, doc in items.items():
+                added += st.put_if_absent(kind, key, doc)
+        return {"added": added}
+
+    try:
+        return await asyncio.to_thread(run)
+    except StrategyError as e:
+        raise _bad_strategy(e) from e

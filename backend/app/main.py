@@ -43,6 +43,7 @@ from app.services.state import AppState
 from app.services.universe import build_universe
 from app.storage.observations import ObservationStore
 from app.storage.store import SnapshotStore
+from app.storage.strategies import StrategyStore
 from app.stream.hub import Hub
 from app.stream.manager import StreamConfig, StreamManager
 
@@ -140,6 +141,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             enabled=settings.flows_autofetch,
         )
         app.state.flows = flows
+        app.state.strategies = StrategyStore(settings.data_dir)
         flows.start()
         intraday_store = IntradayStore(settings.data_dir)
         intraday = IntradayService(
@@ -254,6 +256,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             news_store.close()
             await flows.stop()
             flows_store.close()
+            app.state.strategies.close()
             history_store.close()
             ledger.close()
             await sampler.stop()

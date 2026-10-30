@@ -5,6 +5,11 @@ _Last updated: 2026-10-29_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Strategies stored on the server (30 Oct 2026)
+- Saved and closed strategies now live in `strategies.sqlite3` (data dir) via `GET /api/strategies`, `PUT/DELETE /api/strategies/{saved|closed}/{key}` and a one-time `POST /api/strategies/import`. Delete only marks a strategy deleted; every create/update/delete is appended to an immutable `revisions` history. The file is covered by the nightly backups (all `*.sqlite3`) and listed in the storage report.
+- The builder loads from the server, moves strategies that only this browser holds up once, writes every save/update/exit-all/delete through, and shows `Stored on server` or `Browser only (server unreachable)` / `Not saved on server: …`. The browser copy is a cache.
+- Limits: the endpoints are not authenticated (same as other read/write app routes behind Caddy; no broker access), edits made while the server is unreachable are not merged back over the server's copy, and there is no per-user separation (single-owner app). Not yet running on the server until deployed.
+
 ## Live prices in the builder, cleaner session charts (30 Oct 2026)
 - Strategy builder now uses the same live-tick overlay as the Option chain page (streamed LTP and spot over the stored snapshot while the stream is fresh, `LIVE` tag; stale or closed stream falls back to the snapshot). Chain refetch 15 s (was 30 s). Not yet verified in market hours on the server.
 - Time-series charts: no dots, session axis ends just after the newest sample while the session runs (full session once closed), premium-total samples that sum fewer priced contracts than the best sample are drawn as gaps.
