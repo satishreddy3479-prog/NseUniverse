@@ -514,6 +514,12 @@ async def intraday_research(request: Request, horizon: int = 15, k: float = 0.5)
     return await asyncio.to_thread(request.app.state.intraday.research, horizon, k)
 
 
+@router.get("/intraday/forward")
+async def intraday_forward(request: Request, expiry: date) -> dict[str, Any]:
+    """Stored rules-based sentiment scores against what NIFTY did next (read-only)."""
+    return await asyncio.to_thread(request.app.state.intraday.forward_check, expiry.isoformat())
+
+
 @router.get("/intraday/replay")
 async def intraday_replay(
     request: Request, session: date | None = None, expiry: date | None = None, at: str | None = None

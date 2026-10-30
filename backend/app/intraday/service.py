@@ -569,6 +569,19 @@ class IntradayService:
         self._slow[key] = (_time.monotonic(), res)
         return res
 
+    def forward_check(self, expiry: str) -> dict[str, Any]:
+        """What NIFTY did after each stored rules-based score (see forward.py); cached for ten minutes."""
+        from app.intraday.forward import score_forward
+
+        key = ("forward", expiry, self.store.count())
+        hit = self._slow.get(key)  # type: ignore[call-overload]
+        if hit and _time.monotonic() - hit[0] < 600:
+            return hit[1]  # type: ignore[no-any-return]
+        sessions = {d: self.store.session_rows(d, expiry, limit=2000) for d in self.store.score_sessions(expiry)}
+        res = score_forward(sessions)
+        self._slow[key] = (_time.monotonic(), res)  # type: ignore[index]
+        return res
+
     def replay_sessions(self) -> dict[str, Any]:
         out = []
         for d, n in sorted(self.obs.session_sample_counts(self.underlying).items()):

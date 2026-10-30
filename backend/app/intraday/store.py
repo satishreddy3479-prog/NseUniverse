@@ -181,6 +181,11 @@ class IntradayStore:
             r["components"] = json.loads(r["components"])
         return out
 
+    def score_sessions(self, expiry: str) -> list[str]:
+        with self._lock:
+            rows = self._db.execute("SELECT DISTINCT session FROM scores WHERE expiry=? ORDER BY session", (expiry,)).fetchall()
+        return [r[0] for r in rows]
+
     def last_before(self, expiry: str, sample_utc: str, version: str) -> dict[str, Any] | None:
         with self._lock:
             r = self._db.execute(

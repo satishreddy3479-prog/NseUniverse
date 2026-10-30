@@ -696,3 +696,10 @@ export interface ForecastDay {
   p_up: number | null; p_up_climatology: number | null; model: string | null; logged_utc: string;
   actual: { positive: boolean; return: number | null } | null; counts_in_forward_test: boolean;
 }
+
+/** Rules-based intraday sentiment against what NIFTY did next (stored scores, forward moves from the stored spot path). */
+export interface ForwardGroup { n: number; sessions: number; mean_fwd_pct: number | null; share_up: number | null }
+export interface ForwardCheck {
+  sessions: number; min_sessions: number; conclusion: string | null; note: string;
+  horizons: Record<string, { bullish: ForwardGroup; neutral: ForwardGroup; bearish: ForwardGroup; all: ForwardGroup }>;
+}

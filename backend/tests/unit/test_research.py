@@ -312,3 +312,20 @@ def test_automatic_training_waits_for_the_data_to_settle_but_a_manual_run_does_n
     svc._worker.join()
     done = svc.summary(trigger="auto")
     assert done["ready"] is True and done["computing"] is False and done.get("computing_since") is None
+
+
+def test_training_recording_and_settling_are_logged(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO", logger="app.prediction.research")
+    last = _walk(560, 1)[-1].session
+    nxt = _Cal().next_session(last)
+    svc, _ = _service(tmp_path, 560, _at(nxt, 8, 50))
+    s = svc.summary(block=True)
+    assert s["ready"]
+    events = [r.getMessage() for r in caplog.records]
+    assert "prediction_training_started" in events and "prediction_training_finished" in events
+    rec = [r for r in caplog.records if r.getMessage() == "forecast_recorded"]
+    assert len(rec) == 8  # four models for each horizon
+    fields = rec[0].fields  # type: ignore[attr-defined]
+    assert fields["horizon"] in ("T1", "T5") and 0 < fields["p_up"] < 1 and fields["target"]
+    done = [r for r in caplog.records if r.getMessage() == "prediction_training_finished"][0].fields  # type: ignore[attr-defined]
+    assert done["recorded"]["T1"] and done["seconds"] >= 0

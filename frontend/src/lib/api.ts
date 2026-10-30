@@ -1,4 +1,5 @@
 import type {
+  ForwardCheck,
   PaperReport,
   ReplayResult,
   ReplaySessions,
@@ -87,6 +88,7 @@ export const api = {
   intradayResearch: (horizon: number) => request<ResearchReport>(`/api/intraday/research?horizon=${horizon}`),
   intradayReplaySessions: () => request<ReplaySessions>("/api/intraday/replay"),
   intradayReplay: (session: string, expiry: string, at: string) => request<ReplayResult>(`/api/intraday/replay?session=${session}&expiry=${expiry}&at=${encodeURIComponent(at)}`),
+  intradayForward: (expiry: string) => request<ForwardCheck>(`/api/intraday/forward?expiry=${expiry}`),
   intradayPaper: () => request<PaperReport>("/api/intraday/paper"),
   intradaySummary: (expiry: string) => request<IntradaySummary>(`/api/intraday/summary?expiry=${encodeURIComponent(expiry)}`),
   intradayScores: (expiry: string) =>

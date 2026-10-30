@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import math
 import threading
 import time
@@ -27,6 +28,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+from app.logging_setup import log_event
 from app.prediction.calendar import SessionLookup, TradingCalendar
 from app.prediction.daylog import DayLog
 from app.prediction.evaluation import (
@@ -297,6 +299,9 @@ def _forecast_payloads(data: _Data, ev: dict[str, Any], helpers: dict[str, Any])
     return out
 
 
+logger = logging.getLogger(__name__)
+
+
 class PredictionResearch:
     def __init__(
         self,
@@ -442,12 +447,16 @@ class PredictionResearch:
         return {**body, "ledger": self._ledger_view(), "generated_at": now.isoformat(), "runs": self._runs, "computing": worker is not None and worker.is_alive(), "computing_since": self._run_started.isoformat() if self._run_started and worker is not None and worker.is_alive() else None, "computing_scope": self._run_scope if worker is not None and worker.is_alive() else None, "days": self._days_view(bars)}
 
     def _run(self, bars: list[Bar], key: list[Any], now: datetime, trigger: str = "auto", only: str | None = None, base: dict[str, Any] | None = None) -> None:
+        t0 = time.monotonic()
+        log_event(logger, logging.INFO, "prediction_training_started", trigger=trigger, scope=only or "all", bars=len(bars), last_bar=str(bars[-1].session))
         try:
             body = self._compute(bars, now, only)
             if only is not None and base is not None:
                 body = self._merge(base, body, only)
         except Exception as e:  # noqa: BLE001 - surfaced to the page, never swallowed silently
             self._error = f"{type(e).__name__}: {e}"
+            logger.exception("prediction training failed")
+            log_event(logger, logging.ERROR, "prediction_training_failed", trigger=trigger, scope=only or "all", error=self._error)
             return
         with self._lock:
             self._cache = (tuple(key), body)
@@ -455,6 +464,12 @@ class PredictionResearch:
             with contextlib.suppress(OSError):
                 self._cache_file.write_text(json.dumps({"key": key, "body": body}), "utf-8")
         self._mark([only] if only else ["T1", "T5"], trigger, now)
+        recorded = {h: sorted(n for n, m in body["forecasts"][h]["models"].items() if m.get("recorded")) for h in ("T1", "T5")}
+        previews = {h: sorted({str(m.get("reason")) for m in body["forecasts"][h]["models"].values() if not m.get("recorded") and m.get("reason")}) for h in ("T1", "T5")}
+        log_event(
+            logger, logging.INFO, "prediction_training_finished", trigger=trigger, scope=only or "all", seconds=round(time.monotonic() - t0, 1),
+            fresh=body["data"]["overnight_data_fresh"], stale=body["data"]["stale_series"], recorded=recorded, not_recorded_reasons=previews,
+        )
 
     @staticmethod
     def _merge(base: dict[str, Any], new: dict[str, Any], hz: str) -> dict[str, Any]:
@@ -551,7 +566,12 @@ class PredictionResearch:
             payload=payload, data_quality={"bars": len(bars), "last_bar": str(ref.session)}, excluded_inputs=list(EXCLUDED),
         )  # fmt: skip
         try:
-            return {**out, "recorded": True, "forecast_id": self._ledger.record(f)}
+            fid = self._ledger.record(f)
+            log_event(
+                logger, logging.INFO, "forecast_recorded", forecast_id=fid, horizon=h, model=model, reference=str(ref.session), target=str(target),
+                p_up=payload.get("p_up_model"), p_base=payload.get("p_up_climatology"),
+            )
+            return {**out, "recorded": True, "forecast_id": fid}
         except LedgerError as e:
             existing = self._ledger.get(h, f.forecast_id)  # type: ignore[arg-type]
             if existing is not None:
@@ -608,8 +628,16 @@ class PredictionResearch:
                 if lab is None:
                     continue
                 realized = {"close_to_close": lab.close_to_close, "gap": lab.gap, "positive": lab.positive} if h == "T1" else {"ret5": lab.ret5, "positive": lab.positive}
-                with contextlib.suppress(LedgerError):
+                try:
                     self._ledger.attach_outcome(h, r["forecast"]["forecast_id"], realized)  # type: ignore[arg-type]
+                except LedgerError as e:
+                    log_event(logger, logging.WARNING, "forecast_outcome_not_attached", forecast_id=r["forecast"]["forecast_id"], error=str(e))
+                    continue
+                p = (r["forecast"].get("payload") or {}).get("p_up_model")
+                log_event(
+                    logger, logging.INFO, "forecast_settled", forecast_id=r["forecast"]["forecast_id"], horizon=h, model=r["forecast"].get("model_name"), p_up=p,
+                    actual_up=bool(realized["positive"]), direction_right=None if p is None else (p > 0.5) == bool(realized["positive"]), realized=realized,
+                )
 
     # ------------------------------------------------------------------ daily morning run
     def _window_due(self, now: datetime) -> bool:
@@ -649,7 +677,10 @@ class PredictionResearch:
                 status = "recorded" if recorded else "missed"
                 reason = None if recorded else ((m or {}).get("reason") or "no forecast could be made")
                 p, c, model = pay.get("p_up_model"), pay.get("p_up_climatology"), name
-            wrote += self._days.log(hz, target, ref, status, reason, stale, p, c, model, now=now)
+            n = self._days.log(hz, target, ref, status, reason, stale, p, c, model, now=now)
+            if n:
+                log_event(logger, logging.INFO, "forecast_day_logged", horizon=hz, target=str(target), status=status, reason=reason, p_up=p, stale=stale)
+            wrote += n
         return wrote
 
     def _days_view(self, bars: list[Bar]) -> list[dict[str, Any]]:
@@ -683,6 +714,7 @@ class PredictionResearch:
                 self.log_day(now)
             except Exception:  # noqa: BLE001 - the scheduler must survive
                 self._error = "morning run failed"
+                logger.exception("prediction morning loop failed")
             await asyncio.sleep(240)
 
     def start(self) -> None:

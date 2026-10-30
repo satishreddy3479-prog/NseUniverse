@@ -570,6 +570,48 @@ function Positioning({ d }: { d: IntradaySummary }) {
   );
 }
 
+function ForwardCheckCard({ expiry }: { expiry: string }) {
+  const q = useQuery({ queryKey: ["intradayForward", expiry], queryFn: () => api.intradayForward(expiry), refetchInterval: 600_000, retry: false });
+  const r = q.data;
+  const rows: ["bullish" | "neutral" | "bearish", string, string][] = [["bullish", "Score ≥ +0.2 (bullish)", "text-up"], ["neutral", "Between (neutral)", "text-muted"], ["bearish", "Score ≤ −0.2 (bearish)", "text-down"]];
+  return (
+    <Card title="Forward check of the rules-based sentiment" className="lg:col-span-12" right={<span className="text-[11px] text-muted">stored in real time · what NIFTY did next</span>}>
+      {q.isLoading ? <p className="text-sm text-muted">Loading…</p> : !r ? <p className="text-sm text-muted" data-testid="cc-forward-error">The forward check is unavailable.</p> : (
+        <div className="space-y-3 text-xs" data-testid="cc-forward">
+          <p className="text-paper"><span className="num font-semibold">{r.sessions}</span> session(s) of stored scores. <span className="text-muted">{r.conclusion ?? "The sample is large enough to read, with the usual caution."}</span></p>
+          <div className="grid gap-3 md:grid-cols-3">
+            {["15", "30", "60"].map((h) => {
+              const g = r.horizons[h];
+              if (!g) return null;
+              return (
+                <div key={h} className="rounded-sm border border-rule bg-slate-2/40 p-2">
+                  <div className="mb-1 text-[11px] uppercase tracking-wide text-muted">Next {h} minutes</div>
+                  <table className="w-full"><thead><tr className="text-[11px] text-muted"><th className="py-0.5 text-left font-normal">Score group</th><th className="py-0.5 text-right font-normal">Samples</th><th className="py-0.5 text-right font-normal">Mean move</th><th className="py-0.5 text-right font-normal">Up share</th></tr></thead>
+                    <tbody>
+                      {rows.map(([k, name, cls]) => {
+                        const x = g[k];
+                        return (
+                          <tr key={k} className="border-t border-rule/50">
+                            <td className={`py-1 ${cls}`}>{name}</td><td className="num py-1 text-right">{x.n}</td>
+                            <td className={`num py-1 text-right ${tone(x.mean_fwd_pct)}`}><span className="mr-1">{x.mean_fwd_pct == null ? MISSING : fmtPct(x.mean_fwd_pct)}</span><MiniBar value={x.mean_fwd_pct} scale={0.2} className="w-10" /></td>
+                            <td className="num py-1 text-right">{x.share_up == null ? MISSING : `${Math.round(x.share_up * 100)}%`}</td>
+                          </tr>
+                        );
+                      })}
+                      <tr className="border-t border-rule"><td className="py-1 text-muted">All stored scores</td><td className="num py-1 text-right">{g.all.n}</td><td className={`num py-1 text-right ${tone(g.all.mean_fwd_pct)}`}>{g.all.mean_fwd_pct == null ? MISSING : fmtPct(g.all.mean_fwd_pct)}</td><td className="num py-1 text-right">{g.all.share_up == null ? MISSING : `${Math.round(g.all.share_up * 100)}%`}</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-muted">{r.note} Bullish scores should be followed by a higher mean move than neutral and bearish ones for the sentiment to carry information; until {r.min_sessions} sessions are stored this is a record, not evidence.</p>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function ModelResearch() {
   const q = useQuery({ queryKey: ["intradayResearch", 15], queryFn: () => api.intradayResearch(15), refetchInterval: 600_000, retry: false });
   const r = q.data;
@@ -957,6 +999,7 @@ export function CommandCenter({ expiry }: { expiry: string | null }) {
             <FlowCard d={d} />
             <Sectors d={d} />
             <ModelResearch />
+            {expiry && <ForwardCheckCard expiry={expiry} />}
             <PaperResults />
             <Replay expiry={d.expiry} />
             <Context d={d} />
