@@ -113,3 +113,14 @@ body {
 .flash-up { animation: flash-up 0.9s ease-out; }
 .flash-down { animation: flash-down 0.9s ease-out; }
 
+
+/* Strategy legs: on a phone each leg becomes a card (two columns of labelled controls) instead of a wide table. */
+@media (max-width: 767px) {
+  .legs-table, .legs-table tbody { display: block; }
+  .legs-table thead { display: none; }
+  .legs-table tr { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; padding: 10px 8px 10px 12px; }
+  .legs-table td { display: block; min-width: 0; padding: 0 !important; }
+  .legs-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: 10px; color: var(--muted); }
+  .legs-table td:first-child { grid-column: 1 / -1; }
+  .legs-table td:nth-child(2), .legs-table td:nth-child(3), .legs-table td:last-child { grid-column: 1 / -1; }
+}

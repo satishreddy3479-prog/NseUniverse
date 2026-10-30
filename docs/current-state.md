@@ -5,6 +5,12 @@ _Last updated: 2026-10-29_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Strategy builder payoff chart and mobile (30 Oct 2026)
+- Payoff chart opens on the **profit zone** (between the breakevens, current price included) instead of the whole computed range. **− / + / Fit** buttons zoom around the centre of the profit zone (0.7x per step); the y-axis refits to the visible part; mouse-wheel/drag zoom is removed. The visible range is shown next to the buttons.
+- Jitter: the chart redraws at most every 2.5 s while live ticks arrive, and at once when the zoom, legs or controls change; axis edges snap to 10 points.
+- Phones: legs table becomes one card per leg, compact chart (no right OI axis), shorter chain scroller, wrapping toolbar. Checked by screenshots at 390 px and 1440 px against the replay backend: no horizontal overflow.
+- Projected P&L label no longer says "loss −₹0" at zero.
+
 ## Intraday page layout fixes (30 Oct 2026)
 - Key levels: the overlapping ladder drawing and the duplicate table are replaced by one list sorted by price with the current price placed among the levels, distance in points from it, and the nearest level above and below. Unavailable levels (e.g. VWAP for an index) stay listed as n/a with their reason on hover.
 - Cards sit in a wrapping flex row and grow to fill it, so a row has no blank gap when a neighbouring card is not shown (paper trading, regime, data coverage, global panels).

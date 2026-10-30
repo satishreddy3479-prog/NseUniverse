@@ -428,7 +428,35 @@ const lerp = (pts: { s: number; pnl: number | null }[], x: number): number | nul
  * series with the exact breakeven points inserted, not a visualMap: a piecewise visualMap on this series makes ECharts
  * throw ("reading 'coord'"), which once blanked the whole page.
  */
-export function payoffOption(p: PayoffSeries, c: ChartColors): EChartsCoreOption {
+/** Visible price window of the payoff chart. */
+export interface PayoffView { lo: number; hi: number; fullLo: number; fullHi: number; focus: number; canIn: boolean; canOut: boolean }
+
+/** Zoom steps in and out from the profit-zone window; each step changes the window width by a factor of 0.7. */
+export const PAYOFF_ZOOM = { min: -4, max: 6, factor: 0.7 };
+
+/**
+ * The window the payoff chart shows. At step 0 it frames the profit zone (between the breakevens, or around the
+ * breakeven when the profit is open-ended) with the current price included and a margin. Zooming in narrows the
+ * window around the CENTRE OF THE PROFIT ZONE, zooming out widens it up to the whole computed range. Edges snap to
+ * whole 10s so the axis does not move with every tick.
+ */
+export function payoffView(curve: { s: number }[], breakevens: number[], spot: number, strikes: number[], step: number): PayoffView | null {
+  if (curve.length < 2) return null;
+  const fullLo = curve[0]!.s, fullHi = curve[curve.length - 1]!.s;
+  const bes = [...breakevens].sort((a, b) => a - b);
+  const anchors = [...bes, spot];
+  const focus = bes.length >= 2 ? (bes[0]! + bes[bes.length - 1]!) / 2 : bes.length === 1 ? (bes[0]! + spot) / 2 : spot;
+  if (bes.length === 0) anchors.push(...strikes);
+  const span = Math.max(...anchors) - Math.min(...anchors);
+  const baseHalf = Math.max((span / 2) * 1.35, spot * 0.012);
+  const fullHalf = Math.max(focus - fullLo, fullHi - focus);
+  const half = Math.min(fullHalf, Math.max(spot * 0.002, baseHalf * Math.pow(PAYOFF_ZOOM.factor, step)));
+  const snap = (v: number) => Math.round(v / 10) * 10;
+  const lo = Math.max(fullLo, snap(focus - half)), hi = Math.min(fullHi, snap(focus + half));
+  return { lo, hi, fullLo, fullHi, focus, canIn: step < PAYOFF_ZOOM.max, canOut: lo > fullLo || hi < fullHi };
+}
+
+export function payoffOption(p: PayoffSeries, c: ChartColors, view?: { lo: number; hi: number } | null, compact = false): EChartsCoreOption {
   const pts = [...p.expiry, ...p.breakevens.map((b) => ({ s: b, pnl: 0 }))].sort((x, y) => x.s - y.s);
   const line = (label: string, color: string, keep: (v: number) => boolean) => ({
     name: label, type: "line", showSymbol: false, itemStyle: { color }, lineStyle: { width: 2.6, color }, z: 3,
@@ -436,7 +464,9 @@ export function payoffOption(p: PayoffSeries, c: ChartColors): EChartsCoreOption
   });
   // y scale: fit the shape that matters. A side that runs off to a huge loss or profit is clipped at 3x the other
   // side, so the peak and the breakevens stay readable.
-  const vals = pts.map((x) => x.pnl);
+  const inView = view ? pts.filter((x) => x.s >= view.lo && x.s <= view.hi) : pts;
+  const edge = view ? [lerp(pts, view.lo), lerp(pts, view.hi)].filter((v): v is number => v != null) : [];
+  const vals = [...inView.map((x) => x.pnl), ...edge];
   const peak = Math.max(0, ...vals), trough = Math.min(0, ...vals);
   let top = peak, bottom = trough;
   if (peak > 0 && trough < 0) { if (-trough > 3 * peak) bottom = -3 * peak; else if (peak > -trough * 3) top = -trough * 3; }
@@ -461,14 +491,14 @@ export function payoffOption(p: PayoffSeries, c: ChartColors): EChartsCoreOption
     [{ xAxis: p.bands.m1, itemStyle: { color: c.info, opacity: 0.08 } }, { xAxis: p.bands.p1 }],
   ] : [];
   const signed = (v: number | null) => (v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}₹${fmtInt(Math.round(Math.abs(v)))}`);
-  const maxOi = Math.max(1, ...(p.oi ?? []).map((o) => Math.max(Math.abs(o.call ?? 0), Math.abs(o.put ?? 0))));
+  const maxOi = Math.max(1, ...(p.oi ?? []).filter((o) => !view || (o.strike >= view.lo && o.strike <= view.hi)).map((o) => Math.max(Math.abs(o.call ?? 0), Math.abs(o.put ?? 0))));
   // the right axis shares its zero with the P&L axis, so open interest stands on the zero line and change in OI can go below it
   const oiTop = maxOi * 1.35, oiBottom = yMax > 0 ? (yMin / yMax) * oiTop : -oiTop;
   const oiAt = (x: number) => { const o = (p.oi ?? []).reduce<{ strike: number; call: number | null; put: number | null } | null>((b, r) => (b == null || Math.abs(r.strike - x) < Math.abs(b.strike - x) ? r : b), null); return o && Math.abs(o.strike - x) <= 25 ? o : null; };
   const xs = pts.map((x) => x.s);
   return {
     animation: false,
-    grid: { left: 62, right: 58, top: 44, bottom: 30 },
+    grid: compact ? { left: 50, right: 12, top: 40, bottom: 26 } : { left: 62, right: 58, top: 44, bottom: 30 },
     tooltip: { trigger: "axis", axisPointer: { type: "cross", lineStyle: { color: c.muted, type: "dashed" }, label: { show: false } },
       backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 },
       formatter: (params: unknown) => {
@@ -478,12 +508,11 @@ export function payoffOption(p: PayoffSeries, c: ChartColors): EChartsCoreOption
         const sd = p.bands ? (x >= p.bands.m1 && x <= p.bands.p1 ? "<br/>inside ±1σ (about 68%, model)" : x >= p.bands.m2 && x <= p.bands.p2 ? "<br/>inside ±2σ (about 95%, model)" : "<br/>outside ±2σ (model)") : "";
         return `<b>NIFTY ${fmtInt(Math.round(x))}</b> (${(((x / p.spot) - 1) * 100).toFixed(2)}%)<br/>At expiry: <b>${signed(lerp(pts, x))}</b>${est}${sd}${oiTxt}`;
       } },
-    xAxis: { type: "value", min: Math.min(...xs), max: Math.max(...xs), axisLabel: { ...axisText(c), formatter: (v: number) => fmtInt(Math.round(v)), hideOverlap: true }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } },
+    xAxis: { type: "value", min: view?.lo ?? Math.min(...xs), max: view?.hi ?? Math.max(...xs), axisLabel: { ...axisText(c), formatter: (v: number) => fmtInt(Math.round(v)), hideOverlap: true }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } },
     yAxis: [
       { type: "value", min: yMin, max: yMax, splitNumber: 4, axisLabel: { ...axisText(c), formatter: (v: number) => money(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.35 } } },
-      { type: "value", min: oiBottom, max: oiTop, position: "right", splitLine: { show: false }, axisLabel: { ...axisText(c), formatter: (v: number) => (v === 0 ? "0" : v < 0 ? (p.oiMode === "change" ? "−" + compactIN(Math.abs(v)) : "") : compactIN(v)) }, name: p.oiMode === "change" ? "Change in OI" : "Open interest", nameLocation: "middle", nameGap: 42, nameTextStyle: { color: c.muted, fontSize: 10 } },
+      { type: "value", show: !compact, min: oiBottom, max: oiTop, position: "right", splitLine: { show: false }, axisLabel: { ...axisText(c), formatter: (v: number) => (v === 0 ? "0" : v < 0 ? (p.oiMode === "change" ? "−" + compactIN(Math.abs(v)) : "") : compactIN(v)) }, name: p.oiMode === "change" ? "Change in OI" : "Open interest", nameLocation: "middle", nameGap: 42, nameTextStyle: { color: c.muted, fontSize: 10 } },
     ],
-    dataZoom: [{ type: "inside", filterMode: "none" }],
     series: [
       ...(p.oi ? [
         { name: "Call OI", type: "bar", yAxisIndex: 1, barWidth: 5, barGap: "0%", silent: true, tooltip: { show: false }, itemStyle: { color: c.up, opacity: 0.4 }, z: 0, data: p.oi.map((o) => [o.strike, o.call]) },

@@ -5,11 +5,11 @@ import { useThrottledVersion } from "../components/dashboard/DashContext";
 import { useLiveSpot, useStreamStatus } from "../lib/useLive";
 import { EChart, useChartColors } from "../components/EChart";
 import { Button } from "../components/ui";
-import { payoffOption } from "../lib/chartOptions";
+import { PAYOFF_ZOOM, payoffOption, payoffView } from "../lib/chartOptions";
 import { api } from "../lib/api";
 import { compactIN } from "../lib/analytics";
 import { fmtDateTimeIST, fmtInt, fmtPrice } from "../lib/format";
-import { useExpiries } from "../lib/hooks";
+import { useExpiries, useThrottledValue } from "../lib/hooks";
 import { marketClockMs } from "../lib/session";
 import { carryFromForward, contractGreeks, expiryEnd, impliedForward, legGreeks, sdLevel, netGreeks, probabilityOfProfit, scenarioGrid, sdBands, spotAtPremium, theoreticalPnl, type ContractGreeks, type Valuation } from "../lib/optionModel";
 import {
@@ -86,7 +86,16 @@ export default function StrategyBuilder() {
   const [days, setDays] = useState(0);
   const [oiMode, setOiMode] = useState<"oi" | "change" | "off">("oi");
   const [sdOn, setSdOn] = useState(true);
-  const [zoomKey, setZoomKey] = useState(0);
+  /** Zoom steps from the profit-zone window: + narrows around the centre of the profit zone, − widens. */
+  const [zoom, setZoom] = useState(0);
+  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.matchMedia?.("(max-width: 640px)").matches === true);
+  useEffect(() => {
+    const mq = window.matchMedia?.("(max-width: 640px)");
+    if (!mq) return;
+    const on = () => setNarrow(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
   const [ivPts, setIvPts] = useState(0);
   const [gcols, setGcols] = useState<GKey[]>(["delta", "iv"]);
   const [wide, setWide] = useState(false);
@@ -230,13 +239,17 @@ export default function StrategyBuilder() {
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [curve, mlegs, targetMs, r, carry, ivPts, spot, whatPct]);
-  const chart = useMemo(() => (curve?.length && a?.defined && spot ? payoffOption({
+  const view = useMemo(() => (curve?.length && a?.defined && spot ? payoffView(curve, a.breakevens, spot, live.map((l) => l.strike), zoom) : null), [curve, a, spot, live, zoom]);
+  const chartNow = useMemo(() => (curve?.length && a?.defined && spot ? payoffOption({
     expiry: curve, target: target && target.some((x) => x.pnl != null) ? target : null,
     targetLabel: `${days > 0 ? `Estimated in ${Math.min(days, dte)} day${days === 1 ? "" : "s"}` : "Estimated at the snapshot time"}${ivPts ? `, IV ${ivPts > 0 ? "+" : ""}${ivPts} pts` : ""} (model)`,
     spot, breakevens: a.breakevens, bands: sdOn ? bands : null, levels,
     oiMode: oiMode === "change" ? "change" : "oi",
     oi: oiMode === "off" ? null : rows.map((x) => ({ strike: x.strike, call: (oiMode === "change" ? x.call?.oi_change : x.call?.oi) ?? null, put: (oiMode === "change" ? x.put?.oi_change : x.put?.oi) ?? null })),
-  }, colors) : null), [curve, target, a, spot, days, dte, bands, sdOn, oiMode, rows, colors, levels, ivPts]);
+  }, colors, view, narrow) : null), [curve, target, a, spot, days, dte, bands, sdOn, oiMode, rows, colors, levels, ivPts, view, narrow]);
+  // Live ticks change the spot, premiums and OI many times a second; redraw the payoff at a calm pace. A change of
+  // zoom, window, strategy or the controls shows at once.
+  const chart = useThrottledValue(chartNow, 2500, `${zoom}|${narrow}|${live.length}|${live.map((l) => `${l.action}${l.type}${l.strike}${l.lots}${l.premium}`).join(",")}|${sdOn}|${oiMode}|${days}|${ivPts}|${whatPct}`);
   const pop = ready && a?.defined && lotSize && spot && atmIv && expiry ? probabilityOfProfit(live, lotSize, spot, atmIv, expiry, snapMs, carry) : null;
   const greeks = ready && lotSize && spot ? netGreeks(mlegs, lotSize, val0) : null;
   const unreal = (l: Leg, mkt: number | null) => (mkt == null || l.premium == null || !lotSize ? null : sign(l.action) * (mkt - l.premium) * l.lots * mult * lotSize);
@@ -375,9 +388,9 @@ export default function StrategyBuilder() {
   return (
     <div className="mx-auto flex max-w-[1500px] flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <h1 className="mr-2 text-xl font-semibold">Strategy builder</h1>
+        <h1 className="mr-2 w-full text-xl font-semibold sm:w-auto">Strategy builder</h1>
         <span className="rounded-sm border border-rule bg-slate-2 px-2 py-1 text-sm text-paper">NIFTY 50</span>
-        <input className={`${field} w-40`} aria-label="Strategy name" value={name} onChange={(e) => setName(e.target.value)} placeholder="name to save" />
+        <input className={`${field} min-w-0 flex-1 sm:w-40 sm:flex-none`} aria-label="Strategy name" value={name} onChange={(e) => setName(e.target.value)} placeholder="name to save" />
         <Button variant="primary" disabled={!name.trim() || legs.length === 0 || !expiry} onClick={() => { persist([{ name: name.trim(), savedAt: new Date().toISOString(), expiry: expiry!, legs }, ...saved.filter((s) => s.name !== name.trim())]); setLoaded(name.trim()); setName(""); }}>Save</Button>
         {loaded && savedEntry && (
           <>
@@ -434,10 +447,10 @@ export default function StrategyBuilder() {
           </div>
         </details>
         <Button onClick={() => { setLegs([]); setNote(null); setSel(null); setMult(1); setDays(0); setLoaded(null); }} disabled={legs.length === 0}>Reset / New</Button>
-        <span className="ml-auto text-xs text-muted" title={liveMode === "fresh" ? "Streamed last traded prices overlay the stored snapshot, as on the Option chain page" : "Premiums are the last traded prices in this stored snapshot, not live quotes"}>{liveMode === "fresh" ? <span className="mr-2 rounded-sm border border-up/60 px-1 text-up">LIVE</span> : null}Snapshot <span className={`num ${chain.data?.stale ? "text-warn" : "text-paper"}`}>{snap ? fmtDateTimeIST(snap.retrieved_at) : "—"}</span>{chain.data?.stale ? " · stale" : ""}</span>
+        <span className="text-xs text-muted sm:ml-auto" title={liveMode === "fresh" ? "Streamed last traded prices overlay the stored snapshot, as on the Option chain page" : "Premiums are the last traded prices in this stored snapshot, not live quotes"}>{liveMode === "fresh" ? <span className="mr-2 rounded-sm border border-up/60 px-1 text-up">LIVE</span> : null}Snapshot <span className={`num ${chain.data?.stale ? "text-warn" : "text-paper"}`}>{snap ? fmtDateTimeIST(snap.retrieved_at) : "—"}</span>{chain.data?.stale ? " · stale" : ""}</span>
       </div>
 
-      <div className={`grid gap-3 ${wide ? "" : "xl:grid-cols-[minmax(480px,36%)_1fr]"}`}>
+      <div className={`grid gap-3 [&>*]:min-w-0 ${wide ? "" : "xl:grid-cols-[minmax(480px,36%)_1fr]"}`}>
         {/* ------------------------------------------------------------ chain */}
         <section aria-label="Option chain" className="flex h-fit flex-col rounded-[var(--radius-panel)] border border-rule bg-slate">
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-rule px-3 py-2 text-sm">
@@ -466,7 +479,7 @@ export default function StrategyBuilder() {
           {chain.error && <p role="alert" className="px-3 py-3 text-sm text-warn">No stored chain for {expiry}: capture one from Live option chain first. Strikes and premiums come from it; nothing is made up.</p>}
           {snap && lotSize == null && <p role="alert" className="px-3 py-3 text-sm text-down">The stored chain carries no lot size, so P&L in rupees cannot be computed. It is not assumed.</p>}
           {shown.length > 0 && (
-            <div className="max-h-[640px] overflow-auto">
+            <div className="max-h-[460px] overflow-auto sm:max-h-[640px]">
               <table className="w-full text-sm" aria-label="Option chain">
                 <thead className="sticky top-0 z-[1] bg-slate text-xs text-muted">
                   <tr>
@@ -586,10 +599,15 @@ export default function StrategyBuilder() {
                   <div className="mt-2 flex flex-wrap items-center justify-end gap-2 text-xs">
                     <select className={field} aria-label="Sigma markers" value={sdOn ? "fixed" : "off"} onChange={(e) => setSdOn(e.target.value === "fixed")} title="Expected-move levels at the snapshot: spot x (1 ± k x ATM IV x sqrt(time))"><option value="fixed">SD fixed</option><option value="off">SD off</option></select>
                     <select className={field} aria-label="Open interest on the chart" value={oiMode} onChange={(e) => setOiMode(e.target.value as "oi" | "change" | "off")} title="Bars come from the option chain on the left, strike by strike"><option value="oi">Open interest</option><option value="change">Change in OI</option><option value="off">No OI</option></select>
-                    <button type="button" onClick={() => setZoomKey((k) => k + 1)} className="rounded-sm border border-rule bg-slate-2 px-3 py-1.5 text-paper hover:border-info">⌕ Zoom out</button>
+                    <span role="group" aria-label="Zoom the payoff chart" className="flex items-center gap-1">
+                      <button type="button" aria-label="Zoom out" title="Show a wider price range" disabled={!view?.canOut || zoom <= PAYOFF_ZOOM.min} onClick={() => setZoom((z) => Math.max(PAYOFF_ZOOM.min, z - 1))} className="grid size-9 place-items-center rounded-sm border border-rule bg-slate-2 text-lg text-paper hover:border-info disabled:opacity-40">−</button>
+                      <button type="button" aria-label="Zoom in" title="Narrow the chart around the centre of the profit zone" disabled={!view?.canIn || zoom >= PAYOFF_ZOOM.max} onClick={() => setZoom((z) => Math.min(PAYOFF_ZOOM.max, z + 1))} className="grid size-9 place-items-center rounded-sm border border-rule bg-slate-2 text-lg text-paper hover:border-info disabled:opacity-40">+</button>
+                      <button type="button" aria-label="Fit profit zone" title="Back to the profit zone view" disabled={zoom === 0} onClick={() => setZoom(0)} className="min-h-9 rounded-sm border border-rule bg-slate-2 px-3 text-paper hover:border-info disabled:opacity-40">Fit</button>
+                    </span>
+                    {view && <span className="num text-muted" data-testid="zoom-range">{fmtInt(view.lo)} – {fmtInt(view.hi)}</span>}
                   </div>
-                  <div className="h-[440px]">{chart ? <EChart key={zoomKey} option={chart} ariaLabel="Strategy payoff" /> : null}</div>
-                  <div className="my-2 flex justify-center" data-testid="projected"><span className={`rounded-sm px-3 py-1 text-xs font-semibold text-white ${whatEst == null ? "bg-slate-2" : whatEst >= 0 ? "bg-up/80" : "bg-down/80"}`}>Projected {whatEst != null && whatEst >= 0 ? "profit" : "loss"} at NIFTY {fmtInt(Math.round(whatSpot ?? 0))} on {new Date(targetMs).toLocaleString("en-GB", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}: {money(whatEst)} (model)</span></div>
+                  <div className="h-[320px] sm:h-[440px]" data-testid="payoff-chart">{chart ? <EChart option={chart} ariaLabel="Strategy payoff" /> : null}</div>
+                  <div className="my-2 flex justify-center" data-testid="projected"><span className={`rounded-sm px-3 py-1 text-xs font-semibold text-white ${whatEst == null ? "bg-slate-2" : whatEst >= 0 ? "bg-up/80" : "bg-down/80"}`}>Projected {whatEst == null || Math.round(whatEst) === 0 ? "P&L" : whatEst > 0 ? "profit" : "loss"} at NIFTY {fmtInt(Math.round(whatSpot ?? 0))} on {new Date(targetMs).toLocaleString("en-GB", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}: {money(whatEst == null ? null : Math.round(whatEst) + 0)} (model)</span></div>
                   <div className="grid gap-5 border-t border-rule px-2 py-3 text-xs text-muted md:grid-cols-2" data-testid="whatif">
                     <div>
                       <div className="flex items-center justify-between"><span className="text-paper">NIFTY target</span>
@@ -649,7 +667,7 @@ export default function StrategyBuilder() {
                     <span>Greeks: Δ <span className="num text-paper">{greeks && greeks.unavailable.length === 0 ? greeks.delta.toFixed(1) : "—"}</span> · Θ/day <span className={`num ${tone(greeks ? greeks.thetaDay : null)}`}>{greeks && greeks.unavailable.length === 0 ? money(greeks.thetaDay) : "—"}</span> (model)</span>
                   </div>
                   <div className="overflow-x-auto">
-                  <table className="w-full text-sm" aria-label="Strategy legs">
+                  <table className="legs-table w-full text-sm" aria-label="Strategy legs">
                     <thead className="text-xs text-muted"><tr>{["", "Leg", "Strike", "Lots", "Expiry", "Entry ₹", "LTP", "P&L", "Δ · Θ/day", "Target ₹", "Stop ₹", ""].map((h, i) => <th key={i} className="px-1 py-1 text-left font-normal">{h}</th>)}</tr></thead>
                     <tbody>
                       {legs.map((l) => {
@@ -663,28 +681,28 @@ export default function StrategyBuilder() {
                         return (
                           <tr key={l.id} className={`border-t border-rule/50 align-top ${l.enabled === false ? "opacity-50" : ""}`} style={{ boxShadow: `inset 3px 0 0 ${buy ? "var(--up)" : "var(--down)"}` }} data-testid={`leg-${l.id}`}>
                             <td className="px-2 py-2"><input type="checkbox" aria-label="Include leg" checked={l.enabled !== false} onChange={(e) => update(l.id, { enabled: e.target.checked })} /></td>
-                            <td className="px-1 py-1.5"><div className="flex gap-1">
+                            <td data-label="Leg" className="px-1 py-1.5"><div className="flex gap-1">
                               <select className={`${field} font-semibold ${buy ? "border-up/60 text-up" : "border-down/60 text-down"}`} aria-label="Action" value={l.action} onChange={(e) => update(l.id, { action: e.target.value as Action })}><option>BUY</option><option>SELL</option></select>
                               <select className={`${field} font-semibold`} aria-label="Option type" value={l.type} onChange={(e) => { const t = e.target.value as OptionType; const m = ltp(l.strike, t); update(l.id, { type: t, ...(l.premiumSource === "manual" ? {} : { premium: m, premiumSource: m == null ? null : "market" }) }); }}><option>CE</option><option>PE</option></select>
                             </div></td>
-                            <td className="px-1 py-1.5"><div className="flex items-center gap-1">
+                            <td data-label="Strike" className="px-1 py-1.5"><div className="flex items-center gap-1">
                               <button type="button" className={step} aria-label="Previous strike" disabled={si <= 0} onClick={() => chooseStrike(l, strikes[si - 1]!)}>‹</button>
                               <select className={`${field} w-[5.6rem]`} aria-label="Strike" value={l.strike} onChange={(e) => chooseStrike(l, Number(e.target.value))}>{si < 0 && <option value={l.strike}>{l.strike} (not listed)</option>}{strikes.map((k) => <option key={k} value={k}>{fmtInt(k)}</option>)}</select>
                               <button type="button" className={step} aria-label="Next strike" disabled={si < 0 || si >= strikes.length - 1} onClick={() => chooseStrike(l, strikes[si + 1]!)}>›</button>
                             </div></td>
-                            <td className="px-1 py-1.5"><div className="flex items-center gap-1">
+                            <td data-label="Lots" className="px-1 py-1.5"><div className="flex items-center gap-1">
                               <button type="button" className={step} aria-label="Decrease lots" disabled={l.lots <= 1} onClick={() => update(l.id, { lots: Math.max(1, l.lots - 1) })}>−</button>
                               <input className={`${field} w-12 text-center`} type="number" min={1} step={1} aria-label="Lots" value={l.lots} onChange={(e) => update(l.id, { lots: Number(e.target.value) })} />
                               <button type="button" className={step} aria-label="Increase lots" onClick={() => update(l.id, { lots: l.lots + 1 })}>+</button>
                             </div><div className="num mt-0.5 text-[10px] text-muted">{lotSize ? `${fmtInt(l.lots * mult * lotSize)} qty` : ""}</div></td>
-                            <td className="num px-1 py-2 text-xs text-muted">{dmy(l.expiry)}</td>
-                            <td className="px-1 py-1.5"><input className={`${field} w-24`} type="number" min={0} step="0.05" aria-label="Entry premium" value={l.premium ?? ""} placeholder="enter" title={l.premiumSource === "market" ? "Stored quote" : l.premiumSource === "manual" ? "You entered this" : "Missing"} onChange={(e) => update(l.id, { premium: e.target.value === "" ? null : Number(e.target.value), premiumSource: e.target.value === "" ? null : "manual" })} />
+                            <td data-label="Expiry" className="num px-1 py-2 text-xs text-muted">{dmy(l.expiry)}</td>
+                            <td data-label="Entry ₹" className="px-1 py-1.5"><input className={`${field} w-24`} type="number" min={0} step="0.05" aria-label="Entry premium" value={l.premium ?? ""} placeholder="enter" title={l.premiumSource === "market" ? "Stored quote" : l.premiumSource === "manual" ? "You entered this" : "Missing"} onChange={(e) => update(l.id, { premium: e.target.value === "" ? null : Number(e.target.value), premiumSource: e.target.value === "" ? null : "manual" })} />
                               <div className="text-[10px] text-muted">{l.premiumSource === "market" ? "stored quote" : l.premiumSource === "manual" ? "you entered" : "missing"}</div></td>
-                            <td className="num px-1 py-2">{mk == null ? <span className="text-muted" title="No quote in the stored chain for this contract">—</span> : fmtPrice(mk)}</td>
-                            <td className={`num px-1 py-2 ${tone(pl)}`}>{money(pl)}</td>
-                            <td className="num px-1 py-2 text-xs">{lg ? <><span className="text-paper">{lg.delta.toFixed(1)}</span> <span className="text-muted">·</span> <span className={tone(lg.thetaDay)}>{money(lg.thetaDay)}</span></> : <span className="text-muted" title="No volatility fits this leg's stored price">—</span>}</td>
-                            <td className="px-1 py-1">{exitCell(l, "target")}</td>
-                            <td className="px-1 py-1">{exitCell(l, "stop")}</td>
+                            <td data-label="LTP" className="num px-1 py-2">{mk == null ? <span className="text-muted" title="No quote in the stored chain for this contract">—</span> : fmtPrice(mk)}</td>
+                            <td data-label="P&L" className={`num px-1 py-2 ${tone(pl)}`}>{money(pl)}</td>
+                            <td data-label="Δ · Θ/day" className="num px-1 py-2 text-xs">{lg ? <><span className="text-paper">{lg.delta.toFixed(1)}</span> <span className="text-muted">·</span> <span className={tone(lg.thetaDay)}>{money(lg.thetaDay)}</span></> : <span className="text-muted" title="No volatility fits this leg's stored price">—</span>}</td>
+                            <td data-label="Target ₹" className="px-1 py-1">{exitCell(l, "target")}</td>
+                            <td data-label="Stop ₹" className="px-1 py-1">{exitCell(l, "stop")}</td>
                             <td className="whitespace-nowrap px-1 py-2">
                               {mk != null && l.premium !== mk && <button type="button" className="mr-2 text-xs text-info hover:underline" aria-label="Use stored quote" title="Set the entry premium to the stored quote" onClick={() => update(l.id, { premium: mk, premiumSource: "market" })}>⟳</button>}
                               <button type="button" className="mr-2 text-xs text-info hover:underline" aria-label="Duplicate leg" onClick={() => setLegs((ls) => { const i = ls.findIndex((x) => x.id === l.id); const c = [...ls]; c.splice(i + 1, 0, { ...l, id: newLegId() }); return c; })}>Copy</button>

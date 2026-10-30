@@ -105,6 +105,25 @@ describe("Strategy builder page", () => {
   });
 });
 
+describe("Payoff chart zoom", () => {
+  it("opens on the profit zone, narrows with the + button around its centre, widens with − and fits again; no wheel zoom", async () => {
+    mount();
+    await loaded();
+    await pick("short_straddle");
+    const range = async () => { const t = (await screen.findByTestId("zoom-range")).textContent ?? ""; const [lo, hi] = t.replace(/,/g, "").split("–").map((x) => Number(x.trim())); return { lo: lo!, hi: hi! }; };
+    const r0 = await range();
+    await userEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    const r1 = await range();
+    expect(r1.hi - r1.lo).toBeLessThan(r0.hi - r0.lo);
+    expect((r1.lo + r1.hi) / 2).toBeCloseTo((r0.lo + r0.hi) / 2, -2); // same centre
+    await userEvent.click(screen.getByRole("button", { name: "Zoom out" }));
+    expect((await range()).hi - (await range()).lo).toBeCloseTo(r0.hi - r0.lo, -1);
+    await userEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    await userEvent.click(screen.getByRole("button", { name: "Fit profit zone" }));
+    expect(await range()).toEqual(r0);
+  });
+});
+
 describe("Updating a saved strategy", () => {
   it("shows Update only for a loaded saved strategy, flags unsaved changes and overwrites the same entry", async () => {
     mount();

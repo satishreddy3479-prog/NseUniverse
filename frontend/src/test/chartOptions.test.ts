@@ -266,6 +266,26 @@ describe("divergingBarOption", () => {
   });
 });
 
+describe("payoffView", () => {
+  const curve = Array.from({ length: 41 }, (_, i) => ({ s: 21800 + i * 50 })); // 21,800 .. 23,800
+  it("frames the profit zone between the breakevens, zooms in around its centre and out to the full range", async () => {
+    const { payoffView } = await import("../lib/chartOptions");
+    const v0 = payoffView(curve, [22300, 23100], 22700, [22700], 0)!;
+    expect(v0.focus).toBe(22700); // centre of the profit zone
+    expect(v0.lo).toBeLessThan(22300); expect(v0.hi).toBeGreaterThan(23100); // breakevens inside with a margin
+    expect(v0.lo).toBeGreaterThanOrEqual(21800); expect(v0.hi).toBeLessThanOrEqual(23800);
+    const v2 = payoffView(curve, [22300, 23100], 22700, [22700], 2)!;
+    expect((v2.lo + v2.hi) / 2).toBeCloseTo(22700, -1); // still centred on the profit zone
+    expect(v2.hi - v2.lo).toBeCloseTo((v0.hi - v0.lo) * 0.49, -2); // 0.7 x 0.7 narrower
+    const out = payoffView(curve, [22300, 23100], 22700, [22700], -4)!;
+    expect(out.lo).toBe(21800); expect(out.hi).toBe(23800); expect(out.canOut).toBe(false);
+  });
+  it("with one breakeven it centres between that breakeven and the current price", async () => {
+    const { payoffView } = await import("../lib/chartOptions");
+    expect(payoffView(curve, [22500], 22700, [22600], 0)!.focus).toBe(22600);
+  });
+});
+
 describe("sessionize", () => {
   const ist = (d: number, h: number, m: number) => Date.UTC(2026, 9, d, h, m) - 5.5 * 3600_000;
   it("drops overnight points, breaks the line between days and fixes the axis to the session", async () => {
