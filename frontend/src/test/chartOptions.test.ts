@@ -257,6 +257,15 @@ describe("payoffOption", () => {
 });
 
 
+describe("divergingBarOption", () => {
+  it("leaves room beyond the longest bars so value labels never meet the names", async () => {
+    const { divergingBarOption } = await import("../lib/chartOptions");
+    const o = divergingBarOption([{ name: "A", value: -2.33 }, { name: "B", value: -0.05 }], colors) as unknown as { xAxis: { min: number; max: number } };
+    expect(o.xAxis.min).toBeCloseTo(-2.33 - 2.33 * 0.24, 6); // 24% of the span beyond the longest bar
+    expect(o.xAxis.max).toBe(0); // nothing positive: no empty room on the right
+  });
+});
+
 describe("sessionize", () => {
   const ist = (d: number, h: number, m: number) => Date.UTC(2026, 9, d, h, m) - 5.5 * 3600_000;
   it("drops overnight points, breaks the line between days and fixes the axis to the session", async () => {

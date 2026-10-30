@@ -516,11 +516,14 @@ export function ivSmileOption(rows: { strike: number; side: string; iv: number |
 /** Diverging horizontal bars, largest first: sector returns, global moves. */
 export function divergingBarOption(rows: { name: string; value: number }[], c: ChartColors, unit = "%"): EChartsCoreOption {
   const sorted = [...rows].sort((a, b) => a.value - b.value); // category axis draws bottom-up
+  // Room beyond the longest bars on both sides, so the value label never runs into the names or off the chart.
+  const lo = Math.min(0, ...rows.map((r) => r.value)), hi = Math.max(0, ...rows.map((r) => r.value));
+  const pad = (hi - lo || 1) * 0.24;
   return {
-    animation: false, grid: { left: 130, right: 56, top: 6, bottom: 6, containLabel: false },
+    animation: false, grid: { left: 168, right: 12, top: 6, bottom: 6, containLabel: false },
     tooltip: { trigger: "item", backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, formatter: (p: unknown) => { const q = p as { name: string; value: number }; return `${q.name}: ${q.value >= 0 ? "+" : "−"}${Math.abs(q.value).toFixed(2)}${unit}`; } },
-    xAxis: { type: "value", show: false },
-    yAxis: { type: "category", data: sorted.map((r) => r.name), axisLine: { show: false, onZero: false }, axisTick: { show: false }, axisLabel: { color: c.paper, fontSize: 11, width: 120, overflow: "truncate" } },
+    xAxis: { type: "value", show: false, min: lo < 0 ? lo - pad : 0, max: hi > 0 ? hi + pad : 0 },
+    yAxis: { type: "category", data: sorted.map((r) => r.name), axisLine: { show: false, onZero: false }, axisTick: { show: false }, axisLabel: { color: c.paper, fontSize: 11, width: 156, overflow: "truncate" } },
     series: [{ type: "bar", barMaxWidth: 14, data: sorted.map((r) => ({ value: r.value, itemStyle: { color: r.value >= 0 ? c.up : c.down, borderRadius: r.value >= 0 ? [0, 3, 3, 0] : [3, 0, 0, 3] }, label: { position: r.value >= 0 ? "right" : "left" } })),
       label: { show: true, position: "right", color: c.muted, fontSize: 10, formatter: (p: unknown) => { const v = (p as { value: number }).value; return `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}${unit}`; } } }],
   };

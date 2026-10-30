@@ -5,6 +5,12 @@ _Last updated: 2026-10-29_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Intraday page layout fixes (30 Oct 2026)
+- Key levels: the overlapping ladder drawing and the duplicate table are replaced by one list sorted by price with the current price placed among the levels, distance in points from it, and the nearest level above and below. Unavailable levels (e.g. VWAP for an index) stay listed as n/a with their reason on hover.
+- Cards sit in a wrapping flex row and grow to fill it, so a row has no blank gap when a neighbouring card is not shown (paper trading, regime, data coverage, global panels).
+- Sector bars: room beyond the longest bar and wider name column, so values no longer overlap names ("Capital Goods", "Construction") or get cut off.
+- Checked by unit tests only, not yet by eye on the deployed page.
+
 ## Strategies stored on the server (30 Oct 2026)
 - Saved and closed strategies now live in `strategies.sqlite3` (data dir) via `GET /api/strategies`, `PUT/DELETE /api/strategies/{saved|closed}/{key}` and a one-time `POST /api/strategies/import`. Delete only marks a strategy deleted; every create/update/delete is appended to an immutable `revisions` history. The file is covered by the nightly backups (all `*.sqlite3`) and listed in the storage report.
 - The builder loads from the server, moves strategies that only this browser holds up once, writes every save/update/exit-all/delete through, and shows `Stored on server` or `Browser only (server unreachable)` / `Not saved on server: …`. The browser copy is a cache.

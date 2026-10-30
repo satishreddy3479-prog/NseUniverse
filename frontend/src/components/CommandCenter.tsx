@@ -10,7 +10,7 @@ import { fmtDateTimeIST, fmtPct, fmtPrice, fmtTimeIST, MISSING } from "../lib/fo
 import { useLiveSpot } from "../lib/useLive";
 import type { BreadthBlock, BreakoutState, FlowStats, IntradayComponent, IntradaySummary, MarketSummary, SetupCandidate, SideClass } from "../lib/types";
 import { EChart, useChartColors } from "./EChart";
-import { FillBar, Gauge, Ladder, MiniBar, RangeBar, SplitBar, Tile } from "./viz";
+import { FillBar, Gauge, MiniBar, RangeBar, SplitBar, Tile } from "./viz";
 
 const PHASE: Record<string, string> = {
   closed: "Closed (no session today)", pre_market: "Pre-market", pre_open: "Pre-open (09:00–09:15)", opening: "Opening (09:15–09:45)",
@@ -45,7 +45,19 @@ function labelTone(label: string): string {
   return "text-info";
 }
 
+/**
+ * Width of a card on wide screens as a share of the 12-column row. Cards sit in a wrapping flex row and grow to
+ * fill it, so a row never ends with a blank gap when a neighbouring card has no data and is not shown.
+ */
+const BASIS: Record<number, string> = {
+  4: "lg:basis-[calc(33.333%-0.5rem)]", 5: "lg:basis-[calc(41.667%-0.44rem)]", 6: "lg:basis-[calc(50%-0.375rem)]",
+  7: "lg:basis-[calc(58.333%-0.31rem)]", 8: "lg:basis-[calc(66.667%-0.25rem)]", 12: "lg:basis-full",
+};
+
 function Card({ title, children, right, className = "" }: { title: string; children: ReactNode; right?: ReactNode; className?: string }) {
+  const span = Number(/lg:col-span-(\d+)/.exec(className)?.[1] ?? 12);
+  const width = `w-full lg:w-auto lg:grow ${BASIS[span] ?? BASIS[12]}`;
+  className = `${className.replace(/lg:col-span-\d+/, "")} ${width}`;
   return (
     <section aria-label={title} className={`min-w-0 overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate shadow-[0_1px_0_rgba(255,255,255,0.03)_inset] ${className}`}>
       <header className="flex min-h-10 items-center justify-between gap-2 border-b border-rule bg-gradient-to-r from-slate-2/80 to-transparent px-3 py-1.5">
@@ -786,20 +798,70 @@ function Context({ d }: { d: IntradaySummary }) {
   );
 }
 
+/**
+ * Key levels as one list sorted by price, with the current price placed among them. Each level shows how far it
+ * is from the current price (points and %), so what is nearest above and below is clear at a glance.
+ * Levels within 0.02% of each other are shown as separate rows, never merged, because they have different sources.
+ */
 function Levels({ d }: { d: IntradaySummary }) {
+  const price = d.price.last;
+  const have = d.levels.filter((l): l is typeof l & { value: number } => l.value != null && (price == null || Math.abs(l.value / price - 1) < 0.1));
+  const missing = d.levels.filter((l) => l.value == null);
+  const far = d.levels.filter((l) => l.value != null && price != null && Math.abs((l.value as number) / price - 1) >= 0.1);
+  const sorted = [...have].sort((a, b) => b.value - a.value);
+  const reach = price == null ? 1 : Math.max(...sorted.map((l) => Math.abs(l.value - price)), 1);
+  const nowAt = price == null ? -1 : sorted.findIndex((l) => l.value < price);
+  const nowIndex = price == null ? -1 : nowAt === -1 ? sorted.length : nowAt;
+  const nearestAbove = price == null ? null : [...sorted].reverse().find((l) => l.value >= price) ?? null;
+  const nearestBelow = price == null ? null : sorted.find((l) => l.value < price) ?? null;
+  const row = (l: (typeof sorted)[number]) => {
+    const dist = price == null ? null : l.value - price;
+    const above = dist != null && dist >= 0;
+    return (
+      <li key={l.name} className="grid grid-cols-[1fr_auto_5.5rem] items-center gap-2 border-b border-rule/40 py-1 text-xs"
+        title={`${l.method}${l.source ? ` · ${l.source}` : ""}${l.as_of ? ` · ${l.as_of}` : ""}`}>
+        <span className="truncate text-paper">{l.name}</span>
+        <span className="num text-right font-semibold text-paper">{fmtPrice(l.value)}</span>
+        <span className="flex items-center gap-1" aria-label={dist == null ? "distance unavailable" : `${Math.abs(dist).toFixed(0)} points ${above ? "above" : "below"}`}>
+          <span className="relative h-1.5 flex-1 rounded-sm bg-slate-2">
+            {dist != null && <span className={`absolute top-0 h-full rounded-sm ${above ? "left-0 bg-info/70" : "right-0 bg-brass/70"}`} style={{ width: `${Math.max(4, (Math.abs(dist) / reach) * 100)}%` }} />}
+          </span>
+          <span className="num w-12 text-right text-[11px] text-muted">{dist == null ? "—" : `${above ? "+" : "−"}${Math.abs(dist).toFixed(0)}`}</span>
+        </span>
+      </li>
+    );
+  };
+  const now = (
+    <li key="now" className="my-0.5 flex items-center justify-between rounded-sm border border-brass bg-brass/10 px-2 py-1 text-xs font-semibold text-brass" data-testid="levels-now">
+      <span>Now</span><span className="num">{price == null ? "—" : fmtPrice(price)}</span>
+      <span className="text-[11px] font-normal text-muted">{d.price.change_pct == null ? "" : `${d.price.change_pct >= 0 ? "+" : "−"}${Math.abs(d.price.change_pct).toFixed(2)}% on prev close`}</span>
+    </li>
+  );
   return (
-    <Card title="Key levels" className="lg:col-span-4">
-      <Ladder levels={d.levels} price={d.price.last} />
-      <table className="mt-2 w-full text-xs">
-        <tbody>
-          {d.levels.map((l) => (
-            <tr key={l.name} className="border-b border-rule/50 last:border-0" title={`${l.method}${l.source ? ` · ${l.source}` : ""}${l.as_of ? ` · ${l.as_of}` : ""}`}>
-              <td className="py-1 pr-2 text-muted">{l.name}</td>
-              <td className="num py-1 text-right text-paper">{l.value == null ? <span className="text-muted">n/a</span> : fmtPrice(l.value)}</td>
-            </tr>
+    <Card title="Key levels" className="lg:col-span-4" right={<span className="text-[11px] text-muted">points from the current price</span>}>
+      {price != null && (nearestAbove || nearestBelow) && (
+        <div className="mb-2 grid grid-cols-2 gap-2 text-xs" data-testid="levels-nearest">
+          <div className="rounded-sm border border-rule bg-slate-2/60 px-2 py-1"><div className="text-[10px] uppercase tracking-wide text-muted">Nearest above</div>
+            {nearestAbove ? <><div className="truncate text-paper">{nearestAbove.name}</div><div className="num text-info">{fmtPrice(nearestAbove.value)} · +{(nearestAbove.value - price).toFixed(0)}</div></> : <div className="text-muted">none listed</div>}</div>
+          <div className="rounded-sm border border-rule bg-slate-2/60 px-2 py-1"><div className="text-[10px] uppercase tracking-wide text-muted">Nearest below</div>
+            {nearestBelow ? <><div className="truncate text-paper">{nearestBelow.name}</div><div className="num text-brass">{fmtPrice(nearestBelow.value)} · −{(price - nearestBelow.value).toFixed(0)}</div></> : <div className="text-muted">none listed</div>}</div>
+        </div>
+      )}
+      <ul data-testid="ladder" aria-label="Key levels sorted by price">
+        {sorted.slice(0, Math.max(nowIndex, 0)).map(row)}
+        {price != null && now}
+        {sorted.slice(Math.max(nowIndex, 0)).map(row)}
+      </ul>
+      {missing.length > 0 && (
+        <ul className="mt-1" aria-label="Levels not available">
+          {missing.map((l) => (
+            <li key={l.name} className="flex items-center justify-between border-b border-rule/40 py-1 text-xs" title={`${l.method}${l.source ? ` · ${l.source}` : ""}${l.as_of ? ` · ${l.as_of}` : ""}`}>
+              <span className="text-muted">{l.name}</span><span className="text-muted">n/a</span>
+            </li>
           ))}
-        </tbody>
-      </table>
+        </ul>
+      )}
+      {far.length > 0 && <p className="mt-2 text-[11px] text-muted">Not on the list (over 10% from price): {far.map((l) => l.name).join(", ")}.</p>}
       <p className="mt-2 text-[11px] text-muted">Hover a row for source, method and time. OI concentrations are positioning, not guaranteed support/resistance.</p>
     </Card>
   );
@@ -847,7 +909,7 @@ function Health({ d }: { d: IntradaySummary }) {
 
 function Markets({ d }: { d: IntradaySummary }) {
   return (
-    <Card title="Global, sectors & flows" className="lg:col-span-6">
+    <Card title="Global, sectors & flows" className="lg:col-span-8">
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <h4 className="mb-1 text-[11px] uppercase tracking-wide text-muted">Last completed sessions</h4>
@@ -986,7 +1048,7 @@ export function CommandCenter({ expiry }: { expiry: string | null }) {
                 : "No stored sample for this expiry yet."}
             </p>
           )}
-          <div className="grid gap-3 lg:grid-cols-12">
+          <div className="flex flex-wrap gap-3">
             <Sentiment d={d} />
             <Evidence d={d} />
             <Regime d={d} />

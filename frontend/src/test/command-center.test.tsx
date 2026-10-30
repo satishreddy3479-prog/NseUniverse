@@ -321,9 +321,24 @@ describe("Market Sentiment Command Center", () => {
   it("shows VWAP as not available for an index", async () => {
     mock(base);
     renderCC();
-    const row = (await screen.findByText("VWAP")).closest("tr")!;
+    const row = (await screen.findByText("VWAP")).closest("li")!;
     expect(within(row).getByText("n/a")).toBeInTheDocument();
     expect(row.getAttribute("title")).toMatch(/no traded volume/);
+  });
+
+  it("lists key levels by price with the current price placed among them and the distance from it", async () => {
+    mock(base);
+    renderCC();
+    const list = await screen.findByTestId("ladder");
+    const items = Array.from(list.querySelectorAll("li")).map((li) => li.textContent ?? "");
+    const nowAt = items.findIndex((t) => t.startsWith("Now"));
+    expect(nowAt).toBeGreaterThan(-1);
+    const prices = (xs: string[]) => xs.map((t) => Number(/(\d{2},?\d{3}\.\d{2})/.exec(t)?.[1]?.replace(",", ""))).filter((n) => Number.isFinite(n));
+    const above = prices(items.slice(0, nowAt)), below = prices(items.slice(nowAt + 1));
+    expect(above).toEqual([...above].sort((a, b) => b - a));
+    expect(below).toEqual([...below].sort((a, b) => b - a));
+    expect(Math.min(...above)).toBeGreaterThanOrEqual(Math.max(...below));
+    expect(screen.getByTestId("levels-nearest")).toBeInTheDocument();
   });
 
   it("warns when the values are not live", async () => {

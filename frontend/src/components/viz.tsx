@@ -89,31 +89,3 @@ export function Tile({ label, value, sub, accent = "border-rule", valueCls = "te
     </div>
   );
 }
-
-/** Vertical price ladder: levels positioned by value between the lowest and highest, with the current price marked. */
-export function Ladder({ levels, price }: { levels: { name: string; value: number | null }[]; price: number | null }) {
-  // only price levels belong on a price ladder: a straddle premium or similar is not one (kept out when far from the current price)
-  const have = levels.filter((l): l is { name: string; value: number } => l.value != null && (price == null || Math.abs(l.value / price - 1) < 0.1));
-  const all = [...have.map((l) => l.value), ...(price != null ? [price] : [])];
-  if (have.length < 2 || all.length < 2) return null;
-  const lo = Math.min(...all), hi = Math.max(...all), H = 220;
-  const y = (v: number) => ((hi - v) / (hi - lo || 1)) * (H - 12) + 6;
-  // keep labels apart: nudge a label down when it would overlap the one above
-  const sorted = [...have].sort((a, b) => b.value - a.value);
-  let last = -99;
-  const placed = sorted.map((l) => { const yy = Math.max(y(l.value), last + 15); last = yy; return { ...l, y: y(l.value), ly: yy }; });
-  return (
-    <svg viewBox={`0 0 260 ${H + 14}`} className="w-full" role="img" aria-label="Key levels around the current price" data-testid="ladder">
-      <line x1="96" x2="96" y1="2" y2={H + 8} stroke="var(--rule)" strokeWidth="2" />
-      {placed.map((l) => (
-        <g key={l.name}>
-          <line x1="90" x2="102" y1={l.y} y2={l.y} stroke="var(--info)" strokeWidth="2" />
-          {Math.abs(l.ly - l.y) > 1 && <line x1="102" x2="112" y1={l.y} y2={l.ly} stroke="var(--rule)" />}
-          <text x="116" y={l.ly + 4} fontSize="10.5" fill="var(--paper)">{l.name}</text>
-          <text x="86" y={l.y + 4} fontSize="10.5" fill="var(--muted)" textAnchor="end">{l.value.toFixed(0)}</text>
-        </g>
-      ))}
-      {price != null && <g><line x1="40" x2="150" y1={y(price)} y2={y(price)} stroke="var(--brass)" strokeWidth="1.5" strokeDasharray="4 3" /><text x="154" y={y(price) + 4} fontSize="10.5" fill="var(--brass)" fontWeight="600">now {price.toFixed(0)}</text></g>}
-    </svg>
-  );
-}
