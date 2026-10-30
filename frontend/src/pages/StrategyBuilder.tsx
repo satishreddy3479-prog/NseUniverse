@@ -91,6 +91,7 @@ export default function StrategyBuilder() {
   const [name, setName] = useState("");
   const [closed, setClosed] = useState<Closed[]>(loadClosed);
   const [opened, setOpened] = useState<Closed | null>(null);
+  const [confirmAll, setConfirmAll] = useState<"saved" | "closed" | null>(null);
 
   const chain = useQuery({ queryKey: ["chain", expiry], queryFn: () => api.optionChain(expiry!), enabled: !!expiry, retry: false, staleTime: 15_000, refetchInterval: 30_000 });
   const snap = chain.data?.snapshot;
@@ -316,13 +317,32 @@ export default function StrategyBuilder() {
         <span className="rounded-sm border border-rule bg-slate-2 px-2 py-1 text-sm text-paper">NIFTY 50</span>
         <input className={`${field} w-40`} aria-label="Strategy name" value={name} onChange={(e) => setName(e.target.value)} placeholder="name to save" />
         <Button variant="primary" disabled={!name.trim() || legs.length === 0 || !expiry} onClick={() => { persist([{ name: name.trim(), savedAt: new Date().toISOString(), expiry: expiry!, legs }, ...saved.filter((s) => s.name !== name.trim())]); setName(""); }}>Save</Button>
-        <select className={field} aria-label="Saved strategies" value="" disabled={saved.length === 0} onChange={(e) => { const s = saved.find((x) => x.name === e.target.value); if (s) { setPicked(s.expiry); setLegs(s.legs.map((l) => ({ ...l, id: newLegId() }))); } }}>
-          <option value="">{saved.length ? `Saved (${saved.length})…` : "Saved (none)"}</option>{saved.map((s) => <option key={s.name} value={s.name}>{s.name} · {s.legs.length} legs · {s.expiry}</option>)}
-        </select>
+        <details className="relative text-sm" data-testid="saved-menu">
+          <summary className={`${field} flex cursor-pointer items-center`} aria-label="Saved strategies">Saved ({saved.length})</summary>
+          <div className="absolute left-0 z-20 mt-1 w-80 max-w-[90vw] rounded-sm border border-rule bg-slate p-1 shadow-lg">
+            {saved.length === 0 ? <p className="p-2 text-xs text-muted">Nothing saved yet. Name a strategy and press Save.</p> : (
+              <>
+                <ul className="max-h-72 overflow-auto">
+                  {saved.map((sv) => (
+                    <li key={sv.name} className="flex items-center gap-1 border-b border-rule/40 last:border-0">
+                      <button type="button" className="flex-1 rounded-sm p-2 text-left hover:bg-slate-2" onClick={(e) => { setPicked(sv.expiry); setLegs(sv.legs.map((l) => ({ ...l, id: newLegId() }))); setOpened(null); (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open"); }}>
+                        <div className="text-paper">{sv.name}</div>
+                        <div className="text-[11px] text-muted">{sv.legs.length} legs · expiry {sv.expiry}</div>
+                      </button>
+                      <button type="button" aria-label={`Delete saved strategy ${sv.name}`} title="Delete this saved strategy" className="px-2 text-xs text-muted hover:text-down" onClick={() => persist(saved.filter((x) => x.name !== sv.name))}>✕</button>
+                    </li>
+                  ))}
+                </ul>
+                <button type="button" className="w-full border-t border-rule/40 p-2 text-left text-xs text-muted hover:text-down" onClick={() => (confirmAll === "saved" ? (persist([]), setConfirmAll(null)) : setConfirmAll("saved"))}>{confirmAll === "saved" ? "Click again to delete all saved strategies" : "Delete all saved"}</button>
+              </>
+            )}
+          </div>
+        </details>
         <details className="relative text-sm" data-testid="closed-menu">
           <summary className={`${field} flex cursor-pointer items-center`} aria-label="Closed strategies">Closed ({closed.length})</summary>
           <div className="absolute left-0 z-20 mt-1 w-80 max-w-[90vw] rounded-sm border border-rule bg-slate p-1 shadow-lg">
             {closed.length === 0 ? <p className="p-2 text-xs text-muted">No closed trades yet. Exit all in the positions card saves one here.</p> : (
+              <>
               <ul className="max-h-72 overflow-auto">
                 {closed.map((c) => (
                   <li key={c.id} className="flex items-center gap-1 border-b border-rule/40 last:border-0">
@@ -335,10 +355,11 @@ export default function StrategyBuilder() {
                   </li>
                 ))}
               </ul>
+              <button type="button" className="w-full border-t border-rule/40 p-2 text-left text-xs text-muted hover:text-down" onClick={() => (confirmAll === "closed" ? (persistClosed([]), setConfirmAll(null)) : setConfirmAll("closed"))}>{confirmAll === "closed" ? "Click again to delete all closed trades" : "Delete all closed"}</button>
+              </>
             )}
           </div>
         </details>
-        {saved.length > 0 && <button type="button" className="text-xs text-muted hover:text-down" onClick={() => persist([])} title="Delete every saved strategy from this browser">delete saved</button>}
         <Button onClick={() => { setLegs([]); setNote(null); setSel(null); setMult(1); setDays(0); }} disabled={legs.length === 0}>Reset / New</Button>
         <span className="ml-auto text-xs text-muted" title="Premiums are the last traded prices in this stored snapshot, not live quotes">Snapshot <span className={`num ${chain.data?.stale ? "text-warn" : "text-paper"}`}>{snap ? fmtDateTimeIST(snap.retrieved_at) : "—"}</span>{chain.data?.stale ? " · stale" : ""}</span>
       </div>

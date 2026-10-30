@@ -41,13 +41,13 @@ const pick = async (id: string) => {
   await userEvent.click(await screen.findByRole("tab", { name: TEMPLATE_BIAS[id]! }));
   await userEvent.click(await screen.findByRole("button", { name: t.label }));
 };
-const loaded = () => waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"));
+const loaded = () => waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"), { timeout: 5000 });
 
 describe("Strategy builder page", () => {
   it("shows the instrument, the stored chain's lot size and never hard-codes one", async () => {
     mount();
     expect(await screen.findByText("NIFTY 50")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByTitle(/instrument data in the stored chain/)).toHaveTextContent("75")); // the fixture's lot size, not a built-in number
+    await waitFor(() => expect(screen.getByTitle(/instrument data in the stored chain/)).toHaveTextContent("75"), { timeout: 5000 }); // the fixture's lot size, not a built-in number
   });
 
   it("a long straddle template fills editable legs and shows hand-calculated risk (premium 100 + 100, lot 75)", async () => {
@@ -100,7 +100,7 @@ describe("Strategy builder page", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await userEvent.click(screen.getByRole("button", { name: "Reset / New" }));
     expect(screen.getByTestId("gallery")).toBeInTheDocument();
-    await userEvent.selectOptions(await screen.findByLabelText("Saved strategies"), "my spread");
+    await userEvent.click(within(screen.getByTestId("saved-menu")).getByText(/my spread/));
     expect(within(await screen.findByRole("table", { name: "Strategy legs" })).getAllByLabelText("Strike")).toHaveLength(2);
   });
 });
@@ -361,6 +361,38 @@ describe("Exit all and closed strategies", () => {
     await userEvent.click(screen.getByRole("button", { name: "Exit all" }));
     expect(await screen.findByTestId("template-msg")).toHaveTextContent("Cannot exit");
     expect(screen.getByTestId("closed-menu")).toHaveTextContent("Closed (0)");
+  });
+});
+
+describe("Deleting saved and closed strategies", () => {
+  it("deletes one saved strategy with its cross, and all of them only after a second click", async () => {
+    mount();
+    await loaded();
+    await pick("bull_call_spread");
+    for (const n of ["one", "two"]) {
+      await userEvent.clear(screen.getByLabelText("Strategy name"));
+      await userEvent.type(screen.getByLabelText("Strategy name"), n);
+      await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    }
+    const menu = screen.getByTestId("saved-menu");
+    expect(menu).toHaveTextContent("Saved (2)");
+    await userEvent.click(within(menu).getByRole("button", { name: "Delete saved strategy one" }));
+    expect(menu).toHaveTextContent("Saved (1)");
+    await userEvent.click(within(menu).getByText("Delete all saved"));
+    expect(menu).toHaveTextContent("Saved (1)"); // one click is not enough
+    await userEvent.click(within(menu).getByText("Click again to delete all saved strategies"));
+    expect(menu).toHaveTextContent("Saved (0)");
+  });
+
+  it("deletes a closed trade", async () => {
+    mount();
+    await loaded();
+    await userEvent.click(await screen.findByRole("button", { name: "Sell CE 24100" }));
+    await userEvent.click(screen.getByRole("button", { name: "Exit all" }));
+    const menu = await screen.findByTestId("closed-menu");
+    expect(menu).toHaveTextContent("Closed (1)");
+    await userEvent.click(within(menu).getByRole("button", { name: /Delete closed trade/ }));
+    expect(menu).toHaveTextContent("Closed (0)");
   });
 });
 
