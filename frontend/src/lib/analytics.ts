@@ -130,26 +130,41 @@ const istDay = (ms: number) => new Date(ms + IST_MS).toISOString().slice(0, 10);
 const istMinute = (ms: number) => Math.floor((((ms + IST_MS) % 86400_000) + 86400_000) % 86400_000 / 60_000);
 const SESSION_FROM = SESSION_OPEN_MIN, SESSION_TO = SESSION_CLOSE_MIN;
 
-/**
- * Restrict stored observations to a range. Ranges are measured from the newest sample, not from the
- * wall clock, so they also work after the close. "session" = the IST day of the newest sample,
- * 09:15-15:40; if that day has no in-session sample the whole day is shown and the note says so.
- */
-export function rangeObservations<T extends { retrieved_at: string }>(obs: T[], range: TsRange): { rows: T[]; note: string | null } {
-  if (obs.length === 0 || range === "all") return { rows: obs, note: null };
-  const ms = (o: T) => new Date(o.retrieved_at).getTime();
-  const newest = Math.max(...obs.map(ms));
-  if (range === "30m" || range === "1h") {
-    const from = newest - (range === "30m" ? 30 : 60) * 60_000;
-    return { rows: obs.filter((o) => ms(o) >= from), note: null };
-  }
-  const day = istDay(newest);
-  const sameDay = obs.filter((o) => istDay(ms(o)) === day);
-  const inSession = sameDay.filter((o) => istMinute(ms(o)) >= SESSION_FROM && istMinute(ms(o)) <= SESSION_TO);
-  if (inSession.length > 0) return { rows: inSession, note: null };
-  return { rows: sameDay, note: `No sample from ${SESSION_LABEL} on ${day}; showing every sample of that day.` };
+/** True for a moment inside a trading session: a weekday, 09:15 to the close, IST. Exchange holidays are not known here. */
+export function isSessionMs(ms: number): boolean {
+  const dow = new Date(ms + IST_MS).getUTCDay();
+  const m = istMinute(ms);
+  return dow !== 0 && dow !== 6 && m >= SESSION_FROM && m <= SESSION_TO;
+}
+/** Open and close (ms) of the IST day containing `ms`. */
+export function sessionBoundsOf(ms: number): { min: number; max: number } {
+  const [y, m, d] = istDay(ms).split("-").map(Number) as [number, number, number];
+  const dayStart = Date.UTC(y, m - 1, d) - IST_MS; // IST midnight
+  return { min: dayStart + SESSION_FROM * 60_000, max: dayStart + SESSION_TO * 60_000 };
 }
 
+/**
+ * Restrict stored observations to a range. Only samples taken during a session (weekday, 09:15 to the close) are
+ * drawn: a chain fetched overnight or at the weekend holds the last close and would draw a flat line across the night.
+ * Ranges are measured from the newest in-session sample, so they also work after the close. "session" = the IST day of
+ * that sample, with the axis fixed to the session (`bounds`). If nothing was ever sampled in session, every sample is
+ * returned with a note and `afterHoursOnly` set.
+ */
+export function rangeObservations<T extends { retrieved_at: string }>(obs: T[], range: TsRange): { rows: T[]; note: string | null; bounds: { min: number; max: number } | null; afterHoursOnly: boolean } {
+  const none = { bounds: null, afterHoursOnly: false };
+  if (obs.length === 0) return { rows: obs, note: null, ...none };
+  const ms = (o: T) => new Date(o.retrieved_at).getTime();
+  const live = obs.filter((o) => isSessionMs(ms(o)));
+  if (live.length === 0) return { rows: obs, note: `No sample was taken during ${SESSION_LABEL} IST; showing the after-hours samples that are stored.`, bounds: null, afterHoursOnly: true };
+  const newest = Math.max(...live.map(ms));
+  if (range === "all") return { rows: live, note: null, ...none };
+  if (range === "30m" || range === "1h") {
+    const from = newest - (range === "30m" ? 30 : 60) * 60_000;
+    return { rows: live.filter((o) => ms(o) >= from), note: null, ...none };
+  }
+  const day = istDay(newest);
+  return { rows: live.filter((o) => istDay(ms(o)) === day), note: null, bounds: sessionBoundsOf(newest), afterHoursOnly: false };
+}
 
 // ---------- OI by window (Last 3 min ... All) ----------
 

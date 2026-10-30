@@ -123,7 +123,7 @@ describe("analysis dashboard", () => {
       const prem = await widget("Total premium");
       expect(within(prem).getByRole("button", { name: "Session" })).toHaveAttribute("aria-pressed", "true");
       await userEvent.click(within(prem).getByRole("button", { name: "All" }));
-      expect(await points()).toBe("3,3");
+      expect(await points()).toBe("4,4"); // 3 in-session samples plus the gap marker that breaks the line between days
       await userEvent.click(within(prem).getByRole("button", { name: "30 min" }));
       expect(await points()).toBe("2,2"); // 04:00 is 30 min before the newest sample 04:30
       expect(localStorage.getItem("nse.analysis.tsrange")).toBe("30m");
@@ -140,7 +140,7 @@ describe("analysis dashboard", () => {
       const dlg = await screen.findByRole("dialog", { name: /Total premium over stored snapshots/ });
       expect(within(dlg).getByRole("img", { name: /\(full size\)/ }).dataset.points).toBe("2,2");
       await userEvent.click(within(dlg).getByRole("button", { name: "All" }));
-      expect(within(dlg).getByRole("img", { name: /\(full size\)/ }).dataset.points).toBe("3,3");
+      expect(within(dlg).getByRole("img", { name: /\(full size\)/ }).dataset.points).toBe("4,4");
       await userEvent.keyboard("{Escape}");
       expect(screen.queryByRole("dialog")).toBeNull();
     });

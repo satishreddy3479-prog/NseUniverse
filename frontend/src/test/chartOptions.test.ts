@@ -250,3 +250,17 @@ describe("payoffOption", () => {
   });
 });
 
+
+describe("sessionize", () => {
+  const ist = (d: number, h: number, m: number) => Date.UTC(2026, 9, d, h, m) - 5.5 * 3600_000;
+  it("drops overnight points, breaks the line between days and fixes the axis to the session", async () => {
+    const { sessionize } = await import("../lib/chartOptions");
+    const opt = { xAxis: { type: "time" }, series: [{ data: [[ist(29, 15, 40), 10], [ist(29, 21, 0), 10], [ist(30, 2, 37), 10], [ist(30, 9, 15), 12], [ist(30, 9, 16), 13]] }, { data: [1, 2, 3] }] };
+    const b = { min: ist(30, 9, 15), max: ist(30, 15, 40) };
+    const out = sessionize(opt as never, b) as unknown as { xAxis: { min: number; max: number }; series: { data: unknown[] }[] };
+    expect(out.series[0]!.data).toEqual([[ist(29, 15, 40), 10], [ist(30, 9, 15) - 1, null], [ist(30, 9, 15), 12], [ist(30, 9, 16), 13]]);
+    expect(out.series[1]!.data).toEqual([1, 2, 3]); // not a time series: untouched
+    expect(out.xAxis.min).toBe(b.min);
+    expect(out.xAxis.max).toBe(b.max);
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { atmStraddle, compactIN, computeTotals, maxPain, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, universeRows, windowEndIso, windowStartIso } from "../lib/analytics";
+import { atmStraddle, compactIN, computeTotals, maxPain, OI_WINDOWS, oiWindowStats, isSessionMs, pcr, rangeObservations, universeRows, windowEndIso, windowStartIso } from "../lib/analytics";
 import type { OptionChainRow, OptionQuote } from "../lib/types";
 
 const q = (over: Partial<OptionQuote> = {}): OptionQuote => ({
@@ -110,7 +110,7 @@ describe("compactIN", () => {
 });
 
 describe("rangeObservations", () => {
-  // IST wall-clock -> ISO (UTC = IST - 5:30). Samples: yesterday 14:00; today 09:00, 09:15, 12:00, 15:40, 15:41 (derivatives trade until 15:40).
+  // IST wall-clock -> ISO (UTC = IST - 5:30). Samples: yesterday 14:00; today 09:00, 09:15, 12:00, 15:40, 15:41 (derivatives trade until 15:40; 09:00 and 15:41 are outside the session).
   const at = (day: number, h: number, m: number) => ({ retrieved_at: new Date(Date.UTC(2026, 9, day, h, m) - 5.5 * 3600_000).toISOString(), tag: `${day}@${h}:${m}` });
   const obs = [at(28, 14, 0), at(29, 9, 0), at(29, 9, 15), at(29, 12, 0), at(29, 15, 40), at(29, 15, 41)];
   const tags = (r: { rows: { tag: string }[] }) => r.rows.map((o) => o.tag);
@@ -120,22 +120,35 @@ describe("rangeObservations", () => {
     expect(tags(r)).toEqual(["29@9:15", "29@12:0", "29@15:40"]);
     expect(r.note).toBeNull();
   });
-  it("30 min and 1 hour are measured back from the newest sample, not the wall clock", () => {
-    expect(tags(rangeObservations(obs, "30m"))).toEqual(["29@15:40", "29@15:41"]); // >= 15:11
-    expect(tags(rangeObservations(obs, "1h"))).toEqual(["29@15:40", "29@15:41"]); // >= 14:41, 12:00 is out
+  it("30 min and 1 hour are measured back from the newest in-session sample; the 15:41 after-hours sample is never drawn", () => {
+    expect(tags(rangeObservations(obs, "30m"))).toEqual(["29@15:40"]);
+    expect(tags(rangeObservations(obs, "1h"))).toEqual(["29@15:40"]); // >= 14:40, 12:00 is out
   });
-  it("all returns everything and an empty input stays empty", () => {
-    expect(rangeObservations(obs, "all").rows).toHaveLength(6);
-    expect(rangeObservations([], "session")).toEqual({ rows: [], note: null });
+  it("all returns every in-session sample (not the 09:00 and 15:41 ones) and an empty input stays empty", () => {
+    expect(tags(rangeObservations(obs, "all"))).toEqual(["28@14:0", "29@9:15", "29@12:0", "29@15:40"]);
+    expect(rangeObservations([], "session")).toEqual({ rows: [], note: null, bounds: null, afterHoursOnly: false });
   });
-  it("a day with only pre-market samples shows that day and says so", () => {
-    const pre = [at(28, 14, 0), at(29, 8, 40), at(29, 9, 5)];
+  it("session fixes the axis to that day's 09:15 to 15:40", () => {
+    const b = rangeObservations(obs, "session").bounds!;
+    expect(b.min).toBe(Date.UTC(2026, 9, 29, 9, 15) - 5.5 * 3600_000);
+    expect(b.max).toBe(Date.UTC(2026, 9, 29, 15, 40) - 5.5 * 3600_000);
+  });
+  it("samples fetched overnight or at the weekend are not session samples", () => {
+    const night = [at(30, 2, 37), at(30, 8, 17), at(31, 12, 0), at(29, 12, 0)]; // Fri 02:37, Fri 08:17, Sat noon, Thu noon
+    expect(tags(rangeObservations(night, "all"))).toEqual(["29@12:0"]);
+    expect(isSessionMs(Date.UTC(2026, 9, 31, 6, 30))).toBe(false); // Saturday 12:00 IST
+    expect(isSessionMs(Date.UTC(2026, 9, 30, 6, 30))).toBe(true); // Friday 12:00 IST
+    expect(isSessionMs(Date.UTC(2026, 9, 30, 10, 10))).toBe(true); // Friday 15:40 IST, the close
+    expect(isSessionMs(Date.UTC(2026, 9, 30, 10, 11))).toBe(false); // 15:41
+  });
+  it("with no in-session sample at all, the after-hours ones are returned and the note says so", () => {
+    const pre = [at(29, 8, 40), at(29, 9, 5)];
     const r = rangeObservations(pre, "session");
     expect(tags(r)).toEqual(["29@8:40", "29@9:5"]);
-    expect(r.note).toMatch(/No sample from 09:15–15:40 on 2026-10-29/);
+    expect(r.afterHoursOnly).toBe(true);
+    expect(r.note).toMatch(/No sample was taken during 09:15–15:40/);
   });
 });
-
 
 describe("OI by window", () => {
   it("starts the window at the newest stored sample minus its length", () => {

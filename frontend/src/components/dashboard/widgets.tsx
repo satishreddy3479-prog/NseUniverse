@@ -10,7 +10,7 @@ import { SESSION_CLOSE_MIN, SESSION_OPEN_MIN } from "../../lib/session";
 import { atmStraddle, compactIN, computeTotals, maxPain, OI_MODES, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, TS_RANGES, windowEndIso, windowStartIso, type OiMode } from "../../lib/analytics";
 import {
   decayOption, oiChangeBarOption, oiSeriesOption, type OiSeriesKind, oiHeatmapOption, premiumOption, spotOption, straddleOption, strikeBarOption,
-  oiExplorerOption, totalsBarOption, type StrikeMetric } from "../../lib/chartOptions";
+  oiExplorerOption, sessionize, totalsBarOption, type StrikeMetric } from "../../lib/chartOptions";
 import { ageSeconds, fmtDateTimeIST, fmtExpiry, fmtTimeIST, fmtInt, fmtPct, fmtPrice, fmtSigned } from "../../lib/format";
 import { useLiveSpot } from "../../lib/useLive";
 import type { BaselineKind, Observation, OiChange, OptionChainRow } from "../../lib/types";
@@ -188,8 +188,8 @@ function TimeSeries({ build, label, note, extra }: {
   const colors = useChartColors();
   const [open, setOpen] = useState(false);
   const all = d.history.data?.observations ?? [];
-  const { rows: obs, note: rangeNote } = useMemo(() => rangeObservations(all, d.tsRange), [all, d.tsRange]);
-  const opt = useMemo(() => build(obs, colors), [build, obs, colors]);
+  const { rows: obs, note: rangeNote, bounds, afterHoursOnly } = useMemo(() => rangeObservations(all, d.tsRange), [all, d.tsRange]);
+  const opt = useMemo(() => (afterHoursOnly ? build(obs, colors) : sessionize(build(obs, colors), bounds)), [build, obs, colors, bounds, afterHoursOnly]);
   const distinct = new Set(obs.map((o) => `${o.underlying_ltp}|${o.total_ce_oi}|${o.total_pe_oi}|${o.total_ce_premium}|${o.total_pe_premium}`)).size;
   const rangeLabel = TS_RANGES.find((r) => r.id === d.tsRange)!.label;
   const close = useCallback(() => setOpen(false), []);

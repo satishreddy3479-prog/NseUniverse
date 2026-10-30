@@ -1,7 +1,7 @@
 // Pure builders for ECharts options. They contain all plotting decisions so tests can assert exactly
 // what each chart shows. Missing values become gaps (null), never zero.
 import type { EChartsCoreOption } from "echarts/core";
-import { compactIN, type Totals } from "./analytics";
+import { compactIN, isSessionMs, type Totals } from "./analytics";
 import { fmtDateTimeIST, fmtInt, fmtPrice, fmtTimeIST } from "./format";
 import type { IntradayScoreRow, Observation, OiChange, OiHeatmap, OiSeries, OptionChainRow, PremiumDecay } from "./types";
 
@@ -502,4 +502,32 @@ export function divergingBarOption(rows: { name: string; value: number }[], c: C
     series: [{ type: "bar", barMaxWidth: 14, data: sorted.map((r) => ({ value: r.value, itemStyle: { color: r.value >= 0 ? c.up : c.down, borderRadius: r.value >= 0 ? [0, 3, 3, 0] : [3, 0, 0, 3] }, label: { position: r.value >= 0 ? "right" : "left" } })),
       label: { show: true, position: "right", color: c.muted, fontSize: 10, formatter: (p: unknown) => { const v = (p as { value: number }).value; return `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}${unit}`; } } }],
   };
+}
+
+/**
+ * Keep a time-series chart inside the trading session: points taken outside 09:15 to the close (overnight, weekends)
+ * are dropped, a gap is left between days instead of a line across the night, and for the Session range the axis is
+ * fixed to that session. Works on any series whose data are [timeMs, value] pairs; other series are untouched.
+ */
+export function sessionize(option: EChartsCoreOption, bounds: { min: number; max: number } | null): EChartsCoreOption {
+  const o = option as { series?: { data?: unknown }[]; xAxis?: Record<string, unknown> };
+  if (!Array.isArray(o.series)) return option;
+  const clip = (data: unknown): unknown => {
+    if (!Array.isArray(data) || !data.every((d) => Array.isArray(d) && typeof d[0] === "number")) return data;
+    const out: unknown[] = [];
+    let lastDay: string | null = null;
+    for (const d of data as [number, unknown][]) {
+      if (!isSessionMs(d[0])) continue;
+      const day = new Date(d[0] + 330 * 60_000).toISOString().slice(0, 10);
+      if (lastDay != null && day !== lastDay) out.push([d[0] - 1, null]);
+      lastDay = day;
+      out.push(d);
+    }
+    return out;
+  };
+  return {
+    ...(option as object),
+    ...(bounds && o.xAxis ? { xAxis: { ...o.xAxis, min: bounds.min, max: bounds.max } } : {}),
+    series: o.series.map((s) => ({ ...s, data: clip(s.data) })),
+  } as EChartsCoreOption;
 }
