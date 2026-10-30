@@ -951,7 +951,7 @@ export function CommandCenter({ expiry }: { expiry: string | null }) {
     queryKey: ["intradaySummary", expiry],
     queryFn: () => api.intradaySummary(expiry!),
     enabled: !!expiry,
-    refetchInterval: 30_000,
+    refetchInterval: 15_000,
     retry: false,
   });
   const d = q.data;

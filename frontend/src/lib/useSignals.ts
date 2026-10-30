@@ -9,6 +9,8 @@ import type { SnapshotSummary } from "./types";
 export function useSignals(): {
   signals: Signal[];
   latest: SnapshotSummary | undefined;
+  /** the newest snapshot of the weekly expiry: the one number the header and the dashboard's default spot both read */
+  spotSnapshot: SnapshotSummary | undefined;
   underlying: string;
   expiryText: string;
 } {
@@ -19,6 +21,9 @@ export function useSignals(): {
   const snapshots = useSnapshots();
   const backendDown = status.error instanceof ApiError && status.error.status === 0;
   const latest = snapshots.data?.[0];
+  const weekly = expiries.data?.weekly;
+  // each expiry's capture reads the index on its own (about 0.7 s apart), so one fixed expiry keeps every spot on the page comparable
+  const spotSnapshot = (weekly ? snapshots.data?.find((s) => s.expiry === weekly) : undefined) ?? latest;
   const signals = deriveSignals(status.data, backendDown, latest, now, live);
   const exp = expiries.data;
   const expiryText = exp
@@ -28,5 +33,5 @@ export function useSignals(): {
     : expiries.isLoading
       ? "Loading expiries"
       : "Expiries unavailable";
-  return { signals, latest, underlying: status.data?.underlying ?? "NIFTY", expiryText };
+  return { signals, latest, spotSnapshot, underlying: status.data?.underlying ?? "NIFTY", expiryText };
 }

@@ -87,7 +87,7 @@ function SpotBox() {
   const chg = spot != null && prev != null && prev > 0 ? spot - prev : null;
   return (
     <div className="flex items-baseline gap-2 rounded-sm border border-rule bg-slate-2 px-3 py-1.5" aria-label="Spot price">
-      <span className="text-xs text-muted" title={live ? "From the live stream" : "From the latest stored snapshot"}>Spot {live ? "(live)" : d.snapshot ? `(snapshot ${fmtTimeIST(d.snapshot.retrieved_at)})` : "(snapshot)"}</span>
+      <span className="text-xs text-muted" title={live ? "From the live stream" : "From the latest stored snapshot"}>Spot {live ? "(live)" : d.snapshot ? `(snapshot ${fmtTimeIST(d.snapshot.retrieved_at)} · ${d.snapshot.expiry.slice(5)})` : "(snapshot)"}</span>
       <span className="num text-base font-semibold text-paper">{fmtPrice(spot)}</span>
       {chg != null && (
         <span className={`num text-xs font-medium ${chg >= 0 ? "text-up" : "text-down"}`}>

@@ -13,7 +13,7 @@ export { NAV } from "./SideNav";
 export function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   useLiveConnection();
-  const { signals, latest, underlying } = useSignals();
+  const { signals, latest, spotSnapshot, underlying } = useSignals();
 
   return (
     <div className="flex h-full flex-col">
@@ -31,7 +31,7 @@ export function AppShell() {
           <span className="text-[15px] font-semibold tracking-tight text-paper">NSE Universe</span>
           <span className="text-xs text-muted">{underlying} 50 options</span>
         </div>
-        <SpotBadge latest={latest} />
+        <SpotBadge latest={spotSnapshot ?? latest} />
         <div className="ml-auto">
           <StatusPill signals={signals} />
         </div>

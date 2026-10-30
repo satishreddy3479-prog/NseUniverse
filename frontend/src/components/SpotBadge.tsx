@@ -1,4 +1,4 @@
-import { fmtPct, fmtPrice, fmtSigned } from "../lib/format";
+import { fmtPct, fmtPrice, fmtSigned, fmtTimeIST } from "../lib/format";
 import { INDEX_KEY } from "../lib/liveStore";
 import { useLiveSpot } from "../lib/useLive";
 import type { SnapshotSummary } from "../lib/types";
@@ -20,7 +20,9 @@ export function SpotBadge({ latest }: { latest: SnapshotSummary | undefined }) {
   const tone = chg == null || chg === 0 ? "" : chg > 0 ? "text-up" : "text-down";
   return (
     <div className="flex shrink-0 flex-col leading-tight" title={useLive ? "Live from the exchange feed" : "From the latest snapshot, not live"}>
-      <span className="flex items-center gap-1.5 text-xs text-muted">NIFTY 50 <SourceTag source={source} /></span>
+      <span className="flex items-center gap-1.5 text-xs text-muted">NIFTY 50 <SourceTag source={source} />
+        {!useLive && latest && <span className="num text-[11px]" title={`Stored snapshot of the ${latest.expiry} expiry; each expiry reads the index on its own, so the other expiry can differ by a point or so`}>{fmtTimeIST(latest.retrieved_at)} · {latest.expiry.slice(5)}</span>}
+      </span>
       <span className="num text-[15px] font-semibold text-paper">
         {fmtPrice(ltp)}
         <span className={`ml-2 text-xs font-medium ${tone}`}>

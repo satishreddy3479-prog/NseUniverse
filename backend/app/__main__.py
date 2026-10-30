@@ -12,6 +12,18 @@ from pydantic import ValidationError
 from app.config import get_settings
 
 
+def server_options() -> dict[str, object]:
+    """Options both ways of starting uvicorn share.
+
+    ``proxy_headers=False``: behind Caddy every request arrives from 127.0.0.1 with the
+    browser's real address in X-Forwarded-For, and uvicorn's default replaces the client
+    address with that real address. The app's loopback checks (control endpoints and the
+    live WebSocket) would then reject every browser. The app only binds to loopback and
+    Caddy asks for a login first (deploy/Caddyfile.template), so the TCP peer is what to check.
+    """
+    return {"proxy_headers": False, "log_config": None, "access_log": False}
+
+
 def main() -> int:
     try:
         settings = get_settings()
@@ -41,8 +53,7 @@ def main() -> int:
             reload_dirs=[str(Path(__file__).resolve().parent)],
             reload_delay=1.5,
             timeout_graceful_shutdown=3,  # open browser sockets must not hold a restart for minutes
-            log_config=None,
-            access_log=False,
+            **server_options(),
         )
         return 0
     from app.main import create_app
@@ -51,8 +62,7 @@ def main() -> int:
         create_app(settings),
         host=settings.app_host,
         port=settings.app_port,
-        log_config=None,
-        access_log=False,
+        **server_options(),
     )
     return 0
 

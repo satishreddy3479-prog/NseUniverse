@@ -25,7 +25,7 @@ def make_settings(tmp_path: Path, **overrides: Any) -> Settings:
         "data_dir": tmp_path / "data",
         "log_dir": tmp_path / "logs",
         "stream_autostart": False,
-        "sampler_enabled": False,  # the sampler starts by itself in market hours: tests must not depend on the wall clock
+        "sampler_enabled": False,  # it starts itself in market hours: no wall-clock dependence
         "history_autofetch": False,
         "flows_autofetch": False,
         "news_autofetch": False,
