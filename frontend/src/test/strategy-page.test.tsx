@@ -105,6 +105,30 @@ describe("Strategy builder page", () => {
   });
 });
 
+describe("Updating a saved strategy", () => {
+  it("shows Update only for a loaded saved strategy, flags unsaved changes and overwrites the same entry", async () => {
+    mount();
+    await waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"));
+    await pick("bull_call_spread");
+    await userEvent.type(await screen.findByLabelText("Strategy name"), "adjust me");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    const update = await screen.findByRole("button", { name: "Update “adjust me”" });
+    expect(update).toBeDisabled();
+    expect(screen.getByTestId("saved-state")).toHaveTextContent("Saved");
+    await userEvent.type(screen.getAllByLabelText("Stop percent of entry premium")[0]!, "30");
+    expect(screen.getByTestId("saved-state")).toHaveTextContent("Unsaved changes");
+    expect(update).toBeEnabled();
+    await userEvent.click(update);
+    expect(screen.getByTestId("saved-state")).toHaveTextContent("Saved");
+    expect(within(screen.getByTestId("saved-menu")).getAllByText(/adjust me/)).toHaveLength(1); // same entry, no copy
+    const stored = JSON.parse(localStorage.getItem("nse.strategies.v1") ?? "[]") as { legs: { stop?: number | null }[] }[];
+    expect(stored).toHaveLength(1);
+    expect(stored[0]!.legs.some((l) => l.stop != null)).toBe(true);
+    await userEvent.click(screen.getByRole("button", { name: "Reset / New" }));
+    expect(screen.queryByRole("button", { name: /Update “/ })).not.toBeInTheDocument();
+  });
+});
+
 describe("Option chain inside the builder", () => {
   it("offers only the weekly and monthly expiries we collect, however many dates the exchange lists", async () => {
     mount();
@@ -218,8 +242,8 @@ describe("Target and stop-loss per leg", () => {
     mount();
     await loaded();
     await userEvent.click(await screen.findByRole("button", { name: "Buy CE 24100" })); // stored price 100, lot 75
-    await userEvent.click(await screen.findByRole("button", { name: "Target 50%" })); // 150 -> +50 x 75
-    await userEvent.click(screen.getByRole("button", { name: "Stop 30%" })); // 70 -> -30 x 75
+    await userEvent.type(await screen.findByLabelText("Target percent of entry premium"), "50"); // 150 -> +50 x 75
+    await userEvent.type(screen.getByLabelText("Stop percent of entry premium"), "30"); // 70 -> -30 x 75
     expect(await screen.findByTestId("risk-stats")).toHaveTextContent("If targets hit+₹3,750");
     expect(screen.getByTestId("risk-stats")).toHaveTextContent("If stops hit−₹2,250");
     expect((screen.getByLabelText("Target premium") as HTMLInputElement).value).toBe("150");
@@ -230,9 +254,9 @@ describe("Target and stop-loss per leg", () => {
     mount();
     await loaded();
     await userEvent.click(await screen.findByRole("button", { name: "Sell CE 24100" })); // entry 100
-    await userEvent.click(await screen.findByRole("button", { name: "Target 50%" })); // seller target is below: 50
+    await userEvent.type(await screen.findByLabelText("Target percent of entry premium"), "50"); // seller target is below: 50
     expect((screen.getByLabelText("Target premium") as HTMLInputElement).value).toBe("50");
-    await userEvent.click(screen.getByRole("button", { name: "Stop 30%" })); // seller stop is above: 130
+    await userEvent.type(screen.getByLabelText("Stop percent of entry premium"), "30"); // seller stop is above: 130
     expect((screen.getByLabelText("Stop-loss premium") as HTMLInputElement).value).toBe("130");
     await userEvent.clear(screen.getByLabelText("Target premium"));
     await userEvent.type(screen.getByLabelText("Target premium"), "120");

@@ -15,7 +15,7 @@ import {
 } from "../lib/strategy";
 
 const SAVE_KEY = "nse.strategies.v1";
-interface Saved { name: string; savedAt: string; expiry: string; legs: Leg[] }
+interface Saved { name: string; savedAt: string; updatedAt?: string; expiry: string; legs: Leg[] }
 const CLOSED_KEY = "nse.closed.v1";
 interface ClosedLeg extends Leg { exit: number }
 interface Closed { id: string; name: string; closedAt: string; snapshotAt: string; expiry: string; lotSize: number; pnl: number; legs: ClosedLeg[]; /** the stored chain was stale when the exit prices were read */ stale?: boolean }
@@ -90,6 +90,8 @@ export default function StrategyBuilder() {
   const [whatPct, setWhatPct] = useState(0);
   const [saved, setSaved] = useState<Saved[]>(loadSaved);
   const [name, setName] = useState("");
+  /** Name of the saved strategy currently loaded in the builder (the one the Update button overwrites). */
+  const [loaded, setLoaded] = useState<string | null>(null);
   const [closed, setClosed] = useState<Closed[]>(loadClosed);
   const [opened, setOpened] = useState<Closed | null>(null);
   const [confirmAll, setConfirmAll] = useState<"saved" | "closed" | null>(null);
@@ -277,15 +279,23 @@ export default function StrategyBuilder() {
     const profitSide = kind === "target";
     const up = profitSide === buy; // the premium moves up for a buyer's target and a seller's stop
     const wrong = cur != null && l.premium != null && (up ? cur <= l.premium : cur >= l.premium);
-    const pct = (p: number) => (l.premium == null ? null : Math.max(0.05, Math.round(l.premium * (up ? 1 + p / 100 : 1 - p / 100) * 20) / 20));
-    const presets = kind === "target" ? [30, 50, 80] : [30, 50, 100];
     const tone2 = kind === "target" ? "border-up/60 text-up" : "border-down/60 text-down";
+    // The percentage is how far the premium moves from the entry premium; typing one sets the price.
+    const curPct = cur != null && l.premium ? Math.round((up ? cur / l.premium - 1 : 1 - cur / l.premium) * 1000) / 10 : null;
+    const fromPct = (raw: string) => {
+      if (raw === "" || l.premium == null) return setExit(l, kind, null);
+      const p = Number(raw);
+      if (Number.isFinite(p) && p >= 0) setExit(l, kind, Math.max(0.05, Math.round(l.premium * (up ? 1 + p / 100 : 1 - p / 100) * 20) / 20));
+    };
     return (
       <div>
         <input className={`${field} w-20 ${wrong ? "border-down" : ""}`} type="number" min={0} step="0.05" aria-label={kind === "target" ? "Target premium" : "Stop-loss premium"}
           value={cur ?? ""} placeholder="none" onChange={(e) => setExit(l, kind, e.target.value === "" ? null : Number(e.target.value))} />
-        <div className="mt-0.5 flex gap-1">
-          {presets.map((p) => { const v = pct(p); return v == null || (kind === "stop" && !up && v < 0.05) ? null : <button key={p} type="button" aria-label={`${kind === "target" ? "Target" : "Stop"} ${p}%`} title={`${p}% ${up ? "above" : "below"} the entry premium`} onClick={() => setExit(l, kind, v)} className={`rounded-sm border px-1 text-[10px] ${tone2}`}>{p}%</button>; })}
+        <div className="mt-0.5 flex items-center gap-1">
+          <input className={`${field} w-14 !px-1 text-xs ${tone2}`} type="number" min={0} step="1" aria-label={`${kind === "target" ? "Target" : "Stop"} percent of entry premium`}
+            title={`% the premium moves ${up ? "above" : "below"} the entry premium`} placeholder="%" value={curPct ?? ""} disabled={l.premium == null}
+            onChange={(e) => fromPct(e.target.value)} />
+          <span className="text-[10px] text-muted">%</span>
           {cur != null && <button type="button" aria-label={`Clear ${kind === "target" ? "target" : "stop"}`} onClick={() => setExit(l, kind, null)} className="text-[10px] text-muted hover:text-paper">✕</button>}
         </div>
         {wrong && <div className="max-w-[16ch] text-[10px] text-down">{kind === "target" ? "Target" : "Stop"} must be {up ? "above" : "below"} the entry.</div>}
@@ -305,11 +315,14 @@ export default function StrategyBuilder() {
     const pnl = out.reduce((t, l) => t + sign(l.action) * (l.exit - (l.premium as number)) * l.lots * lotSize, 0);
     const at = new Date();
     persistClosed([{ id: newLegId(), name: name.trim() || `Strategy ${at.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`, closedAt: at.toISOString(), snapshotAt: snap.retrieved_at, expiry, lotSize, pnl, legs: out, stale: !!chain.data?.stale }, ...closed]);
-    setLegs([]); setNote(null); setSel(null); setMult(1); setDays(0); setName(""); setOpened(null);
+    setLegs([]); setNote(null); setSel(null); setMult(1); setDays(0); setName(""); setOpened(null); setLoaded(null);
   };
-  const openClosed = (c: Closed) => { setPicked(c.expiry); setLegs(c.legs.map(({ exit: _e, ...l }) => ({ ...l, id: newLegId() }))); setMult(1); setNote(null); setOpened(c); };
+  const openClosed = (c: Closed) => { setPicked(c.expiry); setLegs(c.legs.map(({ exit: _e, ...l }) => ({ ...l, id: newLegId() }))); setMult(1); setNote(null); setOpened(c); setLoaded(null); };
   const persist = (s: Saved[]) => { setSaved(s); try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch { /* storage unavailable: kept for this visit only */ } };
   const net = (k: number, t: OptionType) => legs.filter((l) => l.strike === k && l.type === t).reduce((s, l) => s + sign(l.action) * l.lots, 0);
+  const savedEntry = loaded ? saved.find((x) => x.name === loaded) : undefined;
+  const sig = (ls: Leg[]) => JSON.stringify(ls.map(({ id: _i, ...r }) => r));
+  const dirty = !!savedEntry && (sig(legs) !== sig(savedEntry.legs) || savedEntry.expiry !== expiry);
   const gallery = useMemo(() => TEMPLATES.filter((t) => TEMPLATE_BIAS[t.id] === bias), [bias]);
 
   return (
@@ -318,7 +331,14 @@ export default function StrategyBuilder() {
         <h1 className="mr-2 text-xl font-semibold">Strategy builder</h1>
         <span className="rounded-sm border border-rule bg-slate-2 px-2 py-1 text-sm text-paper">NIFTY 50</span>
         <input className={`${field} w-40`} aria-label="Strategy name" value={name} onChange={(e) => setName(e.target.value)} placeholder="name to save" />
-        <Button variant="primary" disabled={!name.trim() || legs.length === 0 || !expiry} onClick={() => { persist([{ name: name.trim(), savedAt: new Date().toISOString(), expiry: expiry!, legs }, ...saved.filter((s) => s.name !== name.trim())]); setName(""); }}>Save</Button>
+        <Button variant="primary" disabled={!name.trim() || legs.length === 0 || !expiry} onClick={() => { persist([{ name: name.trim(), savedAt: new Date().toISOString(), expiry: expiry!, legs }, ...saved.filter((s) => s.name !== name.trim())]); setLoaded(name.trim()); setName(""); }}>Save</Button>
+        {loaded && savedEntry && (
+          <>
+            <Button variant="primary" disabled={!dirty || legs.length === 0 || !expiry} title={dirty ? `Overwrite “${loaded}” with the legs, strikes, lots, targets and stops shown now` : `“${loaded}” already matches what is shown`}
+              onClick={() => persist(saved.map((x) => (x.name === loaded ? { ...x, updatedAt: new Date().toISOString(), expiry: expiry!, legs } : x)))}>Update “{loaded}”</Button>
+            <span className={`text-xs ${dirty ? "text-warn" : "text-muted"}`} data-testid="saved-state">{dirty ? "Unsaved changes" : "Saved"}</span>
+          </>
+        )}
         <details className="relative text-sm" data-testid="saved-menu">
           <summary className={`${field} flex cursor-pointer items-center`} aria-label="Saved strategies">Saved ({saved.length})</summary>
           <div className="absolute left-0 z-20 mt-1 w-80 max-w-[90vw] rounded-sm border border-rule bg-slate p-1 shadow-lg">
@@ -327,7 +347,7 @@ export default function StrategyBuilder() {
                 <ul className="max-h-72 overflow-auto">
                   {saved.map((sv) => (
                     <li key={sv.name} className="flex items-center gap-1 border-b border-rule/40 last:border-0">
-                      <button type="button" className="flex-1 rounded-sm p-2 text-left hover:bg-slate-2" onClick={(e) => { setPicked(sv.expiry); setLegs(sv.legs.map((l) => ({ ...l, id: newLegId() }))); setOpened(null); (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open"); }}>
+                      <button type="button" className="flex-1 rounded-sm p-2 text-left hover:bg-slate-2" onClick={(e) => { setPicked(sv.expiry); setLegs(sv.legs.map((l) => ({ ...l, id: newLegId() }))); setOpened(null); setLoaded(sv.name); (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open"); }}>
                         <div className="text-paper">{sv.name}</div>
                         <div className="text-[11px] text-muted">{sv.legs.length} legs · expiry {sv.expiry}</div>
                       </button>
@@ -362,7 +382,7 @@ export default function StrategyBuilder() {
             )}
           </div>
         </details>
-        <Button onClick={() => { setLegs([]); setNote(null); setSel(null); setMult(1); setDays(0); }} disabled={legs.length === 0}>Reset / New</Button>
+        <Button onClick={() => { setLegs([]); setNote(null); setSel(null); setMult(1); setDays(0); setLoaded(null); }} disabled={legs.length === 0}>Reset / New</Button>
         <span className="ml-auto text-xs text-muted" title="Premiums are the last traded prices in this stored snapshot, not live quotes">Snapshot <span className={`num ${chain.data?.stale ? "text-warn" : "text-paper"}`}>{snap ? fmtDateTimeIST(snap.retrieved_at) : "—"}</span>{chain.data?.stale ? " · stale" : ""}</span>
       </div>
 
@@ -387,7 +407,7 @@ export default function StrategyBuilder() {
           </div>
           <div className="flex flex-wrap gap-2 border-b border-rule px-3 py-2">
             {available.map((e) => (
-              <button key={e} type="button" aria-pressed={e === expiry} onClick={() => { if (legs.length) setNote("The legs were cleared because the expiry changed."); setLegs([]); setPicked(e); }}
+              <button key={e} type="button" aria-pressed={e === expiry} onClick={() => { if (legs.length) setNote("The legs were cleared because the expiry changed."); setLegs([]); setLoaded(null); setPicked(e); }}
                 className={`min-h-8 rounded-sm border px-3 text-sm ${e === expiry ? "border-info bg-info/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{dmy(e)} ({dayDiff(e, snapMs)}d) · {e === ex.data?.weekly ? "weekly" : "monthly"}</button>
             ))}
           </div>

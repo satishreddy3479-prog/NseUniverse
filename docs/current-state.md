@@ -5,6 +5,10 @@ _Last updated: 2026-10-29_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Strategy builder: Update saved strategy, own target/stop percentages (30 Oct 2026)
+- A loaded (or just saved) strategy shows an **Update “name”** button and a Saved / Unsaved changes marker; Update overwrites the same entry with the current legs, strikes, lots, targets and stops (no copy). Cleared on Reset, expiry change, exit all or opening a closed trade. Saved strategies are still browser-only (localStorage).
+- The fixed 30/50/80% target and stop buttons are gone. Each leg has a percent box (distance from the entry premium) next to the price box; either one sets the target or stop, nothing is pre-filled.
+
 ## Chart integrity and data-handling plan, 30 Oct 2026
 - Cause of broken PCR / OI-change charts: two stored samples held absurd OI (2.23e17, 8.4e18). Now flagged at ingest and read as missing; stored rows untouched. Premium decay baselines per IST day. Backend tests for both added. Not yet verified on the live server (needs deploy).
 - Retention plan written in `docs/storage-plan.md` (intraday section). Per-contract row pruning is built and runs nightly in **dry-run** mode (keeps 2 sessions, archive-verified only); nothing is deleted until the owner flips `OBSERVATION_PRUNE_DRY_RUN=false`.
