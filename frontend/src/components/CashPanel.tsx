@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ApiError, api } from "../lib/api";
 import { fmtInt } from "../lib/format";
+import { groupedBarsOption } from "../lib/chartOptions";
+import { EChart, useChartColors } from "./EChart";
 import { Button, Panel } from "./ui";
 import { FlowsUpdateLoader } from "./FlowsUpdate";
 
@@ -19,6 +21,7 @@ export function CashPanel() {
     onSuccess: (r) => { setMsg({ ok: true, text: `Read ${r.rows} rows, ${r.added} new, ${r.removed_old} older rows removed; keeping ${r.sessions_kept} sessions.` }); setText(""); void qc.invalidateQueries({ queryKey: ["cash"] }); },
     onError: (e) => setMsg({ ok: false, text: e instanceof ApiError ? e.message : "Import failed" }),
   });
+  const colors = useChartColors();
   const days = [...new Set(q.data?.rows.map((r) => r.session) ?? [])];
   const nsdl = (d: string) => q.data?.rows.find((r) => r.session === d && r.category.startsWith("FPI equity (stock"));
   const get = (d: string, c: string) => q.data?.rows.find((r) => r.session === d && r.category.toUpperCase().startsWith(c));
@@ -30,6 +33,14 @@ export function CashPanel() {
           : q.error ? <p className="text-sm text-muted">Not available: the running backend does not have this module yet.</p>
           : days.length === 0 ? <p className="text-sm text-muted" data-testid="cash-empty">No cash-market data yet. NSE does not allow automated downloads of this feed. Download the CSV from NSE’s FII/DII report page and paste its contents below.</p>
           : (
+            <>
+            <div className="rounded-xl border border-rule bg-ink/40 p-3" data-testid="cash-chart">
+              <p className="font-mono text-[11px] uppercase tracking-wider text-muted">Net buying (+) or selling (−) by session, ₹ crore</p>
+              <div className="h-48"><EChart ariaLabel="FII and DII net cash flow by session" option={groupedBarsOption([...days].sort(), [
+                { name: "FII net", color: colors.info, values: [...days].sort().map((d) => get(d, "FII")?.net ?? null) },
+                { name: "DII net", color: colors.brass, values: [...days].sort().map((d) => get(d, "DII")?.net ?? null) },
+              ], colors, (v) => `₹${fmtInt(v)} cr`)} /></div>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm" aria-label="FII DII cash">
                 <thead className="text-xs text-muted"><tr><th className="text-left font-normal">Session</th><th className="text-right font-normal">FII buy</th><th className="text-right font-normal">FII sell</th><th className="text-right font-normal">FII net</th><th className="text-right font-normal">DII net</th><th className="text-right font-normal">Total net</th><th className="text-right font-normal">FPI equity net (NSDL)</th></tr></thead>
@@ -49,6 +60,7 @@ export function CashPanel() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         <details>
           <summary className="cursor-pointer text-sm text-info">Import from an NSE CSV</summary>

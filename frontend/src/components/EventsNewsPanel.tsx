@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import type { NewsStatus } from "../lib/types";
+import { EventTimeline } from "./PredictionViz";
+import { MiniBar } from "./viz";
 import { Panel } from "./ui";
 
 const when = (iso: string, allDay: boolean) =>
@@ -21,6 +23,7 @@ export function EventsNewsPanel() {
             : ev.data.events.length === 0 ? <p className="text-sm text-muted">No scheduled high-impact events in the calendar for the next 45 days.</p>
             : (
               <>
+                <div className="mb-3 rounded-xl border border-rule bg-ink/40 p-3"><EventTimeline nowMs={new Date().getTime()} events={ev.data.events.map((e) => ({ name: e.name, ms: new Date(e.start_ist).getTime(), high: e.impact === "high" }))} /></div>
                 <table className="hidden w-full text-sm md:table" aria-label="Upcoming events">
                   <thead className="text-xs text-muted"><tr><th className="text-left font-normal">When</th><th className="text-left font-normal">Event</th><th className="text-left font-normal">Impact</th></tr></thead>
                   <tbody>
@@ -62,7 +65,7 @@ export function EventsNewsPanel() {
                     {(Object.entries(n.latest) as [string, NewsStatus["latest"][string]][]).map(([k, rows]) => (
                       <tr key={k} className="num border-t border-rule/50">
                         <td className="font-sans">{n.themes[k] ?? k}</td><td className="text-right">{rows[0]?.day ?? "—"}</td>
-                        <td className={`text-right ${rows[0]?.tone == null ? "" : rows[0].tone < 0 ? "text-down" : "text-up"}`}>{rows[0]?.tone?.toFixed(2) ?? "—"}</td>
+                        <td className={`text-right ${rows[0]?.tone == null ? "" : rows[0].tone < 0 ? "text-down" : "text-up"}`}><span className="mr-2">{rows[0]?.tone?.toFixed(2) ?? "—"}</span><MiniBar value={rows[0]?.tone ?? null} scale={3} className="w-16" /></td>
                         <td className="text-right">{rows[0]?.volume_pct != null ? `${rows[0].volume_pct.toFixed(3)}%` : "—"}</td>
                         <td className="text-right text-muted">{rows[1]?.tone?.toFixed(2) ?? "—"}</td>
                       </tr>

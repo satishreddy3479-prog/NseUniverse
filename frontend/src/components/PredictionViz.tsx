@@ -145,3 +145,72 @@ export function HitInterval({ hit, ci }: { hit: number; ci: [number, number] }) 
     </svg>
   );
 }
+
+/** One dot per forecast day, oldest first: green right, red wrong, grey pending, hollow amber not recorded. */
+export function DotTimeline({ days }: { days: { label: string; state: "right" | "wrong" | "pending" | "missed"; counted: boolean }[] }) {
+  if (days.length === 0) return null;
+  const col = { right: "var(--up)", wrong: "var(--down)", pending: "var(--muted)", missed: "var(--warn)" } as const;
+  return (
+    <div className="flex flex-wrap gap-1.5" role="img" aria-label="Forecast days, oldest first" data-testid="day-dots">
+      {days.map((d, i) => (
+        <span key={`${d.label}${i}`} title={`${d.label}: ${d.state === "missed" ? "not recorded" : d.state}${d.counted ? "" : " (not counted)"}`}
+          className="inline-block size-4 rounded-full border-2" style={{ borderColor: col[d.state], background: d.state === "missed" || !d.counted ? "transparent" : col[d.state], opacity: d.state === "pending" ? 0.6 : 1 }} />
+      ))}
+    </div>
+  );
+}
+
+/** Realised return of each resolved forecast as a bar, with a tick or cross for whether the forecast pointed the right way. */
+export function ReturnBars({ rows }: { rows: { label: string; ret: number; right: boolean }[] }) {
+  if (rows.length === 0) return null;
+  const m = Math.max(...rows.map((r) => Math.abs(r.ret))) || 0.01, W = Math.max(260, rows.length * 34), H = 120, mid = 52, k = 44 / m;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-2xl" role="img" aria-label="Realised return of each resolved forecast; the mark says whether the forecast was right" data-testid="return-bars">
+      <line x1="0" x2={W} y1={mid} y2={mid} stroke="var(--rule)" />
+      {rows.map((r, i) => {
+        const x = 8 + i * 34, h = Math.abs(r.ret) * k;
+        return (
+          <g key={`${r.label}${i}`}>
+            <rect x={x} y={r.ret >= 0 ? mid - h : mid} width="20" height={Math.max(1, h)} rx="2" fill={r.ret >= 0 ? "var(--up)" : "var(--down)"} opacity="0.85"><title>{`${r.label}: ${(r.ret * 100).toFixed(2)}%`}</title></rect>
+            <text x={x + 10} y="104" fontSize="11" textAnchor="middle" fill={r.right ? "var(--up)" : "var(--down)"}>{r.right ? "✓" : "✗"}</text>
+            <text x={x + 10} y="116" fontSize="8" textAnchor="middle" fill="var(--muted)">{r.label.slice(5)}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+/** Scheduled events on a day axis from today, high-impact ones taller and amber. */
+export function EventTimeline({ events, nowMs, days = 45 }: { events: { name: string; ms: number; high: boolean }[]; nowMs: number; days?: number }) {
+  const W = 600, pad = 10, x = (ms: number) => pad + (Math.min(days, Math.max(0, (ms - nowMs) / 86_400_000)) / days) * (W - 2 * pad);
+  const evs = events.filter((e) => e.ms >= nowMs - 86_400_000).sort((a, b) => a.ms - b.ms);
+  if (evs.length === 0) return null;
+  return (
+    <svg viewBox={`0 0 ${W} 86`} className="w-full" role="img" aria-label={`${evs.length} scheduled events over the next ${days} days`} data-testid="event-timeline">
+      <line x1={pad} x2={W - pad} y1="58" y2="58" stroke="var(--rule)" strokeWidth="2" />
+      {[0, 7, 14, 21, 28, 35, 42].map((d) => <g key={d}><line x1={x(nowMs + d * 86_400_000)} x2={x(nowMs + d * 86_400_000)} y1="54" y2="62" stroke="var(--muted)" /><text x={x(nowMs + d * 86_400_000)} y="76" fontSize="9" textAnchor="middle" fill="var(--muted)">{d === 0 ? "today" : `+${d}d`}</text></g>)}
+      {evs.map((e, i) => {
+        const h = e.high ? 34 : 18, lift = (i % 2) * 12;
+        return (
+          <g key={`${e.name}${i}`}>
+            <line x1={x(e.ms)} x2={x(e.ms)} y1="58" y2={58 - h - lift} stroke={e.high ? "var(--warn)" : "var(--muted)"} strokeWidth="2" />
+            <circle cx={x(e.ms)} cy={58 - h - lift} r={e.high ? 4 : 3} fill={e.high ? "var(--warn)" : "var(--muted)"}><title>{e.name}</title></circle>
+            {e.high && i < 8 && <text x={Math.min(W - 70, x(e.ms) + 6)} y={58 - h - lift + 3} fontSize="8.5" fill="var(--paper)">{e.name.length > 22 ? `${e.name.slice(0, 21)}…` : e.name}</text>}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+/** Model Brier next to the base-rate Brier; the shorter bar is better. */
+export function PairBar({ model, base }: { model: number; base: number }) {
+  const m = Math.max(model, base) || 1;
+  return (
+    <svg viewBox="0 0 80 14" className="ml-2 inline-block h-3.5 w-20 align-middle" aria-hidden="true">
+      <rect x="0" y="1" width={(model / m) * 80} height="5" rx="1.5" fill={model < base ? "var(--up)" : "var(--down)"} />
+      <rect x="0" y="8" width={(base / m) * 80} height="5" rx="1.5" fill="var(--muted)" opacity="0.6" />
+    </svg>
+  );
+}

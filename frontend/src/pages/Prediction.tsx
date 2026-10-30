@@ -1,7 +1,8 @@
-import { ConeBar, GainBars, HitInterval, ModelDots, ReliabilityPlot, readingLines } from "../components/PredictionViz";
+import { ConeBar, DotTimeline, GainBars, HitInterval, ModelDots, PairBar, ReliabilityPlot, ReturnBars, readingLines } from "../components/PredictionViz";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Panel } from "../components/ui";
+import { MiniBar } from "../components/viz";
 import { EventsNewsPanel } from "../components/EventsNewsPanel";
 import { CashPanel } from "../components/CashPanel";
 import { FlowsPanel } from "../components/FlowsPanel";
@@ -163,7 +164,7 @@ function ForecastCard({ hz, f, evs, runs, computing, onCompute }: { hz: "T1" | "
   );
 }
 
-type Tile = { label: string; value: string; sub?: string; tone?: "up" | "down" | "warn" };
+type Tile = { label: string; value: string; sub?: string; tone?: "up" | "down" | "warn"; bar?: { v: number | undefined; scale: number }; hit?: number; base?: number };
 const TONE = { up: "text-up", down: "text-down", warn: "text-warn" } as const;
 const sg = (v: number | undefined, d = 2) => (v == null ? "—" : sgn(v, d));
 const tn = (v: number | undefined): Tile["tone"] => (v == null || v === 0 ? undefined : v > 0 ? "up" : "down");
@@ -180,17 +181,17 @@ function InputsPanel({ inputs, last }: { inputs: PredictionSummaryReady["data"][
     );
   }
   const tiles: Tile[] = [
-    { label: "NIFTY 1D / 5D", value: `${sg(a.nifty_ret_1d)} / ${sg(a.nifty_ret_5d)}`, sub: `20D ${sg(b.nifty_ret_20d)}`, tone: tn(a.nifty_ret_1d) },
-    { label: "Trend vs 20D / 50D avg", value: `${sg(a.nifty_dist_sma20)} / ${sg(b.nifty_dist_sma50)}`, sub: `60D drawdown ${sg(b.nifty_drawdown_60d)}`, tone: tn(a.nifty_dist_sma20) },
+    { label: "NIFTY 1D / 5D", value: `${sg(a.nifty_ret_1d)} / ${sg(a.nifty_ret_5d)}`, sub: `20D ${sg(b.nifty_ret_20d)}`, tone: tn(a.nifty_ret_1d), bar: { v: a.nifty_ret_1d, scale: 0.02 } },
+    { label: "Trend vs 20D / 50D avg", value: `${sg(a.nifty_dist_sma20)} / ${sg(b.nifty_dist_sma50)}`, sub: `60D drawdown ${sg(b.nifty_drawdown_60d)}`, tone: tn(a.nifty_dist_sma20), bar: { v: a.nifty_dist_sma20, scale: 0.04 } },
     { label: "India VIX (level / 1D)", value: a.indiavix_ln != null ? `${Math.exp(a.indiavix_ln).toFixed(2)} / ${sg(a.indiavix_chg_1d)}` : "—", sub: `vs 60D avg ${sg(b.indiavix_vs_60d)}`, tone: a.indiavix_chg_1d != null && a.indiavix_chg_1d > 0 ? "down" : "up" },
     { label: "Sectors above 20D avg", value: b.sectors_above_sma20 != null ? `${b.sectors_above_sma20} of 8` : "—", sub: "bank, IT, auto, pharma, FMCG, metal, energy, realty", tone: b.sectors_above_sma20 == null ? undefined : b.sectors_above_sma20 >= 5 ? "up" : b.sectors_above_sma20 <= 3 ? "down" : "warn" },
-    { label: "S&P 500 / Nasdaq (last US close)", value: `${sg(a.spx_ret)} / ${sg(a.ndx_ret)}`, sub: `S&P 5D ${sg(b.spx_ret_5d)}`, tone: tn(a.spx_ret) },
+    { label: "S&P 500 / Nasdaq (last US close)", value: `${sg(a.spx_ret)} / ${sg(a.ndx_ret)}`, sub: `S&P 5D ${sg(b.spx_ret_5d)}`, tone: tn(a.spx_ret), bar: { v: a.spx_ret, scale: 0.02 } },
     { label: "US VIX (level / change)", value: a.usvix_ln != null ? `${Math.exp(a.usvix_ln).toFixed(1)} / ${sg(a.usvix_chg)}` : "—", tone: a.usvix_chg != null && a.usvix_chg > 0 ? "down" : "up" },
-    { label: "Brent crude / Gold", value: `${sg(a.brent_ret)} / ${sg(a.gold_ret)}`, sub: `Brent 20D ${sg(b.brent_ret_20d)}`, tone: tn(a.gold_ret) },
+    { label: "Brent crude / Gold", value: `${sg(a.brent_ret)} / ${sg(a.gold_ret)}`, sub: `Brent 20D ${sg(b.brent_ret_20d)}`, tone: tn(a.gold_ret), bar: { v: a.brent_ret, scale: 0.03 } },
     { label: "USD/INR · Dollar index", value: `${sg(a.usdinr_ret)} · ${sg(a.dxy_ret)}`, sub: `USD/INR 20D ${sg(b.usdinr_ret_20d)}`, tone: a.usdinr_ret != null && a.usdinr_ret > 0 ? "down" : "up" },
     { label: "US 10Y yield change (pts)", value: a.ust10y_chg != null ? `${a.ust10y_chg >= 0 ? "+" : "−"}${Math.abs(a.ust10y_chg).toFixed(2)}` : "—", sub: `5D ${b.ust10y_chg_5d != null ? b.ust10y_chg_5d.toFixed(2) : "—"}`, tone: a.ust10y_chg != null && a.ust10y_chg > 0 ? "down" : "up" },
-    { label: "Asia: Nikkei / Hang Seng", value: `${sg(a.n225_ret)} / ${sg(a.hsi_ret)}`, tone: tn(a.n225_ret) },
-    { label: "Europe: DAX / FTSE", value: `${sg(a.dax_ret)} / ${sg(a.ftse_ret)}`, tone: tn(a.dax_ret) },
+    { label: "Asia: Nikkei / Hang Seng", value: `${sg(a.n225_ret)} / ${sg(a.hsi_ret)}`, tone: tn(a.n225_ret), bar: { v: a.n225_ret, scale: 0.02 } },
+    { label: "Europe: DAX / FTSE", value: `${sg(a.dax_ret)} / ${sg(a.ftse_ret)}`, tone: tn(a.dax_ret), bar: { v: a.dax_ret, scale: 0.02 } },
     { label: "Today's gap / range", value: `${sg(a.nifty_gap_today)} / ${sg(a.nifty_range)}`, sub: "of the last session", tone: tn(a.nifty_gap_today) },
   ];
   return (
@@ -202,6 +203,7 @@ function InputsPanel({ inputs, last }: { inputs: PredictionSummaryReady["data"][
             <p className={MONO}>{t.label}</p>
             <p className={`num mt-1 font-mono text-lg font-semibold ${t.tone ? TONE[t.tone] : ""}`}>{t.value}</p>
             {t.sub && <p className="num font-mono text-[11px] text-muted">{t.sub}</p>}
+            {t.bar && <div className="mt-1.5"><MiniBar value={t.bar.v ?? null} scale={t.bar.scale} className="w-full" /></div>}
           </div>
         ))}
       </div>
@@ -215,8 +217,8 @@ function SummaryStrip({ d }: { d: PredictionSummaryReady }) {
   const best = (e: HorizonEval) => (e.available && e.models && e.best_on_tuning ? e.models[e.best_on_tuning]?.holdout : undefined);
   const a = best(t1), b = best(t5);
   const tiles: Tile[] = [
-    { label: "T+1 holdout hit rate", value: a ? pct(a.hit) : "—", sub: t1.calls?.hit != null ? `confident calls ${pct(t1.calls.hit)} on ${pct(t1.calls.coverage, 0)} of days` : undefined, tone: a && a.hit > 0.55 ? "up" : undefined },
-    { label: "T+5 holdout hit rate", value: b ? pct(b.hit) : "—", sub: "always-up baseline " + (t5.base ? pct(t5.base.up_rate_holdout) : "—") },
+    { label: "T+1 holdout hit rate", value: a ? pct(a.hit) : "—", sub: t1.calls?.hit != null ? `confident calls ${pct(t1.calls.hit)} on ${pct(t1.calls.coverage, 0)} of days` : undefined, tone: a && a.hit > 0.55 ? "up" : undefined, hit: a?.hit, base: t1.base?.up_rate_holdout },
+    { label: "T+5 holdout hit rate", value: b ? pct(b.hit) : "—", sub: "always-up baseline " + (t5.base ? pct(t5.base.up_rate_holdout) : "—"), hit: b?.hit, base: t5.base?.up_rate_holdout },
     { label: "T+1 Brier skill vs base", value: a ? pct(a.skill, 2) : "—", sub: a ? `95% ${num(a.gain_ci95[0], 4)} to ${num(a.gain_ci95[1], 4)}` : undefined, tone: a && a.skill > 0 ? "up" : "warn" },
     { label: "Forward results so far", value: String(Object.values(d.ledger.scoreboard.T1).reduce((s, x) => s + x.n, 0)), sub: "resolved T+1 forecasts (all models)" },
   ];
@@ -227,6 +229,7 @@ function SummaryStrip({ d }: { d: PredictionSummaryReady }) {
           <p className={MONO}>{t.label}</p>
           <p className={`num mt-1 font-mono text-xl font-bold ${t.tone ? TONE[t.tone] : ""}`}>{t.value}</p>
           {t.sub && <p className="num font-mono text-[11px] text-muted">{t.sub}</p>}
+          {t.hit != null && <div className="relative mt-2 h-1.5 rounded-full bg-rule/60" aria-hidden="true"><div className="absolute inset-y-0 left-0 rounded-full bg-info" style={{ width: `${t.hit * 100}%` }} />{t.base != null && <div className="absolute -inset-y-0.5 w-0.5 bg-paper" style={{ left: `${t.base * 100}%` }} />}</div>}
         </div>
       ))}
     </div>
@@ -238,6 +241,18 @@ function SummaryStrip({ d }: { d: PredictionSummaryReady }) {
 function DayLogPanel({ days }: { days: NonNullable<PredictionSummaryReady["days"]> }) {
   return (
     <Panel title="Daily forward-test log — every forecast day, recorded or missed">
+      {days.length > 0 && (() => {
+        const asc = [...days].sort((a, b) => (a.target_session < b.target_session ? -1 : 1));
+        const state = (d: (typeof days)[number]) => (d.status !== "recorded" ? "missed" as const : d.p_up == null || !d.actual ? "pending" as const : d.p_up > 0.5 === d.actual.positive ? "right" as const : "wrong" as const);
+        const st = asc.map(state);
+        const rec = asc.filter((d) => d.status === "recorded").length, right = st.filter((x) => x === "right").length, resolved = st.filter((x) => x === "right" || x === "wrong").length;
+        return (
+          <div className="mb-3 space-y-2 rounded-xl border border-rule bg-ink/40 p-3" data-testid="daylog-summary">
+            <DotTimeline days={asc.map((d, i) => ({ label: `${d.target_session} ${d.horizon}`, state: st[i]!, counted: d.counts_in_forward_test }))} />
+            <p className="num text-xs text-muted">{rec} of {asc.length} forecast days recorded · {resolved === 0 ? "none resolved yet" : `${right} of ${resolved} resolved were right`} · <span className="text-up">●</span> right <span className="text-down">●</span> wrong <span>●</span> pending <span className="text-warn">○</span> not recorded</p>
+          </div>
+        );
+      })()}
       {days.length === 0 ? (
         <p className="text-sm text-muted" data-testid="daylog-empty">Nothing logged yet. Each weekday after 09:10 IST the page records whether the forecast was locked in the ledger and, if not, why.</p>
       ) : (
@@ -274,6 +289,11 @@ function PostMortem({ rows }: { rows: (PredictionLedgerRow & { hz: "T1" | "T5" }
       {done.length === 0 ? (
         <p className="text-sm text-muted" data-testid="postmortem-empty">Nothing has resolved yet. After each target session closes, the ensemble forecast is compared with what happened here, with the inputs that pushed it at the time.</p>
       ) : (
+        <>
+        <div className="mb-3 rounded-xl border border-rule bg-ink/40 p-3">
+          <p className="num mb-1 text-xs text-muted">{done.filter((r) => (r.p_up_model ?? 0.5) > 0.5 === r.outcome!.realized.positive).length} of {done.length} right · bar = what the market did, mark = whether the forecast pointed that way</p>
+          <ReturnBars rows={[...done].reverse().map((r) => ({ label: r.target_session, ret: r.outcome!.realized.close_to_close ?? r.outcome!.realized.ret5 ?? 0, right: (r.p_up_model ?? 0.5) > 0.5 === r.outcome!.realized.positive }))} />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm" aria-label="Post-mortem">
             <thead className="text-xs text-muted"><tr><th className="text-left font-normal">Horizon</th><th className="text-left font-normal">Target</th><th className="text-right font-normal">Said up</th><th className="text-right font-normal">Actual</th><th className="pl-4 text-left font-normal">Verdict</th><th className="pl-4 text-left font-normal">Inputs that pushed it (not causes)</th></tr></thead>
@@ -293,6 +313,7 @@ function PostMortem({ rows }: { rows: (PredictionLedgerRow & { hz: "T1" | "T5" }
             </tbody>
           </table>
         </div>
+        </>
       )}
     </Panel>
   );
@@ -397,7 +418,7 @@ function ForwardPanel({ board }: { board: PredictionSummaryReady["ledger"]["scor
               {rows.map(({ h, m, s }) => (
                 <tr key={`${h}${m}`} className="num border-t border-rule/50">
                   <td>{h}</td><td>{label(m)}</td><td className="text-right">{s.n}</td>
-                  <td className={`text-right ${s.brier < s.brier_base ? "text-up" : "text-down"}`}>{num(s.brier)}</td><td className="text-right text-muted">{num(s.brier_base)}</td>
+                  <td className={`text-right ${s.brier < s.brier_base ? "text-up" : "text-down"}`}>{num(s.brier)}<PairBar model={s.brier} base={s.brier_base} /></td><td className="text-right text-muted">{num(s.brier_base)}</td>
                   <td className="text-right">{pct(s.hit)} <span className="text-muted">({pct(s.hit_ci[0])}–{pct(s.hit_ci[1])})</span><HitInterval hit={s.hit} ci={s.hit_ci as [number, number]} /></td>
                 </tr>
               ))}
@@ -419,8 +440,8 @@ function LedgerTable({ hz, rows }: { hz: "T1" | "T5"; rows: PredictionLedgerRow[
         <tbody>
           {rows.map((r) => (
             <tr key={r.forecast_id} className="num border-t border-rule/50">
-              <td>{label(r.model)} v{r.model_version}</td><td>{r.reference_session}</td><td>{r.target_session}</td><td className="text-right">{pct(r.p_up_model)}</td>
-              <td className="text-right">{r.outcome ? `${r.outcome.realized.positive ? "Up" : "Not up"} ${sgn(r.outcome.realized.close_to_close ?? r.outcome.realized.ret5 ?? 0)}` : <span className="text-muted">pending</span>}</td>
+              <td>{label(r.model)} v{r.model_version}</td><td>{r.reference_session}</td><td>{r.target_session}</td><td className="text-right"><span className="mr-2">{pct(r.p_up_model)}</span><span aria-hidden="true" className="relative inline-block h-1.5 w-14 rounded-full bg-down/50 align-middle"><span className="absolute inset-y-0 left-0 rounded-full bg-up" style={{ width: `${(r.p_up_model ?? 0) * 100}%` }} /></span></td>
+              <td className="text-right">{r.outcome ? <span className={`rounded-full border px-2 py-0.5 text-xs ${r.outcome.realized.positive ? "border-up/50 bg-up/10 text-up" : "border-down/50 bg-down/10 text-down"}`}>{`${r.outcome.realized.positive ? "Up" : "Not up"} ${sgn(r.outcome.realized.close_to_close ?? r.outcome.realized.ret5 ?? 0)}`}</span> : <span className="rounded-full border border-rule px-2 py-0.5 text-xs text-muted">pending</span>}</td>
               <td className={`pl-4 ${r.intact ? "text-up" : "text-down"}`}>{r.intact ? "Yes" : "ALTERED"}</td>
             </tr>
           ))}

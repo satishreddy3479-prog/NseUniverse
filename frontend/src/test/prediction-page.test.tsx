@@ -6,6 +6,11 @@ import { AppRoutes } from "../App";
 import type { CallStats, ModelEval, ModelForecast, PredictionSummary, Verdict } from "../lib/types";
 import { expiries, status, summary } from "./fixtures";
 
+vi.mock("../components/EChart", () => ({
+  useChartColors: () => ({ up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" }),
+  EChart: ({ ariaLabel }: { ariaLabel: string }) => <div role="img" aria-label={ariaLabel} />,
+}));
+
 const meval = (verdict: Verdict, gain = 0.0007): ModelEval => ({
   description: "desc", params: { l2: 50 },
   holdout: { n: 1750, brier: 0.2485, log_loss: 0.69, hit: 0.545, hit_ci: [0.52, 0.56], gain, gain_ci95: [-0.0005, 0.002], gain_ci_strict_low: -0.001, skill: 0.003, verdict },
@@ -183,5 +188,21 @@ describe("Daily forward-test log", () => {
   it("says so when nothing has been logged yet", async () => {
     mount(data());
     expect(await screen.findByTestId("daylog-empty")).toBeInTheDocument();
+  });
+});
+
+describe("Prediction page graphics", () => {
+  it("shows the models-against-base-rate dots, the range bar and the reading for each forecast", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input).split("?")[0]!;
+      const map: Record<string, unknown> = { "/api/status": status(), "/api/expiries": expiries, "/api/snapshots": [summary()], "/api/prediction/summary": data() };
+      return map[url] == null ? new Response("{}", { status: 404 }) : new Response(JSON.stringify(map[url]), { status: 200 });
+    }));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={["/prediction"]}><AppRoutes /></MemoryRouter></QueryClientProvider>);
+    const t1 = await screen.findByTestId("forecast-T1");
+    expect(within(t1).getByTestId("reading-T1")).toHaveTextContent(/chance of a higher close/);
+    expect(within(t1).getByTestId("model-dots")).toBeInTheDocument();
+    expect(within(t1).getByTestId("compute-T1")).toHaveTextContent("Compute now");
   });
 });

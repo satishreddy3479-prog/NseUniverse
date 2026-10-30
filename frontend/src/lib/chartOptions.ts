@@ -531,3 +531,15 @@ export function sessionize(option: EChartsCoreOption, bounds: { min: number; max
     series: o.series.map((s) => ({ ...s, data: clip(s.data) })),
   } as EChartsCoreOption;
 }
+
+/** Grouped bars per session (oldest first): FII and DII net flows, participant positions. Missing values are gaps, not zeros. */
+export function groupedBarsOption(categories: string[], series: { name: string; color: string; values: (number | null)[] }[], c: ChartColors, fmt: (v: number) => string = (v) => v.toLocaleString("en-IN")): EChartsCoreOption {
+  return {
+    animation: false, grid: { left: 62, right: 12, top: 30, bottom: 26 },
+    legend: { top: 0, right: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: unknown) => (v == null ? "—" : fmt(Number(v))) },
+    xAxis: { type: "category", data: categories, axisLabel: { ...axisText(c), formatter: (v: string) => v.slice(5) }, axisLine: { lineStyle: { color: c.rule } }, axisTick: { show: false } },
+    yAxis: { type: "value", axisLabel: { ...axisText(c), formatter: (v: number) => compactIN(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
+    series: series.map((s) => ({ name: s.name, type: "bar", barMaxWidth: 18, itemStyle: { color: s.color, borderRadius: 2 }, data: s.values })),
+  };
+}
