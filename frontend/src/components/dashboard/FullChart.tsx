@@ -1,3 +1,4 @@
+import { Info } from "../Info";
 import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -23,7 +24,7 @@ export function FullChart({ title, onClose, toolbar, footer, children }: {
     <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/70 p-2 sm:p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <section role="dialog" aria-modal="true" aria-label={title} className="flex h-full w-full max-w-[1800px] flex-col rounded-[var(--radius-panel)] border border-rule bg-slate">
         <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-rule px-3 py-2">
-          <h2 className="mr-auto text-base font-semibold text-paper">{title}</h2>
+          <h2 className="mr-auto flex items-center gap-2 text-base font-semibold text-paper">{title}<Info term={title} /></h2>
           {toolbar}
           <button ref={close} type="button" onClick={onClose} aria-label="Close full chart"
             className="inline-flex min-h-9 items-center rounded-sm border border-rule bg-slate-2 px-3 text-sm text-paper hover:border-brass">Close ✕</button>

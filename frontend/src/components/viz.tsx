@@ -1,6 +1,7 @@
 // Small visual primitives for the intraday page: gauges, range bars, diverging bars, split bars, tiles.
 // Pure presentation of numbers the caller already has: a missing value draws an empty track, never a zero.
 import type { ReactNode } from "react";
+import { Info } from "./Info";
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -82,7 +83,7 @@ export function Tile({ label, value, sub, accent = "border-rule", valueCls = "te
 }) {
   return (
     <div title={title} className={`min-w-0 rounded-sm border border-rule border-l-2 bg-slate-2/60 px-3 py-2 ${accent}`}>
-      <div className="text-[11px] uppercase tracking-wide text-muted">{label}</div>
+      <div className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted">{label}<Info term={label} /></div>
       <div className={`num truncate text-base font-semibold ${valueCls}`}>{value}</div>
       {sub && <div className="truncate text-[11px] text-muted">{sub}</div>}
       {children}

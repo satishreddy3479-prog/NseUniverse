@@ -4,6 +4,7 @@ import { mergeRows, type LiveMode } from "../components/ChainTable";
 import { useThrottledVersion } from "../components/dashboard/DashContext";
 import { useLiveSpot, useStreamStatus } from "../lib/useLive";
 import { EChart, useChartColors } from "../components/EChart";
+import { Info } from "../components/Info";
 import { Button } from "../components/ui";
 import { PAYOFF_ZOOM, payoffOption, payoffView } from "../lib/chartOptions";
 import { api } from "../lib/api";
@@ -62,7 +63,7 @@ function Stat({ label, value, sub, cls = "text-paper", hint, big = false }: { la
   // tiles grow to fill their row, so a row never ends with an empty cell
   return (
     <div className={`min-w-0 flex-1 bg-slate px-3 py-2 ${big ? "basis-[8.5rem]" : "basis-[11rem]"}`} title={hint}>
-      <dt className="text-xs text-muted">{label}</dt>
+      <dt className="flex items-center gap-1 text-xs text-muted">{label}<Info term={label} /></dt>
       <dd className={`num font-semibold ${big ? "text-lg" : "text-[15px] font-medium"} ${cls}`}>{value}</dd>
       {sub && <dd className="num text-[11px] text-muted">{sub}</dd>}
     </div>

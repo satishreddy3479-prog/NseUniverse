@@ -1,3 +1,4 @@
+import { Info } from "./Info";
 import type { ReactNode } from "react";
 import type { Completeness, DataSource } from "../lib/types";
 
@@ -10,7 +11,7 @@ export function Panel({ title, actions, children, className = "" }: {
       className={`rounded-[var(--radius-panel)] border border-rule bg-slate ${className}`}
     >
       <header className="flex min-h-11 items-center justify-between gap-3 border-b border-rule px-4 py-2">
-        <h2 className="text-[15px] font-semibold text-paper">{title}</h2>
+        <h2 className="flex items-center gap-2 text-[15px] font-semibold text-paper">{title}<Info term={title} /></h2>
         {actions}
       </header>
       <div className="p-4">{children}</div>

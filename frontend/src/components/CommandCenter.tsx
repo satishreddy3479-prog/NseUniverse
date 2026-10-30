@@ -10,6 +10,7 @@ import { fmtDateTimeIST, fmtPct, fmtPrice, fmtTimeIST, MISSING } from "../lib/fo
 import { useLiveSpot } from "../lib/useLive";
 import type { BreadthBlock, BreakoutState, FlowStats, IntradayComponent, IntradaySummary, MarketSummary, SetupCandidate, SideClass } from "../lib/types";
 import { EChart, useChartColors } from "./EChart";
+import { Info } from "./Info";
 import { FillBar, Gauge, MiniBar, RangeBar, SplitBar, Tile } from "./viz";
 
 const PHASE: Record<string, string> = {
@@ -61,7 +62,7 @@ function Card({ title, children, right, className = "" }: { title: string; child
   return (
     <section aria-label={title} className={`min-w-0 overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate shadow-[0_1px_0_rgba(255,255,255,0.03)_inset] ${className}`}>
       <header className="flex min-h-10 items-center justify-between gap-2 border-b border-rule bg-gradient-to-r from-slate-2/80 to-transparent px-3 py-1.5">
-        <h3 className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-paper/90"><span aria-hidden="true" className="inline-block h-3.5 w-1 rounded-sm bg-info" />{title}</h3>
+        <h3 className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wide text-paper/90"><span aria-hidden="true" className="inline-block h-3.5 w-1 rounded-sm bg-info" />{title}<Info term={title} /></h3>
         {right}
       </header>
       <div className="p-3">{children}</div>

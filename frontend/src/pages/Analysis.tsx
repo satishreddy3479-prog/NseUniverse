@@ -1,3 +1,4 @@
+import { Info } from "../components/Info";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GridLayout, useContainerWidth, verticalCompactor, type Layout, type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
@@ -68,7 +69,7 @@ function Frame({ def, onClose }: { def: WidgetDef; onClose: () => void }) {
   return (
     <section aria-label={def.title} className="flex h-full flex-col overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate">
       <header className="widget-drag flex min-h-9 cursor-grab items-center justify-between gap-2 border-b border-rule px-3 active:cursor-grabbing">
-        <h2 className="truncate text-sm font-semibold text-paper">{def.title}</h2>
+        <h2 className="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-paper"><span className="truncate">{def.title}</span><Info term={def.title} /></h2>
         <button type="button" aria-label={`Remove ${def.title}`} title="Remove widget"
           onMouseDown={(e) => e.stopPropagation()} onClick={onClose}
           className="widget-nodrag -mr-1 inline-flex size-7 items-center justify-center rounded-sm text-muted hover:bg-slate-2 hover:text-paper">×</button>

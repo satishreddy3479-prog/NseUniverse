@@ -271,23 +271,30 @@ export function oiHeatmapOption(h: OiHeatmap, c: ChartColors): EChartsCoreOption
  * NIFTY spot at each score (right axis). Missing scores are gaps, never 0.
  */
 export function sentimentHistoryOption(rows: IntradayScoreRow[], c: ChartColors): EChartsCoreOption {
-  const x = rows.map((r) => fmtTimeIST(r.sample_utc));
+  // short HH:MM labels on the axis; the tooltip carries the full time and both values
+  const hhmm = (iso: string) => fmtTimeIST(iso).slice(0, 5);
+  const x = rows.map((r) => hhmm(r.sample_utc));
   return {
     animation: false,
-    grid: { left: 40, right: 56, top: 28, bottom: 24 },
-    legend: { top: 0, textStyle: axisText(c), data: ["Sentiment score", "NIFTY (sampled)"] },
-    tooltip: { trigger: "axis" },
-    xAxis: { type: "category", data: x, axisLabel: axisText(c), axisLine: { lineStyle: { color: c.rule } } },
+    grid: { left: 44, right: 62, top: 36, bottom: 26 },
+    legend: { top: 0, left: 0, itemWidth: 16, itemHeight: 3, textStyle: { color: c.paper, fontSize: 11 }, data: ["Sentiment score (−1 to +1)", "NIFTY (right axis)"] },
+    tooltip: { trigger: "axis", backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 },
+      formatter: (params: unknown) => {
+        const ps = params as { dataIndex: number; seriesName: string; value: number | null }[];
+        const i = ps[0]!.dataIndex;
+        return `<b>${fmtTimeIST(rows[i]!.sample_utc)}</b><br/>` + ps.map((p) => `${p.seriesName.startsWith("Sentiment") ? "Score" : "NIFTY"}: ${p.value == null ? "—" : p.seriesName.startsWith("Sentiment") ? p.value.toFixed(2) : fmtPrice(p.value)}`).join("<br/>");
+      } },
+    xAxis: { type: "category", data: x, axisLabel: { ...axisText(c), hideOverlap: true, interval: "auto" }, axisTick: { show: false }, axisLine: { lineStyle: { color: c.rule } } },
     yAxis: [
-      { type: "value", min: -1, max: 1, name: "score", nameTextStyle: axisText(c), axisLabel: axisText(c), splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
-      { type: "value", scale: true, name: "INR", nameTextStyle: axisText(c), axisLabel: { ...axisText(c), formatter: (v: number) => fmtPrice(v) }, splitLine: { show: false } },
+      { type: "value", min: -1, max: 1, interval: 0.5, axisLabel: { color: c.brass, fontSize: 11, formatter: (v: number) => (v > 0 ? `+${v}` : String(v)) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
+      { type: "value", scale: true, axisLabel: { color: c.info, fontSize: 11, formatter: (v: number) => fmtInt(Math.round(v)) }, splitLine: { show: false } },
     ],
     series: [
-      { name: "Sentiment score", type: "line", data: rows.map((r) => r.score), connectNulls: false, showSymbol: false,
-        lineStyle: { color: c.brass, width: 2 }, itemStyle: { color: c.brass },
+      { name: "Sentiment score (−1 to +1)", type: "line", data: rows.map((r) => r.score), connectNulls: false, showSymbol: false,
+        lineStyle: { color: c.brass, width: 2 }, itemStyle: { color: c.brass }, areaStyle: { color: c.brass, opacity: 0.08 },
         markLine: { silent: true, symbol: "none", data: [{ yAxis: 0 }], lineStyle: { color: c.muted, type: "dashed" }, label: { show: false } } },
-      { name: "NIFTY (sampled)", type: "line", yAxisIndex: 1, data: rows.map((r) => r.spot), showSymbol: false,
-        lineStyle: { color: c.info, width: 1 }, itemStyle: { color: c.info } },
+      { name: "NIFTY (right axis)", type: "line", yAxisIndex: 1, data: rows.map((r) => r.spot), showSymbol: false,
+        lineStyle: { color: c.info, width: 1.4 }, itemStyle: { color: c.info } },
     ],
   };
 }

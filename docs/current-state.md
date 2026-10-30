@@ -5,6 +5,10 @@ _Last updated: 2026-10-29_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Info buttons and sentiment chart (30 Oct 2026)
+- A small **i** button explains a panel or number: what it is, how to read it, what to keep in mind. Text lives in one place, `frontend/src/lib/glossary.ts` (about 75 entries); `Info` looks a title or label up there and draws nothing when there is no entry. Wired into: shared `Panel` headers, intraday cards, every Analysis widget and its full-size view, `Tile`s, and the strategy builder statistics. Opens on click/tap, closes with Escape, the × or a click outside; drawn outside the card so it is never clipped, bottom-aligned for narrow screens. Tests check every widget and intraday card title has an entry. Not covered yet: individual table column headers (except Greeks terms in the glossary) and the Prediction/Diagnostics sub-labels without an entry.
+- Sentiment history chart: legend no longer overlaps axis titles, axes are coloured to match their lines (score −1…+1 left, NIFTY right as whole points), HH:MM time labels, tooltip shows the full time and both values.
+
 ## Top bar (30 Oct 2026)
 - Live check at 11:28 IST: one `option_chain` call to the broker failed at 11:25:39 IST (ApiException) and the next fetch worked about 3 minutes later; the header showed that moment as a red "Snapshot: Last fetch failed". A failure within 5 minutes of a successful fetch now shows amber "Retrying" with the reason on hover; red stays for failures with no recent success.
 - Phone header: Menu, name and status pill on one row, NIFTY price and change on the second row (nothing cut off); the pill truncates instead of overflowing. Desktop: price, change and time on one line.
