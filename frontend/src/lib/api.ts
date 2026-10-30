@@ -52,11 +52,12 @@ export interface StoredStrategies { saved: Record<string, unknown>[]; closed: Re
 export const api = {
   strategies: () => request<StoredStrategies>("/api/strategies"),
   putStrategy: (kind: "saved" | "closed", key: string, doc: unknown) =>
-    request<{ ok: boolean }>(`/api/strategies/${kind}/${encodeURIComponent(key)}`, {
-      method: "PUT", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ doc }),
+    // the name goes in the body: names like "straddle 30/10/2026" contain slashes that a proxy would split into path parts
+    request<{ ok: boolean }>(`/api/strategies/${kind}`, {
+      method: "PUT", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ key, doc }),
     }),
   deleteStrategy: (kind: "saved" | "closed", key: string) =>
-    request<{ ok: boolean; deleted: boolean }>(`/api/strategies/${kind}/${encodeURIComponent(key)}`, { method: "DELETE" }),
+    request<{ ok: boolean; deleted: boolean }>(`/api/strategies/${kind}?key=${encodeURIComponent(key)}`, { method: "DELETE" }),
   importStrategies: (saved: Record<string, unknown>, closed: Record<string, unknown>) =>
     request<{ added: number }>("/api/strategies/import", {
       method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ saved, closed }),

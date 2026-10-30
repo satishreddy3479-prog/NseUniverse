@@ -5,6 +5,11 @@ _Last updated: 2026-10-29_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Strategy builder: Update, Reset/New, server-save fix, layout (30 Oct 2026)
+- **Server save 404:** strategy names such as "straddle - range bound -30/10/2026" contain slashes; the proxy split them into path parts so PUT/DELETE did not match any route. The name now travels in the body (`PUT /api/strategies/{kind}` `{key, doc}`) or query (`DELETE /api/strategies/{kind}?key=`). Tested with a slashed name.
+- **Update** moved beside Exit all in the Positions header (shows a dot while there are unsaved changes). **Reset** (undo edits back to the built/loaded strategy and default what-if/date/IV/multiplier/zoom) and **New** (blank strategy, clears name and loaded state) are now separate buttons, each disabled when it has nothing to do.
+- Layout: the option chain stays in view while the right column scrolls (no empty space under it); risk stats are two rows of tiles that fill their row (key outcomes, then breakevens/net premium/Greeks/exit sums); legs table fits the card without a sideways scroll (expiry and distance from spot shown under the strike, Δ and Θ on two lines, icon buttons for duplicate/remove).
+
 ## Strategy builder payoff chart and mobile (30 Oct 2026)
 - Payoff chart opens on the **profit zone** (between the breakevens, current price included) instead of the whole computed range. **− / + / Fit** buttons zoom around the centre of the profit zone (0.7x per step); the y-axis refits to the visible part; mouse-wheel/drag zoom is removed. The visible range is shown next to the buttons.
 - Jitter: the chart redraws at most every 2.5 s while live ticks arrive, and at once when the zoom, legs or controls change; axis edges snap to 10 points.

@@ -692,16 +692,23 @@ async def strategies_list(request: Request) -> dict[str, Any]:
     }
 
 
-@router.put("/strategies/{kind}/{key}")
-async def strategies_put(kind: str, key: str, body: StrategyDoc, request: Request) -> dict[str, Any]:  # noqa: E501
+class StrategyPut(BaseModel):
+    key: str
+    doc: dict[str, Any]
+
+
+# The strategy's name travels in the body or the query string, never in the path: names such as
+# "straddle 30/10/2026" contain slashes, which a proxy decodes and the router then cannot match.
+@router.put("/strategies/{kind}")
+async def strategies_put(kind: str, body: StrategyPut, request: Request) -> dict[str, Any]:
     try:
-        await asyncio.to_thread(_strategies(request).put, kind, key, body.doc)
+        await asyncio.to_thread(_strategies(request).put, kind, body.key, body.doc)
     except StrategyError as e:
         raise _bad_strategy(e) from e
     return {"ok": True}
 
 
-@router.delete("/strategies/{kind}/{key}")
+@router.delete("/strategies/{kind}")
 async def strategies_delete(kind: str, key: str, request: Request) -> dict[str, Any]:
     """Marks the strategy deleted (it is no longer listed); its history is kept."""
     try:

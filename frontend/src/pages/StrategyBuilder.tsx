@@ -58,11 +58,12 @@ function Thumb({ legs, lotSize, spot }: { legs: Leg[]; lotSize: number; spot: nu
   return <svg viewBox={`0 0 ${W} ${H}`} className="h-16 w-full" aria-hidden="true"><line x1="0" x2={W} y1={y(0)} y2={y(0)} stroke="var(--rule)" strokeDasharray="3 3" />{segs}</svg>;
 }
 
-function Stat({ label, value, sub, cls = "text-paper", hint }: { label: string; value: string; sub?: string; cls?: string; hint?: string }) {
+function Stat({ label, value, sub, cls = "text-paper", hint, big = false }: { label: string; value: string; sub?: string; cls?: string; hint?: string; big?: boolean }) {
+  // tiles grow to fill their row, so a row never ends with an empty cell
   return (
-    <div className="border-b border-rule/60 px-3 py-2" title={hint}>
+    <div className={`min-w-0 flex-1 bg-slate px-3 py-2 ${big ? "basis-[8.5rem]" : "basis-[11rem]"}`} title={hint}>
       <dt className="text-xs text-muted">{label}</dt>
-      <dd className={`num text-[15px] font-medium ${cls}`}>{value}</dd>
+      <dd className={`num font-semibold ${big ? "text-lg" : "text-[15px] font-medium"} ${cls}`}>{value}</dd>
       {sub && <dd className="num text-[11px] text-muted">{sub}</dd>}
     </div>
   );
@@ -97,6 +98,8 @@ export default function StrategyBuilder() {
     return () => mq.removeEventListener("change", on);
   }, []);
   const [ivPts, setIvPts] = useState(0);
+  /** The legs as they were when this strategy was built from a template or loaded from Saved/Closed: what Reset returns to. */
+  const [baseline, setBaseline] = useState<Leg[]>([]);
   const [gcols, setGcols] = useState<GKey[]>(["delta", "iv"]);
   const [wide, setWide] = useState(false);
   const [whatPct, setWhatPct] = useState(0);
@@ -309,12 +312,13 @@ export default function StrategyBuilder() {
     const out = t.build({ strikes, atm, expiry, premium: (_e, k, ty) => ltp(k, ty) });
     return "error" in out ? null : withIds(out);
   };
+  const loadLegs = (ls: Leg[]) => { setLegs(ls); setBaseline(ls); };
   const apply = (t: Template) => {
     if (!expiry || atm == null) { setNote("Load an option chain first."); return; }
     const out = t.build({ strikes, atm, expiry, premium: (_e, k, ty) => ltp(k, ty) });
     if ("error" in out) { setNote(out.error); return; }
     setNote(null);
-    setLegs(withIds(out));
+    loadLegs(withIds(out));
   };
   const chooseStrike = (l: Leg, strike: number) => {
     const m = ltp(strike, l.type);
@@ -338,10 +342,10 @@ export default function StrategyBuilder() {
     };
     return (
       <div>
-        <input className={`${field} w-20 ${wrong ? "border-down" : ""}`} type="number" min={0} step="0.05" aria-label={kind === "target" ? "Target premium" : "Stop-loss premium"}
+        <input className={`${field} w-[4.4rem] !px-1.5 ${wrong ? "border-down" : ""}`} type="number" min={0} step="0.05" aria-label={kind === "target" ? "Target premium" : "Stop-loss premium"}
           value={cur ?? ""} placeholder="none" onChange={(e) => setExit(l, kind, e.target.value === "" ? null : Number(e.target.value))} />
         <div className="mt-0.5 flex items-center gap-1">
-          <input className={`${field} w-14 !px-1 text-xs ${tone2}`} type="number" min={0} step="1" aria-label={`${kind === "target" ? "Target" : "Stop"} percent of entry premium`}
+          <input className={`${field} w-12 !px-1 text-xs ${tone2}`} type="number" min={0} step="1" aria-label={`${kind === "target" ? "Target" : "Stop"} percent of entry premium`}
             title={`% the premium moves ${up ? "above" : "below"} the entry premium`} placeholder="%" value={curPct ?? ""} disabled={l.premium == null}
             onChange={(e) => fromPct(e.target.value)} />
           <span className="text-[10px] text-muted">%</span>
@@ -377,9 +381,17 @@ export default function StrategyBuilder() {
     persistClosed([{ id: newLegId(), name: name.trim() || `Strategy ${at.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`, closedAt: at.toISOString(), snapshotAt: snap.retrieved_at, expiry, lotSize, pnl, legs: out, stale: !!chain.data?.stale }, ...closed]);
     setLegs([]); setNote(null); setSel(null); setMult(1); setDays(0); setName(""); setOpened(null); setLoaded(null);
   };
-  const openClosed = (c: Closed) => { setPicked(c.expiry); setLegs(c.legs.map(({ exit: _e, ...l }) => ({ ...l, id: newLegId() }))); setMult(1); setNote(null); setOpened(c); setLoaded(null); };
+  const openClosed = (c: Closed) => { setPicked(c.expiry); loadLegs(c.legs.map(({ exit: _e, ...l }) => ({ ...l, id: newLegId() }))); setMult(1); setNote(null); setOpened(c); setLoaded(null); };
   const persist = (s: Saved[]) => { pushDiff("saved", saved, s, (x) => x.name); setSaved(s); try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch { /* storage unavailable: kept for this visit only */ } };
   const net = (k: number, t: OptionType) => legs.filter((l) => l.strike === k && l.type === t).reduce((s, l) => s + sign(l.action) * l.lots, 0);
+  const controlsChanged = mult !== 1 || days !== 0 || ivPts !== 0 || whatPct !== 0 || zoom !== 0;
+  const legsChanged = JSON.stringify(legs.map(({ id: _i, ...r }) => r)) !== JSON.stringify(baseline.map(({ id: _i, ...r }) => r));
+  const canReset = legsChanged || controlsChanged;
+  const canNew = legs.length > 0 || name !== "" || loaded != null || opened != null;
+  /** Reset: undo edits, keeping the strategy. */
+  const resetStrategy = () => { setLegs(baseline.map((l) => ({ ...l }))); setMult(1); setDays(0); setIvPts(0); setWhatPct(0); setZoom(0); setNote(null); setSel(null); };
+  /** New: forget the strategy entirely and start from the gallery. */
+  const newStrategy = () => { setLegs([]); setBaseline([]); setName(""); setLoaded(null); setOpened(null); setNote(null); setSel(null); setMult(1); setDays(0); setIvPts(0); setWhatPct(0); setZoom(0); };
   const savedEntry = loaded ? saved.find((x) => x.name === loaded) : undefined;
   const sig = (ls: Leg[]) => JSON.stringify(ls.map(({ id: _i, ...r }) => r));
   const dirty = !!savedEntry && (sig(legs) !== sig(savedEntry.legs) || savedEntry.expiry !== expiry);
@@ -391,14 +403,7 @@ export default function StrategyBuilder() {
         <h1 className="mr-2 w-full text-xl font-semibold sm:w-auto">Strategy builder</h1>
         <span className="rounded-sm border border-rule bg-slate-2 px-2 py-1 text-sm text-paper">NIFTY 50</span>
         <input className={`${field} min-w-0 flex-1 sm:w-40 sm:flex-none`} aria-label="Strategy name" value={name} onChange={(e) => setName(e.target.value)} placeholder="name to save" />
-        <Button variant="primary" disabled={!name.trim() || legs.length === 0 || !expiry} onClick={() => { persist([{ name: name.trim(), savedAt: new Date().toISOString(), expiry: expiry!, legs }, ...saved.filter((s) => s.name !== name.trim())]); setLoaded(name.trim()); setName(""); }}>Save</Button>
-        {loaded && savedEntry && (
-          <>
-            <Button variant="primary" disabled={!dirty || legs.length === 0 || !expiry} title={dirty ? `Overwrite “${loaded}” with the legs, strikes, lots, targets and stops shown now` : `“${loaded}” already matches what is shown`}
-              onClick={() => persist(saved.map((x) => (x.name === loaded ? { ...x, updatedAt: new Date().toISOString(), expiry: expiry!, legs } : x)))}>Update “{loaded}”</Button>
-            <span className={`text-xs ${dirty ? "text-warn" : "text-muted"}`} data-testid="saved-state">{dirty ? "Unsaved changes" : "Saved"}</span>
-          </>
-        )}
+        <Button variant="primary" disabled={!name.trim() || legs.length === 0 || !expiry} onClick={() => { persist([{ name: name.trim(), savedAt: new Date().toISOString(), expiry: expiry!, legs }, ...saved.filter((s) => s.name !== name.trim())]); setLoaded(name.trim()); setBaseline(legs); setName(""); }}>Save</Button>
         <span data-testid="sync-state" className={`text-[11px] ${sync === "browser" || syncProblem ? "text-warn" : "text-muted"}`}
           title={sync === "server" ? "Saved and closed strategies are stored on the server and kept in its nightly backups" : "The server could not be reached: strategies are held in this browser only and move to the server the next time it is reachable"}>
           {syncProblem ? `Not saved on server: ${syncProblem}` : sync === "server" ? "Stored on server" : sync === "browser" ? "Browser only (server unreachable)" : "Checking server…"}
@@ -411,7 +416,7 @@ export default function StrategyBuilder() {
                 <ul className="max-h-72 overflow-auto">
                   {saved.map((sv) => (
                     <li key={sv.name} className="flex items-center gap-1 border-b border-rule/40 last:border-0">
-                      <button type="button" className="flex-1 rounded-sm p-2 text-left hover:bg-slate-2" onClick={(e) => { setPicked(sv.expiry); setLegs(sv.legs.map((l) => ({ ...l, id: newLegId() }))); setOpened(null); setLoaded(sv.name); (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open"); }}>
+                      <button type="button" className="flex-1 rounded-sm p-2 text-left hover:bg-slate-2" onClick={(e) => { setPicked(sv.expiry); loadLegs(sv.legs.map((l) => ({ ...l, id: newLegId() }))); setOpened(null); setLoaded(sv.name); (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open"); }}>
                         <div className="text-paper">{sv.name}</div>
                         <div className="text-[11px] text-muted">{sv.legs.length} legs · expiry {sv.expiry}</div>
                       </button>
@@ -446,13 +451,14 @@ export default function StrategyBuilder() {
             )}
           </div>
         </details>
-        <Button onClick={() => { setLegs([]); setNote(null); setSel(null); setMult(1); setDays(0); setLoaded(null); }} disabled={legs.length === 0}>Reset / New</Button>
+        <Button ariaLabel="Reset strategy" onClick={resetStrategy} disabled={!canReset} title="Undo your edits: back to the strategy as it was built or loaded (legs, strikes, lots, targets, stops, what-if, date and IV shift)">Reset</Button>
+        <Button ariaLabel="New strategy" onClick={newStrategy} disabled={!canNew} title="Start a blank strategy: clears the legs and the name">New</Button>
         <span className="text-xs text-muted sm:ml-auto" title={liveMode === "fresh" ? "Streamed last traded prices overlay the stored snapshot, as on the Option chain page" : "Premiums are the last traded prices in this stored snapshot, not live quotes"}>{liveMode === "fresh" ? <span className="mr-2 rounded-sm border border-up/60 px-1 text-up">LIVE</span> : null}Snapshot <span className={`num ${chain.data?.stale ? "text-warn" : "text-paper"}`}>{snap ? fmtDateTimeIST(snap.retrieved_at) : "—"}</span>{chain.data?.stale ? " · stale" : ""}</span>
       </div>
 
       <div className={`grid gap-3 [&>*]:min-w-0 ${wide ? "" : "xl:grid-cols-[minmax(480px,36%)_1fr]"}`}>
         {/* ------------------------------------------------------------ chain */}
-        <section aria-label="Option chain" className="flex h-fit flex-col rounded-[var(--radius-panel)] border border-rule bg-slate">
+        <section aria-label="Option chain" className={`flex h-fit flex-col rounded-[var(--radius-panel)] border border-rule bg-slate ${wide ? "" : "xl:sticky xl:top-2 xl:self-start"}`}>
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-rule px-3 py-2 text-sm">
             <span className="text-xs text-muted">SPOT <span className="num text-[15px] font-semibold text-paper">{spot == null ? "—" : fmtPrice(spot)}</span></span>
             <span className="text-xs text-muted" title="Average implied volatility of the call and put at the strike nearest the forward, from their stored prices (model)">ATM IV <span className="num text-paper">{atmIv == null ? "—" : `${(atmIv * 100).toFixed(1)}%`}</span></span>
@@ -479,7 +485,7 @@ export default function StrategyBuilder() {
           {chain.error && <p role="alert" className="px-3 py-3 text-sm text-warn">No stored chain for {expiry}: capture one from Live option chain first. Strikes and premiums come from it; nothing is made up.</p>}
           {snap && lotSize == null && <p role="alert" className="px-3 py-3 text-sm text-down">The stored chain carries no lot size, so P&L in rupees cannot be computed. It is not assumed.</p>}
           {shown.length > 0 && (
-            <div className="max-h-[460px] overflow-auto sm:max-h-[640px]">
+            <div className={`max-h-[460px] overflow-auto sm:max-h-[640px] ${wide ? "" : "xl:max-h-[calc(100vh-15rem)]"}`}>
               <table className="w-full text-sm" aria-label="Option chain">
                 <thead className="sticky top-0 z-[1] bg-slate text-xs text-muted">
                   <tr>
@@ -578,18 +584,22 @@ export default function StrategyBuilder() {
               <p className="p-3 text-sm text-muted" data-testid="payoff-empty">{lotSize == null ? "Waiting for a stored chain with a lot size." : errors.length ? "Fix the highlighted legs to see the payoff." : live.length === 0 ? "Tick at least one leg." : a?.reason ?? "Enter the entry premium of every leg."}</p>
             ) : (
               <div className="flex flex-col">
-                <dl className="grid grid-cols-2 border-b border-rule sm:grid-cols-4 2xl:grid-cols-8 [&>div]:border-r [&>div]:border-rule/60" data-testid="risk-stats">
-                  <Stat label="P&L now (vs entry)" value={money(totalPnl)} cls={tone(totalPnl)} hint="Stored last traded prices minus your entry premiums" />
-                  <Stat label="POP (model estimate)" value={pop == null ? "—" : `${(pop * 100).toFixed(0)}%`} hint="Chance of ending in profit at expiry if NIFTY moves like a lognormal with the ATM implied volatility. A model, not a forecast." />
-                  <Stat label="Reward : Risk" value={rr == null ? "N/A" : `${rr.toFixed(2)} : 1`} />
-                  <Stat label="Max profit" value={a.profitUnlimited ? "Unlimited" : money(a.maxProfit)} cls="text-up" hint="Best P&L at expiry over every NIFTY level from 0 upwards" />
-                  <Stat label="Max loss" value={a.lossUnlimited ? "Unlimited" : money(a.maxLoss)} cls="text-down" hint="Worst P&L at expiry over every NIFTY level from 0 upwards" />
+                <div className="border-b border-rule" data-testid="risk-stats">
+                  <dl className="flex flex-wrap gap-px bg-rule/60">
+                  <Stat big label="Max profit" value={a.profitUnlimited ? "Unlimited" : money(a.maxProfit)} cls="text-up" hint="Best P&L at expiry over every NIFTY level from 0 upwards" />
+                  <Stat big label="Max loss" value={a.lossUnlimited ? "Unlimited" : money(a.maxLoss)} cls="text-down" hint="Worst P&L at expiry over every NIFTY level from 0 upwards" />
+                  <Stat big label="Reward : Risk" value={rr == null ? "N/A" : `${rr.toFixed(2)} : 1`} />
+                  <Stat big label="POP (model estimate)" value={pop == null ? "—" : `${(pop * 100).toFixed(0)}%`} hint="Chance of ending in profit at expiry if NIFTY moves like a lognormal with the ATM implied volatility. A model, not a forecast." />
+                  <Stat big label="P&L now (vs entry)" value={money(totalPnl)} cls={tone(totalPnl)} hint="Stored last traded prices minus your entry premiums" />
+                  </dl>
+                  <dl className="flex flex-wrap gap-px border-t border-rule/60 bg-rule/60">
                   <Stat label="Breakevens" value={a.breakevens.length ? a.breakevens.map((b) => fmtInt(Math.round(b * 100) / 100)).join(" · ") : "none"} sub={spot ? a.breakevens.map((b) => `${((b / spot - 1) * 100).toFixed(2)}%`).join(" · ") : undefined} />
+                  <Stat label="Net premium" value={netPremium == null ? "—" : `${money(netPremium)} ${netPremium >= 0 ? "credit" : "debit"}`} cls={tone(netPremium)} />
+                  {greeks && greeks.unavailable.length === 0 && <Stat label="Net Δ (model)" value={greeks.delta.toFixed(1)} sub={`Θ ${money(greeks.thetaDay)}/day · Vega ${money(greeks.vegaPt)}`} hint="Position delta in NIFTY units; theta per calendar day; vega per volatility point. Black-76 model values." />}
                   {ifTarget && <Stat label="If targets hit" value={money(ifTarget.v)} cls={tone(ifTarget.v)} sub={`${ifTarget.n} of ${live.length} legs, at their target premium`} hint="Sum over the legs that have a target of (target premium - entry) x quantity. Exact arithmetic, not a forecast." />}
                   {ifStop && <Stat label="If stops hit" value={money(ifStop.v)} cls={tone(ifStop.v)} sub={`${ifStop.n} of ${live.length} legs, at their stop premium`} hint="Sum over the legs that have a stop of (stop premium - entry) x quantity. Exact arithmetic, not a forecast." />}
-                  {greeks && greeks.unavailable.length === 0 && <Stat label="Net Δ (model)" value={greeks.delta.toFixed(1)} sub={`Θ ${money(greeks.thetaDay)}/day · Vega ${money(greeks.vegaPt)}`} hint="Position delta in NIFTY units; theta per calendar day; vega per volatility point. Black-76 model values." />}
-                  <Stat label="Net premium" value={netPremium == null ? "—" : `${money(netPremium)} ${netPremium >= 0 ? "credit" : "debit"}`} cls={tone(netPremium)} />
-                </dl>
+                  </dl>
+                </div>
                 <div className="min-w-0 p-2">
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-sm bg-slate-2 px-3 py-2 text-xs" data-testid="oi-strip">
                     <span className="text-muted">{oiMode === "change" ? "OI change" : "OI"} data at <span className="num text-paper">{atmK ?? "—"}</span></span>
@@ -656,6 +666,12 @@ export default function StrategyBuilder() {
                   <span>Multiplier <button type="button" aria-label="Decrease multiplier" className="mx-1 rounded-sm border border-rule px-2" onClick={() => setMult((m) => Math.max(1, m - 1))}>−</button><span className="num text-paper" data-testid="mult">{mult}</span><button type="button" aria-label="Increase multiplier" className="mx-1 rounded-sm border border-rule px-2" onClick={() => setMult((m) => m + 1)}>+</button></span>
                   <span>Qty per lot <span className="num text-paper">{lotSize ?? "—"}</span></span>
                   <span>Total P&L <span className={`num ${tone(totalPnl)}`}>{money(totalPnl)}</span></span>
+                  {loaded && savedEntry && (
+                    <button type="button" disabled={!dirty || legs.length === 0 || !expiry} data-testid="update-saved"
+                      title={dirty ? `Overwrite the saved strategy “${loaded}” with what is shown now` : `“${loaded}” already matches what is shown`}
+                      onClick={() => { persist(saved.map((x) => (x.name === loaded ? { ...x, updatedAt: new Date().toISOString(), expiry: expiry!, legs } : x))); setBaseline(legs); }}
+                      className="rounded-sm border border-brass bg-brass/15 px-3 py-1 text-paper hover:bg-brass/25 disabled:opacity-40">Update{dirty && <span className="ml-1 text-warn" aria-label="unsaved changes">●</span>}</button>
+                  )}
                   <button type="button" onClick={exitAll} disabled={!lotSize || legs.every((l) => l.enabled === false)} title="Exit every ticked leg at its stored price and save the result to Closed. Nothing is sent to a broker." className="rounded-sm border border-down bg-down/15 px-3 py-1 font-semibold text-down hover:bg-down/25 disabled:opacity-40">Exit all</button>
                 </div>
               </div>
@@ -667,8 +683,8 @@ export default function StrategyBuilder() {
                     <span>Greeks: Δ <span className="num text-paper">{greeks && greeks.unavailable.length === 0 ? greeks.delta.toFixed(1) : "—"}</span> · Θ/day <span className={`num ${tone(greeks ? greeks.thetaDay : null)}`}>{greeks && greeks.unavailable.length === 0 ? money(greeks.thetaDay) : "—"}</span> (model)</span>
                   </div>
                   <div className="overflow-x-auto">
-                  <table className="legs-table w-full text-sm" aria-label="Strategy legs">
-                    <thead className="text-xs text-muted"><tr>{["", "Leg", "Strike", "Lots", "Expiry", "Entry ₹", "LTP", "P&L", "Δ · Θ/day", "Target ₹", "Stop ₹", ""].map((h, i) => <th key={i} className="px-1 py-1 text-left font-normal">{h}</th>)}</tr></thead>
+                  <table className="legs-table w-full text-sm md:[&_td]:!px-0.5 md:[&_th]:!px-0.5" aria-label="Strategy legs">
+                    <thead className="text-xs text-muted"><tr>{["", "Leg", "Strike", "Lots", "Entry ₹", "LTP", "P&L", "Δ · Θ/day", "Target ₹", "Stop ₹", ""].map((h, i) => <th key={i} className="px-1 py-1 text-left font-normal">{h}</th>)}</tr></thead>
                     <tbody>
                       {legs.map((l) => {
                         const mk = ltp(l.strike, l.type);
@@ -677,36 +693,35 @@ export default function StrategyBuilder() {
                         const si = strikes.indexOf(l.strike);
                         const lg = lotSize && spot && l.enabled !== false ? legGreeks({ ...l, lots: l.lots * mult, iv: l.iv ?? marketIv(l) }, lotSize, val0) : null;
                         const buy = l.action === "BUY";
-                        const step = "grid size-7 place-items-center rounded-sm border border-rule bg-slate-2 text-paper hover:border-info disabled:opacity-40";
+                        const step = "grid size-6 place-items-center rounded-sm border border-rule bg-slate-2 text-paper hover:border-info disabled:opacity-40";
                         return (
                           <tr key={l.id} className={`border-t border-rule/50 align-top ${l.enabled === false ? "opacity-50" : ""}`} style={{ boxShadow: `inset 3px 0 0 ${buy ? "var(--up)" : "var(--down)"}` }} data-testid={`leg-${l.id}`}>
                             <td className="px-2 py-2"><input type="checkbox" aria-label="Include leg" checked={l.enabled !== false} onChange={(e) => update(l.id, { enabled: e.target.checked })} /></td>
                             <td data-label="Leg" className="px-1 py-1.5"><div className="flex gap-1">
-                              <select className={`${field} font-semibold ${buy ? "border-up/60 text-up" : "border-down/60 text-down"}`} aria-label="Action" value={l.action} onChange={(e) => update(l.id, { action: e.target.value as Action })}><option>BUY</option><option>SELL</option></select>
-                              <select className={`${field} font-semibold`} aria-label="Option type" value={l.type} onChange={(e) => { const t = e.target.value as OptionType; const m = ltp(l.strike, t); update(l.id, { type: t, ...(l.premiumSource === "manual" ? {} : { premium: m, premiumSource: m == null ? null : "market" }) }); }}><option>CE</option><option>PE</option></select>
+                              <select className={`${field} !px-1 font-semibold ${buy ? "border-up/60 text-up" : "border-down/60 text-down"}`} aria-label="Action" value={l.action} onChange={(e) => update(l.id, { action: e.target.value as Action })}><option>BUY</option><option>SELL</option></select>
+                              <select className={`${field} !px-1 font-semibold`} aria-label="Option type" value={l.type} onChange={(e) => { const t = e.target.value as OptionType; const m = ltp(l.strike, t); update(l.id, { type: t, ...(l.premiumSource === "manual" ? {} : { premium: m, premiumSource: m == null ? null : "market" }) }); }}><option>CE</option><option>PE</option></select>
                             </div></td>
                             <td data-label="Strike" className="px-1 py-1.5"><div className="flex items-center gap-1">
                               <button type="button" className={step} aria-label="Previous strike" disabled={si <= 0} onClick={() => chooseStrike(l, strikes[si - 1]!)}>‹</button>
-                              <select className={`${field} w-[5.6rem]`} aria-label="Strike" value={l.strike} onChange={(e) => chooseStrike(l, Number(e.target.value))}>{si < 0 && <option value={l.strike}>{l.strike} (not listed)</option>}{strikes.map((k) => <option key={k} value={k}>{fmtInt(k)}</option>)}</select>
+                              <select className={`${field} w-[4.9rem] !px-1`} aria-label="Strike" value={l.strike} onChange={(e) => chooseStrike(l, Number(e.target.value))}>{si < 0 && <option value={l.strike}>{l.strike} (not listed)</option>}{strikes.map((k) => <option key={k} value={k}>{fmtInt(k)}</option>)}</select>
                               <button type="button" className={step} aria-label="Next strike" disabled={si < 0 || si >= strikes.length - 1} onClick={() => chooseStrike(l, strikes[si + 1]!)}>›</button>
-                            </div></td>
+                            </div><div className="num mt-0.5 text-[10px] text-muted">{dmy(l.expiry)}{spot ? ` · ${(((l.strike / spot) - 1) * 100).toFixed(1)}% vs spot` : ""}</div></td>
                             <td data-label="Lots" className="px-1 py-1.5"><div className="flex items-center gap-1">
                               <button type="button" className={step} aria-label="Decrease lots" disabled={l.lots <= 1} onClick={() => update(l.id, { lots: Math.max(1, l.lots - 1) })}>−</button>
-                              <input className={`${field} w-12 text-center`} type="number" min={1} step={1} aria-label="Lots" value={l.lots} onChange={(e) => update(l.id, { lots: Number(e.target.value) })} />
+                              <input className={`${field} w-10 !px-1 text-center`} type="number" min={1} step={1} aria-label="Lots" value={l.lots} onChange={(e) => update(l.id, { lots: Number(e.target.value) })} />
                               <button type="button" className={step} aria-label="Increase lots" onClick={() => update(l.id, { lots: l.lots + 1 })}>+</button>
                             </div><div className="num mt-0.5 text-[10px] text-muted">{lotSize ? `${fmtInt(l.lots * mult * lotSize)} qty` : ""}</div></td>
-                            <td data-label="Expiry" className="num px-1 py-2 text-xs text-muted">{dmy(l.expiry)}</td>
-                            <td data-label="Entry ₹" className="px-1 py-1.5"><input className={`${field} w-24`} type="number" min={0} step="0.05" aria-label="Entry premium" value={l.premium ?? ""} placeholder="enter" title={l.premiumSource === "market" ? "Stored quote" : l.premiumSource === "manual" ? "You entered this" : "Missing"} onChange={(e) => update(l.id, { premium: e.target.value === "" ? null : Number(e.target.value), premiumSource: e.target.value === "" ? null : "manual" })} />
+                            <td data-label="Entry ₹" className="px-1 py-1.5"><input className={`${field} w-[4.6rem] !px-1.5`} type="number" min={0} step="0.05" aria-label="Entry premium" value={l.premium ?? ""} placeholder="enter" title={l.premiumSource === "market" ? "Stored quote" : l.premiumSource === "manual" ? "You entered this" : "Missing"} onChange={(e) => update(l.id, { premium: e.target.value === "" ? null : Number(e.target.value), premiumSource: e.target.value === "" ? null : "manual" })} />
                               <div className="text-[10px] text-muted">{l.premiumSource === "market" ? "stored quote" : l.premiumSource === "manual" ? "you entered" : "missing"}</div></td>
                             <td data-label="LTP" className="num px-1 py-2">{mk == null ? <span className="text-muted" title="No quote in the stored chain for this contract">—</span> : fmtPrice(mk)}</td>
-                            <td data-label="P&L" className={`num px-1 py-2 ${tone(pl)}`}>{money(pl)}</td>
-                            <td data-label="Δ · Θ/day" className="num px-1 py-2 text-xs">{lg ? <><span className="text-paper">{lg.delta.toFixed(1)}</span> <span className="text-muted">·</span> <span className={tone(lg.thetaDay)}>{money(lg.thetaDay)}</span></> : <span className="text-muted" title="No volatility fits this leg's stored price">—</span>}</td>
+                            <td data-label="P&L" className={`num whitespace-nowrap px-1 py-2 ${tone(pl)}`}>{money(pl)}</td>
+                            <td data-label="Δ · Θ/day" className="num px-1 py-2 text-xs">{lg ? <><div className="whitespace-nowrap"><span className="text-muted">Δ </span><span className="text-paper">{lg.delta.toFixed(1)}</span></div><div className="whitespace-nowrap"><span className="text-muted">Θ </span><span className={tone(lg.thetaDay)}>{money(lg.thetaDay)}</span></div></> : <span className="text-muted" title="No volatility fits this leg's stored price">—</span>}</td>
                             <td data-label="Target ₹" className="px-1 py-1">{exitCell(l, "target")}</td>
                             <td data-label="Stop ₹" className="px-1 py-1">{exitCell(l, "stop")}</td>
                             <td className="whitespace-nowrap px-1 py-2">
                               {mk != null && l.premium !== mk && <button type="button" className="mr-2 text-xs text-info hover:underline" aria-label="Use stored quote" title="Set the entry premium to the stored quote" onClick={() => update(l.id, { premium: mk, premiumSource: "market" })}>⟳</button>}
-                              <button type="button" className="mr-2 text-xs text-info hover:underline" aria-label="Duplicate leg" onClick={() => setLegs((ls) => { const i = ls.findIndex((x) => x.id === l.id); const c = [...ls]; c.splice(i + 1, 0, { ...l, id: newLegId() }); return c; })}>Copy</button>
-                              <button type="button" className="text-xs text-down hover:underline" aria-label="Remove leg" onClick={() => setLegs((ls) => ls.filter((x) => x.id !== l.id))}>✕</button>
+                              <button type="button" className="mr-2 text-xs text-info hover:underline" aria-label="Duplicate leg" title="Duplicate this leg" onClick={() => setLegs((ls) => { const i = ls.findIndex((x) => x.id === l.id); const c = [...ls]; c.splice(i + 1, 0, { ...l, id: newLegId() }); return c; })}>⧉</button>
+                              <button type="button" className="text-xs text-down hover:underline" aria-label="Remove leg" title="Remove this leg" onClick={() => setLegs((ls) => ls.filter((x) => x.id !== l.id))}>✕</button>
                               {issue.map((i) => <div key={i.field + i.message} role={i.level === "error" ? "alert" : undefined} className={`max-w-[28ch] whitespace-normal text-[11px] ${i.level === "error" ? "text-down" : "text-warn"}`}>{i.message}</div>)}
                             </td>
                           </tr>

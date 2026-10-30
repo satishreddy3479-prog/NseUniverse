@@ -98,7 +98,7 @@ describe("Strategy builder page", () => {
     await pick("bull_call_spread");
     await userEvent.type(await screen.findByLabelText("Strategy name"), "my spread");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
-    await userEvent.click(screen.getByRole("button", { name: "Reset / New" }));
+    await userEvent.click(screen.getByRole("button", { name: "New strategy" }));
     expect(screen.getByTestId("gallery")).toBeInTheDocument();
     await userEvent.click(within(screen.getByTestId("saved-menu")).getByText(/my spread/));
     expect(within(await screen.findByRole("table", { name: "Strategy legs" })).getAllByLabelText("Strike")).toHaveLength(2);
@@ -124,6 +124,28 @@ describe("Payoff chart zoom", () => {
   });
 });
 
+describe("Reset and New work independently", () => {
+  it("Reset undoes edits but keeps the strategy; New clears it; each is disabled when it has nothing to do", async () => {
+    mount();
+    await loaded();
+    expect(screen.getByRole("button", { name: "Reset strategy" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "New strategy" })).toBeDisabled();
+    await pick("bull_call_spread");
+    expect(screen.getByRole("button", { name: "Reset strategy" })).toBeDisabled(); // just built: nothing to undo
+    expect(screen.getByRole("button", { name: "New strategy" })).toBeEnabled();
+    const table = () => within(screen.getByRole("table", { name: "Strategy legs" }));
+    await userEvent.click(table().getAllByLabelText("Increase lots")[0]!);
+    expect((table().getAllByLabelText("Lots")[0] as HTMLInputElement).value).toBe("2");
+    await userEvent.click(screen.getByRole("button", { name: "Reset strategy" }));
+    expect((table().getAllByLabelText("Lots")[0] as HTMLInputElement).value).toBe("1"); // edit undone, legs still there
+    expect(table().getAllByLabelText("Strike")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Reset strategy" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "New strategy" }));
+    expect(screen.getByTestId("gallery")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New strategy" })).toBeDisabled();
+  });
+});
+
 describe("Updating a saved strategy", () => {
   it("shows Update only for a loaded saved strategy, flags unsaved changes and overwrites the same entry", async () => {
     mount();
@@ -131,20 +153,20 @@ describe("Updating a saved strategy", () => {
     await pick("bull_call_spread");
     await userEvent.type(await screen.findByLabelText("Strategy name"), "adjust me");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
-    const update = await screen.findByRole("button", { name: "Update “adjust me”" });
+    const update = await screen.findByTestId("update-saved");
+    expect(update).toHaveTextContent("Update");
     expect(update).toBeDisabled();
-    expect(screen.getByTestId("saved-state")).toHaveTextContent("Saved");
     await userEvent.type(screen.getAllByLabelText("Stop percent of entry premium")[0]!, "30");
-    expect(screen.getByTestId("saved-state")).toHaveTextContent("Unsaved changes");
     expect(update).toBeEnabled();
+    expect(update).toHaveTextContent("●"); // unsaved changes
     await userEvent.click(update);
-    expect(screen.getByTestId("saved-state")).toHaveTextContent("Saved");
+    expect(update).toBeDisabled();
     expect(within(screen.getByTestId("saved-menu")).getAllByText(/adjust me/)).toHaveLength(1); // same entry, no copy
     const stored = JSON.parse(localStorage.getItem("nse.strategies.v1") ?? "[]") as { legs: { stop?: number | null }[] }[];
     expect(stored).toHaveLength(1);
     expect(stored[0]!.legs.some((l) => l.stop != null)).toBe(true);
-    await userEvent.click(screen.getByRole("button", { name: "Reset / New" }));
-    expect(screen.queryByRole("button", { name: /Update “/ })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "New strategy" }));
+    expect(screen.queryByTestId("update-saved")).not.toBeInTheDocument();
   });
 });
 
@@ -165,7 +187,7 @@ describe("Strategies kept on the server", () => {
         saved = [...saved, ...add];
         return new Response(JSON.stringify({ added: add.length }), { status: 200 });
       }
-      if (method === "DELETE") { saved = saved.filter((x) => `/api/strategies/saved/${encodeURIComponent(x.name)}` !== url); return new Response(JSON.stringify({ ok: true, deleted: true }), { status: 200 }); }
+      if (method === "DELETE") { saved = saved.filter((x) => `/api/strategies/saved?key=${encodeURIComponent(x.name)}` !== url); return new Response(JSON.stringify({ ok: true, deleted: true }), { status: 200 }); }
       if (method === "PUT") return new Response(JSON.stringify({ ok: true }), { status: 200 });
       return new Response(JSON.stringify({ saved, closed: [] }), { status: 200 });
     }));
@@ -182,7 +204,7 @@ describe("Strategies kept on the server", () => {
     const imp = calls.find((c) => c.url === "/api/strategies/import")!;
     expect(Object.keys((imp.body as { saved: object }).saved)).toEqual(["only here"]); // not the one the server already had
     await userEvent.click(within(menu).getByRole("button", { name: "Delete saved strategy on server" }));
-    await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url.endsWith("/saved/on%20server"))).toBe(true));
+    await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url === "/api/strategies/saved?key=on%20server")).toBe(true));
     expect(menu).toHaveTextContent("Saved (1)");
   });
 
@@ -194,7 +216,7 @@ describe("Strategies kept on the server", () => {
     await pick("bull_call_spread");
     await userEvent.type(await screen.findByLabelText("Strategy name"), "persist me");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url.endsWith("/saved/persist%20me"))).toBe(true));
+    await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url === "/api/strategies/saved" && (c.body as { key: string }).key === "persist me")).toBe(true));
     const put = calls.find((c) => c.method === "PUT")!.body as { doc: { name: string; legs: unknown[] } };
     expect(put.doc.name).toBe("persist me");
     expect(put.doc.legs).toHaveLength(2);

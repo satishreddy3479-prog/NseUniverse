@@ -90,8 +90,8 @@ export function ErrorNote({ title, message }: { title: string; message: string }
   );
 }
 
-export function Button({ children, onClick, disabled, variant = "default", type = "button", title }: {
-  children: ReactNode; onClick?: () => void; disabled?: boolean;
+export function Button({ children, onClick, disabled, variant = "default", type = "button", title, ariaLabel }: {
+  children: ReactNode; onClick?: () => void; disabled?: boolean; ariaLabel?: string;
   variant?: "default" | "primary"; type?: "button" | "submit"; title?: string;
 }) {
   const style = variant === "primary"
@@ -101,6 +101,7 @@ export function Button({ children, onClick, disabled, variant = "default", type 
     <button
       type={type}
       title={title}
+      aria-label={ariaLabel}
       onClick={onClick}
       disabled={disabled}
       className={`inline-flex min-h-9 items-center gap-2 rounded-sm border px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 ${style}`}

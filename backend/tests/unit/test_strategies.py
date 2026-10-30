@@ -63,12 +63,15 @@ def test_import_adds_only_unknown_keys_and_does_not_resurrect_deleted(tmp_path: 
 def test_api_put_list_delete_import(tmp_path: Path) -> None:
     with TestClient(make_app(tmp_path)) as c:
         assert c.get("/api/strategies").json() == {"saved": [], "closed": []}
-        assert c.put("/api/strategies/saved/my%20spread", json={"doc": {"name": "my spread", "legs": LEGS}}).json() == {"ok": True}
-        assert c.put("/api/strategies/closed/c1", json={"doc": {"id": "c1", "pnl": -12.5}}).status_code == 200
+        assert c.put("/api/strategies/saved", json={"key": "straddle - range bound -30/10/2026", "doc": {"name": "my spread", "legs": LEGS}}).json() == {"ok": True}
+        assert c.put("/api/strategies/closed", json={"key": "c1", "doc": {"id": "c1", "pnl": -12.5}}).status_code == 200
         got = c.get("/api/strategies").json()
         assert got["saved"][0]["legs"] == LEGS and got["closed"] == [{"id": "c1", "pnl": -12.5}]
-        assert c.put("/api/strategies/bogus/k", json={"doc": {}}).status_code == 422
-        assert c.delete("/api/strategies/closed/c1").json() == {"ok": True, "deleted": True}
+        assert c.put("/api/strategies/bogus", json={"key": "k", "doc": {}}).status_code == 422
+        assert c.delete("/api/strategies/closed", params={"key": "c1"}).json() == {"ok": True, "deleted": True}
+        # a name with slashes (the app's default style) deletes through the query string too
+        assert c.delete("/api/strategies/saved", params={"key": "straddle - range bound -30/10/2026"}).json()["deleted"] is True
+        c.put("/api/strategies/saved", json={"key": "my spread", "doc": {"name": "my spread", "legs": LEGS}})
         assert c.get("/api/strategies").json()["closed"] == []
         r = c.post("/api/strategies/import", json={"saved": {"my spread": {"x": 1}, "old": {"y": 2}}, "closed": {}})
         assert r.json() == {"added": 1}  # 'my spread' already on the server
