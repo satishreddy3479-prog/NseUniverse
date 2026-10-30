@@ -237,4 +237,16 @@ describe("payoffOption", () => {
     expect(o.series[1]!.data).toEqual([[23900, -100], [24000, 0], [24100, null]]);
     expect(o.series[2]!.markLine.data.map((d) => d.name).filter(Boolean)).toEqual(["Spot", "BE"]);
   });
+
+  it("open interest bars come from the chain strike by strike and the right axis shares the zero line with P&L", async () => {
+    const { payoffOption } = await import("../lib/chartOptions");
+    const oi = [{ strike: 23900, call: 100, put: 300 }, { strike: 24000, call: 500, put: null }];
+    const o = payoffOption({ expiry: [{ s: 23800, pnl: -4000 }, { s: 24200, pnl: 1000 }], spot: 24000, breakevens: [24160], target: null, targetLabel: "", bands: null, oi, oiMode: "oi" }, colors) as unknown as {
+      yAxis: { min: number; max: number }[]; series: { name: string; data: [number, number | null][] }[] };
+    expect(o.series.find((x) => x.name === "Call OI")!.data).toEqual([[23900, 100], [24000, 500]]);
+    expect(o.series.find((x) => x.name === "Put OI")!.data).toEqual([[23900, 300], [24000, null]]); // missing stays missing
+    const [pl, oiAxis] = o.yAxis as { min: number; max: number }[];
+    expect(-pl!.min / pl!.max).toBeCloseTo(-oiAxis!.min / oiAxis!.max, 9); // zero sits at the same height on both axes
+  });
 });
+

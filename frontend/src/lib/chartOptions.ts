@@ -383,6 +383,8 @@ export interface PayoffSeries {
   bands: { m2: number; m1: number; p1: number; p2: number } | null;
   /** open interest per strike drawn faintly behind the payoff */
   oi: { strike: number; call: number | null; put: number | null }[] | null;
+  /** "oi": open interest from zero up; "change": change in OI, bars may go below the zero line */
+  oiMode?: "oi" | "change";
   /** NIFTY levels where a leg is modelled to hit its target or stop (estimates) */
   levels?: { s: number; kind: "target" | "stop" | "whatif"; label: string }[];
 }
@@ -426,10 +428,10 @@ export function payoffOption(p: PayoffSeries, c: ChartColors): EChartsCoreOption
   });
   const marks = [
     { yAxis: 0, lineStyle: { color: c.muted, type: "solid", width: 1 }, label: { show: false } },
-    mk(p.spot, "Spot", c.brass, `Spot ${fmtInt(Math.round(p.spot))}`, "dashed", "top", 1.6),
+    { ...mk(p.spot, "Spot", c.brass, `Current price: ${fmtPrice(p.spot)}`, "dashed", "top", 1.6), label: { formatter: `Current price: ${fmtPrice(p.spot)}`, color: c.paper, fontSize: 11, position: "end", distance: 6, backgroundColor: c.slate, borderColor: c.rule, borderWidth: 1, padding: [3, 6], borderRadius: 3 } },
     ...p.breakevens.map((b) => mk(b, "BE", c.info, `BE ${fmtInt(Math.round(b))}`, "dotted", "bottom")),
     ...(p.bands ? ([["−2σ", p.bands.m2], ["−1σ", p.bands.m1], ["+1σ", p.bands.p1], ["+2σ", p.bands.p2]] as [string, number][]).map(([t, x]) => ({
-      ...mk(x, "SD", c.muted, t, "dotted", "mid"), label: { show: true, formatter: t, color: c.muted, fontSize: 10, rotate: 90, position: "insideStartBottom" } })) : []),
+      ...mk(x, "SD", c.muted, t, "dotted", "mid"), label: { show: true, formatter: t.replace("σ", "SD"), color: c.muted, fontSize: 11, position: "end", distance: 6 } })) : []),
     ...(p.levels ?? []).map((l) => mk(l.s, l.kind, l.kind === "target" ? c.up : l.kind === "stop" ? c.down : c.info, `${l.kind === "target" ? "Target" : l.kind === "stop" ? "Stop" : "What-if"} ${l.label} ${fmtInt(Math.round(l.s))}`.replace("  ", " "), "dashed", "bottom", 1.4)),
   ];
   const areas = p.bands ? [
@@ -437,33 +439,37 @@ export function payoffOption(p: PayoffSeries, c: ChartColors): EChartsCoreOption
     [{ xAxis: p.bands.m1, itemStyle: { color: c.info, opacity: 0.08 } }, { xAxis: p.bands.p1 }],
   ] : [];
   const signed = (v: number | null) => (v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}₹${fmtInt(Math.round(Math.abs(v)))}`);
-  const maxOi = Math.max(1, ...(p.oi ?? []).map((o) => Math.max(o.call ?? 0, o.put ?? 0)));
+  const maxOi = Math.max(1, ...(p.oi ?? []).map((o) => Math.max(Math.abs(o.call ?? 0), Math.abs(o.put ?? 0))));
+  // the right axis shares its zero with the P&L axis, so open interest stands on the zero line and change in OI can go below it
+  const oiTop = maxOi * 1.35, oiBottom = yMax > 0 ? (yMin / yMax) * oiTop : -oiTop;
+  const oiAt = (x: number) => { const o = (p.oi ?? []).reduce<{ strike: number; call: number | null; put: number | null } | null>((b, r) => (b == null || Math.abs(r.strike - x) < Math.abs(b.strike - x) ? r : b), null); return o && Math.abs(o.strike - x) <= 25 ? o : null; };
   const xs = pts.map((x) => x.s);
   return {
     animation: false,
-    grid: { left: 62, right: 16, top: 24, bottom: 30 },
+    grid: { left: 62, right: 58, top: 44, bottom: 30 },
     tooltip: { trigger: "axis", axisPointer: { type: "cross", lineStyle: { color: c.muted, type: "dashed" }, label: { show: false } },
       backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 },
       formatter: (params: unknown) => {
         const x = (params as { axisValue: number }[])[0]!.axisValue;
         const est = p.target ? `<br/><span style="color:${c.info}">${p.targetLabel}</span>: ${signed(lerp(p.target, x))}` : "";
+        const oiRow = oiAt(x), oiTxt = oiRow ? `<br/>${p.oiMode === "change" ? "OI change" : "OI"} at ${fmtInt(oiRow.strike)}: <span style="color:${c.up}">Call ${oiRow.call == null ? "—" : compactIN(oiRow.call)}</span> · <span style="color:${c.down}">Put ${oiRow.put == null ? "—" : compactIN(oiRow.put)}</span>` : "";
         const sd = p.bands ? (x >= p.bands.m1 && x <= p.bands.p1 ? "<br/>inside ±1σ (about 68%, model)" : x >= p.bands.m2 && x <= p.bands.p2 ? "<br/>inside ±2σ (about 95%, model)" : "<br/>outside ±2σ (model)") : "";
-        return `<b>NIFTY ${fmtInt(Math.round(x))}</b> (${(((x / p.spot) - 1) * 100).toFixed(2)}%)<br/>At expiry: <b>${signed(lerp(pts, x))}</b>${est}${sd}`;
+        return `<b>NIFTY ${fmtInt(Math.round(x))}</b> (${(((x / p.spot) - 1) * 100).toFixed(2)}%)<br/>At expiry: <b>${signed(lerp(pts, x))}</b>${est}${sd}${oiTxt}`;
       } },
     xAxis: { type: "value", min: Math.min(...xs), max: Math.max(...xs), axisLabel: { ...axisText(c), formatter: (v: number) => fmtInt(Math.round(v)), hideOverlap: true }, axisLine: { show: false }, axisTick: { show: false }, splitLine: { show: false } },
     yAxis: [
       { type: "value", min: yMin, max: yMax, splitNumber: 4, axisLabel: { ...axisText(c), formatter: (v: number) => money(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.35 } } },
-      { type: "value", show: false, min: 0, max: maxOi * 6 },
+      { type: "value", min: oiBottom, max: oiTop, position: "right", splitLine: { show: false }, axisLabel: { ...axisText(c), formatter: (v: number) => (v === 0 ? "0" : v < 0 ? (p.oiMode === "change" ? "−" + compactIN(Math.abs(v)) : "") : compactIN(v)) }, name: p.oiMode === "change" ? "Change in OI" : "Open interest", nameLocation: "middle", nameGap: 42, nameTextStyle: { color: c.muted, fontSize: 10 } },
     ],
     dataZoom: [{ type: "inside", filterMode: "none" }],
     series: [
       ...(p.oi ? [
-        { name: "Call OI", type: "bar", yAxisIndex: 1, barWidth: 4, silent: true, tooltip: { show: false }, itemStyle: { color: c.up, opacity: 0.35 }, z: 0, data: p.oi.map((o) => [o.strike, o.call]) },
-        { name: "Put OI", type: "bar", yAxisIndex: 1, barWidth: 4, silent: true, tooltip: { show: false }, itemStyle: { color: c.down, opacity: 0.35 }, z: 0, data: p.oi.map((o) => [o.strike, o.put]) },
+        { name: "Call OI", type: "bar", yAxisIndex: 1, barWidth: 5, barGap: "0%", silent: true, tooltip: { show: false }, itemStyle: { color: c.up, opacity: 0.4 }, z: 0, data: p.oi.map((o) => [o.strike, o.call]) },
+        { name: "Put OI", type: "bar", yAxisIndex: 1, barWidth: 5, barGap: "0%", silent: true, tooltip: { show: false }, itemStyle: { color: c.down, opacity: 0.4 }, z: 0, data: p.oi.map((o) => [o.strike, o.put]) },
       ] : []),
       line("Profit", c.up, (v) => v >= 0),
       line("Loss", c.down, (v) => v <= 0),
-      ...(p.target ? [{ name: p.targetLabel, type: "line", showSymbol: false, itemStyle: { color: c.info }, lineStyle: { color: c.info, width: 1.8, type: "dashed" }, z: 4, connectNulls: false, data: p.target.map((x) => [x.s, x.pnl]) }] : []),
+      ...(p.target ? [{ name: p.targetLabel, type: "line", showSymbol: false, itemStyle: { color: c.info }, lineStyle: { color: c.info, width: 2.6 }, z: 4, connectNulls: false, data: p.target.map((x) => [x.s, x.pnl]) }] : []),
       { name: "Markers", type: "line", silent: true, showSymbol: false, data: [],
         markArea: areas.length ? { silent: true, data: areas } : undefined,
         markLine: { symbol: "none", silent: true, animation: false, data: marks } },

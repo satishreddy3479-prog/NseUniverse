@@ -1,14 +1,14 @@
 // Renders the real payoff option with the real ECharts (server-side SVG, no DOM), because a mocked chart cannot
 // show an option that makes ECharts throw. This once blanked the whole page.
 import { BarChart, LineChart } from "echarts/charts";
-import { DataZoomComponent, GridComponent, LegendComponent, MarkLineComponent, TooltipComponent, VisualMapComponent } from "echarts/components";
+import { DataZoomComponent, GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent, TooltipComponent, VisualMapComponent } from "echarts/components";
 import * as echarts from "echarts/core";
 import { SVGRenderer } from "echarts/renderers";
 import { describe, expect, it } from "vitest";
 import { analyzeExpiry, payoffCurve, type Leg } from "../lib/strategy";
 import { payoffOption } from "../lib/chartOptions";
 
-echarts.use([BarChart, LineChart, DataZoomComponent, GridComponent, LegendComponent, MarkLineComponent, TooltipComponent, VisualMapComponent, SVGRenderer]);
+echarts.use([BarChart, LineChart, DataZoomComponent, GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent, TooltipComponent, VisualMapComponent, SVGRenderer]);
 const colors = { up: "#2ad", down: "#f55", brass: "#cb4", info: "#49f", muted: "#889", rule: "#334", paper: "#eee", slate: "#112" };
 const leg = (action: "BUY" | "SELL", type: "CE" | "PE", strike: number, premium: number, lots = 1): Leg => ({ id: `${action}${type}${strike}`, expiry: "2026-11-03", strike, type, action, lots, premium, premiumSource: "manual" });
 

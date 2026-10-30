@@ -81,8 +81,9 @@ export default function StrategyBuilder() {
   const [bias, setBias] = useState<Bias>("Neutral");
   const [rate, setRate] = useState(6);
   const [days, setDays] = useState(0);
-  const [showOi, setShowOi] = useState(true);
-  const [showSd, setShowSd] = useState(true);
+  const [oiMode, setOiMode] = useState<"oi" | "change" | "off">("oi");
+  const [sdOn, setSdOn] = useState(true);
+  const [zoomKey, setZoomKey] = useState(0);
   const [ivPts, setIvPts] = useState(0);
   const [gcols, setGcols] = useState<GKey[]>(["delta", "iv"]);
   const [wide, setWide] = useState(false);
@@ -194,9 +195,10 @@ export default function StrategyBuilder() {
   const chart = useMemo(() => (curve?.length && a?.defined && spot ? payoffOption({
     expiry: curve, target: target && target.some((x) => x.pnl != null) ? target : null,
     targetLabel: `${days > 0 ? `Estimated in ${Math.min(days, dte)} day${days === 1 ? "" : "s"}` : "Estimated at the snapshot time"}${ivPts ? `, IV ${ivPts > 0 ? "+" : ""}${ivPts} pts` : ""} (model)`,
-    spot, breakevens: a.breakevens, bands: showSd ? bands : null, levels,
-    oi: showOi ? shown.map((x) => ({ strike: x.strike, call: x.call?.oi ?? null, put: x.put?.oi ?? null })) : null,
-  }, colors) : null), [curve, target, a, spot, days, dte, bands, showSd, showOi, shown, colors, levels, ivPts]);
+    spot, breakevens: a.breakevens, bands: sdOn ? bands : null, levels,
+    oiMode: oiMode === "change" ? "change" : "oi",
+    oi: oiMode === "off" ? null : rows.map((x) => ({ strike: x.strike, call: (oiMode === "change" ? x.call?.oi_change : x.call?.oi) ?? null, put: (oiMode === "change" ? x.put?.oi_change : x.put?.oi) ?? null })),
+  }, colors) : null), [curve, target, a, spot, days, dte, bands, sdOn, oiMode, rows, colors, levels, ivPts]);
   const pop = ready && a?.defined && lotSize && spot && atmIv && expiry ? probabilityOfProfit(live, lotSize, spot, atmIv, expiry, snapMs, carry) : null;
   const greeks = ready && lotSize && spot ? netGreeks(mlegs, lotSize, val0) : null;
   const unreal = (l: Leg, mkt: number | null) => (mkt == null || l.premium == null || !lotSize ? null : sign(l.action) * (mkt - l.premium) * l.lots * mult * lotSize);
@@ -505,15 +507,41 @@ export default function StrategyBuilder() {
                   <Stat label="Net premium" value={netPremium == null ? "—" : `${money(netPremium)} ${netPremium >= 0 ? "credit" : "debit"}`} cls={tone(netPremium)} />
                 </dl>
                 <div className="min-w-0 p-2">
-                  <div className="h-[440px]">{chart ? <EChart option={chart} ariaLabel="Strategy payoff" /> : null}</div>
-                  <div className="grid gap-3 border-t border-rule px-2 py-3 text-xs text-muted md:grid-cols-3" data-testid="whatif">
-                    <label className="flex flex-col gap-1">Day for the dashed estimate: <span className="num text-paper">{Math.min(days, dte) === 0 ? "snapshot" : `day ${Math.min(days, dte)} of ${dte}`}</span>
-                      <input type="range" min={0} max={dte} step={1} value={Math.min(days, dte)} onChange={(e) => setDays(Number(e.target.value))} aria-label="Days from snapshot" /></label>
-                    <label className="flex flex-col gap-1">Implied volatility shift: <span className="num text-paper">{ivPts > 0 ? "+" : ""}{ivPts} vol points</span>
-                      <input type="range" min={-10} max={10} step={0.5} value={ivPts} onChange={(e) => setIvPts(Number(e.target.value))} aria-label="IV shift" /></label>
-                    <label className="flex flex-col gap-1">What if NIFTY is: <span className="num text-paper">{whatSpot == null ? "—" : `${fmtInt(Math.round(whatSpot))} (${whatPct > 0 ? "+" : ""}${whatPct.toFixed(1)}%)`}</span>
-                      <input type="range" min={-5} max={5} step={0.1} value={whatPct} onChange={(e) => setWhatPct(Number(e.target.value))} aria-label="NIFTY what-if" /></label>
-                    <p className="md:col-span-3" data-testid="whatif-readout">{whatPct === 0 ? "Move the NIFTY slider to see the P&L at a level." : <>At NIFTY <span className="num text-paper">{fmtInt(Math.round(whatSpot ?? 0))}</span>: estimated on the chosen day <span className={`num ${tone(whatEst)}`}>{money(whatEst)}</span> (model) · if held to expiry <span className={`num ${tone(whatExp)}`}>{money(whatExp)}</span> (exact)</>}</p>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-sm bg-slate-2 px-3 py-2 text-xs" data-testid="oi-strip">
+                    <span className="text-muted">{oiMode === "change" ? "OI change" : "OI"} data at <span className="num text-paper">{atmK ?? "—"}</span></span>
+                    {atmK != null && (() => { const row = rows.find((x) => x.strike === atmK); const f = (q: typeof row extends undefined ? never : NonNullable<typeof row>["call"]) => (oiMode === "change" ? q?.oi_change : q?.oi) ?? null; const c = row ? f(row.call) : null, pu = row ? f(row.put) : null; return <><span className="text-muted"><span className="mr-1 inline-block size-2 rounded-sm" style={{ background: colors.up }} />Call <span className="num text-paper">{c == null ? "—" : compactIN(c)}</span></span><span className="text-muted"><span className="mr-1 inline-block size-2 rounded-sm" style={{ background: colors.down }} />Put <span className="num text-paper">{pu == null ? "—" : compactIN(pu)}</span></span></>; })()}
+                    <span className="ml-auto flex items-center gap-3 text-muted"><span><span className="mr-1 inline-block h-0.5 w-4 align-middle" style={{ background: colors.up }} />On expiry</span><span><span className="mr-1 inline-block h-0.5 w-4 align-middle" style={{ background: colors.info }} />On target date (model)</span></span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center justify-end gap-2 text-xs">
+                    <select className={field} aria-label="Sigma markers" value={sdOn ? "fixed" : "off"} onChange={(e) => setSdOn(e.target.value === "fixed")} title="Expected-move levels at the snapshot: spot x (1 ± k x ATM IV x sqrt(time))"><option value="fixed">SD fixed</option><option value="off">SD off</option></select>
+                    <select className={field} aria-label="Open interest on the chart" value={oiMode} onChange={(e) => setOiMode(e.target.value as "oi" | "change" | "off")} title="Bars come from the option chain on the left, strike by strike"><option value="oi">Open interest</option><option value="change">Change in OI</option><option value="off">No OI</option></select>
+                    <button type="button" onClick={() => setZoomKey((k) => k + 1)} className="rounded-sm border border-rule bg-slate-2 px-3 py-1.5 text-paper hover:border-info">⌕ Zoom out</button>
+                  </div>
+                  <div className="h-[440px]">{chart ? <EChart key={zoomKey} option={chart} ariaLabel="Strategy payoff" /> : null}</div>
+                  <div className="my-2 flex justify-center" data-testid="projected"><span className={`rounded-sm px-3 py-1 text-xs font-semibold text-white ${whatEst == null ? "bg-slate-2" : whatEst >= 0 ? "bg-up/80" : "bg-down/80"}`}>Projected {whatEst != null && whatEst >= 0 ? "profit" : "loss"} at NIFTY {fmtInt(Math.round(whatSpot ?? 0))} on {new Date(targetMs).toLocaleString("en-GB", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}: {money(whatEst)} (model)</span></div>
+                  <div className="grid gap-5 border-t border-rule px-2 py-3 text-xs text-muted md:grid-cols-2" data-testid="whatif">
+                    <div>
+                      <div className="flex items-center justify-between"><span className="text-paper">NIFTY target</span>
+                        <span className="flex items-center gap-1"><span className="num">{whatPct > 0 ? "+" : ""}{whatPct.toFixed(1)}%</span>
+                          <button type="button" aria-label="Lower NIFTY target" className="grid size-7 place-items-center rounded-sm border border-rule bg-slate-2 text-paper hover:border-info" onClick={() => setWhatPct((v) => Math.max(-5, Math.round((v - 0.1) * 10) / 10))}>−</button>
+                          <input type="number" aria-label="NIFTY target level" className={`${field} w-24 text-center`} value={whatSpot == null ? "" : Number(whatSpot.toFixed(2))} onChange={(e) => spot && e.target.value !== "" && setWhatPct(Math.max(-5, Math.min(5, (Number(e.target.value) / spot - 1) * 100)))} />
+                          <button type="button" aria-label="Raise NIFTY target" className="grid size-7 place-items-center rounded-sm border border-rule bg-slate-2 text-paper hover:border-info" onClick={() => setWhatPct((v) => Math.min(5, Math.round((v + 0.1) * 10) / 10))}>+</button></span></div>
+                      <button type="button" className="text-info hover:underline" onClick={() => setWhatPct(0)}>Reset</button>
+                      <input type="range" className="mt-1 w-full" min={-5} max={5} step={0.1} value={whatPct} onChange={(e) => setWhatPct(Number(e.target.value))} aria-label="NIFTY what-if" />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between"><span className="text-paper">Date: <span className="num">{Math.max(0, dte - Math.min(days, dte))}D to expiry</span></span>
+                        <span className="flex items-center gap-1">
+                          <button type="button" aria-label="Previous day" disabled={days <= 0} className="grid size-7 place-items-center rounded-sm border border-rule bg-slate-2 text-paper hover:border-info disabled:opacity-40" onClick={() => setDays((d) => Math.max(0, Math.min(d, dte) - 1))}>‹</button>
+                          <span className="num text-paper">{new Date(targetMs).toLocaleString("en-GB", { weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}</span>
+                          <button type="button" aria-label="Next day" disabled={days >= dte} className="grid size-7 place-items-center rounded-sm border border-rule bg-slate-2 text-paper hover:border-info disabled:opacity-40" onClick={() => setDays((d) => Math.min(dte, Math.min(d, dte) + 1))}>›</button></span></div>
+                      <button type="button" className="text-info hover:underline" onClick={() => setDays(0)}>Reset</button>
+                      <input type="range" className="mt-1 w-full" min={0} max={dte} step={1} value={Math.min(days, dte)} onChange={(e) => setDays(Number(e.target.value))} aria-label="Days from snapshot" />
+                      <div className="flex justify-between"><span>{new Date(snapMs).toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "Asia/Kolkata" })}</span><span>{expiry ? dmy(expiry) : ""}</span></div>
+                    </div>
+                    <label className="flex items-center gap-3 md:col-span-2">Implied volatility shift <span className="num text-paper">{ivPts > 0 ? "+" : ""}{ivPts} vol points</span>
+                      <input type="range" className="flex-1" min={-10} max={10} step={0.5} value={ivPts} onChange={(e) => setIvPts(Number(e.target.value))} aria-label="IV shift" /><button type="button" className="text-info hover:underline" onClick={() => setIvPts(0)}>Reset</button></label>
+                    <p className="md:col-span-2" data-testid="whatif-readout">{whatPct === 0 ? "Move the NIFTY target to see the P&L at a level." : <>At NIFTY <span className="num text-paper">{fmtInt(Math.round(whatSpot ?? 0))}</span>: estimated on the chosen day <span className={`num ${tone(whatEst)}`}>{money(whatEst)}</span> (model) · if held to expiry <span className={`num ${tone(whatExp)}`}>{money(whatExp)}</span> (exact)</>}</p>
                   </div>
                   <details className="px-2 pb-2 text-xs" data-testid="model-inputs">
                     <summary className="cursor-pointer text-info">Model inputs (where every estimate comes from)</summary>
@@ -522,13 +550,9 @@ export default function StrategyBuilder() {
                       <li>Rate {rate}% is used only to discount; change it in Settings.</li>
                       <li>Valued at {new Date(snapMs).toLocaleString("en-GB", { timeZone: "Asia/Kolkata" })} IST{snapMs !== fetchedMs ? <>: the chain was fetched at {new Date(fetchedMs).toLocaleString("en-GB", { timeZone: "Asia/Kolkata" })} IST, after the prices were last traded, so decay is counted from the market time, not the fetch.</> : "."}</li>
                       <li>Volatility: each leg uses the implied volatility of its own strike's stored price ({mlegs.filter((l) => marketIv(l) != null).length} of {mlegs.length} legs; the rest fall back to the entry premium). The ±σ markers and POP use the ATM implied volatility <span className="num text-paper">{atmIv == null ? "—" : `${(atmIv * 100).toFixed(1)}%`}</span> at strike {atmK ?? "—"}.</li>
-                      <li>Distribution: lognormal around the forward, σ√T with T the calendar time to the expiry close ({dte} days). {straddle != null && spot ? <>For a model-free cross-check the ATM straddle costs <span className="num text-paper">{fmtPrice(straddle)}</span> ({((straddle / spot) * 100).toFixed(2)}% of spot) against a ±1σ move of {bands ? <span className="num text-paper">{fmtInt(Math.round((bands.p1 - bands.m1) / 2))}</span> : "—"} points.</> : null}</li>
+                      <li>Markers: spot × (1 ± k × ATM IV × √T) with T the calendar time to the expiry close; the probability of profit separately uses a lognormal around the forward ({dte} days). {straddle != null && spot ? <>For a model-free cross-check the ATM straddle costs <span className="num text-paper">{fmtPrice(straddle)}</span> ({((straddle / spot) * 100).toFixed(2)}% of spot) against a ±1σ move of {bands ? <span className="num text-paper">{fmtInt(Math.round((bands.p1 - bands.m1) / 2))}</span> : "—"} points.</> : null}</li>
                     </ul>
                   </details>
-                  <div className="flex flex-wrap items-center gap-4 px-2 pb-1 text-xs text-muted">
-                    <label className="flex items-center gap-1"><input type="checkbox" checked={showOi} onChange={(e) => setShowOi(e.target.checked)} /> OI bars</label>
-                    <label className="flex items-center gap-1"><input type="checkbox" checked={showSd} onChange={(e) => setShowSd(e.target.checked)} /> σ markers and corridors</label>
-                  </div>
                   <p className="px-2 pb-2 text-[11px] text-muted">Solid: exact P&L at expiry on your entry premiums, before brokerage, taxes and charges. Dashed: Black-76 model estimate for the chosen day, never a market price.</p>
                 </div>
               </div>

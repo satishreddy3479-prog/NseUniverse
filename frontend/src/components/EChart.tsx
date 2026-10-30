@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as echarts from "echarts/core";
 import { BarChart, HeatmapChart, LineChart } from "echarts/charts";
 import {
-  DataZoomComponent, GridComponent, LegendComponent, MarkLineComponent, TitleComponent, TooltipComponent,
+  DataZoomComponent, GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent, TitleComponent, TooltipComponent,
   VisualMapComponent,
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
@@ -10,7 +10,7 @@ import type { EChartsCoreOption, ECharts } from "echarts/core";
 import type { ChartColors } from "../lib/chartOptions";
 
 echarts.use([
-  BarChart, HeatmapChart, LineChart, DataZoomComponent, GridComponent, LegendComponent, MarkLineComponent,
+  BarChart, HeatmapChart, LineChart, DataZoomComponent, GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent,
   TitleComponent, TooltipComponent, VisualMapComponent, CanvasRenderer,
 ]);
 
