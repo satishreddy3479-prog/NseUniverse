@@ -20,13 +20,12 @@ from datetime import UTC, date, datetime, time, timedelta
 from statistics import pstdev
 from typing import Any
 
-from app.domain.session import market_time
+from app.domain.session import market_time, session_close
 from app.intraday import evaluate, labels, paper, positioning, price_structure, setups
 from app.intraday import volatility as volmod
 from app.intraday.costs import CostModel
 from app.intraday.features import (
-    CLOSE,
-    IST,
+        IST,
     OPEN,
     DailyBar,
     Point,
@@ -309,7 +308,7 @@ class IntradayService:
         missing_spot = sum(1 for s in samples if s.spot is None)
         pts = in_session(pts_all, today)
         session_samples = [s for s in samples if s.received_at.astimezone(IST).date() == today
-                           and OPEN <= s.received_at.astimezone(IST).time() <= CLOSE]  # fmt: skip
+                           and OPEN <= s.received_at.astimezone(IST).time() <= session_close()]  # fmt: skip
         latest = samples[-1] if samples else None
         feed_prev = latest.prev_close if latest else None
         prev_check: dict[str, Any] | None = None
@@ -379,7 +378,7 @@ class IntradayService:
         mark("global_flows")
         ev = self.events()
         upcoming = ev.upcoming(now, days=7) if ev else []
-        close_today = datetime.combine(today, CLOSE, IST)
+        close_today = datetime.combine(today, session_close(), IST)
         event_today = any(
             e.impact == "high" and e.start <= close_today + timedelta(hours=18) for e in upcoming
         )
@@ -551,7 +550,7 @@ class IntradayService:
         for sess, (exp, frows) in sorted(self.store.feature_session_rows(FEATURE_VERSION).items()):
             day = date.fromisoformat(sess)
             lo = datetime.combine(day, OPEN, IST)
-            samples = self.obs.samples(self.underlying, exp, since=lo, until=datetime.combine(day, CLOSE, IST), limit=2000)
+            samples = self.obs.samples(self.underlying, exp, since=lo, until=datetime.combine(day, session_close(), IST), limit=2000)
             pts = in_session([Point(x.received_at, x.spot) for x in samples if x.spot is not None], day)
             ctx = daily_context([b for b in self._daily("NIFTY50") if b.session < day], day)
             by_time = {p_.at.isoformat(): i for i, p_ in enumerate(pts)}
@@ -588,7 +587,7 @@ class IntradayService:
         out = []
         for d, n in sorted(self.obs.session_sample_counts(self.underlying).items()):
             day = date.fromisoformat(d)
-            lo, hi = datetime.combine(day, OPEN, IST), datetime.combine(day, CLOSE, IST)
+            lo, hi = datetime.combine(day, OPEN, IST), datetime.combine(day, session_close(), IST)
             out.append({"session": d, "samples": n, "expiries": [e for e, _ in self.obs.day_counts(self.underlying, to_ms(lo), to_ms(hi))]})
         return {"sessions": out}
 
@@ -603,7 +602,7 @@ class IntradayService:
             return {"status": "no samples at or before that time", "session": session, "at": at.isoformat()}
         out = self._build(expiry, at, samples, replay=True)
         out.pop("ml", None)  # readiness counts reflect the present, not that moment
-        full = self.obs.samples(self.underlying, expiry, since=datetime.combine(day, OPEN, IST), until=datetime.combine(day, CLOSE, IST), limit=5000)
+        full = self.obs.samples(self.underlying, expiry, since=datetime.combine(day, OPEN, IST), until=datetime.combine(day, session_close(), IST), limit=5000)
         pts = in_session([Point(x.received_at, x.spot) for x in full if x.spot is not None], day)
         sd = daily_context([b for b in self._daily("NIFTY50") if b.session < day], day).daily_sd_pct
         i = next((k for k in range(len(pts) - 1, -1, -1) if pts[k].at <= at), None)
@@ -627,10 +626,10 @@ class IntradayService:
             day = date.fromisoformat(d)
             if n < 60 or day >= self._clock().astimezone(IST).date():
                 continue  # unfinished or too short
-            exp = max(self.obs.day_counts(self.underlying, to_ms(datetime.combine(day, OPEN, IST)), to_ms(datetime.combine(day, CLOSE, IST))), key=lambda x: x[1], default=None)
+            exp = max(self.obs.day_counts(self.underlying, to_ms(datetime.combine(day, OPEN, IST)), to_ms(datetime.combine(day, session_close(), IST))), key=lambda x: x[1], default=None)
             if exp is None:
                 continue
-            full = self.obs.samples(self.underlying, exp[0], since=datetime.combine(day, OPEN, IST), until=datetime.combine(day, CLOSE, IST), limit=5000)
+            full = self.obs.samples(self.underlying, exp[0], since=datetime.combine(day, OPEN, IST), until=datetime.combine(day, session_close(), IST), limit=5000)
             pts = in_session([Point(x.received_at, x.spot) for x in full if x.spot is not None], day)
             sd = daily_context([b for b in self._daily("NIFTY50") if b.session < day], day).daily_sd_pct
             n_sessions += 1

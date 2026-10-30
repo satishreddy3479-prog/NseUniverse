@@ -1,12 +1,13 @@
 """Implied volatility, Greeks and expected move from real option prices (pure functions, no I/O).
 
 Model: Black-76 (options on a forward). NIFTY options are European and cash-settled, so the forward
-F = K + e^{rT} (C - P) is taken from put-call parity at the strike nearest the money: it is market implied and needs
+F = K + e^{rT} (C - P) is taken from put-call parity (the median over the five strikes nearest the money, as in the
+strategy builder): it is market implied and needs
 no dividend or carry assumption. Only the discount factor e^{-rT} uses an assumed rate (configurable, default in
 ``DEFAULT_RATE``); for the days to expiry involved it moves prices by far less than a tick of IV.
 If parity cannot be formed the forward falls back to spot x e^{rT} (no dividend) and the result says so.
 
-T = calendar time from now to the session close (15:40 IST) on the expiry date, in years of 365 days. Closer than ``MIN_T_MINUTES`` to
+T = calendar time from now to the session close (``session_close()``, 15:40 IST with the auction alignment) on the expiry date, in years of 365 days. Closer than ``MIN_T_MINUTES`` to
 expiry nothing is computed: theta and gamma explode and the market price is mostly noise.
 Greeks are per forward: delta is with respect to F; theta per calendar day; vega per one volatility point (1 %).
 Implied volatility is solved by bisection on the option price; a price outside its no-arbitrage bounds gives None.
@@ -21,10 +22,9 @@ from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from app.domain.session import SESSION_CLOSE
+from app.domain.session import session_close
 
 IST = ZoneInfo("Asia/Kolkata")
-EXPIRY_TIME = SESSION_CLOSE
 DEFAULT_RATE = 0.06
 MIN_T_MINUTES = 15
 MAX_IV = 3.0
@@ -42,7 +42,7 @@ def _pdf(x: float) -> float:
 
 
 def years_to_expiry(expiry: date, now: datetime) -> float:
-    end = datetime.combine(expiry, EXPIRY_TIME, IST)
+    end = datetime.combine(expiry, session_close(), IST)
     return (end - now.astimezone(IST)).total_seconds() / (YEAR_DAYS * 86400)
 
 
@@ -104,15 +104,23 @@ def greeks(side: int, f: float, k: float, t: float, sigma: float, r: float = DEF
 
 
 def forward_from_parity(prices: Mapping[tuple[float, int], float | None], spot: float | None, t: float, r: float = DEFAULT_RATE) -> tuple[float, str] | None:
-    """(forward, source). Parity at the strike nearest spot that has both prices; else spot x e^{rT}."""
+    """(forward, source): the median of the forwards implied by put-call parity at the five strikes nearest spot
+    that have both prices (needs three; the strategy builder uses the same rule); else the nearest such strike
+    alone, else spot x e^{rT}."""
     if spot is None or spot <= 0 or t <= 0:
         return None
+    grow = math.exp(r * t)
     ks = sorted({k for k, _ in prices}, key=lambda k: (abs(k - spot), k))
-    for k in ks[:3]:
-        c, p = prices.get((k, CALL)), prices.get((k, PUT))
-        if c is not None and p is not None and c > 0 and p > 0:
-            return k + math.exp(r * t) * (c - p), f"put-call parity at {k:g}"
-    return spot * math.exp(r * t), "spot x carry (no dividend): put-call parity unavailable"
+    both = [(k, prices[(k, CALL)], prices[(k, PUT)]) for k in ks if prices.get((k, CALL)) is not None and prices.get((k, PUT)) is not None]
+    both = [(k, c, p) for k, c, p in both if c is not None and p is not None and c > 0 and p > 0][:5]
+    if len(both) >= 3:
+        fs = sorted(k + grow * (c - p) for k, c, p in both)
+        mid = fs[len(fs) // 2] if len(fs) % 2 else (fs[len(fs) // 2 - 1] + fs[len(fs) // 2]) / 2
+        return mid, f"median of put-call parity at {len(fs)} strikes nearest spot"
+    if both:
+        k, c, p = both[0]
+        return k + grow * (c - p), f"put-call parity at {k:g}"
+    return spot * grow, "spot x carry (no dividend): put-call parity unavailable"
 
 
 def surface(prices: Mapping[tuple[float, int], float | None], spot: float | None, expiry: date, now: datetime, r: float = DEFAULT_RATE, each_side: int = 5) -> dict[str, Any]:

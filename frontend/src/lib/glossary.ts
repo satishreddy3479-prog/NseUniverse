@@ -258,6 +258,33 @@ const E: Record<string, GlossaryEntry> = {
   "oi": { what: "Open interest: contracts outstanding, in units.", read: "Rising OI means positions are being added." },
   "ltp": { what: "Last traded price of the contract.", read: "May be old for contracts that trade rarely." },
 
+
+  // ---------------------------------------------------------------- data clean-up page
+  "disk": { what: "How full the server's disk is, how much of it is this app's data, how fast it grows and how many days of room remain at that rate.", read: "Ok means plenty of room. Watch or low means plan a clean-up. Critical pauses the sampler to protect the server.", caution: "Growth is an estimate from recent days." },
+  "todays data": { what: "What has been stored so far today: samples of the option chain, the per-contract rows behind them, the snapshot files and the rows the intraday model learns from.", read: "Samples arrive about once a minute in market hours. The intraday ML rows are the model's training data and are never removed.", caution: "Today's data stays until the end-of-day job has archived and verified it." },
+  "what could be removed": { what: "Data that is safe to remove because the verified daily archive already holds the same information, or because it can be created again.", read: "Select items, press Review, check the exact amounts, confirm. Sizes are measured now, not guessed. A day the archive does not fully cover is kept and listed.", caution: "Removal cannot be undone, which is why only archived or regenerable data is offered." },
+  "what is stored": { what: "Every database and folder this app keeps, what it holds, its size, how many rows each table has and why it is kept.", read: "Large rows counts in the observations store are normal: one row per contract per changed sample.", caution: "Sizes include the database's write-ahead log files." },
+  "never removed": { what: "Data this page never offers for removal.", read: "These are either the training and testing evidence for the models, the archive that makes other removals safe, or small append-only records.", caution: "They can only be removed from the server by hand." },
+  "samples today": { what: "Option-chain snapshots stored today, per expiry.", read: "About one a minute during market hours; unchanged repeats are counted but store no contract rows.", caution: "" },
+  "contract rows": { what: "One row per option contract per changed sample (price, open interest, volume).", read: "This is the biggest part of the observation database, and what old sessions can shed once archived.", caution: "" },
+  "snapshot files": { what: "Compressed copies of each broker response and its normalized form, one folder per day.", read: "Raw responses are kept for the approved number of days after the archive is verified.", caution: "" },
+  "intraday ml rows": { what: "Feature rows with their outcomes, which the intraday model trains and is tested on.", read: "More complete sessions mean a better chance to validate the model. Needs about 60 sessions before it is trained.", caution: "Never removed." },
+
+  // ---------------------------------------------------------------- table columns
+  "lots": { what: "Number of lots of this option in the leg. One NIFTY lot is 65 units.", read: "The quantity line underneath shows lots × multiplier × lot size.", caution: "" },
+  "entry": { what: "The premium (price per unit) at which this leg is taken. It starts as the stored last traded price and you can overwrite it.", read: "All P&L, breakevens and maximum profit and loss use this number.", caution: "A hand-entered premium is labelled 'you entered'." },
+  "strike": { what: "The strike price of the option.", read: "The percentage under the strike is its distance from the current NIFTY level.", caution: "" },
+  "target": { what: "The option premium at which you plan to take profit on this leg. Type a percentage and the price fills in, or type the price.", read: "For a bought option the target is above the entry; for a sold option it is below.", caution: "A plan, nothing is sent to a broker." },
+  "stop": { what: "The option premium at which you plan to exit to limit the loss on this leg.", read: "For a sold option the stop is above the entry; for a bought option it is below. The ₹ under it is the loss at that stop.", caution: "A plan, nothing is sent to a broker. Real fills can be worse than the stop." },
+  "p l": { what: "Profit or loss of this leg now: (current price − entry) × quantity, with the sign flipped for sold options.", read: "Green is ahead, red is behind.", caution: "Before brokerage, taxes and charges." },
+  "delta per day": { what: "This leg's delta (change in value per NIFTY point) and theta (change per calendar day), both for the whole position size.", read: "Delta −33 means the leg loses about ₹33 for every NIFTY point up. Theta +₹1,500 means about ₹1,500 earned per day from time passing.", caution: "Black-76 model values." },
+  "call oi": { what: "Open interest of the call at this strike, in units.", read: "Bars to the left of the strike; longer means more open positions.", caution: "" },
+  "put oi": { what: "Open interest of the put at this strike, in units.", read: "Bars to the right of the strike; longer means more open positions.", caution: "" },
+  "delta per unit": { what: "Change in the option's price for a 1-point NIFTY move, per unit.", read: "Calls 0 to 1, puts −1 to 0.", caution: "" },
+  "position delta": { what: "Delta of the whole leg: per-unit delta × lots × lot size.", read: "How many NIFTY units the leg behaves like.", caution: "" },
+  "theta per day": { what: "Value an option loses per calendar day from time passing.", read: "Sold options earn it, bought options pay it.", caution: "" },
+  "vega per vol point": { what: "Change in value for a 1-point rise in implied volatility.", read: "Positive for bought options, negative for sold ones.", caution: "" },
+
   // ---------------------------------------------------------------- prediction and data
   "model comparison": {
     what: "Several forecasting models compared on data none of them was tuned on (the untouched holdout period).",

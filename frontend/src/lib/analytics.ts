@@ -1,6 +1,6 @@
 // Pure analytics over option-chain rows. Missing values are skipped and counted, never treated as 0.
 import type { OptionChainRow, OptionQuote } from "./types";
-import { SESSION_CLOSE_MIN, SESSION_LABEL, SESSION_OPEN_MIN } from "./session";
+import { isHoliday, sessionCloseMin, sessionLabel, sessionOpenMin } from "./session";
 
 export interface Totals {
   ceOi: number | null;
@@ -121,26 +121,25 @@ export type TsRange = "30m" | "1h" | "session" | "all";
 export const TS_RANGES: { id: TsRange; label: string; title: string }[] = [
   { id: "30m", label: "30 min", title: "The 30 minutes up to the newest stored sample" },
   { id: "1h", label: "1 hour", title: "The hour up to the newest stored sample" },
-  { id: "session", label: "Session", title: `Today's session, ${SESSION_LABEL} IST (the last session when the market is closed)` },
+  { id: "session", label: "Session", get title() { return `Today's session, ${sessionLabel()} IST (the last session when the market is closed)`; } },
   { id: "all", label: "All", title: "Every stored sample returned for this expiry" },
 ];
 
 const IST_MS = 5.5 * 3600_000;
 const istDay = (ms: number) => new Date(ms + IST_MS).toISOString().slice(0, 10);
 const istMinute = (ms: number) => Math.floor((((ms + IST_MS) % 86400_000) + 86400_000) % 86400_000 / 60_000);
-const SESSION_FROM = SESSION_OPEN_MIN, SESSION_TO = SESSION_CLOSE_MIN;
 
-/** True for a moment inside a trading session: a weekday, 09:15 to the close, IST. Exchange holidays are not known here. */
+/** True for a moment inside a trading session: a weekday that is not an exchange holiday, 09:15 to the close, IST. */
 export function isSessionMs(ms: number): boolean {
   const dow = new Date(ms + IST_MS).getUTCDay();
   const m = istMinute(ms);
-  return dow !== 0 && dow !== 6 && m >= SESSION_FROM && m <= SESSION_TO;
+  return dow !== 0 && dow !== 6 && !isHoliday(istDay(ms)) && m >= sessionOpenMin() && m <= sessionCloseMin();
 }
 /** Open and close (ms) of the IST day containing `ms`. */
 export function sessionBoundsOf(ms: number): { min: number; max: number } {
   const [y, m, d] = istDay(ms).split("-").map(Number) as [number, number, number];
   const dayStart = Date.UTC(y, m - 1, d) - IST_MS; // IST midnight
-  return { min: dayStart + SESSION_FROM * 60_000, max: dayStart + SESSION_TO * 60_000 };
+  return { min: dayStart + sessionOpenMin() * 60_000, max: dayStart + sessionCloseMin() * 60_000 };
 }
 
 /**
@@ -155,7 +154,7 @@ export function rangeObservations<T extends { retrieved_at: string }>(obs: T[], 
   if (obs.length === 0) return { rows: obs, note: null, ...none };
   const ms = (o: T) => new Date(o.retrieved_at).getTime();
   const live = obs.filter((o) => isSessionMs(ms(o)));
-  if (live.length === 0) return { rows: obs, note: `No sample was taken during ${SESSION_LABEL} IST; showing the after-hours samples that are stored.`, bounds: null, afterHoursOnly: true };
+  if (live.length === 0) return { rows: obs, note: `No sample was taken during ${sessionLabel()} IST; showing the after-hours samples that are stored.`, bounds: null, afterHoursOnly: true };
   const newest = Math.max(...live.map(ms));
   if (range === "all") return { rows: live, note: null, ...none };
   if (range === "30m" || range === "1h") {
@@ -194,7 +193,7 @@ export function windowStartIso(newestIso: string, minutes: number): string {
  */
 export function windowEndIso(sampleIsos: string[]): string | null {
   if (!sampleIsos.length) return null;
-  const IST = 330, OPEN = SESSION_OPEN_MIN, CLOSE = SESSION_CLOSE_MIN;
+  const IST = 330, OPEN = sessionOpenMin(), CLOSE = sessionCloseMin();
   const parts = (iso: string) => {
     const m = Math.floor(new Date(iso).getTime() / 60_000) + IST;
     return { day: Math.floor(m / 1440), min: ((m % 1440) + 1440) % 1440 };

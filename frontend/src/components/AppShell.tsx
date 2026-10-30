@@ -1,5 +1,8 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Outlet } from "react-router-dom";
+import { api } from "../lib/api";
+import { setSessionClock } from "../lib/session";
 import { useLiveConnection } from "../lib/useLive";
 import { useSignals } from "../lib/useSignals";
 import { NavLinks, SideNav } from "./SideNav";
@@ -13,6 +16,11 @@ export { NAV } from "./SideNav";
 export function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   useLiveConnection();
+  // The session's open, close and holidays come from the backend, which follows the exchange feed; pages are
+  // redrawn once when they differ from the defaults.
+  const clock = useQuery({ queryKey: ["market-session"], queryFn: api.marketSession, refetchInterval: 30 * 60_000, staleTime: 10 * 60_000, retry: false });
+  if (clock.data) setSessionClock(clock.data);
+  const clockKey = clock.data ? `${clock.data.close}|${clock.data.holidays.length}` : "15:40|0";
   const { signals, latest, spotSnapshot, underlying } = useSignals();
 
   return (
@@ -44,7 +52,7 @@ export function AppShell() {
           </div>
         )}
         <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 md:p-4 lg:p-6">
-          <Outlet />
+          <Outlet key={clockKey} />
         </main>
       </div>
     </div>

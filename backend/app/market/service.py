@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from app.domain.session import SESSION_CLOSE, SESSION_OPEN
+from app.domain.session import SESSION_OPEN, session_close
 from app.logging_setup import log_event
 from app.market import metrics as m
 from app.market import participation as part
@@ -226,7 +226,7 @@ class MarketService:
         if name is None:
             return
         t = tick.received_at.astimezone(IST)
-        if not SESSION_OPEN <= t.time() <= SESSION_CLOSE:
+        if not SESSION_OPEN <= t.time() <= session_close():
             return
         tr = self.trackers.get(name)
         if tr is None:
@@ -762,7 +762,7 @@ class MarketService:
     # ----------------------------------------------------------------------------- recording and scheduling
     def in_session(self, now: datetime | None = None) -> bool:
         t = (now or self._clock()).astimezone(IST)
-        return bool(self._trading_day(t.date())) and SESSION_OPEN <= t.time() <= SESSION_CLOSE
+        return bool(self._trading_day(t.date())) and SESSION_OPEN <= t.time() <= session_close()
 
     def sample(self, now: datetime | None = None) -> bool:
         """Store one compact row per kind for this minute (only in session and only when stocks are streaming)."""

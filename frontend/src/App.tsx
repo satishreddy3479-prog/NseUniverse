@@ -2,6 +2,7 @@ import { lazy, Suspense, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
+import { DataCleanup } from "./pages/DataCleanup";
 import { DataSessions } from "./pages/DataSessions";
 import { Diagnostics } from "./pages/Diagnostics";
 import { OptionChain } from "./pages/OptionChain";
@@ -38,6 +39,7 @@ export function AppRoutes() {
           <Suspense fallback={<p className="text-muted">Loading strategy builder…</p>}><StrategyBuilder /></Suspense>} />
         <Route path="charts" element={<Navigate to="/analysis" replace />} />
         <Route path="data" element={<DataSessions />} />
+        <Route path="cleanup" element={<DataCleanup />} />
         <Route path="diagnostics" element={<Diagnostics />} />
         <Route path="settings" element={<Settings />} />
         <Route path="*" element={<p className="text-muted">Page not found.</p>} />

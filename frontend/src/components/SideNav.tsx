@@ -9,6 +9,7 @@ export const NAV: { to: string; label: string; short: string; planned?: string }
   { to: "/strategy", label: "Strategy builder", short: "B" },
   { to: "/prediction", label: "Prediction", short: "P" },
   { to: "/data", label: "Data & sessions", short: "D" },
+  { to: "/cleanup", label: "Data clean-up", short: "U" },
   { to: "/diagnostics", label: "Connection diagnostics", short: "C" },
   { to: "/settings", label: "Settings", short: "S" },
 ];
@@ -22,6 +23,7 @@ const ICONS: Record<string, string> = {
   "/strategy": "M3 17l5-6 4 3 6-8 3 4M3 21h18",
   "/prediction": "M12 3l2.2 5.3L20 9l-4.3 3.8L17 19l-5-3-5 3 1.3-6.2L4 9l5.8-.7z",
   "/data": "M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6",
+  "/cleanup": "M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6",
   "/diagnostics": "M2 12h4l3-8 4 16 3-8h6",
   "/settings": "M12 15a3 3 0 100-6 3 3 0 000 6zM19 12a7 7 0 00-.1-1.2l2-1.5-2-3.5-2.3.9a7 7 0 00-2-1.2L14 3h-4l-.6 2.5a7 7 0 00-2 1.2l-2.3-.9-2 3.5 2 1.5A7 7 0 005 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.5 2.3-.9a7 7 0 002 1.2L10 21h4l.6-2.5a7 7 0 002-1.2l2.3.9 2-3.5-2-1.5c.1-.4.1-.8.1-1.2z",
 };
@@ -29,7 +31,7 @@ const ICONS: Record<string, string> = {
 // One colour per destination so the rail reads at a glance.
 const TINT: Record<string, string> = {
   "/": "var(--info)", "/option-chain": "var(--up)", "/expiry-comparison": "var(--warn)", "/analysis": "var(--brass)",
-  "/strategy": "var(--info)", "/prediction": "var(--accent)", "/data": "var(--info)", "/diagnostics": "var(--down)", "/settings": "var(--muted)",
+  "/strategy": "var(--info)", "/prediction": "var(--accent)", "/data": "var(--info)", "/cleanup": "var(--warn)", "/diagnostics": "var(--down)", "/settings": "var(--muted)",
 };
 
 const PIN_KEY = "nse.nav.pinned";

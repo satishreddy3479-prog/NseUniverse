@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -46,6 +47,16 @@ def make_app(tmp_path: Path, **overrides: Any) -> Any:
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
     return make_settings(tmp_path)
+
+
+@pytest.fixture(autouse=True)
+def _default_session_close() -> Iterator[None]:
+    """Every test starts with the default close; a test that follows the feed must not leak it."""
+    from app.domain.session import DEFAULT_CLOSE, set_session_close
+
+    set_session_close(DEFAULT_CLOSE, "default")
+    yield
+    set_session_close(DEFAULT_CLOSE, "default")
 
 
 @pytest.fixture(autouse=True)

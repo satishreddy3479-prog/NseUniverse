@@ -3,7 +3,7 @@
  * a dashed "estimated on a chosen date" curve, net Greeks and a probability-of-profit estimate. These are model values built
  * from stored last traded prices, never market prices, and the page labels them so.
  */
-import { SESSION_CLOSE_MIN } from "./session";
+import { sessionCloseMin } from "./session";
 import { intrinsic, sign, type Leg, type OptionType, expiryPnl } from "./strategy";
 
 const YEAR_MS = 365 * 86_400_000;
@@ -64,7 +64,7 @@ export function impliedVol(type: OptionType, price: number, f: number, k: number
 /** Instant a contract stops trading: the session close on its expiry date, IST. */
 export function expiryEnd(expiry: string): number {
   const [y, m, d] = expiry.split("-").map(Number) as [number, number, number];
-  return Date.UTC(y, m - 1, d, 0, SESSION_CLOSE_MIN, 0) - 330 * 60_000;
+  return Date.UTC(y, m - 1, d, 0, sessionCloseMin(), 0) - 330 * 60_000;
 }
 
 

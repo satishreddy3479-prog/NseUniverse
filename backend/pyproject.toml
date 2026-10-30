@@ -29,6 +29,8 @@ select = ["E", "F", "I", "B", "UP", "S", "W"]
 ignore = ["S101"]
 
 [tool.ruff.lint.per-file-ignores]
+"tests/unit/test_session_close.py" = ["E501"]
+"tests/unit/test_cleanup.py" = ["E501"]
 "tests/unit/test_strategies.py" = ["E501"]
 "app/storage/strategies.py" = ["E501"]
 "app/prediction/news_service.py" = ["E501"]

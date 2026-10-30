@@ -268,6 +268,31 @@ class ObservationStore:
             for ts, s, k, d in rows
         ]
 
+    def day_summary(self, start_ms: int, end_ms: int) -> dict[str, Any]:
+        """What one day holds (read-only): samples per expiry, stored contract rows, first and last sample."""
+        with self._lock:
+            per = self._db.execute(
+                "SELECT expiry, COUNT(*), SUM(unchanged), MIN(received_ms), MAX(received_ms) FROM samples"
+                " WHERE received_ms BETWEEN ? AND ? GROUP BY expiry ORDER BY expiry", (start_ms, end_ms)).fetchall()
+            rows = self._db.execute(
+                "SELECT COUNT(*) FROM contracts c JOIN samples s USING(sample_id) WHERE s.received_ms BETWEEN ? AND ?",
+                (start_ms, end_ms)).fetchone()[0]
+            total_rows = self._db.execute("SELECT COUNT(*) FROM contracts").fetchone()[0]
+        return {
+            "expiries": [{"expiry": e, "samples": n, "unchanged": int(u or 0), "first": from_ms(a).isoformat(), "last": from_ms(b).isoformat()}
+                         for e, n, u, a, b in per],
+            "contract_rows": int(rows), "contract_rows_total": int(total_rows),
+        }
+
+    def events_of(self, kind: str, since: datetime, limit: int = 5000) -> list[dict[str, Any]]:
+        """Logged events of one kind since a time, oldest first."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT ts_ms, detail FROM events WHERE kind=? AND ts_ms>=? ORDER BY ts_ms LIMIT ?",
+                (kind, to_ms(since), limit),
+            ).fetchall()
+        return [{"at": from_ms(ts), "detail": d} for ts, d in rows]
+
     def plan_contract_pruning(
         self, keep_sessions: int, archived: dict[str, int], *, delete: bool = False
     ) -> dict[str, Any]:

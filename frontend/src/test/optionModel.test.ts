@@ -179,3 +179,13 @@ describe("spotAtPremium", () => {
     expect(spotAtPremium(l, 1e6, v.nowMs, v, 22000, 24000)).toBeNull(); // not reachable in range
   });
 });
+
+describe("same reference as the backend model", () => {
+  it("prices, implied volatility and delta agree with backend/app/intraday/volatility.py for one case", () => {
+    // F 22700, K 22800, 7 days, 15 %, r 6 %: the values asserted in backend/tests/unit/test_volatility.py
+    const t = 7 / 365;
+    expect(black76("CE", 22700, 22800, t, 0.15, 0.06)).toBeCloseTo(142.5695634102632, 8);
+    expect(black76("PE", 22700, 22800, t, 0.15, 0.06)).toBeCloseTo(242.45456109551898, 8);
+    expect(impliedVol("CE", 142.5695634102632, 22700, 22800, t, 0.06)).toBeCloseTo(0.15, 6);
+  });
+});

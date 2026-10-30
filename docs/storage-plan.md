@@ -159,3 +159,7 @@ Trigger: charts showed yesterday's data and two corrupt contract values (22100 C
 1. Switch the pruning from dry run to real deletion (review a few nights of dry-run reports first).
 2. Backup retention change already listed above.
 Measured on the server: data 47-50 MB, growth about 7.5 MB/day, 12 GB free; at this rate the full-keep policy still has years of room, so approvals 1-2 are optional tidy-ups, not urgent.
+
+
+## Data clean-up page (30 Oct 2026)
+`/cleanup` shows what the server stores and what could be removed, measured from the real files and databases. Removable: raw broker responses and normalized snapshot files older than their approved days, per-contract observation rows older than the last two sessions, and regenerable files (old exports, stray `.tmp`). Each removal is limited to days whose verified archive covers it (the archive must hold at least as many contract rows as the database) and needs review plus an acknowledgement. Never offered: intraday feature rows and scores (the model's training data), the forecast ledger, the archive and manifests, daily prices, flows, news, strategies. Today's data is shown but cannot be removed.

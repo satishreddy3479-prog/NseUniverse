@@ -24,6 +24,7 @@ from app.intraday.service import IntradayService
 from app.intraday.setups import RiskConfig
 from app.intraday.store import IntradayStore
 from app.lifecycle.eod import EodService
+from app.lifecycle.session_close import SessionCloseTracker
 from app.logging_setup import log_event, setup_logging
 from app.market.service import MarketService
 from app.market.store import MarketStore
@@ -205,7 +206,11 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             keep_monthly_backups=settings.backup_keep_monthly,
         )
         app.state.eod = eod
+        app.state.intraday_store = intraday_store
         eod.start()
+        close_tracker = SessionCloseTracker(observations, settings.market_close)
+        app.state.close_tracker = close_tracker
+        close_tracker.start()
         sampler = SnapshotSampler(
             snapshot_service,
             interval_s=settings.sampler_interval_seconds,
@@ -246,6 +251,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
                 login_task.cancel()
             await market.stop()
             market_store.close()
+            await close_tracker.stop()
             await eod.stop()
             await daily_login.stop()
             await intraday.stop()

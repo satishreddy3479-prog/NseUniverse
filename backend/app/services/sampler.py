@@ -17,11 +17,10 @@ from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from app.domain.session import LABEL
-from app.domain.session import SESSION_CLOSE as _SESSION_CLOSE
 from app.domain.session import SESSION_OPEN as _SESSION_OPEN
+from app.domain.session import session_close, session_label
 from app.logging_setup import log_event
 from app.services.snapshot_service import IST, SnapshotService
 from app.stream.models import MarketStatus
@@ -29,7 +28,6 @@ from app.stream.models import MarketStatus
 logger = logging.getLogger(__name__)
 
 SESSION_OPEN = _SESSION_OPEN
-SESSION_CLOSE = _SESSION_CLOSE
 FEED_TRUST_FROM = time(9, 0)  # earlier "closed" messages are treated as stale
 MAX_BACKOFF_S = 300
 POLL_S = 5.0
@@ -40,7 +38,7 @@ SamplerState = Literal["off", "waiting", "sampling", "error"]
 class SamplerStatus(BaseModel):
     enabled: bool
     interval_seconds: int
-    session: str = f"{LABEL}, Mon–Fri"
+    session: str = Field(default_factory=lambda: f"{session_label()}, Mon–Fri")
     state: SamplerState = "off"
     reason: str = ""
     in_session: bool = False
@@ -62,8 +60,8 @@ def session_open(now: datetime, market: MarketStatus | None = None) -> tuple[boo
     t = now.astimezone(IST)
     if t.weekday() >= 5:
         return False, "weekend"
-    if not SESSION_OPEN <= t.time() <= SESSION_CLOSE:
-        return False, f"outside {LABEL}"
+    if not SESSION_OPEN <= t.time() <= session_close():
+        return False, f"outside {session_label()}"
     if market is not None and market.state == "closed" and market.received_at is not None:
         r = market.received_at.astimezone(IST)
         if r.date() == t.date() and r.time() >= FEED_TRUST_FROM and r <= t:

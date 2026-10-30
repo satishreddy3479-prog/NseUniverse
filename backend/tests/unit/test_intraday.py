@@ -410,9 +410,9 @@ def test_full_session_is_scored_recorded_once_and_explained(tmp_path: Path) -> N
     assert len(out["scenarios"]) + len(out["scenarios_ruled_out"]) == 3  # every scenario is either shown or explained away
     assert out["narrative"].startswith("Current assessment:")
     vol = out["volatility"]  # REAL captured chain: implied volatility must come out as a plausible NIFTY number
-    # captured 28 Oct chain, 3 Nov expiry: ATM IV about 16.5 %, forward 22703.85 from put-call parity at 22700
+    # captured 28 Oct chain, 3 Nov expiry: ATM IV about 16.5 %, forward about 22703.85 (median of put-call parity at the five strikes nearest spot)
     assert vol["status"] == "ok" and vol["atm_iv"] == pytest.approx(16.54, abs=0.1) and vol["forward"] == pytest.approx(22703.85, abs=0.5)
-    assert vol["forward_source"] == "put-call parity at 22700" and vol["skew_25d_put_minus_call"] > 0
+    assert vol["forward_source"].startswith("median of put-call parity at") and vol["skew_25d_put_minus_call"] > 0
     # the straddle should be close to 0.8 of the one-standard-deviation move implied by the same IV
     assert vol["expected_move_straddle_pts"] / vol["expected_move_iv_1sd_pts"] == pytest.approx(0.8, abs=0.03)
     pos = out["positioning"]  # same real chain: the +/-10 window PCR must equal the long-standing options feature

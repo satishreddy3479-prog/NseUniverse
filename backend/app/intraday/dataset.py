@@ -17,9 +17,8 @@ from collections.abc import Callable, Sequence
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from app.domain.session import SESSION_CLOSE
+from app.domain.session import session_close
 from app.intraday.features import (
-    CLOSE,
     IST,
     OPEN,
     SESSION_MINUTES,
@@ -35,7 +34,13 @@ FEATURE_VERSION = "if-2"  # if-2 adds implied volatility, futures VWAP/flow, bre
 HORIZONS = (5, 15, 30, 60)  # minutes
 WARMUP_SAMPLES = 15
 LABEL_SLACK_MIN = 3.0  # a target time needs a sample within 3 minutes at or before it
-CLOSE_MIN_AT = (SESSION_CLOSE.hour, SESSION_CLOSE.minute - 5)  # the "to the close" label needs a sample in the last 5 minutes
+
+
+def _close_min_at() -> tuple[int, int]:
+    """The "to the close" label needs a sample in the last 5 minutes of the session."""
+    c = session_close()
+    return (c.hour, c.minute - 5)
+
 
 
 def _r(v: float | None, n: int = 6) -> float | None:
@@ -54,7 +59,7 @@ def labels_for(points: Sequence[Point], i: int) -> dict[str, float | None]:
         out[f"fwd_{h}m"] = None if hit is None else _r((hit.spot / t.spot - 1) * 100)
     last = points[-1]
     ist = last.at.astimezone(IST)
-    out["fwd_close"] = _r((last.spot / t.spot - 1) * 100) if (ist.hour, ist.minute) >= CLOSE_MIN_AT and i < len(points) - 1 else None
+    out["fwd_close"] = _r((last.spot / t.spot - 1) * 100) if (ist.hour, ist.minute) >= _close_min_at() and i < len(points) - 1 else None
     return out
 
 
@@ -108,4 +113,4 @@ def build_rows(
 
 def in_session_window(at: datetime) -> bool:
     t = at.astimezone(IST).time()
-    return OPEN <= t <= CLOSE
+    return OPEN <= t <= session_close()

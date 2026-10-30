@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { mergeRows, type LiveMode } from "../components/ChainTable";
 import { useThrottledVersion } from "../components/dashboard/DashContext";
@@ -112,29 +112,40 @@ export default function StrategyBuilder() {
   /** "server": kept on the server; "browser": the server could not be reached, this browser's copy is all there is. */
   const [sync, setSync] = useState<"checking" | "server" | "browser">("checking");
   const [syncProblem, setSyncProblem] = useState<string | null>(null);
-  // The server is the source of truth. Strategies only this browser knows about (from before server storage) move up once.
-  useEffect(() => {
-    let off = false;
-    void (async () => {
-      try {
-        let got = await api.strategies();
-        const onServer = (list: Record<string, unknown>[], key: string) => new Set(list.map((x) => String(x[key])));
-        const sKeys = onServer(got.saved, "name"), cKeys = onServer(got.closed, "id");
-        const localSaved = loadSaved().filter((x) => !sKeys.has(x.name)), localClosed = loadClosed().filter((x) => !cKeys.has(x.id));
-        if (localSaved.length || localClosed.length) {
-          await api.importStrategies(Object.fromEntries(localSaved.map((x) => [x.name, x])), Object.fromEntries(localClosed.map((x) => [x.id, x])));
-          got = await api.strategies();
-        }
-        if (off) return;
-        const sv = got.saved as unknown as Saved[], cl = got.closed as unknown as Closed[];
-        setSaved(sv); setClosed(cl); setSync("server");
-        try { localStorage.setItem(SAVE_KEY, JSON.stringify(sv)); localStorage.setItem(CLOSED_KEY, JSON.stringify(cl)); } catch { /* cache only */ }
-      } catch {
-        if (!off) setSync("browser");
+  // The server is the source of truth, with two exceptions that are never lost: strategies only this browser holds
+  // (from before server storage, or saved while the server was unreachable) move up, and an edit made here after the
+  // server's copy was last changed (a newer Update while offline) is sent up. Retried every 45 s until it works.
+  const syncNow = useCallback(async (): Promise<boolean> => {
+    try {
+      let got = await api.strategies();
+      type Stamped = { updatedAt?: string; savedAt?: string; closedAt?: string };
+      const newer = (a: Stamped, b: Stamped) => (a.updatedAt ?? a.savedAt ?? a.closedAt ?? "") > (b.updatedAt ?? b.savedAt ?? b.closedAt ?? "");
+      const srvSaved = new Map((got.saved as unknown as Saved[]).map((x) => [x.name, x]));
+      const srvClosed = new Map((got.closed as unknown as Closed[]).map((x) => [x.id, x]));
+      const upSaved = loadSaved().filter((x) => { const o = srvSaved.get(x.name); return !o || newer(x, o); });
+      const upClosed = loadClosed().filter((x) => !srvClosed.has(x.id));
+      const fresh = upSaved.filter((x) => srvSaved.has(x.name));
+      await Promise.all(fresh.map((x) => api.putStrategy("saved", x.name, x)));
+      const isNew = upSaved.filter((x) => !srvSaved.has(x.name));
+      if (isNew.length || upClosed.length) {
+        await api.importStrategies(Object.fromEntries(isNew.map((x) => [x.name, x])), Object.fromEntries(upClosed.map((x) => [x.id, x])));
       }
-    })();
-    return () => { off = true; };
+      if (fresh.length || isNew.length || upClosed.length) got = await api.strategies();
+      const sv = got.saved as unknown as Saved[], cl = got.closed as unknown as Closed[];
+      setSaved(sv); setClosed(cl); setSync("server"); setSyncProblem(null);
+      try { localStorage.setItem(SAVE_KEY, JSON.stringify(sv)); localStorage.setItem(CLOSED_KEY, JSON.stringify(cl)); } catch { /* cache only */ }
+      return true;
+    } catch {
+      setSync("browser");
+      return false;
+    }
   }, []);
+  useEffect(() => {
+    void syncNow();
+    const t = setInterval(() => { if (sync !== "server" || syncProblem) void syncNow(); }, 45_000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncNow, sync, syncProblem]);
   const [opened, setOpened] = useState<Closed | null>(null);
   const [confirmAll, setConfirmAll] = useState<"saved" | "closed" | null>(null);
 
@@ -491,9 +502,9 @@ export default function StrategyBuilder() {
                 <thead className="sticky top-0 z-[1] bg-slate text-xs text-muted">
                   <tr>
                     {GCOLS.filter((g) => gcols.includes(g.key)).map((g) => <th key={`c${g.key}`} className="px-1.5 py-1 text-left font-normal" title={g.hint}>{g.short}</th>)}
-                    <th className="px-2 py-1 text-left font-normal">LTP</th><th className="px-2 py-1 text-right font-normal">Call OI</th>
+                    <th className="px-2 py-1 text-left font-normal">LTP</th><th className="px-2 py-1 text-right font-normal">Call OI <Info term="Call OI" /></th>
                     <th className="px-2 py-1 text-center font-medium text-paper">Strike</th>
-                    <th className="px-2 py-1 text-left font-normal">Put OI</th><th className="px-2 py-1 text-right font-normal">LTP</th>
+                    <th className="px-2 py-1 text-left font-normal">Put OI <Info term="Put OI" /></th><th className="px-2 py-1 text-right font-normal">LTP</th>
                     {[...GCOLS].reverse().filter((g) => gcols.includes(g.key)).map((g) => <th key={`p${g.key}`} className="px-1.5 py-1 text-right font-normal" title={g.hint}>{g.short}</th>)}
                   </tr>
                 </thead>
@@ -685,7 +696,7 @@ export default function StrategyBuilder() {
                   </div>
                   <div className="overflow-x-auto">
                   <table className="legs-table w-full text-sm md:[&_td]:!px-0.5 md:[&_th]:!px-0.5" aria-label="Strategy legs">
-                    <thead className="text-xs text-muted"><tr>{["", "Leg", "Strike", "Lots", "Entry ₹", "LTP", "P&L", "Δ · Θ/day", "Target ₹", "Stop ₹", ""].map((h, i) => <th key={i} className="px-1 py-1 text-left font-normal">{h}</th>)}</tr></thead>
+                    <thead className="text-xs text-muted"><tr>{[["", ""], ["Leg", ""], ["Strike", "Strike"], ["Lots", "Lots"], ["Entry ₹", "Entry"], ["LTP", "LTP"], ["P&L", "P&L"], ["Δ · Θ/day", "Delta per day"], ["Target ₹", "Target"], ["Stop ₹", "Stop"], ["", ""]].map(([h, term], i) => <th key={i} className="px-1 py-1 text-left font-normal"><span className="inline-flex items-center gap-1">{h}{term && <Info term={term} />}</span></th>)}</tr></thead>
                     <tbody>
                       {legs.map((l) => {
                         const mk = ltp(l.strike, l.type);
@@ -735,7 +746,7 @@ export default function StrategyBuilder() {
               ) : tab === "greeks" ? (
                 <div className="overflow-x-auto p-2" data-testid="greeks">
                   <table className="w-full text-sm" aria-label="Greeks">
-                    <thead className="text-xs text-muted"><tr><th className="px-1 py-1 text-left font-normal">Leg</th><th className="px-1 py-1 text-right font-normal">IV</th><th className="px-1 py-1 text-right font-normal">Δ per unit</th><th className="px-1 py-1 text-right font-normal">Position Δ</th><th className="px-1 py-1 text-right font-normal">Γ</th><th className="px-1 py-1 text-right font-normal">Θ / day</th><th className="px-1 py-1 text-right font-normal">Vega / vol pt</th></tr></thead>
+                    <thead className="text-xs text-muted"><tr><th className="px-1 py-1 text-left font-normal">Leg</th><th className="px-1 py-1 text-right font-normal">IV <Info term="IV" /></th><th className="px-1 py-1 text-right font-normal">Δ per unit <Info term="Delta per unit" /></th><th className="px-1 py-1 text-right font-normal">Position Δ <Info term="Position delta" /></th><th className="px-1 py-1 text-right font-normal">Γ <Info term="Gamma" /></th><th className="px-1 py-1 text-right font-normal">Θ / day <Info term="Theta per day" /></th><th className="px-1 py-1 text-right font-normal">Vega / vol pt <Info term="Vega per vol point" /></th></tr></thead>
                     <tbody>
                       {mlegs.map((l) => {
                         const g = lotSize && spot ? legGreeks(l, lotSize, val0) : null;

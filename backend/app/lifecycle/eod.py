@@ -23,10 +23,10 @@ from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 
+from app.domain.session import session_close
 from app.intraday.dataset import FEATURE_VERSION, build_rows
 from app.intraday.enrich import Enricher
 from app.intraday.features import (
-    CLOSE,
     IST,
     OPEN,
     DailyBar,
@@ -186,7 +186,7 @@ class EodService:
         stored = 0
         for expiry, _ in self.obs.day_counts(self.underlying, start, end):
             samples = [s for s in self.obs.samples(self.underlying, expiry, since=datetime.fromtimestamp(start / 1000, UTC), until=datetime.fromtimestamp((end - 1) / 1000, UTC), limit=5000)
-                       if s.spot is not None and OPEN <= s.received_at.astimezone(IST).time() <= CLOSE]  # fmt: skip
+                       if s.spot is not None and OPEN <= s.received_at.astimezone(IST).time() <= session_close()]  # fmt: skip
             if not samples:
                 continue
             pts = [Point(s.received_at, s.spot) for s in samples if s.spot is not None]
@@ -224,7 +224,7 @@ class EodService:
         stored: dict[str, int] = {}
         for expiry, _ in self.obs.day_counts(self.underlying, start, end):
             samples = [s for s in self.obs.samples(self.underlying, expiry, since=datetime.fromtimestamp(start / 1000, UTC), until=datetime.fromtimestamp((end - 1) / 1000, UTC), limit=5000)
-                       if s.spot is not None and s.spot > 0 and OPEN <= s.received_at.astimezone(IST).time() <= CLOSE]  # fmt: skip
+                       if s.spot is not None and s.spot > 0 and OPEN <= s.received_at.astimezone(IST).time() <= session_close()]  # fmt: skip
             if len(samples) < 16:
                 continue
             pts = [Point(s.received_at, float(s.spot or 0)) for s in samples]

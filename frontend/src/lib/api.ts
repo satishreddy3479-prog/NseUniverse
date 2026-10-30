@@ -49,7 +49,39 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export interface StoredStrategies { saved: Record<string, unknown>[]; closed: Record<string, unknown>[] }
 
+export interface MarketSessionInfo {
+  open: string; close: string; label: string; source: string; configured: string;
+  observed: { day: string; closed_at: string; close: string | null }[];
+  pending_change: { close: string; day: string; note: string } | null;
+  holidays: string[]; holiday_coverage: [string, string];
+}
+
+export interface CleanupCandidate {
+  id: string; label: string; files: number; rows?: number; bytes: number; why_safe: string; blocked: number; enabled: boolean;
+  days?: string[]; blocked_detail?: { day: string; reason: string }[];
+}
+export interface CleanupOverview {
+  disk: { free_bytes: number; total_bytes: number; free_gb: number }; pressure: "ok" | "watch" | "low" | "critical";
+  data_bytes: number; logs_bytes: number; growth_bytes_per_day: number; runway_days: number | null;
+  stores: { file: string; name: string; holds: string; keep: string; bytes: number; tables: Record<string, number> }[];
+  files: { name: string; holds: string; keep: string; files: number; bytes: number }[];
+  today: {
+    date: string; samples: number; contract_rows: number; contract_bytes_estimate: number; snapshot_files: number; snapshot_bytes: number; note: string;
+    expiries: { expiry: string; samples: number; unchanged: number; first: string; last: string }[];
+    intraday: { scores: number; feature_rows: number; summaries: number };
+  };
+  candidates: CleanupCandidate[]; removable_bytes: number; never_deleted: { name: string; why: string }[];
+  policy: { raw_days: number; normalized_days: number; contract_row_sessions: number };
+  last_runs: Record<string, unknown>;
+}
+
 export const api = {
+  cleanupOverview: () => request<CleanupOverview>("/api/storage/cleanup"),
+  cleanupRun: (items: string[]) =>
+    request<{ ok: boolean; result: Record<string, unknown> }>("/api/storage/cleanup", {
+      method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ items, confirm: true }),
+    }),
+  marketSession: () => request<MarketSessionInfo>("/api/market/session"),
   strategies: () => request<StoredStrategies>("/api/strategies"),
   putStrategy: (kind: "saved" | "closed", key: string, doc: unknown) =>
     // the name goes in the body: names like "straddle 30/10/2026" contain slashes that a proxy would split into path parts

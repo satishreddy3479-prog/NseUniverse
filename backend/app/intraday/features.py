@@ -24,10 +24,10 @@ from statistics import pstdev
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from app.domain.session import SESSION_CLOSE, SESSION_OPEN
+from app.domain.session import SESSION_OPEN, session_close
 
 IST = ZoneInfo("Asia/Kolkata")
-OPEN, CLOSE = SESSION_OPEN, SESSION_CLOSE
+OPEN = SESSION_OPEN
 SESSION_MINUTES = 375
 OPENING_RANGE_MIN = 15
 #: a return over h minutes needs an anchor sample no older than h + this many minutes
@@ -45,7 +45,6 @@ PHASES: list[tuple[time, time, Phase]] = [
     (time(9, 45), time(11, 30), "morning"),
     (time(11, 30), time(13, 30), "midday"),
     (time(13, 30), time(15, 0), "afternoon"),
-    (time(15, 0), SESSION_CLOSE, "closing"),
 ]
 
 
@@ -59,6 +58,8 @@ def session_phase(now: datetime, is_trading_day: bool | None) -> Phase:
     for lo, hi, ph in PHASES:
         if lo <= t.time() < hi:
             return ph
+    if time(15, 0) <= t.time() < session_close():
+        return "closing"  # the end of the session follows the exchange's close (15:30, or 15:40 with the auction alignment)
     return "post_market"
 
 
@@ -80,7 +81,7 @@ def in_session(points: Sequence[Point], day: date) -> list[Point]:
     out: dict[datetime, Point] = {}
     for p in points:
         t = p.at.astimezone(IST)
-        if t.date() == day and OPEN <= t.time() <= CLOSE and p.at not in out:
+        if t.date() == day and OPEN <= t.time() <= session_close() and p.at not in out:
             out[p.at] = p
     return [out[k] for k in sorted(out)]
 

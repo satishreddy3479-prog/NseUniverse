@@ -484,6 +484,79 @@ async def storage_status(request: Request) -> dict[str, Any]:
     return await asyncio.to_thread(build)
 
 
+class CleanupRequest(BaseModel):
+    items: list[str]
+    confirm: bool = False
+
+
+def _cleanup_args(request: Request) -> dict[str, Any]:
+    s = request.app.state.settings
+    return {
+        "data_dir": s.data_dir,
+        "today": datetime.now(UTC).astimezone(IST).date(),
+        "obs": request.app.state.observations,
+        "eod": request.app.state.eod,
+        "raw_keep": s.snapshot_raw_keep_days,
+        "norm_keep": s.snapshot_normalized_keep_days,
+        "obs_keep": s.observation_keep_sessions,
+        "now": __import__("time").time(),
+    }
+
+
+@router.get("/storage/cleanup")
+async def storage_cleanup_overview(request: Request) -> dict[str, Any]:
+    """What is stored, what today holds and exactly what could be removed (changes nothing)."""
+    from app.lifecycle import cleanup
+
+    s = request.app.state.settings
+    a = _cleanup_args(request)
+    return await asyncio.to_thread(
+        lambda: cleanup.overview(
+            data_dir=a["data_dir"],
+            log_dir=s.log_dir,
+            today=a["today"],
+            obs=a["obs"],
+            intraday=request.app.state.intraday_store,
+            eod=a["eod"],
+            raw_keep=a["raw_keep"],
+            norm_keep=a["norm_keep"],
+            obs_keep=a["obs_keep"],
+            underlying=s.underlying,
+            now=a["now"],
+        )
+    )
+
+
+@router.post("/storage/cleanup", dependencies=[Depends(require_local_control)])
+async def storage_cleanup_run(body: CleanupRequest, request: Request) -> dict[str, Any]:
+    """Remove the named categories (needs ``confirm: true``); archived or regenerable data only."""
+    from app.lifecycle import cleanup
+
+    if not body.confirm:
+        raise HTTPException(
+            422, {"code": "confirmation_required", "message": "send confirm: true to remove data"}
+        )
+    a = _cleanup_args(request)
+    try:
+        res = await asyncio.to_thread(
+            lambda: cleanup.run(
+                body.items,
+                data_dir=a["data_dir"],
+                today=a["today"],
+                obs=a["obs"],
+                eod=a["eod"],
+                raw_keep=a["raw_keep"],
+                norm_keep=a["norm_keep"],
+                obs_keep=a["obs_keep"],
+                now=a["now"],
+            )
+        )
+    except ValueError as e:
+        raise HTTPException(422, {"code": "validation_error", "message": str(e)}) from e
+    a["obs"].record_event("cleanup", f"manual clean-up of {', '.join(body.items)}"[:300])
+    return {"ok": True, "result": res}
+
+
 @router.post("/storage/eod/run", dependencies=[Depends(require_local_control)])
 async def storage_eod_run(request: Request) -> dict[str, Any]:
     """Run the end-of-day pipeline now for every finished day that has no manifest (idempotent)."""
@@ -587,9 +660,7 @@ async def prediction_recompute(
 ) -> dict[str, Any]:
     """Retrain by hand ("Compute now"), also in market hours; ``model`` picks one horizon."""
     only = None if model == "all" else model
-    return await asyncio.to_thread(
-        request.app.state.research.summary, True, False, "manual", only
-    )
+    return await asyncio.to_thread(request.app.state.research.summary, True, False, "manual", only)
 
 
 @router.get("/prediction/flows/status")
@@ -734,3 +805,28 @@ async def strategies_import(body: StrategyImport, request: Request) -> dict[str,
         return await asyncio.to_thread(run)
     except StrategyError as e:
         raise _bad_strategy(e) from e
+
+
+# --------------------------------------------------- the regular session (open, close, holidays)
+@router.get("/market/session")
+async def market_session(request: Request) -> dict[str, Any]:
+    """The session the dashboards use: open, the close in force, where it came from, and holidays.
+
+    The close follows the exchange feed: 15:40 with the auction alignment, 15:30 if NSE ends it.
+    Holidays are from the verified NSE circular list; the browser never counts one as a session."""
+    from app.domain.session import SESSION_OPEN, session_close, session_label, session_source
+    from app.prediction.calendar import TradingCalendar
+
+    tracker = request.app.state.close_tracker
+    cal = TradingCalendar.load()
+    return {
+        "open": f"{SESSION_OPEN:%H:%M}",
+        "close": f"{session_close():%H:%M}",
+        "label": session_label(),
+        "source": session_source(),
+        "configured": tracker.info.get("configured", "auto"),
+        "observed": tracker.info.get("observed", []),
+        "pending_change": tracker.info.get("pending"),
+        "holidays": sorted(d.isoformat() for d in cal.holidays),
+        "holiday_coverage": [cal.coverage[0].isoformat(), cal.coverage[1].isoformat()],
+    }

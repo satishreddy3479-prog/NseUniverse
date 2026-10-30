@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     # per-contract rows of older sessions, removable once their archive is verified (0 = keep all)
     observation_keep_sessions: int = 2
     observation_prune_dry_run: bool = True  # report only; False needs owner approval
+    market_close: str = "auto"  # 'auto' follows the exchange feed, or 'HH:MM'
     backup_keep_daily: int = 7
     backup_keep_monthly: int = 6
     broker_daily_login: bool = True  # fresh broker sign-in every morning

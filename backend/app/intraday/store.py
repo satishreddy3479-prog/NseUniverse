@@ -197,6 +197,14 @@ class IntradayStore:
             return None
         return {"sample_utc": r[0], "score": r[1], "label": r[2], "components": json.loads(r[3])}
 
+    def day_counts(self, session: str) -> dict[str, int]:
+        """Rows stored for one session date (IST, YYYY-MM-DD): scores, feature rows and summaries (read-only)."""
+        with self._lock:
+            sc = self._db.execute("SELECT COUNT(*) FROM scores WHERE session=?", (session,)).fetchone()[0]
+            fr = self._db.execute("SELECT COUNT(*) FROM feature_rows WHERE session=?", (session,)).fetchone()[0]
+            sm = self._db.execute("SELECT COUNT(*) FROM daily_summaries WHERE session=?", (session,)).fetchone()[0]
+        return {"scores": int(sc), "feature_rows": int(fr), "summaries": int(sm)}
+
     def count(self) -> int:
         with self._lock:
             return int(self._db.execute("SELECT COUNT(*) FROM scores").fetchone()[0])

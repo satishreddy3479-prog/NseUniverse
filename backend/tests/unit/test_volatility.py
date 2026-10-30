@@ -66,7 +66,7 @@ def test_forward_is_recovered_from_put_call_parity_and_falls_back_loudly() -> No
     f_true, r = 24060.0, 0.06
     prices = {(k, s): v.price(s, f_true, k, T, 0.15, r) for k in (23900.0, 24000.0, 24100.0, 24200.0) for s in (CALL, PUT)}
     f, src = v.forward_from_parity(prices, 24000.0, T, r) or (0, "")
-    assert f == pytest.approx(f_true, abs=1e-6) and src == "put-call parity at 24000"
+    assert f == pytest.approx(f_true, abs=1e-6) and src == "median of put-call parity at 4 strikes nearest spot"
     f2, src2 = v.forward_from_parity({(24000.0, CALL): 100.0}, 24000.0, T, r) or (0, "")
     assert src2.startswith("spot x carry") and f2 == pytest.approx(24000 * v.math.exp(r * T))
     assert v.forward_from_parity(prices, None, T) is None
@@ -112,3 +112,24 @@ def test_realised_volatility_and_interpretation() -> None:
     assert "Underlying falling while IV rises" in v.interpret(-0.4, 0.6, 1.0)[0]
     assert any("range-bound while the ATM straddle contracts" in x for x in v.interpret(0.02, -0.4, -5.0))
     assert v.interpret(None, 0.5, None) == []
+
+
+def test_median_forward_ignores_one_bad_strike_and_matches_the_strategy_builder_rule() -> None:
+    f_true, r = 24060.0, 0.06
+    ks = (23900.0, 24000.0, 24100.0, 24200.0, 24300.0)
+    prices = {(k, s): v.price(s, f_true, k, T, 0.15, r) for k in ks for s in (CALL, PUT)}
+    prices[(24100.0, CALL)] = (prices[(24100.0, CALL)] or 0) + 400.0  # one stale/bad quote
+    f, src = v.forward_from_parity(prices, 24000.0, T, r) or (0, "")
+    assert f == pytest.approx(f_true, abs=1e-6)  # the median of five is not moved by one bad strike
+    assert src == "median of put-call parity at 5 strikes nearest spot"
+
+
+def test_black76_reference_values_shared_with_the_browser_model() -> None:
+    # The same numbers are asserted in frontend/src/test/optionModel.test.ts (F 22700, K 22800, 7 days, 15 %, r 6 %),
+    # so the two implementations are held to one reference.
+    t = 7 / 365
+    assert v.price(CALL, 22700.0, 22800.0, t, 0.15, 0.06) == pytest.approx(142.5695634102632, abs=1e-9)
+    assert v.price(PUT, 22700.0, 22800.0, t, 0.15, 0.06) == pytest.approx(242.45456109551898, abs=1e-9)
+    assert v.implied_vol(CALL, 142.5695634102632, 22700.0, 22800.0, t, 0.06) == pytest.approx(0.15, abs=1e-6)
+    g = v.greeks(CALL, 22700.0, 22800.0, t, 0.15, 0.06)
+    assert g is not None and g.delta == pytest.approx(0.419780590028781, abs=1e-9) and g.vega_pt == pytest.approx(12.275713218293767, abs=1e-9)
