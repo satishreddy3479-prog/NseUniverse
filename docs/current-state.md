@@ -5,6 +5,10 @@ _Last updated: 2026-10-29_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Targets and stops fixed (30 Oct 2026)
+- **Bug:** the percentage box was rebuilt from the rounded price after every keystroke, so for many premiums what you typed was rewritten (premium 3.5: "70" became 7.1, "12.5" lost its point, 12.35: "40" became 40.1). The box now keeps exactly what is typed and shows the computed value only when you leave it.
+- **New:** each target/stop shows how far the live price is from it, or "Target hit"/"Stop hit" when reached (a bought option's target is above its entry and its stop below; a sold one is the mirror). A banner in Positions lists every level reached. Nothing is exited or sent to a broker; use Exit all or act at the broker.
+
 ## Session close from the exchange, clean-up page, known weaknesses (30 Oct 2026)
 - **Session close follows the exchange.** The close (15:40 with the Closing Auction Session alignment, 15:30 if NSE ends it) is no longer a constant. `app/lifecycle/session_close.py` reads the feed's own market-status messages already stored in the observation events (first F&O "closed" message after 15:20 IST each weekday), and the close in force changes after two sessions in a row show the same time (one odd day is only flagged). `MARKET_CLOSE=15:30` fixes it by hand. The sampler, features, labels, volatility, market recordings, and in the browser every chart and the model's time to expiry read it through `session_close()` / `sessionCloseMin()`; `GET /api/market/session` reports the close, its source, the observed days and any pending change. A closed message from the feed during the session still stops the sampler at once (that part already existed). The 375-minute volatility scaling convention is unchanged.
 - **Exchange holidays** reach the browser in the same answer (verified NSE circular list), so a manual fetch on a weekday holiday is no longer counted as a session in charts or time-decay.

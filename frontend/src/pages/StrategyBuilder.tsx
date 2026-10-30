@@ -59,6 +59,29 @@ function Thumb({ legs, lotSize, spot }: { legs: Leg[]; lotSize: number; spot: nu
   return <svg viewBox={`0 0 ${W} ${H}`} className="h-16 w-full" aria-hidden="true"><line x1="0" x2={W} y1={y(0)} y2={y(0)} stroke="var(--rule)" strokeDasharray="3 3" />{segs}</svg>;
 }
 
+/** Has the market price reached this leg's target or stop? A bought option's target is above its entry and its stop below; for a sold one it is the other way round. */
+export function hitOf(l: { action: Action; target?: number | null; stop?: number | null }, kind: "target" | "stop", price: number): boolean {
+  const lvl = kind === "target" ? l.target : l.stop;
+  if (lvl == null) return false;
+  const up = (kind === "target") === (l.action === "BUY"); // the premium has to rise to the level
+  return up ? price >= lvl : price <= lvl;
+}
+
+/**
+ * Percentage box for a target or stop. What you type is kept exactly as typed while you are in the box (so "7.5" and
+ * "70" arrive intact); the price it sets is rounded to the 0.05 tick, which is why the percentage computed back from
+ * the price can differ slightly, and that computed value is shown only when you are not typing.
+ */
+function PctBox({ derived, onType, label, title, disabled, className }: { derived: number | null; onType: (raw: string) => void; label: string; title: string; disabled: boolean; className: string }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <input className={className} type="number" min={0} step="any" aria-label={label} title={title} placeholder="%" disabled={disabled}
+      value={draft ?? (derived ?? "")}
+      onChange={(e) => { setDraft(e.target.value); onType(e.target.value); }}
+      onBlur={() => setDraft(null)} />
+  );
+}
+
 function Stat({ label, value, sub, cls = "text-paper", hint, big = false }: { label: string; value: string; sub?: string; cls?: string; hint?: string; big?: boolean }) {
   // tiles grow to fill their row, so a row never ends with an empty cell
   return (
@@ -343,6 +366,7 @@ export default function StrategyBuilder() {
     const buy = l.action === "BUY";
     const profitSide = kind === "target";
     const up = profitSide === buy; // the premium moves up for a buyer's target and a seller's stop
+    const mkt = ltp(l.strike, l.type);
     const wrong = cur != null && l.premium != null && (up ? cur <= l.premium : cur >= l.premium);
     const tone2 = kind === "target" ? "border-up/60 text-up" : "border-down/60 text-down";
     // The percentage is how far the premium moves from the entry premium; typing one sets the price.
@@ -357,12 +381,16 @@ export default function StrategyBuilder() {
         <input className={`${field} w-[4.4rem] !px-1.5 ${wrong ? "border-down" : ""}`} type="number" min={0} step="0.05" aria-label={kind === "target" ? "Target premium" : "Stop-loss premium"}
           value={cur ?? ""} placeholder="none" onChange={(e) => setExit(l, kind, e.target.value === "" ? null : Number(e.target.value))} />
         <div className="mt-0.5 flex items-center gap-1">
-          <input className={`${field} w-12 !px-1 text-xs ${tone2}`} type="number" min={0} step="1" aria-label={`${kind === "target" ? "Target" : "Stop"} percent of entry premium`}
-            title={`% the premium moves ${up ? "above" : "below"} the entry premium`} placeholder="%" value={curPct ?? ""} disabled={l.premium == null}
-            onChange={(e) => fromPct(e.target.value)} />
+          <PctBox className={`${field} w-12 !px-1 text-xs ${tone2}`} label={`${kind === "target" ? "Target" : "Stop"} percent of entry premium`}
+            title={`% the premium moves ${up ? "above" : "below"} the entry premium`} derived={curPct} disabled={l.premium == null} onType={fromPct} />
           <span className="text-[10px] text-muted">%</span>
           {cur != null && <button type="button" aria-label={`Clear ${kind === "target" ? "target" : "stop"}`} onClick={() => setExit(l, kind, null)} className="text-[10px] text-muted hover:text-paper">✕</button>}
         </div>
+        {cur != null && !wrong && mkt != null && (
+          hitOf(l, kind, mkt)
+            ? <div className={`mt-0.5 rounded-sm px-1 text-[10px] font-semibold ${kind === "target" ? "bg-up/20 text-up" : "bg-down/20 text-down"}`} data-testid={`${kind}-hit`}>{kind === "target" ? "Target hit" : "Stop hit"} · LTP {fmtPrice(mkt)}</div>
+            : <div className="num mt-0.5 text-[10px] text-muted" data-testid={`${kind}-away`}>{Math.abs(cur - mkt).toFixed(2)} away (LTP {fmtPrice(mkt)})</div>
+        )}
         {wrong && <div className="max-w-[16ch] text-[10px] text-down">{kind === "target" ? "Target" : "Stop"} must be {up ? "above" : "below"} the entry.</div>}
         {cur != null && !wrong && l.premium != null && lotSize && <div className={`num text-[10px] ${tone(sign(l.action) * (cur - l.premium))}`}>{money(sign(l.action) * (cur - l.premium) * l.lots * mult * lotSize)}</div>}
       </div>
@@ -689,6 +717,15 @@ export default function StrategyBuilder() {
               </div>
               {tab === "positions" ? (
                 <div className="p-2">
+                  {(() => {
+                    const hits = live.flatMap((l) => (["stop", "target"] as const).flatMap((k) => { const m = ltp(l.strike, l.type); return m != null && hitOf(l, k, m) ? [{ l, k, m }] : []; }));
+                    return hits.length === 0 ? null : (
+                      <div role="status" className="mb-2 rounded-sm border border-warn/60 bg-warn/10 px-3 py-2 text-xs" data-testid="hit-banner">
+                        {hits.map(({ l, k, m }) => <div key={l.id + k} className={k === "stop" ? "text-down" : "text-up"}>{k === "stop" ? "Stop" : "Target"} reached on {l.action} {fmtInt(l.strike)} {l.type}: price {fmtPrice(m)} against {fmtPrice((k === "stop" ? l.stop : l.target) as number)}.</div>)}
+                        <div className="mt-1 text-muted">Nothing is exited for you and nothing is sent to a broker. Use Exit all, or untick or remove the leg here and act in your broker.</div>
+                      </div>
+                    );
+                  })()}
                   <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-muted" data-testid="legs-summary">
                     <span><span className="num text-paper">{legs.filter((l) => l.enabled !== false).length}</span> of {legs.length} legs active</span>
                     <span>Net premium <span className={`num ${tone(netPremium)}`}>{netPremium == null ? "—" : `${money(netPremium)} ${netPremium >= 0 ? "credit" : "debit"}`}</span></span>

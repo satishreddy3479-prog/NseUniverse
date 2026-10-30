@@ -514,3 +514,52 @@ describe("Deleting saved and closed strategies", () => {
   });
 });
 
+
+describe("Typing a percentage for a target or stop", () => {
+  it("keeps what you type (70, 7.5) even when the price it sets is rounded to the 0.05 tick", async () => {
+    mount();
+    await loaded();
+    await userEvent.click(await screen.findByRole("button", { name: "Sell CE 24100" }));
+    const entry = screen.getByLabelText("Entry premium");
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "3.5");
+    const pct = screen.getByLabelText("Stop percent of entry premium") as HTMLInputElement;
+    await userEvent.type(pct, "70"); // seller stop: 3.5 x 1.7 = 5.95
+    expect(pct.value).toBe("70");
+    expect((screen.getByLabelText("Stop-loss premium") as HTMLInputElement).value).toBe("5.95");
+    await userEvent.clear(pct);
+    await userEvent.type(pct, "7.5"); // 3.5 x 1.075 = 3.7625 -> 3.75
+    expect(pct.value).toBe("7.5");
+    expect((screen.getByLabelText("Stop-loss premium") as HTMLInputElement).value).toBe("3.75");
+  });
+});
+
+describe("Target and stop status against the market price", () => {
+  it("a bought call (entry 100) with a target of 90 and a stop of 120 is flagged hit/away, and a sold one is the mirror image", async () => {
+    const { hitOf } = await import("../pages/StrategyBuilder");
+    expect(hitOf({ action: "BUY", target: 150, stop: 70 }, "target", 150)).toBe(true);
+    expect(hitOf({ action: "BUY", target: 150, stop: 70 }, "target", 149.95)).toBe(false);
+    expect(hitOf({ action: "BUY", target: 150, stop: 70 }, "stop", 70)).toBe(true);
+    expect(hitOf({ action: "BUY", target: 150, stop: 70 }, "stop", 71)).toBe(false);
+    expect(hitOf({ action: "SELL", target: 50, stop: 130 }, "target", 50)).toBe(true); // a seller wins when the premium falls
+    expect(hitOf({ action: "SELL", target: 50, stop: 130 }, "stop", 130)).toBe(true); // and is stopped out when it rises
+    expect(hitOf({ action: "SELL", target: 50, stop: 130 }, "stop", 129)).toBe(false);
+    expect(hitOf({ action: "SELL" }, "stop", 999)).toBe(false); // nothing set: never hit
+  });
+
+  it("shows the banner and the badge when the stored price has passed the stop, and the distance when it has not", async () => {
+    mount();
+    await loaded();
+    await userEvent.click(await screen.findByRole("button", { name: "Sell CE 24100" })); // entry 100
+    await userEvent.type(await screen.findByLabelText("Stop percent of entry premium"), "30"); // stop at 130, price 100: not hit
+    expect(await screen.findByTestId("stop-away")).toHaveTextContent("30.00 away");
+    expect(screen.queryByTestId("hit-banner")).not.toBeInTheDocument();
+    // a sold call entered at 150 with a target of 120: the stored price (100) is already below the target
+    const entry = screen.getByLabelText("Entry premium");
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "150");
+    await userEvent.type(screen.getByLabelText("Target premium"), "120");
+    expect(await screen.findByTestId("target-hit")).toHaveTextContent("Target hit");
+    expect(screen.getByTestId("hit-banner")).toHaveTextContent("Target reached on SELL 24,100 CE");
+  });
+});
