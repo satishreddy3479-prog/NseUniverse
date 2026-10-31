@@ -536,7 +536,7 @@ describe("Typing a percentage for a target or stop", () => {
 
 describe("Target and stop status against the market price", () => {
   it("a bought call (entry 100) with a target of 90 and a stop of 120 is flagged hit/away, and a sold one is the mirror image", async () => {
-    const { hitOf } = await import("../pages/StrategyBuilder");
+    const { hitOf } = await import("../lib/strategy");
     expect(hitOf({ action: "BUY", target: 150, stop: 70 }, "target", 150)).toBe(true);
     expect(hitOf({ action: "BUY", target: 150, stop: 70 }, "target", 149.95)).toBe(false);
     expect(hitOf({ action: "BUY", target: 150, stop: 70 }, "stop", 70)).toBe(true);

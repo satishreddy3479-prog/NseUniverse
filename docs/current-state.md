@@ -5,6 +5,13 @@ _Last updated: 2026-10-29_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Auto stop/target, per-leg exit, re-entry, chart lines (31 Oct 2026)
+- **Paper automation, not trading.** With "Auto stop & target (paper)" on, a leg whose live price reaches its stop (checked first) or target is closed in the strategy at the live price, and its P&L is booked (`realised`, shown in the P&L box and kept as a fixed amount in the payoff). Nothing is sent to a broker; no order placement was added. It runs only on live streamed prices and only while the Strategy builder page is open (browser side), and pauses itself when the stream is not live, so it never acts on a stored or stale price. The close price can be beyond the level you set (it is the live price).
+- **Per-leg Exit** (price box, empty = live price) and **Enter again at live price** under every leg. **Re-entry** box: after a leg is closed by its STOP, with re-entries left, it is entered again at the live price when the premium comes back to its own entry premium (sold: at or below; bought: at or above); the stop and target keep the same percentage distance; one re-entry is used each time. Targets and manual exits never re-enter.
+- The working strategy (legs, exits, re-entries, log) is kept in the browser so a refresh does not repeat exits; Update/Save store it with the strategy. Exit all keeps booked P&L of legs closed earlier.
+- Chart lines menu (was "SD fixed"): SD + stop/target lines, SD only, stop/target lines only, none. The P&L box is now first in the statistics.
+- Limits: not server-side (closing browser stops the watcher); the lot multiplier at the moment of an exit decides the booked rupees; a one-tick spike can trigger a stop (no confirmation delay).
+
 ## Targets and stops fixed (30 Oct 2026)
 - **Bug:** the percentage box was rebuilt from the rounded price after every keystroke, so for many premiums what you typed was rewritten (premium 3.5: "70" became 7.1, "12.5" lost its point, 12.35: "40" became 40.1). The box now keeps exactly what is typed and shows the computed value only when you leave it.
 - **New:** each target/stop shows how far the live price is from it, or "Target hit"/"Stop hit" when reached (a bought option's target is above its entry and its stop below; a sold one is the mirror). A banner in Positions lists every level reached. Nothing is exited or sent to a broker; use Exit all or act at the broker.

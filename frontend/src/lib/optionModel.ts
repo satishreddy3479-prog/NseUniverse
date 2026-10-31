@@ -104,10 +104,11 @@ export function legTheoreticalValue(l: Leg, s: number, atMs: number, v: Valuatio
 export function theoreticalPnl(legs: Leg[], s: number, atMs: number, lotSize: number, v: Valuation): number | null {
   let total = 0;
   for (const l of legs) {
+    if (l.exitPrice != null) { total += l.realised ?? 0; continue; } // closed: fixed
     if (l.premium == null) return null;
     const val = legTheoreticalValue(l, s, atMs, v);
     if (val == null) return null;
-    total += sign(l.action) * (val - l.premium) * l.lots * lotSize;
+    total += sign(l.action) * (val - l.premium) * l.lots * lotSize + (l.realised ?? 0);
   }
   return total;
 }

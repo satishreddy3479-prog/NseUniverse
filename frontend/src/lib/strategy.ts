@@ -22,17 +22,109 @@ export interface Leg {
   /** premium level at which you plan to take profit / cut the loss, per unit (null = none) */
   target?: number | null;
   stop?: number | null;
+  // ---- paper automation (nothing is sent to a broker): a leg that reaches its stop or target is closed at the live price
+  /** set when the leg has been exited: the price it was closed at */
+  exitPrice?: number | null;
+  exitReason?: "stop" | "target" | "manual" | null;
+  exitedAt?: string | null;
+  /** rupees already booked by closes of this leg (a closed cycle adds its P&L here) */
+  realised?: number;
+  /** how many times a stopped-out leg may be entered again (the box next to the leg) */
+  reentry?: number;
+  /** premium the market has to come back to before a stopped-out leg is entered again: its own entry premium before the stop */
+  reentryLevel?: number | null;
+  /** distance of the stop and target from the entry, as fractions, kept so a re-entered leg gets the same distances */
+  stopPct?: number | null;
+  targetPct?: number | null;
+  cycles?: number;
+  log?: { at: string; text: string }[];
 }
 
 export const sign = (a: Action) => (a === "BUY" ? 1 : -1);
+export const isExited = (l: Pick<Leg, "exitPrice">): boolean => l.exitPrice != null;
+
+/** Has the market price reached this leg's target or stop? A bought option's target is above its entry and its stop below; for a sold one it is the other way round. */
+export function hitOf(l: { action: Action; target?: number | null; stop?: number | null }, kind: "target" | "stop", price: number): boolean {
+  const lvl = kind === "target" ? l.target : l.stop;
+  if (lvl == null) return false;
+  const up = (kind === "target") === (l.action === "BUY"); // the premium has to rise to the level
+  return up ? price >= lvl : price <= lvl;
+}
+
+const tick = (v: number) => Math.max(0.05, Math.round(v * 20) / 20);
+const stamp = (at: string) => new Date(at).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata" });
+
+/** Close a leg at `price` and book its P&L. The stop's distance is remembered so a re-entry can reuse it. */
+export function exitLeg(l: Leg, price: number, reason: "stop" | "target" | "manual", lotSize: number, at: string, lotsFactor = 1): Leg {
+  if (l.premium == null || isExited(l)) return l;
+  const pnl = sign(l.action) * (price - l.premium) * l.lots * lotsFactor * lotSize;
+  const what = reason === "stop" ? "Stop" : reason === "target" ? "Target" : "Manual exit";
+  const text = `${what}: ${l.action} ${l.strike} ${l.type} closed at ${price.toFixed(2)} (entry ${l.premium.toFixed(2)}), ${pnl < 0 ? "−" : "+"}₹${Math.round(Math.abs(pnl)).toLocaleString("en-IN")}`;
+  return {
+    ...l, exitPrice: price, exitReason: reason, exitedAt: at, realised: (l.realised ?? 0) + pnl,
+    reentryLevel: reason === "stop" ? l.premium : null,
+    stopPct: l.stop != null ? Math.abs(l.stop / l.premium - 1) : l.stopPct ?? null,
+    targetPct: l.target != null ? Math.abs(l.target / l.premium - 1) : l.targetPct ?? null,
+    log: [...(l.log ?? []), { at, text: `${stamp(at)} ${text}` }].slice(-20),
+  };
+}
+
+/** Enter an exited leg again at `price`. The stop and target keep their distance from the new entry. `viaBox` uses up one of the re-entries. */
+export function reenterLeg(l: Leg, price: number, at: string, viaBox: boolean): Leg {
+  if (!isExited(l)) return l;
+  const buy = l.action === "BUY";
+  const lvl = (pct: number | null | undefined, profitSide: boolean) => (pct == null ? null : tick(price * (profitSide === buy ? 1 + pct : 1 - pct)));
+  const what = viaBox ? "Re-entry" : "Entered again";
+  return {
+    ...l, premium: price, premiumSource: "market", exitPrice: null, exitReason: null, exitedAt: null, reentryLevel: null,
+    stop: lvl(l.stopPct, false), target: lvl(l.targetPct, true),
+    reentry: viaBox ? Math.max(0, (l.reentry ?? 0) - 1) : l.reentry, cycles: (l.cycles ?? 0) + 1,
+    log: [...(l.log ?? []), { at, text: `${stamp(at)} ${what}: ${l.action} ${l.strike} ${l.type} at ${price.toFixed(2)}` }].slice(-20),
+  };
+}
+
+/**
+ * One evaluation of every automatic rule against the live prices (paper only, nothing is sent to a broker):
+ *  - an open leg whose stop or target price has been reached is closed at the live price (the stop is checked first);
+ *  - a leg closed by its stop, with re-entries left, is entered again at the live price when the market comes back to
+ *    its own entry premium: a sold option when the premium falls back to it or below, a bought option when it rises back.
+ * Returns the new legs and the log lines of what happened. Legs without a live price are left alone.
+ */
+export function applyAutomation(legs: Leg[], priceOf: (strike: number, type: OptionType) => number | null, lotSize: number, at: string, lotsFactor = 1): { legs: Leg[]; events: string[] } {
+  const events: string[] = [];
+  const out = legs.map((l) => {
+    if (l.enabled === false) return l;
+    const px = priceOf(l.strike, l.type);
+    if (px == null || !(px > 0)) return l;
+    if (!isExited(l)) {
+      if (l.premium == null) return l;
+      const kind = hitOf(l, "stop", px) ? "stop" : hitOf(l, "target", px) ? "target" : null;
+      if (kind == null) return l;
+      const n = exitLeg(l, px, kind, lotSize, at, lotsFactor);
+      events.push(n.log![n.log!.length - 1]!.text);
+      return n;
+    }
+    if (l.exitReason === "stop" && (l.reentry ?? 0) > 0 && l.reentryLevel != null) {
+      const back = l.action === "SELL" ? px <= l.reentryLevel : px >= l.reentryLevel;
+      if (back) {
+        const n = reenterLeg(l, px, at, true);
+        events.push(n.log![n.log!.length - 1]!.text);
+        return n;
+      }
+    }
+    return l;
+  });
+  return { legs: out, events };
+}
 
 // ---------------------------------------------------------------- expiry payoff
 export const intrinsic = (l: Pick<Leg, "type" | "strike">, s: number) => Math.max(l.type === "CE" ? s - l.strike : l.strike - s, 0);
 
 /** P&L of one leg at expiry, before costs. Null while the premium is missing. */
 export function legExpiryPnl(l: Leg, s: number, lotSize: number): number | null {
+  if (l.exitPrice != null) return l.realised ?? 0; // closed: its P&L is fixed whatever NIFTY does
   if (l.premium == null) return null;
-  return sign(l.action) * (intrinsic(l, s) - l.premium) * l.lots * lotSize;
+  return sign(l.action) * (intrinsic(l, s) - l.premium) * l.lots * lotSize + (l.realised ?? 0);
 }
 
 /** Strategy P&L at expiry (all legs share the expiry), before costs. Null if any premium is missing. */
@@ -72,7 +164,7 @@ export function analyzeExpiry(legs: Leg[], lotSize: number): ExpiryAnalysis {
   const pts = [0, ...kinks];
   const f = (s: number) => expiryPnl(legs, s, lotSize) as number;
   // slope above the last strike: calls only (puts are worthless there); below the first strike: puts only
-  const upSlope = legs.reduce((a, l) => a + (l.type === "CE" ? sign(l.action) * l.lots * lotSize : 0), 0);
+  const upSlope = legs.filter((l) => !isExited(l)).reduce((a, l) => a + (l.type === "CE" ? sign(l.action) * l.lots * lotSize : 0), 0);
   const values = pts.map(f);
   const maxFinite = Math.max(...values), minFinite = Math.min(...values);
   const profitUnlimited = upSlope > 0, lossUnlimited = upSlope < 0;

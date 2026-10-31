@@ -124,3 +124,9 @@ body {
   .legs-table td:first-child { grid-column: 1 / -1; }
   .legs-table td:nth-child(2), .legs-table td:nth-child(3), .legs-table td:last-child { grid-column: 1 / -1; }
 }
+
+/* The exit / re-entry row under each leg spans the whole card on a phone. */
+@media (max-width: 767px) {
+  .legs-table tr.legs-extra { display: block; padding: 0 8px 10px 12px; border-top: 0; }
+  .legs-table tr.legs-extra td { display: block; }
+}

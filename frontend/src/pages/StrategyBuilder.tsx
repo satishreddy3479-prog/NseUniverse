@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { mergeRows, type LiveMode } from "../components/ChainTable";
 import { useThrottledVersion } from "../components/dashboard/DashContext";
@@ -14,7 +14,7 @@ import { useExpiries, useThrottledValue } from "../lib/hooks";
 import { marketClockMs } from "../lib/session";
 import { carryFromForward, contractGreeks, expiryEnd, impliedForward, legGreeks, sdLevel, netGreeks, probabilityOfProfit, scenarioGrid, sdBands, spotAtPremium, theoreticalPnl, type ContractGreeks, type Valuation } from "../lib/optionModel";
 import {
-  analyzeExpiry, expiryPnl, newLegId, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds,
+  analyzeExpiry, applyAutomation, exitLeg, expiryPnl, hitOf, isExited, newLegId, reenterLeg, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds,
   type Action, type Bias, type Leg, type OptionType, type Template,
 } from "../lib/strategy";
 
@@ -59,14 +59,6 @@ function Thumb({ legs, lotSize, spot }: { legs: Leg[]; lotSize: number; spot: nu
   return <svg viewBox={`0 0 ${W} ${H}`} className="h-16 w-full" aria-hidden="true"><line x1="0" x2={W} y1={y(0)} y2={y(0)} stroke="var(--rule)" strokeDasharray="3 3" />{segs}</svg>;
 }
 
-/** Has the market price reached this leg's target or stop? A bought option's target is above its entry and its stop below; for a sold one it is the other way round. */
-export function hitOf(l: { action: Action; target?: number | null; stop?: number | null }, kind: "target" | "stop", price: number): boolean {
-  const lvl = kind === "target" ? l.target : l.stop;
-  if (lvl == null) return false;
-  const up = (kind === "target") === (l.action === "BUY"); // the premium has to rise to the level
-  return up ? price >= lvl : price <= lvl;
-}
-
 /**
  * Percentage box for a target or stop. What you type is kept exactly as typed while you are in the box (so "7.5" and
  * "70" arrive intact); the price it sets is rounded to the 0.05 tick, which is why the percentage computed back from
@@ -98,9 +90,17 @@ export default function StrategyBuilder() {
   const ex = useExpiries();
   // only the two expiries this app collects (weekly and monthly), not every date the exchange lists
   const available = useMemo(() => [...new Set([ex.data?.weekly, ex.data?.monthly].filter((e): e is string => !!e))], [ex.data]);
-  const [picked, setPicked] = useState<string | null>(null);
+  // The strategy being worked on is kept in this browser, so a refresh does not bring back an older saved copy and
+  // repeat exits that already happened. Copies older than three days are ignored.
+  const [work] = useState(() => {
+    try {
+      const w = JSON.parse(localStorage.getItem("nse.builder.working.v1") ?? "null") as { legs?: Leg[]; expiry?: string | null; name?: string; loaded?: string | null; baseline?: Leg[]; at?: number } | null;
+      return w && Array.isArray(w.legs) && w.at && Date.now() - w.at < 3 * 86_400_000 ? w : null;
+    } catch { return null; }
+  });
+  const [picked, setPicked] = useState<string | null>(work?.expiry ?? null);
   const expiry = picked ?? available[0] ?? null;
-  const [legs, setLegs] = useState<Leg[]>([]);
+  const [legs, setLegs] = useState<Leg[]>(work?.legs ?? []);
   const [note, setNote] = useState<string | null>(null);
   const [width, setWidth] = useState<(typeof WIDTHS)[number]>(10);
   const [sel, setSel] = useState<number | null>(null);
@@ -110,7 +110,11 @@ export default function StrategyBuilder() {
   const [rate, setRate] = useState(6);
   const [days, setDays] = useState(0);
   const [oiMode, setOiMode] = useState<"oi" | "change" | "off">("oi");
-  const [sdOn, setSdOn] = useState(true);
+  /** which reference lines the payoff chart draws: the expected-move (SD) markers and/or the stop and target prices of the legs */
+  const [lines, setLines] = useState<"both" | "sd" | "levels" | "none">(() => { try { const v = localStorage.getItem("nse.builder.lines"); return v === "sd" || v === "levels" || v === "none" ? v : "both"; } catch { return "both"; } });
+  const sdOn = lines === "both" || lines === "sd";
+  const levelsOn = lines === "both" || lines === "levels";
+  const [autoOn, setAutoOn] = useState(() => { try { return localStorage.getItem("nse.builder.auto") !== "0"; } catch { return true; } });
   /** Zoom steps from the profit-zone window: + narrows around the centre of the profit zone, − widens. */
   const [zoom, setZoom] = useState(0);
   const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.matchMedia?.("(max-width: 640px)").matches === true);
@@ -123,14 +127,14 @@ export default function StrategyBuilder() {
   }, []);
   const [ivPts, setIvPts] = useState(0);
   /** The legs as they were when this strategy was built from a template or loaded from Saved/Closed: what Reset returns to. */
-  const [baseline, setBaseline] = useState<Leg[]>([]);
+  const [baseline, setBaseline] = useState<Leg[]>(work?.baseline ?? []);
   const [gcols, setGcols] = useState<GKey[]>(["delta", "iv"]);
   const [wide, setWide] = useState(false);
   const [whatPct, setWhatPct] = useState(0);
   const [saved, setSaved] = useState<Saved[]>(loadSaved);
-  const [name, setName] = useState("");
+  const [name, setName] = useState(work?.name ?? "");
   /** Name of the saved strategy currently loaded in the builder (the one the Update button overwrites). */
-  const [loaded, setLoaded] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<string | null>(work?.loaded ?? null);
   const [closed, setClosed] = useState<Closed[]>(loadClosed);
   /** "server": kept on the server; "browser": the server could not be reached, this browser's copy is all there is. */
   const [sync, setSync] = useState<"checking" | "server" | "browser">("checking");
@@ -237,6 +241,8 @@ export default function StrategyBuilder() {
     () => validateStrategy(legs, { expiries: available, strikesByExpiry: expiry ? { [expiry]: strikes } : {}, today: todayIST() }),
     [legs, available, expiry, strikes],
   );
+  /** legs still in the market (a leg closed by its stop or target keeps only its booked P&L) */
+  const open = useMemo(() => live.filter((l) => !isExited(l)), [live]);
   const errors = issues.filter((i) => i.level === "error");
   const ready = lotSize != null && live.length > 0 && errors.length === 0;
   const a = useMemo(() => (lotSize && live.length ? analyzeExpiry(live, lotSize) : null), [live, lotSize]);
@@ -246,13 +252,13 @@ export default function StrategyBuilder() {
   const val: Valuation = { ...val0, ivShift: ivPts / 100 };
   // every model leg uses the volatility the stored market price of its own strike implies, not one backed out of the entry premium you typed
   const marketIv = (l: Leg) => { const d = deltas.get(l.strike); return (l.type === "CE" ? d?.ceIv : d?.peIv) ?? null; };
-  const mlegs = useMemo(() => live.map((l) => ({ ...l, iv: l.iv ?? marketIv(l) })),
+  const mlegs = useMemo(() => open.map((l) => ({ ...l, iv: l.iv ?? marketIv(l) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [live, deltas]);
+    [open, deltas]);
   const bands = expiry && spot && atmIv ? sdBands(spot, atmIv, expiry, snapMs) : null;
   const curve = useMemo(() => {
     if (!ready || !a?.defined || !lotSize || !spot) return null;
-    const ks = live.map((l) => l.strike);
+    const ks = open.map((l) => l.strike);
     // show the part that matters: out to the 2-sigma band, the strikes and the breakevens, plus a margin
     const near = [spot, ...ks, ...a.breakevens, ...(bands ? [bands.m2, bands.p2] : [spot * 0.94, spot * 1.06])];
     const m = spot * 0.012;
@@ -281,22 +287,58 @@ export default function StrategyBuilder() {
   const chartNow = useMemo(() => (curve?.length && a?.defined && spot ? payoffOption({
     expiry: curve, target: target && target.some((x) => x.pnl != null) ? target : null,
     targetLabel: `${days > 0 ? `Estimated in ${Math.min(days, dte)} day${days === 1 ? "" : "s"}` : "Estimated at the snapshot time"}${ivPts ? `, IV ${ivPts > 0 ? "+" : ""}${ivPts} pts` : ""} (model)`,
-    spot, breakevens: a.breakevens, bands: sdOn ? bands : null, levels,
+    spot, breakevens: a.breakevens, bands: sdOn ? bands : null, levels: levelsOn ? levels : [],
     oiMode: oiMode === "change" ? "change" : "oi",
     oi: oiMode === "off" ? null : rows.map((x) => ({ strike: x.strike, call: (oiMode === "change" ? x.call?.oi_change : x.call?.oi) ?? null, put: (oiMode === "change" ? x.put?.oi_change : x.put?.oi) ?? null })),
-  }, colors, view, narrow) : null), [curve, target, a, spot, days, dte, bands, sdOn, oiMode, rows, colors, levels, ivPts, view, narrow]);
+  }, colors, view, narrow) : null), [curve, target, a, spot, days, dte, bands, sdOn, levelsOn, oiMode, rows, colors, levels, ivPts, view, narrow]);
   // Live ticks change the spot, premiums and OI many times a second; redraw the payoff at a calm pace. A change of
   // zoom, window, strategy or the controls shows at once.
-  const chart = useThrottledValue(chartNow, 2500, `${zoom}|${narrow}|${live.length}|${live.map((l) => `${l.action}${l.type}${l.strike}${l.lots}${l.premium}`).join(",")}|${sdOn}|${oiMode}|${days}|${ivPts}|${whatPct}`);
+  const chart = useThrottledValue(chartNow, 2500, `${zoom}|${narrow}|${live.length}|${live.map((l) => `${l.action}${l.type}${l.strike}${l.lots}${l.premium}${l.exitPrice ?? ''}${l.stop ?? ''}${l.target ?? ''}`).join(",")}|${lines}|${oiMode}|${days}|${ivPts}|${whatPct}`);
   const pop = ready && a?.defined && lotSize && spot && atmIv && expiry ? probabilityOfProfit(live, lotSize, spot, atmIv, expiry, snapMs, carry) : null;
   const greeks = ready && lotSize && spot ? netGreeks(mlegs, lotSize, val0) : null;
-  const unreal = (l: Leg, mkt: number | null) => (mkt == null || l.premium == null || !lotSize ? null : sign(l.action) * (mkt - l.premium) * l.lots * mult * lotSize);
-  const totalPnl = lotSize && live.length && live.every((l) => l.premium != null && ltp(l.strike, l.type) != null)
+  /** P&L of one leg: what is booked, plus the open part against the market price */
+  const unreal = (l: Leg, mkt: number | null) => {
+    if (!lotSize) return null;
+    if (isExited(l)) return l.realised ?? 0;
+    return mkt == null || l.premium == null ? null : sign(l.action) * (mkt - l.premium) * l.lots * mult * lotSize + (l.realised ?? 0);
+  };
+  const realisedTotal = live.reduce((t, l) => t + (l.realised ?? 0), 0);
+  const totalPnl = lotSize && live.length && live.every((l) => isExited(l) || (l.premium != null && ltp(l.strike, l.type) != null))
     ? live.reduce((s, l) => s + (unreal({ ...l, lots: l.lots / mult }, ltp(l.strike, l.type)) ?? 0), 0) : null;
+  const [autoNote, setAutoNote] = useState<string | null>(null);
+  const [exitDraft, setExitDraft] = useState<Record<string, string>>({});
+  // Automatic stop, target and re-entry (paper only: nothing is sent to a broker). It runs on live streamed prices only,
+  // and only while this page is open; with the stream stale or the market closed it is paused, never guessing from old prices.
+  const autoActive = autoOn && liveMode === "fresh" && lotSize != null;
+  useEffect(() => {
+    if (!autoActive || !lotSize || legs.length === 0) return;
+    const r = applyAutomation(legs, ltp, lotSize, new Date().toISOString(), mult);
+    if (r.events.length) {
+      setLegs((cur) => (cur === legs ? r.legs : cur));
+      setAutoNote(r.events.join(" · "));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, legs, autoActive, mult, lotSize]);
+  useEffect(() => {
+    try { localStorage.setItem("nse.builder.working.v1", JSON.stringify({ legs, expiry, name, loaded, baseline, at: Date.now() })); } catch { /* this visit only */ }
+  }, [legs, expiry, name, loaded, baseline]);
+  const exitNow = (l: Leg) => {
+    if (!lotSize) return;
+    const typed = exitDraft[l.id];
+    const px = typed != null && typed !== "" ? Number(typed) : ltp(l.strike, l.type);
+    if (px == null || !(px > 0)) { setNote("No live price for that leg: type the exit price in the box."); return; }
+    setLegs((ls) => ls.map((x) => (x.id === l.id ? exitLeg(x, px, "manual", lotSize, new Date().toISOString(), mult) : x)));
+    setExitDraft((d) => ({ ...d, [l.id]: "" }));
+  };
+  const enterAgain = (l: Leg) => {
+    const px = ltp(l.strike, l.type);
+    if (px == null) { setNote("No live price for that leg yet."); return; }
+    setLegs((ls) => ls.map((x) => (x.id === l.id ? reenterLeg(x, px, new Date().toISOString(), false) : x)));
+  };
   const netPremium = lotSize && live.length && live.every((l) => l.premium != null) ? live.reduce((s, l) => s - sign(l.action) * (l.premium as number) * l.lots * lotSize, 0) : null;
   const exitPnl = (kind: "target" | "stop") => {
     if (!lotSize) return null;
-    const withPx = live.filter((l) => (kind === "target" ? l.target : l.stop) != null && l.premium != null);
+    const withPx = open.filter((l) => (kind === "target" ? l.target : l.stop) != null && l.premium != null);
     if (withPx.length === 0) return null;
     return { v: withPx.reduce((t, l) => t + sign(l.action) * (((kind === "target" ? l.target : l.stop) as number) - (l.premium as number)) * l.lots * lotSize, 0), n: withPx.length };
   };
@@ -386,7 +428,7 @@ export default function StrategyBuilder() {
           <span className="text-[10px] text-muted">%</span>
           {cur != null && <button type="button" aria-label={`Clear ${kind === "target" ? "target" : "stop"}`} onClick={() => setExit(l, kind, null)} className="text-[10px] text-muted hover:text-paper">✕</button>}
         </div>
-        {cur != null && !wrong && mkt != null && (
+        {cur != null && !wrong && mkt != null && !isExited(l) && (
           hitOf(l, kind, mkt)
             ? <div className={`mt-0.5 rounded-sm px-1 text-[10px] font-semibold ${kind === "target" ? "bg-up/20 text-up" : "bg-down/20 text-down"}`} data-testid={`${kind}-hit`}>{kind === "target" ? "Target hit" : "Stop hit"} · LTP {fmtPrice(mkt)}</div>
             : <div className="num mt-0.5 text-[10px] text-muted" data-testid={`${kind}-away`}>{Math.abs(cur - mkt).toFixed(2)} away (LTP {fmtPrice(mkt)})</div>
@@ -412,11 +454,12 @@ export default function StrategyBuilder() {
   const exitAll = () => {
     if (!expiry || !lotSize || !snap) return;
     const active = legs.filter((l) => l.enabled !== false);
-    const missing = active.filter((l) => ltp(l.strike, l.type) == null || l.premium == null);
+    const missing = active.filter((l) => !isExited(l) && (ltp(l.strike, l.type) == null || l.premium == null));
     if (active.length === 0) return;
     if (missing.length) { setNote(`Cannot exit: no stored price or no entry premium for ${missing.map((l) => `${l.strike} ${l.type}`).join(", ")}. Untick or remove those legs, or enter the entry premium.`); return; }
-    const out: ClosedLeg[] = active.map((l) => ({ ...l, lots: l.lots * mult, exit: ltp(l.strike, l.type) as number }));
-    const pnl = out.reduce((t, l) => t + sign(l.action) * (l.exit - (l.premium as number)) * l.lots * lotSize, 0);
+    const out: ClosedLeg[] = active.map((l) => ({ ...l, lots: l.lots * mult, exit: isExited(l) ? (l.exitPrice as number) : (ltp(l.strike, l.type) as number) }));
+    // a leg closed earlier by its stop or target keeps its booked P&L; an open one is closed now; earlier cycles stay booked
+    const pnl = out.reduce((t, l) => t + (isExited(l) ? 0 : sign(l.action) * (l.exit - (l.premium as number)) * l.lots * lotSize) + (l.realised ?? 0), 0);
     const at = new Date();
     persistClosed([{ id: newLegId(), name: name.trim() || `Strategy ${at.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`, closedAt: at.toISOString(), snapshotAt: snap.retrieved_at, expiry, lotSize, pnl, legs: out, stale: !!chain.data?.stale }, ...closed]);
     setLegs([]); setNote(null); setSel(null); setMult(1); setDays(0); setName(""); setOpened(null); setLoaded(null);
@@ -626,12 +669,12 @@ export default function StrategyBuilder() {
               <div className="flex flex-col">
                 <div className="border-b border-rule" data-testid="risk-stats">
                   <dl className="flex flex-wrap gap-px bg-rule/60">
+                  <Stat big label="P&L now (vs entry)" value={money(totalPnl)} cls={tone(totalPnl)} sub={realisedTotal !== 0 && totalPnl != null ? `booked ${money(realisedTotal)} · open ${money(totalPnl - realisedTotal)}` : undefined} hint="Booked P&L of closed legs plus the open legs at their latest price against your entry premiums" />
                   <Stat big label="Max profit" value={a.profitUnlimited ? "Unlimited" : money(a.maxProfit)} cls="text-up" hint="Best P&L at expiry over every NIFTY level from 0 upwards" />
                   <Stat big label="Max loss" value={a.lossUnlimited ? "Unlimited" : money(a.maxLoss)} cls="text-down" hint="Worst P&L at expiry over every NIFTY level from 0 upwards" />
                   <Stat big label="Reward : Risk" value={rr == null ? "N/A" : `${rr.toFixed(2)} : 1`} />
                   <Stat big label="POP (model estimate)" value={pop == null ? "—" : `${(pop * 100).toFixed(0)}%`} hint="Chance of ending in profit at expiry if NIFTY moves like a lognormal with the ATM implied volatility. A model, not a forecast." />
-                  <Stat big label="P&L now (vs entry)" value={money(totalPnl)} cls={tone(totalPnl)} hint="Stored last traded prices minus your entry premiums" />
-                  </dl>
+                                    </dl>
                   <dl className="flex flex-wrap gap-px border-t border-rule/60 bg-rule/60">
                   <Stat label="Breakevens" value={a.breakevens.length ? a.breakevens.map((b) => fmtInt(Math.round(b * 100) / 100)).join(" · ") : "none"} sub={spot ? a.breakevens.map((b) => `${((b / spot - 1) * 100).toFixed(2)}%`).join(" · ") : undefined} />
                   <Stat label="Net premium" value={netPremium == null ? "—" : `${money(netPremium)} ${netPremium >= 0 ? "credit" : "debit"}`} cls={tone(netPremium)} />
@@ -647,7 +690,9 @@ export default function StrategyBuilder() {
                     <span className="ml-auto flex items-center gap-3 text-muted"><span><span className="mr-1 inline-block h-0.5 w-4 align-middle" style={{ background: colors.up }} />On expiry</span><span><span className="mr-1 inline-block h-0.5 w-4 align-middle" style={{ background: colors.info }} />On target date (model)</span></span>
                   </div>
                   <div className="mt-2 flex flex-wrap items-center justify-end gap-2 text-xs">
-                    <select className={field} aria-label="Sigma markers" value={sdOn ? "fixed" : "off"} onChange={(e) => setSdOn(e.target.value === "fixed")} title="Expected-move levels at the snapshot: spot x (1 ± k x ATM IV x sqrt(time))"><option value="fixed">SD fixed</option><option value="off">SD off</option></select>
+                    <select className={field} aria-label="Sigma markers" value={lines} onChange={(e) => { const v = e.target.value as typeof lines; setLines(v); try { localStorage.setItem("nse.builder.lines", v); } catch { /* this visit only */ } }}
+                      title="Which reference lines the chart draws: expected-move levels at the snapshot (spot x (1 ± k x ATM IV x sqrt(time))) and the stop and target prices of your legs">
+                      <option value="both">SD + stop/target lines</option><option value="sd">SD only</option><option value="levels">Stop/target lines only</option><option value="none">No reference lines</option></select>
                     <select className={field} aria-label="Open interest on the chart" value={oiMode} onChange={(e) => setOiMode(e.target.value as "oi" | "change" | "off")} title="Bars come from the option chain on the left, strike by strike"><option value="oi">Open interest</option><option value="change">Change in OI</option><option value="off">No OI</option></select>
                     <span role="group" aria-label="Zoom the payoff chart" className="flex items-center gap-1">
                       <button type="button" aria-label="Zoom out" title="Show a wider price range" disabled={!view?.canOut || zoom <= PAYOFF_ZOOM.min} onClick={() => setZoom((z) => Math.max(PAYOFF_ZOOM.min, z - 1))} className="grid size-9 place-items-center rounded-sm border border-rule bg-slate-2 text-lg text-paper hover:border-info disabled:opacity-40">−</button>
@@ -718,7 +763,7 @@ export default function StrategyBuilder() {
               {tab === "positions" ? (
                 <div className="p-2">
                   {(() => {
-                    const hits = live.flatMap((l) => (["stop", "target"] as const).flatMap((k) => { const m = ltp(l.strike, l.type); return m != null && hitOf(l, k, m) ? [{ l, k, m }] : []; }));
+                    const hits = open.flatMap((l) => (["stop", "target"] as const).flatMap((k) => { const m = ltp(l.strike, l.type); return m != null && hitOf(l, k, m) ? [{ l, k, m }] : []; }));
                     return hits.length === 0 ? null : (
                       <div role="status" className="mb-2 rounded-sm border border-warn/60 bg-warn/10 px-3 py-2 text-xs" data-testid="hit-banner">
                         {hits.map(({ l, k, m }) => <div key={l.id + k} className={k === "stop" ? "text-down" : "text-up"}>{k === "stop" ? "Stop" : "Target"} reached on {l.action} {fmtInt(l.strike)} {l.type}: price {fmtPrice(m)} against {fmtPrice((k === "stop" ? l.stop : l.target) as number)}.</div>)}
@@ -726,6 +771,16 @@ export default function StrategyBuilder() {
                       </div>
                     );
                   })()}
+                  <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-sm bg-slate-2 px-3 py-2 text-xs" data-testid="auto-bar">
+                    <label className="flex items-center gap-1.5 text-paper" title="When the live price of a leg reaches its stop or target, the leg is closed in this strategy at the live price, and a stopped-out leg can be entered again (see Re-entry). Paper only: nothing is sent to a broker. Needs live prices and this page open.">
+                      <input type="checkbox" aria-label="Auto stop and target" checked={autoOn} onChange={(e) => { setAutoOn(e.target.checked); try { localStorage.setItem("nse.builder.auto", e.target.checked ? "1" : "0"); } catch { /* this visit only */ } }} />
+                      Auto stop &amp; target (paper) <Info term="Auto stop and target" />
+                    </label>
+                    <span data-testid="auto-state" className={autoActive ? "text-up" : "text-muted"}>
+                      {!autoOn ? "off: levels are only shown" : autoActive ? "watching live prices" : "paused: no live prices (market closed or stream not live)"}
+                    </span>
+                    {autoNote && <button type="button" onClick={() => setAutoNote(null)} className="ml-auto max-w-full truncate text-left text-warn" title="Click to dismiss" data-testid="auto-note">{autoNote} ✕</button>}
+                  </div>
                   <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-muted" data-testid="legs-summary">
                     <span><span className="num text-paper">{legs.filter((l) => l.enabled !== false).length}</span> of {legs.length} legs active</span>
                     <span>Net premium <span className={`num ${tone(netPremium)}`}>{netPremium == null ? "—" : `${money(netPremium)} ${netPremium >= 0 ? "credit" : "debit"}`}</span></span>
@@ -740,11 +795,13 @@ export default function StrategyBuilder() {
                         const issue = issues.filter((i) => i.legId === l.id);
                         const pl = unreal(l, mk);
                         const si = strikes.indexOf(l.strike);
-                        const lg = lotSize && spot && l.enabled !== false ? legGreeks({ ...l, lots: l.lots * mult, iv: l.iv ?? marketIv(l) }, lotSize, val0) : null;
+                        const lg = lotSize && spot && l.enabled !== false && !isExited(l) ? legGreeks({ ...l, lots: l.lots * mult, iv: l.iv ?? marketIv(l) }, lotSize, val0) : null;
                         const buy = l.action === "BUY";
                         const step = "grid size-6 place-items-center rounded-sm border border-rule bg-slate-2 text-paper hover:border-info disabled:opacity-40";
+                        const exited = isExited(l);
                         return (
-                          <tr key={l.id} className={`border-t border-rule/50 align-top ${l.enabled === false ? "opacity-50" : ""}`} style={{ boxShadow: `inset 3px 0 0 ${buy ? "var(--up)" : "var(--down)"}` }} data-testid={`leg-${l.id}`}>
+                          <Fragment key={l.id}>
+                          <tr className={`border-t border-rule/50 align-top ${l.enabled === false ? "opacity-50" : exited ? "opacity-70" : ""}`} style={{ boxShadow: `inset 3px 0 0 ${buy ? "var(--up)" : "var(--down)"}` }} data-testid={`leg-${l.id}`}>
                             <td className="px-2 py-2"><input type="checkbox" aria-label="Include leg" checked={l.enabled !== false} onChange={(e) => update(l.id, { enabled: e.target.checked })} /></td>
                             <td data-label="Leg" className="px-1 py-1.5"><div className="flex gap-1">
                               <select className={`${field} !px-1 font-semibold ${buy ? "border-up/60 text-up" : "border-down/60 text-down"}`} aria-label="Action" value={l.action} onChange={(e) => update(l.id, { action: e.target.value as Action })}><option>BUY</option><option>SELL</option></select>
@@ -771,9 +828,40 @@ export default function StrategyBuilder() {
                               {mk != null && l.premium !== mk && <button type="button" className="mr-2 text-xs text-info hover:underline" aria-label="Use stored quote" title="Set the entry premium to the stored quote" onClick={() => update(l.id, { premium: mk, premiumSource: "market" })}>⟳</button>}
                               <button type="button" className="mr-2 text-xs text-info hover:underline" aria-label="Duplicate leg" title="Duplicate this leg" onClick={() => setLegs((ls) => { const i = ls.findIndex((x) => x.id === l.id); const c = [...ls]; c.splice(i + 1, 0, { ...l, id: newLegId() }); return c; })}>⧉</button>
                               <button type="button" className="text-xs text-down hover:underline" aria-label="Remove leg" title="Remove this leg" onClick={() => setLegs((ls) => ls.filter((x) => x.id !== l.id))}>✕</button>
+                              {exited && <div className="whitespace-nowrap text-[10px] font-semibold text-warn">EXITED</div>}
                               {issue.map((i) => <div key={i.field + i.message} role={i.level === "error" ? "alert" : undefined} className={`max-w-[28ch] whitespace-normal text-[11px] ${i.level === "error" ? "text-down" : "text-warn"}`}>{i.message}</div>)}
                             </td>
                           </tr>
+                          <tr className={`legs-extra ${l.enabled === false ? "opacity-50" : ""}`} data-testid={`leg-extra-${l.id}`} style={{ boxShadow: `inset 3px 0 0 ${buy ? "var(--up)" : "var(--down)"}` }}>
+                            <td colSpan={11} className="px-2 pb-2 pt-0">
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
+                                {!exited ? (
+                                  <span className="flex items-center gap-1">
+                                    <input aria-label="Exit price" className={`${field} w-[5.2rem] !px-1.5`} type="number" min={0} step="0.05" placeholder={mk == null ? "price" : mk.toFixed(2)}
+                                      title="Price to close this leg at; leave empty to close at the live price" value={exitDraft[l.id] ?? ""} onChange={(e) => setExitDraft((d) => ({ ...d, [l.id]: e.target.value }))} />
+                                    <button type="button" aria-label="Exit leg" onClick={() => exitNow(l)} disabled={l.premium == null}
+                                      className="rounded-sm border border-down/60 bg-down/10 px-3 py-1 font-medium text-down hover:bg-down/20 disabled:opacity-40">Exit</button>
+                                  </span>
+                                ) : (
+                                  <span className="flex flex-wrap items-center gap-2" data-testid="leg-exited">
+                                    <span className="text-warn">Exited at {fmtPrice(l.exitPrice as number)} ({l.exitReason}) · booked <span className={`num ${tone(l.realised ?? 0)}`}>{money(l.realised ?? 0)}</span></span>
+                                    <button type="button" aria-label="Enter leg again" onClick={() => enterAgain(l)} className="rounded-sm border border-info/60 px-3 py-1 text-info hover:bg-info/10">Enter again at live price</button>
+                                  </span>
+                                )}
+                                <label className="flex items-center gap-1 text-muted" title="How many times a leg closed by its STOP is entered again at the live price once the premium comes back to its own entry premium: down to it for a sold option, up to it for a bought one. 0 = never.">
+                                  Re-entry <Info term="Re-entry" />
+                                  <input aria-label="Re-entries after a stop" className={`${field} w-12 !px-1 text-center`} type="number" min={0} step={1} value={l.reentry ?? 0}
+                                    onChange={(e) => update(l.id, { reentry: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} />
+                                </label>
+                                {exited && l.exitReason === "stop" && (l.reentry ?? 0) > 0 && l.reentryLevel != null && (
+                                  <span className="text-info" data-testid="reentry-armed">re-entry armed: enters again when the premium is {buy ? "back at or above" : "back at or below"} {fmtPrice(l.reentryLevel)} ({l.reentry} left)</span>
+                                )}
+                                {(l.cycles ?? 0) > 0 && !exited && <span className="text-muted">entry no. {(l.cycles ?? 0) + 1}</span>}
+                              </div>
+                              {(l.log?.length ?? 0) > 0 && <div className="mt-1 text-[11px] text-muted" data-testid="leg-log">{l.log!.slice(-2).map((x, i) => <div key={i}>{x.text}</div>)}</div>}
+                            </td>
+                          </tr>
+                          </Fragment>
                         );
                       })}
                     </tbody>
