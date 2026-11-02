@@ -77,8 +77,11 @@ class MarketService:
         approx_weights: Callable[[list[str], dict[str, float]], dict[str, float]] | None = None,
         enabled: bool = True,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        index_tick: Callable[[], LiveTick | None] | None = None,
     ) -> None:
         self.store, self._ticks, self._scrip_master = store, ticks, scrip_master
+        # the index is an ordinary (public) tick, not one of the internal breadth ticks, so it is read from the book separately
+        self._index_tick = index_tick
         self._trading_day, self._approx, self.enabled, self._clock = (
             trading_day,
             approx_weights,
@@ -484,13 +487,16 @@ class MarketService:
 
     def _spot_now(self, now: datetime) -> float | None:
         """NIFTY 50 level from the live index tick, only when it is fresh (within 15 s), else None."""
-        lt = self._ticks().get(INDEX_KEY)
+        lt = self._index()
         if lt is None or lt.ltp is None or (now - lt.received_at).total_seconds() > 15:
             return None
         return float(lt.ltp)
 
+    def _index(self) -> LiveTick | None:
+        return (self._index_tick() if self._index_tick is not None else None) or self._ticks().get(INDEX_KEY)
+
     def index_change(self) -> float | None:
-        lt = self._ticks().get(INDEX_KEY)
+        lt = self._index()
         return (
             None
             if lt is None

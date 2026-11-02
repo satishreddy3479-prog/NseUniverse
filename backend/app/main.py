@@ -26,7 +26,7 @@ from app.intraday.store import IntradayStore
 from app.lifecycle.eod import EodService
 from app.lifecycle.session_close import SessionCloseTracker
 from app.logging_setup import log_event, setup_logging
-from app.market.service import MarketService
+from app.market.service import INDEX_KEY, MarketService
 from app.market.store import MarketStore
 from app.prediction.flows_service import FlowsService
 from app.prediction.flows_store import FlowsStore
@@ -160,6 +160,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             monthly_expiry=snapshot_service.cached_monthly_expiry,
             trading_day=lambda d: intraday.trading_day(d),
             enabled=settings.breadth_enabled,
+            index_tick=lambda: stream.book.get(INDEX_KEY),
         )
         app.state.market = market
         stream.on_internal = market.on_tick

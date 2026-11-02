@@ -581,3 +581,14 @@ def test_future_price_and_open_interest_are_recorded_even_when_the_flow_tracker_
     # an unmatched key is listed, so a key mismatch shows up instead of silence
     svc.on_tick(LiveTick(key="nse_fo|99999", kind="scrip", exchange_segment="nse_fo", instrument_token="99999", ltp=1.0, received_at=NOW))
     assert "nse_fo|99999" in svc.summary(NOW)["flow"]["diagnostics"]["unmatched_keys"]
+
+
+def test_the_index_level_comes_from_the_public_book_for_index_change_and_the_future_sample(tmp_path: Path) -> None:
+    svc = build(tmp_path, {s: 101.0 for s in SYMS})
+    svc.store.save_tokens({"FUT:NIFTY": TokenInfo("FUT:NIFTY", "55001", "NIFTY26NOVFUT")}, date(2026, 10, 29))
+    idx = LiveTick(key="nse_cm|Nifty 50", kind="index", exchange_segment="nse_cm", instrument_token="Nifty 50", ltp=23266.85, prev_close=23200.0, received_at=NOW)
+    svc._index_tick = lambda: idx  # the index is an ordinary tick in the book, not one of the internal breadth ticks
+    assert svc.index_change() == pytest.approx((23266.85 / 23200.0 - 1) * 100)
+    svc.on_tick(LiveTick(key="nse_fo|55001", kind="scrip", exchange_segment="nse_fo", instrument_token="55001", ltp=23346.0, oi=15_397_460, volume=755_950, received_at=NOW))
+    assert svc.sample(NOW) is True
+    assert svc.store.recent_samples("fut")[0]["spot"] == 23266.85  # the same-moment index level is stored with the future
