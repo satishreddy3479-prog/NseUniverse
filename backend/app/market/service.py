@@ -92,7 +92,11 @@ class MarketService:
         self.last_sample_note = "not started"
         self._monthly_expiry = monthly_expiry
         self.trackers: dict[str, FlowTracker] = {}
+        # what the feed really delivered for the future and the heavyweights, kept separately from the flow classification so
+        # a missing field or a key that does not match shows up here instead of as silence
+        self.diag: dict[str, Any] = {"ticks": 0, "matched": 0, "unmatched_keys": [], "future": {"ticks": 0, "last_at": None, "ltp": None, "volume": None, "oi": None, "bid": None, "atp": None, "spot": None}}
         self._roles: tuple[float, dict[str, str]] | None = None
+        self._fut_key_cache: tuple[float, str | None] | None = None
         self._base_cache: tuple[str, dict[str, Any]] | None = None
         self.future_note = "not looked up yet"
         self._part_cache: tuple[str, dict[str, Any]] | None = None
@@ -220,11 +224,30 @@ class MarketService:
         self._roles = (now, roles)
         return roles
 
+    def _fut_key(self) -> str | None:
+        """Stream key of the NIFTY future, looked up at most once a minute (this runs for every tick)."""
+        now = time_mod.monotonic()
+        if self._fut_key_cache and now - self._fut_key_cache[0] < 60:
+            return self._fut_key_cache[1]
+        tok = self.token_map().get(FUT_SYMBOL)
+        key = None if tok is None else f"nse_fo|{tok.token}"
+        self._fut_key_cache = (now, key)
+        return key
+
     def on_tick(self, tick: LiveTick) -> None:
         """Called for every breadth/depth tick; only the futures and the five heavyweights are tracked."""
+        self.diag["ticks"] += 1
         name = self._flow_roles().get(tick.key)
+        if tick.key == self._fut_key():
+            d = self.diag["future"]
+            d.update(ticks=d["ticks"] + 1, last_at=tick.received_at.isoformat(), ltp=tick.ltp or d["ltp"], volume=tick.volume if tick.volume is not None else d["volume"],
+                     oi=tick.oi if tick.oi else d["oi"], bid=tick.bid if tick.bid is not None else d["bid"], atp=tick.avg_price or d["atp"])
         if name is None:
+            keys: list[str] = self.diag["unmatched_keys"]
+            if tick.key not in keys and len(keys) < 5:
+                keys.append(tick.key)
             return
+        self.diag["matched"] += 1
         t = tick.received_at.astimezone(IST)
         if not SESSION_OPEN <= t.time() <= session_close():
             return
@@ -326,6 +349,7 @@ class MarketService:
             ).trading_symbol
             or None,
             "futures_note": self.future_note,
+            "diagnostics": self.diag | {"future_token_subscribed": any(t.exchange_segment == "nse_fo" for t in self.stream_tokens())},
             "heavy5": {"basis": basis, "stocks": stocks},
             "baseline": {
                 "profile_sessions_futures": base["fut_sessions"],
@@ -813,21 +837,21 @@ class MarketService:
             {"rows": [[r["symbol"], r["change_pct"], r["volume"]] for r in s["nifty50"]["stocks"]]},
         )
         fut = self.trackers.get("NIFTYFUT")
+        raw = self.diag["future"]
         if fut is not None and fut.last_volume is not None:
+            fp: dict[str, Any] | None = {"v": fut.last_volume, "cvd": fut.buy - fut.sell, "b": fut.buy, "s": fut.sell, "ltp": fut.last_ltp,
+                                         "di": fut.last_imbalance, "atp": fut.last_atp, "oi": fut.last_oi}
+        elif raw["ticks"] and raw["ltp"] and raw["last_at"] and (now - datetime.fromisoformat(raw["last_at"])).total_seconds() < 120:
+            # the flow tracker has nothing (no volume yet) but the feed does deliver the future's price: keep price, OI and volume anyway
+            fp = {"v": raw["volume"], "cvd": None, "b": None, "s": None, "ltp": raw["ltp"], "di": None, "atp": raw["atp"], "oi": raw["oi"]}
+        else:
+            fp = None
+        if fp is not None:
             self.store.record_sample(
                 "fut",
                 stamp,
-                {
-                    "v": fut.last_volume,
-                    "cvd": fut.buy - fut.sell,
-                    "b": fut.buy,
-                    "s": fut.sell,
-                    "ltp": fut.last_ltp,
-                    "di": fut.last_imbalance,
-                    "atp": fut.last_atp,
-                    # open interest (None when the feed did not supply it), the index level at the same moment, and which
-                    # contract this is, so the basis and OI series are exact and survive a roll to the next month
-                    "oi": fut.last_oi,
+                fp | {
+                    # the index level at the same moment and which contract this is, so the basis and OI series are exact and survive a roll
                     "spot": self._spot_now(now),
                     "exp": exp.isoformat() if (exp := self._monthly_expiry()) else None,
                     "sym": (self.token_map().get(FUT_SYMBOL) or TokenInfo("", "", "")).trading_symbol or None,

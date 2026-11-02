@@ -5,6 +5,10 @@ _Last updated: 2026-10-29_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Futures data not arriving (2 Nov 2026, 09:20 IST, in progress)
+- Live check: the stream is healthy (options and 495 stocks tick, breadth 50/50) but no futures sample has ever been stored (`/api/futures/series` empty; `baseline.profile_sessions_futures` = 0) and the five heavyweights' flow is also empty, i.e. the depth-subscribed instruments (the future and the top five) never reach the flow tracker. The SDK's depth message does carry price, volume and open interest, so the cause is on our side of the pipe and is not yet identified.
+- Added: the market summary now has `flow.diagnostics` (ticks seen for the future with its last price, volume, OI and bid; ticks that matched a role; keys that matched none) and the minute "fut" sample is now written from the raw future ticks when the flow tracker has no volume, so price, OI and the basis chart no longer depend on the order-flow classification.
+
 ## Chart start, Exit all, portfolio, adjustments (2 Nov 2026)
 - **Charts starting at 09:16 instead of 09:15:** the OI, OI-change, volume and premium-decay charts ask the server for samples since the first stored sample's own time (microseconds), while the database keeps whole milliseconds, so the 09:15:01 sample was cut by under a millisecond. The range filter now compares in milliseconds; a regression test covers it. The Session axis already starts at the open for every chart.
 - **Exit all** moves the strategy from Saved to Closed under its own name (no copy left in Saved); closing a strategy reopened from Closed replaces that record. Trades made inside a saved strategy (exits, automatic stops/targets, re-entries, rolls) are written back to it immediately.

@@ -565,3 +565,19 @@ def test_summary_carries_participation_from_stock_vwap_and_recorded_opening_rang
     # balance now (6 up, 2 down) = 0.5; then (5, 3) = 0.25; index now +1.0 vs +0.2 then
     m = p["momentum"]
     assert m["breadth_momentum"] == 0.25 and m["index_move_pct"] == 0.8 and m["state"] == "confirmed"
+
+
+def test_future_price_and_open_interest_are_recorded_even_when_the_flow_tracker_has_no_volume(tmp_path: Path) -> None:
+    svc = build(tmp_path, {s: 101.0 for s in SYMS})
+    svc.store.save_tokens({"FUT:NIFTY": TokenInfo("FUT:NIFTY", "55001", "NIFTY26NOVFUT")}, date(2026, 10, 29))
+    # a future message with a price and open interest but no volume field: nothing for the flow tracker, but the feed does deliver it
+    svc.on_tick(LiveTick(key="nse_fo|55001", kind="scrip", exchange_segment="nse_fo", instrument_token="55001", ltp=23210.0, oi=1_234_500,
+                         bid=23209.5, received_at=NOW))  # fmt: skip
+    d = svc.summary(NOW)["flow"]["diagnostics"]
+    assert d["future"]["ticks"] == 1 and d["future"]["oi"] == 1_234_500 and d["future"]["ltp"] == 23210.0 and d["future"]["volume"] is None
+    assert svc.sample(NOW) is True
+    rec = svc.store.recent_samples("fut")[0]
+    assert rec["ltp"] == 23210.0 and rec["oi"] == 1_234_500 and rec["v"] is None and rec["sym"] == "NIFTY26NOVFUT"
+    # an unmatched key is listed, so a key mismatch shows up instead of silence
+    svc.on_tick(LiveTick(key="nse_fo|99999", kind="scrip", exchange_segment="nse_fo", instrument_token="99999", ltp=1.0, received_at=NOW))
+    assert "nse_fo|99999" in svc.summary(NOW)["flow"]["diagnostics"]["unmatched_keys"]
