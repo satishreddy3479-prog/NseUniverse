@@ -424,7 +424,7 @@ async def market_status(request: Request) -> dict[str, Any]:
         "subscribed": stream.market_subscribed,
         "messages": stream.market_message_count,
         "handler_errors": stream.on_internal_errors,
-        # wiring check: is the market service really the receiver of the internal ticks, and how many keys are internal
+        # wiring check: who receives the internal ticks, and how many keys are internal
         "handler_set": stream.on_internal is not None,
         "handler_is_this_service": getattr(stream.on_internal, "__self__", None) is mk,
         "internal_keys": len(stream.book.internal_keys),
