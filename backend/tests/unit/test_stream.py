@@ -458,7 +458,7 @@ async def test_other_segments_alone_leave_the_market_unknown() -> None:
 
 
 async def test_the_internal_tick_receiver_survives_start_and_a_restart() -> None:
-    # The market service is wired once at start-up; start() resets the counters and must not drop it,
+    # The market service is wired once at start-up; start() resets counters and must not drop it,
     # or the futures and heavyweight flow never receives a tick.
     m, _, _ = make_manager([FakeFeed(), FakeFeed()])
     seen: list[object] = []
