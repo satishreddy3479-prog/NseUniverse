@@ -98,8 +98,8 @@ class StreamManager:
         self._bg: list[asyncio.Task[None]] = []
         self._feed: FeedSession | None = None
         self._stop = False
-        # the receiver of the internal (breadth and depth) ticks is wired once at start-up and must survive every start(),
-        # which resets the counters below: resetting it here silently disconnected the futures and heavyweight flow
+        # wired once at start-up and kept across every start(), which resets the counters below
+        # (resetting it here silently disconnected the futures and heavyweight flow)
         self.on_internal: Callable[[LiveTick], None] | None = None
         self._reset(StreamState.STOPPED)
 
