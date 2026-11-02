@@ -455,3 +455,19 @@ async def test_other_segments_alone_leave_the_market_unknown() -> None:
     await until(lambda: "mcx_fo" in m.market_segments)
     assert m.market.state == "unknown"  # never borrow another exchange's status
     await m.stop()
+
+
+async def test_the_internal_tick_receiver_survives_start_and_a_restart() -> None:
+    # The market service is wired once at start-up; starting the stream (at launch, and again after each daily login)
+    # resets the counters and must not drop it, or the futures and heavyweight flow never receives a tick.
+    m, _, _ = make_manager([FakeFeed(), FakeFeed()])
+    seen: list[object] = []
+    m.on_internal = seen.append  # type: ignore[assignment]
+    await m.start()
+    await asyncio.sleep(0.05)
+    assert m.on_internal is not None
+    await m.stop()
+    await m.start()
+    await asyncio.sleep(0.05)
+    assert m.on_internal is not None and m.on_internal == seen.append
+    await m.stop()

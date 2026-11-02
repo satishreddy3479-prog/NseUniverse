@@ -98,6 +98,9 @@ class StreamManager:
         self._bg: list[asyncio.Task[None]] = []
         self._feed: FeedSession | None = None
         self._stop = False
+        # the receiver of the internal (breadth and depth) ticks is wired once at start-up and must survive every start(),
+        # which resets the counters below: resetting it here silently disconnected the futures and heavyweight flow
+        self.on_internal: Callable[[LiveTick], None] | None = None
         self._reset(StreamState.STOPPED)
 
     # ------------------------------------------------------------------ state
@@ -114,7 +117,6 @@ class StreamManager:
         self.last_market_data_at: datetime | None = None
         self.subscribed_tokens = 0
         self.market_message_count = 0
-        self.on_internal: Callable[[LiveTick], None] | None = None
         self.on_internal_errors = 0
         self.market_subscribed = 0
         self.market_note = "not requested"
