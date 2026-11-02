@@ -40,6 +40,7 @@ class FlowTracker:
     last_atp: float | None = (
         None  # the exchange's own day VWAP of the contract (average traded price)
     )
+    last_oi: int | None = None  # open interest as streamed; 0 or missing is never stored as a value
     minutes: dict[str, tuple[int, float, int]] = field(
         default_factory=dict
     )  # minute -> (cvd, ltp, volume)
@@ -48,6 +49,7 @@ class FlowTracker:
         self.buy = self.sell = self.unclassified = self.by_quote = self.by_tick = 0
         self.since = self.last_volume = self.last_ltp = None
         self.last_side = 0
+        self.last_oi = None
         self.depth_sum, self.depth_n, self.last_imbalance = 0.0, 0, None
         self.minutes.clear()
 
@@ -63,11 +65,14 @@ class FlowTracker:
         bid_qty: int | None = None,
         ask_qty: int | None = None,
         atp: float | None = None,
+        oi: int | None = None,
     ) -> None:
         if self.day is not None and day != self.day:
             self.reset()
         self.day = day
         self.last_update = at
+        if oi is not None and oi > 0:
+            self.last_oi = oi
         if bid is not None and ask is not None and ask >= bid:
             self.last_spread = ask - bid
         if atp is not None and atp > 0:

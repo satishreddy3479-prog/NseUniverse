@@ -167,6 +167,11 @@ class TestStore:
         assert o.plan_contract_pruning(2, {day: 12}, delete=True)["rows"] == 0  # idempotent
         assert o.plan_contract_pruning(0, {day: 12}, delete=True)["rows"] == 0  # 0 = keep everything
 
+    def test_oi_series_also_carries_total_call_and_put_volume(self, obs: ObservationStore) -> None:
+        res = oi_series(obs, "NIFTY", EXP)
+        # every fixture contract traded 10 units: three strikes per side = 30 at every point
+        assert res.ce_volume and set(res.ce_volume) == {30} and set(res.pe_volume) == {30}
+
     def test_data_survives_a_restart_and_events_are_logged(self, tmp_path: Path) -> None:
         o = ObservationStore(tmp_path)
         o.record_snapshot(

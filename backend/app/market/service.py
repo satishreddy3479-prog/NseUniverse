@@ -242,6 +242,7 @@ class MarketService:
             tick.bid_qty,
             tick.ask_qty,
             tick.avg_price,
+            tick.oi,
         )
 
     def baselines(self, now: datetime) -> dict[str, Any]:
@@ -456,6 +457,13 @@ class MarketService:
                 sym, lt.ltp, lt.prev_close, lt.volume, lt.high, lt.low, lt.received_at
             )
         return out
+
+    def _spot_now(self, now: datetime) -> float | None:
+        """NIFTY 50 level from the live index tick, only when it is fresh (within 15 s), else None."""
+        lt = self._ticks().get(INDEX_KEY)
+        if lt is None or lt.ltp is None or (now - lt.received_at).total_seconds() > 15:
+            return None
+        return float(lt.ltp)
 
     def index_change(self) -> float | None:
         lt = self._ticks().get(INDEX_KEY)
@@ -817,6 +825,12 @@ class MarketService:
                     "ltp": fut.last_ltp,
                     "di": fut.last_imbalance,
                     "atp": fut.last_atp,
+                    # open interest (None when the feed did not supply it), the index level at the same moment, and which
+                    # contract this is, so the basis and OI series are exact and survive a roll to the next month
+                    "oi": fut.last_oi,
+                    "spot": self._spot_now(now),
+                    "exp": exp.isoformat() if (exp := self._monthly_expiry()) else None,
+                    "sym": (self.token_map().get(FUT_SYMBOL) or TokenInfo("", "", "")).trading_symbol or None,
                 },
             )
         rows = [

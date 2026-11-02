@@ -312,3 +312,42 @@ describe("sessionize", () => {
     expect(marks[1]!.label!.formatter).toBe("30/10");
   });
 });
+
+describe("futuresOption", () => {
+  const res = {
+    day: "2026-11-02", contract: "NIFTY25NOVFUT", expiry: "2026-11-25", rate_assumed: 0.06,
+    times: ["2026-11-02T03:46:00Z", "2026-11-02T03:47:00Z", "2026-11-02T03:48:00Z"],
+    future: [23200, 23210, null], spot: [23150, 23160, null], spot_source: ["live tick", "live tick", null],
+    basis: [50, 50, null], basis_pct: [0.216, 0.216, null], carry_pct: [3.4, 3.4, null], fair_basis: [90, 90, null], vs_fair: [-40, -40, null],
+    oi: [1_010_000, null, 1_012_000], oi_change: [10_000, null, 12_000], volume: [50_000, 80_000, null], volume_per_min: [null, 30_000, null],
+    oi_baseline: { kind: "previous session close", value: 1_000_000, day: "2026-10-30" },
+    latest: { times: "2026-11-02T03:47:00Z", future: 23210, spot: 23160, basis: 50, basis_pct: 0.216, carry_pct: 3.4, fair_basis: 90, vs_fair: -40 },
+    warnings: [], definitions: {},
+  } as never;
+  const sx = (o: unknown) => (o as { series: { name: string; data: [number, number | null][] }[] }).series;
+
+  it("draws the index, the future and the gap, with the latest gap in the corner", async () => {
+    const { futuresOption } = await import("../lib/chartOptions");
+    const o = futuresOption(res, "basis", colors) as unknown as { graphic: { style: { text: string } }[] };
+    expect(sx(o).map((s) => s.name)).toEqual(["NIFTY spot", "NIFTY future", "Gap (future − spot)"]);
+    expect(sx(o)[2]!.data.map((d) => d[1])).toEqual([50, 50, null]); // an unrecorded point is a gap, not zero
+    const t = o.graphic[0]!.style.text;
+    expect(t).toContain("Gap +50.0 pts (+0.22%)"); expect(t).toContain("carry 3.40% p.a."); expect(t).toContain("vs fair −40.0");
+  });
+
+  it("OI, OI change and volume keep missing values as gaps", async () => {
+    const { futuresOption } = await import("../lib/chartOptions");
+    expect(sx(futuresOption(res, "oi", colors)).at(-1)!.data.map((d) => d[1])).toEqual([1_010_000, null, 1_012_000]);
+    expect(sx(futuresOption(res, "change", colors)).at(-1)!.data.map((d) => d[1])).toEqual([10_000, null, 12_000]);
+    const v = sx(futuresOption(res, "volume", colors));
+    expect(v.find((s) => s.name === "Volume per minute")!.data.map((d) => d[1])).toEqual([null, 30_000, null]);
+    expect(v.find((s) => s.name === "Volume today")!.data.map((d) => d[1])).toEqual([50_000, 80_000, null]);
+  });
+
+  it("the option volume chart carries call and put volume lines", async () => {
+    const { oiSeriesOption } = await import("../lib/chartOptions");
+    const o = oiSeriesOption({ times: ["2026-11-02T03:46:00Z"], spot: [23150], ce_volume: [120], pe_volume: [90], ce_oi: [1], pe_oi: [1], ce_change: [1], pe_change: [1], pcr: [1] } as never, "volume", colors);
+    expect(sx(o).map((s) => s.name)).toEqual(["NIFTY", "Call volume", "Put volume"]);
+    expect(sx(o)[1]!.data[0]![1]).toBe(120);
+  });
+});

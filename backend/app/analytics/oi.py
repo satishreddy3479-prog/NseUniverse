@@ -528,6 +528,9 @@ class OiSeries(BaseModel):
     spot: list[float | None]
     ce_oi: list[int | None]
     pe_oi: list[int | None]
+    #: contracts traded today (cumulative since the open), summed over the strikes that have a volume
+    ce_volume: list[int | None] = []
+    pe_volume: list[int | None] = []
     #: sum of (OI now - previous-day OI the broker supplied) over strikes that have both
     ce_change: list[int | None]
     pe_change: list[int | None]
@@ -544,6 +547,7 @@ OI_SERIES_DEFINITIONS = {
     "ce_oi": "Sum of call OI (units) over the listed strikes; a strike without OI is left out of that point.",
     "ce_change": "Sum of (call OI now - previous-day call OI from the broker) over strikes that have both.",
     "pcr": "Total put OI / total call OI over the same strikes.",
+    "ce_volume": "Contracts traded today (cumulative since the open, units) summed over the listed strikes; a strike without a volume is left out of that point.",
 }
 
 
@@ -589,10 +593,13 @@ def oi_series(
     oi: dict[int, list[int | None]] = {CALL: [], PUT: []}
     ch: dict[int, list[int | None]] = {CALL: [], PUT: []}
     used: dict[int, list[int]] = {CALL: [], PUT: []}
+    vol: dict[int, list[int | None]] = {CALL: [], PUT: []}
     pcr: list[float | None] = []
     for s in cols:
         cur = contracts_of(s)
         for side in (CALL, PUT):
+            vv = [c.volume for k in strikes if (c := cur.get((k, side))) is not None and c.volume is not None]
+            vol[side].append(sum(vv) if vv else None)
             vals = [c.oi for k in strikes if (c := cur.get((k, side))) is not None and c.oi is not None]
             diffs = [
                 c.oi - c.oi_prev
@@ -612,7 +619,7 @@ def oi_series(
     return OiSeries(
         underlying=underlying, expiry=expiry, strikes=strikes, atm_strike=atm,
         times=[s.received_at for s in cols], spot=[s.spot for s in cols],
-        ce_oi=oi[CALL], pe_oi=oi[PUT], ce_change=ch[CALL], pe_change=ch[PUT], pcr=pcr,
+        ce_oi=oi[CALL], pe_oi=oi[PUT], ce_volume=vol[CALL], pe_volume=vol[PUT], ce_change=ch[CALL], pe_change=ch[PUT], pcr=pcr,
         ce_strikes_used=used[CALL], pe_strikes_used=used[PUT], stride=stride,
         warnings=warnings, definitions=OI_SERIES_DEFINITIONS,
     )  # fmt: skip

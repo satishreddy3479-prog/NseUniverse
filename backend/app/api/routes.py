@@ -830,3 +830,20 @@ async def market_session(request: Request) -> dict[str, Any]:
         "holidays": sorted(d.isoformat() for d in cal.holidays),
         "holiday_coverage": [cal.coverage[0].isoformat(), cal.coverage[1].isoformat()],
     }
+
+
+# ------------------------------------------------------- NIFTY future: basis, open interest, volume
+@router.get("/futures/series")
+async def futures_series_route(
+    request: Request, day: date | None = None, since: str | None = None
+) -> dict[str, Any]:
+    """The NIFTY current-month future through a session (definitions: market/futures_series.py)."""
+    from app.analytics.oi import parse_time
+    from app.market.futures_series import futures_series
+
+    market = request.app.state.market
+    s = request.app.state.settings
+    return await asyncio.to_thread(
+        futures_series, market.store, _obs(request), s.underlying,
+        rate=s.risk_free_rate, day=day, since=parse_time(since),
+    )

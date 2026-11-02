@@ -10,7 +10,7 @@ import { sessionCloseMin, sessionOpenMin } from "../../lib/session";
 import { atmStraddle, compactIN, computeTotals, maxPain, OI_MODES, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, TS_RANGES, windowEndIso, windowStartIso, type OiMode } from "../../lib/analytics";
 import {
   decayOption, oiChangeBarOption, oiSeriesOption, type OiSeriesKind, oiHeatmapOption, premiumOption, spotOption, straddleOption, strikeBarOption,
-  oiExplorerOption, sessionize, totalsBarOption, type StrikeMetric } from "../../lib/chartOptions";
+  oiExplorerOption, futuresOption, sessionize, totalsBarOption, type FuturesKind, type StrikeMetric } from "../../lib/chartOptions";
 import { ageSeconds, fmtDateTimeIST, fmtExpiry, fmtTimeIST, fmtInt, fmtPct, fmtPrice, fmtSigned } from "../../lib/format";
 import { useLiveSpot } from "../../lib/useLive";
 import type { BaselineKind, Observation, OiChange, OptionChainRow } from "../../lib/types";
@@ -301,7 +301,7 @@ function OiSeriesWidget({ kind, label }: { kind: OiSeriesKind; label: string }) 
     () => (_o: Observation[], c: ReturnType<typeof useChartColors>) => (res ? oiSeriesOption(res, kind, c, d.showCalls, d.showPuts) : { animation: false, series: [] }),
     [res, kind, d.showCalls, d.showPuts],
   );
-  const what = kind === "pcr" ? "put OI ÷ call OI" : kind === "change" ? "OI now minus the broker's previous-day OI" : "open interest";
+  const what = kind === "volume" ? "contracts traded today (cumulative since the open)" : kind === "pcr" ? "put OI ÷ call OI" : kind === "change" ? "OI now minus the broker's previous-day OI" : "open interest";
   return (
     <>
       <TimeSeries build={build} label={label} extra={<StrikePicker value={strikes} onChange={setStrikes} />}
@@ -310,6 +310,31 @@ function OiSeriesWidget({ kind, label }: { kind: OiSeriesKind; label: string }) 
     </>
   );
 }
+/** NIFTY current-month future through the session: open interest, OI change, volume, and the gap to the index. */
+function FuturesWidget({ kind, label }: { kind: FuturesKind; label: string }) {
+  const d = useDash();
+  const all = d.history.data?.observations;
+  const since = useMemo(() => rangeObservations(all ?? [], d.tsRange).rows[0]?.retrieved_at, [all, d.tsRange]);
+  const q = useQuery({ queryKey: ["futSeries", since ?? null], queryFn: () => api.futuresSeries(since), refetchInterval: 30_000, retry: false });
+  const res = q.data;
+  const build = useMemo(() => (_o: Observation[], c: ReturnType<typeof useChartColors>) => (res && res.times.length ? futuresOption(res, kind, c) : { animation: false, series: [] }), [res, kind]);
+  const what = kind === "oi" ? "open interest of the future (units)"
+    : kind === "change" ? `OI now minus ${res?.oi_baseline ? `the ${res.oi_baseline.kind} OI (${res.oi_baseline.value.toLocaleString("en-IN")}${res.oi_baseline.day ? `, ${res.oi_baseline.day}` : ""})` : "the baseline (not recorded yet)"}`
+    : kind === "volume" ? "contracts traded today (line) and per minute (bars)"
+    : "the index and the future on one axis; the gap is future minus index";
+  const note = `${res?.contract ?? "NIFTY current-month future"}${res?.expiry ? ` (expires ${res.expiry})` : ""}: ${what}. ${kind === "basis" ? "" : "The future's price is the dotted line. "}${res?.warnings.length ? ` ${res.warnings.join(" ")}` : ""}`;
+  return (
+    <>
+      <TimeSeries build={build} label={label} note={note} />
+      {q.error && <p className="sr-only">Could not load {label}: {String((q.error as Error).message)}</p>}
+    </>
+  );
+}
+export const FuturesOiWidget = () => <FuturesWidget kind="oi" label="NIFTY futures: open interest" />;
+export const FuturesOiChangeWidget = () => <FuturesWidget kind="change" label="NIFTY futures: OI change" />;
+export const FuturesVolumeWidget = () => <FuturesWidget kind="volume" label="NIFTY futures: volume" />;
+export const FuturesBasisWidget = () => <FuturesWidget kind="basis" label="NIFTY spot vs futures (gap)" />;
+export const OiVolumeTrendWidget = () => <OiSeriesWidget kind="volume" label="Total volume over time (call vs put)" />;
 export const PcrTrendWidget = () => <OiSeriesWidget kind="pcr" label="Put-call ratio through the session" />;
 export const OiChangeTrendWidget = () => <OiSeriesWidget kind="change" label="OI change (call vs put) through the session" />;
 export const OiTotalTrendWidget = () => <OiSeriesWidget kind="total" label="Total OI (call vs put) through the session" />;
@@ -961,6 +986,11 @@ export const WIDGETS: WidgetDef[] = [
   { id: "pcrTrend", title: "Put-call ratio over time", render: () => <PcrTrendWidget />, x: 0, y: 45, w: 6, h: 10, minW: 4, minH: 6 },
   { id: "oiChangeTrend", title: "OI change over time (call vs put)", render: () => <OiChangeTrendWidget />, x: 6, y: 45, w: 6, h: 10, minW: 4, minH: 6 },
   { id: "oiTotalTrend", title: "Total OI over time (call vs put)", render: () => <OiTotalTrendWidget />, x: 0, y: 55, w: 6, h: 10, minW: 4, minH: 6 },
+  { id: "futOi", title: "NIFTY futures: open interest", render: () => <FuturesOiWidget />, x: 0, y: 65, w: 6, h: 10, minW: 4, minH: 6 },
+  { id: "futOiChange", title: "NIFTY futures: OI change", render: () => <FuturesOiChangeWidget />, x: 6, y: 65, w: 6, h: 10, minW: 4, minH: 6 },
+  { id: "futBasis", title: "NIFTY spot vs futures (gap)", render: () => <FuturesBasisWidget />, x: 0, y: 75, w: 6, h: 11, minW: 4, minH: 7 },
+  { id: "futVolume", title: "NIFTY futures: volume", render: () => <FuturesVolumeWidget />, x: 6, y: 75, w: 6, h: 11, minW: 4, minH: 6 },
+  { id: "oiVolumeTrend", title: "Total volume over time (call vs put)", render: () => <OiVolumeTrendWidget />, x: 0, y: 86, w: 6, h: 10, minW: 4, minH: 6 },
   { id: "levels", title: "Key levels", render: () => <LevelsWidget />, x: 6, y: 21, w: 6, h: 8, minW: 3, minH: 5 },
   { id: "oiIntraday", title: "Intraday OI change", render: () => <OiIntradayWidget />, x: 0, y: 37, w: 6, h: 12, minW: 4, minH: 7 },
   { id: "oiHeatmap", title: "OI change heatmap", render: () => <OiHeatmapWidget />, x: 6, y: 37, w: 6, h: 12, minW: 4, minH: 7 },
@@ -970,7 +1000,7 @@ export const WIDGETS: WidgetDef[] = [
 ];
 
 /** First screen: the nine widgets of the reference layout; the rest are one click away in "Add widget". */
-export const DEFAULT_ACTIVE = ["spot", "oi", "oiChange", "chain", "premium", "decay", "oiTotal", "oiChangeTotal", "levels", "pcr", "pcrTrend", "oiChangeTrend", "oiTotalTrend"];
+export const DEFAULT_ACTIVE = ["spot", "oi", "oiChange", "chain", "premium", "decay", "oiTotal", "oiChangeTotal", "levels", "pcr", "pcrTrend", "oiChangeTrend", "oiTotalTrend", "futOi", "futOiChange", "futBasis", "futVolume", "oiVolumeTrend"];
 
 /** Widgets added after the first release: offered once to layouts saved earlier, so they are not hidden behind "Add widget". */
-export const NEW_DEFAULT_WIDGETS = ["pcr", "pcrTrend", "oiChangeTrend", "oiTotalTrend"];
+export const NEW_DEFAULT_WIDGETS = ["pcr", "pcrTrend", "oiChangeTrend", "oiTotalTrend", "futOi", "futOiChange", "futBasis", "futVolume", "oiVolumeTrend"];

@@ -680,6 +680,8 @@ export interface OiSeries {
   spot: (number | null)[];
   ce_oi: (number | null)[];
   pe_oi: (number | null)[];
+  ce_volume?: (number | null)[];
+  pe_volume?: (number | null)[];
   ce_change: (number | null)[];
   pe_change: (number | null)[];
   pcr: (number | null)[];
@@ -702,4 +704,16 @@ export interface ForwardGroup { n: number; sessions: number; mean_fwd_pct: numbe
 export interface ForwardCheck {
   sessions: number; min_sessions: number; conclusion: string | null; note: string;
   horizons: Record<string, { bullish: ForwardGroup; neutral: ForwardGroup; bearish: ForwardGroup; all: ForwardGroup }>;
+}
+
+
+/** The NIFTY current-month future through one session (see backend app/market/futures_series.py for every definition). */
+export interface FuturesSeries {
+  day: string | null; contract: string | null; expiry: string | null; rate_assumed: number;
+  times: string[]; future: (number | null)[]; spot: (number | null)[]; spot_source: (string | null)[];
+  basis: (number | null)[]; basis_pct: (number | null)[]; carry_pct: (number | null)[]; fair_basis: (number | null)[]; vs_fair: (number | null)[];
+  oi: (number | null)[]; oi_change: (number | null)[]; volume: (number | null)[]; volume_per_min: (number | null)[];
+  oi_baseline: { kind: string; value: number; day: string | null } | null;
+  latest: { times: string; future: number; spot: number; basis: number; basis_pct: number | null; carry_pct: number | null; fair_basis: number | null; vs_fair: number | null } | null;
+  warnings: string[]; definitions: Record<string, string>;
 }

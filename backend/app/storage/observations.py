@@ -268,6 +268,16 @@ class ObservationStore:
             for ts, s, k, d in rows
         ]
 
+    def spot_near(self, underlying: str, at_ms: int, tolerance_ms: int = 90_000) -> tuple[float, int] | None:
+        """(spot, distance in ms) of the stored sample closest to a moment, within the tolerance; None when none is near."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT spot_p, received_ms FROM samples WHERE underlying=? AND spot_p IS NOT NULL"
+                " AND received_ms BETWEEN ? AND ? ORDER BY ABS(received_ms - ?) LIMIT 1",
+                (underlying, at_ms - tolerance_ms, at_ms + tolerance_ms, at_ms),
+            ).fetchone()
+        return None if row is None else (row[0] / 100, abs(int(row[1]) - at_ms))
+
     def day_summary(self, start_ms: int, end_ms: int) -> dict[str, Any]:
         """What one day holds (read-only): samples per expiry, stored contract rows, first and last sample."""
         with self._lock:

@@ -3,7 +3,7 @@
 import type { EChartsCoreOption } from "echarts/core";
 import { compactIN, isSessionMs, type Totals } from "./analytics";
 import { fmtDateTimeIST, fmtInt, fmtPrice, fmtTimeIST } from "./format";
-import type { IntradayScoreRow, Observation, OiChange, OiHeatmap, OiSeries, OptionChainRow, PremiumDecay } from "./types";
+import type { FuturesSeries, IntradayScoreRow, Observation, OiChange, OiHeatmap, OiSeries, OptionChainRow, PremiumDecay } from "./types";
 
 export interface ChartColors {
   up: string; down: string; brass: string; info: string; muted: string; rule: string; paper: string; slate: string;
@@ -356,7 +356,7 @@ export function oiExplorerOption(
   };
 }
 
-export type OiSeriesKind = "pcr" | "change" | "total";
+export type OiSeriesKind = "pcr" | "change" | "total" | "volume";
 
 /**
  * PCR, OI change or total OI through time, with NIFTY as a dotted line on the left axis (StockMojo style).
@@ -379,7 +379,12 @@ export function oiSeriesOption(res: OiSeries, kind: OiSeriesKind, c: ChartColors
           markLine: { symbol: "none", silent: true, lineStyle: { color: c.muted, type: "dashed" },
             label: { formatter: "PCR 1.0", color: c.muted, fontSize: 10, position: "insideEndTop" }, data: [{ yAxis: 1 }] },
         }]
-      : [
+      : kind === "volume"
+        ? [
+            ...(showCalls ? [line("Call volume", c.up, res.ce_volume ?? res.times.map(() => null), 1)] : []),
+            ...(showPuts ? [line("Put volume", c.down, res.pe_volume ?? res.times.map(() => null), 1)] : []),
+          ]
+        : [
           ...(showCalls ? [line(kind === "change" ? "Call OI change" : "Call OI", c.up, kind === "change" ? res.ce_change : res.ce_oi, 1)] : []),
           ...(showPuts ? [line(kind === "change" ? "Put OI change" : "Put OI", c.down, kind === "change" ? res.pe_change : res.pe_oi, 1)] : []),
         ];
@@ -398,6 +403,71 @@ export function oiSeriesOption(res: OiSeries, kind: OiSeriesKind, c: ChartColors
     } },
     yAxis: [axis(false, (v) => fmtInt(v)), axis(true, (v) => (kind === "pcr" ? v.toFixed(2) : compactIN(v)))],
     series: [line("NIFTY", c.muted, res.spot, 0, true), ...main],
+  };
+}
+
+export type FuturesKind = "oi" | "change" | "volume" | "basis";
+
+/**
+ * NIFTY current-month future through a session. OI, OI change and volume follow the option charts' layout (the
+ * future's price as a dotted line on the left axis, the quantity on the right). "basis" draws the index and the
+ * future on one price axis, with the gap between them (future minus index, in points) as an area on the right axis
+ * and a corner readout of the latest gap, its percentage, the carry it implies per year and the financing-only fair value.
+ * A value that was not recorded is a gap, never zero.
+ */
+export function futuresOption(res: FuturesSeries, kind: FuturesKind, c: ChartColors): EChartsCoreOption {
+  const x = res.times.map((v) => new Date(v).getTime());
+  const sign = (v: number, plus = false) => (v < 0 ? "−" : plus && v > 0 ? "+" : "");
+  const line = (name: string, color: string, vals: (number | null)[], yAxisIndex: number, o: Record<string, unknown> = {}) => ({
+    name, type: "line", yAxisIndex, showSymbol: false, itemStyle: { color }, connectNulls: false,
+    lineStyle: { color, width: 1.8, ...(o.dotted ? { type: "dotted", width: 1 } : {}) }, data: x.map((t, i) => [t, vals[i] ?? null]),
+    ...(o.area ? { areaStyle: fade(color, 0.14) } : {}), ...(o.extra as object ?? {}),
+  });
+  const axis = (opposite: boolean, f: (v: number) => string, extra: Record<string, unknown> = {}) => ({
+    type: "value", scale: true, position: opposite ? "right" : "left", axisLabel: { ...axisText(c), formatter: f },
+    splitLine: { show: !opposite, lineStyle: { color: c.rule, opacity: 0.5 } }, ...extra,
+  });
+  const base = tsBase(c, () => "");
+  const tip = (fmt: (n: string, v: number) => string) => ({
+    ...base.tooltip, formatter: (params: unknown) => {
+      const ps = params as { axisValue: number; seriesName: string; value: [number, number | null] }[];
+      return `<b>${fmtDateTimeIST(new Date(ps[0]!.axisValue).toISOString())}</b><br/>` + ps.map((p) => `${p.seriesName}: ${p.value[1] == null ? "—" : fmt(p.seriesName, p.value[1])}`).join("<br/>");
+    },
+  });
+  if (kind === "basis") {
+    const L = res.latest;
+    const corner = L == null ? "Gap: not available" : [
+      `Gap ${sign(L.basis, true)}${Math.abs(L.basis).toFixed(1)} pts${L.basis_pct == null ? "" : ` (${sign(L.basis_pct, true)}${Math.abs(L.basis_pct).toFixed(2)}%)`}`,
+      L.carry_pct == null ? "" : `carry ${L.carry_pct.toFixed(2)}% p.a.`,
+      L.fair_basis == null ? "" : `fair ${sign(L.fair_basis, true)}${Math.abs(L.fair_basis).toFixed(1)} · vs fair ${sign(L.vs_fair ?? 0, true)}${Math.abs(L.vs_fair ?? 0).toFixed(1)}`,
+    ].filter(Boolean).join("\n");
+    return {
+      ...base,
+      grid: { left: 62, right: 52, top: 62, bottom: 44 },
+      graphic: [{ type: "text", right: 58, top: 26, silent: true, style: { text: corner, fill: c.paper, font: "600 11px sans-serif", textAlign: "right", lineHeight: 15, backgroundColor: c.slate, padding: [3, 6], borderRadius: 3 } }],
+      tooltip: tip((n, v) => (n.startsWith("Gap") ? `${sign(v, true)}${Math.abs(v).toFixed(2)} pts` : fmtPrice(v))),
+      yAxis: [axis(false, (v) => fmtInt(Math.round(v))), axis(true, (v) => `${sign(v, true)}${Math.abs(v).toFixed(0)}`)],
+      series: [
+        line("NIFTY spot", c.info, res.spot, 0),
+        line("NIFTY future", c.brass, res.future, 0),
+        line("Gap (future − spot)", c.muted, res.basis, 1, { area: true, extra: { lineStyle: { color: c.muted, width: 1, opacity: 0.8 }, markLine: { silent: true, symbol: "none", data: [{ yAxis: 0 }], lineStyle: { color: c.muted, type: "dashed" }, label: { show: false } } } }),
+      ],
+    };
+  }
+  const main =
+    kind === "oi" ? [line("Open interest", c.info, res.oi, 1, { area: true })]
+    : kind === "change" ? [line("OI change", c.brass, res.oi_change, 1, { area: true, extra: { markLine: { silent: true, symbol: "none", data: [{ yAxis: 0 }], lineStyle: { color: c.muted, type: "dashed" }, label: { show: false } } } })]
+    : [
+        { name: "Volume per minute", type: "bar", yAxisIndex: 2, data: x.map((t, i) => [t, res.volume_per_min[i] ?? null]), itemStyle: { color: c.muted, opacity: 0.45 }, barMaxWidth: 4 },
+        line("Volume today", c.info, res.volume, 1, { area: true }),
+      ];
+  const fmt = (n: string, v: number) => (n === "NIFTY future" ? fmtPrice(v) : `${sign(v, kind === "change")}${compactIN(Math.abs(v))}`);
+  return {
+    ...base,
+    grid: { left: 58, right: 62, top: 34, bottom: 44 },
+    tooltip: tip(fmt),
+    yAxis: [axis(false, (v) => fmtInt(Math.round(v))), axis(true, (v) => `${sign(v)}${compactIN(Math.abs(v))}`), { type: "value", show: false, scale: false, min: 0 }],
+    series: [line("NIFTY future", c.muted, res.future, 0, { dotted: true }), ...main],
   };
 }
 

@@ -150,6 +150,30 @@ const E: Record<string, GlossaryEntry> = {
     read: "Below zero means those options lost value since the day began. Faster decay on one side shows where selling pressure or falling volatility hit.",
     caution: "The same strikes are used at every point so the line compares like with like.",
   },
+  "nifty futures open interest": {
+    what: "Open interest of the NIFTY current-month future: the number of futures contracts still open (units, 1 lot = 65), through the session.",
+    read: "Rising OI with rising price usually means new long positions; rising OI with falling price, new shorts; falling OI means positions are being closed. The dotted line is the future's price.",
+    caution: "OI shows positions, not who is long or short. The line is empty if the feed did not supply OI for the future.",
+  },
+  "nifty futures oi change": {
+    what: "Open interest of the NIFTY future now minus its previous session's last OI (or the session's first value when yesterday was not recorded; the note under the chart says which).",
+    read: "Above zero means positions were added since the baseline, below zero means they were closed. Read it with the price: price up with OI up is new buying; price up with OI down is short covering.",
+    caution: "The broker does not supply previous-day OI for futures here, so the baseline is from our own recordings.",
+  },
+  "nifty spot vs futures gap": {
+    what: "The NIFTY index and its current-month future on one axis, with the gap between them: future minus index, in points (area, right axis). The corner shows the latest gap, its percentage of the index, the carry it implies per year, and the gap that financing alone would justify.",
+    read: "The future normally trades above the index by the cost of carry, shrinking to zero at expiry. Carry p.a. = ln(future ÷ index) ÷ years to expiry. 'Fair' is index × (e^(rT) − 1) at an assumed rate, with no dividends; 'vs fair' above zero means the future is rich to financing, below zero cheap. A sudden narrowing or a discount can signal selling pressure in futures.",
+    caution: "The assumed rate is 6% and dividends are ignored, so 'fair' is a reference, not a measurement. The index and future are read at the same moment from the live feed; older points may use the nearest stored snapshot.",
+  },
+  "nifty futures volume": {
+    what: "Contracts of the NIFTY future traded today (line, cumulative) and per minute (bars).",
+    read: "Bars show when trading was heavy. A rising line with a flat price means turnover without direction; a burst of volume with OI change shows conviction.",
+  },
+  "total volume over time call vs put": {
+    what: "Contracts traded today in all calls and in all puts of the selected strikes, cumulative since the open, at each stored sample.",
+    read: "The side with the steeper line is the one being traded more actively. Compare with the OI charts: heavy volume with little OI change means positions were opened and closed inside the day.",
+    caution: "Volume counts trades, not positions; it does not say who bought or sold.",
+  },
   "total oi calls vs puts": {
     what: "Total open interest of all calls compared with all puts in the selected strikes.",
     read: "More puts than calls gives a ratio above 1. Look at the split bar for the balance.",
