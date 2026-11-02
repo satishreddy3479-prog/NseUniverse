@@ -79,3 +79,37 @@ describe("automatic stop, target and re-entry (paper)", () => {
 });
 
 const isFixed = (l: Leg) => l.exitPrice != null;
+
+import { rollLeg, strategyPnl } from "../lib/strategy";
+
+describe("rolling a leg and the strategy's P&L", () => {
+  it("a roll books the old leg's P&L at its live price and opens the new strike at its live price", () => {
+    const l = short({ strike: 23000, premium: 100, stop: 130, target: 50 });
+    const r = rollLeg(l, 23100, 140, 85, LOT, AT); // old premium 140 (loss 40 x 65), new strike trades at 85
+    expect(r.strike).toBe(23100); expect(r.premium).toBe(85);
+    expect(r.realised).toBeCloseTo(-40 * 65, 6); // −2,600 booked
+    expect(r.stop).toBeCloseTo(110.5, 6); // 85 x 1.3: the same 30 % distance
+    expect(r.target).toBeCloseTo(42.5, 6); // 85 x 0.5
+    expect(r.cycles).toBe(1); expect(r.log!.at(-1)!.text).toContain("Rolled SELL 23000 CE to 23100 CE");
+    expect(rollLeg(l, 23000, 140, 85, LOT, AT)).toBe(l); // same strike: nothing to do
+    expect(rollLeg(exitLeg(l, 120, "manual", LOT, AT), 23100, 140, 85, LOT, AT).exitPrice).toBe(120); // a closed leg is not rolled
+  });
+
+  it("after a roll the payoff keeps the booked amount as a constant and follows the new strike", () => {
+    const r = rollLeg(short({ strike: 23000, premium: 100 }), 23100, 140, 85, LOT, AT);
+    // at expiry far above both strikes: a short call 23100 at 85 loses (S − 23100 − 85) x 65, plus the booked −2,600
+    expect(expiryPnl([r], 24000, LOT)).toBeCloseTo(-(24000 - 23100 - 85) * 65 - 2600, 6);
+    expect(expiryPnl([r], 20000, LOT)).toBeCloseTo(85 * 65 - 2600, 6); // expires worthless: premium kept, roll loss stays
+  });
+
+  it("strategyPnl adds booked P&L and the open legs; a missing price makes the open part unknown, never zero", () => {
+    const closed = exitLeg(short({ id: "c", strike: 23000 }), 120, "manual", LOT, AT); // −20 x 65 = −1,300 booked
+    const open = short({ id: "o", strike: 23100, premium: 90 });
+    const price = (k: number) => (k === 23100 ? 80 : null);
+    const p = strategyPnl([closed, open], price, LOT);
+    expect(p.booked).toBeCloseTo(-1300, 6); expect(p.open).toBeCloseTo(10 * 65, 6); expect(p.total).toBeCloseTo(-650, 6); expect(p.openLegs).toBe(1);
+    const q = strategyPnl([closed, short({ id: "z", strike: 23200 })], price, LOT);
+    expect(q.open).toBeNull(); expect(q.total).toBeNull(); expect(q.booked).toBeCloseTo(-1300, 6);
+    expect(strategyPnl([short({ enabled: false })], price, LOT).openLegs).toBe(0); // an unticked leg is not part of it
+  });
+});

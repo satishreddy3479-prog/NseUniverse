@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
-from app.storage.observations import CALL, PUT, Contract, ObservationStore, Sample
+from app.storage.observations import CALL, PUT, Contract, ObservationStore, Sample, to_ms
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -356,7 +356,7 @@ def oi_heatmap(
 
     strikes = universe(sorted({k for k, _ in contracts_of(last)}), last.spot, each_side)
     atm = _nearest(strikes, last.spot) if strikes and last.spot is not None else None
-    shown = [s for s in all_samples if since is None or s.received_at >= since]
+    shown = [s for s in all_samples if since is None or to_ms(s.received_at) >= to_ms(since)]
     stride = max(1, -(-len(shown) // max_columns))
     cols = shown[::stride]
     if shown and cols[-1].sample_id != shown[-1].sample_id:
@@ -470,7 +470,7 @@ def premium_decay(
 
     strikes = universe(sorted({k for k, _ in contracts_of(last)}), last.spot, each_side)
     atm = _nearest(strikes, last.spot) if strikes and last.spot is not None else None
-    shown = [s for s in samples if since is None or s.received_at >= since]
+    shown = [s for s in samples if since is None or to_ms(s.received_at) >= to_ms(since)]
     if len(shown) < 2:
         empty.strikes, empty.atm_strike = strikes, atm
         empty.warnings.append("Fewer than two samples in the chosen range.")
@@ -581,7 +581,7 @@ def oi_series(
 
     strikes = universe(sorted({k for k, _ in contracts_of(last)}), last.spot, each_side)
     atm = _nearest(strikes, last.spot) if strikes and last.spot is not None else None
-    shown = [s for s in samples if since is None or s.received_at >= since]
+    shown = [s for s in samples if since is None or to_ms(s.received_at) >= to_ms(since)]
     if not shown:
         empty.strikes, empty.atm_strike = strikes, atm
         empty.warnings.append("No samples in the chosen range.")

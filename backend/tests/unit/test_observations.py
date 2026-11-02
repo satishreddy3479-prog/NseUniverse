@@ -167,6 +167,17 @@ class TestStore:
         assert o.plan_contract_pruning(2, {day: 12}, delete=True)["rows"] == 0  # idempotent
         assert o.plan_contract_pruning(0, {day: 12}, delete=True)["rows"] == 0  # 0 = keep everything
 
+    def test_a_chart_range_starting_at_a_stored_time_keeps_that_very_first_sample(self, tmp_path: Path) -> None:
+        # the chart asks for samples since the first one's own time (microseconds); stored times are whole milliseconds
+        o = ObservationStore(tmp_path)
+        t0 = datetime(2026, 10, 28, 3, 45, 1, 886537, tzinfo=UTC)
+        for i, at in enumerate((t0, t0.replace(minute=46, second=3, microsecond=100))):
+            o.record_snapshot(chain(f"x{i}", at, 109.0 + i, {100: 60 + i, 110: 40, 120: 25}, {100: 10, 110: 25, 120: 30},
+                                    {100: 14, 110: 9, 120: 3.5}, {100: 2.5, 110: 5, 120: 13}), unchanged=False)  # fmt: skip
+        first = oi_series(o, "NIFTY", EXP, since=t0)
+        assert len(first.times) == 2 and first.times[0].minute == 45  # not 09:16: the 09:15:01 sample is kept
+        assert len(premium_decay(o, "NIFTY", EXP, since=t0).times) == 2
+
     def test_oi_series_also_carries_total_call_and_put_volume(self, obs: ObservationStore) -> None:
         res = oi_series(obs, "NIFTY", EXP)
         # every fixture contract traded 10 units: three strikes per side = 30 at every point

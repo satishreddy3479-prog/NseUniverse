@@ -84,6 +84,40 @@ export function reenterLeg(l: Leg, price: number, at: string, viaBox: boolean): 
 }
 
 /**
+ * Roll a leg to another strike: the old position is closed at its live price (its P&L is booked) and the same leg is
+ * opened at the new strike at its live price. The stop and target keep their percentage distance from the new entry.
+ * Paper only. Returns the leg unchanged when it is closed, has no entry premium, or the strike does not change.
+ */
+export function rollLeg(l: Leg, newStrike: number, oldPrice: number, newPrice: number, lotSize: number, at: string, lotsFactor = 1): Leg {
+  if (isExited(l) || l.premium == null || newStrike === l.strike) return l;
+  const pnl = sign(l.action) * (oldPrice - l.premium) * l.lots * lotsFactor * lotSize;
+  const buy = l.action === "BUY";
+  const pct = (lvl: number | null | undefined) => (lvl == null ? null : Math.abs(lvl / l.premium! - 1));
+  const lvl = (p: number | null, profitSide: boolean) => (p == null ? null : tick(newPrice * (profitSide === buy ? 1 + p : 1 - p)));
+  const text = `Rolled ${l.action} ${l.strike} ${l.type} to ${newStrike} ${l.type}: old closed at ${oldPrice.toFixed(2)} (entry ${l.premium.toFixed(2)}), ${pnl < 0 ? "−" : "+"}₹${Math.round(Math.abs(pnl)).toLocaleString("en-IN")} booked; new entry ${newPrice.toFixed(2)}`;
+  return {
+    ...l, strike: newStrike, premium: newPrice, premiumSource: "market", realised: (l.realised ?? 0) + pnl, cycles: (l.cycles ?? 0) + 1,
+    stop: lvl(pct(l.stop), false), target: lvl(pct(l.target), true), exitPrice: null, exitReason: null, reentryLevel: null,
+    log: [...(l.log ?? []), { at, text: `${stamp(at)} ${text}` }].slice(-20),
+  };
+}
+
+/** The strategy's P&L from its legs and live prices: what is booked plus the open legs against the market. Null total when an open leg has no price or entry. */
+export function strategyPnl(legs: Leg[], priceOf: (strike: number, type: OptionType) => number | null, lotSize: number): { booked: number; open: number | null; total: number | null; openLegs: number } {
+  let booked = 0, open: number | null = 0, openLegs = 0;
+  for (const l of legs) {
+    if (l.enabled === false) continue;
+    booked += l.realised ?? 0;
+    if (isExited(l)) continue;
+    openLegs += 1;
+    const px = priceOf(l.strike, l.type);
+    if (px == null || l.premium == null) { open = null; continue; }
+    if (open != null) open += sign(l.action) * (px - l.premium) * l.lots * lotSize;
+  }
+  return { booked, open, total: open == null ? null : booked + open, openLegs };
+}
+
+/**
  * One evaluation of every automatic rule against the live prices (paper only, nothing is sent to a broker):
  *  - an open leg whose stop or target price has been reached is closed at the live price (the stop is checked first);
  *  - a leg closed by its stop, with re-entries left, is entered again at the live price when the market comes back to

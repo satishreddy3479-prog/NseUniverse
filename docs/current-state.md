@@ -5,6 +5,13 @@ _Last updated: 2026-10-29_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Chart start, Exit all, portfolio, adjustments (2 Nov 2026)
+- **Charts starting at 09:16 instead of 09:15:** the OI, OI-change, volume and premium-decay charts ask the server for samples since the first stored sample's own time (microseconds), while the database keeps whole milliseconds, so the 09:15:01 sample was cut by under a millisecond. The range filter now compares in milliseconds; a regression test covers it. The Session axis already starts at the open for every chart.
+- **Exit all** moves the strategy from Saved to Closed under its own name (no copy left in Saved); closing a strategy reopened from Closed replaces that record. Trades made inside a saved strategy (exits, automatic stops/targets, re-entries, rolls) are written back to it immediately.
+- **Roll** (per leg): closes the leg at its live price, books the P&L, opens the same leg at another strike at that strike's live price, same stop/target percentages. The strike arrows still only edit the plan and book nothing. Payoff, breakevens, max profit/loss, Greeks and the P&L box recompute after every adjustment (tests: roll, hedge added and removed, lots, exits).
+- **Strategy portfolio** (`/portfolio`): live mark-to-market of every saved strategy with an open leg (booked + open at live prices; a missing price leaves the open part blank, not zero), booked P&L of closed strategies, totals; a row opens that strategy in the builder. An unsaved strategy in the builder is listed too and asks before being replaced.
+- Limit: the saved record stores base lots; the multiplier at the time of a trade decides the booked rupees.
+
 ## NIFTY futures and option-volume charts (2 Nov 2026)
 - **Five new Analysis widgets:** NIFTY futures open interest, NIFTY futures OI change, NIFTY spot vs futures (gap), NIFTY futures volume, and Total volume over time (call vs put). They follow the dashboard time-range chips and are offered once to existing saved layouts (and are in the default set).
 - **Data:** the market service's minute "fut" sample now also records the future's open interest (as streamed; 0 or missing stays missing), the index level at the same moment, the contract symbol and its expiry. `GET /api/futures/series` builds the series from those samples. Samples recorded before this change have no OI and no same-moment index level (the index is then joined from the nearest stored snapshot within 90 s and the chart says so).

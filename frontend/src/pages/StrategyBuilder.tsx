@@ -14,15 +14,16 @@ import { useExpiries, useThrottledValue } from "../lib/hooks";
 import { marketClockMs } from "../lib/session";
 import { carryFromForward, contractGreeks, expiryEnd, impliedForward, legGreeks, sdLevel, netGreeks, probabilityOfProfit, scenarioGrid, sdBands, spotAtPremium, theoreticalPnl, type ContractGreeks, type Valuation } from "../lib/optionModel";
 import {
-  analyzeExpiry, applyAutomation, exitLeg, expiryPnl, hitOf, isExited, newLegId, reenterLeg, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds,
+  analyzeExpiry, applyAutomation, exitLeg, expiryPnl, hitOf, isExited, newLegId, reenterLeg, rollLeg, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds,
   type Action, type Bias, type Leg, type OptionType, type Template,
 } from "../lib/strategy";
 
-const SAVE_KEY = "nse.strategies.v1";
-interface Saved { name: string; savedAt: string; updatedAt?: string; expiry: string; legs: Leg[] }
-const CLOSED_KEY = "nse.closed.v1";
-interface ClosedLeg extends Leg { exit: number }
-interface Closed { id: string; name: string; closedAt: string; snapshotAt: string; expiry: string; lotSize: number; pnl: number; legs: ClosedLeg[]; /** the stored chain was stale when the exit prices were read */ stale?: boolean }
+export const WORKING_KEY = "nse.builder.working.v1";
+export const SAVE_KEY = "nse.strategies.v1";
+export interface Saved { name: string; savedAt: string; updatedAt?: string; expiry: string; legs: Leg[] }
+export const CLOSED_KEY = "nse.closed.v1";
+export interface ClosedLeg extends Leg { exit: number }
+export interface Closed { id: string; name: string; closedAt: string; snapshotAt: string; expiry: string; lotSize: number; pnl: number; legs: ClosedLeg[]; /** the stored chain was stale when the exit prices were read */ stale?: boolean }
 const loadClosed = (): Closed[] => { try { return JSON.parse(localStorage.getItem(CLOSED_KEY) ?? "[]") as Closed[]; } catch { return []; } };
 const loadSaved = (): Saved[] => { try { return JSON.parse(localStorage.getItem(SAVE_KEY) ?? "[]") as Saved[]; } catch { return []; } };
 const money = (v: number | null, signed = true) => (v == null ? "—" : `${v < 0 ? "−" : v > 0 && signed ? "+" : ""}₹${fmtInt(Math.round(Math.abs(v)))}`);
@@ -94,7 +95,7 @@ export default function StrategyBuilder() {
   // repeat exits that already happened. Copies older than three days are ignored.
   const [work] = useState(() => {
     try {
-      const w = JSON.parse(localStorage.getItem("nse.builder.working.v1") ?? "null") as { legs?: Leg[]; expiry?: string | null; name?: string; loaded?: string | null; baseline?: Leg[]; at?: number } | null;
+      const w = JSON.parse(localStorage.getItem(WORKING_KEY) ?? "null") as { legs?: Leg[]; expiry?: string | null; name?: string; loaded?: string | null; baseline?: Leg[]; at?: number } | null;
       return w && Array.isArray(w.legs) && w.at && Date.now() - w.at < 3 * 86_400_000 ? w : null;
     } catch { return null; }
   });
@@ -307,6 +308,18 @@ export default function StrategyBuilder() {
     ? live.reduce((s, l) => s + (unreal({ ...l, lots: l.lots / mult }, ltp(l.strike, l.type)) ?? 0), 0) : null;
   const [autoNote, setAutoNote] = useState<string | null>(null);
   const [exitDraft, setExitDraft] = useState<Record<string, string>>({});
+  const [rollTo, setRollTo] = useState<Record<string, string>>({});
+  /**
+   * Trades made inside a strategy that was saved (exits, automatic stops and targets, re-entries, rolls) are written back to
+   * that saved strategy at once, so the portfolio, a refresh and another device all see the same open and booked positions.
+   */
+  const commitTrades = (next: Leg[]) => {
+    setLegs(next);
+    if (loaded && saved.some((x) => x.name === loaded)) {
+      persist(saved.map((x) => (x.name === loaded ? { ...x, updatedAt: new Date().toISOString(), expiry: expiry ?? x.expiry, legs: next } : x)));
+      setBaseline(next);
+    }
+  };
   // Automatic stop, target and re-entry (paper only: nothing is sent to a broker). It runs on live streamed prices only,
   // and only while this page is open; with the stream stale or the market closed it is paused, never guessing from old prices.
   const autoActive = autoOn && liveMode === "fresh" && lotSize != null;
@@ -314,26 +327,35 @@ export default function StrategyBuilder() {
     if (!autoActive || !lotSize || legs.length === 0) return;
     const r = applyAutomation(legs, ltp, lotSize, new Date().toISOString(), mult);
     if (r.events.length) {
-      setLegs((cur) => (cur === legs ? r.legs : cur));
+      commitTrades(r.legs);
       setAutoNote(r.events.join(" · "));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, legs, autoActive, mult, lotSize]);
   useEffect(() => {
-    try { localStorage.setItem("nse.builder.working.v1", JSON.stringify({ legs, expiry, name, loaded, baseline, at: Date.now() })); } catch { /* this visit only */ }
+    try { localStorage.setItem(WORKING_KEY, JSON.stringify({ legs, expiry, name, loaded, baseline, at: Date.now() })); } catch { /* this visit only */ }
   }, [legs, expiry, name, loaded, baseline]);
   const exitNow = (l: Leg) => {
     if (!lotSize) return;
     const typed = exitDraft[l.id];
     const px = typed != null && typed !== "" ? Number(typed) : ltp(l.strike, l.type);
     if (px == null || !(px > 0)) { setNote("No live price for that leg: type the exit price in the box."); return; }
-    setLegs((ls) => ls.map((x) => (x.id === l.id ? exitLeg(x, px, "manual", lotSize, new Date().toISOString(), mult) : x)));
+    commitTrades(legs.map((x) => (x.id === l.id ? exitLeg(x, px, "manual", lotSize, new Date().toISOString(), mult) : x)));
     setExitDraft((d) => ({ ...d, [l.id]: "" }));
   };
   const enterAgain = (l: Leg) => {
     const px = ltp(l.strike, l.type);
     if (px == null) { setNote("No live price for that leg yet."); return; }
-    setLegs((ls) => ls.map((x) => (x.id === l.id ? reenterLeg(x, px, new Date().toISOString(), false) : x)));
+    commitTrades(legs.map((x) => (x.id === l.id ? reenterLeg(x, px, new Date().toISOString(), false) : x)));
+  };
+  /** Roll: close the leg at its live price (P&L booked) and open the same leg at another strike at that strike's live price. */
+  const rollNow = (l: Leg) => {
+    const k = Number(rollTo[l.id]);
+    const oldPx = ltp(l.strike, l.type), newPx = ltp(k, l.type);
+    if (!lotSize || !Number.isFinite(k) || k === l.strike) return;
+    if (oldPx == null || newPx == null) { setNote(`Cannot roll: no price for ${oldPx == null ? l.strike : k} ${l.type}.`); return; }
+    commitTrades(legs.map((x) => (x.id === l.id ? rollLeg(x, k, oldPx, newPx, lotSize, new Date().toISOString(), mult) : x)));
+    setRollTo((d) => ({ ...d, [l.id]: "" }));
   };
   const netPremium = lotSize && live.length && live.every((l) => l.premium != null) ? live.reduce((s, l) => s - sign(l.action) * (l.premium as number) * l.lots * lotSize, 0) : null;
   const exitPnl = (kind: "target" | "stop") => {
@@ -461,7 +483,9 @@ export default function StrategyBuilder() {
     // a leg closed earlier by its stop or target keeps its booked P&L; an open one is closed now; earlier cycles stay booked
     const pnl = out.reduce((t, l) => t + (isExited(l) ? 0 : sign(l.action) * (l.exit - (l.premium as number)) * l.lots * lotSize) + (l.realised ?? 0), 0);
     const at = new Date();
-    persistClosed([{ id: newLegId(), name: name.trim() || `Strategy ${at.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`, closedAt: at.toISOString(), snapshotAt: snap.retrieved_at, expiry, lotSize, pnl, legs: out, stale: !!chain.data?.stale }, ...closed]);
+    const closedName = name.trim() || loaded || opened?.name;
+    persistClosed([{ id: opened?.id ?? newLegId(), name: closedName || `Strategy ${at.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`, closedAt: at.toISOString(), snapshotAt: snap.retrieved_at, expiry, lotSize, pnl, legs: out, stale: !!chain.data?.stale }, ...closed.filter((x) => x.id !== opened?.id)]);
+    if (loaded) persist(saved.filter((x) => x.name !== loaded)); // the strategy moves from Saved to Closed, it is not copied
     setLegs([]); setNote(null); setSel(null); setMult(1); setDays(0); setName(""); setOpened(null); setLoaded(null);
   };
   const openClosed = (c: Closed) => { setPicked(c.expiry); loadLegs(c.legs.map(({ exit: _e, ...l }) => ({ ...l, id: newLegId() }))); setMult(1); setNote(null); setOpened(c); setLoaded(null); };
@@ -846,6 +870,17 @@ export default function StrategyBuilder() {
                                   <span className="flex flex-wrap items-center gap-2" data-testid="leg-exited">
                                     <span className="text-warn">Exited at {fmtPrice(l.exitPrice as number)} ({l.exitReason}) · booked <span className={`num ${tone(l.realised ?? 0)}`}>{money(l.realised ?? 0)}</span></span>
                                     <button type="button" aria-label="Enter leg again" onClick={() => enterAgain(l)} className="rounded-sm border border-info/60 px-3 py-1 text-info hover:bg-info/10">Enter again at live price</button>
+                                  </span>
+                                )}
+                                {!exited && (
+                                  <span className="flex items-center gap-1 text-muted" title="Roll: close this leg at its live price (the P&L is booked) and open the same leg at another strike at that strike's live price">
+                                    Roll to <Info term="Roll" />
+                                    <select aria-label="Roll to strike" className={`${field} w-[5.4rem] !px-1`} value={rollTo[l.id] ?? ""} onChange={(e) => setRollTo((d) => ({ ...d, [l.id]: e.target.value }))}>
+                                      <option value="">strike…</option>
+                                      {strikes.filter((k) => k !== l.strike).map((k) => <option key={k} value={k}>{fmtInt(k)}</option>)}
+                                    </select>
+                                    <button type="button" aria-label="Roll leg" disabled={!rollTo[l.id] || l.premium == null} onClick={() => rollNow(l)}
+                                      className="rounded-sm border border-info/60 px-3 py-1 text-info hover:bg-info/10 disabled:opacity-40">Roll</button>
                                   </span>
                                 )}
                                 <label className="flex items-center gap-1 text-muted" title="How many times a leg closed by its STOP is entered again at the live price once the premium comes back to its own entry premium: down to it for a sold option, up to it for a bought one. 0 = never.">
