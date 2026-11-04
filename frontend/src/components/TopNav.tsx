@@ -4,15 +4,17 @@ import { MENU_ORDER, MENU_TITLES, menuGroups, toolPath, type MenuId, type Tool }
 
 /** Top-level links; the three tool menus open as drop-downs between them. */
 const LEFT: { to: string; label: string }[] = [
-  { to: "/strategy", label: "Strategy Builder" },
   { to: "/option-chain", label: "Option Chain" },
 ];
 const RIGHT: { to: string; label: string }[] = [
   { to: "/prediction", label: "Prediction" },
 ];
+export const STRATEGY: { to: string; label: string }[] = [
+  { to: "/strategy", label: "Strategy builder" },
+  { to: "/portfolio", label: "Strategy portfolio" },
+];
 export const SYSTEM: { to: string; label: string }[] = [
   { to: "/overview", label: "Platform status" },
-  { to: "/portfolio", label: "Strategy portfolio" },
   { to: "/data", label: "Data & sessions" },
   { to: "/cleanup", label: "Data clean-up" },
   { to: "/diagnostics", label: "Connection diagnostics" },
@@ -20,7 +22,7 @@ export const SYSTEM: { to: string; label: string }[] = [
 ];
 
 const link = (active: boolean) =>
-  `inline-flex min-h-10 items-center border-b-2 px-3 text-sm ${active ? "border-brass font-medium text-paper" : "border-transparent text-muted hover:text-paper"}`;
+  `inline-flex min-h-10 items-center whitespace-nowrap border-b-2 px-2.5 text-sm ${active ? "border-brass font-medium text-paper" : "border-transparent text-muted hover:text-paper"}`;
 
 function ToolItem({ t, onPick }: { t: Tool; onPick: () => void }) {
   const to = toolPath(t);
@@ -73,6 +75,11 @@ export function TopNav() {
   const set = (id: string) => (o: boolean) => setOpen(o ? id : (cur) => (cur === id ? null : cur) as string | null);
   return (
     <nav ref={root} aria-label="Main" className="hidden items-center md:flex">
+      <Dropdown id="strategy" label="Strategy Builder" open={open === "strategy"} setOpen={set("strategy")}>
+        {STRATEGY.map((n) => (
+          <NavLink key={n.to} to={n.to} onClick={() => setOpen(null)} className={({ isActive }) => `flex min-h-9 items-center rounded-sm px-2 text-sm hover:bg-slate-2 ${isActive ? "bg-slate-2 font-medium text-paper" : "text-paper/90"}`}>{n.label}</NavLink>
+        ))}
+      </Dropdown>
       {LEFT.map((n) => <NavLink key={n.to} to={n.to} className={({ isActive }) => link(isActive)}>{n.label}</NavLink>)}
       {MENU_ORDER.map((m: MenuId) => (
         <Dropdown key={m} id={m} label={MENU_TITLES[m]} open={open === m} setOpen={set(m)} wide>
@@ -100,7 +107,7 @@ export function TopNav() {
 export function MobileNav({ onNavigate }: { onNavigate: () => void }) {
   return (
     <nav aria-label="Main" className="max-h-[75vh] overflow-y-auto p-2">
-      {[...LEFT, ...RIGHT].map((n) => (
+      {[...STRATEGY, ...LEFT, ...RIGHT].map((n) => (
         <NavLink key={n.to} to={n.to} onClick={onNavigate} className={({ isActive }) => `flex min-h-10 items-center rounded-sm px-2.5 text-sm ${isActive ? "bg-slate-2 font-medium text-paper" : "text-muted"}`}>{n.label}</NavLink>
       ))}
       <NavLink to="/" end onClick={onNavigate} className={({ isActive }) => `flex min-h-10 items-center rounded-sm px-2.5 text-sm ${isActive ? "bg-slate-2 font-medium text-paper" : "text-muted"}`}>All tools</NavLink>

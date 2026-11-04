@@ -26,7 +26,7 @@ export function AppShell() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="relative z-30 flex min-h-14 flex-wrap items-center gap-x-4 gap-y-1 border-b border-rule bg-slate px-3 py-1">
+      <header className="relative z-30 flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 md:flex-nowrap border-b border-rule bg-slate px-3 py-1">
         <button
           type="button"
           className="rounded-sm border border-rule px-2 py-1 text-sm md:hidden"
@@ -41,10 +41,10 @@ export function AppShell() {
           <span className="hidden text-xs text-muted sm:block">{underlying} 50 options</span>
         </Link>
         <TopNav />
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
-          <SpotBadge latest={spotSnapshot ?? latest} className="" />
+        <div className="ml-auto flex shrink-0 items-center justify-end gap-x-3 whitespace-nowrap">
+          <SpotBadge latest={spotSnapshot ?? latest} className="md:flex-nowrap" />
           <StatusPill signals={signals} />
-          <ThemeSwitch />
+          <div className="hidden xl:block"><ThemeSwitch /></div>
         </div>
       </header>
       {menuOpen && (

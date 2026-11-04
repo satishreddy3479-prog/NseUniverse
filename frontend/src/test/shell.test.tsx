@@ -34,15 +34,27 @@ beforeEach(() => localStorage.clear());
 afterEach(() => vi.unstubAllGlobals());
 
 describe("top menu bar", () => {
+  it("Strategy Builder menu holds the builder and the portfolio; System does not", async () => {
+    mockApi();
+    renderAt("/overview");
+    await screen.findByRole("heading", { name: "Overview" });
+    const nav = screen.getAllByRole("navigation", { name: "Main" })[0]!;
+    await userEvent.click(within(nav).getByRole("button", { name: /Strategy Builder/ }));
+    expect(within(nav).getByRole("link", { name: "Strategy builder" })).toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: "Strategy portfolio" })).toBeInTheDocument();
+    await userEvent.click(within(nav).getByRole("button", { name: /System/ }));
+    expect(within(nav).queryByRole("link", { name: "Strategy portfolio" })).toBeNull();
+  });
+
   const bar = () => screen.getAllByRole("navigation", { name: "Main" })[0]!;
 
   it("has the tool menus and the main links in the bar", async () => {
     mockApi();
     renderAt("/overview");
     await screen.findByRole("heading", { name: "Overview" });
-    for (const name of ["Strategy Builder", "Option Chain", "Prediction"])
+    for (const name of ["Option Chain", "Prediction"])
       expect(within(bar()).getByRole("link", { name })).toBeInTheDocument();
-    for (const name of ["Options Lab", "Future Lab", "Analyse", "System"])
+    for (const name of ["Strategy Builder", "Options Lab", "Future Lab", "Analyse", "System"])
       expect(within(bar()).getByRole("button", { name: new RegExp(name) })).toBeInTheDocument();
   });
 

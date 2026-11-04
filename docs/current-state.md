@@ -11,6 +11,7 @@ _Last updated: 2026-11-04_
 - **Themes:** Light / Ocean / Dark in the top bar and Settings (CSS variables, remembered in the browser).
 - **New analytics** (`lib/optionTools.ts`, 7 hand-checked tests): Smart OI buildup (price change vs OI change), PE−CE difference, volatility skew, gamma and vega exposure (Black-76 from each contract's own price; gamma exposure = gamma × OI × spot² × 1 %; the call−put net is a stated convention, not measured dealer positioning). Missing prices stay missing and are counted.
 - **Index tools** (Contributors, Advance/Decline, Weightage, Sector Rotation, Market Movers, FII/DII) read `/api/market/summary` and the existing flows/cash panels; if stock breadth is off on the server they say so.
+- **Top bar (follow-up):** one row at every desktop width (nowrap, tighter links; theme switch shown from 1280 px up, always in Settings). Strategy Builder is now a menu holding Strategy builder and Strategy portfolio (moved out of System).
 - **Fix:** a menu opened by hover no longer closes on the click.
 - **Planned, not built:** IV-HV, IV Grid, IV Intraday, OI Crossover, MultiStrike Chart, Option Triggers, Future Heatmap, Future Price vs OI, Sentiment Cycle (each needs data not yet stored; reasons shown in the menu).
 - **Verified:** tsc clean, 371 frontend tests pass, production build OK, screenshots of Home, menus and phone menu on a mocked-offline API. **Not verified:** live data in these pages (sandbox cannot reach the server); check after deploy in market hours.
