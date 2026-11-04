@@ -353,3 +353,7 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 - Our vega Greek is correct: an ATM contract at ~4.6 days to expiry has vega about 10.7 rupees per volatility point (hand calculation), so 21 strikes sum to about 190. By put-call parity a call and a put at one strike have the same vega, so the call and put sums stay close (187.8 vs 186.6 on 4 Nov).
 - The reference page shows call 19 and put -33 starting from zero at the open and drifting apart: that cannot be a plain Greek sum. It behaves like vega weighted by OI added since the open. Its exact formula is not published; we do not claim ours matches it.
 - Added the measure "Vega × OI change" (vega x OI added since the first session sample, starts at zero). Greek stays the default; "Vega × OI" is the exposure of all open positions.
+
+## Vega Analysis: OTM-only option (5 Nov 2026)
+- "OTM only" with N = 3/5/10: calls use the N out-of-the-money strikes above NIFTY, puts the N below it, re-chosen at every sample (ATM ±20 is fetched to cover moves). The two sides are then different contracts, so call and put vega differ. Test: spot 24,000, N=1 gives vega(24,100) for calls and vega(23,900) for puts.
+- The per-contract vega table (price, IV, vega of every call and put) sits at the top of the page for checking.

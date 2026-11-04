@@ -282,10 +282,11 @@ const quoteOf = (ltp: number | null, oi: number | null): OptionQuote => ({ ltp, 
  * contract, no open interest involved). "oi" weights each contract by its open interest (units), which is the vega exposure
  * of the whole market and grows as OI builds. "change" weights each contract's vega by the OI added since the first session sample
  * of the day (so the series starts at zero and moves with new positions, negative where OI was removed). Samples outside the session are left out; a contract with no usable price
- * (or, for "oi", no OI) is skipped and counted, never zero-filled.
+ * (or, for "oi", no OI) is skipped and counted, never zero-filled. With `otm` = n, each sample uses only the n out-of-the-money
+ * strikes nearest that sample's NIFTY level on each side (calls above it, puts below it), so the two sides are different contracts.
  */
 export type VegaBasis = "greek" | "oi" | "change";
-export function vegaSeries(res: StrikeSeries, expiry: string, basis: VegaBasis = "greek", rate = 0.06): VegaPoint[] {
+export function vegaSeries(res: StrikeSeries, expiry: string, basis: VegaBasis = "greek", rate = 0.06, otm?: number): VegaPoint[] {
   const out: VegaPoint[] = [];
   // OI of each contract at the first session sample that has one: the "since the open" reference of the change basis
   const base = new Map<string, number>();
@@ -308,7 +309,11 @@ export function vegaSeries(res: StrikeSeries, expiry: string, basis: VegaBasis =
       const key = String(k);
       return { strike: k, call: quoteOf(res.ce_price[key]?.[i] ?? null, res.ce_oi[key]?.[i] ?? null), put: quoteOf(res.pe_price[key]?.[i] ?? null, res.pe_oi[key]?.[i] ?? null) } as OptionChainRow;
     });
-    const g = chainGreeks(rows, spot, expiry, t, rate);
+    const g0 = chainGreeks(rows, spot, expiry, t, rate);
+    // OTM mode: keep only the n nearest out-of-the-money strikes of each side for this sample
+    const near = (above: boolean) => new Set(res.strikes.filter((k) => (above ? k > spot : k < spot)).sort((a, b) => Math.abs(a - spot) - Math.abs(b - spot)).slice(0, otm ?? 0));
+    const callK = otm == null ? null : near(true), putK = otm == null ? null : near(false);
+    const g = otm == null ? g0 : { ...g0, strikes: g0.strikes.map((x) => ({ strike: x.strike, ce: callK!.has(x.strike) ? x.ce : null, pe: putK!.has(x.strike) ? x.pe : null })) };
     let cs: number[], ps: number[];
     if (basis === "change") {
       const one = (side: "CE" | "PE", pick: (x: (typeof g.strikes)[number]) => number | undefined, oi: Record<string, (number | null)[]>) =>
