@@ -289,9 +289,12 @@ const quoteOf = (ltp: number | null, oi: number | null): OptionQuote => ({ ltp, 
  * and puts below that sample's NIFTY level, so the two sides are different contracts.
  */
 export type VegaBasis = "greek" | "dgreek" | "oi" | "change";
+/** The reference a "change since the open" series is measured from: the first sample in which every strike that ever contributed did. */
+export interface VegaBase { t: number; call: number; put: number; callN: number; putN: number; expectedCall: number; expectedPut: number; complete: boolean }
+export type VegaSeriesOut = VegaPoint[] & { base?: VegaBase };
 export interface VegaWindow { n: number; mode: "auto" | "fixed" }
-export function vegaSeries(res: StrikeSeries, expiry: string, basis: VegaBasis = "greek", rate = 0.06, otmOnly = false, win?: VegaWindow): VegaPoint[] {
-  const out: VegaPoint[] = [];
+export function vegaSeries(res: StrikeSeries, expiry: string, basis: VegaBasis = "greek", rate = 0.06, otmOnly = false, win?: VegaWindow): VegaSeriesOut {
+  const out: VegaSeriesOut = [];
   // "fixed" window: the strikes around the ATM of the first session sample, kept all day; "auto": around each sample's own ATM
   const listed = [...res.strikes].sort((a, b) => a - b);
   const around = (ref: number, n: number) => {
@@ -329,11 +332,21 @@ export function vegaSeries(res: StrikeSeries, expiry: string, basis: VegaBasis =
     out.push({ t, spot, fwd: g0.forward, call, put, diff: call != null && put != null ? put - call : null, callN: cs.length, putN: ps.length, skipped: g.skipped });
   });
   if (basis === "dgreek" || basis === "change") {
-    // change since the open: both sides start at 0 and the difference is put change minus call change
-    const c0 = out.find((p) => p.call != null)?.call ?? null, p0 = out.find((p) => p.put != null)?.put ?? null;
-    for (const p of out) {
-      const call = p.call != null && c0 != null ? p.call - c0 : null, put = p.put != null && p0 != null ? p.put - p0 : null;
-      p.call = call; p.put = put; p.diff = call != null && put != null ? put - call : null;
+    // The reference is the first sample in which every strike that contributes at any time of the day has a price (and OI): a first
+    // sample with half the chain still unpriced would make the change look like a build-up when it is only strikes appearing.
+    // Samples before it are gaps. If no sample is complete the first usable one is used and `complete` says so.
+    const expectedCall = Math.max(0, ...out.map((p) => p.callN)), expectedPut = Math.max(0, ...out.map((p) => p.putN));
+    let bi = out.findIndex((p) => p.call != null && p.put != null && p.callN === expectedCall && p.putN === expectedPut);
+    const complete = bi >= 0;
+    if (bi < 0) bi = out.findIndex((p) => p.call != null && p.put != null);
+    if (bi >= 0) {
+      const b = out[bi]!;
+      const c0 = b.call!, p0 = b.put!;
+      out.base = { t: b.t, call: c0, put: p0, callN: b.callN, putN: b.putN, expectedCall, expectedPut, complete };
+      out.forEach((p, j) => {
+        const call = j >= bi && p.call != null ? p.call - c0 : null, put = j >= bi && p.put != null ? p.put - p0 : null;
+        p.call = call; p.put = put; p.diff = call != null && put != null ? put - call : null;
+      });
     }
   }
   return out;

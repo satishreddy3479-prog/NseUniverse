@@ -245,8 +245,8 @@ export function VegaBoard() {
   const c = useChartColors();
   const [tf, setTf] = useState<number>(1);
   const [view, setView] = useState<"chart" | "table">("table");
-  const [each, setEach] = useState<number>(4);
-  const [mode, setMode] = useState<"auto" | "fixed">("auto");
+  const [each, setEach] = useState<number>(10);
+  const [mode, setMode] = useState<"auto" | "fixed">("fixed");
   const [basis, setBasis] = useState<VegaBasis>("dgreek");
   const [otm, setOtm] = useState(false);
   const vt = vegaTxt(basis);
@@ -259,6 +259,8 @@ export function VegaBoard() {
   const res = q.data;
   const all = useMemo(() => (res && d.expiry ? vegaSeries(res, d.expiry, basis, 0.06, otm, { n: each, mode }) : []), [res, d.expiry, basis, otm, each, mode]);
   const pts = useMemo(() => vegaCandles(all, tf, sessionOpenMin()), [all, tf]);
+  const base = (all as { base?: import("../../lib/optionTools").VegaBase }).base;
+  const hhmm = (t: number) => new Date(t + 330 * 60_000).toISOString().slice(11, 16);
   const opt = useMemo(() => {
     const t = pts.map((p) => p.t);
     const line = (name: string, color: string, data: (number | null)[], extra: Partial<Line> = {}): Line => ({ name, color, data, fmt: vt, ...extra });
@@ -310,6 +312,12 @@ export function VegaBoard() {
         </div>
         {last && <span className="num text-xs text-muted">Latest {new Date(last.t + 330 * 60_000).toISOString().slice(11, 16)}: call <span className="text-up">{vt(last.call)}</span> · put <span className="text-down">{vt(last.put)}</span> · put − call {vt(last.diff)}</span>}
       </div>
+      {base && (basis === "dgreek" || basis === "change") && (
+        <p className="num rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-1.5 text-xs text-muted" data-testid="vega-base">
+          Change measured from {hhmm(base.t)}: call {vt(base.call)} · put {vt(base.put)} there, at {base.callN}/{base.expectedCall} call and {base.putN}/{base.expectedPut} put strikes{base.complete ? "" : " — no sample had every strike priced, so the first usable one is the reference"}.
+          {all[0] && all[0].t < base.t ? ` Earlier samples (from ${hhmm(all[0].t)}) had unpriced strikes and are not plotted.` : ""}
+        </p>
+      )}
       <Frame q={q} w={w} res={res} footer={
         <>
           <span>{pts.length} {tf}-minute point{pts.length === 1 ? "" : "s"}</span>

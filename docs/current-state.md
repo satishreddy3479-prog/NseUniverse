@@ -373,3 +373,8 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 
 ## Menu: Timeseries and Strategy Chart removed (5 Nov 2026)
 - Options Lab no longer lists Timeseries or Strategy Chart (Strategy Chart was only a link to Strategy Builder; Strategy Builder keeps its own menu). The OI-by-strike-over-time widgets still exist on the Analysis dashboard. The section tabs no longer show them.
+
+## Vega: what StockMojo's 15.48 / -41.68 are (5 Nov 2026)
+- Their figures are "level now − level at the first sample": 187.78 = 172.30 (base call) + 15.48 and 186.59 = 228.27 (base put) − 41.68. Our Vega-level lines on 4 Nov 15:39 showed exactly 187.78 and 186.59 (ATM ±10, 21 strikes), so the Greek sums are the same; only the reference level can differ. The bases 172.30 / 228.27 come from a spec supplied by the user, not from data we hold.
+- Our earlier "level" lines started near 110 and ramped to ~190 in the first minutes: strikes without a price in the first samples contribute nothing, so the change looked like a build-up. The reference is now the first sample in which every strike that contributes at any time of the day is priced; earlier samples are not plotted, and the page prints the reference time, its values and its strike coverage (so it can be compared with their 172.30 / 228.27).
+- Defaults now ATM ±10, Fixed (as on their screen). Not verified against stored data on the server.
