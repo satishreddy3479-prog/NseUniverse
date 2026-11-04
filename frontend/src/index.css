@@ -20,37 +20,63 @@
   --down: #ff5a64;
   --warn: #ff9f3d;
   --info: #4cc2ff;
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --r-panel: 4px;
+  --r-ctl: 2px;
+  --body-bg: var(--ink);
+  --header-bg: var(--slate);
+  --font-ui: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
 }
 
+/* Light: a clean, airy phone-style theme. White cards float on a pale grey page with soft shadows and
+   large corners, hairline borders, system fonts, and darker data colours so numbers and charts stay readable. */
 [data-theme="light"] {
-  --ink: #eef1f5;
+  --ink: #f1f3f7;
   --slate: #ffffff;
-  --slate-2: #f5f7fa;
-  --rule: #d3dae4;
-  --paper: #182233;
-  --muted: #5a687d;
-  --accent: #6d4aff;
-  --brass: #b87408;
-  --up: #0e8f61;
-  --down: #d62f3a;
-  --warn: #c76a0c;
-  --info: #0b78c2;
+  --slate-2: #f4f6fa;
+  --rule: #e1e6ee;
+  --paper: #111827;
+  --muted: #546074;
+  --accent: #4f46e5;
+  --brass: #9a5b00;
+  --up: #0a7d55;
+  --down: #c5283a;
+  --warn: #b45309;
+  --info: #0a68b0;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
+  --shadow-pop: 0 12px 32px rgba(16, 24, 40, 0.16);
+  --r-panel: 16px;
+  --r-ctl: 10px;
+  --body-bg: var(--ink);
+  --header-bg: rgba(255, 255, 255, 0.92);
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  color-scheme: light;
 }
 
-/* Ocean: a deep blue-green dark theme between the light and the dark one. */
+/* Ocean: a deep sea-blue theme with a vertical water gradient, translucent glass cards,
+   soft glow instead of hard borders, rounded corners and aqua accents. */
 [data-theme="ocean"] {
-  --ink: #06242b;
-  --slate: #0b3540;
-  --slate-2: #11444f;
-  --rule: #1f6070;
-  --paper: #e9f6f8;
-  --muted: #8dbcc6;
-  --accent: #7ee0d0;
+  --ink: #04202b;
+  --slate: #0b3a47;
+  --slate-2: #0f4857;
+  --rule: #1d6475;
+  --paper: #eaf8fb;
+  --muted: #90c3cf;
+  --accent: #5eead4;
   --brass: #ffc857;
   --up: #3be8a8;
-  --down: #ff6b6b;
-  --warn: #ffa94d;
-  --info: #5fd0ff;
+  --down: #ff7a7a;
+  --warn: #ffb15c;
+  --info: #62d4ff;
+  --shadow: 0 6px 20px rgba(0, 20, 30, 0.35), 0 0 0 1px rgba(94, 234, 212, 0.08) inset;
+  --shadow-pop: 0 14px 36px rgba(0, 10, 20, 0.55);
+  --r-panel: 14px;
+  --r-ctl: 9px;
+  --body-bg: linear-gradient(180deg, #03212d 0%, #06323f 55%, #0a4552 100%) fixed;
+  --header-bg: rgba(7, 48, 60, 0.9);
+  --font-ui: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -66,8 +92,10 @@
   --color-down: var(--down);
   --color-warn: var(--warn);
   --color-info: var(--info);
-  --font-sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
-  --radius-panel: 4px;
+  --radius-panel: var(--r-panel);
+  --radius-sm: var(--r-ctl);
+  --radius-md: var(--r-ctl);
+  --font-sans: var(--font-ui);
 }
 
 html,
@@ -77,7 +105,7 @@ body,
 }
 
 body {
-  background: var(--ink);
+  background: var(--body-bg);
   color: var(--paper);
   font-family: var(--font-sans);
   font-size: 14px;
@@ -159,4 +187,20 @@ body {
     border-top: 1px dashed var(--rule); padding-top: 10px !important;
   }
   .legs-table tr:not(.legs-extra) > td:last-child { grid-column: 4 / -1; justify-self: stretch; text-align: right; }
+}
+
+/* Theme surfaces: cards, bars and pop-ups take their elevation from the active theme. */
+.bg-slate { box-shadow: var(--shadow); }
+header.bg-slate { background: var(--header-bg); box-shadow: var(--shadow); }
+[data-theme="light"] header.bg-slate, [data-theme="ocean"] header.bg-slate { backdrop-filter: blur(10px); }
+.shadow-xl { box-shadow: var(--shadow-pop); }
+[data-theme="light"] .bg-slate-2, [data-theme="light"] input, [data-theme="light"] select { border-color: var(--rule); }
+[data-theme="light"] ::selection { background: color-mix(in srgb, var(--accent) 22%, white); }
+[data-theme="ocean"] ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+/* Light: hover and active states stay visible on white. */
+[data-theme="light"] .hover\:bg-slate-2:hover { background: #eaeef5; }
+/* Installed app: respect the phone's notch and home bar. */
+@supports (padding: env(safe-area-inset-top)) {
+  header.bg-slate { padding-top: max(0.25rem, env(safe-area-inset-top)); }
+  main { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
 }

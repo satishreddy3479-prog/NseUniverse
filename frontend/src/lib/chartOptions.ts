@@ -102,7 +102,7 @@ const t = (o: Observation) => new Date(o.retrieved_at).getTime();
 
 /** Soft fill under a line: the same colour fading to nothing, so the level reads at a glance. */
 const fade = (color: string, top = 0.22) => ({
-  color: { type: "linear", x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color }, { offset: 1, color: "rgba(0,0,0,0)" }] },
+  color: { type: "linear", x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color }, { offset: 1, color: /^#[0-9a-f]{6}$/i.test(color) ? `${color}00` : "rgba(128,128,128,0)" }] },
   opacity: top,
 });
 

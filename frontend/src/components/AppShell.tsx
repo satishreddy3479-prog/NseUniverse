@@ -36,9 +36,12 @@ export function AppShell() {
         >
           Menu
         </button>
-        <Link to="/" className="flex min-w-0 shrink-0 flex-col leading-tight" aria-label="NSE Universe home">
-          <span className="text-[15px] font-semibold tracking-tight text-paper">NSE Universe</span>
-          <span className="hidden text-xs text-muted sm:block">{underlying} 50 options</span>
+        <Link to="/" className="flex min-w-0 shrink-0 items-center gap-2 leading-tight" aria-label="NSE Universe home">
+          <img src="/logo.svg" alt="" width={34} height={34} className="h-[34px] w-[34px] shrink-0 rounded-[9px] ring-1 ring-black/10" />
+          <span className="flex flex-col">
+            <span className="text-[15px] font-semibold tracking-tight text-paper">NSE Universe</span>
+            <span className="hidden text-xs text-muted sm:block">{underlying} 50 options</span>
+          </span>
         </Link>
         <TopNav />
         <div className="ml-auto flex shrink-0 items-center justify-end gap-x-3 whitespace-nowrap">
