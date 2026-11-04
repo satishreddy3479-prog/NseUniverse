@@ -15,6 +15,7 @@ vi.mock("../components/EChart", async () => {
 // a server that remembers what the page stores, so Saved/Closed behave as in production
 let store: { saved: Record<string, unknown>[]; closed: Record<string, unknown>[] };
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-02T05:00:00Z")); // the fixtures expire on 3 Nov 2026
   store = { saved: [], closed: [] };
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const full = String(input);
@@ -42,7 +43,7 @@ beforeEach(() => {
   }));
   localStorage.clear();
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 const mount = (at = "/strategy") => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter initialEntries={[at]}><AppRoutes /></MemoryRouter></QueryClientProvider>);
 const build = async (id: string) => {

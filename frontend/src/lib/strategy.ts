@@ -44,10 +44,12 @@ export const sign = (a: Action) => (a === "BUY" ? 1 : -1);
 export const isExited = (l: Pick<Leg, "exitPrice">): boolean => l.exitPrice != null;
 
 /** Has the market price reached this leg's target or stop? A bought option's target is above its entry and its stop below; for a sold one it is the other way round. */
-export function hitOf(l: { action: Action; target?: number | null; stop?: number | null }, kind: "target" | "stop", price: number): boolean {
+export function hitOf(l: { action: Action; premium?: number | null; target?: number | null; stop?: number | null }, kind: "target" | "stop", price: number): boolean {
   const lvl = kind === "target" ? l.target : l.stop;
   if (lvl == null) return false;
   const up = (kind === "target") === (l.action === "BUY"); // the premium has to rise to the level
+  // a level on the wrong side of the entry (or at it) is a typing slip, not a trigger: it is flagged in the UI and never fires
+  if (l.premium != null && (up ? lvl <= l.premium : lvl >= l.premium)) return false;
   return up ? price >= lvl : price <= lvl;
 }
 

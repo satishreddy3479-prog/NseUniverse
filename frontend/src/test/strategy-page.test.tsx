@@ -18,6 +18,7 @@ vi.mock("../components/EChart", async () => {
 });
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-02T05:00:00Z")); // the fixtures expire on 3 Nov 2026
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const full = String(input);
     const url = full.split("?")[0]!;
@@ -30,7 +31,7 @@ beforeEach(() => {
   }));
   localStorage.clear();
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 function mount() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -203,7 +204,9 @@ describe("Strategies kept on the server", () => {
     expect(screen.getByTestId("sync-state")).toHaveTextContent("Stored on server");
     const imp = calls.find((c) => c.url === "/api/strategies/import")!;
     expect(Object.keys((imp.body as { saved: object }).saved)).toEqual(["only here"]); // not the one the server already had
+    const ask = vi.spyOn(window, "confirm").mockReturnValue(true);
     await userEvent.click(within(menu).getByRole("button", { name: "Delete saved strategy on server" }));
+    expect(ask).toHaveBeenCalled();
     await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url === "/api/strategies/saved?key=on%20server")).toBe(true));
     expect(menu).toHaveTextContent("Saved (1)");
   });
@@ -494,7 +497,11 @@ describe("Deleting saved and closed strategies", () => {
     }
     const menu = screen.getByTestId("saved-menu");
     expect(menu).toHaveTextContent("Saved (2)");
+    const ask = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValue(true);
     await userEvent.click(within(menu).getByRole("button", { name: "Delete saved strategy one" }));
+    expect(menu).toHaveTextContent("Saved (2)"); // declined: nothing deleted
+    await userEvent.click(within(menu).getByRole("button", { name: "Delete saved strategy one" }));
+    expect(ask).toHaveBeenCalledTimes(2);
     expect(menu).toHaveTextContent("Saved (1)");
     await userEvent.click(within(menu).getByText("Delete all saved"));
     expect(menu).toHaveTextContent("Saved (1)"); // one click is not enough
@@ -509,6 +516,9 @@ describe("Deleting saved and closed strategies", () => {
     await userEvent.click(screen.getByRole("button", { name: "Exit all" }));
     const menu = await screen.findByTestId("closed-menu");
     expect(menu).toHaveTextContent("Closed (1)");
+    vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValue(true);
+    await userEvent.click(within(menu).getByRole("button", { name: /Delete closed trade/ }));
+    expect(menu).toHaveTextContent("Closed (1)"); // declined
     await userEvent.click(within(menu).getByRole("button", { name: /Delete closed trade/ }));
     expect(menu).toHaveTextContent("Closed (0)");
   });
@@ -545,6 +555,12 @@ describe("Target and stop status against the market price", () => {
     expect(hitOf({ action: "SELL", target: 50, stop: 130 }, "stop", 130)).toBe(true); // and is stopped out when it rises
     expect(hitOf({ action: "SELL", target: 50, stop: 130 }, "stop", 129)).toBe(false);
     expect(hitOf({ action: "SELL" }, "stop", 999)).toBe(false); // nothing set: never hit
+    // levels on the wrong side of (or at) the entry never fire: a sold 114.6 with a stop typed as 0 %, or "1" on the way to 150
+    expect(hitOf({ action: "SELL", premium: 114.6, stop: 114.6 }, "stop", 114.6)).toBe(false);
+    expect(hitOf({ action: "SELL", premium: 114.6, stop: 1 }, "stop", 114.6)).toBe(false);
+    expect(hitOf({ action: "SELL", premium: 114.6, stop: 149 }, "stop", 150)).toBe(true);
+    expect(hitOf({ action: "SELL", premium: 114.6, stop: 149 }, "stop", 148)).toBe(false);
+    expect(hitOf({ action: "BUY", premium: 100, target: 90 }, "target", 100)).toBe(false);
   });
 
   it("shows the banner and the badge when the stored price has passed the stop, and the distance when it has not", async () => {

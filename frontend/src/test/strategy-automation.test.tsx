@@ -19,6 +19,7 @@ vi.mock("../lib/useLive", async () => {
 });
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-02T05:00:00Z")); // fixtures expire on 3 Nov 2026
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input).split("?")[0]!;
     const chain = bigChain();
@@ -29,7 +30,7 @@ beforeEach(() => {
   localStorage.clear();
   liveStore.reset();
 });
-afterEach(() => { vi.unstubAllGlobals(); liveStore.reset(); });
+afterEach(() => { vi.unstubAllGlobals(); liveStore.reset(); vi.useRealTimers(); });
 
 const mount = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter initialEntries={["/strategy"]}><AppRoutes /></MemoryRouter></QueryClientProvider>);
 let seq = 1;
@@ -51,7 +52,7 @@ describe("automatic stop, target and re-entry through the page", () => {
     tick("nse_fo|24050CE", 125); // below the stop of 130: nothing happens
     await waitFor(() => expect(table.getAllByLabelText("Exit price")).toHaveLength(2));
     tick("nse_fo|24050CE", 133); // the stop is reached: the leg is closed at the live price 133 (a loss of 33 x 75)
-    await waitFor(() => expect(screen.getByTestId("leg-exited")).toHaveTextContent("Exited at 133.00 (stop)"));
+    await waitFor(() => expect(screen.getByTestId("leg-exited")).toHaveTextContent("Exited at 133.00 (stop)"), { timeout: 4000 }); // typing settles for 1.5 s before a new level is checked
     expect(screen.getByTestId("leg-exited")).toHaveTextContent("−₹2,475");
     expect(screen.getByTestId("reentry-armed")).toHaveTextContent("back at or below 100.00");
     expect(screen.getByTestId("auto-note")).toHaveTextContent("Stop: SELL 24050 CE closed at 133.00");

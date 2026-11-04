@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { mergeRows, type LiveMode } from "../components/ChainTable";
 import { useThrottledVersion } from "../components/dashboard/DashContext";
@@ -323,15 +323,21 @@ export default function StrategyBuilder() {
   // Automatic stop, target and re-entry (paper only: nothing is sent to a broker). It runs on live streamed prices only,
   // and only while this page is open; with the stream stale or the market closed it is paused, never guessing from old prices.
   const autoActive = autoOn && liveMode === "fresh" && lotSize != null;
+  // A target or stop that was just typed is not checked until the typing has settled: "30" passes through "3" on the way,
+  // and that half-typed level must not close the leg.
+  const lastExitEdit = useRef(-1e9);
+  const [settle, setSettle] = useState(0);
   useEffect(() => {
     if (!autoActive || !lotSize || legs.length === 0) return;
+    const wait = 1500 - (performance.now() - lastExitEdit.current);
+    if (wait > 0) { const t = setTimeout(() => setSettle((n) => n + 1), wait + 20); return () => clearTimeout(t); }
     const r = applyAutomation(legs, ltp, lotSize, new Date().toISOString(), mult);
     if (r.events.length) {
       commitTrades(r.legs);
       setAutoNote(r.events.join(" · "));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, legs, autoActive, mult, lotSize]);
+  }, [rows, legs, autoActive, mult, lotSize, settle]);
   useEffect(() => {
     try { localStorage.setItem(WORKING_KEY, JSON.stringify({ legs, expiry, name, loaded, baseline, at: Date.now() })); } catch { /* this visit only */ }
   }, [legs, expiry, name, loaded, baseline]);
@@ -424,7 +430,7 @@ export default function StrategyBuilder() {
     update(l.id, { strike, ...(l.premiumSource === "manual" ? {} : { premium: m, premiumSource: m == null ? null : "market" }) });
   };
   /** Target or stop-loss for one leg: a premium, or a % of the entry premium. Targets are on the profit side of the entry, stops on the loss side. */
-  const setExit = (l: Leg, kind: "target" | "stop", px: number | null) => update(l.id, kind === "target" ? { target: px } : { stop: px });
+  const setExit = (l: Leg, kind: "target" | "stop", px: number | null) => { lastExitEdit.current = performance.now(); update(l.id, kind === "target" ? { target: px } : { stop: px }); };
   const exitCell = (l: Leg, kind: "target" | "stop") => {
     const cur = kind === "target" ? l.target ?? null : l.stop ?? null;
     const buy = l.action === "BUY";
@@ -527,7 +533,7 @@ export default function StrategyBuilder() {
                         <div className="text-paper">{sv.name}</div>
                         <div className="text-[11px] text-muted">{sv.legs.length} legs · expiry {sv.expiry}</div>
                       </button>
-                      <button type="button" aria-label={`Delete saved strategy ${sv.name}`} title="Delete this saved strategy" className="px-2 text-xs text-muted hover:text-down" onClick={() => persist(saved.filter((x) => x.name !== sv.name))}>✕</button>
+                      <button type="button" aria-label={`Delete saved strategy ${sv.name}`} title="Delete this saved strategy" className="px-2 text-xs text-muted hover:text-down" onClick={() => { if (window.confirm(`Delete the saved strategy "${sv.name}"? This cannot be undone.`)) persist(saved.filter((x) => x.name !== sv.name)); }}>✕</button>
                     </li>
                   ))}
                 </ul>
@@ -549,7 +555,7 @@ export default function StrategyBuilder() {
                       <div className="text-[11px] text-muted">{c.legs.length} legs · expiry {c.expiry} · closed {new Date(c.closedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}</div>
                       <div className={`num text-xs ${tone(c.pnl)}`}>Realised {money(c.pnl)}{c.stale && <span className="ml-2 text-warn" title={`Exit prices were the stored prices from ${fmtDateTimeIST(c.snapshotAt)}, which were stale (not live)`}>at stale prices</span>}</div>
                     </button>
-                    <button type="button" aria-label={`Delete closed trade ${c.name}`} title="Remove from the closed list" className="px-2 text-xs text-muted hover:text-down" onClick={() => persistClosed(closed.filter((x) => x.id !== c.id))}>✕</button>
+                    <button type="button" aria-label={`Delete closed trade ${c.name}`} title="Remove from the closed list" className="px-2 text-xs text-muted hover:text-down" onClick={() => { if (window.confirm(`Delete the closed trade "${c.name}"? This cannot be undone.`)) persistClosed(closed.filter((x) => x.id !== c.id)); }}>✕</button>
                   </li>
                 ))}
               </ul>
