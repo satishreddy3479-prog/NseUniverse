@@ -26,7 +26,7 @@ export function AppShell() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="relative z-30 flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 md:flex-nowrap border-b border-rule bg-slate px-3 py-1">
+      <header className="relative z-30 flex min-h-14 flex-wrap items-center gap-x-2 gap-y-1 md:flex-nowrap border-b border-rule bg-slate px-3 py-1">
         <button
           type="button"
           className="rounded-sm border border-rule px-2 py-1 text-sm md:hidden"
@@ -40,14 +40,14 @@ export function AppShell() {
           <img src="/logo.svg" alt="" width={34} height={34} className="h-[34px] w-[34px] shrink-0 rounded-[9px] ring-1 ring-black/10" />
           <span className="flex flex-col">
             <span className="text-[15px] font-semibold tracking-tight text-paper">NSE Universe</span>
-            <span className="hidden text-xs text-muted sm:block">{underlying} 50 options</span>
+            <span className="hidden text-[11px] text-muted 2xl:block">{underlying} 50 options</span>
           </span>
         </Link>
         <TopNav />
-        <div className="ml-auto flex shrink-0 items-center justify-end gap-x-3 whitespace-nowrap">
+        <div className="ml-auto flex shrink-0 items-center justify-end gap-x-2.5 whitespace-nowrap">
           <SpotBadge latest={spotSnapshot ?? latest} className="md:flex-nowrap" />
           <StatusPill signals={signals} />
-          <div className="hidden xl:block"><ThemeSwitch /></div>
+          <ThemeSwitch />
         </div>
       </header>
       {menuOpen && (

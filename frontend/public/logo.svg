@@ -1,10 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="NSE Universe">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#16324a"/><stop offset="1" stop-color="#0a1626"/></linearGradient>
-    <linearGradient id="ln" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#4cc2ff"/><stop offset="1" stop-color="#2bd99f"/></linearGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1b3a57"/><stop offset="1" stop-color="#091422"/></linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd166"/><stop offset="1" stop-color="#f59e0b"/></linearGradient>
+    <linearGradient id="horn" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#e8eef7"/><stop offset="1" stop-color="#ffffff"/></linearGradient>
   </defs>
   <rect width="512" height="512" rx="112" fill="url(#bg)"/>
-  <ellipse cx="256" cy="268" rx="178" ry="70" transform="rotate(-24 256 268)" fill="none" stroke="#ffb02e" stroke-opacity=".55" stroke-width="10"/>
-  <path d="M96 352 H228 L420 128" fill="none" stroke="url(#ln)" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="420" cy="128" r="26" fill="#ffb02e"/>
+  <path d="M326 238 C380 246 428 204 440 112 C412 172 366 192 322 198 Z" fill="url(#horn)"/><path d="M186 238 C132 246 84 204 72 112 C100 172 146 192 190 198 Z" fill="url(#horn)"/>
+  <path d="M322 250 L384 262 C372 288 346 296 320 284 Z" fill="#f59e0b"/><path d="M190 250 L128 262 C140 288 166 296 192 284 Z" fill="#f59e0b"/>
+  <path d="M256 196 C296 196 330 212 332 246 C334 284 314 318 306 342 C302 356 308 374 306 390 C302 414 282 428 256 428 C230 428 210 414 206 390 C204 374 210 356 206 342 C198 318 178 284 180 246 C182 212 216 196 256 196 Z" fill="url(#gold)"/>
+  <path d="M214 262 L246 276 L238 288 L208 280 Z" fill="#091422"/><path d="M298 262 L266 276 L274 288 L304 280 Z" fill="#091422"/>
+  <ellipse cx="236" cy="392" rx="10" ry="14" fill="#091422"/><ellipse cx="276" cy="392" rx="10" ry="14" fill="#091422"/>
+  <path d="M236 206 L256 232 L276 206" fill="none" stroke="#b45309" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" opacity=".55"/>
+  <circle cx="256" cy="452" r="0"/>
 </svg>

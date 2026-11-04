@@ -99,9 +99,13 @@ describe("top menu bar", () => {
     renderAt("/overview");
     await screen.findByRole("heading", { name: "Overview" });
     const group = screen.getByRole("group", { name: "Theme" });
-    await userEvent.click(within(group).getByRole("button", { name: "Ocean" }));
-    expect(document.documentElement.dataset.theme).toBe("ocean");
-    expect(within(group).getByRole("button", { name: "Ocean" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(group).queryByRole("button", { name: "Ocean" })).toBeNull();
+    await userEvent.click(within(group).getByRole("button", { name: "Light" }));
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(within(group).getByRole("button", { name: "Light" })).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(within(group).getByRole("button", { name: "Dark" }));
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(localStorage.getItem("nse-universe.theme")).toBe("dark");
   });
 });
 

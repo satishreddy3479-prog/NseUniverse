@@ -5,6 +5,12 @@ _Last updated: 2026-11-04_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Logo, home page, two themes, compact top bar (4 Nov 2026)
+- **Logo:** new original bull-head mark (`public/logo.svg`, app icons regenerated).
+- **Home:** hero panel and an illustration on every tool card (`components/ToolArt.tsx`). The pictures are decorative, built from fixed shapes, carry no market data and are hidden from screen readers; planned tools are greyed.
+- **Themes:** only Light and Dark, switched with a sun / moon button. Ocean was removed; a saved "ocean" choice opens as Dark.
+- **Top bar:** tighter menu spacing, smaller status pill, the stored-snapshot time now sits under the "NIFTY 50 [Snapshot]" label with the price and change on the right.
+
 ## Smart OI rebuilt to the user's spec (4 Nov 2026)
 - The first Smart OI (per-strike buildup labels) was a wrong reading of the feature. It is now **OI Buildup** (`/tools/oi-buildup`), kept as is.
 - **Smart OI** (`/tools/smart-oi`) follows the supplied "Smart OI Complete Engineering Spec": the session is cut into 1/3/5/15-minute candles; per candle ΔPE = PE[i]−PE[i−1], ΔCE = CE[i]−CE[i−1], **p = ΔPE − ΔCE**, drawn as a zero-baseline candlestick (green ≥ 0, red < 0) under NIFTY candles, with option volume per candle, plus day-change lines (put, call, PE−CE since the first candle) and OI PCR / volume PCR panels. Pure function `smartOiCandles` in `lib/optionTools.ts`; tested against the spec's own worked example (+150k, +450k, −800k).

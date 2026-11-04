@@ -54,31 +54,6 @@
   color-scheme: light;
 }
 
-/* Ocean: a deep sea-blue theme with a vertical water gradient, translucent glass cards,
-   soft glow instead of hard borders, rounded corners and aqua accents. */
-[data-theme="ocean"] {
-  --ink: #04202b;
-  --slate: #0b3a47;
-  --slate-2: #0f4857;
-  --rule: #1d6475;
-  --paper: #eaf8fb;
-  --muted: #90c3cf;
-  --accent: #5eead4;
-  --brass: #ffc857;
-  --up: #3be8a8;
-  --down: #ff7a7a;
-  --warn: #ffb15c;
-  --info: #62d4ff;
-  --shadow: 0 6px 20px rgba(0, 20, 30, 0.35), 0 0 0 1px rgba(94, 234, 212, 0.08) inset;
-  --shadow-pop: 0 14px 36px rgba(0, 10, 20, 0.55);
-  --r-panel: 14px;
-  --r-ctl: 9px;
-  --body-bg: linear-gradient(180deg, #03212d 0%, #06323f 55%, #0a4552 100%) fixed;
-  --header-bg: rgba(7, 48, 60, 0.9);
-  --font-ui: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
-  color-scheme: dark;
-}
-
 @theme inline {
   --color-ink: var(--ink);
   --color-slate: var(--slate);
@@ -192,11 +167,10 @@ body {
 /* Theme surfaces: cards, bars and pop-ups take their elevation from the active theme. */
 .bg-slate { box-shadow: var(--shadow); }
 header.bg-slate { background: var(--header-bg); box-shadow: var(--shadow); }
-[data-theme="light"] header.bg-slate, [data-theme="ocean"] header.bg-slate { backdrop-filter: blur(10px); }
+[data-theme="light"] header.bg-slate { backdrop-filter: blur(10px); }
 .shadow-xl { box-shadow: var(--shadow-pop); }
 [data-theme="light"] .bg-slate-2, [data-theme="light"] input, [data-theme="light"] select { border-color: var(--rule); }
 [data-theme="light"] ::selection { background: color-mix(in srgb, var(--accent) 22%, white); }
-[data-theme="ocean"] ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
 /* Light: hover and active states stay visible on white. */
 [data-theme="light"] .hover\:bg-slate-2:hover { background: #eaeef5; }
 /* Installed app: respect the phone's notch and home bar. */
@@ -204,3 +178,7 @@ header.bg-slate { background: var(--header-bg); box-shadow: var(--shadow); }
   header.bg-slate { padding-top: max(0.25rem, env(safe-area-inset-top)); }
   main { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
 }
+
+/* Home: hero panel and the illustration tiles on tool cards. */
+.hero { background: radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--brass) 14%, var(--slate)) 0%, var(--slate) 55%); }
+.tool-art { background: linear-gradient(160deg, color-mix(in srgb, var(--info) 9%, var(--slate-2)), var(--slate-2)); border: 1px solid var(--rule); }

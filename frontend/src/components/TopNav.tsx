@@ -22,7 +22,7 @@ export const SYSTEM: { to: string; label: string }[] = [
 ];
 
 const link = (active: boolean) =>
-  `inline-flex min-h-10 items-center whitespace-nowrap border-b-2 px-2.5 text-sm ${active ? "border-brass font-medium text-paper" : "border-transparent text-muted hover:text-paper"}`;
+  `inline-flex min-h-10 items-center whitespace-nowrap border-b-2 px-2 text-[13px] xl:px-2.5 xl:text-sm ${active ? "border-brass font-medium text-paper" : "border-transparent text-muted hover:text-paper"}`;
 
 function ToolItem({ t, onPick }: { t: Tool; onPick: () => void }) {
   const to = toolPath(t);

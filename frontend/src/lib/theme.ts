@@ -1,22 +1,21 @@
-export type Theme = "dark" | "light" | "ocean";
+export type Theme = "dark" | "light";
 export const THEMES: { id: Theme; label: string }[] = [
   { id: "light", label: "Light" },
-  { id: "ocean", label: "Ocean" },
   { id: "dark", label: "Dark" },
 ];
 const KEY = "nse-universe.theme";
 
+/** Saved choice; anything else (including the removed "ocean" theme) opens as dark. */
 export function loadTheme(): Theme {
   try {
-    const v = localStorage.getItem(KEY);
-    return v === "light" || v === "ocean" ? v : "dark";
+    return localStorage.getItem(KEY) === "light" ? "light" : "dark";
   } catch {
     return "dark";
   }
 }
 
 /** Browser / installed-app title bar colour for each theme. */
-const BAR: Record<Theme, string> = { dark: "#172233", light: "#ffffff", ocean: "#0a3340" };
+const BAR: Record<Theme, string> = { dark: "#172233", light: "#ffffff" };
 
 export function applyTheme(t: Theme): void {
   document.documentElement.dataset.theme = t;
