@@ -3,7 +3,8 @@
  * Pure functions on the option-chain rows: a value that cannot be computed stays null and is counted, never zero-filled.
  */
 import { carryFromForward, contractGreeks, impliedForward, type ContractGreeks } from "./optionModel";
-import type { OptionChainRow, OptionQuote } from "./types";
+import { isSessionMs } from "./analytics";
+import type { OptionChainRow, OptionQuote, StrikeSeries } from "./types";
 
 // ---------------------------------------------------------------- Smart OI
 export type Buildup = "Long buildup" | "Short buildup" | "Short covering" | "Long unwinding";
@@ -213,4 +214,48 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
     candles.push(c);
   }
   return { day: useDay, timeframe, candles, baselineAt: baseline ? s.times[slots.length ? buckets.get(slots[0]!)!.lastOi : 0]! : null, gapCandles: gaps, skippedSamples: skipped };
+}
+
+// ---------------------------------------------------------------- Price vs OI (one strike through the session)
+export interface StrikeBoard {
+  strike: number;
+  times: number[];
+  spot: (number | null)[];
+  cePrice: (number | null)[]; pePrice: (number | null)[];
+  ceOi: (number | null)[]; peOi: (number | null)[];
+  ceChange: (number | null)[]; peChange: (number | null)[];
+  /** call price + put price, only where both were observed in that sample */
+  straddle: (number | null)[];
+  /** put OI / call OI of this strike, only where both OIs were observed and the call OI is above zero */
+  pcr: (number | null)[];
+  /** samples dropped because they were taken outside the session, and points where one side's price was missing */
+  outsideSession: number;
+  straddleGaps: number;
+}
+
+/** One strike's series from the stored samples, session samples only. A missing value stays null; nothing is filled. */
+export function strikeBoard(res: StrikeSeries, strike: number): StrikeBoard | null {
+  const key = String(strike);
+  const cp = res.ce_price[key], pp = res.pe_price[key], co = res.ce_oi[key], po = res.pe_oi[key], cc = res.ce_change[key], pc = res.pe_change[key];
+  if (!cp || !pp || !co || !po || !cc || !pc) return null;
+  const keep = res.times.map((t) => isSessionMs(new Date(t).getTime()));
+  const pick = <T,>(a: T[]): T[] => a.filter((_, i) => keep[i]);
+  const cePrice = pick(cp), pePrice = pick(pp), ceOi = pick(co), peOi = pick(po);
+  const straddle = cePrice.map((c, i) => (c != null && pePrice[i] != null ? Math.round((c + pePrice[i]!) * 100) / 100 : null));
+  const pcr = ceOi.map((c, i) => (c != null && c > 0 && peOi[i] != null ? Math.round((peOi[i]! / c) * 10000) / 10000 : null));
+  return {
+    strike, times: pick(res.times.map((t) => new Date(t).getTime())), spot: pick(res.spot), cePrice, pePrice, ceOi, peOi,
+    ceChange: pick(cc), peChange: pick(pc), straddle, pcr,
+    outsideSession: keep.filter((k) => !k).length, straddleGaps: straddle.filter((v) => v == null).length,
+  };
+}
+
+/** The listed strikes nearest the ATM, in order (up to `n` of them), for the multi-strike pickers. */
+export function strikesAround(strikes: number[], atm: number | null, n: number): number[] {
+  const s = [...strikes].sort((a, b) => a - b);
+  if (atm == null || s.length === 0) return s.slice(0, n);
+  let i = s.findIndex((x) => x >= atm);
+  if (i < 0) i = s.length - 1;
+  const from = Math.max(0, Math.min(s.length - n, i - Math.floor(n / 2)));
+  return s.slice(from, from + n);
 }

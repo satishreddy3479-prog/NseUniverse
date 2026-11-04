@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { Info } from "../components/Info";
 import { DashProvider, type Range } from "../components/dashboard/DashContext";
 import { WIDGETS } from "../components/dashboard/widgets";
+import { MultiStrikeBoard, PriceOiBoard } from "../components/dashboard/PriceBoards";
 import { StreamButtons } from "../components/LiveActivity";
 import { IndexToolBody } from "../components/IndexTools";
 import { FlowsPanel } from "../components/FlowsPanel";
@@ -10,6 +11,9 @@ import { CashPanel } from "../components/CashPanel";
 import { fmtExpiry } from "../lib/format";
 import { useExpiries } from "../lib/hooks";
 import { toolById, toolPath } from "../lib/tools";
+
+/** The price tools are one family (as tabs on the reference site): each tab is its own page. */
+const PRICE_TABS = ["straddle", "premium-decay", "price-vs-oi", "multistrike-chart", "multi-straddle"];
 
 type Mode = "weekly" | "monthly" | "manual";
 const RANGES: Range[] = [5, 10, 20, "all"];
@@ -37,7 +41,8 @@ export default function ToolPage() {
       </div>
     );
 
-  const usesChain = !!tool.widgets;
+  const usesChain = !!tool.widgets || !!tool.board;
+  const strikeControls = !tool.board; // the boards pick their own strikes
   const modeBtn = (m: Mode, label: string, date?: string | null) => (
     <button type="button" key={m} aria-pressed={mode === m} disabled={m !== "manual" && !date} onClick={() => setMode(m)}
       className={`min-h-9 rounded-sm border px-3 text-sm disabled:opacity-40 ${mode === m ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>
@@ -55,6 +60,17 @@ export default function ToolPage() {
           </div>
           {usesChain && <StreamButtons />}
         </div>
+        {PRICE_TABS.includes(tool.id) && (
+          <nav aria-label="Price tools" className="flex flex-wrap gap-1 rounded-[var(--radius-panel)] border border-rule bg-slate p-1">
+            {PRICE_TABS.map((id) => {
+              const t = toolById(id);
+              return t ? (
+                <Link key={id} to={toolPath(t) ?? "/"} aria-current={id === tool.id ? "page" : undefined}
+                  className={`min-h-9 rounded-sm px-3 py-1.5 text-sm ${id === tool.id ? "bg-brass/15 text-paper" : "text-muted hover:text-paper"}`}>{t.label}</Link>
+              ) : null;
+            })}
+          </nav>
+        )}
         {usesChain && (
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2">
             <span className="text-sm font-semibold">NIFTY</span>
@@ -68,14 +84,14 @@ export default function ToolPage() {
                 </select>
               )}
             </div>
-            <label className="flex items-center gap-2 text-sm text-muted">
+            {strikeControls && <label className="flex items-center gap-2 text-sm text-muted">
               Strikes around ATM
               <select aria-label="Strike range" value={String(range)} onChange={(e) => setRange(e.target.value === "all" ? "all" : Number(e.target.value))} className="min-h-9 rounded-sm border border-rule bg-slate-2 px-2 text-paper">
                 {RANGES.map((n) => <option key={String(n)} value={String(n)}>{n === "all" ? "All" : `±${n}`}</option>)}
               </select>
-            </label>
-            <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={showCalls} onChange={(e) => setShowCalls(e.target.checked)} className="accent-[var(--brass)]" /> Calls</label>
-            <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={showPuts} onChange={(e) => setShowPuts(e.target.checked)} className="accent-[var(--brass)]" /> Puts</label>
+            </label>}
+            {strikeControls && <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={showCalls} onChange={(e) => setShowCalls(e.target.checked)} className="accent-[var(--brass)]" /> Calls</label>}
+            {strikeControls && <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={showPuts} onChange={(e) => setShowPuts(e.target.checked)} className="accent-[var(--brass)]" /> Puts</label>}
           </div>
         )}
         {tool.widgets?.map((wid) => {
@@ -87,6 +103,9 @@ export default function ToolPage() {
             </section>
           ) : null;
         })}
+        {tool.board === "priceOi" && <PriceOiBoard />}
+        {tool.board === "multiStrike" && <MultiStrikeBoard straddle={false} />}
+        {tool.board === "multiStraddle" && <MultiStrikeBoard straddle />}
         {tool.page === "flows" && <FlowsPanel />}
         {tool.page === "cash" && <CashPanel />}
         {tool.page && tool.page !== "flows" && tool.page !== "cash" && <IndexToolBody page={tool.page} />}

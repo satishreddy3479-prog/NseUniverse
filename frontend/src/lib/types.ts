@@ -692,6 +692,25 @@ export interface OiSeries {
   definitions: Record<string, string>;
 }
 
+/** Price, OI and OI change of chosen strikes through the stored samples (backend app/analytics/oi.py strike_series). Keys are the strike as text. */
+export interface StrikeSeries {
+  underlying: string;
+  expiry: string;
+  strikes: number[];
+  atm_strike: number | null;
+  times: string[];
+  spot: (number | null)[];
+  ce_price: Record<string, (number | null)[]>;
+  pe_price: Record<string, (number | null)[]>;
+  ce_oi: Record<string, (number | null)[]>;
+  pe_oi: Record<string, (number | null)[]>;
+  ce_change: Record<string, (number | null)[]>;
+  pe_change: Record<string, (number | null)[]>;
+  stride: number;
+  warnings: string[];
+  definitions: Record<string, string>;
+}
+
 export interface ForecastDay {
   horizon: "T1" | "T5"; target_session: string; reference_session: string;
   status: "recorded" | "missed"; reason: string | null; stale: string[];

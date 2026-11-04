@@ -18,6 +18,8 @@ export interface Tool {
   to?: string;
   /** dashboard widgets (ids in components/dashboard/widgets.tsx) stacked on the tool page */
   widgets?: string[];
+  /** chart boards built from the stored per-strike series (components/dashboard/PriceBoards.tsx) */
+  board?: "priceOi" | "multiStrike" | "multiStraddle";
   /** a special page body (see pages/ToolPage.tsx) */
   page?: "flows" | "cash" | "contributors" | "weightage" | "breadth" | "sectors" | "movers";
   /** why a planned tool is not available yet */
@@ -44,8 +46,9 @@ export const TOOLS: Tool[] = [
   { id: "vega-analysis", label: "Vega Analysis", menu: "options", group: "Popular tools", status: "ready", isNew: true, widgets: ["vega"], blurb: "Strike-wise vega from open interest: where a volatility change would matter most." },
   { id: "straddle", label: "ATM Straddle Chart", menu: "options", group: "Price tools", status: "ready", popular: true, widgets: ["straddle"], blurb: "At-the-money call plus put premium over the session." },
   { id: "premium-decay", label: "Premium Decay", menu: "options", group: "Price tools", status: "ready", widgets: ["premium", "decay"], blurb: "How option premium decays through the day, strike by strike." },
-  { id: "price-vs-oi", label: "Price vs OI", menu: "options", group: "Price tools", status: "ready", widgets: ["priceOi"], blurb: "NIFTY price against open interest through the session." },
-  { id: "multistrike-chart", label: "MultiStrike Chart", menu: "options", group: "Price tools", status: "planned", needs: "Multi-strike price history needs the per-strike minute prices to be exposed by the backend.", blurb: "Several strikes' prices on one chart." },
+  { id: "price-vs-oi", label: "Price vs OI", menu: "options", group: "Price tools", status: "ready", board: "priceOi", blurb: "One strike's call and put price against its open interest and OI change through the session." },
+  { id: "multistrike-chart", label: "MultiStrike Chart", menu: "options", group: "Price tools", status: "ready", isNew: true, board: "multiStrike", blurb: "Price, OI or OI change of several strikes on one chart, calls and puts side by side." },
+  { id: "multi-straddle", label: "Multi-Straddle Chart", menu: "options", group: "Price tools", status: "ready", isNew: true, board: "multiStraddle", blurb: "The straddle price of several strikes on one chart." },
   { id: "volatility-skew", label: "Volatility Skew", menu: "options", group: "IV tools", status: "ready", isNew: true, widgets: ["ivSkew"], blurb: "Implied volatility across strikes for calls and puts." },
   { id: "iv-hv", label: "IV - HV", menu: "options", group: "IV tools", status: "planned", needs: "Historical volatility has to be computed from stored daily closes; the endpoint is not built yet.", blurb: "Implied against historical volatility." },
   { id: "iv-grid", label: "IV Grid", menu: "options", group: "IV tools", status: "planned", needs: "Needs implied volatility stored per strike over time.", blurb: "Implied volatility by strike and time." },

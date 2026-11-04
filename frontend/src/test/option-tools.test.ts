@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildupOf, chainGreeks, exposures, peCeDifference, smartOiSummary, type StrikeGreeks , smartOiCandles } from "../lib/optionTools";
+import { buildupOf, chainGreeks, exposures, peCeDifference, smartOiSummary, type StrikeGreeks , smartOiCandles, strikeBoard, strikesAround } from "../lib/optionTools";
 import { contractGreeks } from "../lib/optionModel";
-import type { OptionChainRow, OptionQuote } from "../lib/types";
+import type { OptionChainRow, OptionQuote, StrikeSeries } from "../lib/types";
 
 const q = (o: Partial<OptionQuote>): OptionQuote => ({ exchange_segment: "nse_fo", instrument_token: "1", trading_symbol: "x", option_type: "CE", ltp: null, open: null, high: null, low: null, prev_close: null, close: null, volume: null, oi: null, oi_previous: null, oi_change: null, oi_change_pct: null, moneyness: null, invalid_fields: [], ...o });
 
@@ -144,5 +144,37 @@ describe("smartOiCandles (Smart OI spec, section 5 worked example)", () => {
     const r = smartOiCandles(s, 3);
     expect(r.candles.map((c) => c.label)).toEqual(["15:24", "15:39"]);
     expect(r.candles[1]!.p).toBe(10);
+  });
+});
+
+describe("Price vs OI strike board", () => {
+  // 04 Nov 2026 (Wednesday): 09:20 and 09:21 IST are in the session, 23:31 IST is not (the sampler also stored that one).
+  const res: StrikeSeries = {
+    underlying: "NIFTY", expiry: "2026-11-09", strikes: [23950], atm_strike: 23950,
+    times: ["2026-11-04T03:50:00Z", "2026-11-04T03:51:00Z", "2026-11-04T18:01:00Z"],
+    spot: [23960, 23970, 23980],
+    ce_price: { "23950": [100, 110, 120] }, pe_price: { "23950": [80, null, 60] },
+    ce_oi: { "23950": [400_000, 0, 500_000] }, pe_oi: { "23950": [800_000, 900_000, 700_000] },
+    ce_change: { "23950": [10, 20, 30] }, pe_change: { "23950": [-5, null, 7] },
+    stride: 1, warnings: [], definitions: {},
+  };
+  it("keeps session samples only and derives the straddle and PCR by hand-checked arithmetic", () => {
+    const b = strikeBoard(res, 23950)!;
+    expect(b.times).toHaveLength(2);
+    expect(b.outsideSession).toBe(1);
+    expect(b.straddle).toEqual([180, null]); // 100 + 80; the second sample has no put price: a gap, not 110 + 0
+    expect(b.straddleGaps).toBe(1);
+    expect(b.pcr).toEqual([2, null]); // 800000 / 400000; a call OI of 0 gives no ratio
+    expect(b.pePrice).toEqual([80, null]);
+    expect(b.peChange).toEqual([-5, null]);
+  });
+  it("returns nothing for a strike that was not asked for", () => {
+    expect(strikeBoard(res, 24000)).toBeNull();
+  });
+  it("picks the listed strikes nearest the ATM, in order", () => {
+    const ks = [23800, 23850, 23900, 23950, 24000, 24050, 24100];
+    expect(strikesAround(ks, 23950, 3)).toEqual([23900, 23950, 24000]);
+    expect(strikesAround(ks, 23800, 3)).toEqual([23800, 23850, 23900]); // at the edge the window slides, it does not shrink
+    expect(strikesAround(ks, null, 2)).toEqual([23800, 23850]);
   });
 });

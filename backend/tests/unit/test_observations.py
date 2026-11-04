@@ -12,7 +12,14 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.analytics.oi import oi_change, oi_heatmap, oi_series, premium_decay, universe
+from app.analytics.oi import (
+    oi_change,
+    oi_heatmap,
+    oi_series,
+    premium_decay,
+    strike_series,
+    universe,
+)
 from app.domain.models import (
     Completeness,
     DataSource,
@@ -477,6 +484,37 @@ class TestOiSeries:
 
     def test_no_data_is_reported(self, tmp_path: Path) -> None:
         r = oi_series(ObservationStore(tmp_path), "NIFTY", EXP)
+        assert r.times == [] and r.warnings
+
+
+class TestStrikeSeries:
+    def test_default_is_the_newest_atm_and_values_are_that_strikes_own(self, obs: ObservationStore) -> None:
+        r = strike_series(obs, "NIFTY", EXP, since=B)
+        # newest spot 108-ish is nearest 110 (see the D sample); times are the stored samples from B on
+        assert r.times == [B, C, D] and r.strikes == [r.atm_strike] and r.atm_strike is not None
+        k = f"{r.atm_strike:g}"
+        assert len(r.ce_price[k]) == len(r.pe_oi[k]) == len(r.ce_change[k]) == 3
+
+    def test_values_by_strike_and_change_is_oi_minus_previous_day(self, obs: ObservationStore) -> None:
+        r = strike_series(obs, "NIFTY", EXP, strikes=[100.0, 120.0], since=B)
+        assert r.strikes == [100.0, 120.0]
+        # B: strike 100 call price 14, OI 60 (prev-day 50 -> +10); put price 2.5, OI 10 (prev 10 -> 0)
+        assert r.ce_price["100"][0] == 14 and r.ce_oi["100"][0] == 60 and r.ce_change["100"][0] == 10
+        assert r.pe_price["100"][0] == 2.5 and r.pe_change["100"][0] == 0
+        # strike 120 call price 3.5 at B, OI 25 (prev 30 -> -5): a fall in OI is negative, not clipped
+        assert r.ce_price["120"][0] == 3.5 and r.ce_change["120"][0] == -5
+
+    def test_unlisted_strike_is_reported_and_missing_stays_missing(self, tmp_path: Path) -> None:
+        o = ObservationStore(tmp_path)
+        o.record_snapshot(snap("m1", B, 100.0, {100: (None, None, 5)}, {100: (0.0, 10, None)}), unchanged=False)
+        r = strike_series(o, "NIFTY", EXP, strikes=[100.0, 555.0])
+        assert r.strikes == [100.0] and any("555" in w for w in r.warnings)
+        assert r.ce_price["100"] == [None] and r.ce_oi["100"] == [None] and r.ce_change["100"] == [None]
+        assert r.pe_price["100"] == [None]  # a price of 0 is a gap, not a price
+        assert r.pe_oi["100"] == [10] and r.pe_change["100"] == [None]  # no previous-day OI: no change
+
+    def test_no_data(self, tmp_path: Path) -> None:
+        r = strike_series(ObservationStore(tmp_path), "NIFTY", EXP)
         assert r.times == [] and r.warnings
 
 

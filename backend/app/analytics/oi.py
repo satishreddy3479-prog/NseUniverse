@@ -625,6 +625,97 @@ def oi_series(
     )  # fmt: skip
 
 
+class StrikeSeries(BaseModel):
+    underlying: str
+    expiry: str
+    #: the strikes returned, in the order asked; chosen strikes are fixed for the whole series
+    strikes: list[float]
+    atm_strike: float | None
+    times: list[datetime]
+    spot: list[float | None]
+    #: per strike (key = strike as text): one value per time, None where that contract had no value in that sample
+    ce_price: dict[str, list[float | None]]
+    pe_price: dict[str, list[float | None]]
+    ce_oi: dict[str, list[int | None]]
+    pe_oi: dict[str, list[int | None]]
+    ce_change: dict[str, list[int | None]]
+    pe_change: dict[str, list[int | None]]
+    stride: int
+    warnings: list[str] = []
+    definitions: dict[str, str] = {}
+
+
+STRIKE_SERIES_DEFINITIONS = {
+    "price": "The contract's last traded price (rupees) in each stored sample; a missing or non-positive price is left as a gap.",
+    "oi": "The contract's open interest (units) in each stored sample.",
+    "change": "OI now minus the broker's previous-day OI for that contract (computed here), left as a gap when either is missing.",
+}
+
+
+def strike_series(
+    obs: ObservationStore,
+    underlying: str,
+    expiry: str,
+    *,
+    strikes: list[float] | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    max_points: int = 400,
+) -> StrikeSeries:
+    """Price, OI and OI change of chosen strikes (both sides) through the stored samples. No strikes given: the ATM strike of the newest sample."""
+    samples = obs.samples(underlying, expiry, until=until)
+    empty = StrikeSeries(
+        underlying=underlying, expiry=expiry, strikes=[], atm_strike=None, times=[], spot=[], ce_price={}, pe_price={},
+        ce_oi={}, pe_oi={}, ce_change={}, pe_change={}, stride=1, definitions=STRIKE_SERIES_DEFINITIONS,
+    )  # fmt: skip
+    if not samples:
+        empty.warnings.append("No observations are stored for this expiry.")
+        return empty
+    last = samples[-1]
+    cache: dict[int, dict[tuple[float, int], Contract]] = {}
+
+    def contracts_of(s: Sample) -> dict[tuple[float, int], Contract]:
+        if s.values_from not in cache:
+            cache[s.values_from] = obs.contracts(s.values_from)
+        return cache[s.values_from]
+
+    listed = sorted({k for k, _ in contracts_of(last)})
+    atm = _nearest(listed, last.spot) if listed and last.spot is not None else None
+    chosen = [k for k in (strikes if strikes else ([atm] if atm is not None else [])) if k in listed]
+    empty.atm_strike = atm
+    warnings: list[str] = []
+    dropped = [k for k in (strikes or []) if k not in listed]
+    if dropped:
+        warnings.append("Not listed for this expiry: " + ", ".join(f"{k:g}" for k in dropped) + ".")
+    shown = [s for s in samples if since is None or to_ms(s.received_at) >= to_ms(since)]
+    if not chosen or not shown:
+        empty.strikes, empty.warnings = chosen, warnings + ["No samples or no listed strike in the chosen range."]
+        return empty
+    stride = max(1, -(-len(shown) // max_points))
+    cols = shown[::stride]
+    if cols[-1].sample_id != shown[-1].sample_id:
+        cols.append(shown[-1])
+    keys = [f"{k:g}" for k in chosen]
+    out: dict[str, dict[str, list[float | int | None]]] = {
+        n: {key: [] for key in keys} for n in ("cp", "pp", "co", "po", "cc", "pc")
+    }
+    for s in cols:
+        cur = contracts_of(s)
+        for k, key in zip(chosen, keys, strict=True):
+            for side, p, o, c in ((CALL, "cp", "co", "cc"), (PUT, "pp", "po", "pc")):
+                q = cur.get((k, side))
+                out[p][key].append(q.ltp if q is not None and q.ltp is not None and q.ltp > 0 else None)
+                out[o][key].append(q.oi if q is not None else None)
+                out[c][key].append(q.oi - q.oi_prev if q is not None and q.oi is not None and q.oi_prev is not None else None)
+    if stride > 1:
+        warnings.append(f"Showing every {stride}th observation ({len(shown)} stored).")
+    return StrikeSeries(
+        underlying=underlying, expiry=expiry, strikes=chosen, atm_strike=atm, times=[s.received_at for s in cols],
+        spot=[s.spot for s in cols], ce_price=out["cp"], pe_price=out["pp"], ce_oi=out["co"], pe_oi=out["po"],  # type: ignore[arg-type]
+        ce_change=out["cc"], pe_change=out["pc"], stride=stride, warnings=warnings, definitions=STRIKE_SERIES_DEFINITIONS,  # type: ignore[arg-type]
+    )  # fmt: skip
+
+
 def parse_time(v: str | None) -> datetime | None:
     if not v:
         return None

@@ -323,3 +323,12 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 - Diagnostics: `/api/prediction/history/status` -> `weekend_dated_bars`; per-run `dates_repaired`, `latest_downloaded`.
 - Not fixable retroactively: days already "Not recorded" stay so; the ledger is never edited.
 - Verify after deploy: `weekend_dated_bars` falls to 0 after the next morning run and the next day is recorded. If not, `latest_downloaded` per symbol shows the real cause.
+
+## Price tools: Price vs OI, MultiStrike, Multi-Straddle (4 Nov 2026)
+- `Price vs OI` (Options Lab > Price tools) no longer shows the old OI-change table. It now has six linked charts for one strike (default: the newest sample's ATM, or any listed strike): call and put price, straddle + PCR, call price vs call OI, put price vs put OI, OI (call vs put), OI change (call vs put). One shared crosshair, session axis (open to close, IST), end-of-line value tags, PCR hidden until clicked in the legend.
+- `MultiStrike Chart` (was planned) and new `Multi-Straddle Chart`: up to 6 strikes near the ATM; MultiStrike plots price, OI or OI change for calls and puts side by side. The five price tools are tabs of one family.
+- New endpoint `GET /api/history/strike-series?expiry&strikes=atm|k1,k2,...&since` (`analytics/oi.py strike_series`): price, OI and OI change per strike and side from stored samples. Missing values stay null; a price of 0 is a gap; OI change = OI minus broker previous-day OI computed here.
+- Frontend maths in `lib/optionTools.ts` (`strikeBoard`, `strikesAround`); chart builder `lib/priceCharts.ts`; boards in `components/dashboard/PriceBoards.tsx`. Only session samples are plotted (the sampler also stored a 23:31 IST sample; it is left out and counted in the footer).
+- PCR on these charts is the strike's own put OI / call OI, labelled as such. Straddle = call + put price of the same strike, only where both were observed.
+- Tests: backend `TestStrikeSeries`; frontend `strikeBoard` hand calculation in `option-tools.test.ts`, page tests in `price-boards.test.tsx`. Backend 583 and frontend 386 tests pass; ruff and tsc clean.
+- Not verified: the pages against live stored data on the server (sandbox has none). The Analysis dashboard still has its own "Price and OI" table widget (unchanged).

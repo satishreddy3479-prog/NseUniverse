@@ -17,11 +17,13 @@ from app.analytics.oi import (
     OiSeries,
     PremiumDecay,
     Side,
+    StrikeSeries,
     oi_change,
     oi_heatmap,
     oi_series,
     parse_time,
     premium_decay,
+    strike_series,
 )
 from app.api.security import require_local_control
 from app.broker.base import AuthStatus, BrokerError
@@ -400,6 +402,29 @@ async def oi_series_route(
     return await asyncio.to_thread(
         oi_series, _obs(request), _svc(request).underlying, expiry.isoformat(),
         each_side=_each_side(strikes), since=_time(since, "since"), until=_time(until, "until"),
+        max_points=max_points,
+    )  # fmt: skip
+
+
+@router.get("/history/strike-series", response_model=StrikeSeries)
+async def strike_series_route(
+    request: Request,
+    expiry: date,
+    since: str | None = None,
+    until: str | None = None,
+    strikes: str = "atm",
+    max_points: Annotated[int, Query(ge=20, le=1000)] = 400,
+) -> StrikeSeries:
+    """Price, OI and OI change of chosen strikes ("atm" = the newest sample's ATM strike)."""
+    try:
+        parts = [x for x in strikes.split(",") if x.strip()][:12]
+        picked = None if strikes == "atm" else [float(x) for x in parts]
+    except ValueError as e:
+        detail = "strikes must be 'atm' or comma-separated numbers"
+        raise HTTPException(status_code=422, detail=detail) from e
+    return await asyncio.to_thread(
+        strike_series, _obs(request), _svc(request).underlying, expiry.isoformat(),
+        strikes=picked, since=_time(since, "since"), until=_time(until, "until"),
         max_points=max_points,
     )  # fmt: skip
 
