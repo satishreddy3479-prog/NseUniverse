@@ -65,7 +65,7 @@ export function paperView(over: Partial<SwingPaperView> = {}): SwingPaperView {
     atr14: 110, min_volume: 52000, rank, ...over2,
   });
   return {
-    status: { enabled: true, runs_after_ist: "17:00", running: false, done_today: true, last_result: "ok", last_run_at: "2026-11-04T12:00:00Z", started_session: "2026-10-30", rule_version: "swing-v1" },
+    status: { enabled: true, runs_after_ist: "17:00", running: false, done_today: true, last_result: "ok", last_run_at: "2026-11-04T12:00:00Z", started_session: "2026-10-30", rule_version: "swing-v1", progress: null },
     book: { capital: 1_000_000, equity: 1_024_500, cash: 612_000, invested: 412_500, open_positions: 1, slots: 5, return_pct: 2.45, as_of: istToday(), started: "2026-10-30", sessions: 4, nifty_return_pct: 1.1 },
     positions: [{
       symbol: "TITAN", sector: "CNXFMCG", archetype: "BLUE_SKY", score: 70, pivot: 3490, entry_session: "2026-11-02", entry_no: 2,

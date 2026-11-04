@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { drawdownOption, equityOption, robustnessOption, yearReturnsOption } from "../lib/swingCharts";
 import {
-  exitLabel, filterTrades, isStale, NO_FILTER, pct, plain, reportAgeDays, rupees, sortBy, tradesToCsv,
+  exitLabel, filterTrades, isStale, NO_FILTER, pct, plain, resultText, reportAgeDays, rupees, sortBy, tradesToCsv,
 } from "../lib/swing";
 import { sensitivity } from "../components/swing/SwingRobustness";
 import { swingReport, trade } from "./swingFixture";
@@ -94,3 +94,16 @@ describe("score sensitivity sentence", () => {
     expect(sensitivity([mk("only one", 5)])).toBe("");
   });
 });
+
+describe("scanner result in plain words", () => {
+  it("translates known states and keeps the detail of failures", () => {
+    expect(resultText("ok")).toContain("settled");
+    expect(resultText("up_to_date")).toContain("up to date");
+    expect(resultText("data_unavailable: only 600 of 791 stocks had usable bars; scan not trusted"))
+      .toBe("Data not available yet (only 600 of 791 stocks had usable bars; scan not trusted); it will retry");
+    expect(resultText("error: KeyError")).toBe("Error (KeyError); it will retry");
+    expect(resultText("not run yet")).toBe("Not run yet");
+    expect(resultText("something new")).toBe("something new"); // unknown values are shown, not hidden
+  });
+});
+

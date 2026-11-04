@@ -1,11 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { ApiError, api } from "../lib/api";
 import { fmtDateTimeIST } from "../lib/format";
 import { BASIS_LABEL, isStale, reportAgeDays, type Basis } from "../lib/swing";
 import { EmptyState, ErrorNote, Panel, Skeleton } from "../components/ui";
 import { SwingOverview } from "../components/swing/SwingOverview";
-import { SwingPaper } from "../components/swing/SwingPaper";
+import { SwingPaper, type RunNote } from "../components/swing/SwingPaper";
 import { SwingRobustness } from "../components/swing/SwingRobustness";
 import { SwingRules } from "../components/swing/SwingRules";
 import { SwingTrades } from "../components/swing/SwingTrades";
@@ -40,7 +40,21 @@ const MISSING_REPORT = (
 export default function Swing() {
   const [tab, setTab] = useState("paper");
   const [basis, setBasis] = useState<Basis>("net");
-  const paper = useQuery({ queryKey: ["swing-paper"], queryFn: api.swingPaper, staleTime: 30_000, refetchInterval: 5 * 60_000, retry: false });
+  const qc = useQueryClient();
+  // while a scan runs, follow its progress every 3 seconds; otherwise every 5 minutes
+  const paper = useQuery({
+    queryKey: ["swing-paper"], queryFn: api.swingPaper, staleTime: 30_000, retry: false,
+    refetchInterval: (q) => (q.state.data?.status.running ? 3_000 : 5 * 60_000),
+  });
+  const [runNote, setRunNote] = useState<RunNote | null>(null);
+  const run = useMutation({
+    mutationFn: api.swingRun,
+    onSuccess: (r) => {
+      setRunNote({ kind: "info", text: r.started ? "Scan started. This page follows its progress and updates by itself." : "A scan is already running." });
+      void qc.invalidateQueries({ queryKey: ["swing-paper"] });
+    },
+    onError: (e) => setRunNote({ kind: "error", text: `Could not start the scan: ${e instanceof Error ? e.message : "unknown error"}` }),
+  });
   const report = useQuery({ queryKey: ["swing-report"], queryFn: api.swingReport, staleTime: 60_000, retry: false, enabled: tab !== "paper" });
   const withReport = (render: (r: SwingReport) => ReactNode) =>
     report.isPending ? <Loading what="the backtest report" />
@@ -85,7 +99,7 @@ export default function Swing() {
         <TabPanel id="paper">
           {paper.isPending ? <Loading what="the paper book" />
             : paper.isError ? <ErrorNote title="Could not load the paper book" message={paper.error instanceof Error ? paper.error.message : "Unknown error"} />
-              : <SwingPaper view={paper.data} />}
+              : <SwingPaper view={paper.data} runPending={run.isPending} runNote={runNote} onRun={() => { setRunNote(null); run.mutate(); }} />}
         </TabPanel>
       )}
       {tab === "overview" && <TabPanel id="overview">{withReport((r) => <SwingOverview report={r} basis={basis} />)}</TabPanel>}

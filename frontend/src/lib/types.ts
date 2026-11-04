@@ -801,6 +801,7 @@ export interface SwingPaperView {
   status: {
     enabled: boolean; runs_after_ist: string; running: boolean; done_today: boolean; last_result: string;
     last_run_at: string | null; started_session: string | null; rule_version: string;
+    progress: { phase: string; done: number | null; total: number | null; started_at: string } | null;
   };
   book: {
     capital: number; equity: number; cash: number; invested: number; open_positions: number; slots: number;

@@ -99,3 +99,18 @@ export const SECTOR_NAME: Record<string, string> = {
   CNXFMCG: "FMCG & consumer", CNXINFRA: "Infrastructure & capital goods", CNXIT: "IT",
   CNXMETAL: "Metals", CNXPHARMA: "Pharma & healthcare", CNXREALTY: "Realty", CNXPSE: "PSE & power",
 };
+
+/** The scanner's last result in plain words (the raw value is "state" or "state: detail"). */
+export function resultText(raw: string): string {
+  const [state = "", ...rest] = raw.split(": ");
+  const detail = rest.join(": ");
+  switch (state) {
+    case "ok": return "Done: the session was settled and the next orders queued";
+    case "up_to_date": return "Already up to date with the latest finished session";
+    case "data_unavailable": return `Data not available yet${detail ? ` (${detail})` : ""}; it will retry`;
+    case "error": return `Error${detail ? ` (${detail})` : ""}; it will retry`;
+    case "busy": return "A scan was already running";
+    case "not run yet": return "Not run yet";
+    default: return raw;
+  }
+}

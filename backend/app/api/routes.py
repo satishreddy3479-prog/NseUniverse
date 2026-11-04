@@ -612,6 +612,17 @@ async def swing_paper(request: Request) -> dict[str, Any]:
     return await asyncio.to_thread(request.app.state.swing_paper.view)
 
 
+@router.post("/swing/paper/run", dependencies=[Depends(require_local_control)])
+async def swing_paper_run(request: Request) -> dict[str, Any]:
+    """Run the swing scan now: the same pass the schedule runs after 17:00 IST.
+
+    Returns at once. It takes about 9 minutes the first time; progress shows in GET /swing/paper.
+    """
+    svc = request.app.state.swing_paper
+    started = svc.trigger()
+    return {"started": started, "status": svc.status()}
+
+
 @router.post("/storage/eod/run", dependencies=[Depends(require_local_control)])
 async def storage_eod_run(request: Request) -> dict[str, Any]:
     """Run the end-of-day pipeline now for every finished day that has no manifest (idempotent)."""

@@ -185,5 +185,6 @@ export const api = {
     request<HistoryResponse>(`/api/history/observations?expiry=${encodeURIComponent(expiry)}&strikes=${strikes}`),
   swingReport: () => request<SwingReport>("/api/swing/report"),
   swingPaper: () => request<SwingPaperView>("/api/swing/paper"),
+  swingRun: () => request<{ started: boolean; status: SwingPaperView["status"] }>("/api/swing/paper/run", { method: "POST" }),
   csvUrl: (id: string) => `/api/snapshots/${encodeURIComponent(id)}/csv`,
 };

@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import { EChart, useChartColors } from "../EChart";
-import { EmptyState, Panel } from "../ui";
+import { Button, EmptyState, Panel } from "../ui";
 import { fmtDateTimeIST, fmtInt, fmtPrice } from "../../lib/format";
-import { exitLabel, isStale, pct, plain, reportAgeDays, rupees, SECTOR_NAME, signedRupees } from "../../lib/swing";
+import { exitLabel, isStale, pct, plain, reportAgeDays, resultText, rupees, SECTOR_NAME, signedRupees } from "../../lib/swing";
 import { paperEquityOption } from "../../lib/swingCharts";
 import type { SwingPaperView } from "../../lib/types";
 import { Stat, TABLE_WRAP, TD, TD_L, THEAD, Verdict } from "./shared";
@@ -11,7 +11,11 @@ const TH_L = "px-2 py-1.5 text-left font-medium";
 const TH_R = "px-2 py-1.5 text-right font-medium";
 const tone = (v: number) => (v >= 0 ? "text-up" : "text-down");
 
-export function SwingPaper({ view }: { view: SwingPaperView }) {
+export interface RunNote { kind: "info" | "error"; text: string }
+
+export function SwingPaper({ view, onRun, runPending, runNote }: {
+  view: SwingPaperView; onRun: () => void; runPending: boolean; runNote: RunNote | null;
+}) {
   const colors = useChartColors();
   const opt = useMemo(() => paperEquityOption(view, colors), [view, colors]);
   const { book, status, scan } = view;
@@ -36,13 +40,34 @@ export function SwingPaper({ view }: { view: SwingPaperView }) {
         </div>
       )}
 
-      <Panel title="Scanner status">
+      <Panel
+        title="Scanner status"
+        actions={
+          <Button onClick={onRun} disabled={status.running || runPending} title="Runs the same scan the schedule runs after 17:00 IST, on the last finished session">
+            {status.running || runPending ? "Scan running…" : "Run scan now"}
+          </Button>
+        }
+      >
         <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
-          <div><dt className="text-muted">Auto mode</dt><dd>{status.enabled ? "On" : "Off (disabled in settings)"}{status.running ? " · running now" : ""}</dd></div>
+          <div><dt className="text-muted">Auto mode</dt><dd>{status.enabled ? "On" : "Off (disabled in settings)"}</dd></div>
           <div><dt className="text-muted">Last run</dt><dd className="num">{status.last_run_at ? fmtDateTimeIST(status.last_run_at) : "Not yet"}</dd></div>
-          <div><dt className="text-muted">Last result</dt><dd>{status.last_result}</dd></div>
+          <div><dt className="text-muted">Last result</dt><dd>{resultText(status.last_result)}</dd></div>
           <div><dt className="text-muted">Book started</dt><dd className="num">{book.started ?? "Waiting for the first run"}</dd></div>
         </dl>
+        {status.running && (
+          <p className="mt-3 text-sm" role="status" data-testid="scan-progress">
+            <span className="text-warn">●</span> Running now: {status.progress?.phase ?? "starting"}
+            {status.progress?.done != null && status.progress.total != null ? ` (${status.progress.done} of ${status.progress.total})` : ""}
+          </p>
+        )}
+        {runNote && (runNote.kind === "error" || status.running || runPending) && (
+          <p role={runNote.kind === "error" ? "alert" : "status"} className={`mt-2 text-sm ${runNote.kind === "error" ? "text-down" : "text-muted"}`}>{runNote.text}</p>
+        )}
+        {!status.running && !runPending && (
+          <p className="mt-3 max-w-[75ch] text-xs text-muted">
+            The scan also runs by itself after {status.runs_after_ist} IST. Before then &ldquo;Run scan now&rdquo; uses the last finished session; it takes about 9 minutes the first time and seconds when nothing is new.
+          </p>
+        )}
       </Panel>
 
       {never ? (

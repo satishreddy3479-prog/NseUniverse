@@ -15,6 +15,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import threading
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
@@ -57,6 +58,9 @@ class SwingPaperService:
         self.last_attempt: datetime | None = None
         self.last_result = "not run yet"
         self._running = False
+        self._lock = threading.Lock()  # one scan at a time, whoever starts it
+        self.progress: dict[str, Any] | None = None
+        self._manual: asyncio.Task[dict[str, Any]] | None = None
         self._task: asyncio.Task[None] | None = None
 
     # ---- scheduling
@@ -77,10 +81,33 @@ class SwingPaperService:
         return d
 
     def run_once(self) -> dict[str, Any]:
-        """One catch-up pass. Never raises: failures are recorded and retried later."""
+        """One catch-up pass. Never raises: failures are recorded and retried later.
+        Only one pass runs at a time: a second caller gets `busy` and changes nothing."""
+        if not self._lock.acquire(blocking=False):
+            return {"state": "busy", "detail": "a scan is already running"}
+        try:
+            return self._run_locked()
+        finally:
+            self.progress = None
+            self._lock.release()
+
+    def trigger(self) -> bool:
+        """Start a pass in the background now (the 'Run scan now' button). Returns False if one is running.
+        The pass is the same one the schedule runs; it uses the last finished session."""
+        if self._lock.locked() or (self._manual is not None and not self._manual.done()):
+            return False
+        self._manual = asyncio.create_task(asyncio.to_thread(self.run_once), name="swing-paper-manual")
+        return True
+
+    def _step(self, phase: str, done: int | None = None, total: int | None = None) -> None:
+        started = self.progress["started_at"] if self.progress else self._clock().astimezone(UTC).isoformat(timespec="seconds")
+        self.progress = {"phase": phase, "done": done, "total": total, "started_at": started}
+
+    def _run_locked(self) -> dict[str, Any]:
         now = self._clock()
         self._running = True
         self.last_attempt = now
+        self._step("Checking the latest finished session")
         try:
             result = self._process(now)
         except FetchError as e:
@@ -129,6 +156,7 @@ class SwingPaperService:
             except FetchError:
                 sector_closes[code] = {}
 
+        self._step("Reading the Chartink list")
         rows = self.fetcher.universe()
         symbols = sorted({str(r["nsecode"]) for r in rows})
         if not symbols:
@@ -138,7 +166,10 @@ class SwingPaperService:
         setups_at: dict[str, dict[str, Setup]] = {s: {} for s in sessions}
         ok = 0
         failed_must: list[str] = []
-        for sym in sorted(set(symbols) | must):
+        todo = sorted(set(symbols) | must)
+        for k, sym in enumerate(todo):
+            if k % 10 == 0:
+                self._step("Downloading prices", k, len(todo))
             try:
                 raw = self.fetcher.daily(f"{sym}.NS")
             except FetchError:
@@ -166,6 +197,7 @@ class SwingPaperService:
         if ok < MIN_FETCH_RATIO * len(symbols):
             raise FetchError(f"only {ok} of {len(symbols)} stocks had usable bars; scan not trusted")
 
+        self._step("Scoring, settling and queuing orders")
         defaulted = sum(1 for s in symbols if s not in self.sectors)
         for s in sessions:
             no += 1
@@ -236,7 +268,7 @@ class SwingPaperService:
             "enabled": self.enabled, "runs_after_ist": self.run_after.strftime("%H:%M"), "running": self._running,
             "done_today": self.done_on == now.date(), "last_result": meta.get("last_result", self.last_result),
             "last_run_at": meta.get("last_run_at"), "started_session": meta.get("started"),
-            "rule_version": RULE_VERSION,
+            "rule_version": RULE_VERSION, "progress": self.progress,
         }
 
     async def _loop(self) -> None:

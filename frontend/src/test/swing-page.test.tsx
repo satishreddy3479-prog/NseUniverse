@@ -29,12 +29,25 @@ function reply<T>(body: Reply<T>): Response {
   return new Response(JSON.stringify(body), { status: 200 });
 }
 
-function mount(report: Reply<SwingReport> = swingReport(), paper: Reply<SwingPaperView> = paperView()) {
+let runCalls = 0;
+const RUNNING = { phase: "Downloading prices", done: 312, total: 803, started_at: "2026-11-05T11:30:00Z" };
+
+function mount(report: Reply<SwingReport> = swingReport(), paper: Reply<SwingPaperView> = paperView(),
+               run: Reply<{ started: boolean }> = { started: true }) {
+  runCalls = 0;
   vi.stubGlobal("ResizeObserver", RO);
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input).split("?")[0]!;
     if (url === "/api/swing/report") return reply(report);
-    if (url === "/api/swing/paper") return reply(paper);
+    if (url === "/api/swing/paper/run" && init?.method === "POST") { runCalls += 1; return reply(run); }
+    if (url === "/api/swing/paper") {
+      // after the button is pressed the server reports the scan as running
+      if (runCalls > 0 && paper && !("http" in (paper as object))) {
+        const p = paper as SwingPaperView;
+        return reply({ ...p, status: { ...p.status, running: true, progress: RUNNING } });
+      }
+      return reply(paper);
+    }
     const map: Record<string, unknown> = { "/api/status": status(), "/api/expiries": expiries, "/api/snapshots": [summary()] };
     return map[url] == null ? new Response("{}", { status: 404 }) : new Response(JSON.stringify(map[url]), { status: 200 });
   }));
@@ -176,3 +189,36 @@ describe("Swing trading page: backtest research", () => {
     expect((await screen.findAllByRole("alert"))[0]).toHaveTextContent("Could not load this section");
   });
 });
+
+describe("Swing trading page: Run scan now", () => {
+  it("starts the scan once, then shows it running with progress and disables the button", async () => {
+    mount();
+    await userEvent.click(await screen.findByRole("button", { name: "Run scan now" }));
+    expect(runCalls).toBe(1);
+    expect(await screen.findByTestId("scan-progress")).toHaveTextContent("Running now: Downloading prices (312 of 803)");
+    expect(screen.getByRole("button", { name: "Scan running…" })).toBeDisabled();
+    expect(screen.getByText(/Scan started\. This page follows its progress/)).toBeInTheDocument();
+  });
+
+  it("cannot be pressed while a scan is already running, and says what it is doing", async () => {
+    const base = paperView();
+    mount(swingReport(), paperView({ status: { ...base.status, running: true, progress: RUNNING } }));
+    expect(await screen.findByTestId("scan-progress")).toHaveTextContent("Downloading prices (312 of 803)");
+    expect(screen.getByRole("button", { name: "Scan running…" })).toBeDisabled();
+    expect(runCalls).toBe(0);
+  });
+
+  it("explains a refused start instead of failing silently", async () => {
+    mount(swingReport(), paperView(), { code: "forbidden_origin", http: 403 });
+    await userEvent.click(await screen.findByRole("button", { name: "Run scan now" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not start the scan");
+    expect(screen.getByRole("button", { name: "Run scan now" })).toBeEnabled();
+  });
+
+  it("shows the last result in plain words", async () => {
+    const base = paperView();
+    mount(swingReport(), paperView({ status: { ...base.status, last_result: "up_to_date" } }));
+    expect(await screen.findByText("Already up to date with the latest finished session")).toBeInTheDocument();
+  });
+});
+

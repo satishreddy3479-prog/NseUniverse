@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3
+import threading
 from datetime import UTC, date, datetime, time
 from pathlib import Path
+from time import sleep
 
 import pytest
 
@@ -42,11 +45,14 @@ def make_data() -> dict[str, list[RawBar]]:
 class FakeFetcher:
     def __init__(self, data: dict[str, list[RawBar]]) -> None:
         self.data, self.cut, self.fail = data, None, set()
+        self.gate: threading.Event | None = None  # holds every download until released
 
     def universe(self) -> list[dict]:
         return [{"nsecode": s} for s in NAMES]
 
     def daily(self, ticker: str) -> list[RawBar]:
+        if self.gate is not None:
+            self.gate.wait(15)
         if ticker in self.fail:
             raise FetchError(f"{ticker}: down")
         bars = self.data[ticker]
@@ -206,3 +212,53 @@ def test_view_and_api_expose_the_book(tmp_path: Path) -> None:
     for o in body["orders"]:
         assert o["trigger"] == pytest.approx(o["pivot"] * 1.003) and o["max_open"] == pytest.approx(o["pivot"] * 1.025)
     assert body["scan"]["universe_size"] == 30 and body["recent_runs"]
+
+
+async def test_run_now_starts_in_the_background_shows_progress_and_refuses_a_second_start(tmp_path: Path) -> None:
+    data = make_data()
+    f = FakeFetcher(data)
+    f.cut = FIRST
+    f.gate = threading.Event()
+    svc = service(tmp_path, f, clock_after(data, FIRST - 1))
+    assert svc.status()["running"] is False and svc.status()["progress"] is None
+    assert svc.trigger() is True
+    for _ in range(100):  # wait until the worker thread is inside the run
+        if svc.progress is not None:
+            break
+        await asyncio.sleep(0.05)
+    st = svc.status()
+    assert st["running"] is True and st["progress"]["phase"] and st["progress"]["started_at"]
+    assert svc.trigger() is False  # a scan is already running
+    assert svc.run_once()["state"] == "busy"  # and a second pass changes nothing
+    f.gate.set()
+    await svc._manual  # let the real run finish
+    st = svc.status()
+    assert st["running"] is False and st["progress"] is None and st["last_result"].startswith("ok")
+    assert len(svc.store.snapshot()["equity"]) == 1  # exactly one session was recorded
+    assert svc.trigger() is True  # free again; this pass finds nothing new and says so
+    await svc._manual
+    assert svc.status()["last_result"].startswith("up_to_date")
+
+
+def test_run_now_endpoint_is_local_only_and_runs_the_scan(tmp_path: Path) -> None:
+    data = make_data()
+    app = make_app(tmp_path)
+    with TestClient(app, client=("203.0.113.9", 50000)) as remote:  # not the server itself
+        assert remote.post("/api/swing/paper/run").status_code == 403
+    with TestClient(app, client=("127.0.0.1", 50000)) as c:
+        svc = app.state.swing_paper
+        f = FakeFetcher(data)
+        f.cut = FIRST
+        svc.fetcher, svc.sectors, svc.cfg = f, {s: "CNXIT" for s in NAMES}, CFG
+        svc._clock = clock_after(data, FIRST - 1)
+        r = c.post("/api/swing/paper/run")
+        assert r.status_code == 200 and r.json()["started"] is True
+        body = {}
+        for _ in range(300):
+            body = c.get("/api/swing/paper").json()
+            if not body["status"]["running"] and body["book"]["sessions"] == 1:
+                break
+            sleep(0.05)
+    assert body["book"]["sessions"] == 1 and body["status"]["last_result"].startswith("ok")
+    assert body["status"]["progress"] is None
+
