@@ -11,7 +11,7 @@ import json
 import sqlite3
 import threading
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +40,14 @@ CREATE TABLE IF NOT EXISTS bar_corrections (
   run_id TEXT NOT NULL, replaces_retrieved_utc TEXT NOT NULL, reason TEXT NOT NULL,
   PRIMARY KEY (symbol, session, source)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS bar_rejections (
+  symbol TEXT NOT NULL, session TEXT NOT NULL, source TEXT NOT NULL, rejected_utc TEXT NOT NULL,
+  run_id TEXT NOT NULL, reason TEXT NOT NULL, PRIMARY KEY (symbol, session, source)
+) WITHOUT ROWID;
+CREATE TRIGGER IF NOT EXISTS bar_rejections_no_update BEFORE UPDATE ON bar_rejections
+  BEGIN SELECT RAISE(ABORT, 'rejections are never overwritten'); END;
+CREATE TRIGGER IF NOT EXISTS bar_rejections_no_delete BEFORE DELETE ON bar_rejections
+  BEGIN SELECT RAISE(ABORT, 'rejections are never deleted'); END;
 CREATE TRIGGER IF NOT EXISTS bar_corrections_no_update BEFORE UPDATE ON bar_corrections
   BEGIN SELECT RAISE(ABORT, 'stored corrections are never overwritten'); END;
 CREATE TRIGGER IF NOT EXISTS bar_corrections_no_delete BEFORE DELETE ON bar_corrections
@@ -84,6 +92,86 @@ class HistoryStore:
         if spec is None:
             return False
         return datetime.fromisoformat(retrieved_utc) < complete_after(spec, date.fromisoformat(session))
+
+    def _matches_correction(self, symbol: str, session: str, source: str, bar: Bar) -> bool:
+        fix = self._db.execute(
+            "SELECT open, high, low, close FROM bar_corrections WHERE symbol=? AND session=? AND source=?",
+            (symbol, session, source),
+        ).fetchone()
+        return fix is not None and all(
+            abs(a - b) <= _TOL * max(1.0, abs(a)) for a, b in zip(fix, (bar.open, bar.high, bar.low, bar.close), strict=True)
+        )
+
+    def repair_shifted_dates(
+        self, symbol: str, rows: list[RawRow], *, source: str, run_id: str, now: datetime | None = None
+    ) -> int:  # fmt: skip
+        """Fix bars stored one day early (date stamp sent as the previous evening after a clock change).
+
+        Nothing is changed unless there is proof: a stored bar dated on a Saturday or Sunday whose open, high, low
+        and close appear exactly, under a later date, in the fresh download. From the first such bar on, a stored bar
+        whose values belong to a later date is corrected (the right values go to ``bar_corrections``) or, when no bar
+        exists for its date, rejected (``bar_rejections``). The original rows stay in ``daily_bars``. Returns the
+        number of bars repaired.
+        """
+        good = {r.session: (r.open, r.high, r.low, r.close) for r in rows if None not in (r.open, r.high, r.low, r.close)}
+        if not good:
+            return 0
+        stamp = (now or datetime.now(UTC)).astimezone(UTC).isoformat()
+
+        def same(a: tuple[float, ...], b: tuple[float, ...]) -> bool:
+            return all(abs(x - y) <= _TOL * max(1.0, abs(x)) for x, y in zip(a, b, strict=True))
+
+        with self._lock:
+            lo = str(min(good) - timedelta(days=7))
+            stored = {
+                date.fromisoformat(r[0]): tuple(r[1:])
+                for r in self._db.execute(
+                    "SELECT session, open, high, low, close FROM daily_bars WHERE symbol=? AND source=? AND session>=?",
+                    (symbol, source, lo),
+                )
+            }
+            done = {
+                date.fromisoformat(r[0])
+                for q in ("bar_corrections", "bar_rejections")
+                for r in self._db.execute(f"SELECT session FROM {q} WHERE symbol=? AND source=?", (symbol, source))  # noqa: S608 - fixed table names
+            }
+
+            def moved_to(s: date) -> bool:
+                """The stored values of ``s`` are the values the download gives for a later date within four days."""
+                if s in good and same(stored[s], good[s]):
+                    return False
+                return any(0 < (x - s).days <= 4 and same(stored[s], v) for x, v in good.items())
+
+            proof = [w for w in stored if w.weekday() >= 5 and w not in done and moved_to(w)]
+            if not proof:
+                return 0
+            repaired = 0
+            why = "date stamp was one day early (evening of the previous day); values belong to a later date"
+            for s in sorted(d for d in stored if d >= min(proof) and d not in done):
+                if not moved_to(s):
+                    continue
+                if s in good:
+                    o, h, lo_, c = good[s]
+                    self._db.execute(
+                        "INSERT INTO bar_corrections VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        (symbol, str(s), source, o, h, lo_, c, stamp, run_id, stamp, why),
+                    )
+                else:
+                    self._db.execute("INSERT INTO bar_rejections VALUES (?,?,?,?,?,?)", (symbol, str(s), source, stamp, run_id, why))
+                repaired += 1
+            self._db.commit()
+        return repaired
+
+    def suspect_weekend_bars(self, source: str = "yahoo") -> list[dict[str, str]]:
+        """Stored, non-rejected bars dated on a weekend (US and Indian cash markets and futures do not settle then)."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT d.symbol, d.session FROM daily_bars d WHERE d.source=? AND NOT EXISTS"
+                " (SELECT 1 FROM bar_rejections r WHERE r.symbol=d.symbol AND r.session=d.session AND r.source=d.source)"
+                " ORDER BY d.symbol, d.session",
+                (source,),
+            ).fetchall()
+        return [{"symbol": sy, "session": se} for sy, se in rows if date.fromisoformat(se).weekday() >= 5 and sy not in ("USDINR",)]
 
     def insert_bars(
         self, symbol: str, rows: list[RawRow], *, source: str, run_id: str, now: datetime | None = None,
@@ -130,6 +218,8 @@ class HistoryStore:
                     for a, b in zip(cur, (bar.open, bar.high, bar.low, bar.close), strict=True)
                 ):
                     res.unchanged += 1
+                elif self._matches_correction(symbol, str(bar.session), source, bar):
+                    res.unchanged += 1  # a recorded correction already holds this value
                 elif self._premature(symbol, str(bar.session), stored_at) and not self._db.execute(
                     "SELECT 1 FROM bar_corrections WHERE symbol=? AND session=? AND source=?",
                     (symbol, str(bar.session), source),
@@ -176,6 +266,12 @@ class HistoryStore:
                     (symbol, source),
                 )
             }
+            rejected = {
+                r[0]
+                for r in self._db.execute(
+                    "SELECT session FROM bar_rejections WHERE symbol=? AND source=?", (symbol, source)
+                )
+            }
             fixes = {
                 r[0]: r[1:]
                 for r in self._db.execute(
@@ -186,6 +282,8 @@ class HistoryStore:
         out: list[Bar] = []
         premature = {s for s, got in early.items() if self._premature(symbol, s, got)}
         for s, o, h, lo, c in rows:
+            if s in rejected:
+                continue
             if s in fixes:
                 o, h, lo, c = fixes[s]
             elif s in premature:
@@ -224,8 +322,9 @@ class HistoryStore:
                 held_back.setdefault(b["symbol"], set()).add(b["session"])
         with self._lock:
             rows = self._db.execute(
-                "SELECT symbol, MIN(session), MAX(session), COUNT(*), MAX(retrieved_utc) FROM daily_bars"
-                " WHERE source=? GROUP BY symbol ORDER BY symbol",
+                "SELECT d.symbol, MIN(d.session), MAX(d.session), COUNT(*), MAX(d.retrieved_utc) FROM daily_bars d"
+                " WHERE d.source=? AND NOT EXISTS (SELECT 1 FROM bar_rejections r WHERE r.symbol=d.symbol"
+                " AND r.session=d.session AND r.source=d.source) GROUP BY d.symbol ORDER BY d.symbol",
                 (source,),
             ).fetchall()
             changes = dict(

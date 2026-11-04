@@ -263,3 +263,41 @@ class TestMorningRetry:
         assert svc.due() == bool(missing)  # retries only while something overnight is missing
         svc.last_attempt = clock.now - timedelta(minutes=3)
         assert not svc.due()  # but never faster than every 10 minutes
+
+
+class TestShiftedDates:
+    """Yahoo can stamp a futures/FX daily bar as the evening before after a clock change; the bar then lands a day early."""
+
+    def test_frame_stamped_the_evening_before_is_moved_to_its_own_day(self) -> None:
+        pd = pytest.importorskip("pandas")
+        # Monday's and Tuesday's bars sent as Sunday and Monday 23:00 New York time
+        idx = pd.DatetimeIndex(["2026-11-01 23:00", "2026-11-02 23:00", "2026-11-04 00:00"]).tz_localize("America/New_York")
+        df = pd.DataFrame({"Open": [1.0, 2.0, 3.0], "High": [2.0, 3.0, 4.0], "Low": [0.5, 1.5, 2.5], "Close": [1.5, 2.5, 3.5], "Volume": [0, 0, 0]}, index=idx)
+        assert [r.session for r in rows_from_frame(df)] == [D("2026-11-02"), D("2026-11-03"), D("2026-11-04")]
+
+    def test_bars_stored_a_day_early_are_corrected_or_rejected_and_the_originals_kept(self, tmp_path: Path) -> None:
+        st = HistoryStore(tmp_path)
+        # what the old reading stored: Mon 2 Nov's bar under Sun 1 Nov, Tue 3 Nov's under Mon 2 Nov
+        st.insert_bars("BRENT", [row("2026-10-30", 10, 12, 9, 11), row("2026-11-01", 20, 22, 19, 21), row("2026-11-02", 30, 32, 29, 31)], source="yahoo", run_id="r1", now=datetime(2026, 11, 5, tzinfo=UTC))
+        # the same data read correctly
+        fresh = [row("2026-10-30", 10, 12, 9, 11), row("2026-11-02", 20, 22, 19, 21), row("2026-11-03", 30, 32, 29, 31)]
+        assert [x["session"] for x in st.suspect_weekend_bars()] == ["2026-11-01"]
+        assert st.repair_shifted_dates("BRENT", fresh, source="yahoo", run_id="r2", now=datetime(2026, 11, 5, tzinfo=UTC)) == 2
+        st.insert_bars("BRENT", fresh, source="yahoo", run_id="r2", now=datetime(2026, 11, 5, tzinfo=UTC))
+        got = {str(b.session): b.close for b in st.bars("BRENT")}
+        assert got == {"2026-10-30": 11, "2026-11-02": 21, "2026-11-03": 31}  # Sunday gone, Monday corrected, Tuesday added
+        assert st.suspect_weekend_bars() == []
+        assert st.coverage()[0]["last"] == "2026-11-03"
+        raw = sqlite3.connect(st.path).execute("SELECT COUNT(*) FROM daily_bars WHERE symbol='BRENT'").fetchone()[0]
+        assert raw == 4  # the three stored rows are all still there, plus the new Tuesday bar
+        # running it again changes nothing and logs no new disagreements
+        assert st.repair_shifted_dates("BRENT", fresh, source="yahoo", run_id="r3", now=datetime(2026, 11, 6, tzinfo=UTC)) == 0
+        res = st.insert_bars("BRENT", fresh, source="yahoo", run_id="r3", now=datetime(2026, 11, 6, tzinfo=UTC))
+        assert (res.changed, res.new) == (0, 0)
+
+    def test_nothing_is_touched_without_proof(self, tmp_path: Path) -> None:
+        st = HistoryStore(tmp_path)
+        st.insert_bars("BRENT", [row("2026-10-30", 10, 12, 9, 11), row("2026-11-02", 20, 22, 19, 21)], source="yahoo", run_id="r1", now=datetime(2026, 11, 5, tzinfo=UTC))
+        revised = [row("2026-10-30", 10, 12, 9, 11), row("2026-11-02", 20, 22, 19, 21.5)]  # an ordinary Yahoo revision, no weekend bar
+        assert st.repair_shifted_dates("BRENT", revised, source="yahoo", run_id="r2") == 0
+        assert {str(b.session): b.close for b in st.bars("BRENT")}["2026-11-02"] == 21

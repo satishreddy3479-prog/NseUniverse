@@ -315,3 +315,11 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 - **Old expiry**: the 3-day working copy restored `picked = 03 Nov` even after it expired and was no longer listed. Once the listed expiries are known, such a working strategy is set aside (copy in `localStorage` key `nse.builder.expired.v1`) and the builder starts on the latest weekly expiry with a note.
 - **Leg layout**: each leg is now a card (position strip: leg, strike, lots, entry, LTP, P&L; second line: Δ·Θ, target, stop, actions; footer: exit / roll / re-entry). Two columns when the card is narrow, six when its own width is 840 px or more (container query), so it adapts to the builder sitting next to the chain. Column guide with glossary buttons stays above the cards.
 - Tests: backend 576 + 8 new automation tests; frontend 358.
+
+## Prediction gaps: cause and fix (4 Nov 2026)
+- Symptom: from 3 Nov the daily forward-test log showed "Not recorded" with late series BRENT, DXY. A day is recorded only if all six overnight series (SPX, VIX, BRENT, DXY, USDINR, UST10Y) have a bar on/after the reference session; one late series skips the day (its number stays a preview, never counted).
+- Most likely cause (inferred from code and log pattern, NOT verified against Yahoo from the build sandbox): after US DST ended on 1 Nov, Yahoo daily stamps for midnight-stamped futures/FX (BZ=F, DX-Y.NYB) arrive as 23:00 the evening before, so bars were dated one day early (weekend-dated) and BRENT/DXY looked permanently stale.
+- Fix: `sources/yahoo.py` moves stamps at/after 12:00 to the next day. `history_store.repair_shifted_dates` repairs already-stored shifted bars only on exact-OHLC proof, via `bar_corrections` (or `bar_rejections` when no replacement); originals are never deleted. Tests: `TestShiftedDates`.
+- Diagnostics: `/api/prediction/history/status` -> `weekend_dated_bars`; per-run `dates_repaired`, `latest_downloaded`.
+- Not fixable retroactively: days already "Not recorded" stay so; the ledger is never edited.
+- Verify after deploy: `weekend_dated_bars` falls to 0 after the next morning run and the next day is recorded. If not, `latest_downloaded` per symbol shows the real cause.

@@ -79,12 +79,22 @@ class HistoryService:
         # a bar whose session has not finished is partial (intraday): never stored as a daily bar
         rows = [r for r in downloaded if complete_after(spec, r.session) <= now]
         partial = len(downloaded) - len(rows)
+        repaired = self.store.repair_shifted_dates(
+            spec.key, rows, source=SOURCE, run_id=run_id, now=self._clock()
+        )
+        if repaired:
+            log_event(
+                logger, logging.WARNING, "history_dates_repaired", symbol=spec.key, bars=repaired
+            )
+        newest = max((r.session for r in downloaded), default=None)
         res: InsertResult = self.store.insert_bars(
             spec.key, rows, source=SOURCE, run_id=run_id, now=self._clock(), volume_meaningful=False
         )
         return {
             "symbol": spec.key, "yahoo": spec.yahoo, "downloaded": len(rows),
-            "partial_skipped": partial, "corrected": res.corrected, "new": res.new,
+            "partial_skipped": partial, "dates_repaired": repaired,
+            "latest_downloaded": str(newest) if newest else None,
+            "corrected": res.corrected, "new": res.new,
             "unchanged": res.unchanged, "changed": res.changed, "invalid": res.invalid,
             "incomplete": res.incomplete, "error": None,
         }  # fmt: skip
@@ -200,6 +210,7 @@ class HistoryService:
             "source": "Yahoo Finance via yfinance (unofficial, personal use)",
             "running": self.running,
             "progress": self.progress,
+            "weekend_dated_bars": self.store.suspect_weekend_bars(SOURCE),
             "partial_bars_held_back": [
                 b for b in self.store.premature_bars(SOURCE) if not b["corrected"]
             ],

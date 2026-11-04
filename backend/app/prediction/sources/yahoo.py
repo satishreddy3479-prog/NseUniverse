@@ -141,6 +141,11 @@ def rows_from_frame(frame: Any) -> list[RawRow]:
         return out
     for ts, row in frame.iterrows():
         d = ts.date() if hasattr(ts, "date") else ts
+        # A daily bar is stamped at the start of its day (00:00 local, or 09:30 for a cash market). For futures and FX
+        # Yahoo can send the stamp as the evening before (23:00) after a clock change; read as a date that puts the bar
+        # one day early, so it is moved to the day it belongs to. No daily bar is ever stamped in the afternoon or evening.
+        if getattr(ts, "hour", 0) >= 12:
+            d = d + timedelta(days=1)
         out.append(
             RawRow(
                 d,
