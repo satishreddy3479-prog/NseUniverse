@@ -199,8 +199,17 @@ describe("Vega Analysis series", () => {
     spot: [spot, spot], ce_price: per(call), pe_price: per(put), ce_oi: per((k) => (k === 24000 ? 100_000 : 50_000)), pe_oi: per(() => 80_000),
     ce_change: per(() => 0), pe_change: per(() => 0), stride: 1, warnings: [], definitions: {},
   };
+  it("the Greek basis sums vega per point of one unit of each contract, with no open interest in it", () => {
+    const g = vegaSeries(res, "2026-11-09", "greek")[0]!;
+    const want = vegaPt(23900) + vegaPt(24000) + vegaPt(24100);
+    expect(Math.abs(g.call! / want - 1)).toBeLessThan(1e-3);
+    expect(Math.abs(g.put! / want - 1)).toBeLessThan(1e-3); // same strikes and volatility: a put has the call's vega
+    expect(Math.abs(g.diff!)).toBeLessThan(want * 2e-3);
+    const noOi: StrikeSeries = { ...res, ce_oi: { ...res.ce_oi, "24000": [null, null] } };
+    expect(vegaSeries(noOi, "2026-11-09", "greek")[0]!.callN).toBe(3); // OI does not matter for the Greek
+  });
   it("sums vega per point x OI per side and takes the difference as put minus call", () => {
-    const pts = vegaSeries(res, "2026-11-09");
+    const pts = vegaSeries(res, "2026-11-09", "oi");
     expect(pts).toHaveLength(1); // the after-hours sample is dropped
     const wantCall = vegaPt(23900) * 50_000 + vegaPt(24000) * 100_000 + vegaPt(24100) * 50_000;
     const wantPut = (vegaPt(23900) + vegaPt(24000) + vegaPt(24100)) * 80_000;
@@ -212,7 +221,7 @@ describe("Vega Analysis series", () => {
   });
   it("leaves out a contract with no OI instead of counting it as zero, and keeps the last value of each candle", () => {
     const noOi: StrikeSeries = { ...res, ce_oi: { ...res.ce_oi, "24000": [null, null] } };
-    const p = vegaSeries(noOi, "2026-11-09")[0]!;
+    const p = vegaSeries(noOi, "2026-11-09", "oi")[0]!;
     expect(p.callN).toBe(2);
     expect(Math.abs(p.call! / (vegaPt(23900) * 50_000 + vegaPt(24100) * 50_000) - 1)).toBeLessThan(1e-3);
     const mk = (min: number, v: number) => ({ t: Date.UTC(2026, 10, 4, 3, 45 + min), spot: 1, call: v, put: v, diff: 0, callN: 1, putN: 1, skipped: 0 });

@@ -339,3 +339,7 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 - Data: `/api/history/strike-series` now accepts up to 45 strikes.
 - `ToolTabs` (AppShell): every tool page, including Strategy Chart and Intraday Booster, shows its section's tools (same menu and heading) as tabs; planned tools are greyed with the reason.
 - Not verified against live stored data on the server. 390 frontend tests pass; backend ruff clean (the backend change is a one-line cap).
+
+## Vega Analysis uses the Greek (5 Nov 2026)
+- Correction: the first time-series version summed vega x OI, which grows as OI builds and looked like a volume curve. Default is now the vega Greek itself (rupees of option price per volatility point, one unit of each contract, summed over the strikes of each side). "Vega × OI" (exposure of all open positions) is a switch. Test: Greek basis checked against a closed-form Black-76 vega, independent of OI.
+- Put vega is shown positive and the difference is put minus call (the reference site shows put vega negative).

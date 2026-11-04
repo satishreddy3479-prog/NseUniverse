@@ -6,7 +6,7 @@ import { EmptyState } from "../ui";
 import { useDash } from "./DashContext";
 import { rangeObservations } from "../../lib/analytics";
 import { fmtExpiry, fmtInt, fmtTimeIST } from "../../lib/format";
-import { strikeBoard, strikesAround, vegaCandles, vegaSeries, type StrikeBoard } from "../../lib/optionTools";
+import { strikeBoard, strikesAround, vegaCandles, vegaSeries, type StrikeBoard, type VegaBasis } from "../../lib/optionTools";
 import { sessionOpenMin } from "../../lib/session";
 import { VegaWidget } from "./toolWidgets";
 import { compactIN } from "../../lib/analytics";
@@ -239,7 +239,7 @@ export function MultiStrikeBoard({ straddle }: { straddle: boolean }) {
 
 const TFS = [1, 3, 5, 15] as const;
 const RANGES = [5, 10, 20] as const;
-const vegaTxt = (v: number | null) => (v == null ? "—" : compactIN(v));
+const vegaTxt = (basis: VegaBasis) => (v: number | null) => (v == null ? "—" : basis === "oi" ? compactIN(v) : v.toFixed(2));
 
 export function VegaBoard() {
   const d = useDash();
@@ -247,24 +247,26 @@ export function VegaBoard() {
   const [tf, setTf] = useState<number>(1);
   const [view, setView] = useState<"chart" | "table">("table");
   const [each, setEach] = useState<number>(10);
+  const [basis, setBasis] = useState<VegaBasis>("greek");
+  const vt = vegaTxt(basis);
   const listed = useMemo(() => [...new Set(d.rows.map((r) => r.strike))].sort((x, y) => x - y), [d.rows]);
   // the strikes are fixed when the page loads (ATM of the latest chain) so every point sums the same contracts
   const picked = useMemo(() => strikesAround(listed, d.atmStrike, 2 * each + 1), [listed, d.atmStrike, each]);
   const key = picked.join(",");
   const { q, w } = useStrikeSeries(key || "atm");
   const res = q.data;
-  const all = useMemo(() => (res && d.expiry ? vegaSeries(res, d.expiry) : []), [res, d.expiry]);
+  const all = useMemo(() => (res && d.expiry ? vegaSeries(res, d.expiry, basis) : []), [res, d.expiry, basis]);
   const pts = useMemo(() => vegaCandles(all, tf, sessionOpenMin()), [all, tf]);
   const opt = useMemo(() => {
     const t = pts.map((p) => p.t);
-    const line = (name: string, color: string, data: (number | null)[], extra: Partial<Line> = {}): Line => ({ name, color, data, fmt: vegaTxt, ...extra });
+    const line = (name: string, color: string, data: (number | null)[], extra: Partial<Line> = {}): Line => ({ name, color, data, fmt: vt, ...extra });
     return timeLinesOption(t, [
       line("Call Vega", c.up, pts.map((p) => p.call)),
       line("Put Vega", c.down, pts.map((p) => p.put)),
       line("Put − Call", c.info, pts.map((p) => p.diff), { dotted: true, hidden: true }),
       line("NIFTY", c.muted, pts.map((p) => p.spot), { axis: 1, dotted: true, fmt: rupee }),
-    ], c, w.bounds, { leftFmt: vegaTxt, rightFmt: (v) => fmtInt(v) });
-  }, [pts, c, w.bounds]);
+    ], c, w.bounds, { leftFmt: vt, rightFmt: (v) => fmtInt(v) });
+  }, [pts, c, w.bounds, vt]);
   const thin = all.length ? Math.min(...all.map((p) => Math.min(p.callN, p.putN))) : 0;
   const last = pts[pts.length - 1];
   return (
@@ -279,18 +281,24 @@ export function VegaBoard() {
           <button type="button" aria-pressed={view === "chart"} onClick={() => setView("chart")} className={pill(view === "chart")}>Chart</button>
           <button type="button" aria-pressed={view === "table"} onClick={() => setView("table")} className={pill(view === "table")}>Chart + Table</button>
         </div>
+        <div role="group" aria-label="Measure" className="flex items-center gap-1">
+          <span className="mr-1 text-sm text-muted">Measure</span>
+          <button type="button" aria-pressed={basis === "greek"} onClick={() => setBasis("greek")} className={pill(basis === "greek")} title="The vega Greek itself: rupees of option price per volatility point, summed over the strikes">Vega (Greek)</button>
+          <button type="button" aria-pressed={basis === "oi"} onClick={() => setBasis("oi")} className={pill(basis === "oi")} title="Each contract's vega times its open interest: the vega of all open positions, which grows as OI builds">Vega × OI</button>
+        </div>
         <div role="group" aria-label="Strikes" className="flex items-center gap-1">
           <span className="mr-1 text-sm text-muted">Strikes around ATM</span>
           {RANGES.map((n) => <button key={n} type="button" aria-pressed={each === n} onClick={() => setEach(n)} className={pill(each === n)}>±{n}</button>)}
         </div>
-        {last && <span className="num text-xs text-muted">Latest {new Date(last.t + 330 * 60_000).toISOString().slice(11, 16)}: call <span className="text-up">{vegaTxt(last.call)}</span> · put <span className="text-down">{vegaTxt(last.put)}</span> · put − call {vegaTxt(last.diff)}</span>}
+        {last && <span className="num text-xs text-muted">Latest {new Date(last.t + 330 * 60_000).toISOString().slice(11, 16)}: call <span className="text-up">{vt(last.call)}</span> · put <span className="text-down">{vt(last.put)}</span> · put − call {vt(last.diff)}</span>}
       </div>
       <Frame q={q} w={w} res={res} footer={
         <>
           <span>{pts.length} {tf}-minute point{pts.length === 1 ? "" : "s"}</span>
           {thin < picked.length && all.length > 0 && <span className="text-warn">some points use fewer strikes (fewest {thin} of {picked.length}) because a price or OI was missing</span>}
           <span className="basis-full">
-            Vega = the rupee change in all contracts of a strike for one volatility point (Black-76, 6 % rate, forward from put-call parity near spot, volatility solved from each contract&apos;s own last price) × open interest, summed over {picked.length} fixed strikes (ATM ±{each} of the latest chain).
+            Vega is the Greek: how many rupees an option&apos;s price changes for a one-point change in implied volatility (Black-76, 6 % rate, forward from put-call parity near spot, volatility solved from each contract&apos;s own last price).
+            {basis === "greek" ? " Each line adds the vega of one unit of every call (or put) over " : " Each line adds vega × open interest of every call (or put) over "}{picked.length} fixed strikes (ATM ±{each} of the latest chain); the first point is the first stored sample of the session.
             Put − Call is hidden until you click it in the legend. Each {tf}-minute point is the last stored sample in that window. It describes where volatility sensitivity sits in the open interest; it does not say who holds it or what happens next.
           </span>
         </>
@@ -309,9 +317,9 @@ export function VegaBoard() {
                       {[...pts].reverse().map((p) => (
                         <tr key={p.t} className="border-t border-rule/50">
                           <td className="num px-2 py-1">{new Date(p.t + 330 * 60_000).toISOString().slice(11, 16)}</td>
-                          <td className="num px-2 text-right text-up">{vegaTxt(p.call)}</td>
-                          <td className="num px-2 text-right text-down">{vegaTxt(p.put)}</td>
-                          <td className={`num px-2 text-right ${p.diff == null ? "" : p.diff >= 0 ? "text-up" : "text-down"}`}>{vegaTxt(p.diff)}</td>
+                          <td className="num px-2 text-right text-up">{vt(p.call)}</td>
+                          <td className="num px-2 text-right text-down">{vt(p.put)}</td>
+                          <td className={`num px-2 text-right ${p.diff == null ? "" : p.diff >= 0 ? "text-up" : "text-down"}`}>{vt(p.diff)}</td>
                         </tr>
                       ))}
                     </tbody>

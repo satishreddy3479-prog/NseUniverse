@@ -276,12 +276,15 @@ export interface VegaPoint {
 const quoteOf = (ltp: number | null, oi: number | null): OptionQuote => ({ ltp, oi } as OptionQuote);
 
 /**
- * Call and put vega exposure of a FIXED set of strikes at every stored sample: for each sample the chain's own prices give
- * the forward (put-call parity near spot) and every contract's implied volatility (Black-76); vega per volatility point x OI
- * is summed per side (same definition as the by-strike chart). Samples taken outside the session are left out.
- * A contract without a usable price or OI is skipped and counted, never zero-filled.
+ * Call and put VEGA (the Greek) of a FIXED set of strikes at every stored sample. For each sample the chain's own prices give
+ * the forward (put-call parity near spot) and every contract's implied volatility (Black-76); `vegaPt` is the change in that
+ * contract's price, in rupees, for one volatility point. "greek" sums vegaPt over the strikes of each side (one unit of each
+ * contract, no open interest involved). "oi" weights each contract by its open interest (units), which is the vega exposure
+ * of the whole market and grows as OI builds. Samples outside the session are left out; a contract with no usable price
+ * (or, for "oi", no OI) is skipped and counted, never zero-filled.
  */
-export function vegaSeries(res: StrikeSeries, expiry: string, rate = 0.06): VegaPoint[] {
+export type VegaBasis = "greek" | "oi";
+export function vegaSeries(res: StrikeSeries, expiry: string, basis: VegaBasis = "greek", rate = 0.06): VegaPoint[] {
   const out: VegaPoint[] = [];
   res.times.forEach((iso, i) => {
     const t = new Date(iso).getTime();
@@ -292,11 +295,17 @@ export function vegaSeries(res: StrikeSeries, expiry: string, rate = 0.06): Vega
       return { strike: k, call: quoteOf(res.ce_price[key]?.[i] ?? null, res.ce_oi[key]?.[i] ?? null), put: quoteOf(res.pe_price[key]?.[i] ?? null, res.pe_oi[key]?.[i] ?? null) } as OptionChainRow;
     });
     const g = chainGreeks(rows, spot, expiry, t, rate);
-    const ex = exposures(rows, g.strikes, spot, "vega").points;
-    const cs = ex.map((p) => p.call).filter((v): v is number => v != null);
-    const ps = ex.map((p) => p.put).filter((v): v is number => v != null);
-    const call = cs.length ? cs.reduce((a, b) => a + b, 0) : null;
-    const put = ps.length ? ps.reduce((a, b) => a + b, 0) : null;
+    let cs: number[], ps: number[];
+    if (basis === "oi") {
+      const ex = exposures(rows, g.strikes, spot, "vega").points;
+      cs = ex.map((p) => p.call).filter((v): v is number => v != null);
+      ps = ex.map((p) => p.put).filter((v): v is number => v != null);
+    } else {
+      cs = g.strikes.map((x) => x.ce?.vegaPt).filter((v): v is number => v != null);
+      ps = g.strikes.map((x) => x.pe?.vegaPt).filter((v): v is number => v != null);
+    }
+    const call = cs.length ? cs.reduce((x, y) => x + y, 0) : null;
+    const put = ps.length ? ps.reduce((x, y) => x + y, 0) : null;
     out.push({ t, spot, call, put, diff: call != null && put != null ? put - call : null, callN: cs.length, putN: ps.length, skipped: g.skipped });
   });
   return out;

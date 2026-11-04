@@ -103,6 +103,7 @@ describe("Vega Analysis page and section tabs", () => {
     const chart = await screen.findByRole("img", { name: "Call vega, put vega and NIFTY through the session" });
     expect(chart.getAttribute("data-series")).toBe("Call Vega|Put Vega|Put − Call|NIFTY");
     expect(screen.getByRole("group", { name: "Timeframe" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Vega (Greek)" })).toHaveAttribute("aria-pressed", "true"); // the Greek is the default, not OI-weighted
     expect(await screen.findByRole("table", { name: "Vega table" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Chart" }));
     expect(screen.queryByRole("table", { name: "Vega table" })).toBeNull();
