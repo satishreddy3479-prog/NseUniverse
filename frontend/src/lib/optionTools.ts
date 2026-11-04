@@ -280,12 +280,26 @@ const quoteOf = (ltp: number | null, oi: number | null): OptionQuote => ({ ltp, 
  * the forward (put-call parity near spot) and every contract's implied volatility (Black-76); `vegaPt` is the change in that
  * contract's price, in rupees, for one volatility point. "greek" sums vegaPt over the strikes of each side (one unit of each
  * contract, no open interest involved). "oi" weights each contract by its open interest (units), which is the vega exposure
- * of the whole market and grows as OI builds. Samples outside the session are left out; a contract with no usable price
+ * of the whole market and grows as OI builds. "change" weights each contract's vega by the OI added since the first session sample
+ * of the day (so the series starts at zero and moves with new positions, negative where OI was removed). Samples outside the session are left out; a contract with no usable price
  * (or, for "oi", no OI) is skipped and counted, never zero-filled.
  */
-export type VegaBasis = "greek" | "oi";
+export type VegaBasis = "greek" | "oi" | "change";
 export function vegaSeries(res: StrikeSeries, expiry: string, basis: VegaBasis = "greek", rate = 0.06): VegaPoint[] {
   const out: VegaPoint[] = [];
+  // OI of each contract at the first session sample that has one: the "since the open" reference of the change basis
+  const base = new Map<string, number>();
+  if (basis === "change") {
+    for (let i = 0; i < res.times.length; i++) {
+      if (!isSessionMs(new Date(res.times[i]!).getTime())) continue;
+      for (const k of res.strikes) {
+        for (const [side, m] of [["CE", res.ce_oi], ["PE", res.pe_oi]] as const) {
+          const v = m[String(k)]?.[i];
+          if (v != null && !base.has(`${side}${k}`)) base.set(`${side}${k}`, v);
+        }
+      }
+    }
+  }
   res.times.forEach((iso, i) => {
     const t = new Date(iso).getTime();
     const spot = res.spot[i];
@@ -296,7 +310,15 @@ export function vegaSeries(res: StrikeSeries, expiry: string, basis: VegaBasis =
     });
     const g = chainGreeks(rows, spot, expiry, t, rate);
     let cs: number[], ps: number[];
-    if (basis === "oi") {
+    if (basis === "change") {
+      const one = (side: "CE" | "PE", pick: (x: (typeof g.strikes)[number]) => number | undefined, oi: Record<string, (number | null)[]>) =>
+        g.strikes.flatMap((x) => {
+          const v = pick(x), now = oi[String(x.strike)]?.[i], b = base.get(`${side}${x.strike}`);
+          return v == null || now == null || b == null ? [] : [v * (now - b)];
+        });
+      cs = one("CE", (x) => x.ce?.vegaPt, res.ce_oi);
+      ps = one("PE", (x) => x.pe?.vegaPt, res.pe_oi);
+    } else if (basis === "oi") {
       const ex = exposures(rows, g.strikes, spot, "vega").points;
       cs = ex.map((p) => p.call).filter((v): v is number => v != null);
       ps = ex.map((p) => p.put).filter((v): v is number => v != null);
