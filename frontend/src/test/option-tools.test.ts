@@ -138,4 +138,11 @@ describe("smartOiCandles (Smart OI spec, section 5 worked example)", () => {
     expect(r.day).toBe("2026-11-04");
     expect(r.candles.map((c) => c.p)).toEqual([null, 5]);
   });
+  it("keeps the close minute (15:40 IST by default) and drops later samples", () => {
+    // 15:25, 15:40 and 15:41 IST written as UTC
+    const s = { times: [t("09:55"), t("10:10"), t("10:11")], spot: [1, 2, 3], pe_oi: [10, 30, 999], ce_oi: [10, 20, 999] };
+    const r = smartOiCandles(s, 3);
+    expect(r.candles.map((c) => c.label)).toEqual(["15:24", "15:39"]);
+    expect(r.candles[1]!.p).toBe(10);
+  });
 });

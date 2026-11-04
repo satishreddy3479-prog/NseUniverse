@@ -717,8 +717,8 @@ export function smartOiOption(r: SmartOiResult, c: ChartColors): EChartsCoreOpti
   const labels = cs.map((x) => x.label);
   const axis = (i: number, show: boolean) => ({
     type: "category", gridIndex: i, data: labels, boundaryGap: true, axisTick: { show: false },
-    axisLine: { lineStyle: { color: c.rule } }, axisLabel: { show, ...axisText(c), hideOverlap: true }, splitLine: { show: false },
-    axisPointer: { show: true, label: { show: show } },
+    axisLine: { lineStyle: { color: c.rule } }, axisLabel: { show, ...axisText(c), hideOverlap: true, showMaxLabel: true }, splitLine: { show: false },
+    axisPointer: { show: true, label: { show: show, backgroundColor: c.paper, color: c.slate } },
   });
   const val = (i: number, extra: object = {}) => ({
     type: "value", gridIndex: i, scale: true, splitNumber: 3, axisLabel: axisText(c),
@@ -728,7 +728,7 @@ export function smartOiOption(r: SmartOiResult, c: ChartColors): EChartsCoreOpti
     animation: false,
     axisPointer: { link: [{ xAxisIndex: "all" }], lineStyle: { color: c.muted, type: "dashed" } },
     tooltip: {
-      trigger: "axis", axisPointer: { type: "cross" }, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 },
+      trigger: "axis", confine: true, axisPointer: { type: "cross" }, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 },
       formatter: (params: unknown) => {
         const i = (params as { dataIndex: number }[])[0]?.dataIndex ?? -1;
         const k = cs[i];
@@ -774,8 +774,8 @@ export function smartOiDayOption(r: SmartOiResult, c: ChartColors): EChartsCoreO
   return {
     animation: false, grid: { left: 58, right: 14, top: 30, bottom: 24 },
     legend: { top: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
-    tooltip: { trigger: "axis", backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: unknown) => (typeof v === "number" ? upTxt(v) : "—") },
-    xAxis: { type: "category", data: cs.map((k) => k.label), axisLabel: { ...axisText(c), hideOverlap: true }, axisLine: { lineStyle: { color: c.rule } }, axisTick: { show: false } },
+    tooltip: { trigger: "axis", confine: true, axisPointer: { type: "line", lineStyle: { color: c.muted, type: "dashed" }, label: { show: true, backgroundColor: c.paper, color: c.slate } }, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: unknown) => (typeof v === "number" ? upTxt(v) : "—") },
+    xAxis: { type: "category", data: cs.map((k) => k.label), axisLabel: { ...axisText(c), hideOverlap: true, showMaxLabel: true }, axisLine: { lineStyle: { color: c.rule } }, axisTick: { show: false } },
     yAxis: { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => upTxt(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
     series: [line("Put OI day chg", c.up, cs.map((k) => k.peDay)), line("Call OI day chg", c.down, cs.map((k) => k.ceDay)), line("PE−CE day chg", c.info, cs.map((k) => k.diffDay))],
   };
@@ -787,8 +787,8 @@ export function smartOiRatioOption(r: SmartOiResult, c: ChartColors): EChartsCor
   return {
     animation: false, grid: { left: 46, right: 14, top: 30, bottom: 24 },
     legend: { top: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
-    tooltip: { trigger: "axis", backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: unknown) => (typeof v === "number" ? v.toFixed(3) : "—") },
-    xAxis: { type: "category", data: cs.map((k) => k.label), axisLabel: { ...axisText(c), hideOverlap: true }, axisLine: { lineStyle: { color: c.rule } }, axisTick: { show: false } },
+    tooltip: { trigger: "axis", confine: true, axisPointer: { type: "line", lineStyle: { color: c.muted, type: "dashed" }, label: { show: true, backgroundColor: c.paper, color: c.slate } }, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: unknown) => (typeof v === "number" ? v.toFixed(3) : "—") },
+    xAxis: { type: "category", data: cs.map((k) => k.label), axisLabel: { ...axisText(c), hideOverlap: true, showMaxLabel: true }, axisLine: { lineStyle: { color: c.rule } }, axisTick: { show: false } },
     yAxis: { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => v.toFixed(2) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
     series: [line("OI PCR", c.info, cs.map((k) => k.pcr)), line("Volume PCR", c.brass, cs.map((k) => k.volPcr))],
   };

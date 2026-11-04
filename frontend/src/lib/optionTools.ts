@@ -147,18 +147,19 @@ export interface SmartOiResult {
 
 const IST_MS = 5.5 * 3600_000;
 const OPEN_MIN = 9 * 60 + 15;
-const CLOSE_MIN = 15 * 60 + 30;
+const CLOSE_MIN = 15 * 60 + 40;
 const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
 /**
- * Smart OI per candle. The session (09:15–15:30 IST) is cut into candles of `timeframe` minutes. In each candle the
+ * Smart OI per candle. The session (open to close as the backend reports it, 09:15–15:40 while the closing auction alignment is on) is cut into candles of `timeframe` minutes. In each candle the
  * last stored sample gives that candle's total call and put OI. For candle i against the previous candle i−1:
  *   ΔPE = PE[i] − PE[i−1],  ΔCE = CE[i] − CE[i−1],  Smart OI p = ΔPE − ΔCE
  * (positive: puts added faster than calls, negative: calls added faster). The first candle is the baseline [0], so it has
  * no bar. Candles with no stored sample are left out, never filled in; the next change then spans the gap (`span` > 1)
  * and is counted in `gapCandles`. Only the newest day with data is used so no change ever crosses a night.
  */
-export function smartOiCandles(s: SmartOiSeries, timeframe: number, day?: string): SmartOiResult {
+export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?: string; openMin?: number; closeMin?: number } = {}): SmartOiResult {
+  const day = opts.day, openMin = opts.openMin ?? OPEN_MIN, closeMin = opts.closeMin ?? CLOSE_MIN;
   const empty: SmartOiResult = { day: null, timeframe, candles: [], baselineAt: null, gapCandles: 0, skippedSamples: 0 };
   const n = Math.min(s.times.length, s.ce_oi.length, s.pe_oi.length, s.spot.length);
   const istOf = (iso: string) => new Date(new Date(iso).getTime() + IST_MS);
@@ -172,8 +173,8 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, day?: string
     const t = istOf(s.times[i]!);
     if (Number.isNaN(t.getTime()) || t.toISOString().slice(0, 10) !== useDay) continue;
     const m = t.getUTCHours() * 60 + t.getUTCMinutes();
-    if (m < OPEN_MIN || m >= CLOSE_MIN) continue;
-    const slot = Math.floor((m - OPEN_MIN) / timeframe);
+    if (m < openMin || m > closeMin) continue; // the close minute itself is kept: the last stored sample is the closing state
+    const slot = Math.floor((m - openMin) / timeframe);
     const b = buckets.get(slot) ?? { last: -1, lastOi: -1, spots: [], volIdx: -1 };
     const sp = s.spot[i];
     if (sp != null) b.spots.push(sp);
@@ -198,7 +199,7 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, day?: string
     if (prev && span > 1) gaps++;
     const dv = (cur: number | null, old: number | null) => (cur != null && old != null && cur >= old ? cur - old : null);
     const c: SmartOiCandle = {
-      slot: k, label: hhmm(OPEN_MIN + k * timeframe),
+      slot: k, label: hhmm(openMin + k * timeframe),
       spot: b.spots.length ? { open: b.spots[0]!, high: Math.max(...b.spots), low: Math.min(...b.spots), close: b.spots[b.spots.length - 1]! } : null,
       ceOi: ce, peOi: pe, dPe, dCe, p, bullish: p == null ? null : p >= 0, span,
       peDay: baseline ? pe - baseline.peOi : 0, ceDay: baseline ? ce - baseline.ceOi : 0,

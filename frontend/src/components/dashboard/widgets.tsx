@@ -334,7 +334,7 @@ function SmartOiChartWidget() {
     queryFn: () => api.oiSeries(d.expiry!, strikesParam(strikes), since, 1000),
     enabled: !!d.expiry && !!since, refetchInterval: 30_000, retry: false,
   });
-  const res = useMemo(() => (q.data ? smartOiCandles(q.data, tf) : null), [q.data, tf]);
+  const res = useMemo(() => (q.data ? smartOiCandles(q.data, tf, { openMin: sessionOpenMin(), closeMin: sessionCloseMin() }) : null), [q.data, tf]);
   const main = useMemo(() => (res ? smartOiOption(res, colors) : null), [res, colors]);
   const dayOpt = useMemo(() => (res ? smartOiDayOption(res, colors) : null), [res, colors]);
   const ratioOpt = useMemo(() => (res ? smartOiRatioOption(res, colors) : null), [res, colors]);
@@ -378,10 +378,10 @@ function SmartOiChartWidget() {
             </EmptyState>
           ) : (
             <div className="grid min-h-0 flex-1 gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-              <div className="min-h-[340px]"><EChart option={main} ariaLabel="NIFTY candles, Smart OI candles and option volume" /></div>
+              <div className="min-h-[340px]"><EChart group="smart-oi" option={main} ariaLabel="NIFTY candles, Smart OI candles and option volume" /></div>
               <div className="grid min-h-0 grid-rows-2 gap-2">
-                <div className="min-h-[160px]"><EChart option={dayOpt} ariaLabel="Put, call and put minus call OI change since the first candle" /></div>
-                <div className="min-h-[160px]"><EChart option={ratioOpt} ariaLabel="OI put-call ratio and volume put-call ratio" /></div>
+                <div className="min-h-[160px]"><EChart group="smart-oi" option={dayOpt} ariaLabel="Put, call and put minus call OI change since the first candle" /></div>
+                <div className="min-h-[160px]"><EChart group="smart-oi" option={ratioOpt} ariaLabel="OI put-call ratio and volume put-call ratio" /></div>
               </div>
             </div>
           )}

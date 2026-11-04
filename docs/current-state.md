@@ -5,6 +5,10 @@ _Last updated: 2026-11-04_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Smart OI: shared crosshair and full session (4 Nov 2026)
+- **Cause of the chart ending at 15:27:** the candle builder cut the session at 15:30, but the exchange session is 15:40 while the closing-auction alignment is on (`/api/market/session`), so the last ten minutes of stored samples were dropped. It now uses the backend's open and close (close minute included).
+- **Shared crosshair:** the three Smart OI charts form one ECharts group (`EChart group="smart-oi"`): hovering any chart marks the same candle time, with a time label and tooltip, in the other two (checked in a browser with both directions).
+
 ## Logo, home page, two themes, compact top bar (4 Nov 2026)
 - **Logo:** new original bull-head mark (`public/logo.svg`, app icons regenerated).
 - **Home:** hero panel and an illustration on every tool card (`components/ToolArt.tsx`). The pictures are decorative, built from fixed shapes, carry no market data and are hidden from screen readers; planned tools are greyed.

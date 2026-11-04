@@ -21,11 +21,13 @@ export interface PointClick {
 }
 
 /** Thin ECharts wrapper: owns the instance, resizes with its container, keeps zoom across updates. */
-export function EChart({ option, onClick, ariaLabel, className = "" }: {
+export function EChart({ option, onClick, ariaLabel, className = "", group }: {
   option: EChartsCoreOption;
   onClick?: (p: PointClick) => void;
   ariaLabel: string;
   className?: string;
+  /** Charts with the same group name share one crosshair and tooltip: hovering one marks the same x position in the others. */
+  group?: string;
 }) {
   const el = useRef<HTMLDivElement>(null);
   const chart = useRef<ECharts | null>(null);
@@ -37,6 +39,7 @@ export function EChart({ option, onClick, ariaLabel, className = "" }: {
     if (!node) return;
     const c = echarts.init(node, undefined, { renderer: "canvas" });
     chart.current = c;
+    if (group) { c.group = group; echarts.connect(group); }
     c.on("click", (p) => clickRef.current?.(p as PointClick));
     const ro = new ResizeObserver(() => c.resize());
     ro.observe(node);
