@@ -363,3 +363,8 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 - Strike window: Auto (re-centres on every sample's ATM) or Fixed (locked to the first sample's ATM); ATM ±4 / ±10 / ±20. ATM ±20 is fetched once and the window is cut from it.
 - Chart: "Synth Future" (forward from put-call parity of that sample's chain) on the left axis; call vega (green) and put vega (red) as areas around a zero line on the right axis; Put − Call (purple) hidden until clicked. Table: day-high difference solid green, day-low solid red, other rows tinted by rise or fall from the row before.
 - Not taken from the spec: the 6.5 % rate (we use 6 %), the Black-Scholes form (we use Black-76 on the parity forward), and the lot-size factor in the by-strike Cr exposure (OI is already in units; our latest-chain totals 61.77 / 43.36 Cr already match the reference without it). Not built: Live/Historical switch (no historical-day endpoint yet).
+
+## Vega Analysis aligned to the second spec (5 Nov 2026)
+- "OTM only" now works inside the ATM ±N band (N = 4/10/20) with Auto/Fixed: calls above NIFTY, puts below it. Replaces the earlier "N nearest OTM strikes" option.
+- "Vega × OI change" is now the OI-weighted vega total minus its value at the first session sample (spec formula), replacing vega × (OI added). Time-series Vega × OI values are shown in Cr (value / 1e7); OI is already in units so no lot-size factor is applied (our by-strike totals already match the reference).
+- Table: day-high/day-low (solid) and rise/fall tints now apply to the Call, Put and Put − Call columns. Put − Call line is dotted purple.

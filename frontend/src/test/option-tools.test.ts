@@ -219,9 +219,9 @@ describe("Vega Analysis series", () => {
     expect(pts[0]!.diff).toBeCloseTo(pts[0]!.put! - pts[0]!.call!, 6);
     expect(pts[0]!.callN).toBe(3);
   });
-  it("the change basis starts at zero and weights each contract's vega by the OI added since the first session sample", () => {
+  it("the change basis is the OI-weighted vega minus its value at the first session sample, starting at zero", () => {
     const two: StrikeSeries = {
-      ...res, times: [new Date(at).toISOString(), new Date(at + 60_000).toISOString()], spot: [spot, spot],
+      ...res, times: [new Date(at).toISOString(), new Date(at).toISOString()], spot: [spot, spot], // same instant: only OI differs
       ce_oi: { "23900": [50_000, 50_000], "24000": [100_000, 130_000], "24100": [50_000, 40_000] }, pe_oi: per(() => 80_000),
     };
     const [a, b] = vegaSeries(two, "2026-11-09", "change");
@@ -263,7 +263,7 @@ describe("Vega Analysis series", () => {
     expect(wide.callN).toBe(5);
   });
   it("OTM mode takes calls from strikes above NIFTY and puts from strikes below it", () => {
-    const p = vegaSeries(res, "2026-11-09", "greek", 0.06, 1)[0]!; // spot 24,000: the OTM call is 24,100, the OTM put is 23,900
+    const p = vegaSeries(res, "2026-11-09", "greek", 0.06, true, { n: 1, mode: "auto" })[0]!; // spot 24,000: the OTM call is 24,100, the OTM put is 23,900
     expect(p.callN).toBe(1);
     expect(p.putN).toBe(1);
     expect(Math.abs(p.call! / vegaPt(24100) - 1)).toBeLessThan(1e-3);
