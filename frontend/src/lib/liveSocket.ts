@@ -38,7 +38,8 @@ export function startLiveSocket(store: LiveStore, opts: SocketOptions = {}): () 
   const scheduleReconnect = () => {
     if (stopped || retryTimer) return;
     attempt += 1;
-    const delay = Math.min(maxBackoff, 1000 * 2 ** (attempt - 1));
+    // the first retry is almost immediate: a dropped link is usually a server-side slow-client drop or a proxy hiccup
+    const delay = attempt === 1 ? 300 : Math.min(maxBackoff, 1000 * 2 ** (attempt - 2));
     retryTimer = setTimeout(() => {
       retryTimer = undefined;
       connect();
@@ -83,6 +84,27 @@ export function startLiveSocket(store: LiveStore, opts: SocketOptions = {}): () 
     };
   };
 
+  /**
+   * The page came back (phone unlocked, tab shown, network back). Timers were frozen while it was away, so the old
+   * socket is usually dead even if it looks open: reconnect at once instead of waiting for the dead-link timer and the
+   * backoff. The server answers with a full snapshot of its live book (the "hello" message), so nothing is lost.
+   */
+  const resume = () => {
+    if (stopped || (typeof document !== "undefined" && document.visibilityState === "hidden")) return;
+    const quiet = Date.now() - lastMsg;
+    if (ws && ws.readyState === WebSocket.OPEN && quiet < 4000) return; // healthy: the server sends something every second
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = undefined; }
+    const old = ws;
+    ws = null;
+    if (old) { old.onopen = old.onmessage = old.onclose = old.onerror = null; try { old.close(); } catch { /* already closed */ } }
+    attempt = 0;
+    connect();
+  };
+  document.addEventListener("visibilitychange", resume);
+  window.addEventListener("pageshow", resume);
+  window.addEventListener("online", resume);
+  window.addEventListener("focus", resume);
+
   connect();
   watchdog = setInterval(() => {
     if (ws && Date.now() - lastMsg > deadAfter) ws.close(); // triggers onclose -> reconnect
@@ -90,6 +112,10 @@ export function startLiveSocket(store: LiveStore, opts: SocketOptions = {}): () 
 
   return () => {
     stopped = true;
+    document.removeEventListener("visibilitychange", resume);
+    window.removeEventListener("pageshow", resume);
+    window.removeEventListener("online", resume);
+    window.removeEventListener("focus", resume);
     clearTimers();
     const s = ws;
     ws = null;

@@ -62,10 +62,12 @@ class FakeSocket {
   onmessage: ((e: { data: string }) => void) | null = null;
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  static OPEN = 1;
+  readyState = 0;
   closed = false;
   constructor(public url: string) { FakeSocket.instances.push(this); }
-  close() { this.closed = true; this.onclose?.(); }
-  open() { this.onopen?.(); }
+  close() { this.closed = true; this.readyState = 3; this.onclose?.(); }
+  open() { this.readyState = 1; this.onopen?.(); }
   send(msg: unknown) { this.onmessage?.({ data: JSON.stringify(msg) }); }
 }
 
@@ -91,15 +93,30 @@ describe("startLiveSocket", () => {
 
     FakeSocket.instances[0]!.close(); // drop
     expect(store.getState().conn).toBe("closed");
-    vi.advanceTimersByTime(999);
+    vi.advanceTimersByTime(299);
     expect(FakeSocket.instances).toHaveLength(1);
-    vi.advanceTimersByTime(2); // 1 s backoff
+    vi.advanceTimersByTime(2); // first retry after 0.3 s
     expect(FakeSocket.instances).toHaveLength(2);
-    FakeSocket.instances[1]!.close(); // fails again: next delay is 2 s
-    vi.advanceTimersByTime(1999);
+    FakeSocket.instances[1]!.close(); // fails again: next delay is 1 s
+    vi.advanceTimersByTime(999);
     expect(FakeSocket.instances).toHaveLength(2);
     vi.advanceTimersByTime(2);
     expect(FakeSocket.instances).toHaveLength(3);
+    stop();
+  });
+
+  it("reconnects at once when the page comes back after being away, and leaves a healthy link alone", () => {
+    const store = new LiveStore();
+    const stop = startLiveSocket(store, { url: "ws://x/ws" });
+    FakeSocket.instances[0]!.open();
+    FakeSocket.instances[0]!.send({ type: "status", status: streamStatus() });
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(FakeSocket.instances).toHaveLength(1); // healthy: untouched
+    vi.advanceTimersByTime(3000); // phone locked: timers were frozen, nothing arrived
+    vi.setSystemTime(Date.now() + 120_000);
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(FakeSocket.instances).toHaveLength(2); // no waiting for the dead-link timer or the backoff
+    expect(FakeSocket.instances[0]!.closed).toBe(true);
     stop();
   });
 

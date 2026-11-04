@@ -6,6 +6,7 @@ import { startLiveSocket } from "./liveSocket";
 import { isStreamStatus, type LiveTick, type StreamStatus } from "./types";
 import { useStatus } from "./hooks";
 
+const LINK_GRACE_MS = 8000;
 const noopSubscribe = () => () => {};
 
 export function useLiveState(): LiveState {
@@ -68,7 +69,10 @@ export function useStreamStatus(): {
 } {
   const live = useLiveState();
   const rest = useStatus();
-  const linkOpen = live.conn === "open" && isStreamStatus(live.status);
+  // A reconnect of a few seconds is not an outage: while the last message from the backend is recent, the link counts as
+  // up, so the top bar does not flip from "Live" to "Streaming" each time the socket is re-established.
+  const recent = live.lastMessageAt != null && Date.now() - live.lastMessageAt < LINK_GRACE_MS;
+  const linkOpen = (live.conn === "open" || recent) && isStreamStatus(live.status);
   const candidate = linkOpen ? live.status : rest.data?.stream;
   const valid = isStreamStatus(candidate);
   return { stream: valid ? candidate : undefined, linkOpen, outdated: !!rest.data && !valid };

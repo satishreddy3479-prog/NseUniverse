@@ -269,3 +269,10 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 - Fix: `hitOf` ignores a level at or on the wrong side of the entry premium (the UI already flags it); the page waits 1.5 s after the last target/stop edit before checking (`StrategyBuilder.tsx`, `lastExitEdit`). A valid level is compared with the live LTP as before (sold leg: stop when LTP >= stop, target when LTP <= target; mirrored for bought).
 - Deleting one saved strategy or one closed trade now asks for confirmation (`window.confirm`); "Delete all" keeps its click-twice confirmation.
 - Strategy test fixtures expire on 3 Nov 2026, so those tests now pin the clock to 2 Nov 2026 (they had started failing as the date passed).
+
+## "Live" flips to "Streaming"; slow recovery on mobile resume (4 Nov 2026)
+- Top bar shows "Live" only when the stream is fresh AND the browser's WebSocket is up. Any socket re-establishment (dead-link watchdog after 10 s of silence, server drop of a slow client with code 1013, proxy hiccup) produced "Stream: Streaming" (warning tone) until the next message. Backoff started at 1 s.
+- On a phone, timers are frozen while the browser is in the background: on return the old socket was dead, the watchdog fired after up to 10 s, then backoff, so "Streaming"/"Stale" showed for some seconds.
+- Fix (frontend only): first retry after 0.3 s; the socket reconnects at once on visibilitychange / pageshow / online / focus when it has been quiet >4 s; a link whose last backend message is under 8 s old still counts as up. The server's `hello` message resends the whole live book on every connect.
+- Lot size: 65 (`cost_lot_size`, and the chain's `mktLot` from Kotak). 75 appears only in old test fixtures.
+- Known gap: paper stop/target/re-entry/roll automation runs in the browser only (page open). Moving it to the backend is proposed, not built.
