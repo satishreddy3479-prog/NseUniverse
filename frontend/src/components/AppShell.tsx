@@ -5,11 +5,12 @@ import { api } from "../lib/api";
 import { setSessionClock } from "../lib/session";
 import { useLiveConnection } from "../lib/useLive";
 import { useSignals } from "../lib/useSignals";
-import { NavLinks, SideNav } from "./SideNav";
+import { Link } from "react-router-dom";
+import { MobileNav, TopNav } from "./TopNav";
+import { ThemeSwitch } from "./ThemeSwitch";
 import { SpotBadge } from "./SpotBadge";
 import { StatusPill } from "./StatusPill";
 
-export { NAV } from "./SideNav";
 
 /** Top bar keeps only what matters at a glance: the product, the NIFTY level and one status.
  *  Everything else (full signal list, expiries, last update, refresh, theme) is in Settings. */
@@ -25,7 +26,7 @@ export function AppShell() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="grid min-h-14 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-b border-rule bg-slate px-3 py-1.5 md:flex md:flex-wrap">
+      <header className="relative z-30 flex min-h-14 flex-wrap items-center gap-x-4 gap-y-1 border-b border-rule bg-slate px-3 py-1">
         <button
           type="button"
           className="rounded-sm border border-rule px-2 py-1 text-sm md:hidden"
@@ -35,26 +36,25 @@ export function AppShell() {
         >
           Menu
         </button>
-        <div className="flex min-w-0 shrink-0 flex-col leading-tight">
+        <Link to="/" className="flex min-w-0 shrink-0 flex-col leading-tight" aria-label="NSE Universe home">
           <span className="text-[15px] font-semibold tracking-tight text-paper">NSE Universe</span>
-          <span className="hidden text-xs text-muted sm:block md:block">{underlying} 50 options</span>
-        </div>
-        <SpotBadge latest={spotSnapshot ?? latest} className="col-span-3 row-start-2 md:col-auto md:row-auto" />
-        <div className="col-start-3 row-start-1 justify-self-end md:ml-auto">
+          <span className="hidden text-xs text-muted sm:block">{underlying} 50 options</span>
+        </Link>
+        <TopNav />
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+          <SpotBadge latest={spotSnapshot ?? latest} className="" />
           <StatusPill signals={signals} />
+          <ThemeSwitch />
         </div>
       </header>
-      <div className="flex min-h-0 flex-1">
-        <SideNav />
-        {menuOpen && (
-          <div id="mobile-nav" className="fixed inset-x-0 top-14 z-20 border-b border-rule bg-slate md:hidden">
-            <NavLinks onNavigate={() => setMenuOpen(false)} />
-          </div>
-        )}
-        <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 md:p-4 lg:p-6">
-          <Outlet key={clockKey} />
-        </main>
-      </div>
+      {menuOpen && (
+        <div id="mobile-nav" className="z-20 border-b border-rule bg-slate md:hidden">
+          <MobileNav onNavigate={() => setMenuOpen(false)} />
+        </div>
+      )}
+      <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 md:p-4 lg:p-6">
+        <Outlet key={clockKey} />
+      </main>
     </div>
   );
 }

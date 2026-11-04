@@ -4,7 +4,7 @@ import { useLocation } from "react-router-dom";
 import { fmtTimeIST } from "../lib/format";
 import { useStatus } from "../lib/hooks";
 import { useSignals } from "../lib/useSignals";
-import { applyTheme, loadTheme, type Theme } from "../lib/theme";
+import { applyTheme, loadTheme, THEMES, type Theme } from "../lib/theme";
 import { SignalChain } from "../components/SignalChain";
 import { PredictionData } from "../components/PredictionData";
 import { PredictionFlows } from "../components/PredictionFlows";
@@ -59,11 +59,11 @@ export function Settings() {
       <Panel title="Theme">
         <fieldset className="flex gap-4">
           <legend className="sr-only">Theme</legend>
-          {(["dark", "light"] as const).map((t) => (
-            <label key={t} className="flex min-h-9 cursor-pointer items-center gap-2 text-sm capitalize">
+          {THEMES.map(({ id: t, label }) => (
+            <label key={t} className="flex min-h-9 cursor-pointer items-center gap-2 text-sm">
               <input type="radio" name="theme" value={t} checked={theme === t} onChange={() => choose(t)}
                 className="accent-[var(--brass)]" />
-              {t}
+              {label}
             </label>
           ))}
         </fieldset>

@@ -46,7 +46,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("dashboard", () => {
   it("renders the overview with no demo or mock labelling anywhere", async () => {
     mockFetch(base);
-    renderAt("/");
+    renderAt("/overview");
     expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: /System status:/ })).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/demo|synthetic|mock/i);
@@ -54,13 +54,13 @@ describe("dashboard", () => {
 
   it("shows loading skeletons before data arrives", () => {
     vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
-    const { container } = renderAt("/");
+    const { container } = renderAt("/overview");
     expect(container.querySelectorAll(".skeleton").length).toBeGreaterThan(0);
   });
 
   it("shows empty states when nothing is captured", async () => {
     mockFetch(base);
-    renderAt("/");
+    renderAt("/overview");
     expect(await screen.findByText("No snapshots stored")).toBeInTheDocument();
     expect(screen.getAllByText("Not started").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Start stream" })).toBeEnabled();
@@ -68,27 +68,27 @@ describe("dashboard", () => {
 
   it("reports an unreachable backend", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));
-    renderAt("/");
+    renderAt("/overview");
     expect((await screen.findAllByText("Backend offline")).length).toBeGreaterThan(0);
   });
 
   it("never shows underlying price as a number before it is available", async () => {
     mockFetch(base);
-    renderAt("/");
+    renderAt("/overview");
     const label = await screen.findByText("Underlying price");
     expect(within(label.parentElement!).getByText(/Unavailable/)).toBeInTheDocument();
   });
 
   it("shows the underlying price only from a snapshot, labelled as not live", async () => {
     mockFetch({ ...base, "/api/snapshots": [summary()] });
-    renderAt("/");
+    renderAt("/overview");
     expect((await screen.findAllByText("22,698.85")).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/From snapshot .*not live/).length).toBeGreaterThan(0);
   });
 
   it("labels the monthly roll to next month", async () => {
     mockFetch(base);
-    renderAt("/");
+    renderAt("/overview");
     expect(await screen.findByText(/Next month: no expiry left this month/)).toBeInTheDocument();
   });
 
@@ -114,7 +114,6 @@ describe("dashboard", () => {
     mockFetch(base);
     renderAt("/charts");
     expect(await screen.findByRole("heading", { name: "Intraday analysis" }, { timeout: 8000 })).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Intraday analysis" }).length).toBeGreaterThan(0);
   });
 
   it("opens the mobile navigation menu", async () => {
@@ -131,7 +130,7 @@ describe("dashboard", () => {
   it("surfaces snapshot capture errors from the backend", async () => {
     mockFetch({ ...base, "/api/snapshots/capture": () =>
       new Response(JSON.stringify({ detail: { code: "rate_limited", message: "broker rate limit reached; retry later" } }), { status: 429 }) });
-    renderAt("/");
+    renderAt("/overview");
     const btn = await screen.findByRole("button", { name: "Capture snapshot" });
     await screen.findByText("Weekly expiry");
     await userEvent.click(btn);
@@ -144,7 +143,7 @@ describe("older backend still running", () => {
 
   it("Overview renders and tells the user to restart the backend", async () => {
     mockFetch({ ...base, "/api/status": oldStatus });
-    renderAt("/");
+    renderAt("/overview");
     expect(await screen.findByText("The running backend is an older version")).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "System status: Stream: Backend needs restart" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start stream" })).toBeDisabled();

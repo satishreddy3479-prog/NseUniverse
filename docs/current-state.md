@@ -1,9 +1,19 @@
 # Current state
-_Last updated: 2026-10-29_
+_Last updated: 2026-11-04_
 
 - **Objective:** NSE Universe — Indian market research platform; see [roadmap](roadmap.md).
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
+
+## New interface: top menu bar, Home, tool pages, themes (4 Nov 2026)
+- **Structure** (requested after the user's StockMojo screenshots; structure only, no branding, code or visual copy): top bar with Strategy Builder, Option Chain, drop-downs Options Lab / Future Lab / Analyse / System, and Prediction; Home (`/`) lists every tool with search; each tool opens at `/tools/:id`. Phone: one scrolling menu with the same groups. The old side rail is removed; Platform status moved to `/overview`.
+- **Registry:** `frontend/src/lib/tools.ts` drives the menus, Home and routes. A tool is *ready* only when it has a real page. Planned tools show greyed with the reason they are not built; no placeholder pages.
+- **Themes:** Light / Ocean / Dark in the top bar and Settings (CSS variables, remembered in the browser).
+- **New analytics** (`lib/optionTools.ts`, 7 hand-checked tests): Smart OI buildup (price change vs OI change), PE−CE difference, volatility skew, gamma and vega exposure (Black-76 from each contract's own price; gamma exposure = gamma × OI × spot² × 1 %; the call−put net is a stated convention, not measured dealer positioning). Missing prices stay missing and are counted.
+- **Index tools** (Contributors, Advance/Decline, Weightage, Sector Rotation, Market Movers, FII/DII) read `/api/market/summary` and the existing flows/cash panels; if stock breadth is off on the server they say so.
+- **Fix:** a menu opened by hover no longer closes on the click.
+- **Planned, not built:** IV-HV, IV Grid, IV Intraday, OI Crossover, MultiStrike Chart, Option Triggers, Future Heatmap, Future Price vs OI, Sentiment Cycle (each needs data not yet stored; reasons shown in the menu).
+- **Verified:** tsc clean, 371 frontend tests pass, production build OK, screenshots of Home, menus and phone menu on a mocked-offline API. **Not verified:** live data in these pages (sandbox cannot reach the server); check after deploy in market hours.
 
 ## Futures and heavyweight flow never received ticks: root cause fixed (2 Nov 2026)
 - **Cause:** `StreamManager._reset()` (called by every `start()`: at launch and after each daily login) also set `on_internal = None`, so the market service, wired once at start-up, was disconnected from the internal tick feed. Breadth kept working because it reads the tick book directly, but nothing reached `MarketService.on_tick`: no futures price/volume/OI sample was ever stored, and the five heavyweights' order flow stayed empty. Found on the live server (internal messages 48,000 and rising, service ticks seen 0, `handler_set` false).

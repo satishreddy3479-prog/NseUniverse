@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,74 +33,70 @@ function renderAt(path: string) {
 beforeEach(() => localStorage.clear());
 afterEach(() => vi.unstubAllGlobals());
 
-const rail = () => screen.getByLabelText("Menu", { selector: "aside" });
+describe("top menu bar", () => {
+  const bar = () => screen.getAllByRole("navigation", { name: "Main" })[0]!;
 
-describe("side menu", () => {
-  it("starts collapsed so the page keeps its width", async () => {
+  it("has the tool menus and the main links in the bar", async () => {
     mockApi();
-    renderAt("/");
+    renderAt("/overview");
     await screen.findByRole("heading", { name: "Overview" });
-    expect(rail()).toHaveAttribute("data-expanded", "false");
+    for (const name of ["Strategy Builder", "Option Chain", "Prediction"])
+      expect(within(bar()).getByRole("link", { name })).toBeInTheDocument();
+    for (const name of ["Options Lab", "Future Lab", "Analyse", "System"])
+      expect(within(bar()).getByRole("button", { name: new RegExp(name) })).toBeInTheDocument();
   });
 
-  it("opens on hover or touch, and on keyboard focus", async () => {
+  it("opens a menu on click, closes it with Escape and after a choice", async () => {
     mockApi();
-    renderAt("/");
+    renderAt("/overview");
     await screen.findByRole("heading", { name: "Overview" });
-    fireEvent.pointerEnter(rail());
-    expect(rail()).toHaveAttribute("data-expanded", "true");
-    fireEvent.pointerLeave(rail());
-    expect(rail()).toHaveAttribute("data-expanded", "false");
-    act(() => within(rail()).getAllByRole("link")[1]!.focus());
-    expect(rail()).toHaveAttribute("data-expanded", "true");
+    const lab = within(bar()).getByRole("button", { name: /Options Lab/ });
+    expect(lab).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(lab);
+    expect(lab).toHaveAttribute("aria-expanded", "true");
+    expect(within(bar()).getByRole("link", { name: /Smart OI/ })).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    expect(lab).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(lab);
+    await userEvent.click(within(bar()).getByRole("link", { name: /Smart OI/ }));
+    expect(lab).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("closes after a choice and stays closed until the pointer leaves and returns", async () => {
+  it("shows planned tools as disabled items with their reason, never as links", async () => {
     mockApi();
-    renderAt("/");
+    renderAt("/overview");
     await screen.findByRole("heading", { name: "Overview" });
-    fireEvent.pointerEnter(rail());
-    await userEvent.click(within(rail()).getByRole("link", { name: /Settings/ }));
-    expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
-    expect(rail()).toHaveAttribute("data-expanded", "false");
-    fireEvent.pointerEnter(rail()); // still hovering: no re-open
-    expect(rail()).toHaveAttribute("data-expanded", "false");
-    fireEvent.pointerLeave(rail());
-    fireEvent.pointerEnter(rail());
-    expect(rail()).toHaveAttribute("data-expanded", "true");
+    await userEvent.click(within(bar()).getByRole("button", { name: /Options Lab/ }));
+    expect(within(bar()).queryByRole("link", { name: /IV Grid/ })).toBeNull();
+    const planned = within(bar()).getByText("IV Grid").closest("[aria-disabled]") as HTMLElement;
+    expect(planned).toHaveAttribute("aria-disabled", "true");
+    expect(planned.getAttribute("title")).toBeTruthy();
   });
 
-  it("can be kept open, and remembers that", async () => {
+  it("System menu reaches the platform pages", async () => {
     mockApi();
-    const first = renderAt("/");
+    renderAt("/overview");
     await screen.findByRole("heading", { name: "Overview" });
-    await userEvent.click(within(rail()).getByRole("button", { name: /Keep menu open/ }));
-    expect(rail()).toHaveAttribute("data-expanded", "true");
-    expect(localStorage.getItem("nse.nav.pinned")).toBe("1");
-    await userEvent.click(within(rail()).getByRole("link", { name: /Intraday analysis/ }));
-    expect(rail()).toHaveAttribute("data-expanded", "true"); // pinned: no auto-close
-    first.unmount();
-    renderAt("/");
-    await screen.findByRole("heading", { name: "Overview" });
-    expect(rail()).toHaveAttribute("data-expanded", "true");
-    await userEvent.click(within(rail()).getByRole("button", { name: /Collapse menu/ }));
-    expect(rail()).toHaveAttribute("aria-label", "Menu");
-    expect(localStorage.getItem("nse.nav.pinned")).toBe("0");
+    await userEvent.click(within(bar()).getByRole("button", { name: /System/ }));
+    for (const name of ["Platform status", "Data & sessions", "Connection diagnostics", "Settings"])
+      expect(within(bar()).getByRole("link", { name })).toBeInTheDocument();
   });
 
-  it("every page is still reachable by name from the collapsed rail", async () => {
+  it("changes theme and remembers it", async () => {
     mockApi();
-    renderAt("/");
+    renderAt("/overview");
     await screen.findByRole("heading", { name: "Overview" });
-    for (const name of ["Overview", "Live option chain", "Expiry comparison", "Intraday analysis", "Data & sessions", "Connection diagnostics", "Settings"])
-      expect(within(rail()).getByRole("link", { name: new RegExp(name) })).toBeInTheDocument();
+    const group = screen.getByRole("group", { name: "Theme" });
+    await userEvent.click(within(group).getByRole("button", { name: "Ocean" }));
+    expect(document.documentElement.dataset.theme).toBe("ocean");
+    expect(within(group).getByRole("button", { name: "Ocean" })).toHaveAttribute("aria-pressed", "true");
   });
 });
 
 describe("top bar", () => {
   it("keeps the product, the NIFTY level and one status, and nothing else", async () => {
     mockApi();
-    renderAt("/");
+    renderAt("/overview");
     await screen.findByRole("heading", { name: "Overview" });
     const header = document.querySelector("header") as HTMLElement;
     expect(await within(header).findByText("22,698.85")).toBeInTheDocument();
@@ -114,14 +110,14 @@ describe("top bar", () => {
 
   it("status pill goes to the full status in Settings", async () => {
     mockApi();
-    renderAt("/");
+    renderAt("/overview");
     await userEvent.click(await screen.findByRole("link", { name: /System status:/ }));
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
     const panel = screen.getByRole("region", { name: "System status" });
     expect(await within(panel).findByRole("list", { name: "System signals" })).toBeInTheDocument();
     expect(within(panel).getByRole("button", { name: "Refresh" })).toBeInTheDocument();
     expect(within(panel).getByText("Selected expiries")).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "dark" })).toBeInTheDocument(); // theme lives here
+    expect(screen.getByRole("radio", { name: "Dark" })).toBeInTheDocument(); // theme lives here
   });
 
   it("shows a problem instead of hiding it", async () => {

@@ -1,9 +1,15 @@
-export type Theme = "dark" | "light";
+export type Theme = "dark" | "light" | "ocean";
+export const THEMES: { id: Theme; label: string }[] = [
+  { id: "light", label: "Light" },
+  { id: "ocean", label: "Ocean" },
+  { id: "dark", label: "Dark" },
+];
 const KEY = "nse-universe.theme";
 
 export function loadTheme(): Theme {
   try {
-    return localStorage.getItem(KEY) === "light" ? "light" : "dark";
+    const v = localStorage.getItem(KEY);
+    return v === "light" || v === "ocean" ? v : "dark";
   } catch {
     return "dark";
   }

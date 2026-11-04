@@ -9,6 +9,62 @@ export interface GlossaryEntry { what: string; read: string; caution?: string }
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9+% ]+/g, " ").replace(/\s+/g, " ").trim();
 
 const E: Record<string, GlossaryEntry> = {
+  // ---------------------------------------------------------------- Options Lab and Analyse tools
+  "smart oi": {
+    what: "For every option contract, whether today's price move and today's change in open interest point to new positions being opened or old ones closed: long buildup (price up, OI up), short buildup (price down, OI up), short covering (price up, OI down), long unwinding (price down, OI down).",
+    read: "It describes the contract itself. A short buildup in a call (writers adding as the premium falls) is a different message from a long buildup in a call; a long buildup in a put is bearish for NIFTY. Look at where the largest buildups cluster.",
+    caution: "OI is reported for the day, so the label is a daily picture, not a trade-by-trade one. Contracts without a previous close, or with no change, carry no label.",
+  },
+  "pe ce difference": {
+    what: "Put minus call for open interest, OI change or volume at each strike.",
+    read: "Bars above zero (green) mean more put than call at that strike, below zero more call. The total at the top is the sum over the strikes shown.",
+    caution: "More puts than calls is not by itself bullish or bearish: it depends on who holds them. Strikes missing a value on either side are left out and counted.",
+  },
+  "volatility skew": {
+    what: "The implied volatility of each strike's call and put, solved from its own last traded price with the Black-76 model.",
+    read: "A line that rises away from the money means the market pays more for protection or for large moves at those strikes. Calls and puts at one strike should be close; a gap hints at stale prices.",
+    caution: "Illiquid strikes have stale prices and noisy volatility. The model uses a 6 % rate and a forward from put-call parity; gaps in the line are contracts that gave no volatility.",
+  },
+  "gamma exposure": {
+    what: "Gamma × open interest × spot² × 1 %, per strike: the rupee value of NIFTY whose delta changes when the index moves 1 %.",
+    read: "Large bars show strikes where positions are most sensitive to a move. Call and put bars are separate; net = call − put assumes the market is long calls and short puts.",
+    caution: "Who is long or short is not observable from open interest, so the net line is a convention, not measured dealer positioning. Treat it as a map of where sensitivity sits.",
+  },
+  "vega analysis": {
+    what: "Vega per volatility point × open interest, per strike: how much all contracts at a strike would gain or lose for a one-point change in implied volatility.",
+    read: "The tallest bars are the strikes where a volatility change matters most. Calls and puts are shown separately.",
+    caution: "It sums contract sensitivities without knowing which side holds them. It uses the same model volatility as the skew chart.",
+  },
+  "vega exposure": {
+    what: "Vega per volatility point × open interest at each strike, for calls and puts.",
+    read: "Tall bars are where a change in implied volatility moves contract values most.",
+    caution: "Model values from each contract's own price; strikes without a usable price are left out and counted.",
+  },
+  "index contributors": {
+    what: "How many percentage points each NIFTY 50 stock has added to or taken from the index today: its weight × its change since the previous close.",
+    read: "The longest bars are what moved the index. The sum of all contributions should be close to the index's own change.",
+    caution: "Needs weights. They are as of the date shown and rolled to recent closes, so small differences from the official index are normal.",
+  },
+  "advance decline": {
+    what: "How many NIFTY 50 stocks are above and below their previous close right now.",
+    read: "A ratio above 1 means more stocks are up than down. Compare it with the index: an index rising on a few heavyweights while most stocks fall is a narrow move.",
+    caution: "Only stocks with a current price count; the coverage is shown. It covers the 50 index stocks, not the whole market.",
+  },
+  "index weightage": {
+    what: "The share of each NIFTY 50 stock in the index, with its sector and today's change.",
+    read: "Higher weights move the index more for the same percentage change.",
+    caution: "Official weights change with prices and are reviewed periodically; the table shows their date and source.",
+  },
+  "sector rotation": {
+    what: "NIFTY 50 stocks grouped by sector, ranked by their return today minus the index's return.",
+    read: "Sectors at the top are leading the index, those at the bottom lagging. Compare the up/down counts with the return.",
+    caution: "Sectors with few stocks in NIFTY 50 are noisy. Groupings follow the NIFTY 50 list stored on this server.",
+  },
+  "market movers": {
+    what: "The NIFTY 50 stocks with the largest gains and losses today.",
+    read: "The volume multiple compares volume so far with the stock's recent average for this time of day.",
+    caution: "NIFTY 50 only. Relative volume needs enough stored sessions and is hidden until it has them.",
+  },
   // ---------------------------------------------------------------- sentiment and intraday command center
   "current market sentiment": {
     what: "A score from −1 (clearly bearish) to +1 (clearly bullish) that adds up what the market is doing right now: NIFTY price action, breadth, sector participation, options positioning, overnight global markets and institutional cash flows.",

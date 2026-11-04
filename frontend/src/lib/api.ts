@@ -54,6 +54,20 @@ export interface RunningDoc {
 }
 export interface RunningResponse { doc: RunningDoc | null; checking: { live: boolean; last_check_at: string | null; error: string | null } }
 
+/** What /api/market/summary returns for the NIFTY 50 tools; only the fields the pages use. Missing stays null. */
+export interface MarketStockRow { symbol: string; sector: string | null; weight: number | null; change_pct: number | null; contribution: number | null; volume: number | null; relative_volume: number | null }
+export interface MarketSectorRow { sector: string; stocks: number; covered: number; advancing: number; declining: number; equal_weight_return: number | null; cap_weight_return: number | null; contribution_pts: number | null; relative_strength: number | null; rank: number | null }
+export interface MarketSummary {
+  generated_at: string; index_change_pct: number | null;
+  nifty50: {
+    breadth: { total: number; covered: number; advancing: number; declining: number; flat: number; ad_ratio: number | null; pct_advancing: number | null; equal_weight_return: number | null; at_high: number; at_low: number; coverage: number };
+    contribution: { weight_covered: number; weight_loaded: number; cap_weight_return: number | null; net_points_pct: number | null; top5_share: number | null; top10_share: number | null; stocks_for_half: number | null } | null;
+    stocks: MarketStockRow[];
+    weights: { as_of: string; source: string; approximate: boolean; rolled_to: string | null } | null;
+  };
+  sectors: { nifty50: MarketSectorRow[] };
+}
+
 export interface StoredStrategies { saved: Record<string, unknown>[]; closed: Record<string, unknown>[] }
 
 export interface MarketSessionInfo {
@@ -95,6 +109,7 @@ export const api = {
     request<{ ok: boolean }>(`/api/strategies/${kind}`, {
       method: "PUT", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ key, doc }),
     }),
+  marketSummary: () => request<MarketSummary>("/api/market/summary"),
   runningGet: () => request<RunningResponse>("/api/strategies/running"),
   runningPut: (doc: unknown, baseRev: number | null) =>
     request<{ ok: boolean; rev: number }>("/api/strategies/running", {

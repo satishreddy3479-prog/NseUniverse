@@ -37,6 +37,22 @@
   --info: #0b78c2;
 }
 
+/* Ocean: a deep blue-green dark theme between the light and the dark one. */
+[data-theme="ocean"] {
+  --ink: #06242b;
+  --slate: #0b3540;
+  --slate-2: #11444f;
+  --rule: #1f6070;
+  --paper: #e9f6f8;
+  --muted: #8dbcc6;
+  --accent: #7ee0d0;
+  --brass: #ffc857;
+  --up: #3be8a8;
+  --down: #ff6b6b;
+  --warn: #ffa94d;
+  --info: #5fd0ff;
+}
+
 @theme inline {
   --color-ink: var(--ink);
   --color-slate: var(--slate);

@@ -5,6 +5,7 @@ import { EChart, useChartColors } from "../EChart";
 import { ChainTable } from "../ChainTable";
 import { Button, EmptyState, SourceTag } from "../ui";
 import { useDash } from "./DashContext";
+import { GexWidget, IvSkewWidget, PeCeWidget, SmartOiWidget, VegaWidget } from "./toolWidgets";
 import { FullChart } from "./FullChart";
 import { sessionCloseMin, sessionOpenMin } from "../../lib/session";
 import { atmStraddle, compactIN, computeTotals, maxPain, OI_MODES, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, TS_RANGES, windowEndIso, windowStartIso, type OiMode } from "../../lib/analytics";
@@ -996,6 +997,11 @@ export const WIDGETS: WidgetDef[] = [
   { id: "oiHeatmap", title: "OI change heatmap", render: () => <OiHeatmapWidget />, x: 6, y: 37, w: 6, h: 12, minW: 4, minH: 7 },
   { id: "oiConcentration", title: "OI concentration", render: () => <OiConcentrationWidget />, x: 0, y: 49, w: 5, h: 10, minW: 3, minH: 6 },
   { id: "priceOi", title: "Price and OI", render: () => <PriceOiWidget />, x: 5, y: 49, w: 7, h: 10, minW: 4, minH: 6 },
+  { id: "smartOi", title: "Smart OI: buildup by strike", render: () => <SmartOiWidget />, x: 0, y: 100, w: 12, h: 14, minW: 5, minH: 8 },
+  { id: "peCe", title: "PE − CE difference", render: () => <PeCeWidget />, x: 0, y: 114, w: 12, h: 10, minW: 4, minH: 6 },
+  { id: "ivSkew", title: "Volatility skew", render: () => <IvSkewWidget />, x: 0, y: 124, w: 12, h: 10, minW: 4, minH: 6 },
+  { id: "gex", title: "Gamma exposure by strike", render: () => <GexWidget />, x: 0, y: 134, w: 12, h: 10, minW: 4, minH: 6 },
+  { id: "vega", title: "Vega exposure by strike", render: () => <VegaWidget />, x: 0, y: 144, w: 12, h: 10, minW: 4, minH: 6 },
   { id: "detail", title: "Strike detail", render: () => <DetailWidget />, x: 9, y: 29, w: 3, h: 8, minW: 2, minH: 4 },
 ];
 

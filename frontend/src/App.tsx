@@ -7,6 +7,7 @@ import { Portfolio } from "./pages/Portfolio";
 import { DataSessions } from "./pages/DataSessions";
 import { Diagnostics } from "./pages/Diagnostics";
 import { OptionChain } from "./pages/OptionChain";
+import { Home } from "./pages/Home";
 import { Overview } from "./pages/Overview";
 import { Planned } from "./pages/Planned";
 import { Settings } from "./pages/Settings";
@@ -15,6 +16,7 @@ import { Settings } from "./pages/Settings";
 const Analysis = lazy(() => import("./pages/Analysis"));
 const Prediction = lazy(() => import("./pages/Prediction"));
 const StrategyBuilder = lazy(() => import("./pages/StrategyBuilder"));
+const ToolPage = lazy(() => import("./pages/ToolPage"));
 
 export function makeQueryClient() {
   return new QueryClient({
@@ -26,7 +28,10 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route index element={<Overview />} />
+        <Route index element={<Home />} />
+        <Route path="overview" element={<Overview />} />
+        <Route path="tools/:id" element={
+          <Suspense fallback={<p className="text-muted">Loading tool…</p>}><ToolPage /></Suspense>} />
         <Route path="option-chain" element={<OptionChain />} />
         <Route path="expiry-comparison" element={
           <Planned title="Expiry comparison" when="Checkpoint 3">
