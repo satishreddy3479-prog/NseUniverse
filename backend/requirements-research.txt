@@ -2,3 +2,5 @@
 # the server installs requirements.txt only; the PC / Codespaces use requirements-dev.txt.
 yfinance>=1.7,<2
 numpy>=1.26
+scikit-learn>=1.5,<2   # swing pre-move study (research/swing)
+pyarrow>=15            # parquet price cache for research/swing

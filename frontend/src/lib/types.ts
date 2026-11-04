@@ -736,3 +736,87 @@ export interface FuturesSeries {
   latest: { times: string; future: number; spot: number; basis: number; basis_pct: number | null; carry_pct: number | null; fair_basis: number | null; vs_fair: number | null } | null;
   warnings: string[]; definitions: Record<string, string>;
 }
+
+// ---- Swing research report (/api/swing/report, written by research/swing/export_report.py)
+export interface SwingMetrics {
+  bars: number; years: number; final_equity: number; net_profit: number; return_pct: number; cagr_pct: number;
+  max_drawdown_pct: number; calmar: number | null; sharpe_rf0: number | null; trades: number; wins: number;
+  win_rate_pct: number | null; avg_win_over_avg_loss: number | null; profit_factor: number | null; avg_r: number | null;
+  avg_hold_win: number | null; avg_hold_loss: number | null; nifty_return_pct: number; nifty_cagr_pct: number;
+}
+export interface SwingTrade {
+  symbol: string; sector: string; archetype: string; score: number; signal_date: string; entry_date: string;
+  entry: number; pivot: number; initial_sl: number; shares: number; exit_date: string | null; exit: number | null;
+  reason: string; pnl: number; return_pct: number | null; r_mult: number | null; hold_days: number;
+}
+export interface SwingGroupRow { key: string | number; trades: number; win_rate_pct: number; pnl: number; avg_r: number | null; pnl_pct_of_capital: number }
+export interface SwingRobustRow {
+  group: string; label: string; trades: number; gross_return_pct: number; net_return_pct: number;
+  gross_max_dd_pct: number; gross_profit_factor: number | null; net_profit_factor: number | null;
+}
+export interface SwingReport {
+  schema: number;
+  meta: {
+    generated_at_utc: string; data_through: string; period_start: string; universe_fetched_at_utc: string;
+    universe_size: number; stocks_with_data: number; scan_clause: string; price_basis: string;
+    cost_per_side_pct: number; params: Record<string, number | string | boolean>;
+  };
+  kpis: { gross: SwingMetrics; net: SwingMetrics };
+  equity: { dates: string[]; gross: number[]; net: number[]; nifty: number[]; gross_dd: number[]; net_dd: number[] };
+  year_returns: { year: number; gross_pct: number; net_pct: number; nifty_pct: number }[];
+  concentration: { top10_pnl: number; total_pnl: number; pnl_without_top10: number; top10_share_pct: number | null };
+  by_exit_reason: SwingGroupRow[]; by_archetype: SwingGroupRow[]; by_sector: SwingGroupRow[]; by_year: SwingGroupRow[];
+  trades: SwingTrade[];
+  robustness: SwingRobustRow[];
+  original_ledger: {
+    source: string; trades: number; return_pct: number; max_drawdown_pct: number; profit_factor: number;
+    win_rate_pct: number; costs: string; prices: string; note: string;
+  };
+  caveats: string[];
+}
+
+// ---- Swing paper book (/api/swing/paper, built by backend/app/swing)
+export interface SwingPaperOrder {
+  id: number; session: string; symbol: string; sector: string; archetype: string; score: number; pillars: number[];
+  close: number; dist_pct: number; pivot: number; trigger: number; max_open: number; initial_sl: number;
+  risk_pct: number; atr14: number; min_volume: number; rank: number;
+}
+export interface SwingPaperPosition {
+  symbol: string; sector: string; archetype: string; score: number; pivot: number; entry_session: string; entry_no: number;
+  fill: number; shares: number; initial_sl: number; tsl: number; hh: number; last_close: number;
+  value: number; unrealized_pnl: number; unrealized_pct: number; stop_stage: "initial stop" | "breakeven" | "trailing";
+  risk_to_stop_pct: number;
+}
+export interface SwingPaperDecision {
+  decided_on: string; outcome: "filled" | "skipped"; reason: string; fill: number | null; shares: number | null;
+  symbol: string; sector: string; score: number; signal_session: string; trigger_price: number; max_open: number;
+  initial_sl: number; rank: number;
+}
+export interface SwingPaperTrade {
+  id: number; symbol: string; sector: string; archetype: string; score: number; entry_session: string; entry: number;
+  pivot: number; initial_sl: number; shares: number; exit_session: string; exit: number; reason: string;
+  gross_pnl: number; costs: number; pnl: number; r_mult: number | null; hold_sessions: number;
+}
+export interface SwingPaperView {
+  status: {
+    enabled: boolean; runs_after_ist: string; running: boolean; done_today: boolean; last_result: string;
+    last_run_at: string | null; started_session: string | null; rule_version: string;
+  };
+  book: {
+    capital: number; equity: number; cash: number; invested: number; open_positions: number; slots: number;
+    return_pct: number; as_of: string | null; started: string | null; sessions: number; nifty_return_pct: number | null;
+  };
+  positions: SwingPaperPosition[];
+  orders: SwingPaperOrder[];
+  scan: {
+    session: string; ran_at: string; universe_size: number; fetched_ok: number; sectors_defaulted: number;
+    nifty_close: number | null; nifty_sma50: number | null; nifty_ok: boolean | null;
+    sectors: { code: string; ok: boolean | null }[]; candidates: number; blocked_by_gate: number; note: string;
+  } | null;
+  decisions: SwingPaperDecision[];
+  trades: SwingPaperTrade[];
+  trade_totals: { closed: number; wins: number; net_pnl: number; costs: number };
+  equity: { session: string; session_no: number; equity: number; cash: number; invested: number; open_positions: number; nifty_close: number | null }[];
+  recent_runs: { session: string; ran_at: string; universe_size: number; fetched_ok: number; candidates: number; blocked_by_gate: number; note: string }[];
+  config: { capital: number; slots: number; risk_pct: number; min_score: number; cost_per_side_pct: number; cooldown: number; rule_version: string };
+}

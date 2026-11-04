@@ -12,6 +12,7 @@ const RIGHT: { to: string; label: string }[] = [
 export const STRATEGY: { to: string; label: string }[] = [
   { to: "/strategy", label: "Strategy builder" },
   { to: "/portfolio", label: "Strategy portfolio" },
+  { to: "/swing", label: "Swing trading" },
 ];
 export const SYSTEM: { to: string; label: string }[] = [
   { to: "/overview", label: "Platform status" },

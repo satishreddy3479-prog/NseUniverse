@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     market_close: str = "auto"  # 'auto' follows the exchange feed, or 'HH:MM'
     backup_keep_daily: int = 7
     backup_keep_monthly: int = 6
+    swing_paper_enabled: bool = True  # after-close swing scan + paper trades (paper only)
+    swing_paper_capital: float = Field(default=1_000_000.0, ge=10_000)
+    swing_paper_cost_per_side: float = Field(default=0.0015, ge=0, le=0.02)
+    swing_paper_run_after: str = "17:00"  # IST, HH:MM; heavy jobs run after 16:30
     broker_daily_login: bool = True  # fresh broker sign-in every morning
     broker_login_time: str = "08:30"  # IST, HH:MM
     intraday_autoscore: bool = True  # record the rules-based intraday score each minute in session

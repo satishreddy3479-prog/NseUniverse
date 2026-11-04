@@ -48,6 +48,10 @@ from app.storage.strategies import StrategyStore
 from app.strategy.automation import StrategyAutomation
 from app.stream.hub import Hub
 from app.stream.manager import StreamConfig, StreamManager
+from app.swing.engine import Config as SwingConfig
+from app.swing.fetch import HttpFetcher
+from app.swing.service import SwingPaperService
+from app.swing.store import PaperStore
 
 logger = logging.getLogger(__name__)
 
@@ -248,6 +252,14 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         )
         app.state.daily_login = daily_login
         daily_login.start()
+        sh, sm = (int(x) for x in settings.swing_paper_run_after.split(":"))
+        swing_paper = SwingPaperService(
+            PaperStore(settings.data_dir), HttpFetcher(), enabled=settings.swing_paper_enabled,
+            run_after=time(sh, sm),
+            cfg=SwingConfig(capital=settings.swing_paper_capital,
+                            cost_per_side=settings.swing_paper_cost_per_side))
+        app.state.swing_paper = swing_paper
+        swing_paper.start()
         stream.start_background()
         if settings.stream_autostart:
             await stream.start()
@@ -268,6 +280,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             await close_tracker.stop()
             await strategy_automation.stop()
             await eod.stop()
+            await swing_paper.stop()
             await daily_login.stop()
             await intraday.stop()
             intraday_store.close()

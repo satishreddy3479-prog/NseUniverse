@@ -67,6 +67,7 @@ T+1/T+5 research system: read `docs/prediction/overview.md` first. Never use inf
 ## Commands (Windows, from repo root)
 - Open the app: double-click `NSE Universe.cmd` (starts it if needed). Dev mode is on: backend auto-restarts on code changes, Vite hot-updates, `scripts\watch.ps1` installs new packages. After any change tell the user to just refresh the browser; never ask them to stop/start.
 - Live stream check (market hours): `scripts\stream-check.ps1`.
+- Swing page data: paper trading runs by itself on the server after 17:00 IST (manual pass: `python -m app.swing --data-dir PATH` in `backend`); the backtest report is built by `scripts\swing-refresh.ps1` and copied to the server's `data/swing/report.json`.
 - Setup `scripts\setup.ps1` · run `scripts\dev.ps1` · offline checks `scripts\check.ps1` · live read-only check `scripts\live-check.ps1` (user runs; needs `backend\.env`).
 - Never read or print `backend/.env`. Live tests are opt-in (`-m live`, `NSE_LIVE_TESTS=1`).
 

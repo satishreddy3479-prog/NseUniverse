@@ -10,7 +10,7 @@ import type {
   ConfigStatus,
   ErrorEvent,
   ExpirySelection,
-  EventItem, FlowsLatest, StorageStatus, IntradayScoreRow, IntradaySummary, NewsStatus, FlowsStatus, HistoryFetchStatus, HistoryResponse, OiChange, OiHeatmap, OiSeries, StrikeSeries, FuturesSeries, PremiumDecay, PredictionSummary, SamplerStatus,
+  EventItem, FlowsLatest, StorageStatus, IntradayScoreRow, IntradaySummary, NewsStatus, FlowsStatus, HistoryFetchStatus, HistoryResponse, OiChange, OiHeatmap, OiSeries, StrikeSeries, FuturesSeries, PremiumDecay, PredictionSummary, SamplerStatus, SwingReport, SwingPaperView,
   SessionInfo,
   SnapshotSummary,
 } from "./types";
@@ -183,5 +183,7 @@ export const api = {
   sampler: () => request<SamplerStatus>("/api/sampler/status"),
   history: (expiry: string, strikes: number) =>
     request<HistoryResponse>(`/api/history/observations?expiry=${encodeURIComponent(expiry)}&strikes=${strikes}`),
+  swingReport: () => request<SwingReport>("/api/swing/report"),
+  swingPaper: () => request<SwingPaperView>("/api/swing/paper"),
   csvUrl: (id: string) => `/api/snapshots/${encodeURIComponent(id)}/csv`,
 };

@@ -1,0 +1,60 @@
+{
+ "source": "chartink.com/screener/process",
+ "scan_clause": "( {cash} ( market cap >= 300 and daily sma( daily volume * daily close , 50 ) >= 10000000 and yearly return on capital employed percentage >= 10 and yearly return on net worth percentage >= 10 and yearly debt equity ratio <= 1.5 and quarterly eps after extraordinary items basic > 0 and quarterly net profit/reported profit after tax > 0 and daily close > 75 ) )",
+ "rows": [
+  {
+   "sr": 1,
+   "nsecode": "MRF",
+   "name": "Mrf Limited",
+   "bsecode": "500290",
+   "close": 117985,
+   "per_chg": 0.25,
+   "volume": 2776
+  },
+  {
+   "sr": 2,
+   "nsecode": "BOSCHLTD",
+   "name": "Bosch Limited",
+   "bsecode": "500530",
+   "close": 50925,
+   "per_chg": 2.58,
+   "volume": 46770
+  },
+  {
+   "sr": 3,
+   "nsecode": "PAGEIND",
+   "name": "Page Industries Limited",
+   "bsecode": "532827",
+   "close": 35750,
+   "per_chg": 1.33,
+   "volume": 13739
+  },
+  {
+   "sr": 4,
+   "nsecode": "HONAUT",
+   "name": "Honeywell Automation India Limited",
+   "bsecode": "517174",
+   "close": 29810,
+   "per_chg": 2.55,
+   "volume": 7019
+  },
+  {
+   "sr": 5,
+   "nsecode": "POWERINDIA",
+   "name": "Hitachi Energy India Ltd",
+   "bsecode": "543187",
+   "close": 29100,
+   "per_chg": 6.67,
+   "volume": 180043
+  },
+  {
+   "sr": 6,
+   "nsecode": "3MINDIA",
+   "name": "3m India Limited",
+   "bsecode": "523395",
+   "close": 28835,
+   "per_chg": -0.17,
+   "volume": 8544
+  }
+ ]
+}

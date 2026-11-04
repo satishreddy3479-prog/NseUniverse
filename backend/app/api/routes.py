@@ -588,6 +588,30 @@ async def storage_cleanup_run(body: CleanupRequest, request: Request) -> dict[st
     return {"ok": True, "result": res}
 
 
+@router.get("/swing/report")
+async def swing_report(request: Request) -> dict[str, Any]:
+    """Swing research report: backtest, robustness runs and caveats.
+
+    Read from data/swing/report.json (built on the research PC by scripts/swing-refresh.ps1);
+    nothing is computed here.
+    """
+    from app.services.swing_report import SwingReportError, load_report
+
+    try:
+        return await asyncio.to_thread(load_report, request.app.state.settings.data_dir)
+    except SwingReportError as e:
+        raise HTTPException(e.status, {"code": e.code, "message": e.message}) from e
+
+
+@router.get("/swing/paper")
+async def swing_paper(request: Request) -> dict[str, Any]:
+    """Swing paper book: equity, open positions, next-session orders, decisions and closed trades.
+
+    Simulated on daily bars after the close (paper only). Read from data/swing_paper.sqlite3.
+    """
+    return await asyncio.to_thread(request.app.state.swing_paper.view)
+
+
 @router.post("/storage/eod/run", dependencies=[Depends(require_local_control)])
 async def storage_eod_run(request: Request) -> dict[str, Any]:
     """Run the end-of-day pipeline now for every finished day that has no manifest (idempotent)."""
