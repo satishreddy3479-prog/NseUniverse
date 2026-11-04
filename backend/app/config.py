@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     stream_max_reconnect_attempts: int = Field(default=8, ge=1, le=100)
     stream_backoff_base_seconds: float = Field(default=2.0, ge=0.5)
     stream_backoff_cap_seconds: float = Field(default=60.0, ge=1.0)
+    stream_failed_retry_seconds: float = Field(default=600.0, ge=0.0)  # 0 = stay stopped
     stream_test_timeout_seconds: float = Field(default=10.0, ge=1.0)
     sampler_enabled: bool = True
     sampler_interval_seconds: int = Field(default=60, ge=30, le=3600)

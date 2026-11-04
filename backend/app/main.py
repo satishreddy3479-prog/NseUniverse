@@ -103,6 +103,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
                 max_reconnect_attempts=settings.stream_max_reconnect_attempts,
                 backoff_base_s=settings.stream_backoff_base_seconds,
                 backoff_cap_s=settings.stream_backoff_cap_seconds,
+                failed_retry_s=settings.stream_failed_retry_seconds,
                 test_timeout_s=settings.stream_test_timeout_seconds,
             ),
             hub=Hub(max_clients=settings.ws_max_clients),

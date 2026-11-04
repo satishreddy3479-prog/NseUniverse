@@ -471,3 +471,74 @@ async def test_the_internal_tick_receiver_survives_start_and_a_restart() -> None
     await asyncio.sleep(0.05)
     assert m.on_internal is not None and m.on_internal == seen.append
     await m.stop()
+
+
+# ------------------------------------------------------------------ trying again after giving up
+async def test_after_giving_up_it_starts_a_fresh_round_later_and_recovers() -> None:
+    feeds = [FakeFeed(close_after_connect=True) for _ in range(4)] + [FakeFeed()]
+    cfg = StreamConfig(max_reconnect_attempts=3, test_timeout_s=0.05, failed_retry_s=600.0)
+    m, delays, calls = make_manager(feeds, cfg=cfg)
+    await m.start()
+    await until(lambda: len(feeds[-1].subs) >= 1)
+    assert delays == [2.0, 4.0, 8.0, 600.0]  # three backoffs, the long wait, then a fresh round
+    assert len(calls) == 5 and m.state is not StreamState.FAILED
+    # the failure stays on record
+    assert any(e.code == "retries_exhausted" for e in m.status().recent_errors)
+    await m.stop()
+
+
+def waiting_manager(feeds: list[FakeFeed]) -> StreamManager:
+    """A manager whose long retry wait lasts until cancelled (the short backoffs are instant)."""
+    it = iter(feeds)
+    release = asyncio.Event()
+
+    async def factory() -> FakeFeed:
+        return next(it)
+
+    async def universe() -> Universe:
+        return UNIVERSE
+
+    async def sleep(d: float) -> None:
+        if d >= 600:
+            await release.wait()
+        else:
+            await asyncio.sleep(0)
+
+    cfg = StreamConfig(max_reconnect_attempts=3, test_timeout_s=0.05, failed_retry_s=600.0)
+    return StreamManager(
+        feed_factory=factory, universe_provider=universe, config=cfg, clock=Clock(), sleep=sleep
+    )
+
+
+async def test_start_while_waiting_for_the_next_round_starts_over_at_once() -> None:
+    ok = FakeFeed()
+    m = waiting_manager([FakeFeed(close_after_connect=True) for _ in range(4)] + [ok])
+    await m.start()
+    await until(lambda: m.state is StreamState.FAILED)
+    assert m.running  # still alive, waiting for its next round
+    note = m.status().note
+    assert "tries again at" in note and "IST" in note  # the page can say when
+    await m.start()  # the owner presses Start: no ten-minute wait, and never a second supervisor
+    await until(lambda: len(ok.subs) >= 1)
+    assert m.state is not StreamState.FAILED and "tries again" not in m.status().note
+    await m.stop()
+
+
+async def test_stop_while_waiting_for_the_next_round_ends_cleanly() -> None:
+    m = waiting_manager([FakeFeed(close_after_connect=True) for _ in range(4)])
+    await m.start()
+    await until(lambda: m.state is StreamState.FAILED)
+    await m.stop()
+    assert not m.running and m.state is StreamState.STOPPED
+
+
+async def test_a_session_that_ends_in_failure_is_never_retried_when_the_retry_is_off() -> None:
+    m, delays, calls = make_manager(
+        [FakeFeed(close_after_connect=True) for _ in range(10)],
+        cfg=StreamConfig(max_reconnect_attempts=2, test_timeout_s=0.05, failed_retry_s=0.0),
+    )
+    await m.start()
+    await until(lambda: m.state is StreamState.FAILED)
+    assert 600.0 not in delays and not m.running  # the old behaviour is still available
+    await m.stop()
+

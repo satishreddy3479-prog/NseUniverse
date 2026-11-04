@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
+from zoneinfo import ZoneInfo
 
 from app.broker.base import BrokerError
 from app.domain.models import OptionChainSnapshot, OptionQuote
@@ -12,6 +13,7 @@ from app.stream.manager import Universe
 from app.stream.models import FeedToken
 
 INDEX_NAMES = {"NIFTY": "Nifty 50"}
+IST = ZoneInfo("Asia/Kolkata")
 
 
 def _token(q: OptionQuote | None) -> FeedToken | None:
@@ -64,21 +66,58 @@ def tokens_from_snapshots(snaps: list[OptionChainSnapshot], underlying: str) -> 
     )
 
 
+def market_hours(now: datetime) -> bool:
+    """Weekday 09:00-15:45 IST: when a fresh option chain is worth fetching before streaming.
+
+    Outside it the exchange is closed, so the latest stored chain is as good as a new one.
+    """
+    t_ = now.astimezone(IST)
+    return t_.weekday() < 5 and time(9, 0) <= t_.time() < time(15, 45)
+
+
+def stored_targets(svc: SnapshotService, today: date) -> list[date]:
+    """Expiries to stream when the broker cannot be asked.
+
+    The newest usable stored chain of each kind (weekly, monthly) that has not expired yet.
+    """
+    picked: dict[str, date] = {}
+    for item in svc.store.list(underlying=svc.underlying, limit=200):  # newest first
+        if item.completeness.value == "empty" or item.expiry < today:
+            continue
+        for kind in item.expiry_kinds or []:
+            picked.setdefault(str(kind), item.expiry)
+    return sorted(set(picked.values()))
+
+
 async def build_universe(
-    svc: SnapshotService, market_tokens: Callable[[], list[FeedToken]] | None = None
+    svc: SnapshotService,
+    market_tokens: Callable[[], list[FeedToken]] | None = None,
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> Universe:
-    sel = await svc.expiries()
+    closed = not market_hours(now())
     targets: list[date] = []
-    for d in (sel.weekly, sel.monthly):
-        if d is not None and d not in targets:
-            targets.append(d)
+    try:
+        sel = await svc.expiries()
+        for d in (sel.weekly, sel.monthly):
+            if d is not None and d not in targets:
+                targets.append(d)
+    except BrokerError:
+        if not closed:
+            raise
+        # Exchange closed and the broker will not answer (typical right after a restart at night):
+        # carry on from what is stored instead of failing every retry.
+        targets = stored_targets(svc, now().astimezone(IST).date())
+        if not targets:
+            raise
     if not targets:
         raise BrokerError("no verified expiry available to stream", code="no_expiry")
     snaps: list[OptionChainSnapshot] = []
     for exp in targets:
         snap = svc.store.latest(svc.underlying, exp.isoformat(), prefer_non_empty=True)
-        too_old = snap is not None and (
-            (datetime.now(UTC) - snap.retrieved_at).total_seconds() > svc.max_age_s
+        too_old = (
+            not closed
+            and snap is not None
+            and (datetime.now(UTC) - snap.retrieved_at).total_seconds() > svc.max_age_s
         )
         if snap is None or snap.completeness.value == "empty" or too_old:
             # The snapshot is the base the stream updates, so make sure the base is current.

@@ -12,8 +12,9 @@ import logging
 from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from app.logging_setup import log_event
 from app.stream.book import LiveBook
@@ -69,6 +70,9 @@ class StreamConfig:
     backoff_cap_s: float = 60.0
     test_timeout_s: float = 10.0
     healthy_reset_s: float = 60.0  # a session that lived this long resets the retry budget
+    # After the retries are used up, wait this long, then start a fresh round instead of
+    # staying stopped until the app restarts. 0 keeps the old behaviour (the app sets 600).
+    failed_retry_s: float = 0.0
 
 
 class StreamManager:
@@ -112,6 +116,7 @@ class StreamManager:
         self.message_count = 0
         self.duplicate_count = 0
         self.reconnect_count = 0
+        self.retry_at: datetime | None = None  # when a failed stream will try again
         self.connected_since: datetime | None = None
         self.last_message_at: datetime | None = None
         self.last_market_data_at: datetime | None = None
@@ -189,6 +194,9 @@ class StreamManager:
                 if self.market.state == "closed"
                 else ""
             )
+        elif self.state is StreamState.FAILED and self.retry_at is not None:
+            when = self.retry_at.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%H:%M")
+            note = f"Gave up after repeated failures. It tries again at {when} IST, or press Start."
         return StreamStatusModel(
             state=self.state,
             state_since=self.state_since,
@@ -220,8 +228,14 @@ class StreamManager:
     # ---------------------------------------------------------------- control
     async def start(self) -> StreamStatusModel:
         async with self._lock:
-            if self.running:
+            if self.running and self.state is not StreamState.FAILED:
                 return self.status()  # idempotent: never a second ingestion process
+            if self.running:  # failed and only waiting for its next scheduled round: start over now
+                sup = self._supervisor
+                if sup is not None:
+                    sup.cancel()
+                    with contextlib.suppress(asyncio.CancelledError, Exception):
+                        await sup
             self._stop = False
             self._reset(StreamState.CONNECTING)
             self._supervisor = asyncio.create_task(self._supervise())
@@ -305,7 +319,17 @@ class StreamManager:
                         "retries_exhausted",
                         f"gave up after {self.cfg.max_reconnect_attempts} reconnect attempts",
                     )
-                    return
+                    if self.cfg.failed_retry_s <= 0:
+                        return
+                    # Not for good: the cause (broker at night, lapsed session) is temporary.
+                    self.retry_at = self._now() + timedelta(seconds=self.cfg.failed_retry_s)
+                    due = self.retry_at.isoformat(timespec="seconds")
+                    self._emit("stream_retry_scheduled", f"next round at {due}")
+                    await self._sleep(self.cfg.failed_retry_s)
+                    self.retry_at = None
+                    attempt = 0
+                    self._set(StreamState.CONNECTING)
+                    continue
                 if self.state is not StreamState.AUTH_FAILED:
                     self._set(StreamState.RECONNECTING)
                 self.reconnect_count += 1
