@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sqlite3
 import threading
 from datetime import UTC, date, datetime, time
@@ -46,11 +47,13 @@ class FakeFetcher:
     def __init__(self, data: dict[str, list[RawBar]]) -> None:
         self.data, self.cut, self.fail = data, None, set()
         self.gate: threading.Event | None = None  # holds every download until released
+        self.threads: set[str] = set()  # names of the threads that asked for data
 
     def universe(self) -> list[dict]:
         return [{"nsecode": s} for s in NAMES]
 
     def daily(self, ticker: str) -> list[RawBar]:
+        self.threads.add(threading.current_thread().name)
         if self.gate is not None:
             self.gate.wait(15)
         if ticker in self.fail:
@@ -261,4 +264,51 @@ def test_run_now_endpoint_is_local_only_and_runs_the_scan(tmp_path: Path) -> Non
             sleep(0.05)
     assert body["book"]["sessions"] == 1 and body["status"]["last_result"].startswith("ok")
     assert body["status"]["progress"] is None
+
+
+async def test_the_scan_runs_in_its_own_thread_not_the_shared_worker_pool(tmp_path: Path) -> None:
+    data = make_data()
+    f = FakeFetcher(data)
+    f.cut = FIRST
+    svc = service(tmp_path, f, clock_after(data, FIRST - 1))
+    assert svc.trigger() is True
+    await svc._manual
+    assert f.threads == {"swing-paper-scan"}  # not asyncio_0 / ThreadPoolExecutor-*, which the broker calls also use
+    f.threads.clear()
+    f.cut = FIRST + 1
+    svc._clock = clock_after(data, FIRST)
+    assert (await svc._run_in_thread("schedule"))["state"] == "ok"
+    assert f.threads == {"swing-paper-scan"}
+    assert not [t for t in threading.enumerate() if t.name == "swing-paper-scan"]  # the thread ends with the pass
+
+
+def test_start_and_finish_are_logged_with_source_and_duration(tmp_path: Path, caplog) -> None:
+    data = make_data()
+    f = FakeFetcher(data)
+    f.cut = FIRST
+    svc = service(tmp_path, f, clock_after(data, FIRST - 1))
+    with caplog.at_level(logging.INFO, logger="app.swing.service"):
+        svc.run_once("manual")
+    events = {r.getMessage(): r.fields for r in caplog.records if r.getMessage().startswith("swing_paper_")}  # type: ignore[attr-defined]
+    assert events["swing_paper_start"] == {"source": "manual"}
+    done = events["swing_paper_run"]
+    assert done["state"] == "ok" and done["source"] == "manual" and done["seconds"] >= 0
+
+
+async def test_an_unexpected_failure_in_the_pass_never_hangs_the_waiter(tmp_path: Path) -> None:
+    data = make_data()
+    svc = service(tmp_path, FakeFetcher(data), clock_after(data, FIRST - 1))
+
+    def boom(source: str = "schedule") -> dict:
+        raise ZeroDivisionError("simulated bug")
+
+    svc.run_once = boom  # type: ignore[method-assign]
+    with pytest.raises(ZeroDivisionError):
+        await asyncio.wait_for(svc._run_in_thread("manual"), 5)  # a hang would time out here
+    assert svc.trigger() is True  # the failed manual run did not leave the service stuck
+    with pytest.raises(ZeroDivisionError):
+        await asyncio.wait_for(svc._manual, 5)
+    assert svc.trigger() is True and svc._manual is not None
+    with pytest.raises(ZeroDivisionError):
+        await asyncio.wait_for(svc._manual, 5)
 

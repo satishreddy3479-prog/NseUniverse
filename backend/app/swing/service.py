@@ -18,6 +18,7 @@ import logging
 import threading
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
+from time import monotonic
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -80,13 +81,13 @@ class SwingPaperService:
             d -= timedelta(days=1)
         return d
 
-    def run_once(self) -> dict[str, Any]:
+    def run_once(self, source: str = "schedule") -> dict[str, Any]:
         """One catch-up pass. Never raises: failures are recorded and retried later.
         Only one pass runs at a time: a second caller gets `busy` and changes nothing."""
         if not self._lock.acquire(blocking=False):
             return {"state": "busy", "detail": "a scan is already running"}
         try:
-            return self._run_locked()
+            return self._run_locked(source)
         finally:
             self.progress = None
             self._lock.release()
@@ -96,15 +97,48 @@ class SwingPaperService:
         The pass is the same one the schedule runs; it uses the last finished session."""
         if self._lock.locked() or (self._manual is not None and not self._manual.done()):
             return False
-        self._manual = asyncio.create_task(asyncio.to_thread(self.run_once), name="swing-paper-manual")
+        self._manual = asyncio.create_task(self._run_in_thread("manual"), name="swing-paper-manual")
+        self._manual.add_done_callback(self._log_manual_failure)
         return True
+
+    @staticmethod
+    def _log_manual_failure(task: asyncio.Task[dict[str, Any]]) -> None:
+        if not task.cancelled() and (err := task.exception()) is not None:
+            log_event(logger, logging.ERROR, "swing_paper_manual_failed", error=type(err).__name__)
+
+    async def _run_in_thread(self, source: str) -> dict[str, Any]:
+        """Run one pass in a thread of its own. The scan lasts minutes; on the shared worker pool (five
+        threads on this server, also used by every broker call) it would hold one of them all that time."""
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future[dict[str, Any]] = loop.create_future()
+
+        def deliver(result: dict[str, Any] | None, error: Exception | None) -> None:
+            if fut.done():  # the waiter may have been cancelled at shutdown
+                return
+            if error is not None:
+                fut.set_exception(error)
+            else:
+                fut.set_result(result or {})
+
+        def work() -> None:
+            try:
+                result = self.run_once(source)
+            except Exception as e:  # noqa: BLE001 - run_once catches its own failures; this is the last safety net
+                loop.call_soon_threadsafe(deliver, None, e)
+            else:
+                loop.call_soon_threadsafe(deliver, result, None)
+
+        threading.Thread(target=work, name="swing-paper-scan", daemon=True).start()
+        return await fut
 
     def _step(self, phase: str, done: int | None = None, total: int | None = None) -> None:
         started = self.progress["started_at"] if self.progress else self._clock().astimezone(UTC).isoformat(timespec="seconds")
         self.progress = {"phase": phase, "done": done, "total": total, "started_at": started}
 
-    def _run_locked(self) -> dict[str, Any]:
+    def _run_locked(self, source: str) -> dict[str, Any]:
         now = self._clock()
+        began = monotonic()
+        log_event(logger, logging.INFO, "swing_paper_start", source=source)
         self._running = True
         self.last_attempt = now
         self._step("Checking the latest finished session")
@@ -126,7 +160,8 @@ class SwingPaperService:
         if result["state"] in ("ok", "up_to_date") and latest and date.fromisoformat(latest) >= self.expected_session(today):
             self.done_on = today
         log_event(logger, logging.INFO, "swing_paper_run", state=result["state"], session=result.get("session"),
-                  sessions=result.get("sessions"), candidates=result.get("candidates"), detail=result.get("detail"))
+                  sessions=result.get("sessions"), candidates=result.get("candidates"), detail=result.get("detail"),
+                  source=source, seconds=round(monotonic() - began, 1))
         return result
 
     # ---- the job
@@ -274,7 +309,10 @@ class SwingPaperService:
     async def _loop(self) -> None:
         while True:
             if self.due():
-                await asyncio.to_thread(self.run_once)
+                try:
+                    await self._run_in_thread("schedule")
+                except Exception as e:  # noqa: BLE001 - the scheduler must outlive any single pass
+                    log_event(logger, logging.ERROR, "swing_paper_loop_error", error=type(e).__name__)
             await asyncio.sleep(60)
 
     def start(self) -> None:
