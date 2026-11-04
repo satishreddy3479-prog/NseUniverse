@@ -279,6 +279,10 @@ async def test_the_scan_runs_in_its_own_thread_not_the_shared_worker_pool(tmp_pa
     svc._clock = clock_after(data, FIRST)
     assert (await svc._run_in_thread("schedule"))["state"] == "ok"
     assert f.threads == {"swing-paper-scan"}
+    for _ in range(100):  # the result is handed back from inside the thread, which may still be finishing
+        if not [t for t in threading.enumerate() if t.name == "swing-paper-scan"]:
+            break
+        await asyncio.sleep(0.02)
     assert not [t for t in threading.enumerate() if t.name == "swing-paper-scan"]  # the thread ends with the pass
 
 

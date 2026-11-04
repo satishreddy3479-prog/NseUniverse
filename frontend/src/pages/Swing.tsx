@@ -5,6 +5,7 @@ import { fmtDateTimeIST } from "../lib/format";
 import { BASIS_LABEL, isStale, reportAgeDays, type Basis } from "../lib/swing";
 import { EmptyState, ErrorNote, Panel, Skeleton } from "../components/ui";
 import { SwingOverview } from "../components/swing/SwingOverview";
+import { SwingLivePanel } from "../components/swing/SwingLivePanel";
 import { SwingPaper, type RunNote } from "../components/swing/SwingPaper";
 import { SwingRobustness } from "../components/swing/SwingRobustness";
 import { SwingRules } from "../components/swing/SwingRules";
@@ -47,6 +48,7 @@ export default function Swing() {
     refetchInterval: (q) => (q.state.data?.status.running ? 3_000 : 5 * 60_000),
   });
   const [runNote, setRunNote] = useState<RunNote | null>(null);
+  const live = useQuery({ queryKey: ["swing-live"], queryFn: api.swingLive, refetchInterval: 5_000, retry: false, enabled: tab === "paper" });
   const run = useMutation({
     mutationFn: api.swingRun,
     onSuccess: (r) => {
@@ -99,7 +101,7 @@ export default function Swing() {
         <TabPanel id="paper">
           {paper.isPending ? <Loading what="the paper book" />
             : paper.isError ? <ErrorNote title="Could not load the paper book" message={paper.error instanceof Error ? paper.error.message : "Unknown error"} />
-              : <SwingPaper view={paper.data} runPending={run.isPending} runNote={runNote} onRun={() => { setRunNote(null); run.mutate(); }} />}
+              : <SwingPaper view={paper.data} live={<SwingLivePanel live={live.data} loading={live.isPending} error={live.error} />} runPending={run.isPending} runNote={runNote} onRun={() => { setRunNote(null); run.mutate(); }} />}
         </TabPanel>
       )}
       {tab === "overview" && <TabPanel id="overview">{withReport((r) => <SwingOverview report={r} basis={basis} />)}</TabPanel>}

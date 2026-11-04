@@ -821,3 +821,21 @@ export interface SwingPaperView {
   recent_runs: { session: string; ran_at: string; universe_size: number; fetched_ok: number; candidates: number; blocked_by_gate: number; note: string }[];
   config: { capital: number; slots: number; risk_pct: number; min_score: number; cost_per_side_pct: number; cooldown: number; rule_version: string };
 }
+
+// ---- Swing live view (/api/swing/live): prices from the Kotak feed for the stocks the paper book watches
+export interface SwingLiveRow {
+  symbol: string; kind: "order" | "position"; has_token: boolean; ltp: number | null; prev_close: number | null;
+  change_pct: number | null; volume: number | null; day_open: number | null; day_high: number | null;
+  day_low: number | null; tick_age_s: number | null; stale: boolean; state: string; note: string; stop: number;
+  rank?: number; pace?: number | null; trigger?: number; max_open?: number; min_volume?: number;
+  fill?: number; shares?: number; r_now?: number | null; level_1_8r?: number; level_2_5r?: number;
+  reached_1_8r?: boolean; reached_2_5r?: boolean; unrealized_pnl?: number | null;
+}
+export interface SwingLiveEvent {
+  at: string; kind: string; symbol: string; price: number | null; volume: number | null; detail: Record<string, unknown>;
+}
+export interface SwingLiveView {
+  enabled: boolean; mode: "shadow"; market: "open" | "closed"; feed_state: string; note: string | null;
+  watching: SwingLiveRow[]; events: SwingLiveEvent[]; updated_at: string;
+}
+

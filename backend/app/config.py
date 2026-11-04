@@ -80,6 +80,7 @@ class Settings(BaseSettings):
     backup_keep_daily: int = 7
     backup_keep_monthly: int = 6
     swing_paper_enabled: bool = True  # after-close swing scan + paper trades (paper only)
+    swing_live_enabled: bool = True  # live prices for the swing paper book (shadow decisions only)
     swing_paper_capital: float = Field(default=1_000_000.0, ge=10_000)
     swing_paper_cost_per_side: float = Field(default=0.0015, ge=0, le=0.02)
     swing_paper_run_after: str = "17:00"  # IST, HH:MM; heavy jobs run after 16:30

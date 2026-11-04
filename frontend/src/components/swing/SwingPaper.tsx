@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { EChart, useChartColors } from "../EChart";
 import { Button, EmptyState, Panel } from "../ui";
 import { fmtDateTimeIST, fmtInt, fmtPrice } from "../../lib/format";
@@ -13,8 +13,8 @@ const tone = (v: number) => (v >= 0 ? "text-up" : "text-down");
 
 export interface RunNote { kind: "info" | "error"; text: string }
 
-export function SwingPaper({ view, onRun, runPending, runNote }: {
-  view: SwingPaperView; onRun: () => void; runPending: boolean; runNote: RunNote | null;
+export function SwingPaper({ view, onRun, runPending, runNote, live }: {
+  view: SwingPaperView; onRun: () => void; runPending: boolean; runNote: RunNote | null; live?: ReactNode;
 }) {
   const colors = useChartColors();
   const opt = useMemo(() => paperEquityOption(view, colors), [view, colors]);
@@ -69,6 +69,8 @@ export function SwingPaper({ view, onRun, runPending, runNote }: {
           </p>
         )}
       </Panel>
+
+      {live}
 
       {never ? (
         <Panel title="Paper book">

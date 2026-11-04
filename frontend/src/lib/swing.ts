@@ -114,3 +114,22 @@ export function resultText(raw: string): string {
     default: return raw;
   }
 }
+
+const LIVE_STATE: Record<string, string> = {
+  waiting: "Waiting for the trigger", triggered: "Triggered: would be bought", gap_skip: "Skipped: gapped above the limit",
+  volume_short: "Through the trigger, volume too low", no_data: "No live price yet", stale: "Price is stale",
+  holding: "Holding", stop_hit: "Stop breached: would be sold",
+};
+export const liveStateLabel = (s: string): string => LIVE_STATE[s] ?? s;
+
+const LIVE_EVENT: Record<string, string> = {
+  entry_trigger: "Would buy: price through the trigger on enough volume", entry_gap_skip: "Would skip: opened above the no-chase limit",
+  stop_hit: "Would sell: stop breached", target_1_8r: "Reached 1.8R: the stop moves to breakeven at the close",
+  target_2_5r: "Reached 2.5R: the trailing stop starts at the close",
+};
+export const liveEventLabel = (k: string): string => LIVE_EVENT[k] ?? k;
+
+/** Percent distance from the live price to a level (positive = the level is above the price). */
+export const pctTo = (level: number | null | undefined, ltp: number | null | undefined): number | null =>
+  level == null || ltp == null || ltp <= 0 ? null : (level / ltp - 1) * 100;
+

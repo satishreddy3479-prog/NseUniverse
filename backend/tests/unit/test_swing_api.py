@@ -49,3 +49,13 @@ def test_load_report_error_carries_status(tmp_path: Path) -> None:
     with pytest.raises(SwingReportError) as e:
         load_report(tmp_path)
     assert e.value.status == 404
+
+
+def test_live_view_is_served_even_with_nothing_watched(client: TestClient) -> None:
+    r = client.get("/api/swing/live")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["mode"] == "shadow" and body["watching"] == [] and body["events"] == []
+    assert body["enabled"] is False and body["market"] in ("open", "closed")
+    assert body["note"] == "no broker instrument file available"  # the replay broker has no instrument file
+

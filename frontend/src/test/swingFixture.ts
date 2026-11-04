@@ -1,4 +1,4 @@
-import type { SwingMetrics, SwingPaperOrder, SwingPaperView, SwingReport, SwingTrade } from "../lib/types";
+import type { SwingLiveView, SwingMetrics, SwingPaperOrder, SwingPaperView, SwingReport, SwingTrade } from "../lib/types";
 
 export const istToday = (offsetDays = 0): string =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(Date.now() + offsetDays * 86_400_000));
@@ -92,3 +92,20 @@ export function paperView(over: Partial<SwingPaperView> = {}): SwingPaperView {
     ...over,
   };
 }
+
+export function liveView(over: Partial<SwingLiveView> = {}): SwingLiveView {
+  const base = { has_token: true, day_open: null, day_high: null, day_low: null, tick_age_s: 1.2, stale: false, note: "" };
+  return {
+    enabled: true, mode: "shadow", market: "open", feed_state: "streaming", note: null, updated_at: "2026-11-05T05:30:00Z",
+    watching: [
+      { ...base, symbol: "KMEW", kind: "order", rank: 1, ltp: 3405, prev_close: 3330, change_pct: 2.25, volume: 90_000, pace: 0.82,
+        state: "waiting", trigger: 3419.23, max_open: 3494.23, stop: 3168.01, min_volume: 149_133 },
+      { ...base, symbol: "TITAN", kind: "position", ltp: 3650, prev_close: 3600, change_pct: 1.39, volume: 1_200_000, state: "holding",
+        fill: 3500, shares: 100, stop: 3507, r_now: 0.78, level_1_8r: 3860, level_2_5r: 4000, reached_1_8r: false, reached_2_5r: false,
+        unrealized_pnl: 15_000 },
+    ],
+    events: [{ at: "2026-11-05T04:10:00Z", kind: "entry_trigger", symbol: "ARIS", price: 148.4, volume: 800_000, detail: {} }],
+    ...over,
+  };
+}
+

@@ -4,9 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
-import type { SwingPaperView, SwingReport } from "../lib/types";
+import type { SwingLiveView, SwingPaperView, SwingReport } from "../lib/types";
 import { expiries, status, summary } from "./fixtures";
-import { istToday, paperView, swingReport } from "./swingFixture";
+import { istToday, liveView, paperView, swingReport } from "./swingFixture";
 
 // jsdom has no canvas: the chart wrapper becomes a stub that exposes what was plotted.
 vi.mock("../components/EChart", () => ({
@@ -33,12 +33,13 @@ let runCalls = 0;
 const RUNNING = { phase: "Downloading prices", done: 312, total: 803, started_at: "2026-11-05T11:30:00Z" };
 
 function mount(report: Reply<SwingReport> = swingReport(), paper: Reply<SwingPaperView> = paperView(),
-               run: Reply<{ started: boolean }> = { started: true }) {
+               run: Reply<{ started: boolean }> = { started: true }, live: Reply<SwingLiveView> = liveView()) {
   runCalls = 0;
   vi.stubGlobal("ResizeObserver", RO);
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input).split("?")[0]!;
     if (url === "/api/swing/report") return reply(report);
+    if (url === "/api/swing/live") return reply(live);
     if (url === "/api/swing/paper/run" && init?.method === "POST") { runCalls += 1; return reply(run); }
     if (url === "/api/swing/paper") {
       // after the button is pressed the server reports the scan as running
@@ -219,6 +220,57 @@ describe("Swing trading page: Run scan now", () => {
     const base = paperView();
     mount(swingReport(), paperView({ status: { ...base.status, last_result: "up_to_date" } }));
     expect(await screen.findByText("Already up to date with the latest finished session")).toBeInTheDocument();
+  });
+});
+
+describe("Swing trading page: live prices", () => {
+  it("shows live prices, volume pace, distance to trigger, stop and targets, and says it is shadow mode", async () => {
+    mount();
+    expect(await screen.findByText(/Shadow mode: shown and logged/)).toBeInTheDocument();
+    const table = await screen.findByRole("table", { name: "Live prices for watched stocks" });
+    const rows = within(table).getAllByRole("row");
+    expect(rows[1]).toHaveTextContent("KMEW");
+    expect(rows[1]).toHaveTextContent("Queued order #1");
+    expect(rows[1]).toHaveTextContent("3,405.00");
+    expect(rows[1]).toHaveTextContent("82% of pace");
+    expect(rows[1]).toHaveTextContent("Trigger 3,419.23 (+0.4%)"); // 0.4 % above the live price
+    expect(rows[1]).toHaveTextContent("Waiting for the trigger");
+    expect(rows[2]).toHaveTextContent("Position, 100 sh");
+    expect(rows[2]).toHaveTextContent("1.8R 3,860.00");
+    expect(rows[2]).toHaveTextContent("Holding");
+    expect(rows[2]).toHaveTextContent("+₹15.0 K");
+    expect(screen.getByTestId("live-status")).toHaveTextContent("Market: open");
+    expect(screen.getByTestId("live-status")).toHaveTextContent("Kotak feed: streaming");
+    expect(screen.getByRole("list", { name: "Shadow decisions today" })).toHaveTextContent("Would buy: price through the trigger on enough volume at 148.40");
+  });
+
+  it("when the market is closed or the token file is missing it says so instead of implying live data", async () => {
+    mount(swingReport(), paperView(), { started: true }, liveView({
+      market: "closed", feed_state: "waiting for data", note: "Kotak instrument file not loaded (OSError); it retries every 10 minutes", events: [],
+    }));
+    expect(await screen.findByTestId("live-status")).toHaveTextContent("closed (09:15-15:30 IST)");
+    expect(screen.getByTestId("live-status")).toHaveTextContent("decisions run only during the session");
+    expect(screen.getByText(/Kotak instrument file not loaded/)).toBeInTheDocument();
+    expect(screen.getByText(/None yet today/)).toBeInTheDocument();
+  });
+
+  it("marks stale prices and stocks without a token, and shows a stop breach in words", async () => {
+    const v = liveView();
+    v.watching[0] = { ...v.watching[0]!, stale: true, state: "stale", has_token: false };
+    v.watching[1] = { ...v.watching[1]!, state: "stop_hit" };
+    mount(swingReport(), paperView(), { started: true }, v);
+    const table = await screen.findByRole("table", { name: "Live prices for watched stocks" });
+    const rows = within(table).getAllByRole("row");
+    expect(rows[1]).toHaveTextContent("(stale)");
+    expect(rows[1]).toHaveTextContent("no Kotak token");
+    expect(rows[2]).toHaveTextContent("Stop breached: would be sold");
+  });
+
+  it("tells you when there is nothing to watch, and when the live view cannot be read", async () => {
+    mount(swingReport(), paperView(), { started: true }, liveView({ watching: [], events: [] }));
+    expect(await screen.findByText(/Nothing to watch/)).toBeInTheDocument();
+    mount(swingReport(), paperView(), { started: true }, null);
+    expect((await screen.findAllByRole("alert")).some((a) => /Could not read the live view/.test(a.textContent ?? ""))).toBe(true);
   });
 });
 

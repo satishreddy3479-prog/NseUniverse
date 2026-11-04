@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { drawdownOption, equityOption, robustnessOption, yearReturnsOption } from "../lib/swingCharts";
 import {
-  exitLabel, filterTrades, isStale, NO_FILTER, pct, plain, resultText, reportAgeDays, rupees, sortBy, tradesToCsv,
+  exitLabel, filterTrades, isStale, liveEventLabel, liveStateLabel, NO_FILTER, pct, pctTo, plain, resultText, reportAgeDays, rupees, sortBy, tradesToCsv,
 } from "../lib/swing";
 import { sensitivity } from "../components/swing/SwingRobustness";
 import { swingReport, trade } from "./swingFixture";
@@ -104,6 +104,23 @@ describe("scanner result in plain words", () => {
     expect(resultText("error: KeyError")).toBe("Error (KeyError); it will retry");
     expect(resultText("not run yet")).toBe("Not run yet");
     expect(resultText("something new")).toBe("something new"); // unknown values are shown, not hidden
+  });
+});
+
+describe("live labels and distances", () => {
+  it("name every state in words and pass unknown ones through", () => {
+    expect(liveStateLabel("triggered")).toContain("would be bought");
+    expect(liveStateLabel("stop_hit")).toContain("would be sold");
+    expect(liveStateLabel("something_new")).toBe("something_new");
+    expect(liveEventLabel("target_1_8r")).toContain("breakeven");
+    expect(liveEventLabel("x")).toBe("x");
+  });
+  it("measures a level against the live price, never inventing a distance", () => {
+    expect(pctTo(110, 100)).toBeCloseTo(10);
+    expect(pctTo(95, 100)).toBeCloseTo(-5);
+    expect(pctTo(null, 100)).toBeNull();
+    expect(pctTo(110, null)).toBeNull();
+    expect(pctTo(110, 0)).toBeNull();
   });
 });
 

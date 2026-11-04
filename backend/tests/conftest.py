@@ -33,6 +33,7 @@ def make_settings(tmp_path: Path, **overrides: Any) -> Settings:
         "intraday_autoscore": False,
         "eod_enabled": False,
         "swing_paper_enabled": False,
+        "swing_live_enabled": False,
         "breadth_enabled": False,
         **CREDS,
     }

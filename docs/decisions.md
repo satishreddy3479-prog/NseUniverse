@@ -243,3 +243,16 @@ Owner direction (29 Oct): breadth for NIFTY 500 is only the advance/decline coun
 - Storage (tier 1, tiny, kept forever): `data/swing_paper.sqlite3`, append-only (triggers), one transaction per session, point-in-time Chartink list kept gzip-compressed, so survivorship bias can be measured out of sample. Roughly 10 KB per session (about 2.5 MB a year). Covered by `deploy/backup.sh` (every `*.sqlite3`).
 - Safe by construction: refuses to act on incomplete data (below 90 % of the list, or any held/queued stock missing), idempotent per session, catches up missed sessions in order, drops today's bar before 16:00 IST. Yahoo currently answers 429 to long browser user-agents, so the fetcher sends `Mozilla/5.0`; if that changes the job fails safe and the page shows the book as stale.
 - Forward-test record starts when the server first runs. Judge it only after months, never from a few sessions.
+
+## D66 — Swing paper trading uses the Kotak feed for live prices, in shadow mode first (2026-11-05)
+- The backend already holds a Kotak feed, so the swing paper trader reads live price, day open/high/low and volume from it for the stocks
+  it cares about (queued orders and open positions only, about a dozen) instead of waiting for end-of-day bars. It pulls the feed's latest
+  values every 2 seconds; it adds no hook on the tick path and cannot disturb the feed. New subscriptions go through the existing
+  "internal" path (kept off the browser feed), `StreamManager.add_internal_tokens`, and are repeated on every reconnect.
+- Live decisions are **shadow-only** until verified: shown on the Swing page and logged once a day per kind and stock (`live_events`,
+  append-only), never applied to the book. Reason: the forward record is immutable and the live path cannot be exercised before a market
+  session; a wrong live fill would stay in it for good. Switching to live execution is a separate, tested step after a session's shadow
+  events have been compared with the end-of-day settlement.
+- Stops are not moved intraday: that would add same-day stop-outs the backtest does not have. Targets (1.8R, 2.5R) are shown and logged.
+- The live volume rule is a straight-line pace against the full-day minimum; it is an approximation and is documented as such.
+

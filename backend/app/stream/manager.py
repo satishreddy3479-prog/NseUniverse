@@ -262,6 +262,30 @@ class StreamManager:
             self.market_segments = {}
         return self.status()
 
+    async def add_internal_tokens(self, tokens: list[FeedToken]) -> int:
+        """Subscribe more stocks on the running feed, kept off the browser feed.
+
+        The swing paper trader watches about a dozen. Before the feed is up they are only
+        remembered: the next (re)connect subscribes them through the universe provider.
+        Returns how many were new.
+        """
+        new = [t for t in tokens if t.key not in self.book.internal_keys]
+        if not new:
+            return 0
+        self.book.internal_keys |= {t.key for t in new}
+        feed = self._feed
+        if feed is not None and self.state in (StreamState.WAITING_FOR_DATA, StreamState.STREAMING):
+            try:
+                for i in range(0, len(new), SUBSCRIBE_CHUNK):
+                    await feed.subscribe(new[i : i + SUBSCRIBE_CHUNK])
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001 - best effort; forgotten again so the next call retries
+                self.book.internal_keys -= {t.key for t in new}
+                self._emit("extra_subscribe_failed", type(e).__name__)
+                return 0
+        return len(new)
+
     def start_background(self) -> None:
         if self._bg:
             return

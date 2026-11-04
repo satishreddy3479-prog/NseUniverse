@@ -47,11 +47,14 @@ CREATE TABLE IF NOT EXISTS trades (
   initial_sl REAL NOT NULL, shares INTEGER NOT NULL, exit_session TEXT NOT NULL, exit REAL NOT NULL,
   reason TEXT NOT NULL, gross_pnl REAL NOT NULL, costs REAL NOT NULL, pnl REAL NOT NULL, r_mult REAL,
   hold_sessions INTEGER NOT NULL, exit_no INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS live_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, session TEXT NOT NULL, at TEXT NOT NULL, kind TEXT NOT NULL,
+  symbol TEXT NOT NULL, price REAL, volume INTEGER, detail TEXT NOT NULL, UNIQUE (session, kind, symbol));
 CREATE TABLE IF NOT EXISTS equity (
   session TEXT PRIMARY KEY, session_no INTEGER NOT NULL, equity REAL NOT NULL, cash REAL NOT NULL,
   invested REAL NOT NULL, open_positions INTEGER NOT NULL, nifty_close REAL);
 """
-APPEND_ONLY = ("scan_runs", "universe_log", "orders", "decisions", "trades", "equity")
+APPEND_ONLY = ("scan_runs", "universe_log", "orders", "decisions", "trades", "equity", "live_events")
 
 
 def _triggers() -> str:
@@ -145,6 +148,22 @@ class PaperStore:
     def set_meta(self, key: str, value: str) -> None:
         with closing(self._conn()) as c, c:
             c.execute("INSERT INTO meta VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
+
+    # ---- live (shadow) events: what the live checks say, once per day per kind and stock
+    def record_live_event(self, session: str, at: datetime, kind: str, symbol: str, price: float | None,
+                          volume: int | None, detail: dict[str, Any]) -> bool:
+        """True when this is the first time today that `kind` was seen for `symbol` (then it is stored)."""
+        with closing(self._conn()) as c, c:
+            cur = c.execute(
+                "INSERT OR IGNORE INTO live_events (session, at, kind, symbol, price, volume, detail) VALUES (?,?,?,?,?,?,?)",
+                (session, at.astimezone(UTC).isoformat(timespec="seconds"), kind, symbol, price, volume, json.dumps(detail)))
+            return cur.rowcount == 1
+
+    def live_events(self, session: str) -> list[dict[str, Any]]:
+        with closing(self._conn()) as c:
+            rows = c.execute("SELECT at, kind, symbol, price, volume, detail FROM live_events WHERE session = ? "
+                             "ORDER BY id", (session,))
+            return [dict(r) | {"detail": json.loads(r["detail"])} for r in rows]
 
     # ---- read side for the API
     def snapshot(self, trades_limit: int = 100, decisions_limit: int = 40) -> dict[str, Any]:

@@ -612,6 +612,15 @@ async def swing_paper(request: Request) -> dict[str, Any]:
     return await asyncio.to_thread(request.app.state.swing_paper.view)
 
 
+@router.get("/swing/live")
+async def swing_live(request: Request) -> dict[str, Any]:
+    """Live prices, volume pace, stop and target distances for the stocks the swing book watches.
+
+    Shadow mode: shows what the rules would do now; the paper book itself is not changed by it.
+    """
+    return await asyncio.to_thread(request.app.state.swing_live.view)
+
+
 @router.post("/swing/paper/run", dependencies=[Depends(require_local_control)])
 async def swing_paper_run(request: Request) -> dict[str, Any]:
     """Run the swing scan now: the same pass the schedule runs after 17:00 IST.

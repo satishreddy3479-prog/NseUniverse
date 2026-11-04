@@ -50,6 +50,7 @@ from app.stream.hub import Hub
 from app.stream.manager import StreamConfig, StreamManager
 from app.swing.engine import Config as SwingConfig
 from app.swing.fetch import HttpFetcher
+from app.swing.live import SwingLive
 from app.swing.service import SwingPaperService
 from app.swing.store import PaperStore
 
@@ -91,11 +92,18 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         )
         app.state.snapshot_service = snapshot_service
         market_ref: dict[str, MarketService] = {}
+        live_ref: dict[str, SwingLive] = {}
         stream = StreamManager(
             feed_factory=b.create_feed,
             universe_provider=lambda: build_universe(
                 snapshot_service,
-                lambda: market_ref["m"].stream_tokens() if "m" in market_ref else [],
+                lambda: list(
+                    {
+                        t.key: t
+                        for t in (market_ref["m"].stream_tokens() if "m" in market_ref else [])
+                        + (live_ref["l"].feed_tokens() if "l" in live_ref else [])
+                    }.values()
+                ),
             ),
             config=StreamConfig(
                 stale_after_seconds=settings.stream_stale_after_seconds,
@@ -261,6 +269,15 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
                             cost_per_side=settings.swing_paper_cost_per_side))
         app.state.swing_paper = swing_paper
         swing_paper.start()
+        swing_live = SwingLive(
+            swing_paper.store, swing_paper.cfg, ticks=stream.book.internal_ticks,
+            scrip_master=scrip,
+            add_tokens=stream.add_internal_tokens, feed_state=lambda: stream.state.value,
+            enabled=settings.swing_live_enabled,
+        )
+        live_ref["l"] = swing_live
+        app.state.swing_live = swing_live
+        swing_live.start()
         stream.start_background()
         if settings.stream_autostart:
             await stream.start()
@@ -281,6 +298,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             await close_tracker.stop()
             await strategy_automation.stop()
             await eod.stop()
+            await swing_live.stop()
             await swing_paper.stop()
             await daily_login.stop()
             await intraday.stop()

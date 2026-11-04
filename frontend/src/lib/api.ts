@@ -10,7 +10,7 @@ import type {
   ConfigStatus,
   ErrorEvent,
   ExpirySelection,
-  EventItem, FlowsLatest, StorageStatus, IntradayScoreRow, IntradaySummary, NewsStatus, FlowsStatus, HistoryFetchStatus, HistoryResponse, OiChange, OiHeatmap, OiSeries, StrikeSeries, FuturesSeries, PremiumDecay, PredictionSummary, SamplerStatus, SwingReport, SwingPaperView,
+  EventItem, FlowsLatest, StorageStatus, IntradayScoreRow, IntradaySummary, NewsStatus, FlowsStatus, HistoryFetchStatus, HistoryResponse, OiChange, OiHeatmap, OiSeries, StrikeSeries, FuturesSeries, PremiumDecay, PredictionSummary, SamplerStatus, SwingReport, SwingPaperView, SwingLiveView,
   SessionInfo,
   SnapshotSummary,
 } from "./types";
@@ -185,6 +185,7 @@ export const api = {
     request<HistoryResponse>(`/api/history/observations?expiry=${encodeURIComponent(expiry)}&strikes=${strikes}`),
   swingReport: () => request<SwingReport>("/api/swing/report"),
   swingPaper: () => request<SwingPaperView>("/api/swing/paper"),
+  swingLive: () => request<SwingLiveView>("/api/swing/live"),
   swingRun: () => request<{ started: boolean; status: SwingPaperView["status"] }>("/api/swing/paper/run", { method: "POST" }),
   csvUrl: (id: string) => `/api/snapshots/${encodeURIComponent(id)}/csv`,
 };

@@ -161,3 +161,34 @@ What this does and does not show:
 **Live check, 2026-11-05 (scratch folder, real Chartink and Yahoo):** 803 of 803 stocks fetched, NIFTY gate open, 7 orders queued for the next session, 4 more blocked by the sector gate; 533 seconds (sequential, gentle on Yahoo), about 50 MB resident, Python peak 3.6 MB. Yahoo's newest bar had no close just after midnight, so that run settled 3 Nov; the job picks 4 Nov up on its own once the bar is complete.
 
 **Limits of paper trading:** fills are simulated on the daily bar at the rule prices (the trigger is assumed filled when the high trades through it, the stop first when both trade in one bar, full-day volume is used for the volume rule), so real fills can be worse; the Chartink list is today's list but is now stored every day (point-in-time from here on); Yahoo currently needs the plain `Mozilla/5.0` user agent (long browser strings get HTTP 429), and if that changes the job fails safe and the page shows the book as stale. A few months of forward results are needed before drawing conclusions.
+
+## Live prices from the Kotak feed (shadow mode, 2026-11-05, D66)
+The after-close job stays the authority for the paper book. A live layer (`backend/app/swing/live.py`, `live_rules.py`)
+adds what the feed makes possible during the session, for the few stocks that matter: tonight's queued orders and the open
+positions (about a dozen).
+
+- **Feed:** those stocks are subscribed on the running Kotak feed (`StreamManager.add_internal_tokens`, kept off the browser
+  feed; re-subscribed on every reconnect through the universe provider). Tokens come from Kotak's instrument file
+  (`scrip_master_rows`, which the code notes has not been exercised against the live service yet).
+- **Pull, not hook:** every 2 seconds the layer reads the feed's latest value per stock. It is not on the tick path, so it cannot
+  disturb the feed. Ticks older than 2 minutes are shown but never acted on; nothing is acted on outside 09:15-15:30 IST.
+- **Rules applied to live prices:** entry = price through the trigger (pivot x 1.003), the open not above pivot x 1.025, and volume
+  at pace (day volume so far at least the minimum volume scaled by the share of the session elapsed, a straight-line stand-in for
+  the backtest's full-day rule); stop = last price or day low at or below the stop, filled at the stop or at the open if it gapped
+  through; targets = the 1.8R (breakeven) and 2.5R (trailing) levels, reached by the day's high.
+- **Stops and targets are not moved intraday.** The stop stays where the last close set it and the end-of-day job raises it from the
+  day's high, exactly as backtested; reaching 1.8R or 2.5R is shown and logged, not acted on.
+- **Shadow mode:** what the rules would do is shown on the page and logged once a day per kind and stock in `live_events`
+  (append-only). The paper book is **not** changed by it. The paper record is permanent, and the live path cannot be tested before
+  the first session, so live execution is enabled only after one session's shadow events have been compared with the end-of-day result.
+- **Page:** the Paper trading tab has a "Live prices from your Kotak feed" panel (price, day change, volume and pace, distance to
+  trigger, stop and targets, state in words, today's shadow decisions); `GET /api/swing/live`; setting `SWING_LIVE_ENABLED`.
+
+**To verify in the first session (not verifiable before):** the instrument file downloads and resolves the watched symbols; the
+feed's `volume` is the cumulative day volume in shares; the day open arrives on the first tick; ticks keep flowing for the extra
+subscriptions without disturbing the existing ones; shadow trigger and stop events match what the end-of-day bar says.
+
+**Then, phase 2 (live execution):** fills, stop exits and cash movements written to the book as they happen, with the end-of-day job
+applying only the close-based day-1 cuts and the stop updates, and acting as the fallback when the feed is down. Needs: cash movements
+logged between sessions, entry source on positions, the settlement skipping orders already decided live, and tests of each.
+
