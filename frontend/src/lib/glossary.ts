@@ -11,9 +11,14 @@ const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9+% ]+/g, " ").repla
 const E: Record<string, GlossaryEntry> = {
   // ---------------------------------------------------------------- Options Lab and Analyse tools
   "smart oi": {
+    what: "How much more put OI than call OI was added inside each candle (1, 3, 5 or 15 minutes): (put OI now − put OI one candle ago) − (call OI now − call OI one candle ago). It is drawn as a bar from the zero line beside NIFTY's own candles.",
+    read: "Green bars mean puts were added faster than calls in that candle (support building); red means calls were added faster (resistance building). Because each bar covers only its own candle, it turns before the day-total change does. The side panels show the day change since the first candle and the OI and volume put-call ratios.",
+    caution: "OI changes can be new positions or closures, and OI does not say who is long or short, so this is a flow signal, not proof of intent. Candles with no stored sample are left out, not filled in; the strikes summed are fixed for the whole day.",
+  },
+  "oi buildup": {
     what: "For every option contract, whether today's price move and today's change in open interest point to new positions being opened or old ones closed: long buildup (price up, OI up), short buildup (price down, OI up), short covering (price up, OI down), long unwinding (price down, OI down).",
-    read: "It describes the contract itself. A short buildup in a call (writers adding as the premium falls) is a different message from a long buildup in a call; a long buildup in a put is bearish for NIFTY. Look at where the largest buildups cluster.",
-    caution: "OI is reported for the day, so the label is a daily picture, not a trade-by-trade one. Contracts without a previous close, or with no change, carry no label.",
+    read: "It describes the contract itself. Look at where the largest buildups cluster.",
+    caution: "OI is reported for the day, so the label is a daily picture. Contracts without a previous close, or with no change, carry no label.",
   },
   "pe ce difference": {
     what: "Put minus call for open interest, OI change or volume at each strike.",

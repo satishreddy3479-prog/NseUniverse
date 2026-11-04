@@ -91,3 +91,125 @@ export function exposures(rows: OptionChainRow[], greeks: StrikeGreeks[], spot: 
   }
   return { points, skipped };
 }
+
+// ---------------------------------------------------------------- Smart OI (OI change inside each candle)
+/** The stored OI series the calculation reads: totals over one fixed set of strikes, one value per stored sample. */
+export interface SmartOiSeries {
+  times: string[];
+  spot: (number | null)[];
+  ce_oi: (number | null)[];
+  pe_oi: (number | null)[];
+  ce_volume?: (number | null)[];
+  pe_volume?: (number | null)[];
+}
+
+export interface SmartOiCandle {
+  /** Position of this candle in the session (0 = 09:15 slot), so gaps in stored data are visible. */
+  slot: number;
+  /** Start of the candle, "HH:MM" in IST. */
+  label: string;
+  spot: { open: number; high: number; low: number; close: number } | null;
+  ceOi: number;
+  peOi: number;
+  /** Interval change against the previous candle with data; null on the first candle (the baseline). */
+  dPe: number | null;
+  dCe: number | null;
+  /** Smart OI: ΔPE − ΔCE. */
+  p: number | null;
+  bullish: boolean | null;
+  /** How many candle slots the change spans: 1 normally, more when stored samples are missing in between. */
+  span: number;
+  /** Day change against the first candle. */
+  peDay: number;
+  ceDay: number;
+  diffDay: number;
+  /** Put OI ÷ call OI; null when call OI is 0. */
+  pcr: number | null;
+  /** Cumulative put volume ÷ cumulative call volume today; null when not stored or call volume is 0. */
+  volPcr: number | null;
+  /** Option volume traded inside this candle (change in the cumulative total); null when unknown. */
+  ceVolDelta: number | null;
+  peVolDelta: number | null;
+}
+
+export interface SmartOiResult {
+  /** IST date the candles belong to (the newest day with stored samples). */
+  day: string | null;
+  timeframe: number;
+  candles: SmartOiCandle[];
+  /** Time of the first stored sample used as the baseline (the spec's i = 0). */
+  baselineAt: string | null;
+  /** Candles whose change spans more than one slot because stored samples are missing in between. */
+  gapCandles: number;
+  /** Samples left out because call or put OI was missing. */
+  skippedSamples: number;
+}
+
+const IST_MS = 5.5 * 3600_000;
+const OPEN_MIN = 9 * 60 + 15;
+const CLOSE_MIN = 15 * 60 + 30;
+const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+/**
+ * Smart OI per candle. The session (09:15–15:30 IST) is cut into candles of `timeframe` minutes. In each candle the
+ * last stored sample gives that candle's total call and put OI. For candle i against the previous candle i−1:
+ *   ΔPE = PE[i] − PE[i−1],  ΔCE = CE[i] − CE[i−1],  Smart OI p = ΔPE − ΔCE
+ * (positive: puts added faster than calls, negative: calls added faster). The first candle is the baseline [0], so it has
+ * no bar. Candles with no stored sample are left out, never filled in; the next change then spans the gap (`span` > 1)
+ * and is counted in `gapCandles`. Only the newest day with data is used so no change ever crosses a night.
+ */
+export function smartOiCandles(s: SmartOiSeries, timeframe: number, day?: string): SmartOiResult {
+  const empty: SmartOiResult = { day: null, timeframe, candles: [], baselineAt: null, gapCandles: 0, skippedSamples: 0 };
+  const n = Math.min(s.times.length, s.ce_oi.length, s.pe_oi.length, s.spot.length);
+  const istOf = (iso: string) => new Date(new Date(iso).getTime() + IST_MS);
+  let useDay = day ?? null;
+  if (!useDay) for (let i = n - 1; i >= 0; i--) { const t = new Date(s.times[i]!).getTime(); if (!Number.isNaN(t)) { useDay = istOf(s.times[i]!).toISOString().slice(0, 10); break; } }
+  if (!useDay || timeframe < 1) return empty;
+  type B = { last: number; lastOi: number; spots: number[]; volIdx: number };
+  const buckets = new Map<number, B>();
+  let skipped = 0;
+  for (let i = 0; i < n; i++) {
+    const t = istOf(s.times[i]!);
+    if (Number.isNaN(t.getTime()) || t.toISOString().slice(0, 10) !== useDay) continue;
+    const m = t.getUTCHours() * 60 + t.getUTCMinutes();
+    if (m < OPEN_MIN || m >= CLOSE_MIN) continue;
+    const slot = Math.floor((m - OPEN_MIN) / timeframe);
+    const b = buckets.get(slot) ?? { last: -1, lastOi: -1, spots: [], volIdx: -1 };
+    const sp = s.spot[i];
+    if (sp != null) b.spots.push(sp);
+    if (s.ce_oi[i] == null || s.pe_oi[i] == null) skipped++;
+    else b.lastOi = i;
+    b.last = i;
+    buckets.set(slot, b);
+  }
+  const slots = [...buckets.keys()].sort((a, b) => a - b).filter((k) => buckets.get(k)!.lastOi >= 0);
+  const candles: SmartOiCandle[] = [];
+  let gaps = 0;
+  let baseline: SmartOiCandle | null = null;
+  let cumPrev: { ce: number | null; pe: number | null } | null = null;
+  for (const k of slots) {
+    const b = buckets.get(k)!;
+    const ce = s.ce_oi[b.lastOi]!, pe = s.pe_oi[b.lastOi]!;
+    const cev = s.ce_volume?.[b.lastOi] ?? null, pev = s.pe_volume?.[b.lastOi] ?? null;
+    const prev = candles[candles.length - 1] ?? null;
+    const dPe = prev ? pe - prev.peOi : null, dCe = prev ? ce - prev.ceOi : null;
+    const p = dPe != null && dCe != null ? dPe - dCe : null;
+    const span = prev ? k - prev.slot : 1;
+    if (prev && span > 1) gaps++;
+    const dv = (cur: number | null, old: number | null) => (cur != null && old != null && cur >= old ? cur - old : null);
+    const c: SmartOiCandle = {
+      slot: k, label: hhmm(OPEN_MIN + k * timeframe),
+      spot: b.spots.length ? { open: b.spots[0]!, high: Math.max(...b.spots), low: Math.min(...b.spots), close: b.spots[b.spots.length - 1]! } : null,
+      ceOi: ce, peOi: pe, dPe, dCe, p, bullish: p == null ? null : p >= 0, span,
+      peDay: baseline ? pe - baseline.peOi : 0, ceDay: baseline ? ce - baseline.ceOi : 0,
+      diffDay: baseline ? pe - baseline.peOi - (ce - baseline.ceOi) : 0,
+      pcr: ce > 0 ? pe / ce : null,
+      volPcr: cev != null && pev != null && cev > 0 ? pev / cev : null,
+      ceVolDelta: prev ? dv(cev, cumPrev?.ce ?? null) : null, peVolDelta: prev ? dv(pev, cumPrev?.pe ?? null) : null,
+    };
+    if (!baseline) baseline = c;
+    cumPrev = { ce: cev, pe: pev };
+    candles.push(c);
+  }
+  return { day: useDay, timeframe, candles, baselineAt: baseline ? s.times[slots.length ? buckets.get(slots[0]!)!.lastOi : 0]! : null, gapCandles: gaps, skippedSamples: skipped };
+}

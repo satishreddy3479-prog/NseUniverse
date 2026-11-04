@@ -5,6 +5,13 @@ _Last updated: 2026-11-04_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Smart OI rebuilt to the user's spec (4 Nov 2026)
+- The first Smart OI (per-strike buildup labels) was a wrong reading of the feature. It is now **OI Buildup** (`/tools/oi-buildup`), kept as is.
+- **Smart OI** (`/tools/smart-oi`) follows the supplied "Smart OI Complete Engineering Spec": the session is cut into 1/3/5/15-minute candles; per candle ΔPE = PE[i]−PE[i−1], ΔCE = CE[i]−CE[i−1], **p = ΔPE − ΔCE**, drawn as a zero-baseline candlestick (green ≥ 0, red < 0) under NIFTY candles, with option volume per candle, plus day-change lines (put, call, PE−CE since the first candle) and OI PCR / volume PCR panels. Pure function `smartOiCandles` in `lib/optionTools.ts`; tested against the spec's own worked example (+150k, +450k, −800k).
+- Data: `/api/history/oi-series` (stored one-minute samples, one fixed strike set for the whole day so no change comes from strikes entering or leaving a window; ATM ±5/10/20 or all, as of the newest sample), newest day only.
+- Deliberate differences from the spec: the first candle is the baseline and has no bar (not a zero bar); a candle with no stored sample is left out and the next change is flagged as spanning the gap; PCR with call OI = 0 stays missing instead of defaulting to 1.0 (rule: missing stays missing). Charts use ECharts (the project's library), not Lightweight Charts; crosshair is linked across the three panels.
+- Not verified with live data yet (needs a market-hours session with stored samples).
+
 ## New interface: top menu bar, Home, tool pages, themes (4 Nov 2026)
 - **Structure** (requested after the user's StockMojo screenshots; structure only, no branding, code or visual copy): top bar with Strategy Builder, Option Chain, drop-downs Options Lab / Future Lab / Analyse / System, and Prediction; Home (`/`) lists every tool with search; each tool opens at `/tools/:id`. Phone: one scrolling menu with the same groups. The old side rail is removed; Platform status moved to `/overview`.
 - **Registry:** `frontend/src/lib/tools.ts` drives the menus, Home and routes. A tool is *ready* only when it has a real page. Planned tools show greyed with the reason they are not built; no placeholder pages.

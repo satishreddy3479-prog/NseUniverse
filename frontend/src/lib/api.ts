@@ -144,9 +144,9 @@ export const api = {
         (at ? `&at=${encodeURIComponent(at)}` : "") + (until ? `&until=${encodeURIComponent(until)}` : ""),
     ),
   futuresSeries: (since?: string) => request<FuturesSeries>("/api/futures/series" + (since ? `?since=${encodeURIComponent(since)}` : "")),
-  oiSeries: (expiry: string, strikes: string, since?: string) =>
+  oiSeries: (expiry: string, strikes: string, since?: string, maxPoints?: number) =>
     request<OiSeries>(
-      `/api/history/oi-series?expiry=${encodeURIComponent(expiry)}&strikes=${strikes}` + (since ? `&since=${encodeURIComponent(since)}` : ""),
+      `/api/history/oi-series?expiry=${encodeURIComponent(expiry)}&strikes=${strikes}` + (since ? `&since=${encodeURIComponent(since)}` : "") + (maxPoints ? `&max_points=${maxPoints}` : ""),
     ),
   premiumDecay: (expiry: string, strikes: string, since?: string) =>
     request<PremiumDecay>(

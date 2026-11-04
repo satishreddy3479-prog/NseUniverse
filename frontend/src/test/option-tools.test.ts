@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildupOf, chainGreeks, exposures, peCeDifference, smartOiSummary, type StrikeGreeks } from "../lib/optionTools";
+import { buildupOf, chainGreeks, exposures, peCeDifference, smartOiSummary, type StrikeGreeks , smartOiCandles } from "../lib/optionTools";
 import { contractGreeks } from "../lib/optionModel";
 import type { OptionChainRow, OptionQuote } from "../lib/types";
 
@@ -78,5 +78,64 @@ describe("chain Greeks", () => {
     expect(atm.pe!.iv).toBeCloseTo(0.15, 3);
     expect(r.carry).toBeCloseTo(0.06, 2);
     expect(r.skipped).toBe(0);
+  });
+});
+
+describe("smartOiCandles (Smart OI spec, section 5 worked example)", () => {
+  // The user's spec table: 3-minute candles, put OI 10.0M → 10.2M → 10.7M → 10.75M, call OI 10.0M → 10.05M → 10.1M → 10.95M.
+  // Times are IST 09:15, 09:18, 09:21, 09:24 written as UTC (−5:30).
+  const t = (hm: string) => `2026-11-04T${hm}:00Z`;
+  const series = {
+    times: [t("03:45"), t("03:48"), t("03:51"), t("03:54")],
+    spot: [23300, 23310, 23290, 23330],
+    pe_oi: [10_000_000, 10_200_000, 10_700_000, 10_750_000],
+    ce_oi: [10_000_000, 10_050_000, 10_100_000, 10_950_000],
+    pe_volume: [100, 160, 250, 300], ce_volume: [100, 140, 200, 400],
+  };
+  it("gives +150k, +450k and −800k and no bar on the baseline", () => {
+    const r = smartOiCandles(series, 3);
+    expect(r.candles.map((c) => c.label)).toEqual(["09:15", "09:18", "09:21", "09:24"]);
+    expect(r.candles.map((c) => c.p)).toEqual([null, 150_000, 450_000, -800_000]);
+    expect(r.candles.map((c) => c.dPe)).toEqual([null, 200_000, 500_000, 50_000]);
+    expect(r.candles.map((c) => c.dCe)).toEqual([null, 50_000, 50_000, 850_000]);
+    expect(r.candles.map((c) => c.bullish)).toEqual([null, true, true, false]);
+  });
+  it("day change stays positive on the last candle while the interval bar turns red", () => {
+    const last = smartOiCandles(series, 3).candles[3]!;
+    expect(last.peDay).toBe(750_000);
+    expect(last.ceDay).toBe(950_000);
+    expect(last.diffDay).toBe(-200_000);
+    expect(last.pcr).toBeCloseTo(10_750_000 / 10_950_000, 10);
+    expect(last.volPcr).toBeCloseTo(300 / 400, 10);
+    expect(last.peVolDelta).toBe(50);
+    expect(last.ceVolDelta).toBe(200);
+  });
+  it("builds spot candles from the samples inside each candle, and uses the last sample's OI", () => {
+    const s = { times: [t("03:45"), t("03:46"), t("03:47"), t("03:48")], spot: [100, 104, 99, 101], pe_oi: [10, 12, 15, 20], ce_oi: [10, 11, 12, 13] };
+    const r = smartOiCandles(s, 3);
+    expect(r.candles).toHaveLength(2);
+    expect(r.candles[0]!.spot).toEqual({ open: 100, high: 104, low: 99, close: 99 });
+    expect(r.candles[1]!.p).toBe((20 - 15) - (13 - 12));
+  });
+  it("leaves a missing candle out, flags the span, and never fills it", () => {
+    const s = { times: [t("03:45"), t("04:00")], spot: [1, 2], pe_oi: [10, 40], ce_oi: [10, 20] };
+    const r = smartOiCandles(s, 5);
+    expect(r.candles.map((c) => c.label)).toEqual(["09:15", "09:30"]);
+    expect(r.candles[1]!.span).toBe(3);
+    expect(r.candles[1]!.p).toBe(20);
+    expect(r.gapCandles).toBe(1);
+  });
+  it("skips samples with missing OI and keeps PCR missing when call OI is 0", () => {
+    const s = { times: [t("03:45"), t("03:46"), t("03:48")], spot: [1, 2, 3], pe_oi: [10, null, 30], ce_oi: [0, 5, 0] };
+    const r = smartOiCandles(s, 1);
+    expect(r.skippedSamples).toBe(1);
+    expect(r.candles.map((c) => c.label)).toEqual(["09:15", "09:18"]);
+    expect(r.candles.every((c) => c.pcr === null)).toBe(true);
+  });
+  it("uses only the newest day and ignores samples outside the session", () => {
+    const s = { times: ["2026-11-03T04:00:00Z", "2026-11-04T03:00:00Z", t("03:45"), t("03:48")], spot: [1, 1, 1, 1], pe_oi: [1, 1, 10, 20], ce_oi: [1, 1, 10, 15] };
+    const r = smartOiCandles(s, 3);
+    expect(r.day).toBe("2026-11-04");
+    expect(r.candles.map((c) => c.p)).toEqual([null, 5]);
   });
 });

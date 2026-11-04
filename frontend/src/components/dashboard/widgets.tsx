@@ -5,14 +5,15 @@ import { EChart, useChartColors } from "../EChart";
 import { ChainTable } from "../ChainTable";
 import { Button, EmptyState, SourceTag } from "../ui";
 import { useDash } from "./DashContext";
-import { GexWidget, IvSkewWidget, PeCeWidget, SmartOiWidget, VegaWidget } from "./toolWidgets";
+import { GexWidget, IvSkewWidget, PeCeWidget, SmartOiWidget as OiBuildupWidget, VegaWidget } from "./toolWidgets";
 import { FullChart } from "./FullChart";
 import { sessionCloseMin, sessionOpenMin } from "../../lib/session";
 import { atmStraddle, compactIN, computeTotals, maxPain, OI_MODES, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, TS_RANGES, windowEndIso, windowStartIso, type OiMode } from "../../lib/analytics";
 import {
-  decayOption, oiChangeBarOption, oiSeriesOption, type OiSeriesKind, oiHeatmapOption, premiumOption, spotOption, straddleOption, strikeBarOption,
+  smartOiDayOption, smartOiOption, smartOiRatioOption, decayOption, oiChangeBarOption, oiSeriesOption, type OiSeriesKind, oiHeatmapOption, premiumOption, spotOption, straddleOption, strikeBarOption,
   oiExplorerOption, futuresOption, sessionize, totalsBarOption, type FuturesKind, type StrikeMetric } from "../../lib/chartOptions";
 import { ageSeconds, fmtDateTimeIST, fmtExpiry, fmtTimeIST, fmtInt, fmtPct, fmtPrice, fmtSigned } from "../../lib/format";
+import { smartOiCandles } from "../../lib/optionTools";
 import { useLiveSpot } from "../../lib/useLive";
 import type { BaselineKind, Observation, OiChange, OptionChainRow } from "../../lib/types";
 
@@ -309,6 +310,84 @@ function OiSeriesWidget({ kind, label }: { kind: OiSeriesKind; label: string }) 
         note={`${res?.strikes.length ?? ""} strikes, the same at every point; ${what}. NIFTY is the dotted line.${res?.warnings.length ? ` ${res.warnings.join(" ")}` : ""}`} />
       {q.error && <p className="sr-only">Could not load {label}: {String((q.error as Error).message)}</p>}
     </>
+  );
+}
+
+const SMART_TF = [1, 3, 5, 15] as const;
+
+/** Smart OI: put OI change minus call OI change inside each candle, beside NIFTY, from the stored one-minute samples. */
+function SmartOiChartWidget() {
+  const d = useDash();
+  const colors = useChartColors();
+  const [tf, setTf] = useState<number>(3);
+  const [strikes, setStrikes] = useState<number | "all">(10);
+  const all = d.history.data?.observations;
+  // Newest IST day with stored samples; its first sample is where the series starts, so no change ever crosses a night.
+  const since = useMemo(() => {
+    if (!all?.length) return undefined;
+    const day = (iso: string) => new Date(new Date(iso).getTime() + 5.5 * 3600_000).toISOString().slice(0, 10);
+    const last = day(all[all.length - 1]!.retrieved_at);
+    return all.find((o) => day(o.retrieved_at) === last)?.retrieved_at;
+  }, [all]);
+  const q = useQuery({
+    queryKey: ["smartOiSeries", d.expiry, strikes, since],
+    queryFn: () => api.oiSeries(d.expiry!, strikesParam(strikes), since, 1000),
+    enabled: !!d.expiry && !!since, refetchInterval: 30_000, retry: false,
+  });
+  const res = useMemo(() => (q.data ? smartOiCandles(q.data, tf) : null), [q.data, tf]);
+  const main = useMemo(() => (res ? smartOiOption(res, colors) : null), [res, colors]);
+  const dayOpt = useMemo(() => (res ? smartOiDayOption(res, colors) : null), [res, colors]);
+  const ratioOpt = useMemo(() => (res ? smartOiRatioOption(res, colors) : null), [res, colors]);
+  const last = res?.candles[res.candles.length - 1];
+  return (
+    <ChainGuard>
+      <Body footer={
+        <Meta kind="history">
+          {res?.day && <span>{res.day}</span>}
+          {res && <span>{res.candles.length} candles of {tf} min</span>}
+          <span className="basis-full">
+            Each bar is put OI change minus call OI change inside one candle ({strikes === "all" ? "all strikes" : `ATM ±${strikes} strikes, as of the newest sample`}, the same strikes in every candle).
+            Green = puts added faster than calls, red = calls added faster. The first candle is the baseline and has no bar.
+            {q.data?.stride && q.data.stride > 1 ? ` Showing every ${q.data.stride}th stored sample.` : ""}
+            {res && res.gapCandles > 0 ? ` ${res.gapCandles} candle(s) follow a gap in stored samples, so their change covers more than one candle (see the tooltip).` : ""}
+            {res && res.skippedSamples > 0 ? ` ${res.skippedSamples} sample(s) skipped because call or put OI was missing.` : ""}
+          </span>
+        </Meta>
+      }>
+        <div className="flex h-full min-h-0 flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <div role="group" aria-label="Candle length" className="flex items-center gap-0.5">
+              {SMART_TF.map((m) => (
+                <button key={m} type="button" aria-pressed={tf === m} onClick={() => setTf(m)}
+                  className={`widget-nodrag min-h-6 rounded-sm border px-2 text-xs ${tf === m ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{m} min</button>
+              ))}
+            </div>
+            <StrikePicker value={strikes} onChange={setStrikes} />
+            {last && last.p != null && (
+              <span className="num text-xs text-muted">Latest candle {last.label}: <span className={last.p >= 0 ? "text-up" : "text-down"}>{last.p >= 0 ? "+" : "−"}{compactIN(Math.abs(last.p))}</span>
+                {" "}(ΔPut {fmtSigned(last.dPe)} · ΔCall {fmtSigned(last.dCe)})</span>
+            )}
+          </div>
+          {d.history.isPending || q.isPending ? (
+            <p className="p-3 text-sm text-muted">Loading stored samples…</p>
+          ) : q.error ? (
+            <EmptyState title="Could not load the stored OI series">{String((q.error as Error).message)}</EmptyState>
+          ) : !res || res.candles.length < 2 || !main || !dayOpt || !ratioOpt ? (
+            <EmptyState title="Not enough stored samples for Smart OI yet">
+              Smart OI needs at least two {tf}-minute candles with stored call and put OI today ({res?.candles.length ?? 0} so far). During market hours the sampler stores one sample a minute.
+            </EmptyState>
+          ) : (
+            <div className="grid min-h-0 flex-1 gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+              <div className="min-h-[340px]"><EChart option={main} ariaLabel="NIFTY candles, Smart OI candles and option volume" /></div>
+              <div className="grid min-h-0 grid-rows-2 gap-2">
+                <div className="min-h-[160px]"><EChart option={dayOpt} ariaLabel="Put, call and put minus call OI change since the first candle" /></div>
+                <div className="min-h-[160px]"><EChart option={ratioOpt} ariaLabel="OI put-call ratio and volume put-call ratio" /></div>
+              </div>
+            </div>
+          )}
+        </div>
+      </Body>
+    </ChainGuard>
   );
 }
 /** NIFTY current-month future through the session: open interest, OI change, volume, and the gap to the index. */
@@ -997,11 +1076,12 @@ export const WIDGETS: WidgetDef[] = [
   { id: "oiHeatmap", title: "OI change heatmap", render: () => <OiHeatmapWidget />, x: 6, y: 37, w: 6, h: 12, minW: 4, minH: 7 },
   { id: "oiConcentration", title: "OI concentration", render: () => <OiConcentrationWidget />, x: 0, y: 49, w: 5, h: 10, minW: 3, minH: 6 },
   { id: "priceOi", title: "Price and OI", render: () => <PriceOiWidget />, x: 5, y: 49, w: 7, h: 10, minW: 4, minH: 6 },
-  { id: "smartOi", title: "Smart OI: buildup by strike", render: () => <SmartOiWidget />, x: 0, y: 100, w: 12, h: 14, minW: 5, minH: 8 },
-  { id: "peCe", title: "PE − CE difference", render: () => <PeCeWidget />, x: 0, y: 114, w: 12, h: 10, minW: 4, minH: 6 },
-  { id: "ivSkew", title: "Volatility skew", render: () => <IvSkewWidget />, x: 0, y: 124, w: 12, h: 10, minW: 4, minH: 6 },
-  { id: "gex", title: "Gamma exposure by strike", render: () => <GexWidget />, x: 0, y: 134, w: 12, h: 10, minW: 4, minH: 6 },
-  { id: "vega", title: "Vega exposure by strike", render: () => <VegaWidget />, x: 0, y: 144, w: 12, h: 10, minW: 4, minH: 6 },
+  { id: "smartOi", title: "Smart OI: change per candle", render: () => <SmartOiChartWidget />, x: 0, y: 100, w: 12, h: 18, minW: 6, minH: 12 },
+  { id: "oiBuildup", title: "OI buildup by strike", render: () => <OiBuildupWidget />, x: 0, y: 118, w: 12, h: 14, minW: 5, minH: 8 },
+  { id: "peCe", title: "PE − CE difference", render: () => <PeCeWidget />, x: 0, y: 132, w: 12, h: 10, minW: 4, minH: 6 },
+  { id: "ivSkew", title: "Volatility skew", render: () => <IvSkewWidget />, x: 0, y: 142, w: 12, h: 10, minW: 4, minH: 6 },
+  { id: "gex", title: "Gamma exposure by strike", render: () => <GexWidget />, x: 0, y: 152, w: 12, h: 10, minW: 4, minH: 6 },
+  { id: "vega", title: "Vega exposure by strike", render: () => <VegaWidget />, x: 0, y: 162, w: 12, h: 10, minW: 4, minH: 6 },
   { id: "detail", title: "Strike detail", render: () => <DetailWidget />, x: 9, y: 29, w: 3, h: 8, minW: 2, minH: 4 },
 ];
 

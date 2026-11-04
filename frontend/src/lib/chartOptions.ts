@@ -1,6 +1,7 @@
 // Pure builders for ECharts options. They contain all plotting decisions so tests can assert exactly
 // what each chart shows. Missing values become gaps (null), never zero.
 import type { EChartsCoreOption } from "echarts/core";
+import type { SmartOiResult } from "./optionTools";
 import { compactIN, isSessionMs, type Totals } from "./analytics";
 import { fmtDateTimeIST, fmtInt, fmtPrice, fmtTimeIST } from "./format";
 import type { FuturesSeries, IntradayScoreRow, Observation, OiChange, OiHeatmap, OiSeries, OptionChainRow, PremiumDecay } from "./types";
@@ -704,5 +705,91 @@ export function groupedBarsOption(categories: string[], series: { name: string; 
     xAxis: { type: "category", data: categories, axisLabel: { ...axisText(c), formatter: (v: string) => v.slice(5) }, axisLine: { lineStyle: { color: c.rule } }, axisTick: { show: false } },
     yAxis: { type: "value", axisLabel: { ...axisText(c), formatter: (v: number) => compactIN(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
     series: series.map((s) => ({ name: s.name, type: "bar", barMaxWidth: 18, itemStyle: { color: s.color, borderRadius: 2 }, data: s.values })),
+  };
+}
+
+// ----------------------------------------------------------------- Smart OI
+const upTxt = (v: number | null) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${compactIN(Math.abs(v))}`);
+
+/** Spot candles (top), Smart OI zero-baseline candles (middle) and option volume per candle (bottom) on one shared time axis. */
+export function smartOiOption(r: SmartOiResult, c: ChartColors): EChartsCoreOption {
+  const cs = r.candles;
+  const labels = cs.map((x) => x.label);
+  const axis = (i: number, show: boolean) => ({
+    type: "category", gridIndex: i, data: labels, boundaryGap: true, axisTick: { show: false },
+    axisLine: { lineStyle: { color: c.rule } }, axisLabel: { show, ...axisText(c), hideOverlap: true }, splitLine: { show: false },
+    axisPointer: { show: true, label: { show: show } },
+  });
+  const val = (i: number, extra: object = {}) => ({
+    type: "value", gridIndex: i, scale: true, splitNumber: 3, axisLabel: axisText(c),
+    splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } }, axisLine: { show: false }, ...extra,
+  });
+  return {
+    animation: false,
+    axisPointer: { link: [{ xAxisIndex: "all" }], lineStyle: { color: c.muted, type: "dashed" } },
+    tooltip: {
+      trigger: "axis", axisPointer: { type: "cross" }, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 },
+      formatter: (params: unknown) => {
+        const i = (params as { dataIndex: number }[])[0]?.dataIndex ?? -1;
+        const k = cs[i];
+        if (!k) return "";
+        const sp = k.spot ? `O ${fmtPrice(k.spot.open)} H ${fmtPrice(k.spot.high)} L ${fmtPrice(k.spot.low)} C ${fmtPrice(k.spot.close)}` : "—";
+        return `<b>${k.label}</b> (${r.timeframe} min)<br/>NIFTY ${sp}<br/>Call OI ${fmtInt(k.ceOi)} · Put OI ${fmtInt(k.peOi)}<br/>` +
+          (k.p == null ? "Baseline candle: no change yet" :
+            `ΔPut ${upTxt(k.dPe)} · ΔCall ${upTxt(k.dCe)}<br/><b>Smart OI ${upTxt(k.p)}</b> ${k.p >= 0 ? "(puts added faster)" : "(calls added faster)"}` +
+            (k.span > 1 ? `<br/>spans ${k.span} candles: samples missing in between` : ""));
+      },
+    },
+    grid: [
+      { left: 62, right: 14, top: 8, height: "48%" },
+      { left: 62, right: 14, top: "60%", height: "20%" },
+      { left: 62, right: 14, top: "88%", height: "8%" },
+    ],
+    xAxis: [axis(0, false), axis(1, false), axis(2, true)],
+    yAxis: [val(0), val(1, { scale: false }), val(2, { scale: false, splitNumber: 1 })],
+    dataZoom: [{ type: "inside", xAxisIndex: [0, 1, 2], filterMode: "none" }],
+    series: [
+      {
+        name: "NIFTY", type: "candlestick", xAxisIndex: 0, yAxisIndex: 0,
+        data: cs.map((k) => (k.spot ? [k.spot.open, k.spot.close, k.spot.low, k.spot.high] : "-")),
+        itemStyle: { color: c.up, color0: c.down, borderColor: c.up, borderColor0: c.down },
+      },
+      {
+        name: "Smart OI", type: "candlestick", xAxisIndex: 1, yAxisIndex: 1,
+        // open is always 0: the bar starts on the zero line and ends at ΔPE − ΔCE; the baseline candle has no bar.
+        data: cs.map((k) => (k.p == null ? "-" : [0, k.p, Math.min(0, k.p), Math.max(0, k.p)])),
+        itemStyle: { color: c.up, color0: c.down, borderColor: c.up, borderColor0: c.down },
+        markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: c.muted, width: 1 }, data: [{ yAxis: 0 }] },
+      },
+      { name: "Put volume", type: "bar", stack: "v", xAxisIndex: 2, yAxisIndex: 2, data: cs.map((k) => k.peVolDelta), itemStyle: { color: c.up, opacity: 0.7 } },
+      { name: "Call volume", type: "bar", stack: "v", xAxisIndex: 2, yAxisIndex: 2, data: cs.map((k) => k.ceVolDelta), itemStyle: { color: c.down, opacity: 0.7 } },
+    ],
+  };
+}
+
+/** Day change lines (put, call, put − call since the first candle) and the two ratios, as two small charts. */
+export function smartOiDayOption(r: SmartOiResult, c: ChartColors): EChartsCoreOption {
+  const cs = r.candles;
+  const line = (name: string, color: string, data: (number | null)[]) => ({ name, type: "line", data, showSymbol: false, lineStyle: { width: 1.8, color }, itemStyle: { color } });
+  return {
+    animation: false, grid: { left: 58, right: 14, top: 30, bottom: 24 },
+    legend: { top: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
+    tooltip: { trigger: "axis", backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: unknown) => (typeof v === "number" ? upTxt(v) : "—") },
+    xAxis: { type: "category", data: cs.map((k) => k.label), axisLabel: { ...axisText(c), hideOverlap: true }, axisLine: { lineStyle: { color: c.rule } }, axisTick: { show: false } },
+    yAxis: { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => upTxt(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
+    series: [line("Put OI day chg", c.up, cs.map((k) => k.peDay)), line("Call OI day chg", c.down, cs.map((k) => k.ceDay)), line("PE−CE day chg", c.info, cs.map((k) => k.diffDay))],
+  };
+}
+
+export function smartOiRatioOption(r: SmartOiResult, c: ChartColors): EChartsCoreOption {
+  const cs = r.candles;
+  const line = (name: string, color: string, data: (number | null)[]) => ({ name, type: "line", data, showSymbol: false, lineStyle: { width: 1.8, color }, itemStyle: { color } });
+  return {
+    animation: false, grid: { left: 46, right: 14, top: 30, bottom: 24 },
+    legend: { top: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
+    tooltip: { trigger: "axis", backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: unknown) => (typeof v === "number" ? v.toFixed(3) : "—") },
+    xAxis: { type: "category", data: cs.map((k) => k.label), axisLabel: { ...axisText(c), hideOverlap: true }, axisLine: { lineStyle: { color: c.rule } }, axisTick: { show: false } },
+    yAxis: { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => v.toFixed(2) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
+    series: [line("OI PCR", c.info, cs.map((k) => k.pcr)), line("Volume PCR", c.brass, cs.map((k) => k.volPcr))],
   };
 }
