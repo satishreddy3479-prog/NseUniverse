@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet } from "react-router-dom";
+import { ToolTabs } from "./ToolTabs";
 import { api } from "../lib/api";
 import { setSessionClock } from "../lib/session";
 import { useLiveConnection } from "../lib/useLive";
@@ -56,6 +57,7 @@ export function AppShell() {
         </div>
       )}
       <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 md:p-4 lg:p-6">
+        <ToolTabs />
         <Outlet key={clockKey} />
       </main>
     </div>

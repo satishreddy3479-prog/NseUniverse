@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { Info } from "../components/Info";
 import { DashProvider, type Range } from "../components/dashboard/DashContext";
 import { WIDGETS } from "../components/dashboard/widgets";
-import { MultiStrikeBoard, PriceOiBoard } from "../components/dashboard/PriceBoards";
+import { MultiStrikeBoard, PriceOiBoard, VegaBoard } from "../components/dashboard/PriceBoards";
 import { StreamButtons } from "../components/LiveActivity";
 import { IndexToolBody } from "../components/IndexTools";
 import { FlowsPanel } from "../components/FlowsPanel";
@@ -11,9 +11,6 @@ import { CashPanel } from "../components/CashPanel";
 import { fmtExpiry } from "../lib/format";
 import { useExpiries } from "../lib/hooks";
 import { toolById, toolPath } from "../lib/tools";
-
-/** The price tools are one family (as tabs on the reference site): each tab is its own page. */
-const PRICE_TABS = ["straddle", "premium-decay", "price-vs-oi", "multistrike-chart", "multi-straddle"];
 
 type Mode = "weekly" | "monthly" | "manual";
 const RANGES: Range[] = [5, 10, 20, "all"];
@@ -60,17 +57,6 @@ export default function ToolPage() {
           </div>
           {usesChain && <StreamButtons />}
         </div>
-        {PRICE_TABS.includes(tool.id) && (
-          <nav aria-label="Price tools" className="flex flex-wrap gap-1 rounded-[var(--radius-panel)] border border-rule bg-slate p-1">
-            {PRICE_TABS.map((id) => {
-              const t = toolById(id);
-              return t ? (
-                <Link key={id} to={toolPath(t) ?? "/"} aria-current={id === tool.id ? "page" : undefined}
-                  className={`min-h-9 rounded-sm px-3 py-1.5 text-sm ${id === tool.id ? "bg-brass/15 text-paper" : "text-muted hover:text-paper"}`}>{t.label}</Link>
-              ) : null;
-            })}
-          </nav>
-        )}
         {usesChain && (
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2">
             <span className="text-sm font-semibold">NIFTY</span>
@@ -103,6 +89,7 @@ export default function ToolPage() {
             </section>
           ) : null;
         })}
+        {tool.board === "vega" && <VegaBoard />}
         {tool.board === "priceOi" && <PriceOiBoard />}
         {tool.board === "multiStrike" && <MultiStrikeBoard straddle={false} />}
         {tool.board === "multiStraddle" && <MultiStrikeBoard straddle />}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildupOf, chainGreeks, exposures, peCeDifference, smartOiSummary, type StrikeGreeks , smartOiCandles, strikeBoard, strikesAround } from "../lib/optionTools";
-import { contractGreeks } from "../lib/optionModel";
+import { buildupOf, chainGreeks, exposures, peCeDifference, smartOiSummary, type StrikeGreeks , smartOiCandles, strikeBoard, strikesAround, vegaCandles, vegaSeries } from "../lib/optionTools";
+import { contractGreeks, expiryEnd } from "../lib/optionModel";
 import type { OptionChainRow, OptionQuote, StrikeSeries } from "../lib/types";
 
 const q = (o: Partial<OptionQuote>): OptionQuote => ({ exchange_segment: "nse_fo", instrument_token: "1", trading_symbol: "x", option_type: "CE", ltp: null, open: null, high: null, low: null, prev_close: null, close: null, volume: null, oi: null, oi_previous: null, oi_change: null, oi_change_pct: null, moneyness: null, invalid_fields: [], ...o });
@@ -176,5 +176,47 @@ describe("Price vs OI strike board", () => {
     expect(strikesAround(ks, 23950, 3)).toEqual([23900, 23950, 24000]);
     expect(strikesAround(ks, 23800, 3)).toEqual([23800, 23850, 23900]); // at the edge the window slides, it does not shrink
     expect(strikesAround(ks, null, 2)).toEqual([23800, 23850]);
+  });
+});
+
+describe("Vega Analysis series", () => {
+  // Independent arithmetic: prices come from a closed-form Black-76 written here (numeric normal CDF), not from the app's model.
+  const pdf = (x: number) => Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
+  const cdf = (x: number) => { let a = -10, sum = 0; const n = 20000, h = (x - a) / n; for (let i = 0; i <= n; i++) sum += (i === 0 || i === n ? 1 : i % 2 ? 4 : 2) * pdf(a + i * h); return (sum * h) / 3; };
+  const r = 0.06, sigma = 0.2, spot = 24000;
+  const at = Date.parse("2026-11-04T04:00:00Z"); // 09:30 IST
+  const T = (expiryEnd("2026-11-09") - at) / (365 * 86_400_000);
+  const F = spot * Math.exp(r * T);
+  const d1 = (k: number) => (Math.log(F / k) + 0.5 * sigma * sigma * T) / (sigma * Math.sqrt(T));
+  const call = (k: number) => Math.exp(-r * T) * (F * cdf(d1(k)) - k * cdf(d1(k) - sigma * Math.sqrt(T)));
+  const put = (k: number) => call(k) - Math.exp(-r * T) * (F - k);
+  const vegaPt = (k: number) => (Math.exp(-r * T) * F * pdf(d1(k)) * Math.sqrt(T)) / 100;
+  const strikes = [23900, 24000, 24100];
+  const per = (f: (k: number) => number | null) => Object.fromEntries(strikes.map((k) => [String(k), [f(k), f(k)]]));
+  const res: StrikeSeries = {
+    underlying: "NIFTY", expiry: "2026-11-09", strikes, atm_strike: 24000,
+    times: [new Date(at).toISOString(), "2026-11-04T18:01:00Z"], // the second is 23:31 IST: not a session sample
+    spot: [spot, spot], ce_price: per(call), pe_price: per(put), ce_oi: per((k) => (k === 24000 ? 100_000 : 50_000)), pe_oi: per(() => 80_000),
+    ce_change: per(() => 0), pe_change: per(() => 0), stride: 1, warnings: [], definitions: {},
+  };
+  it("sums vega per point x OI per side and takes the difference as put minus call", () => {
+    const pts = vegaSeries(res, "2026-11-09");
+    expect(pts).toHaveLength(1); // the after-hours sample is dropped
+    const wantCall = vegaPt(23900) * 50_000 + vegaPt(24000) * 100_000 + vegaPt(24100) * 50_000;
+    const wantPut = (vegaPt(23900) + vegaPt(24000) + vegaPt(24100)) * 80_000;
+    expect(pts[0]!.call!).toBeCloseTo(wantCall, -1); // within 5 rupees of ~ crores: the implied-volatility solve is numeric
+    expect(Math.abs(pts[0]!.call! / wantCall - 1)).toBeLessThan(1e-3);
+    expect(Math.abs(pts[0]!.put! / wantPut - 1)).toBeLessThan(1e-3);
+    expect(pts[0]!.diff).toBeCloseTo(pts[0]!.put! - pts[0]!.call!, 6);
+    expect(pts[0]!.callN).toBe(3);
+  });
+  it("leaves out a contract with no OI instead of counting it as zero, and keeps the last value of each candle", () => {
+    const noOi: StrikeSeries = { ...res, ce_oi: { ...res.ce_oi, "24000": [null, null] } };
+    const p = vegaSeries(noOi, "2026-11-09")[0]!;
+    expect(p.callN).toBe(2);
+    expect(Math.abs(p.call! / (vegaPt(23900) * 50_000 + vegaPt(24100) * 50_000) - 1)).toBeLessThan(1e-3);
+    const mk = (min: number, v: number) => ({ t: Date.UTC(2026, 10, 4, 3, 45 + min), spot: 1, call: v, put: v, diff: 0, callN: 1, putN: 1, skipped: 0 });
+    const c = vegaCandles([mk(0, 1), mk(1, 2), mk(2, 3), mk(3, 4)], 3, 9 * 60 + 15);
+    expect(c.map((x) => x.call)).toEqual([3, 4]); // minutes 0-2 are one 3-minute candle (last value 3), minute 3 starts the next
   });
 });

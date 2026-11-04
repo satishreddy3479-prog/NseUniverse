@@ -332,3 +332,10 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 - PCR on these charts is the strike's own put OI / call OI, labelled as such. Straddle = call + put price of the same strike, only where both were observed.
 - Tests: backend `TestStrikeSeries`; frontend `strikeBoard` hand calculation in `option-tools.test.ts`, page tests in `price-boards.test.tsx`. Backend 583 and frontend 386 tests pass; ruff and tsc clean.
 - Not verified: the pages against live stored data on the server (sandbox has none). The Analysis dashboard still has its own "Price and OI" table widget (unchanged).
+
+## Vega Analysis time series and section tabs (5 Nov 2026)
+- `Vega Analysis` is now a session time series: call vega, put vega and put minus call (hidden until clicked) with NIFTY on the right axis; timeframes 1/3/5/15 min (last stored sample in each window); Chart or Chart + Table (time, call, put, put − call); strikes ATM ±5/10/20, fixed per load. The by-strike bars stay below as "latest chain".
+- Calculation `vegaSeries` in `lib/optionTools.ts`: per stored sample, forward from put-call parity, each contract's IV from its own last price (Black-76, 6 %), vega per vol point × OI summed per side over the fixed strikes; missing price/OI skipped and counted. Test uses an independent closed-form Black-76 written in the test.
+- Data: `/api/history/strike-series` now accepts up to 45 strikes.
+- `ToolTabs` (AppShell): every tool page, including Strategy Chart and Intraday Booster, shows its section's tools (same menu and heading) as tabs; planned tools are greyed with the reason.
+- Not verified against live stored data on the server. 390 frontend tests pass; backend ruff clean (the backend change is a one-line cap).

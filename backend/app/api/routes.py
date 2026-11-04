@@ -417,7 +417,7 @@ async def strike_series_route(
 ) -> StrikeSeries:
     """Price, OI and OI change of chosen strikes ("atm" = the newest sample's ATM strike)."""
     try:
-        parts = [x for x in strikes.split(",") if x.strip()][:12]
+        parts = [x for x in strikes.split(",") if x.strip()][:45]
         picked = None if strikes == "atm" else [float(x) for x in parts]
     except ValueError as e:
         detail = "strikes must be 'atm' or comma-separated numbers"

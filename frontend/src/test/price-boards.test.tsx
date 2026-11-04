@@ -95,3 +95,24 @@ describe("MultiStrike and Multi-Straddle", () => {
     expect(chart.getAttribute("data-series")?.split("|").every((n) => n.endsWith("Straddle"))).toBe(true);
   });
 });
+
+describe("Vega Analysis page and section tabs", () => {
+  it("draws call vega, put vega and NIFTY through the session with a table, not only the by-strike bars", async () => {
+    mockApi(history(IN_SESSION));
+    renderAt("/tools/vega-analysis");
+    const chart = await screen.findByRole("img", { name: "Call vega, put vega and NIFTY through the session" });
+    expect(chart.getAttribute("data-series")).toBe("Call Vega|Put Vega|Put − Call|NIFTY");
+    expect(screen.getByRole("group", { name: "Timeframe" })).toBeInTheDocument();
+    expect(await screen.findByRole("table", { name: "Vega table" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Chart" }));
+    expect(screen.queryByRole("table", { name: "Vega table" })).toBeNull();
+  });
+
+  it("every tool page lists the tools of its section as tabs, with the current one marked", async () => {
+    mockApi(history(IN_SESSION));
+    renderAt("/tools/vega-analysis");
+    const nav = await screen.findByRole("navigation", { name: "Popular tools" });
+    for (const name of ["PE-CE Difference", "Timeseries", "Strategy Chart", "Smart OI", "Vega Analysis"]) expect(within(nav).getByRole("link", { name: new RegExp(name) })).toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: /Vega Analysis/ })).toHaveAttribute("aria-current", "page");
+  });
+});

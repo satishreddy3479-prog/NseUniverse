@@ -259,3 +259,62 @@ export function strikesAround(strikes: number[], atm: number | null, n: number):
   const from = Math.max(0, Math.min(s.length - n, i - Math.floor(n / 2)));
   return s.slice(from, from + n);
 }
+
+// ---------------------------------------------------------------- Vega Analysis (through the session)
+export interface VegaPoint {
+  t: number;
+  spot: number | null;
+  /** sum over the chosen strikes of call vega per volatility point x OI (rupees); null when no strike had both */
+  call: number | null;
+  put: number | null;
+  /** put minus call, only where both exist */
+  diff: number | null;
+  /** strikes that contributed on each side, and contracts whose price gave no volatility */
+  callN: number; putN: number; skipped: number;
+}
+
+const quoteOf = (ltp: number | null, oi: number | null): OptionQuote => ({ ltp, oi } as OptionQuote);
+
+/**
+ * Call and put vega exposure of a FIXED set of strikes at every stored sample: for each sample the chain's own prices give
+ * the forward (put-call parity near spot) and every contract's implied volatility (Black-76); vega per volatility point x OI
+ * is summed per side (same definition as the by-strike chart). Samples taken outside the session are left out.
+ * A contract without a usable price or OI is skipped and counted, never zero-filled.
+ */
+export function vegaSeries(res: StrikeSeries, expiry: string, rate = 0.06): VegaPoint[] {
+  const out: VegaPoint[] = [];
+  res.times.forEach((iso, i) => {
+    const t = new Date(iso).getTime();
+    const spot = res.spot[i];
+    if (!isSessionMs(t) || spot == null) return;
+    const rows: OptionChainRow[] = res.strikes.map((k) => {
+      const key = String(k);
+      return { strike: k, call: quoteOf(res.ce_price[key]?.[i] ?? null, res.ce_oi[key]?.[i] ?? null), put: quoteOf(res.pe_price[key]?.[i] ?? null, res.pe_oi[key]?.[i] ?? null) } as OptionChainRow;
+    });
+    const g = chainGreeks(rows, spot, expiry, t, rate);
+    const ex = exposures(rows, g.strikes, spot, "vega").points;
+    const cs = ex.map((p) => p.call).filter((v): v is number => v != null);
+    const ps = ex.map((p) => p.put).filter((v): v is number => v != null);
+    const call = cs.length ? cs.reduce((a, b) => a + b, 0) : null;
+    const put = ps.length ? ps.reduce((a, b) => a + b, 0) : null;
+    out.push({ t, spot, call, put, diff: call != null && put != null ? put - call : null, callN: cs.length, putN: ps.length, skipped: g.skipped });
+  });
+  return out;
+}
+
+/** The last value inside each candle of `tf` minutes (counted from the session open): vega is a level, not a flow, so the candle shows where it ended. */
+export function vegaCandles(points: VegaPoint[], tf: number, openMin: number): VegaPoint[] {
+  if (tf <= 1) return points;
+  const slot = (t: number) => {
+    const d = new Date(t + 330 * 60_000);
+    return Math.floor((d.getUTCHours() * 60 + d.getUTCMinutes() - openMin) / tf);
+  };
+  const out: VegaPoint[] = [];
+  let lastKey = "";
+  for (const p of points) {
+    const key = `${new Date(p.t + 330 * 60_000).toISOString().slice(0, 10)}|${slot(p.t)}`;
+    if (key === lastKey) out[out.length - 1] = p; else out.push(p);
+    lastKey = key;
+  }
+  return out;
+}
