@@ -8,7 +8,7 @@ import { rangeObservations } from "../../lib/analytics";
 import { fmtExpiry, fmtInt, fmtTimeIST } from "../../lib/format";
 import { strikeBoard, strikesAround, vegaCandles, vegaSeries, type StrikeBoard, type VegaBasis } from "../../lib/optionTools";
 import { sessionOpenMin } from "../../lib/session";
-import { VegaWidget } from "./toolWidgets";
+import { VegaTableWidget, VegaWidget } from "./toolWidgets";
 import { compactIN } from "../../lib/analytics";
 import { ratio, rupee, signedUnits, STRIKE_COLORS, timeLinesOption, units, type Line } from "../../lib/priceCharts";
 import type { StrikeSeries } from "../../lib/types";
@@ -271,6 +271,7 @@ export function VegaBoard() {
   const last = pts[pts.length - 1];
   return (
     <div className="flex flex-col gap-3" data-testid="vega-board">
+      <Panel title="Vega of every call and put (latest chain)"><div className="h-[380px]"><VegaTableWidget /></div></Panel>
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2">
         <div role="group" aria-label="Timeframe" className="flex items-center gap-1">
           <span className="mr-1 text-sm text-muted">Timeframe</span>

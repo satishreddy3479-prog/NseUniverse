@@ -170,3 +170,45 @@ function ExposureWidget({ kind }: { kind: "gamma" | "vega" }) {
 }
 export const GexWidget = () => <ExposureWidget kind="gamma" />;
 export const VegaWidget = () => <ExposureWidget kind="vega" />;
+
+/** Every contract's own price, implied volatility and vega, so each number the summed charts are built from can be checked one by one. */
+export function VegaTableWidget() {
+  const { d, g, spot } = useChainGreeks();
+  const rows = useMemo(() => {
+    const by = new Map((g?.strikes ?? []).map((x) => [x.strike, x]));
+    return d.view.map((r) => ({ strike: r.strike, cp: r.call?.ltp ?? null, ci: by.get(r.strike)?.ce?.iv ?? null, cv: by.get(r.strike)?.ce?.vegaPt ?? null,
+      pp: r.put?.ltp ?? null, pi: by.get(r.strike)?.pe?.iv ?? null, pv: by.get(r.strike)?.pe?.vegaPt ?? null }));
+  }, [d.view, g]);
+  const sum = (k: "cv" | "pv") => rows.reduce((t, r) => t + (r[k] ?? 0), 0);
+  const n = (k: "cv" | "pv") => rows.filter((r) => r[k] != null).length;
+  const f = (v: number | null, dp = 2) => (v == null ? "—" : v.toFixed(dp));
+  return (
+    <Guard>
+      <div className="flex h-full min-h-0 flex-col">
+        {g == null || spot == null ? <p className="p-3 text-sm text-muted">Needs a NIFTY level and prices to solve volatility; none is available.</p> : (
+          <div className="min-h-0 flex-1 overflow-auto">
+            <table className="w-full text-sm" aria-label="Vega of every call and put">
+              <thead className="sticky top-0 bg-slate text-xs text-muted">
+                <tr><th className="text-right font-normal">CE price</th><th className="text-right font-normal">CE IV %</th><th className="text-right font-normal text-up">CE vega</th>
+                  <th className="px-3 text-center font-normal">Strike</th>
+                  <th className="text-right font-normal text-down">PE vega</th><th className="text-right font-normal">PE IV %</th><th className="text-right font-normal">PE price</th></tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.strike} className={`border-t border-rule/50 ${r.strike === d.atmStrike ? "bg-brass/10" : ""}`}>
+                    <td className="num text-right">{f(r.cp)}</td><td className="num text-right">{r.ci == null ? "—" : f(r.ci * 100)}</td><td className="num text-right text-up">{f(r.cv)}</td>
+                    <td className="num px-3 text-center font-semibold">{fmtInt(r.strike)}</td>
+                    <td className="num text-right text-down">{f(r.pv)}</td><td className="num text-right">{r.pi == null ? "—" : f(r.pi * 100)}</td><td className="num text-right">{f(r.pp)}</td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-rule font-semibold"><td /><td className="text-right text-xs font-normal text-muted">sum of {n("cv")}</td><td className="num text-right text-up">{f(sum("cv"))}</td>
+                  <td className="px-3 text-center">Total</td><td className="num text-right text-down">{f(sum("pv"))}</td><td className="text-right text-xs font-normal text-muted">sum of {n("pv")}</td><td /></tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+        <Note>Vega = rupees of option price per one volatility point, for one unit of the contract (no open interest). {MODEL_NOTE} NIFTY {spot == null ? "—" : fmtPrice(spot)}. Strikes: {d.universeLabel}.</Note>
+      </div>
+    </Guard>
+  );
+}
