@@ -251,7 +251,7 @@ describe("Vega Analysis series", () => {
     expect(b!.fwd).not.toBeNull(); // the synthetic future comes from the chain's own parity
     expect(Math.abs(b!.fwd! - F)).toBeLessThan(1);
   });
-  it("the reference of a change series is the first sample in which every contributing strike was priced", () => {
+  it("a change series measures each strike from its own first value, so a late-priced strike adds nothing at first", () => {
     const at2 = [new Date(at).toISOString(), new Date(at).toISOString()];
     const gap = (k: number) => (k === 24100 ? [null, call(k)] : [call(k), call(k)]); // the 24,100 call has no price in the first sample
     const part: StrikeSeries = {
@@ -260,10 +260,9 @@ describe("Vega Analysis series", () => {
     };
     const s = vegaSeries(part, "2026-11-09", "dgreek");
     expect(s[0]!.callN).toBe(2);
-    expect(s[0]!.call).toBeNull(); // before the reference: a gap, not a number measured against an incomplete chain
-    expect(s[1]!.call).toBeCloseTo(0, 9); // the second sample is the reference
-    expect(s.base).toMatchObject({ callN: 3, putN: 3, expectedCall: 3, expectedPut: 3, complete: true });
-    expect(Math.abs(s.base!.call / (vegaPt(23900) + vegaPt(24000) + vegaPt(24100)) - 1)).toBeLessThan(1e-3);
+    expect(s[0]!.call).toBeCloseTo(0, 9);
+    expect(s[1]!.callN).toBe(3);
+    expect(Math.abs(s[1]!.call!)).toBeLessThan(1e-2); // the late strike's first value is its zero
   });
   it("a window keeps ATM ± n strikes of the sample (auto) or of the first sample (fixed)", () => {
     const five = [23800, 23900, 24000, 24100, 24200];

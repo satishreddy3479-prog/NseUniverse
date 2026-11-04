@@ -289,65 +289,66 @@ const quoteOf = (ltp: number | null, oi: number | null): OptionQuote => ({ ltp, 
  * and puts below that sample's NIFTY level, so the two sides are different contracts.
  */
 export type VegaBasis = "greek" | "dgreek" | "oi" | "change";
-/** The reference a "change since the open" series is measured from: the first sample in which every strike that ever contributed did. */
-export interface VegaBase { t: number; call: number; put: number; callN: number; putN: number; expectedCall: number; expectedPut: number; complete: boolean }
-export type VegaSeriesOut = VegaPoint[] & { base?: VegaBase };
 export interface VegaWindow { n: number; mode: "auto" | "fixed" }
-export function vegaSeries(res: StrikeSeries, expiry: string, basis: VegaBasis = "greek", rate = 0.06, otmOnly = false, win?: VegaWindow): VegaSeriesOut {
-  const out: VegaSeriesOut = [];
-  // "fixed" window: the strikes around the ATM of the first session sample, kept all day; "auto": around each sample's own ATM
+
+/**
+ * Call and put VEGA (the Greek) of the strikes in a window, at every stored sample. For each sample the chain's own prices give
+ * the forward (put-call parity near spot) and every contract's implied volatility (Black-76); `vegaPt` is the change in that
+ * contract's price, in rupees, for one volatility point.
+ *   "greek"  sum of vegaPt over the window (one unit of each contract, no open interest)
+ *   "oi"     sum of vegaPt x open interest (units): the vega of all open positions
+ *   "dgreek" / "change"  the same sums as a change since the open: each strike is measured from its OWN first value of the
+ *            session and only strikes with a value now and at their first sample count, so a strike that only gets its first
+ *            price at 09:20 adds nothing at 09:20 instead of showing up as a build-up. Both lines start at 0 and equal
+ *            "sum now minus sum at the open" whenever every strike was priced at the open.
+ * `win` keeps the ATM ± n strikes of each sample ("auto") or of the first sample ("fixed"); `otmOnly` keeps calls above and puts
+ * below that sample's NIFTY level. Samples outside the session are left out; a contract with no usable price (or, for the OI
+ * measures, no OI) is skipped and counted, never zero-filled.
+ */
+export function vegaSeries(res: StrikeSeries, expiry: string, basis: VegaBasis = "greek", rate = 0.06, otmOnly = false, win?: VegaWindow): VegaPoint[] {
   const listed = [...res.strikes].sort((a, b) => a - b);
   const around = (ref: number, n: number) => {
     let c = 0;
     listed.forEach((k, j) => { if (Math.abs(k - ref) < Math.abs(listed[c]! - ref)) c = j; });
     return new Set(listed.slice(Math.max(0, c - n), c + n + 1));
   };
-  let fixedSet: Set<number> | null = null;
+  const weighted = basis === "oi" || basis === "change";
+  const delta = basis === "dgreek" || basis === "change";
+  type Vals = { ce: Map<number, number>; pe: Map<number, number> };
+  const per: { t: number; spot: number; fwd: number | null; skipped: number; v: Vals }[] = [];
   res.times.forEach((iso, i) => {
     const t = new Date(iso).getTime();
     const spot = res.spot[i];
     if (!isSessionMs(t) || spot == null) return;
-    if (win && fixedSet == null) fixedSet = around(spot, win.n);
     const rows: OptionChainRow[] = res.strikes.map((k) => {
       const key = String(k);
       return { strike: k, call: quoteOf(res.ce_price[key]?.[i] ?? null, res.ce_oi[key]?.[i] ?? null), put: quoteOf(res.pe_price[key]?.[i] ?? null, res.pe_oi[key]?.[i] ?? null) } as OptionChainRow;
     });
-    const g0 = chainGreeks(rows, spot, expiry, t, rate);
-    const band = win ? (win.mode === "fixed" ? fixedSet! : around(spot, win.n)) : new Set(listed);
-    // OTM only, inside the band: calls above this sample's NIFTY level, puts below it
-    const callK = otmOnly ? new Set([...band].filter((k) => k > spot)) : band;
-    const putK = otmOnly ? new Set([...band].filter((k) => k < spot)) : band;
-    const g = { ...g0, strikes: g0.strikes.map((x) => ({ strike: x.strike, ce: callK.has(x.strike) ? x.ce : null, pe: putK.has(x.strike) ? x.pe : null })) };
-    let cs: number[], ps: number[];
-    if (basis === "oi" || basis === "change") {
-      const ex = exposures(rows, g.strikes, spot, "vega").points;
-      cs = ex.map((p) => p.call).filter((v): v is number => v != null);
-      ps = ex.map((p) => p.put).filter((v): v is number => v != null);
+    const g = chainGreeks(rows, spot, expiry, t, rate);
+    const v: Vals = { ce: new Map(), pe: new Map() };
+    if (weighted) {
+      for (const p of exposures(rows, g.strikes, spot, "vega").points) { if (p.call != null) v.ce.set(p.strike, p.call); if (p.put != null) v.pe.set(p.strike, p.put); }
     } else {
-      cs = g.strikes.map((x) => x.ce?.vegaPt).filter((v): v is number => v != null);
-      ps = g.strikes.map((x) => x.pe?.vegaPt).filter((v): v is number => v != null);
+      for (const x of g.strikes) { if (x.ce) v.ce.set(x.strike, x.ce.vegaPt); if (x.pe) v.pe.set(x.strike, x.pe.vegaPt); }
     }
-    const call = cs.length ? cs.reduce((x, y) => x + y, 0) : null;
-    const put = ps.length ? ps.reduce((x, y) => x + y, 0) : null;
-    out.push({ t, spot, fwd: g0.forward, call, put, diff: call != null && put != null ? put - call : null, callN: cs.length, putN: ps.length, skipped: g.skipped });
+    per.push({ t, spot, fwd: g.forward, skipped: g.skipped, v });
   });
-  if (basis === "dgreek" || basis === "change") {
-    // The reference is the first sample in which every strike that contributes at any time of the day has a price (and OI): a first
-    // sample with half the chain still unpriced would make the change look like a build-up when it is only strikes appearing.
-    // Samples before it are gaps. If no sample is complete the first usable one is used and `complete` says so.
-    const expectedCall = Math.max(0, ...out.map((p) => p.callN)), expectedPut = Math.max(0, ...out.map((p) => p.putN));
-    let bi = out.findIndex((p) => p.call != null && p.put != null && p.callN === expectedCall && p.putN === expectedPut);
-    const complete = bi >= 0;
-    if (bi < 0) bi = out.findIndex((p) => p.call != null && p.put != null);
-    if (bi >= 0) {
-      const b = out[bi]!;
-      const c0 = b.call!, p0 = b.put!;
-      out.base = { t: b.t, call: c0, put: p0, callN: b.callN, putN: b.putN, expectedCall, expectedPut, complete };
-      out.forEach((p, j) => {
-        const call = j >= bi && p.call != null ? p.call - c0 : null, put = j >= bi && p.put != null ? p.put - p0 : null;
-        p.call = call; p.put = put; p.diff = call != null && put != null ? put - call : null;
-      });
-    }
+  // each strike's first value of the session, per side: the zero of the change measures
+  const first: Vals = { ce: new Map(), pe: new Map() };
+  for (const p of per) for (const side of ["ce", "pe"] as const) for (const [k, x] of p.v[side]) if (!first[side].has(k)) first[side].set(k, x);
+  const out: VegaPoint[] = [];
+  let fixedSet: Set<number> | null = null;
+  for (const p of per) {
+    if (win && fixedSet == null) fixedSet = around(p.spot, win.n);
+    const band = win ? (win.mode === "fixed" ? fixedSet! : around(p.spot, win.n)) : new Set(listed);
+    const sum = (side: "ce" | "pe") => {
+      const inSide = (k: number) => band.has(k) && (!otmOnly || (side === "ce" ? k > p.spot : k < p.spot));
+      const xs: number[] = [];
+      for (const [k, x] of p.v[side]) if (inSide(k)) xs.push(delta ? x - first[side].get(k)! : x);
+      return { total: xs.length ? xs.reduce((a, b) => a + b, 0) : null, n: xs.length };
+    };
+    const c = sum("ce"), q = sum("pe");
+    out.push({ t: p.t, spot: p.spot, fwd: p.fwd, call: c.total, put: q.total, diff: c.total != null && q.total != null ? q.total - c.total : null, callN: c.n, putN: q.n, skipped: p.skipped });
   }
   return out;
 }

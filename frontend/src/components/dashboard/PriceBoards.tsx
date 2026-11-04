@@ -8,7 +8,6 @@ import { rangeObservations } from "../../lib/analytics";
 import { fmtExpiry, fmtInt, fmtTimeIST } from "../../lib/format";
 import { strikeBoard, strikesAround, vegaCandles, vegaSeries, type StrikeBoard, type VegaBasis } from "../../lib/optionTools";
 import { sessionOpenMin } from "../../lib/session";
-import { VegaTableWidget, VegaWidget } from "./toolWidgets";
 import { ratio, rupee, signedUnits, STRIKE_COLORS, timeLinesOption, units, type Line } from "../../lib/priceCharts";
 import type { StrikeSeries } from "../../lib/types";
 
@@ -259,8 +258,6 @@ export function VegaBoard() {
   const res = q.data;
   const all = useMemo(() => (res && d.expiry ? vegaSeries(res, d.expiry, basis, 0.06, otm, { n: each, mode }) : []), [res, d.expiry, basis, otm, each, mode]);
   const pts = useMemo(() => vegaCandles(all, tf, sessionOpenMin()), [all, tf]);
-  const base = (all as { base?: import("../../lib/optionTools").VegaBase }).base;
-  const hhmm = (t: number) => new Date(t + 330 * 60_000).toISOString().slice(11, 16);
   const opt = useMemo(() => {
     const t = pts.map((p) => p.t);
     const line = (name: string, color: string, data: (number | null)[], extra: Partial<Line> = {}): Line => ({ name, color, data, fmt: vt, ...extra });
@@ -284,7 +281,6 @@ export function VegaBoard() {
   const tip = (v: number | null, e: { hi: number | null; lo: number | null }) => (v != null && v === e.hi ? "Day high" : v != null && v === e.lo ? "Day low" : undefined);
   return (
     <div className="flex flex-col gap-3" data-testid="vega-board">
-      <Panel title="Vega of every call and put (latest chain)"><div className="h-[380px]"><VegaTableWidget /></div></Panel>
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2">
         <div role="group" aria-label="Timeframe" className="flex items-center gap-1">
           <span className="mr-1 text-sm text-muted">Timeframe</span>
@@ -312,12 +308,6 @@ export function VegaBoard() {
         </div>
         {last && <span className="num text-xs text-muted">Latest {new Date(last.t + 330 * 60_000).toISOString().slice(11, 16)}: call <span className="text-up">{vt(last.call)}</span> · put <span className="text-down">{vt(last.put)}</span> · put − call {vt(last.diff)}</span>}
       </div>
-      {base && (basis === "dgreek" || basis === "change") && (
-        <p className="num rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-1.5 text-xs text-muted" data-testid="vega-base">
-          Change measured from {hhmm(base.t)}: call {vt(base.call)} · put {vt(base.put)} there, at {base.callN}/{base.expectedCall} call and {base.putN}/{base.expectedPut} put strikes{base.complete ? "" : " — no sample had every strike priced, so the first usable one is the reference"}.
-          {all[0] && all[0].t < base.t ? ` Earlier samples (from ${hhmm(all[0].t)}) had unpriced strikes and are not plotted.` : ""}
-        </p>
-      )}
       <Frame q={q} w={w} res={res} footer={
         <>
           <span>{pts.length} {tf}-minute point{pts.length === 1 ? "" : "s"}</span>
@@ -355,7 +345,6 @@ export function VegaBoard() {
             )}
           </div>
         )}
-        <Panel title="Vega exposure by strike (latest chain)"><div className="h-[360px]"><VegaWidget /></div></Panel>
       </Frame>
     </div>
   );
