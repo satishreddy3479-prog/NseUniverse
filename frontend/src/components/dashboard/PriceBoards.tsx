@@ -239,6 +239,7 @@ export function MultiStrikeBoard({ straddle }: { straddle: boolean }) {
 
 const TFS = [1, 3, 5, 15] as const;
 const RANGES = [5, 10, 20] as const;
+const OTM_RANGES = [3, 5, 10] as const;
 const vegaTxt = (basis: VegaBasis) => (v: number | null) => (v == null ? "—" : basis === "greek" ? v.toFixed(2) : compactIN(v));
 
 export function VegaBoard() {
@@ -248,14 +249,16 @@ export function VegaBoard() {
   const [view, setView] = useState<"chart" | "table">("table");
   const [each, setEach] = useState<number>(10);
   const [basis, setBasis] = useState<VegaBasis>("greek");
+  const [otm, setOtm] = useState(false);
   const vt = vegaTxt(basis);
   const listed = useMemo(() => [...new Set(d.rows.map((r) => r.strike))].sort((x, y) => x - y), [d.rows]);
   // the strikes are fixed when the page loads (ATM of the latest chain) so every point sums the same contracts
-  const picked = useMemo(() => strikesAround(listed, d.atmStrike, 2 * each + 1), [listed, d.atmStrike, each]);
+  // OTM mode re-picks the nearest strikes at every sample, so a wider fixed set (ATM ±20) is fetched to cover moves of the index
+  const picked = useMemo(() => strikesAround(listed, d.atmStrike, 2 * (otm ? 20 : each) + 1), [listed, d.atmStrike, each, otm]);
   const key = picked.join(",");
   const { q, w } = useStrikeSeries(key || "atm");
   const res = q.data;
-  const all = useMemo(() => (res && d.expiry ? vegaSeries(res, d.expiry, basis) : []), [res, d.expiry, basis]);
+  const all = useMemo(() => (res && d.expiry ? vegaSeries(res, d.expiry, basis, 0.06, otm ? each : undefined) : []), [res, d.expiry, basis, otm, each]);
   const pts = useMemo(() => vegaCandles(all, tf, sessionOpenMin()), [all, tf]);
   const opt = useMemo(() => {
     const t = pts.map((p) => p.t);
@@ -290,18 +293,20 @@ export function VegaBoard() {
         </div>
         <div role="group" aria-label="Strikes" className="flex items-center gap-1">
           <span className="mr-1 text-sm text-muted">Strikes around ATM</span>
-          {RANGES.map((n) => <button key={n} type="button" aria-pressed={each === n} onClick={() => setEach(n)} className={pill(each === n)}>±{n}</button>)}
+          <button type="button" aria-pressed={!otm} onClick={() => { setOtm(false); setEach(10); }} className={pill(!otm)} title="Calls and puts over the same strikes around the ATM">All ±N</button>
+          <button type="button" aria-pressed={otm} onClick={() => { setOtm(true); setEach(5); }} className={pill(otm)} title="Calls: the N out-of-the-money strikes above NIFTY. Puts: the N out-of-the-money strikes below NIFTY">OTM only</button>
+          {(otm ? OTM_RANGES : RANGES).map((n) => <button key={n} type="button" aria-pressed={each === n} onClick={() => setEach(n)} className={pill(each === n)}>{otm ? n : `±${n}`}</button>)}
         </div>
         {last && <span className="num text-xs text-muted">Latest {new Date(last.t + 330 * 60_000).toISOString().slice(11, 16)}: call <span className="text-up">{vt(last.call)}</span> · put <span className="text-down">{vt(last.put)}</span> · put − call {vt(last.diff)}</span>}
       </div>
       <Frame q={q} w={w} res={res} footer={
         <>
           <span>{pts.length} {tf}-minute point{pts.length === 1 ? "" : "s"}</span>
-          {thin < picked.length && all.length > 0 && <span className="text-warn">some points use fewer strikes (fewest {thin} of {picked.length}) because a price or OI was missing</span>}
+          {!otm && thin < picked.length && all.length > 0 && <span className="text-warn">some points use fewer strikes (fewest {thin} of {picked.length}) because a price or OI was missing</span>}
           <span className="basis-full">
             Vega is the Greek: how many rupees an option&apos;s price changes for a one-point change in implied volatility (Black-76, 6 % rate, forward from put-call parity near spot, volatility solved from each contract&apos;s own last price).
-            {basis === "greek" ? " Each line adds the vega of one unit of every call (or put) over " : basis === "oi" ? " Each line adds vega × open interest of every call (or put) over " : " Each line adds vega × the OI added since the first sample of the session (negative where OI was removed) of every call (or put) over "}{picked.length} fixed strikes (ATM ±{each} of the latest chain); the first point is the first stored sample of the session.
-            {basis === "greek" ? "For the same strikes a call and a put have the same vega (put-call parity), so the two lines stay close together; that is correct, not an error. " : ""}Put − Call is hidden until you click it in the legend. Each {tf}-minute point is the last stored sample in that window. It describes where volatility sensitivity sits in the open interest; it does not say who holds it or what happens next.
+            {basis === "greek" ? " Each line adds the vega of one unit of every call (or put) over " : basis === "oi" ? " Each line adds vega × open interest of every call (or put) over " : " Each line adds vega × the OI added since the first sample of the session (negative where OI was removed) of every call (or put) over "}{otm ? `the ${each} out-of-the-money strikes nearest NIFTY on each side (calls above it, puts below it, chosen again at every sample)` : `${picked.length} fixed strikes (ATM ±${each} of the latest chain)`}; the first point is the first stored sample of the session.
+            {basis === "greek" && !otm ? "For the same strikes a call and a put have the same vega (put-call parity), so the two lines stay close together; that is correct, not an error. " : ""}Put − Call is hidden until you click it in the legend. Each {tf}-minute point is the last stored sample in that window. It describes where volatility sensitivity sits in the open interest; it does not say who holds it or what happens next.
           </span>
         </>
       }>

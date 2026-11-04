@@ -231,6 +231,14 @@ describe("Vega Analysis series", () => {
     expect(Math.abs(b!.call! / want - 1)).toBeLessThan(2e-3);
     expect(b!.put!).toBeCloseTo(0, 6); // put OI did not change
   });
+  it("OTM mode takes calls from strikes above NIFTY and puts from strikes below it", () => {
+    const p = vegaSeries(res, "2026-11-09", "greek", 0.06, 1)[0]!; // spot 24,000: the OTM call is 24,100, the OTM put is 23,900
+    expect(p.callN).toBe(1);
+    expect(p.putN).toBe(1);
+    expect(Math.abs(p.call! / vegaPt(24100) - 1)).toBeLessThan(1e-3);
+    expect(Math.abs(p.put! / vegaPt(23900) - 1)).toBeLessThan(1e-3);
+    expect(p.call!).toBeLessThan(vegaPt(24000)); // an OTM wing has less vega than the money strike
+  });
   it("leaves out a contract with no OI instead of counting it as zero, and keeps the last value of each candle", () => {
     const noOi: StrikeSeries = { ...res, ce_oi: { ...res.ce_oi, "24000": [null, null] } };
     const p = vegaSeries(noOi, "2026-11-09", "oi")[0]!;
