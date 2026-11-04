@@ -47,6 +47,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** The strategy the builder is managing, as the server holds it; the server checks its stops and targets every second. */
+export interface RunningDoc {
+  rev?: number; auto?: boolean; lotSize?: number | null; mult?: number; expiry?: string | null; name?: string; loaded?: string | null;
+  legs?: import("./strategy").Leg[]; baseline?: import("./strategy").Leg[]; serverEvents?: { at: string; text: string }[];
+}
+export interface RunningResponse { doc: RunningDoc | null; checking: { live: boolean; last_check_at: string | null; error: string | null } }
+
 export interface StoredStrategies { saved: Record<string, unknown>[]; closed: Record<string, unknown>[] }
 
 export interface MarketSessionInfo {
@@ -87,6 +94,11 @@ export const api = {
     // the name goes in the body: names like "straddle 30/10/2026" contain slashes that a proxy would split into path parts
     request<{ ok: boolean }>(`/api/strategies/${kind}`, {
       method: "PUT", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ key, doc }),
+    }),
+  runningGet: () => request<RunningResponse>("/api/strategies/running"),
+  runningPut: (doc: unknown, baseRev: number | null) =>
+    request<{ ok: boolean; rev: number }>("/api/strategies/running", {
+      method: "PUT", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ doc, base_rev: baseRev }),
     }),
   deleteStrategy: (kind: "saved" | "closed", key: string) =>
     request<{ ok: boolean; deleted: boolean }>(`/api/strategies/${kind}?key=${encodeURIComponent(key)}`, { method: "DELETE" }),

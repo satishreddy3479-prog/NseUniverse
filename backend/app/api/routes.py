@@ -39,6 +39,7 @@ from app.services.state import AppState, ErrorEvent, SnapshotActivity
 from app.storage.observations import ObservationStore
 from app.storage.store import SnapshotStore, StorageError
 from app.storage.strategies import StrategyError, StrategyStore
+from app.strategy.automation import RunningConflict, StrategyAutomation
 from app.stream.models import StreamStatusModel
 
 router = APIRouter(prefix="/api")
@@ -773,10 +774,50 @@ class StrategyPut(BaseModel):
     doc: dict[str, Any]
 
 
+class RunningPut(BaseModel):
+    doc: dict[str, Any]
+    base_rev: int | None = None
+
+
+def _automation(request: Request) -> StrategyAutomation:
+    a: StrategyAutomation = request.app.state.strategy_automation
+    return a
+
+
+@router.get("/strategies/running")
+async def running_get(request: Request) -> dict[str, Any]:
+    """The strategy the builder is managing, as the server holds it (including exits the server made), and whether the server is checking it."""  # noqa: E501
+    a = _automation(request)
+    doc = await asyncio.to_thread(a.get)
+    return {
+        "doc": doc,
+        "checking": {
+            "live": a.is_live(),
+            "last_check_at": a.last_check_at.isoformat() if a.last_check_at else None,
+            "error": a.last_error,
+        },
+    }
+
+
+@router.put("/strategies/running")
+async def running_put(body: RunningPut, request: Request) -> dict[str, Any]:
+    """Store the builder's current strategy. Refused (409) when the server changed it since `base_rev` (a stop or target it executed)."""  # noqa: E501
+    a = _automation(request)
+    try:
+        doc = await asyncio.to_thread(a.put, body.doc, body.base_rev)
+    except RunningConflict as e:
+        raise HTTPException(409, {"code": "conflict", "message": "the server changed this strategy (a stop or target was executed)", "current": e.current}) from e  # noqa: E501
+    except StrategyError as e:
+        raise _bad_strategy(e) from e
+    return {"ok": True, "rev": doc["rev"]}
+
+
 # The strategy's name travels in the body or the query string, never in the path: names such as
 # "straddle 30/10/2026" contain slashes, which a proxy decodes and the router then cannot match.
 @router.put("/strategies/{kind}")
 async def strategies_put(kind: str, body: StrategyPut, request: Request) -> dict[str, Any]:
+    if kind == "running":
+        raise HTTPException(422, {"code": "validation_error", "message": "use PUT /strategies/running"})  # noqa: E501
     try:
         await asyncio.to_thread(_strategies(request).put, kind, body.key, body.doc)
     except StrategyError as e:
@@ -787,6 +828,8 @@ async def strategies_put(kind: str, body: StrategyPut, request: Request) -> dict
 @router.delete("/strategies/{kind}")
 async def strategies_delete(kind: str, key: str, request: Request) -> dict[str, Any]:
     """Marks the strategy deleted (it is no longer listed); its history is kept."""
+    if kind == "running":
+        raise HTTPException(422, {"code": "validation_error", "message": "the running strategy is replaced, not deleted"})  # noqa: E501
     try:
         done = await asyncio.to_thread(_strategies(request).delete, kind, key)
     except StrategyError as e:

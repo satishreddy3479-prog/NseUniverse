@@ -114,19 +114,33 @@ body {
 .flash-down { animation: flash-down 0.9s ease-out; }
 
 
-/* Strategy legs: on a phone each leg becomes a card (two columns of labelled controls) instead of a wide table. */
-@media (max-width: 767px) {
-  .legs-table, .legs-table tbody { display: block; }
-  .legs-table thead { display: none; }
-  .legs-table tr { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; padding: 10px 8px 10px 12px; }
-  .legs-table td { display: block; min-width: 0; padding: 0 !important; }
-  .legs-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 2px; font-size: 10px; color: var(--muted); }
-  .legs-table td:first-child { grid-column: 1 / -1; }
-  .legs-table td:nth-child(2), .legs-table td:nth-child(3), .legs-table td:last-child { grid-column: 1 / -1; }
+/* Strategy legs: every leg is a card with labelled controls. Narrow (phone, or the builder next to the chain): two columns.
+   Wide (the card's own width, not the screen's): one strip of position fields, then target / stop / actions underneath,
+   and the exit / roll / re-entry row as the card's footer. The column guide (with the glossary buttons) sits above the cards. */
+.legs-wrap { container-type: inline-size; }
+.legs-table, .legs-table tbody { display: block; }
+.legs-table thead, .legs-table thead tr { display: flex; flex-wrap: wrap; gap: 2px 14px; padding: 0 2px 2px; }
+.legs-table thead th { display: inline-flex; padding: 0 !important; }
+.legs-table tr[data-testid^="leg-"]:not(.legs-extra) {
+  position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; align-items: start;
+  margin-top: 12px; padding: 14px 14px 12px 40px; background: var(--slate-2);
+  border: 1px solid var(--rule); border-bottom: 0; border-radius: 8px 8px 0 0;
 }
-
-/* The exit / re-entry row under each leg spans the whole card on a phone. */
-@media (max-width: 767px) {
-  .legs-table tr.legs-extra { display: block; padding: 0 8px 10px 12px; border-top: 0; }
-  .legs-table tr.legs-extra td { display: block; }
+.legs-table td { display: block; min-width: 0; padding: 0 !important; }
+.legs-table td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 3px; font-size: 10px; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); }
+.legs-table tr:not(.legs-extra) > td:first-child { position: absolute; left: 14px; top: 30px; }
+.legs-table tr:not(.legs-extra) > td:nth-child(2), .legs-table tr:not(.legs-extra) > td:nth-child(3), .legs-table tr:not(.legs-extra) > td:last-child { grid-column: 1 / -1; }
+.legs-table td[data-label="LTP"], .legs-table td[data-label="P&L"] { font-size: 15px; font-weight: 600; }
+.legs-table tr.legs-extra { display: block; padding: 10px 14px 12px 40px; background: var(--slate-2); border: 1px solid var(--rule); border-top: 1px dashed var(--rule); border-radius: 0 0 8px 8px; }
+.legs-table tr.legs-extra td { display: block; }
+@container (min-width: 840px) {
+  .legs-table tr[data-testid^="leg-"]:not(.legs-extra) {
+    grid-template-columns: minmax(8.5rem, 1fr) minmax(11.5rem, 1.4fr) minmax(8rem, 1fr) minmax(6rem, .8fr) minmax(4rem, .6fr) minmax(5rem, .7fr);
+  }
+  .legs-table tr:not(.legs-extra) > td:nth-child(2), .legs-table tr:not(.legs-extra) > td:nth-child(3) { grid-column: auto; }
+  .legs-table tr:not(.legs-extra) > td:nth-child(8), .legs-table tr:not(.legs-extra) > td:nth-child(9),
+  .legs-table tr:not(.legs-extra) > td:nth-child(10), .legs-table tr:not(.legs-extra) > td:last-child {
+    border-top: 1px dashed var(--rule); padding-top: 10px !important;
+  }
+  .legs-table tr:not(.legs-extra) > td:last-child { grid-column: 4 / -1; justify-self: stretch; text-align: right; }
 }

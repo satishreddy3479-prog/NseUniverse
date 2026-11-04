@@ -1,13 +1,13 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { mergeRows, type LiveMode } from "../components/ChainTable";
+import { liveKey, mergeRows, type LiveMode } from "../components/ChainTable";
 import { useThrottledVersion } from "../components/dashboard/DashContext";
 import { useLiveSpot, useStreamStatus } from "../lib/useLive";
 import { EChart, useChartColors } from "../components/EChart";
 import { Info } from "../components/Info";
 import { Button } from "../components/ui";
 import { PAYOFF_ZOOM, payoffOption, payoffView } from "../lib/chartOptions";
-import { api } from "../lib/api";
+import { api, ApiError, type RunningDoc } from "../lib/api";
 import { compactIN } from "../lib/analytics";
 import { fmtDateTimeIST, fmtInt, fmtPrice } from "../lib/format";
 import { useExpiries, useThrottledValue } from "../lib/hooks";
@@ -322,7 +322,8 @@ export default function StrategyBuilder() {
   };
   // Automatic stop, target and re-entry (paper only: nothing is sent to a broker). It runs on live streamed prices only,
   // and only while this page is open; with the stream stale or the market closed it is paused, never guessing from old prices.
-  const autoActive = autoOn && liveMode === "fresh" && lotSize != null;
+  const [serverAuto, setServerAuto] = useState(false);
+  const autoActive = autoOn && liveMode === "fresh" && lotSize != null && !serverAuto;
   // A target or stop that was just typed is not checked until the typing has settled: "30" passes through "3" on the way,
   // and that half-typed level must not close the leg.
   const lastExitEdit = useRef(-1e9);
@@ -341,6 +342,96 @@ export default function StrategyBuilder() {
   useEffect(() => {
     try { localStorage.setItem(WORKING_KEY, JSON.stringify({ legs, expiry, name, loaded, baseline, at: Date.now() })); } catch { /* this visit only */ }
   }, [legs, expiry, name, loaded, baseline]);
+
+  // ---- the server keeps this strategy and checks its stops and targets every second, with or without a page open.
+  // The browser sends every change (after a short pause) and takes back what the server did; if the server cannot be
+  // reached the page checks the levels itself while it is open, as before.
+  const revRef = useRef<number | null>(null);
+  const sentRef = useRef("");
+  const skipPush = useRef(false);
+  const seenEvents = useRef<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+  const keyOf = (l: Leg): string | null => {
+    const row = rows.find((r) => r.strike === l.strike);
+    return liveKey(l.type === "CE" ? row?.call ?? null : row?.put ?? null) ?? l.key ?? null;
+  };
+  const payloadJson = JSON.stringify({ name, loaded, expiry, lotSize, mult, auto: autoOn, baseline, legs: legs.map((l) => ({ ...l, key: keyOf(l) })) });
+  const adoptServer = (d: RunningDoc, announce: boolean) => {
+    revRef.current = d.rev ?? null;
+    skipPush.current = true;
+    setLegs(d.legs ?? []); setBaseline(d.baseline ?? d.legs ?? []); setName(d.name ?? ""); setLoaded(d.loaded ?? null); setMult(d.mult ?? 1);
+    if (d.expiry) setPicked(d.expiry);
+    const last = d.serverEvents?.[d.serverEvents.length - 1];
+    if (last && last.at !== seenEvents.current) {
+      if (announce) setAutoNote(`${last.text}`);
+      seenEvents.current = last.at;
+    }
+  };
+  useEffect(() => {
+    let off = false;
+    api.runningGet().then((r) => {
+      if (off) return;
+      const d = r.doc;
+      setServerAuto(true);
+      if (d) {
+        revRef.current = d.rev ?? null;
+        const last = d.serverEvents?.[d.serverEvents.length - 1];
+        seenEvents.current = last?.at ?? null;
+        // the server's copy is the latest one (the page sends every change): take it unless its expiry has gone
+        if (d.legs?.length && d.expiry && d.expiry >= todayIST()) adoptServer(d, false);
+      }
+      setHydrated(true);
+    }).catch(() => { if (!off) { setServerAuto(false); setHydrated(true); } });
+    return () => { off = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!hydrated || !serverAuto) return;
+    if (skipPush.current) { skipPush.current = false; sentRef.current = payloadJson; return; }
+    if (payloadJson === sentRef.current) return;
+    const t = setTimeout(() => {
+      api.runningPut(JSON.parse(payloadJson), revRef.current).then((r) => { revRef.current = r.rev; sentRef.current = payloadJson; })
+        .catch(async (e: unknown) => {
+          if (e instanceof ApiError && e.status === 409) {
+            // the server closed or re-entered a leg meanwhile: its state wins, because an exit cannot be undone
+            try { const r = await api.runningGet(); if (r.doc) { adoptServer(r.doc, true); setNote("A stop or target was executed on the server while you were editing; your last edit was dropped, please check the legs."); } } catch { /* retried on the next poll */ }
+          }
+        });
+    }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payloadJson, hydrated, serverAuto]);
+  useEffect(() => {
+    if (!hydrated) return;
+    const poll = async () => {
+      try {
+        const r = await api.runningGet();
+        setServerAuto(true);
+        const d = r.doc;
+        // adopt what the server did (an exit, a re-entry) unless an edit made here is still waiting to be sent
+        if (d && d.rev !== revRef.current && payloadJson === sentRef.current) adoptServer(d, true);
+      } catch { setServerAuto(false); }
+    };
+    const t = setInterval(() => { void poll(); }, 4000);
+    const vis = () => { if (document.visibilityState === "visible") void poll(); };
+    document.addEventListener("visibilitychange", vis);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", vis); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, payloadJson]);
+  // The working copy survives a refresh for three days, so it can point at an expiry that has since expired and is no longer
+  // listed (it kept the builder on 03 Nov after that day). Once the listed expiries are known, such a strategy is set aside
+  // (a copy stays in this browser) and the builder starts on the latest weekly expiry.
+  const expiryChecked = useRef(false);
+  useEffect(() => {
+    if (expiryChecked.current || !hydrated || available.length === 0) return;
+    expiryChecked.current = true;
+    if (picked && !available.includes(picked) && !opened) {
+      try { localStorage.setItem("nse.builder.expired.v1", JSON.stringify({ expiry: picked, name, legs, at: Date.now() })); } catch { /* this visit only */ }
+      setLegs([]); setBaseline([]); setLoaded(null); setName(""); setPicked(null);
+      setNote(`The strategy you were working on was for ${picked}, which has expired and is no longer listed. The builder moved to the latest weekly expiry (${available[0]}); a copy of that strategy is kept in this browser.`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, available]);
   const exitNow = (l: Leg) => {
     if (!lotSize) return;
     const typed = exitDraft[l.id];
@@ -806,8 +897,8 @@ export default function StrategyBuilder() {
                       <input type="checkbox" aria-label="Auto stop and target" checked={autoOn} onChange={(e) => { setAutoOn(e.target.checked); try { localStorage.setItem("nse.builder.auto", e.target.checked ? "1" : "0"); } catch { /* this visit only */ } }} />
                       Auto stop &amp; target (paper) <Info term="Auto stop and target" />
                     </label>
-                    <span data-testid="auto-state" className={autoActive ? "text-up" : "text-muted"}>
-                      {!autoOn ? "off: levels are only shown" : autoActive ? "watching live prices" : "paused: no live prices (market closed or stream not live)"}
+                    <span data-testid="auto-state" className={autoActive || (serverAuto && autoOn && liveMode === "fresh") ? "text-up" : "text-muted"}>
+                      {!autoOn ? "off: levels are only shown" : serverAuto ? (liveMode === "fresh" ? "checked on the server every second, even when this page is closed" : "on the server: waiting for live prices (market closed or stream not live)") : autoActive ? "watching live prices (server unreachable: only while this page is open)" : "paused: no live prices (market closed or stream not live)"}
                     </span>
                     {autoNote && <button type="button" onClick={() => setAutoNote(null)} className="ml-auto max-w-full truncate text-left text-warn" title="Click to dismiss" data-testid="auto-note">{autoNote} ✕</button>}
                   </div>
@@ -816,8 +907,8 @@ export default function StrategyBuilder() {
                     <span>Net premium <span className={`num ${tone(netPremium)}`}>{netPremium == null ? "—" : `${money(netPremium)} ${netPremium >= 0 ? "credit" : "debit"}`}</span></span>
                     <span>Greeks: Δ <span className="num text-paper">{greeks && greeks.unavailable.length === 0 ? greeks.delta.toFixed(1) : "—"}</span> · Θ/day <span className={`num ${tone(greeks ? greeks.thetaDay : null)}`}>{greeks && greeks.unavailable.length === 0 ? money(greeks.thetaDay) : "—"}</span> (model)</span>
                   </div>
-                  <div className="overflow-x-auto">
-                  <table className="legs-table w-full text-sm md:[&_td]:!px-0.5 md:[&_th]:!px-0.5" aria-label="Strategy legs">
+                  <div className="legs-wrap">
+                  <table className="legs-table w-full text-sm" aria-label="Strategy legs">
                     <thead className="text-xs text-muted"><tr>{[["", ""], ["Leg", ""], ["Strike", "Strike"], ["Lots", "Lots"], ["Entry ₹", "Entry"], ["LTP", "LTP"], ["P&L", "P&L"], ["Δ · Θ/day", "Delta per day"], ["Target ₹", "Target"], ["Stop ₹", "Stop"], ["", ""]].map(([h, term], i) => <th key={i} className="px-1 py-1 text-left font-normal"><span className="inline-flex items-center gap-1">{h}{term && <Info term={term} />}</span></th>)}</tr></thead>
                     <tbody>
                       {legs.map((l) => {

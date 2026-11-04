@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-KINDS = ("saved", "closed")
+KINDS = ("saved", "closed", "running")  # "running": the one strategy the builder is managing (server-side stops)
 MAX_DOC_BYTES = 200_000
 MAX_KEY_LEN = 120
 
@@ -81,8 +81,15 @@ class StrategyStore:
             else:
                 self._db.execute("UPDATE items SET doc=?, updated_utc=?, deleted_utc=NULL WHERE kind=? AND key=?", (text, now, kind, key))
                 action = "update" if row[1] is None else "restore"
-            self._db.execute("INSERT INTO revisions(kind, key, doc, at_utc, action) VALUES (?,?,?,?,?)", (kind, key, text, now, action))
+            if kind != "running":  # the running document changes with every edit and every exit; its exits are in its own log
+                self._db.execute("INSERT INTO revisions(kind, key, doc, at_utc, action) VALUES (?,?,?,?,?)", (kind, key, text, now, action))
             self._db.commit()
+
+    def get(self, kind: str, key: str) -> dict[str, Any] | None:
+        self._check(kind, key)
+        with self._lock:
+            row = self._db.execute("SELECT doc FROM items WHERE kind=? AND key=? AND deleted_utc IS NULL", (kind, key)).fetchone()
+        return json.loads(row[0]) if row else None
 
     def put_if_absent(self, kind: str, key: str, doc: dict[str, Any]) -> bool:
         """Import helper: store only if the key was never stored (a deleted one is not resurrected)."""

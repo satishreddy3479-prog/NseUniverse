@@ -45,6 +45,7 @@ from app.services.universe import build_universe
 from app.storage.observations import ObservationStore
 from app.storage.store import SnapshotStore
 from app.storage.strategies import StrategyStore
+from app.strategy.automation import StrategyAutomation
 from app.stream.hub import Hub
 from app.stream.manager import StreamConfig, StreamManager
 
@@ -143,6 +144,18 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         )
         app.state.flows = flows
         app.state.strategies = StrategyStore(settings.data_dir)
+
+        def _live_price(key: str) -> float | None:
+            t = stream.book.get(key)
+            return t.ltp if t is not None else None
+
+        strategy_automation = StrategyAutomation(
+            app.state.strategies,
+            _live_price,
+            lambda: stream.status().effective_state == "streaming",
+        )
+        app.state.strategy_automation = strategy_automation
+        strategy_automation.start()
         flows.start()
         intraday_store = IntradayStore(settings.data_dir)
         intraday = IntradayService(
@@ -253,6 +266,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             await market.stop()
             market_store.close()
             await close_tracker.stop()
+            await strategy_automation.stop()
             await eod.stop()
             await daily_login.stop()
             await intraday.stop()

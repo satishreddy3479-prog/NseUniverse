@@ -22,6 +22,8 @@ export interface Leg {
   /** premium level at which you plan to take profit / cut the loss, per unit (null = none) */
   target?: number | null;
   stop?: number | null;
+  /** live-feed key of the contract ("nse_fo|<token>"): lets the server watch this leg's price while no page is open */
+  key?: string | null;
   // ---- paper automation (nothing is sent to a broker): a leg that reaches its stop or target is closed at the live price
   /** set when the leg has been exited: the price it was closed at */
   exitPrice?: number | null;
