@@ -357,3 +357,9 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 ## Vega Analysis: OTM-only option (5 Nov 2026)
 - "OTM only" with N = 3/5/10: calls use the N out-of-the-money strikes above NIFTY, puts the N below it, re-chosen at every sample (ATM ±20 is fetched to cover moves). The two sides are then different contracts, so call and put vega differ. Test: spot 24,000, N=1 gives vega(24,100) for calls and vega(23,900) for puts.
 - The per-contract vega table (price, IV, vega of every call and put) sits at the top of the page for checking.
+
+## Vega Analysis rebuilt to the written spec (5 Nov 2026)
+- Default measure is now "Δ Vega since open": the vega Greek summed over ATM ±4 strikes (calls and puts separately) minus its value at the first sample of the session, so both lines start at 0; difference = put change − call change. The other measures (vega level, vega × OI, vega × OI change, OTM only) remain as options.
+- Strike window: Auto (re-centres on every sample's ATM) or Fixed (locked to the first sample's ATM); ATM ±4 / ±10 / ±20. ATM ±20 is fetched once and the window is cut from it.
+- Chart: "Synth Future" (forward from put-call parity of that sample's chain) on the left axis; call vega (green) and put vega (red) as areas around a zero line on the right axis; Put − Call (purple) hidden until clicked. Table: day-high difference solid green, day-low solid red, other rows tinted by rise or fall from the row before.
+- Not taken from the spec: the 6.5 % rate (we use 6 %), the Black-Scholes form (we use Black-76 on the parity forward), and the lot-size factor in the by-strike Cr exposure (OI is already in units; our latest-chain totals 61.77 / 43.36 Cr already match the reference without it). Not built: Live/Historical switch (no historical-day endpoint yet).

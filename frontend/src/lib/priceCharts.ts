@@ -17,6 +17,8 @@ export interface Line {
   dotted?: boolean;
   /** drawn only after the user clicks it in the legend */
   hidden?: boolean;
+  /** shade between the line and the zero line */
+  area?: boolean;
   fmt: (v: number) => string;
 }
 
@@ -44,6 +46,7 @@ export function timeLinesOption(
   const series = lines.map((l) => ({
     name: l.name, type: "line", yAxisIndex: l.axis ?? 0, showSymbol: false, connectNulls: false, sampling: "lttb",
     itemStyle: { color: l.color }, lineStyle: { color: l.color, width: l.dotted ? 1.4 : 1.8, type: l.dotted ? "dotted" : "solid" },
+    ...(l.area ? { areaStyle: { color: l.color, opacity: 0.16 } } : {}),
     data: times.map((t, i) => [t, l.data[i] ?? null]),
     // the tag at the right end shows the latest value of the line, as on the reference page
     endLabel: { show: true, formatter: (p: { value: unknown }) => { const v = (p.value as [number, number | null])[1]; return v == null ? "" : l.fmt(v); },

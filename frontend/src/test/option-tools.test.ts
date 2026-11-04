@@ -231,6 +231,37 @@ describe("Vega Analysis series", () => {
     expect(Math.abs(b!.call! / want - 1)).toBeLessThan(2e-3);
     expect(b!.put!).toBeCloseTo(0, 6); // put OI did not change
   });
+  it("the change-since-open basis starts both lines at zero, and a volatility rise lifts the call and put sums by hand-checked amounts", () => {
+    // second sample with every price raised to the model value at 24 % volatility instead of 20 %
+    const sig2 = 0.24;
+    const c2 = (k: number) => { const dd = (Math.log(F / k) + 0.5 * sig2 * sig2 * T) / (sig2 * Math.sqrt(T)); return Math.exp(-r * T) * (F * cdf(dd) - k * cdf(dd - sig2 * Math.sqrt(T))); };
+    const p2 = (k: number) => c2(k) - Math.exp(-r * T) * (F - k);
+    const v2 = (k: number) => { const dd = (Math.log(F / k) + 0.5 * sig2 * sig2 * T) / (sig2 * Math.sqrt(T)); return (Math.exp(-r * T) * F * pdf(dd) * Math.sqrt(T)) / 100; };
+    const t2 = [new Date(at).toISOString(), new Date(at).toISOString()]; // same instant: only the volatility differs, not the time left
+    const two: StrikeSeries = {
+      ...res, times: t2, spot: [spot, spot],
+      ce_price: Object.fromEntries(strikes.map((k) => [String(k), [call(k), c2(k)]])), pe_price: Object.fromEntries(strikes.map((k) => [String(k), [put(k), p2(k)]])),
+    };
+    const [a, b] = vegaSeries(two, "2026-11-09", "dgreek");
+    expect(a!.call).toBeCloseTo(0, 9); expect(a!.put).toBeCloseTo(0, 9); expect(a!.diff).toBeCloseTo(0, 9);
+    const want = strikes.reduce((x, k) => x + v2(k) - vegaPt(k), 0); // same strikes, same forward: only the volatility moved
+    expect(Math.abs(b!.call! / want - 1)).toBeLessThan(5e-3);
+    expect(Math.abs(b!.put! / want - 1)).toBeLessThan(5e-3);
+    expect(b!.diff).toBeCloseTo(b!.put! - b!.call!, 9);
+    expect(b!.fwd).not.toBeNull(); // the synthetic future comes from the chain's own parity
+    expect(Math.abs(b!.fwd! - F)).toBeLessThan(1);
+  });
+  it("a window keeps ATM ± n strikes of the sample (auto) or of the first sample (fixed)", () => {
+    const five = [23800, 23900, 24000, 24100, 24200];
+    const mk = (f: (k: number) => number) => Object.fromEntries(five.map((k) => [String(k), [f(k), f(k)]]));
+    const w: StrikeSeries = { ...res, strikes: five, ce_price: mk(call), pe_price: mk(put), ce_oi: mk(() => 1), pe_oi: mk(() => 1), ce_change: mk(() => 0), pe_change: mk(() => 0),
+      times: [new Date(at).toISOString(), new Date(at + 60_000).toISOString()], spot: [spot, spot] };
+    const p = vegaSeries(w, "2026-11-09", "greek", 0.06, undefined, { n: 1, mode: "auto" })[0]!;
+    expect(p.callN).toBe(3);
+    expect(Math.abs(p.call! / (vegaPt(23900) + vegaPt(24000) + vegaPt(24100)) - 1)).toBeLessThan(1e-3);
+    const wide = vegaSeries(w, "2026-11-09", "greek", 0.06, undefined, { n: 2, mode: "fixed" })[0]!;
+    expect(wide.callN).toBe(5);
+  });
   it("OTM mode takes calls from strikes above NIFTY and puts from strikes below it", () => {
     const p = vegaSeries(res, "2026-11-09", "greek", 0.06, 1)[0]!; // spot 24,000: the OTM call is 24,100, the OTM put is 23,900
     expect(p.callN).toBe(1);
@@ -244,7 +275,7 @@ describe("Vega Analysis series", () => {
     const p = vegaSeries(noOi, "2026-11-09", "oi")[0]!;
     expect(p.callN).toBe(2);
     expect(Math.abs(p.call! / (vegaPt(23900) * 50_000 + vegaPt(24100) * 50_000) - 1)).toBeLessThan(1e-3);
-    const mk = (min: number, v: number) => ({ t: Date.UTC(2026, 10, 4, 3, 45 + min), spot: 1, call: v, put: v, diff: 0, callN: 1, putN: 1, skipped: 0 });
+    const mk = (min: number, v: number) => ({ t: Date.UTC(2026, 10, 4, 3, 45 + min), spot: 1, fwd: null, call: v, put: v, diff: 0, callN: 1, putN: 1, skipped: 0 });
     const c = vegaCandles([mk(0, 1), mk(1, 2), mk(2, 3), mk(3, 4)], 3, 9 * 60 + 15);
     expect(c.map((x) => x.call)).toEqual([3, 4]); // minutes 0-2 are one 3-minute candle (last value 3), minute 3 starts the next
   });

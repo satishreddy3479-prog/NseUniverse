@@ -101,9 +101,9 @@ describe("Vega Analysis page and section tabs", () => {
     mockApi(history(IN_SESSION));
     renderAt("/tools/vega-analysis");
     const chart = await screen.findByRole("img", { name: "Call vega, put vega and NIFTY through the session" });
-    expect(chart.getAttribute("data-series")).toBe("Call Vega|Put Vega|Put − Call|NIFTY");
+    expect(chart.getAttribute("data-series")).toBe("Synth Future|Call Vega|Put Vega|Put − Call");
     expect(screen.getByRole("group", { name: "Timeframe" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Vega (Greek)" })).toHaveAttribute("aria-pressed", "true"); // the Greek is the default, not OI-weighted
+    expect(screen.getByRole("button", { name: "Δ Vega since open" })).toHaveAttribute("aria-pressed", "true"); // the Greek's change since the open is the default, not OI-weighted
     expect(await screen.findByRole("table", { name: "Vega table" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Chart" }));
     expect(screen.queryByRole("table", { name: "Vega table" })).toBeNull();

@@ -238,40 +238,46 @@ export function MultiStrikeBoard({ straddle }: { straddle: boolean }) {
 // ---------------------------------------------------------------- Vega Analysis
 
 const TFS = [1, 3, 5, 15] as const;
-const RANGES = [5, 10, 20] as const;
+const RANGES = [4, 10, 20] as const;
 const OTM_RANGES = [3, 5, 10] as const;
-const vegaTxt = (basis: VegaBasis) => (v: number | null) => (v == null ? "—" : basis === "greek" ? v.toFixed(2) : compactIN(v));
+const vegaTxt = (basis: VegaBasis) => (v: number | null) => (v == null ? "—" : basis === "greek" || basis === "dgreek" ? v.toFixed(2) : compactIN(v));
 
 export function VegaBoard() {
   const d = useDash();
   const c = useChartColors();
   const [tf, setTf] = useState<number>(1);
   const [view, setView] = useState<"chart" | "table">("table");
-  const [each, setEach] = useState<number>(10);
-  const [basis, setBasis] = useState<VegaBasis>("greek");
+  const [each, setEach] = useState<number>(4);
+  const [mode, setMode] = useState<"auto" | "fixed">("auto");
+  const [basis, setBasis] = useState<VegaBasis>("dgreek");
   const [otm, setOtm] = useState(false);
   const vt = vegaTxt(basis);
   const listed = useMemo(() => [...new Set(d.rows.map((r) => r.strike))].sort((x, y) => x - y), [d.rows]);
   // the strikes are fixed when the page loads (ATM of the latest chain) so every point sums the same contracts
-  // OTM mode re-picks the nearest strikes at every sample, so a wider fixed set (ATM ±20) is fetched to cover moves of the index
-  const picked = useMemo(() => strikesAround(listed, d.atmStrike, 2 * (otm ? 20 : each) + 1), [listed, d.atmStrike, each, otm]);
+  // ATM ±20 is fetched once; the window of each sample (auto) or of the first sample (fixed) is cut from it, so the index can move without a refetch
+  const picked = useMemo(() => strikesAround(listed, d.atmStrike, 41), [listed, d.atmStrike]);
   const key = picked.join(",");
   const { q, w } = useStrikeSeries(key || "atm");
   const res = q.data;
-  const all = useMemo(() => (res && d.expiry ? vegaSeries(res, d.expiry, basis, 0.06, otm ? each : undefined) : []), [res, d.expiry, basis, otm, each]);
+  const all = useMemo(() => (res && d.expiry ? vegaSeries(res, d.expiry, basis, 0.06, otm ? each : undefined, otm ? undefined : { n: each, mode }) : []), [res, d.expiry, basis, otm, each, mode]);
   const pts = useMemo(() => vegaCandles(all, tf, sessionOpenMin()), [all, tf]);
   const opt = useMemo(() => {
     const t = pts.map((p) => p.t);
     const line = (name: string, color: string, data: (number | null)[], extra: Partial<Line> = {}): Line => ({ name, color, data, fmt: vt, ...extra });
     return timeLinesOption(t, [
-      line("Call Vega", c.up, pts.map((p) => p.call)),
-      line("Put Vega", c.down, pts.map((p) => p.put)),
-      line("Put − Call", c.info, pts.map((p) => p.diff), { dotted: true, hidden: true }),
-      line("NIFTY", c.muted, pts.map((p) => p.spot), { axis: 1, dotted: true, fmt: rupee }),
-    ], c, w.bounds, { leftFmt: vt, rightFmt: (v) => fmtInt(v) });
+      line("Synth Future", c.muted, pts.map((p) => p.fwd), { dotted: true, fmt: rupee }),
+      line("Call Vega", "#34C759", pts.map((p) => p.call), { axis: 1, area: true }),
+      line("Put Vega", "#ef4444", pts.map((p) => p.put), { axis: 1, area: true }),
+      line("Put − Call", "#8b5cf6", pts.map((p) => p.diff), { axis: 1, hidden: true }),
+    ], c, w.bounds, { leftFmt: (v) => fmtInt(v), rightFmt: vt, zeroLine: true });
   }, [pts, c, w.bounds, vt]);
   const thin = all.length ? Math.min(...all.map((p) => Math.min(p.callN, p.putN))) : 0;
   const last = pts[pts.length - 1];
+  const diffs = pts.map((p) => p.diff).filter((v): v is number => v != null);
+  const hi = diffs.length ? Math.max(...diffs) : null, lo = diffs.length ? Math.min(...diffs) : null;
+  // the day's highest and lowest difference are solid; every other row is tinted by whether it rose or fell from the row before it
+  const shade = (v: number | null, prev: number | null, h: number | null, l: number | null) =>
+    v == null ? "" : v === h ? "bg-green-600 font-bold text-white" : v === l ? "bg-red-600 font-bold text-white" : prev == null ? "" : v >= prev ? "bg-green-500/15 text-up" : "bg-red-500/15 text-down";
   return (
     <div className="flex flex-col gap-3" data-testid="vega-board">
       <Panel title="Vega of every call and put (latest chain)"><div className="h-[380px]"><VegaTableWidget /></div></Panel>
@@ -287,13 +293,20 @@ export function VegaBoard() {
         </div>
         <div role="group" aria-label="Measure" className="flex items-center gap-1">
           <span className="mr-1 text-sm text-muted">Measure</span>
-          <button type="button" aria-pressed={basis === "greek"} onClick={() => setBasis("greek")} className={pill(basis === "greek")} title="The vega Greek itself: rupees of option price per volatility point, summed over the strikes">Vega (Greek)</button>
+          <button type="button" aria-pressed={basis === "dgreek"} onClick={() => setBasis("dgreek")} className={pill(basis === "dgreek")} title="Vega Greek summed over the strikes, minus its value at the first sample of the session: both lines start at 0">Δ Vega since open</button>
+          <button type="button" aria-pressed={basis === "greek"} onClick={() => setBasis("greek")} className={pill(basis === "greek")} title="The vega Greek itself: rupees of option price per volatility point, summed over the strikes">Vega level</button>
           <button type="button" aria-pressed={basis === "oi"} onClick={() => setBasis("oi")} className={pill(basis === "oi")} title="Each contract's vega times its open interest: the vega of all open positions, which grows as OI builds">Vega × OI</button>
           <button type="button" aria-pressed={basis === "change"} onClick={() => setBasis("change")} className={pill(basis === "change")} title="Each contract's vega times the OI added since the first sample of the session: starts at zero at the open">Vega × OI change</button>
         </div>
         <div role="group" aria-label="Strikes" className="flex items-center gap-1">
           <span className="mr-1 text-sm text-muted">Strikes around ATM</span>
-          <button type="button" aria-pressed={!otm} onClick={() => { setOtm(false); setEach(10); }} className={pill(!otm)} title="Calls and puts over the same strikes around the ATM">All ±N</button>
+          {!otm && (
+            <>
+              <button type="button" aria-pressed={mode === "auto"} onClick={() => setMode("auto")} className={pill(mode === "auto")} title="Strikes re-centre on the ATM of every sample">Auto</button>
+              <button type="button" aria-pressed={mode === "fixed"} onClick={() => setMode("fixed")} className={pill(mode === "fixed")} title="Strikes locked to the ATM of the first sample of the session">Fixed</button>
+            </>
+          )}
+          <button type="button" aria-pressed={!otm} onClick={() => { setOtm(false); setEach(4); }} className={pill(!otm)} title="Calls and puts over the same strikes around the ATM">All ±N</button>
           <button type="button" aria-pressed={otm} onClick={() => { setOtm(true); setEach(5); }} className={pill(otm)} title="Calls: the N out-of-the-money strikes above NIFTY. Puts: the N out-of-the-money strikes below NIFTY">OTM only</button>
           {(otm ? OTM_RANGES : RANGES).map((n) => <button key={n} type="button" aria-pressed={each === n} onClick={() => setEach(n)} className={pill(each === n)}>{otm ? n : `±${n}`}</button>)}
         </div>
@@ -302,11 +315,11 @@ export function VegaBoard() {
       <Frame q={q} w={w} res={res} footer={
         <>
           <span>{pts.length} {tf}-minute point{pts.length === 1 ? "" : "s"}</span>
-          {!otm && thin < picked.length && all.length > 0 && <span className="text-warn">some points use fewer strikes (fewest {thin} of {picked.length}) because a price or OI was missing</span>}
+          {!otm && thin < 2 * each + 1 && all.length > 0 && <span className="text-warn">some points use fewer strikes (fewest {thin} of {2 * each + 1}) because a price or OI was missing</span>}
           <span className="basis-full">
             Vega is the Greek: how many rupees an option&apos;s price changes for a one-point change in implied volatility (Black-76, 6 % rate, forward from put-call parity near spot, volatility solved from each contract&apos;s own last price).
-            {basis === "greek" ? " Each line adds the vega of one unit of every call (or put) over " : basis === "oi" ? " Each line adds vega × open interest of every call (or put) over " : " Each line adds vega × the OI added since the first sample of the session (negative where OI was removed) of every call (or put) over "}{otm ? `the ${each} out-of-the-money strikes nearest NIFTY on each side (calls above it, puts below it, chosen again at every sample)` : `${picked.length} fixed strikes (ATM ±${each} of the latest chain)`}; the first point is the first stored sample of the session.
-            {basis === "greek" && !otm ? "For the same strikes a call and a put have the same vega (put-call parity), so the two lines stay close together; that is correct, not an error. " : ""}Put − Call is hidden until you click it in the legend. Each {tf}-minute point is the last stored sample in that window. It describes where volatility sensitivity sits in the open interest; it does not say who holds it or what happens next.
+            {basis === "dgreek" ? " Each line is the vega of one unit of every call (or put) over " : basis === "greek" ? " Each line adds the vega of one unit of every call (or put) over " : basis === "oi" ? " Each line adds vega × open interest of every call (or put) over " : " Each line adds vega × the OI added since the first sample of the session (negative where OI was removed) of every call (or put) over "}{otm ? `the ${each} out-of-the-money strikes nearest NIFTY on each side (calls above it, puts below it, chosen again at every sample)` : `${2 * each + 1} strikes (ATM ±${each}, ${mode === "auto" ? "re-centred on every sample's ATM" : "locked to the ATM of the first sample"})`}${basis === "dgreek" ? ", minus its value at the first sample of the session, so both lines start at 0" : ""}; the first point is the first stored sample of the session.
+            {(basis === "greek" || basis === "dgreek") && !otm && mode === "fixed" ? "For the same strikes a call and a put have the same vega (put-call parity), so the two lines stay close together; that is correct, not an error. " : ""}Put − Call is hidden until you click it in the legend. Each {tf}-minute point is the last stored sample in that window. It describes where volatility sensitivity sits in the open interest; it does not say who holds it or what happens next.
           </span>
         </>
       }>
@@ -321,12 +334,12 @@ export function VegaBoard() {
                   <table className="w-full text-sm" aria-label="Vega table">
                     <thead className="sticky top-0 bg-slate-2 text-xs text-muted"><tr><th className="px-2 py-1.5 text-left font-normal">Time</th><th className="px-2 text-right font-normal">Call Vega</th><th className="px-2 text-right font-normal">Put Vega</th><th className="px-2 text-right font-normal">Put − Call</th></tr></thead>
                     <tbody>
-                      {[...pts].reverse().map((p) => (
+                      {[...pts].map((p, j) => ({ p, prev: j > 0 ? pts[j - 1]!.diff : null })).reverse().map(({ p, prev }) => (
                         <tr key={p.t} className="border-t border-rule/50">
                           <td className="num px-2 py-1">{new Date(p.t + 330 * 60_000).toISOString().slice(11, 16)}</td>
                           <td className="num px-2 text-right text-up">{vt(p.call)}</td>
                           <td className="num px-2 text-right text-down">{vt(p.put)}</td>
-                          <td className={`num px-2 text-right ${p.diff == null ? "" : p.diff >= 0 ? "text-up" : "text-down"}`}>{vt(p.diff)}</td>
+                          <td className={`num px-2 text-right ${shade(p.diff, prev, hi, lo)}`} title={p.diff != null && p.diff === hi ? "Day high" : p.diff != null && p.diff === lo ? "Day low" : undefined}>{vt(p.diff)}</td>
                         </tr>
                       ))}
                     </tbody>
