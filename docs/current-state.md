@@ -344,6 +344,11 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 - Correction: the first time-series version summed vega x OI, which grows as OI builds and looked like a volume curve. Default is now the vega Greek itself (rupees of option price per volatility point, one unit of each contract, summed over the strikes of each side). "Vega × OI" (exposure of all open positions) is a switch. Test: Greek basis checked against a closed-form Black-76 vega, independent of OI.
 - Put vega is shown positive and the difference is put minus call (the reference site shows put vega negative).
 
+## Vega: why the reference numbers differ (5 Nov 2026)
+- Our vega Greek is correct: an ATM contract at ~4.6 days to expiry has vega about 10.7 rupees per volatility point (hand calculation), so 21 strikes sum to about 190. By put-call parity a call and a put at one strike have the same vega, so the call and put sums stay close (187.8 vs 186.6 on 4 Nov).
+- The reference page shows call 19 and put -33 starting from zero at the open and drifting apart: that cannot be a plain Greek sum. It behaves like vega weighted by OI added since the open. Its exact formula is not published; we do not claim ours matches it.
+- Added the measure "Vega × OI change" (vega x OI added since the first session sample, starts at zero). Greek stays the default; "Vega × OI" is the exposure of all open positions.
+
 ## Swing trading: website section and automatic paper trading (2026-11-05, D65)
 - Built and tested locally (backend 383 passed incl. scorer and engine parity tests, ruff + mypy clean; frontend tsc, build, 189 vitest with the swing page tests; one existing Analysis test is intermittently slow when the whole suite runs at once). New: `backend/app/swing/` (scorer, engine, fetchers, SQLite paper book, daily job), `GET /api/swing/paper`, `GET /api/swing/report`, `/swing` page, `scripts/swing-refresh.ps1`, `data/swing_paper.sqlite3`. Details: [swing-backtest](swing-backtest.md).
 - Live-checked against real Chartink and Yahoo in a scratch folder (7 orders queued, 803/803 stocks). **Not deployed**: nothing committed, pushed or changed on the server. After deploy the first run after 17:00 IST starts the paper book; copy `data/swing/report.json` to the server's `data/swing/` for the Backtest tabs.

@@ -8,7 +8,7 @@ import { rangeObservations } from "../../lib/analytics";
 import { fmtExpiry, fmtInt, fmtTimeIST } from "../../lib/format";
 import { strikeBoard, strikesAround, vegaCandles, vegaSeries, type StrikeBoard, type VegaBasis } from "../../lib/optionTools";
 import { sessionOpenMin } from "../../lib/session";
-import { VegaWidget } from "./toolWidgets";
+import { VegaTableWidget, VegaWidget } from "./toolWidgets";
 import { compactIN } from "../../lib/analytics";
 import { ratio, rupee, signedUnits, STRIKE_COLORS, timeLinesOption, units, type Line } from "../../lib/priceCharts";
 import type { StrikeSeries } from "../../lib/types";
@@ -239,7 +239,7 @@ export function MultiStrikeBoard({ straddle }: { straddle: boolean }) {
 
 const TFS = [1, 3, 5, 15] as const;
 const RANGES = [5, 10, 20] as const;
-const vegaTxt = (basis: VegaBasis) => (v: number | null) => (v == null ? "—" : basis === "oi" ? compactIN(v) : v.toFixed(2));
+const vegaTxt = (basis: VegaBasis) => (v: number | null) => (v == null ? "—" : basis === "greek" ? v.toFixed(2) : compactIN(v));
 
 export function VegaBoard() {
   const d = useDash();
@@ -271,6 +271,7 @@ export function VegaBoard() {
   const last = pts[pts.length - 1];
   return (
     <div className="flex flex-col gap-3" data-testid="vega-board">
+      <Panel title="Vega of every call and put (latest chain)"><div className="h-[380px]"><VegaTableWidget /></div></Panel>
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2">
         <div role="group" aria-label="Timeframe" className="flex items-center gap-1">
           <span className="mr-1 text-sm text-muted">Timeframe</span>
@@ -285,6 +286,7 @@ export function VegaBoard() {
           <span className="mr-1 text-sm text-muted">Measure</span>
           <button type="button" aria-pressed={basis === "greek"} onClick={() => setBasis("greek")} className={pill(basis === "greek")} title="The vega Greek itself: rupees of option price per volatility point, summed over the strikes">Vega (Greek)</button>
           <button type="button" aria-pressed={basis === "oi"} onClick={() => setBasis("oi")} className={pill(basis === "oi")} title="Each contract's vega times its open interest: the vega of all open positions, which grows as OI builds">Vega × OI</button>
+          <button type="button" aria-pressed={basis === "change"} onClick={() => setBasis("change")} className={pill(basis === "change")} title="Each contract's vega times the OI added since the first sample of the session: starts at zero at the open">Vega × OI change</button>
         </div>
         <div role="group" aria-label="Strikes" className="flex items-center gap-1">
           <span className="mr-1 text-sm text-muted">Strikes around ATM</span>
@@ -298,8 +300,8 @@ export function VegaBoard() {
           {thin < picked.length && all.length > 0 && <span className="text-warn">some points use fewer strikes (fewest {thin} of {picked.length}) because a price or OI was missing</span>}
           <span className="basis-full">
             Vega is the Greek: how many rupees an option&apos;s price changes for a one-point change in implied volatility (Black-76, 6 % rate, forward from put-call parity near spot, volatility solved from each contract&apos;s own last price).
-            {basis === "greek" ? " Each line adds the vega of one unit of every call (or put) over " : " Each line adds vega × open interest of every call (or put) over "}{picked.length} fixed strikes (ATM ±{each} of the latest chain); the first point is the first stored sample of the session.
-            Put − Call is hidden until you click it in the legend. Each {tf}-minute point is the last stored sample in that window. It describes where volatility sensitivity sits in the open interest; it does not say who holds it or what happens next.
+            {basis === "greek" ? " Each line adds the vega of one unit of every call (or put) over " : basis === "oi" ? " Each line adds vega × open interest of every call (or put) over " : " Each line adds vega × the OI added since the first sample of the session (negative where OI was removed) of every call (or put) over "}{picked.length} fixed strikes (ATM ±{each} of the latest chain); the first point is the first stored sample of the session.
+            {basis === "greek" ? "For the same strikes a call and a put have the same vega (put-call parity), so the two lines stay close together; that is correct, not an error. " : ""}Put − Call is hidden until you click it in the legend. Each {tf}-minute point is the last stored sample in that window. It describes where volatility sensitivity sits in the open interest; it does not say who holds it or what happens next.
           </span>
         </>
       }>

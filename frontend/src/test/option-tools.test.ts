@@ -219,6 +219,18 @@ describe("Vega Analysis series", () => {
     expect(pts[0]!.diff).toBeCloseTo(pts[0]!.put! - pts[0]!.call!, 6);
     expect(pts[0]!.callN).toBe(3);
   });
+  it("the change basis starts at zero and weights each contract's vega by the OI added since the first session sample", () => {
+    const two: StrikeSeries = {
+      ...res, times: [new Date(at).toISOString(), new Date(at + 60_000).toISOString()], spot: [spot, spot],
+      ce_oi: { "23900": [50_000, 50_000], "24000": [100_000, 130_000], "24100": [50_000, 40_000] }, pe_oi: per(() => 80_000),
+    };
+    const [a, b] = vegaSeries(two, "2026-11-09", "change");
+    expect(a!.call).toBeCloseTo(0, 6); // the first sample is the reference
+    // +30,000 at 24,000 and -10,000 at 24,100 (one minute later, same vega as before to within the model's tolerance)
+    const want = vegaPt(24000) * 30_000 - vegaPt(24100) * 10_000;
+    expect(Math.abs(b!.call! / want - 1)).toBeLessThan(2e-3);
+    expect(b!.put!).toBeCloseTo(0, 6); // put OI did not change
+  });
   it("leaves out a contract with no OI instead of counting it as zero, and keeps the last value of each candle", () => {
     const noOi: StrikeSeries = { ...res, ce_oi: { ...res.ce_oi, "24000": [null, null] } };
     const p = vegaSeries(noOi, "2026-11-09", "oi")[0]!;
