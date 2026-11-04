@@ -27,7 +27,7 @@ export interface Leg {
   // ---- paper automation (nothing is sent to a broker): a leg that reaches its stop or target is closed at the live price
   /** set when the leg has been exited: the price it was closed at */
   exitPrice?: number | null;
-  exitReason?: "stop" | "target" | "manual" | null;
+  exitReason?: "stop" | "target" | "manual" | "strategy" | null;
   exitedAt?: string | null;
   /** rupees already booked by closes of this leg (a closed cycle adds its P&L here) */
   realised?: number;
@@ -39,6 +39,16 @@ export interface Leg {
   stopPct?: number | null;
   targetPct?: number | null;
   cycles?: number;
+  /**
+   * Percentage trailing stop (needs a stop): for every `trailEvery` % of the ENTRY premium the leg moves in your favour
+   * (a sold option falling, a bought one rising), the stop moves `trailBy` % of the entry premium in your favour too.
+   * The stop only ever tightens. `stopBase` is the stop you set; `stopTrailed` marks a stop that has moved, and such a stop
+   * may sit on the profit side of the entry (it locks profit), which a stop you type may not.
+   */
+  trailEvery?: number | null;
+  trailBy?: number | null;
+  stopBase?: number | null;
+  stopTrailed?: boolean;
   log?: { at: string; text: string }[];
 }
 
@@ -46,12 +56,12 @@ export const sign = (a: Action) => (a === "BUY" ? 1 : -1);
 export const isExited = (l: Pick<Leg, "exitPrice">): boolean => l.exitPrice != null;
 
 /** Has the market price reached this leg's target or stop? A bought option's target is above its entry and its stop below; for a sold one it is the other way round. */
-export function hitOf(l: { action: Action; premium?: number | null; target?: number | null; stop?: number | null }, kind: "target" | "stop", price: number): boolean {
+export function hitOf(l: { action: Action; premium?: number | null; target?: number | null; stop?: number | null; stopTrailed?: boolean }, kind: "target" | "stop", price: number): boolean {
   const lvl = kind === "target" ? l.target : l.stop;
   if (lvl == null) return false;
   const up = (kind === "target") === (l.action === "BUY"); // the premium has to rise to the level
   // a level on the wrong side of the entry (or at it) is a typing slip, not a trigger: it is flagged in the UI and never fires
-  if (l.premium != null && (up ? lvl <= l.premium : lvl >= l.premium)) return false;
+  if (!(kind === "stop" && l.stopTrailed) && l.premium != null && (up ? lvl <= l.premium : lvl >= l.premium)) return false;
   return up ? price >= lvl : price <= lvl;
 }
 
@@ -59,15 +69,15 @@ const tick = (v: number) => Math.max(0.05, Math.round(v * 20) / 20);
 const stamp = (at: string) => new Date(at).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata" });
 
 /** Close a leg at `price` and book its P&L. The stop's distance is remembered so a re-entry can reuse it. */
-export function exitLeg(l: Leg, price: number, reason: "stop" | "target" | "manual", lotSize: number, at: string, lotsFactor = 1): Leg {
+export function exitLeg(l: Leg, price: number, reason: "stop" | "target" | "manual" | "strategy", lotSize: number, at: string, lotsFactor = 1, label?: string): Leg {
   if (l.premium == null || isExited(l)) return l;
   const pnl = sign(l.action) * (price - l.premium) * l.lots * lotsFactor * lotSize;
-  const what = reason === "stop" ? "Stop" : reason === "target" ? "Target" : "Manual exit";
+  const what = label ?? (reason === "stop" ? (l.stopTrailed ? "Trailing stop" : "Stop") : reason === "target" ? "Target" : "Manual exit");
   const text = `${what}: ${l.action} ${l.strike} ${l.type} closed at ${price.toFixed(2)} (entry ${l.premium.toFixed(2)}), ${pnl < 0 ? "−" : "+"}₹${Math.round(Math.abs(pnl)).toLocaleString("en-IN")}`;
   return {
     ...l, exitPrice: price, exitReason: reason, exitedAt: at, realised: (l.realised ?? 0) + pnl,
     reentryLevel: reason === "stop" ? l.premium : null,
-    stopPct: l.stop != null ? Math.abs(l.stop / l.premium - 1) : l.stopPct ?? null,
+    stopPct: (l.stopBase ?? l.stop) != null ? Math.abs((l.stopBase ?? l.stop!) / l.premium - 1) : l.stopPct ?? null,
     targetPct: l.target != null ? Math.abs(l.target / l.premium - 1) : l.targetPct ?? null,
     log: [...(l.log ?? []), { at, text: `${stamp(at)} ${text}` }].slice(-20),
   };
@@ -81,7 +91,7 @@ export function reenterLeg(l: Leg, price: number, at: string, viaBox: boolean): 
   const what = viaBox ? "Re-entry" : "Entered again";
   return {
     ...l, premium: price, premiumSource: "market", exitPrice: null, exitReason: null, exitedAt: null, reentryLevel: null,
-    stop: lvl(l.stopPct, false), target: lvl(l.targetPct, true),
+    stop: lvl(l.stopPct, false), target: lvl(l.targetPct, true), stopBase: null, stopTrailed: false,
     reentry: viaBox ? Math.max(0, (l.reentry ?? 0) - 1) : l.reentry, cycles: (l.cycles ?? 0) + 1,
     log: [...(l.log ?? []), { at, text: `${stamp(at)} ${what}: ${l.action} ${l.strike} ${l.type} at ${price.toFixed(2)}` }].slice(-20),
   };
@@ -101,7 +111,7 @@ export function rollLeg(l: Leg, newStrike: number, oldPrice: number, newPrice: n
   const text = `Rolled ${l.action} ${l.strike} ${l.type} to ${newStrike} ${l.type}: old closed at ${oldPrice.toFixed(2)} (entry ${l.premium.toFixed(2)}), ${pnl < 0 ? "−" : "+"}₹${Math.round(Math.abs(pnl)).toLocaleString("en-IN")} booked; new entry ${newPrice.toFixed(2)}`;
   return {
     ...l, strike: newStrike, premium: newPrice, premiumSource: "market", realised: (l.realised ?? 0) + pnl, cycles: (l.cycles ?? 0) + 1,
-    stop: lvl(pct(l.stop), false), target: lvl(pct(l.target), true), exitPrice: null, exitReason: null, reentryLevel: null,
+    stop: lvl(pct(l.stopBase ?? l.stop), false), target: lvl(pct(l.target), true), stopBase: null, stopTrailed: false, exitPrice: null, exitReason: null, reentryLevel: null,
     log: [...(l.log ?? []), { at, text: `${stamp(at)} ${text}` }].slice(-20),
   };
 }
@@ -122,6 +132,94 @@ export function strategyPnl(legs: Leg[], priceOf: (strike: number, type: OptionT
 }
 
 /**
+ * Percentage trailing stop of one open leg at the live price `px`. The leg's gain is how far the premium has moved in your
+ * favour as a fraction of the ENTRY premium; every full `trailEvery` % of it moves the stop `trailBy` % of the entry premium in
+ * your favour from the stop you set (`stopBase`). The stop only tightens, so remembering the best price is not needed.
+ * Returns the leg unchanged when no trail is set, there is no stop or entry, or the stop would not move.
+ */
+export function trailLeg(l: Leg, px: number): Leg {
+  const every = l.trailEvery, by = l.trailBy;
+  if (!(every && every > 0) || !(by && by > 0) || by > every || l.premium == null || !(l.premium > 0) || l.stop == null || isExited(l)) return l;
+  const base = l.stopTrailed ? l.stopBase ?? l.stop : l.stop;
+  const buy = l.action === "BUY";
+  const gain = (buy ? px - l.premium : l.premium - px) / l.premium; // fraction of the entry premium, in your favour
+  const steps = Math.floor(gain * 100 / every + 1e-9);
+  if (steps < 1) return l;
+  const moved = base + (buy ? 1 : -1) * steps * (by / 100) * l.premium;
+  const next = Math.max(0.05, Math.round(moved * 20) / 20);
+  const tighter = buy ? next > l.stop : next < l.stop;
+  if (!tighter) return l;
+  return { ...l, stopBase: base, stopTrailed: true, stop: next };
+}
+
+// ---------------------------------------------------------------- strategy-level stop, target, lock and trail (rupees)
+/**
+ * Rules on the whole strategy's P&L (booked + open), in rupees, all optional:
+ *  sl      exit everything when the P&L falls to -sl
+ *  target  exit everything when the P&L reaches +target
+ *  lockAt, lockProfit   once the P&L has reached lockAt, never give back more than to lockProfit (the floor)
+ *  trailEvery, trailBy  after that, for every further trailEvery rupees of profit the floor rises by trailBy
+ */
+export interface StrategyRules { sl: number | null; target: number | null; lockAt: number | null; lockProfit: number | null; trailEvery: number | null; trailBy: number | null }
+export interface RulesState { floor: number | null; done: "sl" | "target" | "lock" | null; at?: string | null; pnl?: number | null }
+export const NO_RULES: StrategyRules = { sl: null, target: null, lockAt: null, lockProfit: null, trailEvery: null, trailBy: null };
+export const hasRules = (r: StrategyRules | null | undefined): boolean => !!r && Object.values(r).some((v) => v != null);
+
+/**
+ * Why the lock-and-trail setting cannot work, or null. Such a setting is ignored (never half-applied) so a slip cannot close
+ * the strategy: locking at or above the level reached would exit at once, and a floor rising faster than the profit would too.
+ */
+export function rulesProblem(r: StrategyRules): string | null {
+  const any = r.lockAt != null || r.lockProfit != null;
+  if (any && (r.lockAt == null || r.lockProfit == null)) return "Lock needs both “when profit reaches” and “lock”.";
+  if (r.lockAt != null && r.lockProfit != null && (!(r.lockAt > 0) || !(r.lockProfit >= 0) || r.lockProfit >= r.lockAt)) return "The locked profit has to be below the profit that triggers it.";
+  if ((r.trailEvery != null) !== (r.trailBy != null)) return "Trail needs both “for every” and “raise by”.";
+  if (r.trailEvery != null && r.trailBy != null && (!(r.trailEvery > 0) || !(r.trailBy > 0) || r.trailBy > r.trailEvery)) return "Raise the floor by no more than the extra profit it is for.";
+  if ((r.trailEvery != null) && r.lockAt == null) return "Trail only works after a lock.";
+  return null;
+}
+
+/** The profit floor the lock-and-trail rule gives at a P&L of `pnl` (null while the lock level has not been reached). */
+export function lockFloor(r: StrategyRules, pnl: number): number | null {
+  if (rulesProblem(r) || r.lockAt == null || r.lockProfit == null || pnl < r.lockAt) return null;
+  const extra = r.trailEvery && r.trailBy ? Math.floor((pnl - r.lockAt) / r.trailEvery + 1e-9) * r.trailBy : 0;
+  return r.lockProfit + extra;
+}
+
+/**
+ * Check the strategy rules against the live prices (paper only). The floor is kept and only rises. When a rule fires every open
+ * leg is closed at its live price (reason "strategy", so no leg re-enters) and `done` records which rule it was.
+ * Legs are given at their own lots; `lotsFactor` is the multiplier. Nothing happens while any open leg has no live price.
+ */
+export function applyStrategyRules(legs: Leg[], rules: StrategyRules, state: RulesState, priceOf: (strike: number, type: OptionType) => number | null, lotSize: number, at: string, lotsFactor = 1): { legs: Leg[]; state: RulesState; events: string[] } {
+  if (state.done || !hasRules(rules)) return { legs, state, events: [] };
+  const live = legs.filter((l) => l.enabled !== false);
+  if (live.length === 0) return { legs, state, events: [] };
+  const p = strategyPnl(live.map((l) => ({ ...l, lots: l.lots * lotsFactor })), priceOf, lotSize);
+  if (p.total == null || p.openLegs === 0) return { legs, state, events: [] };
+  const total = p.total;
+  const fl = lockFloor(rules, total);
+  const floor = fl != null && (state.floor == null || fl > state.floor) ? fl : state.floor;
+  let done: RulesState["done"] = null;
+  let label = "";
+  if (rules.sl != null && rules.sl > 0 && total <= -rules.sl) { done = "sl"; label = `Strategy stop loss (−₹${Math.round(rules.sl).toLocaleString("en-IN")})`; }
+  else if (rules.target != null && rules.target > 0 && total >= rules.target) { done = "target"; label = `Strategy target (+₹${Math.round(rules.target).toLocaleString("en-IN")})`; }
+  else if (floor != null && total <= floor) { done = "lock"; label = `Locked profit (floor +₹${Math.round(floor).toLocaleString("en-IN")})`; }
+  if (!done) return floor === state.floor ? { legs, state, events: [] } : { legs, state: { ...state, floor }, events: [] };
+  const events: string[] = [];
+  const out = legs.map((l) => {
+    if (l.enabled === false) return l;
+    if (isExited(l)) return { ...l, reentry: 0 }; // a leg waiting to re-enter stays out
+    const px = priceOf(l.strike, l.type);
+    if (px == null || !(px > 0) || l.premium == null) return l;
+    const n = { ...exitLeg(l, px, "strategy", lotSize, at, lotsFactor, label), reentry: 0 };
+    events.push(n.log![n.log!.length - 1]!.text);
+    return n;
+  });
+  return { legs: out, state: { floor, done, at, pnl: total }, events };
+}
+
+/**
  * One evaluation of every automatic rule against the live prices (paper only, nothing is sent to a broker):
  *  - an open leg whose stop or target price has been reached is closed at the live price (the stop is checked first);
  *  - a leg closed by its stop, with re-entries left, is entered again at the live price when the market comes back to
@@ -136,6 +234,11 @@ export function applyAutomation(legs: Leg[], priceOf: (strike: number, type: Opt
     if (px == null || !(px > 0)) return l;
     if (!isExited(l)) {
       if (l.premium == null) return l;
+      const t = trailLeg(l, px);
+      if (t !== l) {
+        events.push(`Trailing stop ${l.action} ${l.strike} ${l.type}: stop ${l.stop!.toFixed(2)} → ${t.stop!.toFixed(2)} (price ${px.toFixed(2)})`);
+        l = t;
+      }
       const kind = hitOf(l, "stop", px) ? "stop" : hitOf(l, "target", px) ? "target" : null;
       if (kind == null) return l;
       const n = exitLeg(l, px, kind, lotSize, at, lotsFactor);

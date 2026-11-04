@@ -45,7 +45,8 @@ def hit_of(leg: Leg, kind: str, price: float) -> bool:
         return False
     up = (kind == "target") == (leg.get("action") == "BUY")  # the premium has to rise to the level
     prem = leg.get("premium")
-    if prem is not None and (lvl <= prem if up else lvl >= prem):
+    trailed = kind == "stop" and bool(leg.get("stopTrailed"))  # a stop that has trailed may sit on the profit side
+    if not trailed and prem is not None and (lvl <= prem if up else lvl >= prem):
         return False
     return price >= lvl if up else price <= lvl
 
@@ -58,12 +59,19 @@ def _money(v: float) -> str:
     return f"{'−' if v < 0 else '+'}₹{round(abs(v)):,}"
 
 
-def exit_leg(leg: Leg, price: float, reason: str, lot_size: int, at: datetime, mult: float = 1) -> Leg:
+def _stop_ref(leg: Leg) -> float | None:
+    """The stop as the user set it (before any trailing)."""
+    base = leg.get("stopBase")
+    return base if base is not None else leg.get("stop")
+
+
+def exit_leg(leg: Leg, price: float, reason: str, lot_size: int, at: datetime, mult: float = 1, label: str | None = None) -> Leg:
     prem = leg.get("premium")
     if prem is None or is_exited(leg):
         return leg
     pnl = _sign(leg) * (price - prem) * leg["lots"] * mult * lot_size
-    what = {"stop": "Stop", "target": "Target"}.get(reason, "Manual exit")
+    stop_name = "Trailing stop" if leg.get("stopTrailed") else "Stop"
+    what = label or {"stop": stop_name, "target": "Target"}.get(reason, "Manual exit")
     text = (
         f"{what}: {leg['action']} {leg['strike']} {leg['type']} closed at {price:.2f} "
         f"(entry {prem:.2f}), {_money(pnl)}"
@@ -72,7 +80,7 @@ def exit_leg(leg: Leg, price: float, reason: str, lot_size: int, at: datetime, m
     out.update(
         exitPrice=price, exitReason=reason, exitedAt=at.isoformat(), realised=(leg.get("realised") or 0) + pnl,
         reentryLevel=prem if reason == "stop" else None,
-        stopPct=abs(leg["stop"] / prem - 1) if leg.get("stop") is not None else leg.get("stopPct"),
+        stopPct=abs(_stop_ref(leg) / prem - 1) if _stop_ref(leg) is not None else leg.get("stopPct"),
         targetPct=abs(leg["target"] / prem - 1) if leg.get("target") is not None else leg.get("targetPct"),
         log=[*(leg.get("log") or []), {"at": at.isoformat(), "text": f"{_stamp(at)} {text} [server]"}][-20:],
     )  # fmt: skip
@@ -88,12 +96,117 @@ def reenter_leg(leg: Leg, price: float, at: datetime) -> Leg:
     out = dict(leg)
     out.update(
         premium=price, premiumSource="market", exitPrice=None, exitReason=None, exitedAt=None, reentryLevel=None,
-        stop=lvl(leg.get("stopPct"), False), target=lvl(leg.get("targetPct"), True),
+        stop=lvl(leg.get("stopPct"), False), target=lvl(leg.get("targetPct"), True), stopBase=None, stopTrailed=False,
         reentry=max(0, (leg.get("reentry") or 0) - 1), cycles=(leg.get("cycles") or 0) + 1,
         log=[*(leg.get("log") or []),
              {"at": at.isoformat(), "text": f"{_stamp(at)} Re-entry: {leg['action']} {leg['strike']} {leg['type']} at {price:.2f} [server]"}][-20:],
     )  # fmt: skip
     return out
+
+
+def trail_leg(leg: Leg, px: float) -> Leg:
+    """Percentage trailing stop: every full ``trailEvery`` % of the ENTRY premium the leg moves in your favour moves the stop
+    ``trailBy`` % of the entry premium in your favour from the stop you set. The stop only tightens."""
+    every, by, prem, stop = leg.get("trailEvery"), leg.get("trailBy"), leg.get("premium"), leg.get("stop")
+    if not every or every <= 0 or not by or by <= 0 or by > every or prem is None or prem <= 0 or stop is None or is_exited(leg):
+        return leg
+    base = (leg.get("stopBase") if leg.get("stopBase") is not None else stop) if leg.get("stopTrailed") else stop
+    buy = leg.get("action") == "BUY"
+    gain = ((px - prem) if buy else (prem - px)) / prem
+    steps = math.floor(gain * 100 / every + 1e-9)
+    if steps < 1:
+        return leg
+    nxt = _tick(base + (1 if buy else -1) * steps * (by / 100) * prem)
+    if not (nxt > stop if buy else nxt < stop):
+        return leg
+    return {**leg, "stopBase": base, "stopTrailed": True, "stop": nxt}
+
+
+def rules_problem(rules: dict[str, Any]) -> bool:
+    """True when the lock-and-trail setting cannot work (it is then ignored, never half-applied): locking at or above the
+    level reached would exit at once, and a floor rising faster than the profit would too. Mirrors ``rulesProblem``."""
+    at, lock = rules.get("lockAt"), rules.get("lockProfit")
+    every, by = rules.get("trailEvery"), rules.get("trailBy")
+    if (at is None) != (lock is None):
+        return True
+    if at is not None and lock is not None and not (at > 0 and 0 <= lock < at):
+        return True
+    if (every is None) != (by is None):
+        return True
+    if every is not None and by is not None and not (every > 0 and 0 < by <= every):
+        return True
+    return every is not None and at is None
+
+
+def lock_floor(rules: dict[str, Any], pnl: float) -> float | None:
+    if rules_problem(rules):
+        return None
+    lock_at, lock_profit = rules.get("lockAt"), rules.get("lockProfit")
+    if lock_at is None or lock_profit is None or pnl < lock_at:
+        return None
+    every, by = rules.get("trailEvery"), rules.get("trailBy")
+    extra = math.floor((pnl - lock_at) / every + 1e-9) * by if every and by else 0
+    return lock_profit + extra
+
+
+def has_rules(rules: dict[str, Any] | None) -> bool:
+    return bool(rules) and any(v is not None for v in (rules or {}).values())
+
+
+def apply_strategy_rules(
+    legs: list[Leg], rules: dict[str, Any], state: dict[str, Any], price_of: Callable[[Leg], float | None],
+    lot_size: int, at: datetime, mult: float = 1,
+) -> tuple[list[Leg], dict[str, Any], list[str]]:
+    """Strategy-level stop loss, target and lock-and-trail on the P&L (booked + open), in rupees. Mirrors
+    ``applyStrategyRules`` in ``frontend/src/lib/strategy.ts``. A rule that fires closes every open leg at its live price
+    (reason ``strategy``: nothing re-enters) and records ``done``. Nothing happens while an open leg has no live price."""
+    if state.get("done") or not has_rules(rules):
+        return legs, state, []
+    live = [lg for lg in legs if lg.get("enabled") is not False]
+    if not live:
+        return legs, state, []
+    total = 0.0
+    open_legs = 0
+    for lg in live:
+        total += lg.get("realised") or 0
+        if is_exited(lg):
+            continue
+        open_legs += 1
+        px = price_of(lg)
+        if px is None or lg.get("premium") is None:
+            return legs, state, []
+        total += _sign(lg) * (px - lg["premium"]) * lg["lots"] * mult * lot_size
+    if open_legs == 0:
+        return legs, state, []
+    prev = state.get("floor")
+    fl = lock_floor(rules, total)
+    floor = fl if fl is not None and (prev is None or fl > prev) else prev
+    sl, target = rules.get("sl"), rules.get("target")
+    done = label = None
+    if sl and sl > 0 and total <= -sl:
+        done, label = "sl", f"Strategy stop loss (−₹{round(sl):,})"
+    elif target and target > 0 and total >= target:
+        done, label = "target", f"Strategy target (+₹{round(target):,})"
+    elif floor is not None and total <= floor:
+        done, label = "lock", f"Locked profit (floor +₹{round(floor):,})"
+    if done is None:
+        return (legs, state, []) if floor == prev else (legs, {**state, "floor": floor}, [])
+    events: list[str] = []
+    out: list[Leg] = []
+    for lg in legs:
+        if lg.get("enabled") is False:
+            out.append(lg)
+        elif is_exited(lg):
+            out.append({**lg, "reentry": 0})  # a leg waiting to re-enter stays out
+        else:
+            px = price_of(lg)
+            if px is None or not px > 0 or lg.get("premium") is None:
+                out.append(lg)
+                continue
+            n = {**exit_leg(lg, px, "strategy", lot_size, at, mult, label), "reentry": 0}
+            events.append(n["log"][-1]["text"])
+            out.append(n)
+    return out, {"floor": floor, "done": done, "at": at.isoformat(), "pnl": total}, events
 
 
 def apply_automation(
@@ -111,6 +224,13 @@ def apply_automation(
             if leg.get("premium") is None:
                 out.append(leg)
                 continue
+            trailed = trail_leg(leg, px)
+            if trailed is not leg:
+                events.append(
+                    f"{_stamp(at)} Trailing stop {leg['action']} {leg['strike']} {leg['type']}: "
+                    f"stop {leg['stop']:.2f} → {trailed['stop']:.2f} (price {px:.2f}) [server]"
+                )
+                leg = trailed
             kind = "stop" if hit_of(leg, "stop", px) else "target" if hit_of(leg, "target", px) else None
             if kind is None:
                 out.append(leg)
@@ -169,7 +289,10 @@ class StrategyAutomation:
             cur_rev = int(cur.get("rev", 0)) if cur else 0
             if cur is not None and base_rev != cur_rev:
                 raise RunningConflict(cur)
-            doc = {**doc, "rev": cur_rev + 1, "serverEvents": (cur or {}).get("serverEvents", [])}
+            # the state of the strategy rules (profit floor, which rule fired) belongs to the server; a browser edit only
+            # replaces it when it asks for a re-arm (a new ``rearmAt``)
+            keep = (cur or {}).get("rstate") if doc.get("rearmAt") == (cur or {}).get("rearmAt") else None
+            doc = {**doc, "rev": cur_rev + 1, "serverEvents": (cur or {}).get("serverEvents", []), "rstate": keep}
             self.store.put(RUNNING_KIND, RUNNING_KEY, doc)
             return doc
 
@@ -186,14 +309,19 @@ class StrategyAutomation:
             exp = doc.get("expiry")
             if not lot or (exp and exp < at.astimezone(IST).date().isoformat()):
                 return []
-            legs, events = apply_automation(
-                doc["legs"], lambda lg: self.price_of_key(lg["key"]) if lg.get("key") else None, int(lot), at,
-                float(doc.get("mult") or 1),
-            )  # fmt: skip
-            if not events:
+            price = lambda lg: self.price_of_key(lg["key"]) if lg.get("key") else None  # noqa: E731
+            mult = float(doc.get("mult") or 1)
+            legs, events = apply_automation(doc["legs"], price, int(lot), at, mult)
+            rstate = doc.get("rstate") or {}
+            legs, new_state, rule_events = apply_strategy_rules(legs, doc.get("rules") or {}, rstate, price, int(lot), at, mult)
+            events = [*events, *rule_events]
+            if not events and new_state == rstate:
                 return []
             ev = [*(doc.get("serverEvents") or []), *({"at": at.isoformat(), "text": t} for t in events)][-50:]
-            self.store.put(RUNNING_KIND, RUNNING_KEY, {**doc, "legs": legs, "rev": int(doc.get("rev", 0)) + 1, "serverEvents": ev})
+            self.store.put(
+                RUNNING_KIND, RUNNING_KEY,
+                {**doc, "legs": legs, "rstate": new_state, "rev": int(doc.get("rev", 0)) + 1, "serverEvents": ev},
+            )
             logger.info("strategy_automation", extra={"fields": {"events": events}})
             return events
 

@@ -84,3 +84,54 @@ describe("automatic stop, target and re-entry through the page", () => {
     expect((table.getAllByLabelText("Entry premium")[1] as HTMLInputElement).value).toBe("90");
   });
 });
+
+describe("strategy rules and the percentage trailing stop through the page", () => {
+  const setup = async () => {
+    mount();
+    await waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"), { timeout: 5000 });
+    await userEvent.click(await screen.findByRole("tab", { name: TEMPLATE_BIAS.short_straddle! }));
+    await userEvent.click(await screen.findByRole("button", { name: TEMPLATES.find((t) => t.id === "short_straddle")!.label }));
+    return within(await screen.findByRole("table", { name: "Strategy legs" }));
+  };
+
+  it("trails the stop 5 % of the entry for every 10 % the sold leg falls (entry 100, stop 130, price 90 gives 125)", async () => {
+    const table = await setup();
+    await userEvent.type(table.getAllByLabelText("Stop percent of entry premium")[0]!, "30");
+    await userEvent.type(screen.getAllByLabelText("Trail every percent")[0]!, "10");
+    await userEvent.type(screen.getAllByLabelText("Trail by percent")[0]!, "5{Enter}");
+    tick("nse_fo|24050CE", 90);
+    await waitFor(() => expect((table.getAllByLabelText("Stop-loss premium")[0] as HTMLInputElement).value).toBe("125"), { timeout: 4000 });
+    expect(screen.getByTestId("stop-trailed")).toHaveTextContent("stop trailed from 130.00 to 125.00");
+    expect(screen.getByTestId("auto-note")).toHaveTextContent("Trailing stop SELL 24050 CE: stop 130.00 → 125.00");
+    tick("nse_fo|24050CE", 125); // back up to the trailed stop: closed there
+    await waitFor(() => expect(screen.getByTestId("leg-exited")).toHaveTextContent("Exited at 125.00 (stop)"), { timeout: 4000 });
+  });
+
+  it("a strategy stop loss closes both legs when the P&L reaches it, and half-typed numbers arm nothing until committed", async () => {
+    const table = await setup();
+    await userEvent.click(screen.getByText(/Strategy stop loss, target and lock/));
+    const sl = screen.getByLabelText("Stop loss ₹");
+    await userEvent.type(sl, "1"); // typed but not committed: nothing armed
+    tick("nse_fo|24050CE", 200);
+    expect(table.getAllByLabelText("Exit price")).toHaveLength(2);
+    await userEvent.clear(sl); await userEvent.type(sl, "1000{Enter}");
+    // CE 114, PE stored 100: -(14 x 75) = -1,050 <= -1,000
+    tick("nse_fo|24050CE", 114);
+    await waitFor(() => expect(screen.getAllByTestId("leg-exited")).toHaveLength(2), { timeout: 4000 });
+    expect(screen.getByTestId("strategy-rules")).toHaveTextContent("stop loss exit done");
+    expect(screen.getByTestId("auto-note")).toHaveTextContent("Strategy stop loss (−₹1,000)");
+    await userEvent.click(screen.getByTestId("rules-rearm"));
+    expect(screen.queryByTestId("rules-rearm")).not.toBeInTheDocument();
+  });
+
+  it("flags a lock that cannot work and shows the floor the lock gives", async () => {
+    await setup();
+    await userEvent.click(screen.getByText(/Strategy stop loss, target and lock/));
+    await userEvent.type(screen.getByLabelText("Lock when profit reaches ₹"), "1000{Enter}");
+    expect(screen.getByTestId("rules-problem")).toHaveTextContent("Lock needs both"); // only one half typed
+    await userEvent.type(screen.getByLabelText("Lock profit ₹"), "1000{Enter}");
+    expect(screen.getByTestId("rules-problem")).toHaveTextContent("locked profit has to be below");
+    await userEvent.clear(screen.getByLabelText("Lock profit ₹")); await userEvent.type(screen.getByLabelText("Lock profit ₹"), "500{Enter}");
+    expect(screen.queryByTestId("rules-problem")).not.toBeInTheDocument();
+  });
+});

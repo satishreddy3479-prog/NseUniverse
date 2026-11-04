@@ -155,3 +155,96 @@ describe("templates and validation", () => {
     expect(validateStrategy([legs[4]!], vctx).filter((i) => i.level === "error")).toEqual([]);
   });
 });
+
+import { applyAutomation, applyStrategyRules, hitOf, lockFloor, NO_RULES, rulesProblem, trailLeg } from "../lib/strategy";
+
+describe("percentage trailing stop (hand calculated)", () => {
+  const sold: Leg = { id: "a", expiry: "2026-11-09", strike: 23300, type: "CE", action: "SELL", lots: 1, premium: 100, premiumSource: "market", stop: 130, trailEvery: 10, trailBy: 5 };
+  it("moves the stop 5 % of the entry for every 10 % the sold leg falls, only tightens, and may end on the profit side", () => {
+    expect(trailLeg(sold, 95)).toBe(sold); // 5 %: no full step
+    expect(trailLeg(sold, 90).stop).toBe(125);
+    const two = trailLeg(sold, 80);
+    expect(two).toMatchObject({ stop: 120, stopBase: 130, stopTrailed: true });
+    expect(trailLeg(two, 90)).toBe(two); // price came back: stop stays
+    const far = trailLeg(two, 30); // 70 % = seven steps: 130 - 35
+    expect(far.stop).toBe(95);
+    expect(hitOf(far, "stop", 95)).toBe(true);
+    expect(hitOf(far, "stop", 94.95)).toBe(false);
+    expect(hitOf({ ...sold, stop: 95 }, "stop", 95)).toBe(false); // a typed stop on the profit side is still a slip
+  });
+  it("works for a bought leg and ignores incomplete or impossible settings", () => {
+    const buy: Leg = { ...sold, action: "BUY", stop: 70 };
+    expect(trailLeg(buy, 120).stop).toBe(80); // +20 %: two steps of 5 up from 70
+    expect(trailLeg({ ...sold, trailBy: null }, 50)).toEqual({ ...sold, trailBy: null });
+    expect(trailLeg({ ...sold, trailBy: 20 }, 50).stop).toBe(130); // moving by more than the step is ignored
+    expect(trailLeg({ ...sold, stop: null }, 50).stop).toBeNull();
+  });
+  it("applyAutomation trails first and then closes at the trailed stop, keeping the stop distance the user set for a re-entry", () => {
+    const priced = (px: number) => () => px;
+    let r = applyAutomation([{ ...sold, target: null, reentry: 1 }], priced(80), 65, "2026-11-05T04:00:00Z");
+    expect(r.legs[0]!.stop).toBe(120);
+    expect(r.events[0]).toContain("Trailing stop");
+    r = applyAutomation(r.legs, priced(120.5), 65, "2026-11-05T04:00:01Z");
+    expect(r.legs[0]).toMatchObject({ exitPrice: 120.5, exitReason: "stop" });
+    expect(r.legs[0]!.stopPct).toBeCloseTo(0.3, 9);
+    r = applyAutomation(r.legs, priced(99), 65, "2026-11-05T04:00:02Z");
+    expect(r.legs[0]!.stop).toBeCloseTo(128.7, 2);
+    expect(r.legs[0]!.stopTrailed).toBe(false);
+  });
+});
+
+describe("strategy stop loss, target and lock-and-trail (hand calculated, lot 65)", () => {
+  const leg = (id: string, strike: number, type: "CE" | "PE", premium: number): Leg => ({ id, expiry: "2026-11-09", strike, type, action: "SELL", lots: 1, premium, premiumSource: "market" });
+  it("lock floor: 1,000 locks 500, then +200 for every further 300", () => {
+    const r = { ...NO_RULES, lockAt: 1000, lockProfit: 500, trailEvery: 300, trailBy: 200 };
+    expect([999, 1000, 1299, 1300, 1625].map((p) => lockFloor(r, p))).toEqual([null, 500, 500, 700, 900]);
+    expect(lockFloor({ ...r, trailEvery: null, trailBy: null }, 5000)).toBe(500);
+    expect(lockFloor({ ...r, lockProfit: 1000 }, 5000)).toBeNull();
+    expect(rulesProblem({ ...r, lockProfit: 1000 })).toMatch(/below/);
+    expect(lockFloor({ ...r, trailBy: 400 }, 5000)).toBeNull();
+    expect(rulesProblem({ ...NO_RULES, trailEvery: 100, trailBy: 50 })).toMatch(/after a lock/);
+  });
+  it("a stop loss closes every open leg at its live price, nothing re-enters, and it never fires twice", () => {
+    const legs = [{ ...leg("a", 23300, "CE", 100), reentry: 2 }, { ...leg("b", 23100, "PE", 80), reentry: 2 }];
+    const px = { 23300: 100, 23100: 80 } as Record<number, number>;
+    const price = (k: number) => px[k] ?? null;
+    const rules = { ...NO_RULES, sl: 2000, target: 3000 };
+    const empty = { floor: null, done: null } as const;
+    px[23300] = 115; px[23100] = 95; // -(15 + 15) x 65 = -1,950: inside
+    expect(applyStrategyRules(legs, rules, empty, price, 65, "t").events).toEqual([]);
+    px[23300] = 116; // -2,015
+    const r = applyStrategyRules(legs, rules, empty, price, 65, "2026-11-05T04:00:00Z");
+    expect(r.state.done).toBe("sl");
+    expect(r.legs.map((l) => l.exitReason)).toEqual(["strategy", "strategy"]);
+    expect(r.legs.every((l) => l.reentry === 0)).toBe(true);
+    expect(r.legs.reduce((t, l) => t + (l.realised ?? 0), 0)).toBeCloseTo(-2015, 6);
+    expect(r.events[0]).toContain("Strategy stop loss");
+    expect(applyStrategyRules(r.legs, rules, r.state, price, 65, "t").events).toEqual([]);
+    px[23300] = 50; px[23100] = 40; // multiplier 2: (50 + 40) x 65 x 2 = 11,700
+    expect(applyStrategyRules(legs, rules, empty, price, 65, "t", 2).state.done).toBe("target");
+  });
+  it("the floor only rises and the strategy exits when the P&L falls back to it", () => {
+    let legs = [leg("a", 23300, "CE", 100)];
+    let state: { floor: number | null; done: "sl" | "target" | "lock" | null } = { floor: null, done: null };
+    let px = 85;
+    const rules = { ...NO_RULES, lockAt: 1000, lockProfit: 500, trailEvery: 300, trailBy: 200 };
+    const step = (p: number) => { px = p; const r = applyStrategyRules(legs, rules, state, () => px, 65, "2026-11-05T04:00:00Z"); legs = r.legs; state = r.state; return r; };
+    step(85); expect(state.floor).toBeNull(); // 975
+    step(80); expect(state.floor).toBe(700); // 1,300
+    step(75); expect(state.floor).toBe(900); // 1,625
+    expect(step(78).events).toEqual([]); // 1,430: below the peak, floor stays 900
+    expect(state.floor).toBe(900);
+    expect(step(86).events).toEqual([]); // 910
+    const r = step(86.5); // 877.5: through the floor
+    expect(state.done).toBe("lock");
+    expect(legs[0]).toMatchObject({ exitPrice: 86.5, exitReason: "strategy" });
+    expect(legs[0]!.realised).toBeCloseTo(877.5, 6);
+    expect(r.events[0]).toContain("Locked profit");
+  });
+  it("waits for every open leg to have a price", () => {
+    const legs = [leg("a", 23300, "CE", 100), leg("b", 23100, "PE", 80)];
+    const r = applyStrategyRules(legs, { ...NO_RULES, sl: 10 }, { floor: null, done: null }, (k) => (k === 23300 ? 500 : null), 65, "t");
+    expect(r.legs).toBe(legs);
+    expect(r.events).toEqual([]);
+  });
+});

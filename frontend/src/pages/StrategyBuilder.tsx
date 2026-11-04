@@ -14,7 +14,7 @@ import { useExpiries, useThrottledValue } from "../lib/hooks";
 import { marketClockMs } from "../lib/session";
 import { carryFromForward, contractGreeks, expiryEnd, impliedForward, legGreeks, sdLevel, netGreeks, probabilityOfProfit, scenarioGrid, sdBands, spotAtPremium, theoreticalPnl, type ContractGreeks, type Valuation } from "../lib/optionModel";
 import {
-  analyzeExpiry, applyAutomation, exitLeg, expiryPnl, hitOf, isExited, newLegId, reenterLeg, rollLeg, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds,
+  analyzeExpiry, applyAutomation, applyStrategyRules, exitLeg, expiryPnl, hitOf, isExited, newLegId, reenterLeg, rollLeg, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds, NO_RULES, hasRules, lockFloor, rulesProblem, type StrategyRules, type RulesState,
   type Action, type Bias, type Leg, type OptionType, type Template,
 } from "../lib/strategy";
 
@@ -25,6 +25,20 @@ export const CLOSED_KEY = "nse.closed.v1";
 export interface ClosedLeg extends Leg { exit: number }
 export interface Closed { id: string; name: string; closedAt: string; snapshotAt: string; expiry: string; lotSize: number; pnl: number; legs: ClosedLeg[]; /** the stored chain was stale when the exit prices were read */ stale?: boolean }
 const loadClosed = (): Closed[] => { try { return JSON.parse(localStorage.getItem(CLOSED_KEY) ?? "[]") as Closed[]; } catch { return []; } };
+/** A number box that commits on blur or Enter, so a half-typed "2" on the way to "2000" never arms a rule. Empty clears it. */
+function NumBox({ value, onCommit, className, ariaLabel }: { value: number | null | undefined; onCommit: (v: number | null) => void; className: string; ariaLabel: string }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft == null) return;
+    const v = draft.trim() === "" ? null : Number(draft);
+    setDraft(null);
+    if (v == null || (Number.isFinite(v) && v >= 0)) onCommit(v);
+  };
+  return (
+    <input className={className} type="number" min={0} step="any" aria-label={ariaLabel} placeholder="none" value={draft ?? (value ?? "")}
+      onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={(e) => { if (e.key === "Enter") commit(); }} />
+  );
+}
 const loadSaved = (): Saved[] => { try { return JSON.parse(localStorage.getItem(SAVE_KEY) ?? "[]") as Saved[]; } catch { return []; } };
 const money = (v: number | null, signed = true) => (v == null ? "—" : `${v < 0 ? "−" : v > 0 && signed ? "+" : ""}₹${fmtInt(Math.round(Math.abs(v)))}`);
 const tone = (v: number | null) => (v == null || v === 0 ? "text-paper" : v > 0 ? "text-up" : "text-down");
@@ -95,7 +109,7 @@ export default function StrategyBuilder() {
   // repeat exits that already happened. Copies older than three days are ignored.
   const [work] = useState(() => {
     try {
-      const w = JSON.parse(localStorage.getItem(WORKING_KEY) ?? "null") as { legs?: Leg[]; expiry?: string | null; name?: string; loaded?: string | null; baseline?: Leg[]; at?: number } | null;
+      const w = JSON.parse(localStorage.getItem(WORKING_KEY) ?? "null") as { legs?: Leg[]; expiry?: string | null; name?: string; loaded?: string | null; baseline?: Leg[]; at?: number; rules?: StrategyRules; rstate?: RulesState | null; rearmAt?: string | null } | null;
       return w && Array.isArray(w.legs) && w.at && Date.now() - w.at < 3 * 86_400_000 ? w : null;
     } catch { return null; }
   });
@@ -106,6 +120,10 @@ export default function StrategyBuilder() {
   const [width, setWidth] = useState<(typeof WIDTHS)[number]>(10);
   const [sel, setSel] = useState<number | null>(null);
   const [mult, setMult] = useState(1);
+  /** strategy-level stop loss, target and lock-and-trail (rupees), and what they have done so far (the profit floor, the rule that fired) */
+  const [rules, setRules] = useState<StrategyRules>(work?.rules ?? NO_RULES);
+  const [rstate, setRstate] = useState<RulesState | null>(work?.rstate ?? null);
+  const [rearmAt, setRearmAt] = useState<string | null>(work?.rearmAt ?? null);
   const [tab, setTab] = useState<"positions" | "greeks" | "scenarios">("positions");
   const [bias, setBias] = useState<Bias>("Neutral");
   const [rate, setRate] = useState(6);
@@ -332,16 +350,21 @@ export default function StrategyBuilder() {
     if (!autoActive || !lotSize || legs.length === 0) return;
     const wait = 1500 - (performance.now() - lastExitEdit.current);
     if (wait > 0) { const t = setTimeout(() => setSettle((n) => n + 1), wait + 20); return () => clearTimeout(t); }
-    const r = applyAutomation(legs, ltp, lotSize, new Date().toISOString(), mult);
-    if (r.events.length) {
-      commitTrades(r.legs);
-      setAutoNote(r.events.join(" · "));
+    const at = new Date().toISOString();
+    const r = applyAutomation(legs, ltp, lotSize, at, mult);
+    const cur: RulesState = rstate ?? { floor: null, done: null };
+    const q = applyStrategyRules(r.legs, rules, cur, ltp, lotSize, at, mult);
+    if (q.state !== cur) setRstate(q.state);
+    const events = [...r.events, ...q.events];
+    if (events.length) {
+      commitTrades(q.legs);
+      setAutoNote(events.join(" · "));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, legs, autoActive, mult, lotSize, settle]);
+  }, [rows, legs, autoActive, mult, lotSize, settle, rules]);
   useEffect(() => {
-    try { localStorage.setItem(WORKING_KEY, JSON.stringify({ legs, expiry, name, loaded, baseline, at: Date.now() })); } catch { /* this visit only */ }
-  }, [legs, expiry, name, loaded, baseline]);
+    try { localStorage.setItem(WORKING_KEY, JSON.stringify({ legs, expiry, name, loaded, baseline, rules, rstate, rearmAt, at: Date.now() })); } catch { /* this visit only */ }
+  }, [legs, expiry, name, loaded, baseline, rules, rstate, rearmAt]);
 
   // ---- the server keeps this strategy and checks its stops and targets every second, with or without a page open.
   // The browser sends every change (after a short pause) and takes back what the server did; if the server cannot be
@@ -355,11 +378,12 @@ export default function StrategyBuilder() {
     const row = rows.find((r) => r.strike === l.strike);
     return liveKey(l.type === "CE" ? row?.call ?? null : row?.put ?? null) ?? l.key ?? null;
   };
-  const payloadJson = JSON.stringify({ name, loaded, expiry, lotSize, mult, auto: autoOn, baseline, legs: legs.map((l) => ({ ...l, key: keyOf(l) })) });
+  const payloadJson = JSON.stringify({ name, loaded, expiry, lotSize, mult, auto: autoOn, rules, rearmAt, baseline, legs: legs.map((l) => ({ ...l, key: keyOf(l) })) });
   const adoptServer = (d: RunningDoc, announce: boolean) => {
     revRef.current = d.rev ?? null;
     skipPush.current = true;
     setLegs(d.legs ?? []); setBaseline(d.baseline ?? d.legs ?? []); setName(d.name ?? ""); setLoaded(d.loaded ?? null); setMult(d.mult ?? 1);
+    setRules(d.rules ?? NO_RULES); setRstate(d.rstate ?? null); setRearmAt(d.rearmAt ?? null);
     if (d.expiry) setPicked(d.expiry);
     const last = d.serverEvents?.[d.serverEvents.length - 1];
     if (last && last.at !== seenEvents.current) {
@@ -408,6 +432,7 @@ export default function StrategyBuilder() {
         const r = await api.runningGet();
         setServerAuto(true);
         const d = r.doc;
+        if (d && payloadJson === sentRef.current) setRstate(d.rstate ?? null); // the profit floor moves without a new revision
         // adopt what the server did (an exit, a re-entry) unless an edit made here is still waiting to be sent
         if (d && d.rev !== revRef.current && payloadJson === sentRef.current) adoptServer(d, true);
       } catch { setServerAuto(false); }
@@ -521,7 +546,7 @@ export default function StrategyBuilder() {
     update(l.id, { strike, ...(l.premiumSource === "manual" ? {} : { premium: m, premiumSource: m == null ? null : "market" }) });
   };
   /** Target or stop-loss for one leg: a premium, or a % of the entry premium. Targets are on the profit side of the entry, stops on the loss side. */
-  const setExit = (l: Leg, kind: "target" | "stop", px: number | null) => { lastExitEdit.current = performance.now(); update(l.id, kind === "target" ? { target: px } : { stop: px }); };
+  const setExit = (l: Leg, kind: "target" | "stop", px: number | null) => { lastExitEdit.current = performance.now(); update(l.id, kind === "target" ? { target: px } : { stop: px, stopBase: null, stopTrailed: false }); };
   const exitCell = (l: Leg, kind: "target" | "stop") => {
     const cur = kind === "target" ? l.target ?? null : l.stop ?? null;
     const buy = l.action === "BUY";
@@ -902,6 +927,39 @@ export default function StrategyBuilder() {
                     </span>
                     {autoNote && <button type="button" onClick={() => setAutoNote(null)} className="ml-auto max-w-full truncate text-left text-warn" title="Click to dismiss" data-testid="auto-note">{autoNote} ✕</button>}
                   </div>
+                  {(() => {
+                    const bad = rulesProblem(rules);
+                    const setR = (patch: Partial<StrategyRules>) => setRules((r) => ({ ...r, ...patch }));
+                    const box = (label: string, key: keyof StrategyRules, aria = label) => (
+                      <label className="flex items-center gap-1">{label}
+                        <NumBox ariaLabel={aria} className={`${field} w-[5rem] !px-1.5 text-right`} value={rules[key]} onCommit={(v) => { lastExitEdit.current = performance.now(); setR({ [key]: v }); }} />
+                      </label>
+                    );
+                    const floor = rstate?.floor ?? null;
+                    return (
+                      <details className="mb-2 rounded-sm bg-slate-2 px-3 py-2 text-xs" data-testid="strategy-rules" open={hasRules(rules) || undefined}>
+                        <summary className="cursor-pointer text-paper">
+                          Strategy stop loss, target and lock &amp; trail (paper, ₹)
+                          {rstate?.done ? <span className="ml-2 text-warn">— {rstate.done === "sl" ? "stop loss" : rstate.done === "target" ? "target" : "locked profit"} exit done</span> : hasRules(rules) ? <span className="ml-2 text-up">— armed{floor != null ? `, profit floor +₹${Math.round(floor).toLocaleString("en-IN")}` : ""}</span> : null}
+                        </summary>
+                        <div className="mt-2 flex flex-wrap items-end gap-x-4 gap-y-2 text-muted">
+                          {box("Stop loss ₹", "sl")}
+                          {box("Target ₹", "target")}
+                          <span className="flex flex-wrap items-center gap-1" title="When the whole strategy's profit reaches the first amount, never give back more than to the second amount: if the profit falls back to it, every open leg is closed. Then, for every further amount of profit, the floor rises by the next amount.">
+                            Lock: when profit reaches {box("₹", "lockAt", "Lock when profit reaches ₹")} lock {box("₹", "lockProfit", "Lock profit ₹")}
+                          </span>
+                          <span className="flex flex-wrap items-center gap-1" title="After the lock: for every further ₹X of profit the locked floor rises by ₹Y (Y no more than X).">
+                            Trail: for every extra {box("₹", "trailEvery", "Trail for every extra ₹")} raise the floor by {box("₹", "trailBy", "Raise the floor by ₹")}
+                          </span>
+                          {(hasRules(rules) || rstate != null) && <button type="button" className="rounded-sm border border-rule px-2 py-1 hover:text-paper" data-testid="rules-clear" onClick={() => { setRules(NO_RULES); setRstate(null); setRearmAt(String(Date.now())); }}>Clear</button>}
+                          {rstate?.done && <button type="button" className="rounded-sm border border-info/60 px-2 py-1 text-info hover:bg-info/10" data-testid="rules-rearm" onClick={() => { setRstate(null); setRearmAt(String(Date.now())); }}>Re-arm</button>}
+                        </div>
+                        {bad && <div className="mt-1 text-down" data-testid="rules-problem">{bad} The lock and trail are ignored until this is fixed.</div>}
+                        {rstate?.done && <div className="mt-1 text-warn">Closed every open leg when the P&amp;L was {money(rstate.pnl ?? null)}{rstate.at ? ` (${new Date(rstate.at).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata" })} IST)` : ""}. Nothing re-enters; Re-arm to start watching again.</div>}
+                        <div className="mt-1 text-muted">Checked against the whole strategy's P&amp;L (booked + open) on live prices, on the server every second like the leg stops. Paper only: nothing is sent to a broker. {rules.lockAt != null && rules.lockProfit != null && !bad && totalPnl != null ? <>Profit now {money(totalPnl)}; the floor would be {lockFloor(rules, totalPnl) == null ? "not set yet" : `+₹${Math.round(Math.max(lockFloor(rules, totalPnl) as number, floor ?? 0)).toLocaleString("en-IN")}`}.</> : null}</div>
+                      </details>
+                    );
+                  })()}
                   <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-muted" data-testid="legs-summary">
                     <span><span className="num text-paper">{legs.filter((l) => l.enabled !== false).length}</span> of {legs.length} legs active</span>
                     <span>Net premium <span className={`num ${tone(netPremium)}`}>{netPremium == null ? "—" : `${money(netPremium)} ${netPremium >= 0 ? "credit" : "debit"}`}</span></span>
@@ -985,6 +1043,17 @@ export default function StrategyBuilder() {
                                   <input aria-label="Re-entries after a stop" className={`${field} w-12 !px-1 text-center`} type="number" min={0} step={1} value={l.reentry ?? 0}
                                     onChange={(e) => update(l.id, { reentry: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} />
                                 </label>
+                                <span className="flex flex-wrap items-center gap-1 text-muted" data-testid={`trail-${l.id}`}
+                                  title="Trailing stop in percent (needs a stop). For every X % of the entry premium the leg moves in your favour (a sold option falling, a bought one rising), the stop moves Y % of the entry premium the same way. The stop only tightens and can end up locking profit.">
+                                  Trail stop: every
+                                  <NumBox ariaLabel="Trail every percent" className={`${field} w-12 !px-1 text-center`} value={l.trailEvery ?? null} onCommit={(v) => update(l.id, { trailEvery: v })} />%
+                                  move stop
+                                  <NumBox ariaLabel="Trail by percent" className={`${field} w-12 !px-1 text-center`} value={l.trailBy ?? null} onCommit={(v) => update(l.id, { trailBy: v })} />%
+                                  {(l.trailEvery != null || l.trailBy != null) && (l.trailEvery == null || l.trailBy == null || l.trailBy > l.trailEvery || l.stop == null) && (
+                                    <span className="text-down">{l.stop == null ? "set a stop first" : l.trailEvery == null || l.trailBy == null ? "needs both boxes" : "move by no more than the step"}</span>
+                                  )}
+                                  {l.stopTrailed && l.stopBase != null && <span className="text-info" data-testid="stop-trailed">stop trailed from {fmtPrice(l.stopBase)} to {fmtPrice(l.stop as number)}</span>}
+                                </span>
                                 {exited && l.exitReason === "stop" && (l.reentry ?? 0) > 0 && l.reentryLevel != null && (
                                   <span className="text-info" data-testid="reentry-armed">re-entry armed: enters again when the premium is {buy ? "back at or above" : "back at or below"} {fmtPrice(l.reentryLevel)} ({l.reentry} left)</span>
                                 )}
