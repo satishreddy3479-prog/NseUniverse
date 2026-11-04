@@ -368,3 +368,6 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 - "OTM only" now works inside the ATM ±N band (N = 4/10/20) with Auto/Fixed: calls above NIFTY, puts below it. Replaces the earlier "N nearest OTM strikes" option.
 - "Vega × OI change" is now the OI-weighted vega total minus its value at the first session sample (spec formula), replacing vega × (OI added). Time-series Vega × OI values are shown in Cr (value / 1e7); OI is already in units so no lot-size factor is applied (our by-strike totals already match the reference).
 - Table: day-high/day-low (solid) and rise/fall tints now apply to the Call, Put and Put − Call columns. Put − Call line is dotted purple.
+
+## Menu: Timeseries and Strategy Chart removed (5 Nov 2026)
+- Options Lab no longer lists Timeseries or Strategy Chart (Strategy Chart was only a link to Strategy Builder; Strategy Builder keeps its own menu). The OI-by-strike-over-time widgets still exist on the Analysis dashboard. The section tabs no longer show them.

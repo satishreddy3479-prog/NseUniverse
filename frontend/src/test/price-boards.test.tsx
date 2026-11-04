@@ -113,7 +113,8 @@ describe("Vega Analysis page and section tabs", () => {
     mockApi(history(IN_SESSION));
     renderAt("/tools/vega-analysis");
     const nav = await screen.findByRole("navigation", { name: "Popular tools" });
-    for (const name of ["PE-CE Difference", "Timeseries", "Strategy Chart", "Smart OI", "Vega Analysis"]) expect(within(nav).getByRole("link", { name: new RegExp(name) })).toBeInTheDocument();
+    for (const name of ["PE-CE Difference", "Smart OI", "Vega Analysis"]) expect(within(nav).getByRole("link", { name: new RegExp(name) })).toBeInTheDocument();
+    for (const gone of ["Timeseries", "Strategy Chart"]) expect(within(nav).queryByRole("link", { name: new RegExp(gone) })).toBeNull(); // not tools of their own: Strategy Builder has its own menu
     expect(within(nav).getByRole("link", { name: /Vega Analysis/ })).toHaveAttribute("aria-current", "page");
   });
 });
