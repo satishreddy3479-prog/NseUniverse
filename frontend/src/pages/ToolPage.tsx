@@ -8,6 +8,7 @@ import { StreamButtons } from "../components/LiveActivity";
 import { IndexToolBody } from "../components/IndexTools";
 import { FlowsPanel } from "../components/FlowsPanel";
 import { CashPanel } from "../components/CashPanel";
+import { FuturesFlowBody } from "../components/FuturesFlowTools";
 import { fmtExpiry } from "../lib/format";
 import { useExpiries } from "../lib/hooks";
 import { toolById, toolPath } from "../lib/tools";
@@ -38,8 +39,8 @@ export default function ToolPage() {
       </div>
     );
 
-  const usesChain = !!tool.widgets || !!tool.board;
-  const strikeControls = !tool.board; // the boards pick their own strikes
+  const usesChain = !!tool.widgets || !!tool.board || tool.page === "futflow" || tool.page === "futsectors";
+  const strikeControls = !tool.board && tool.page !== "futflow" && tool.page !== "futsectors"; // the boards pick their own strikes; these pages have no strike range
   const modeBtn = (m: Mode, label: string, date?: string | null) => (
     <button type="button" key={m} aria-pressed={mode === m} disabled={m !== "manual" && !date} onClick={() => setMode(m)}
       className={`min-h-9 rounded-sm border px-3 text-sm disabled:opacity-40 ${mode === m ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>
@@ -95,7 +96,9 @@ export default function ToolPage() {
         {tool.board === "multiStraddle" && <MultiStrikeBoard straddle />}
         {tool.page === "flows" && <FlowsPanel />}
         {tool.page === "cash" && <CashPanel />}
-        {tool.page && tool.page !== "flows" && tool.page !== "cash" && <IndexToolBody page={tool.page} />}
+        {tool.page === "futflow" && <FuturesFlowBody expiry={expiry} part="flow" />}
+        {tool.page === "futsectors" && <FuturesFlowBody expiry={expiry} part="sectors" />}
+        {tool.page && tool.page !== "flows" && tool.page !== "cash" && tool.page !== "futflow" && tool.page !== "futsectors" && <IndexToolBody page={tool.page} />}
       </div>
     </DashProvider>
   );

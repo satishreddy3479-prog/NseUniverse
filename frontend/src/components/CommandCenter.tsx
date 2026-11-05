@@ -402,14 +402,25 @@ function fmtQty(n: number | null | undefined): string {
   return n == null ? MISSING : `${n < 0 ? "−" : ""}${Math.abs(n).toLocaleString("en-IN")}`;
 }
 
+/** What the estimated flow covers and how fresh it is: CVD only counts volume traded after the first push we saw. */
+function flowCoverage(f: FlowStats): string {
+  const parts: string[] = [];
+  if (f.coverage_of_day_volume != null) parts.push(`covers ${Math.round(f.coverage_of_day_volume * 100)}% of today's volume${f.since ? ` (counted from ${fmtTimeIST(f.since)})` : ""}`);
+  if (f.age_seconds != null) parts.push(f.stale ? `STALE: last push ${Math.round(f.age_seconds)} s ago` : `last push ${Math.round(f.age_seconds)} s ago`);
+  return parts.join(" · ");
+}
+
 function FlowLine({ f }: { f: FlowStats }) {
   return (
+    <>
     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
       <div><div className="text-[11px] text-muted">Net buying (CVD, estimated)</div><div className={`num ${tone(f.cvd)}`}>{fmtQty(f.cvd)}{f.cvd_pct == null ? "" : ` · ${f.cvd_pct >= 0 ? "+" : "−"}${Math.abs(f.cvd_pct).toFixed(1)}%`}</div></div>
       <div><div className="text-[11px] text-muted">Buy / sell volume</div><div className="num text-paper">{fmtQty(f.buy_volume)} / {fmtQty(f.sell_volume)}</div></div>
       <div><div className="text-[11px] text-muted">Order-book imbalance</div><div className={`num ${tone(f.depth_imbalance)}`}>{f.depth_imbalance == null ? MISSING : f.depth_imbalance.toFixed(2)}</div></div>
       <div><div className="text-[11px] text-muted">Volume vs normal</div><div className={`num ${f.relative_volume != null && f.relative_volume < 0.7 ? "text-warn" : "text-paper"}`}>{f.relative_volume == null ? MISSING : `${f.relative_volume.toFixed(2)}x`}</div></div>
     </div>
+    <p className={`mt-1 text-[11px] ${f.stale ? "text-warn" : "text-muted"}`} data-testid="cc-flow-coverage">{flowCoverage(f)}</p>
+    </>
   );
 }
 
@@ -456,7 +467,7 @@ function Breakout({ d }: { d: IntradaySummary }) {
   );
 }
 
-function FlowCard({ d }: { d: IntradaySummary }) {
+export function FlowCard({ d }: { d: IntradaySummary }) {
   const fl = d.stocks?.flow;
   const fut = fl?.futures ?? null;
   return (
@@ -470,7 +481,7 @@ function FlowCard({ d }: { d: IntradaySummary }) {
                 <FlowLine f={fut} />
                 {fut.divergence && <p className="mt-1 text-xs text-muted" data-testid="cc-fut-divergence">Last {fut.divergence.window_minutes} min: {DIVERGENCE[fut.divergence.state] ?? fut.divergence.state} (price {fmtPct(fut.divergence.price_change_pct)}).</p>}
               </>
-            ) : <p className="text-xs text-muted">{fl.futures_note}. No futures ticks received yet.</p>}
+            ) : <p className="text-xs text-muted">{fl.futures_note}. No futures flow yet: it starts with the first push after the 09:15 IST open{fl.diagnostics?.future?.ticks ? ` (${fl.diagnostics.future.ticks} pre-open pushes seen, not counted)` : ""}.</p>}
             {!fl.baseline.futures_profile_ready && <p className="mt-1 text-[11px] text-muted">Volume vs normal needs {fl.baseline.needs_sessions} recorded sessions ({fl.baseline.profile_sessions_futures} so far).</p>}
           </div>
           <div className="overflow-x-auto">
@@ -492,6 +503,11 @@ function FlowCard({ d }: { d: IntradaySummary }) {
                 ))}
               </tbody>
             </table>
+            {fl.heavy5.stocks.some((s) => s.flow) && (
+              <p className={`mt-1 text-[11px] ${fl.heavy5.stocks.some((s) => s.flow?.stale) ? "text-warn" : "text-muted"}`} data-testid="cc-heavy5-coverage">
+                Net buying and book imbalance are estimates: {fl.heavy5.stocks.filter((s) => s.flow).map((s) => `${s.symbol} ${s.flow!.coverage_of_day_volume == null ? MISSING : `${Math.round(s.flow!.coverage_of_day_volume * 100)}%`}${s.flow!.stale ? " stale" : ""}`).join(", ")} of today's volume counted. The book imbalance is the latest depth push (bid minus ask over the five visible levels), left blank when older than a minute.
+              </p>
+            )}
             {fl.heavy5.stocks.some((s) => !s.technical.enough_history) && <p className="mt-1 text-[11px] text-muted">Technical reads use NSE daily files; the 50-day trend needs 50 sessions of history, which is still being collected.</p>}
           </div>
         </div>
@@ -749,7 +765,7 @@ function Replay({ expiry }: { expiry: string }) {
   );
 }
 
-function Sectors({ d }: { d: IntradaySummary }) {
+export function Sectors({ d }: { d: IntradaySummary }) {
   const colors = useChartColors();
   const m = d.stocks;
   const rows = (m?.sectors.nifty500 ?? []).filter((r) => r.equal_weight_return != null);
@@ -1060,8 +1076,6 @@ export function CommandCenter({ expiry }: { expiry: string | null }) {
             <SetupMonitor d={d} />
             <Volatility d={d} />
             <Positioning d={d} />
-            <FlowCard d={d} />
-            <Sectors d={d} />
             <ModelResearch />
             {expiry && <ForwardCheckCard expiry={expiry} />}
             <PaperResults />

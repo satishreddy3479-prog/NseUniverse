@@ -314,6 +314,15 @@ class MarketService:
         self._base_cache = (today, out)
         return out
 
+    def _future_note(self) -> str:
+        """The note set when the token list was last refreshed; after a restart that note is the initial placeholder
+        while the contract is already known from the stored token list, so say what is true."""
+        if self.future_note == "not looked up yet":
+            fut = self.token_map().get(FUT_SYMBOL)
+            if fut is not None:
+                return f"NIFTY futures contract {fut.trading_symbol}"
+        return self.future_note
+
     def flow_summary(
         self,
         now: datetime,
@@ -325,7 +334,7 @@ class MarketService:
         fut_tr = self.trackers.get("NIFTYFUT")
         fut: dict[str, Any] | None = None
         if fut_tr is not None and fut_tr.last_volume is not None:
-            fut = fut_tr.public()
+            fut = fut_tr.public(now)
             frac = profile_fraction(base["fut_profile"], elapsed)
             avg = base["fut_avg"]
             fut["relative_volume"] = (
@@ -343,7 +352,7 @@ class MarketService:
             r = rows.get(sym, {})
             tr = self.trackers.get(sym)
             stocks.append({"symbol": sym, "weight": r.get("weight"), "change_pct": r.get("change_pct"), "volume": r.get("volume"),
-                           "relative_volume": r.get("relative_volume"), "flow": None if tr is None or tr.last_volume is None else tr.public(),
+                           "relative_volume": r.get("relative_volume"), "flow": None if tr is None or tr.last_volume is None else tr.public(now),
                            "technical": tech.read(sym, bars, None if tk is None else tk.ltp)})  # fmt: skip
         return {
             "futures": fut,
@@ -351,7 +360,7 @@ class MarketService:
                 self.token_map().get(FUT_SYMBOL) or TokenInfo("", "", "")
             ).trading_symbol
             or None,
-            "futures_note": self.future_note,
+            "futures_note": self._future_note(),
             "diagnostics": self.diag | {"future_token_subscribed": any(t.exchange_segment == "nse_fo" for t in self.stream_tokens())},
             "heavy5": {"basis": basis, "stocks": stocks},
             "baseline": {
@@ -846,7 +855,7 @@ class MarketService:
         raw = self.diag["future"]
         if fut is not None and fut.last_volume is not None:
             fp: dict[str, Any] | None = {"v": fut.last_volume, "cvd": fut.buy - fut.sell, "b": fut.buy, "s": fut.sell, "ltp": fut.last_ltp,
-                                         "di": fut.last_imbalance, "atp": fut.last_atp, "oi": fut.last_oi}
+                                         "di": fut.imbalance_at(now), "atp": fut.last_atp, "oi": fut.last_oi}
         elif raw["ticks"] and raw["ltp"] and raw["last_at"] and (now - datetime.fromisoformat(raw["last_at"])).total_seconds() < 120:
             # the flow tracker has nothing (no volume yet) but the feed does deliver the future's price: keep price, OI and volume anyway
             fp = {"v": raw["volume"], "cvd": None, "b": None, "s": None, "ltp": raw["ltp"], "di": None, "atp": raw["atp"], "oi": raw["oi"]}
@@ -864,7 +873,7 @@ class MarketService:
                 },
             )
         rows = [
-            [k, tr.buy - tr.sell, tr.buy, tr.sell, tr.last_volume, tr.last_imbalance]
+            [k, tr.buy - tr.sell, tr.buy, tr.sell, tr.last_volume, tr.imbalance_at(now)]
             for k in self.heavy()[0]
             if (tr := self.trackers.get(k)) and tr.last_volume is not None
         ]

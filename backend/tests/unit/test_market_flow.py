@@ -7,7 +7,7 @@ The bhavcopy open/high/low values are the real NSE 28 Oct 2026 line for 360ONE.
 from __future__ import annotations
 
 import random
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from app.market.flow import FlowTracker, profile_fraction, volume_profile
@@ -139,3 +139,42 @@ def test_weight_estimation_recovers_known_weights_and_refuses_a_bad_fit() -> Non
     noisy = [(y + random.gauss(0, 1.0), x) for y, x in rows]
     assert estimate(noisy, syms) is None  # does not reproduce the index: no weights are produced
     assert estimate(rows[:50], syms) is None  # too few rows
+
+
+def test_cvd_conserves_volume_and_reports_how_much_of_the_day_it_covers() -> None:
+    """Live audit 5 Nov 2026 (server, 45 s apart): change in buy+sell equalled change in volume to the share, but
+    HDFCBANK had traded 7.50 M shares while CVD covered 4.09 M (55%): the opening auction came before the first push."""
+    f = FlowTracker("HDFCBANK")
+    f.update(T0, "09:15", DAY, 3_400_000, 750.0)  # volume done before our first push: never classified
+    f.update(T0, "09:16", DAY, 3_900_000, 750.5, bid=750.0, ask=750.5)  # +500 000 at the ask -> buy
+    f.update(T0, "09:17", DAY, 4_000_000, 750.0, bid=750.0, ask=750.5)  # +100 000 at the bid -> sell
+    p = f.public()
+    assert (p["buy_volume"], p["sell_volume"], p["unclassified_volume"]) == (500_000, 100_000, 0)
+    assert p["buy_volume"] + p["sell_volume"] + p["unclassified_volume"] == 4_000_000 - 3_400_000  # nothing lost or invented
+    assert p["coverage_of_day_volume"] == 0.15  # 600 000 of 4 000 000
+    assert p["classified_share"] == 1.0  # of what it saw, all was classified; that is a different question
+
+
+def test_flow_says_when_it_is_stale_and_drops_an_old_book_imbalance() -> None:
+    f = FlowTracker("X")
+    f.update(T0, "09:15", DAY, 100, 10.0, bid=9.95, ask=10.0, bid_qty=300, ask_qty=100)
+    fresh = f.public(T0 + timedelta(seconds=30))
+    assert fresh["depth_imbalance"] == 0.5  # (300 - 100) / 400
+    assert fresh["stale"] is False and fresh["age_seconds"] == 30.0
+    old = f.public(T0 + timedelta(seconds=90))  # depth older than a minute: not shown, nothing guessed
+    assert old["depth_imbalance"] is None and old["stale"] is False
+    gone = f.public(T0 + timedelta(seconds=300))
+    assert gone["stale"] is True
+    assert f.public()["depth_imbalance"] == 0.5  # without a clock the stored value is returned as before
+    # a later push with no depth must not refresh the imbalance's age
+    f.update(T0 + timedelta(seconds=100), "09:17", DAY, 150, 10.0)
+    assert f.public(T0 + timedelta(seconds=110))["depth_imbalance"] is None
+
+
+
+def test_stored_minute_samples_use_the_book_imbalance_only_while_it_is_fresh() -> None:
+    f = FlowTracker("X")
+    f.update(T0, "09:15", DAY, 100, 10.0, bid=9.95, ask=10.0, bid_qty=300, ask_qty=100)
+    assert f.imbalance_at(T0 + timedelta(seconds=59)) == 0.5
+    assert f.imbalance_at(T0 + timedelta(seconds=61)) is None
+    assert FlowTracker("Y").imbalance_at(T0) is None

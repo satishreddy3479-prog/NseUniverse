@@ -21,7 +21,7 @@ export interface Tool {
   /** chart boards built from the stored per-strike series (components/dashboard/PriceBoards.tsx) */
   board?: "priceOi" | "multiStrike" | "multiStraddle" | "vega";
   /** a special page body (see pages/ToolPage.tsx) */
-  page?: "flows" | "cash" | "contributors" | "weightage" | "breadth" | "sectors" | "movers";
+  page?: "flows" | "cash" | "contributors" | "weightage" | "breadth" | "sectors" | "movers" | "futflow" | "futsectors";
   /** why a planned tool is not available yet */
   needs?: string;
   isNew?: boolean;
@@ -57,6 +57,8 @@ export const TOOLS: Tool[] = [
   // ---- Future Lab
   { id: "future-dashboard", label: "Future Dashboard", menu: "futures", group: "Price tools", status: "ready", popular: true, widgets: ["futBasis", "futOi", "futOiChange", "futVolume"], blurb: "NIFTY futures: spot-futures gap, open interest, OI change and volume." },
   { id: "future-intraday", label: "Future Intraday", menu: "futures", group: "Price tools", status: "ready", widgets: ["futBasis", "futVolume"], blurb: "The futures against spot through the session, and its volume." },
+  { id: "future-flow", label: "Future Flow & Heavyweights", menu: "futures", group: "Price tools", status: "ready", isNew: true, page: "futflow", blurb: "NIFTY current-month future flow (estimated net buying, book imbalance) and the top-5 heavyweights. Moved from the Intraday Booster." },
+  { id: "future-sectors", label: "Future Sectors", menu: "futures", group: "Price tools", status: "ready", isNew: true, page: "futsectors", blurb: "Equal-weighted NIFTY 500 sector strength against the index, with rotation. Moved from the Intraday Booster." },
   { id: "market-movers", label: "Market Movers", menu: "futures", group: "Price tools", status: "ready", isNew: true, page: "movers", blurb: "NIFTY 50 stocks ranked by move and contribution (NIFTY 50 only)." },
   { id: "future-heatmap", label: "Future Heatmap", menu: "futures", group: "Price tools", status: "planned", needs: "Needs futures data for more than NIFTY, which is out of scope for now.", blurb: "Futures across many instruments." },
   { id: "future-oi", label: "Future Open Interest", menu: "futures", group: "OI tools", status: "ready", widgets: ["futOi", "futOiChange"], blurb: "NIFTY futures open interest and its change." },

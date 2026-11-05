@@ -569,6 +569,7 @@ export interface FlowStats {
   symbol: string; estimated: boolean; since: string | null; buy_volume: number; sell_volume: number; unclassified_volume: number;
   cvd: number; cvd_pct: number | null; classified_share: number | null; quote_rule_share: number | null; volume: number | null; last_price: number | null;
   depth_imbalance: number | null; depth_imbalance_avg: number | null; updated: string | null;
+  coverage_of_day_volume?: number | null; depth_updated?: string | null; age_seconds?: number | null; stale?: boolean | null;
   divergence: { window_minutes: number; price_change_pct: number; cvd_change: number; cvd_share_of_volume: number | null; state: string } | null;
   relative_volume?: number | null; relative_volume_reference?: string | null;
 }
@@ -578,7 +579,7 @@ export interface TechnicalRead {
   price_vs_sma20_pct: number | null; range_position: number | null; enough_history: boolean;
 }
 export interface FlowBlock {
-  futures: FlowStats | null; futures_contract: string | null; futures_note: string;
+  futures: FlowStats | null; futures_contract: string | null; futures_note: string; diagnostics?: { future?: { ticks: number } };
   heavy5: { basis: string; stocks: { symbol: string; weight: number | null; change_pct: number | null; volume: number | null; relative_volume: number | null; flow: FlowStats | null; technical: TechnicalRead }[] };
   baseline: { profile_sessions_futures: number; futures_profile_ready: boolean; stock_profile_ready: boolean; needs_sessions: number };
 }

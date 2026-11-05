@@ -17,6 +17,8 @@ from typing import Any
 MAX_MINUTES = 420
 DIVERGENCE_WINDOW = 30  # minutes
 MIN_DIVERGENCE_PRICE_PCT = 0.05  # a price move smaller than this is noise
+STALE_AFTER_S = 120.0  # no push for this long during the session: the figures are shown as stale
+DEPTH_STALE_AFTER_S = 60.0  # a book imbalance older than this is not shown (missing stays missing)
 
 
 @dataclass
@@ -37,6 +39,7 @@ class FlowTracker:
     last_imbalance: float | None = None
     last_spread: float | None = None  # best ask - best bid in points
     last_update: datetime | None = None
+    last_depth_at: datetime | None = None  # when the order-book imbalance was last computed
     last_atp: float | None = (
         None  # the exchange's own day VWAP of the contract (average traded price)
     )
@@ -50,7 +53,7 @@ class FlowTracker:
         self.since = self.last_volume = self.last_ltp = None
         self.last_side = 0
         self.last_oi = None
-        self.depth_sum, self.depth_n, self.last_imbalance = 0.0, 0, None
+        self.depth_sum, self.depth_n, self.last_imbalance, self.last_depth_at = 0.0, 0, None, None
         self.minutes.clear()
 
     def update(
@@ -79,6 +82,7 @@ class FlowTracker:
             self.last_atp = atp
         if bid_qty is not None and ask_qty is not None and bid_qty + ask_qty > 0:
             self.last_imbalance = (bid_qty - ask_qty) / (bid_qty + ask_qty)
+            self.last_depth_at = at
             self.depth_sum += self.last_imbalance
             self.depth_n += 1
         if volume is None or ltp is None:
@@ -115,6 +119,12 @@ class FlowTracker:
         self.last_volume, self.last_ltp = volume, ltp
         self._mark(minute, ltp, volume)
 
+    def imbalance_at(self, now: datetime) -> float | None:
+        """The latest book imbalance, or None when its depth push is older than DEPTH_STALE_AFTER_S."""
+        if self.last_imbalance is None or self.last_depth_at is None:
+            return None
+        return self.last_imbalance if (now - self.last_depth_at).total_seconds() <= DEPTH_STALE_AFTER_S else None
+
     def _mark(self, minute: str, ltp: float, volume: int) -> None:
         self.minutes[minute] = (self.buy - self.sell, ltp, volume)
         while len(self.minutes) > MAX_MINUTES:
@@ -148,9 +158,14 @@ class FlowTracker:
             "state": state,
         }
 
-    def public(self) -> dict[str, Any]:
+    def public(self, now: datetime | None = None) -> dict[str, Any]:
+        """The figures for the page. With ``now`` they also carry their age: ``stale`` when nothing was pushed for
+        STALE_AFTER_S, and the book imbalance is left out (None) when its last depth push is older than DEPTH_STALE_AFTER_S."""
         classified = self.buy + self.sell
         total = classified + self.unclassified
+        age = None if now is None or self.last_update is None else (now - self.last_update).total_seconds()
+        depth_age = None if now is None or self.last_depth_at is None else (now - self.last_depth_at).total_seconds()
+        depth_ok = self.last_imbalance is not None and (depth_age is None or depth_age <= DEPTH_STALE_AFTER_S)
         return {
             "symbol": self.symbol,
             "estimated": True,
@@ -163,12 +178,18 @@ class FlowTracker:
             if classified == 0
             else round((self.buy - self.sell) / classified * 100, 2),
             "classified_share": None if total == 0 else round(classified / total, 3),
+            # share of the day's traded volume this tracker has seen at all: volume that traded before its first
+            # push (opening auction, a restart of the backend) is not in CVD, so this can be well below 1
+            "coverage_of_day_volume": None
+            if not self.last_volume
+            else round(min(1.0, total / self.last_volume), 3),
             "quote_rule_share": None if classified == 0 else round(self.by_quote / classified, 3),
             "volume": self.last_volume,
             "last_price": self.last_ltp,
-            "depth_imbalance": None
-            if self.last_imbalance is None
-            else round(self.last_imbalance, 3),
+            "depth_imbalance": round(self.last_imbalance, 3) if depth_ok and self.last_imbalance is not None else None,
+            "depth_updated": None if self.last_depth_at is None else self.last_depth_at.isoformat(),
+            "age_seconds": None if age is None else round(age, 1),
+            "stale": None if age is None else age > STALE_AFTER_S,
             "depth_imbalance_avg": None
             if self.depth_n == 0
             else round(self.depth_sum / self.depth_n, 3),

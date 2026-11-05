@@ -405,3 +405,8 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 - Found: model features reuse the last bar of a global series for up to 5 days (`Series.idx`), so a late DXY/Brent bar shows an older day's move without any warning.
 - Changed: the report now carries `data.input_dates` (bar date each input comes from, schema 6) and the Model inputs panel lists any series older than the reference session.
 - Server check 5 Nov (read-only): 3 Nov preview only, 4 Nov no run, 5 Nov DXY not final in time; fixed by D67 (provisional, flagged overnight bars; not verified in a live morning yet). Earlier open point: the Yahoo `hour >= 12` date shift. Check the server's `prediction_daylog.sqlite3` and `history_service` fetch runs.
+
+## Future Lab: flow and sectors; CVD / book-imbalance audit (2026-11-05, D68)
+- "Futures flow and top-5 heavyweights" and "Sectors" moved from the Intraday Booster to Future Lab tools (`future-flow`, `future-sectors`).
+- Audit results and fixes (coverage of day volume, freshness/stale flag, 60 s limit on the book imbalance, futures note after restart) are in D68. Verified live only for the first minutes after the 09:15 open on 5 Nov; CVD cannot be validated against a real trade tape.
+
