@@ -4,7 +4,7 @@ import { api } from "../../lib/api";
 import { EChart, useChartColors } from "../EChart";
 import { EmptyState } from "../ui";
 import { useDash } from "./DashContext";
-import { rangeObservations } from "../../lib/analytics";
+import { sessionWindow, TIMELINE_VIEWS, type TimelineView } from "../../lib/analytics";
 import { fmtExpiry, fmtInt, fmtTimeIST } from "../../lib/format";
 import { strikeBoard, strikesAround, vegaCandles, vegaSeries, type StrikeBoard, type VegaBasis } from "../../lib/optionTools";
 import { sessionOpenMin } from "../../lib/session";
@@ -13,23 +13,46 @@ import type { StrikeSeries } from "../../lib/types";
 
 const GROUP = "price-tools";
 
-/** The newest session day's stored samples: where the series starts and the axis bounds, from the same stored samples every chart uses. */
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "Wed 04 Nov 2026" from an IST calendar day (no locale: the label is the same on every device). */
+const fmtDay = (iso: string, newest: boolean) =>
+  `${WEEKDAYS[new Date(`${iso}T00:00:00Z`).getUTCDay()]} ${iso.slice(8)} ${MONTHS[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}${newest ? " (latest)" : ""}`;
+
+/** Which session and which stretch of it the three boards draw, from the stored samples every chart uses. */
 function useSessionWindow() {
   const d = useDash();
   const all = d.history.data?.observations;
-  return useMemo(() => {
-    const r = rangeObservations(all ?? [], "session");
-    return { since: r.afterHoursOnly ? undefined : r.rows[0]?.retrieved_at, bounds: r.bounds, afterHoursOnly: r.afterHoursOnly, loaded: !!all };
-  }, [all]);
+  const [day, setDay] = useState<string | null>(null);
+  const [view, setView] = useState<TimelineView>("fit");
+  const s = useMemo(() => sessionWindow(all ?? [], day, view), [all, day, view]);
+  const controls = s.days.length === 0 ? null : (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm" data-testid="session-timeline">
+      <label className="flex items-center gap-2 text-muted">
+        Session
+        <select aria-label="Session" value={s.day ?? ""} onChange={(e) => setDay(e.target.value)}
+          className="widget-nodrag min-h-9 rounded-sm border border-rule bg-slate-2 px-2 text-paper">
+          {s.days.map((x, i) => <option key={x} value={x}>{fmtDay(x, i === 0)}</option>)}
+        </select>
+      </label>
+      <div role="group" aria-label="Timeline" className="flex flex-wrap items-center gap-1">
+        <span className="mr-1 text-muted">Timeline</span>
+        {TIMELINE_VIEWS.map((v) => (
+          <button key={v.id} type="button" title={v.title} aria-pressed={view === v.id} onClick={() => setView(v.id)} className={pill(view === v.id)}>{v.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+  return { since: s.since, until: s.until, bounds: s.bounds, afterHoursOnly: s.afterHoursOnly, loaded: !!all, day: s.day, controls };
 }
 
 function useStrikeSeries(strikes: string) {
   const d = useDash();
   const w = useSessionWindow();
   const q = useQuery({
-    queryKey: ["strikeSeries", d.expiry, strikes, w.since],
-    queryFn: () => api.strikeSeries(d.expiry!, strikes, w.since),
-    enabled: !!d.expiry && !!w.since, refetchInterval: 30_000, retry: false,
+    queryKey: ["strikeSeries", d.expiry, strikes, w.since, w.until],
+    queryFn: () => api.strikeSeries(d.expiry!, strikes, w.since, w.until),
+    enabled: !!d.expiry && !!w.since, refetchInterval: w.until ? false : 30_000, retry: false,
   });
   return { q, w };
 }
@@ -63,9 +86,10 @@ function Frame({ q, w, res, children, footer }: {
   if (!res || res.times.length < 2) return <EmptyState title="Not enough samples yet">A line needs at least two stored samples in the session ({res?.times.length ?? 0} so far).</EmptyState>;
   return (
     <div className="flex flex-col gap-3">
+      {w.controls && <div className="rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2">{w.controls}</div>}
       {children}
       <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted">
-        <span>Stored one-minute samples (not ticks), newest session only</span>
+        <span>Stored one-minute samples (not ticks), session {w.day}</span>
         <span>{fmtExpiry(d.expiry)}</span>
         <span>last sample {fmtTimeIST(res.times[res.times.length - 1])}</span>
         {footer}
@@ -323,7 +347,10 @@ export function VegaBoard() {
           <EmptyState title="Not enough usable samples">Vega could not be computed for at least two stored samples (a price or OI was missing).</EmptyState>
         ) : (
           <div className={`grid gap-3 ${view === "table" ? "lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)]" : ""}`}>
-            <Panel title="Vega Analysis"><div className="h-[460px]"><EChart group={GROUP} option={opt} ariaLabel="Call vega, put vega and NIFTY through the session" /></div></Panel>
+            <Panel title="Vega Analysis">
+              <div className="h-[460px]"><EChart group={GROUP} option={opt} ariaLabel="Call vega, put vega and NIFTY through the session" /></div>
+              <p className="px-1 pt-1 text-[11px] text-muted" data-testid="vega-axes">Left axis: NIFTY (synthetic future, dotted). Right axis: call vega (green) and put vega (red); the dashed line is zero. Tags at the right edge are the latest values.</p>
+            </Panel>
             {view === "table" && (
               <section aria-label="Vega by time" className="flex max-h-[520px] flex-col overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate">
                 <div className="min-h-0 flex-1 overflow-auto">

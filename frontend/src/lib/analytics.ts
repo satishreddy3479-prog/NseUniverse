@@ -301,3 +301,57 @@ export function buildupSession(times: string[], price: (number | null)[], oi: (n
   const rows = buildupRows(times, price, oi, 24 * 60);
   return rows[0] ?? null;
 }
+
+// ---------- session and timeline of the price boards (Price vs OI, Multi Strike, Vega) ----------
+
+export type TimelineView = "fit" | "day" | "2h" | "1h" | "30m";
+export const TIMELINE_VIEWS: { id: TimelineView; label: string; title: string }[] = [
+  { id: "fit", label: "Fit", title: "From the first to the newest stored sample of the session, so the lines fill the chart" },
+  { id: "day", label: "Full day", title: "The whole trading session, 09:15 to the close, with the hours still to come left empty" },
+  { id: "2h", label: "2 h", title: "The last 2 hours of the session" },
+  { id: "1h", label: "1 h", title: "The last hour of the session" },
+  { id: "30m", label: "30 min", title: "The last 30 minutes of the session" },
+];
+
+/** Trading days (IST, newest first) that have at least one in-session sample. */
+export function sessionDays<T extends { retrieved_at: string }>(obs: T[]): string[] {
+  const days = new Set<string>();
+  for (const o of obs) {
+    const ms = new Date(o.retrieved_at).getTime();
+    if (isSessionMs(ms)) days.add(istDay(ms));
+  }
+  return [...days].sort().reverse();
+}
+
+/**
+ * The session a price board shows and the x-axis it is drawn on. ``day`` picks the session (default: the newest); the
+ * samples are those taken in session that day. ``view`` sets the axis: "fit" runs from the first to the newest sample
+ * (plus a little room for the value tags at the right edge), "day" is the whole session, 2h / 1h / 30m show the last
+ * stretch of it. ``until`` is set for a past day so the query stops at its close. A day with no in-session sample gives
+ * nothing to show (``afterHoursOnly`` when only overnight samples exist).
+ */
+export function sessionWindow<T extends { retrieved_at: string }>(obs: T[], day: string | null, view: TimelineView): {
+  days: string[]; day: string | null; since?: string; until?: string; bounds: { min: number; max: number } | null; afterHoursOnly: boolean; samples: number;
+} {
+  const days = sessionDays(obs);
+  if (days.length === 0) return { days, day: null, bounds: null, afterHoursOnly: obs.length > 0, samples: 0 };
+  const chosen = day != null && days.includes(day) ? day : days[0]!;
+  const rows = obs.filter((o) => { const ms = new Date(o.retrieved_at).getTime(); return isSessionMs(ms) && istDay(ms) === chosen; });
+  const first = new Date(rows[0]!.retrieved_at).getTime();
+  const last = new Date(rows[rows.length - 1]!.retrieved_at).getTime();
+  const full = sessionBoundsOf(first);
+  const room = (span: number) => Math.max(2 * 60_000, span * 0.06);
+  let bounds: { min: number; max: number };
+  if (view === "day") bounds = full;
+  else if (view === "fit") bounds = { min: first, max: Math.min(full.max, last + room(last - first)) };
+  else {
+    const span = (view === "2h" ? 120 : view === "1h" ? 60 : 30) * 60_000;
+    const min = Math.max(first, last - span);
+    bounds = { min, max: Math.min(full.max, last + room(last - min)) };
+  }
+  if (bounds.max <= bounds.min) bounds = { min: bounds.min, max: bounds.min + 60_000 };
+  return {
+    days, day: chosen, since: rows[0]!.retrieved_at, until: chosen === days[0] ? undefined : new Date(full.max + 60_000).toISOString(),
+    bounds, afterHoursOnly: false, samples: rows.length,
+  };
+}

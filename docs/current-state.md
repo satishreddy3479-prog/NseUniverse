@@ -429,4 +429,5 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 - "Total OI — calls vs puts" and "Total OI change — calls vs puts" moved from the Analysis page to the Options Lab Open Interest tool (`LAB_ONLY_WIDGETS`); saved Analysis layouts drop them, nothing else changed.
 - Swing data holes (D72): a missing bar for a held or queued stock is read from NSE's bhavcopy or the pass waits; it is never recorded as a skipped decision. Expected tonight on the real 4 Nov bars (not yet run): KRISHANA and ARIS enter, the other five orders are skipped for the reasons in D72.
 - Mobile / PWA / light theme (D73): content-height widgets with fixed chart heights, compact phone header, install files exempt from the login (D73; applied on the server with `deploy/apply-caddyfile.sh`), theme-aware Vega colours and a firmer light palette. Checked in a browser at 390 px (with a raised font size) and 1366 px, dark and light, with test fixtures; not yet on the phone itself.
+- Price boards (Price vs OI, Multi Strike, Multi-Straddle, Vega): Session selector and Timeline (Fit / Full day / 2 h / 1 h / 30 min), fitted to the data by default (D74).
 

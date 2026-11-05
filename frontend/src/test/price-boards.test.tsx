@@ -118,3 +118,34 @@ describe("Vega Analysis page and section tabs", () => {
     expect(within(nav).getByRole("link", { name: /Vega Analysis/ })).toHaveAttribute("aria-current", "page");
   });
 });
+
+describe("session and timeline controls on the price boards", () => {
+  const TWO_DAYS = ["2026-11-03T03:50:00Z", "2026-11-03T03:51:00Z", ...IN_SESSION]; // Tue 3 Nov and Wed 4 Nov, both inside the session
+  const seriesCalls = () => (fetch as unknown as { mock: { calls: [RequestInfo | URL][] } }).mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/history/strike-series"));
+
+  it("every board offers a session and a timeline, fitted to the data by default", async () => {
+    mockApi(history(TWO_DAYS));
+    renderAt("/tools/vega-analysis");
+    const bar = await screen.findByTestId("session-timeline");
+    const timeline = within(bar).getByRole("group", { name: "Timeline" });
+    expect(within(timeline).getByRole("button", { name: "Fit" })).toHaveAttribute("aria-pressed", "true");
+    for (const l of ["Full day", "2 h", "1 h", "30 min"]) expect(within(timeline).getByRole("button", { name: l })).toHaveAttribute("aria-pressed", "false");
+    const sessions = within(bar).getByRole("combobox", { name: "Session" });
+    expect([...(sessions as HTMLSelectElement).options].map((o) => o.text)).toEqual(["Wed 04 Nov 2026 (latest)", "Tue 03 Nov 2026"]);
+    await userEvent.click(within(timeline).getByRole("button", { name: "Full day" }));
+    expect(within(timeline).getByRole("button", { name: "Full day" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(timeline).getByRole("button", { name: "Fit" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("an earlier session is requested up to its own close", async () => {
+    mockApi(history(TWO_DAYS));
+    renderAt("/tools/price-vs-oi");
+    await screen.findByTestId("price-oi-board");
+    expect(seriesCalls().every((u) => !u.includes("until="))).toBe(true); // the latest session keeps updating, no end time
+    await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Session" }), "2026-11-03");
+    await screen.findByRole("img", { name: /call and put OI change/ });
+    const last = seriesCalls().pop()!;
+    expect(last).toContain("since=2026-11-03T03%3A50%3A00Z");
+    expect(last).toContain("until=2026-11-03T10%3A11%3A00.000Z"); // 15:40 IST close + 1 minute
+  });
+});

@@ -151,9 +151,9 @@ export const api = {
     request<OiSeries>(
       `/api/history/oi-series?expiry=${encodeURIComponent(expiry)}&strikes=${strikes}` + (since ? `&since=${encodeURIComponent(since)}` : "") + (maxPoints ? `&max_points=${maxPoints}` : ""),
     ),
-  strikeSeries: (expiry: string, strikes: string, since?: string) =>
+  strikeSeries: (expiry: string, strikes: string, since?: string, until?: string) =>
     request<StrikeSeries>(
-      `/api/history/strike-series?expiry=${encodeURIComponent(expiry)}&strikes=${encodeURIComponent(strikes)}` + (since ? `&since=${encodeURIComponent(since)}` : "") + "&max_points=1000",
+      `/api/history/strike-series?expiry=${encodeURIComponent(expiry)}&strikes=${encodeURIComponent(strikes)}` + (since ? `&since=${encodeURIComponent(since)}` : "") + (until ? `&until=${encodeURIComponent(until)}` : "") + "&max_points=1000",
     ),
   premiumDecay: (expiry: string, strikes: string, since?: string) =>
     request<PremiumDecay>(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { atmStraddle, buildupRows, buildupSession, classifyBuildup, compactIN, computeTotals, maxPain, OI_WINDOWS, oiWindowStats, isSessionMs, pcr, rangeObservations, universeRows, windowEndIso, windowStartIso } from "../lib/analytics";
+import { sessionDays, sessionWindow, atmStraddle, buildupRows, buildupSession, classifyBuildup, compactIN, computeTotals, maxPain, OI_WINDOWS, oiWindowStats, isSessionMs, pcr, rangeObservations, universeRows, windowEndIso, windowStartIso } from "../lib/analytics";
 import type { OptionChainRow, OptionQuote } from "../lib/types";
 
 const q = (over: Partial<OptionQuote> = {}): OptionQuote => ({
@@ -227,5 +227,49 @@ describe('futures buildup', () => {
     const s = buildupSession(['2026-11-05T03:30:00Z', ...T], [90, ...P], [500, ...O]);
     expect(s).toMatchObject({ priceFrom: 100, priceTo: 101, oiFrom: 1000, oiTo: 1100, state: 'long buildup' });
     expect(buildupSession([], [], [])).toBeNull();
+  });
+});
+
+describe("session and timeline of the price boards", () => {
+  // Wed 4 Nov 09:15-09:30 IST (03:45-04:00 UTC) and Thu 5 Nov 09:15-10:15 IST (03:45-04:45 UTC); 15:40 IST close = 10:10 UTC
+  const at = (iso: string) => ({ retrieved_at: `2026-11-0${iso}Z` });
+  const obs = [at("4T03:45:00"), at("4T03:50:00"), at("4T04:00:00"), at("5T03:45:00"), at("5T04:15:00"), at("5T04:45:00"), at("5T14:30:00")]; // the last is after hours
+  const ms = (s: string) => new Date(`2026-11-0${s}Z`).getTime();
+
+  it("lists the days that have in-session samples, newest first, and ignores after-hours ones", () => {
+    expect(sessionDays(obs)).toEqual(["2026-11-05", "2026-11-04"]);
+  });
+
+  it("fits the newest session from its first to its newest sample plus a little room for the value tags", () => {
+    const w = sessionWindow(obs, null, "fit");
+    expect(w.day).toBe("2026-11-05");
+    expect(w.since).toBe("2026-11-05T03:45:00Z");
+    expect(w.until).toBeUndefined(); // the newest day keeps updating
+    // 60 minutes of data: room = max(2 min, 6 % of 60 min = 3.6 min)
+    expect(w.bounds).toEqual({ min: ms("5T03:45:00"), max: ms("5T04:45:00") + 3.6 * 60_000 });
+  });
+
+  it("shows the whole session, or only the last stretch of it", () => {
+    expect(sessionWindow(obs, null, "day").bounds).toEqual({ min: ms("5T03:45:00"), max: ms("5T10:10:00") });
+    // last 30 min of a 60-minute session: from 04:15, room = max(2 min, 6 % of 30 min = 1.8 min) = 2 min
+    expect(sessionWindow(obs, null, "30m").bounds).toEqual({ min: ms("5T04:15:00"), max: ms("5T04:45:00") + 2 * 60_000 });
+    // a longer window than the data starts at the first sample, not before it
+    expect(sessionWindow(obs, null, "2h").bounds!.min).toBe(ms("5T03:45:00"));
+  });
+
+  it("an earlier session is cut at its own close and never extends into the next day", () => {
+    const w = sessionWindow(obs, "2026-11-04", "fit");
+    expect(w.day).toBe("2026-11-04");
+    expect(w.since).toBe("2026-11-04T03:45:00Z");
+    expect(w.until).toBe("2026-11-04T10:11:00.000Z"); // close 10:10 UTC + 1 minute
+    expect(w.bounds).toEqual({ min: ms("4T03:45:00"), max: ms("4T04:00:00") + 2 * 60_000 });
+    expect(w.samples).toBe(3);
+    expect(sessionWindow(obs, "2020-01-01", "fit").day).toBe("2026-11-05"); // an unknown day falls back to the newest
+  });
+
+  it("says when only after-hours samples exist, and when there are none", () => {
+    const night = sessionWindow([at("5T14:30:00")], null, "fit");
+    expect(night).toMatchObject({ days: [], day: null, bounds: null, afterHoursOnly: true });
+    expect(sessionWindow([], null, "fit")).toMatchObject({ day: null, afterHoursOnly: false });
   });
 });
