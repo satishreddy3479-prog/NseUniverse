@@ -218,3 +218,17 @@ def test_service_adds_the_latest_stored_session_as_a_flagged_provisional_bar(tmp
     # once the real bar for that day is stored there is no provisional day
     svc.history.insert_bars("NIFTY50", [RawRow(date(2026, 10, 29), 24100, 24300, 24050, 24250, 0)], source="yahoo", run_id="t2", volume_meaningful=False)
     assert svc._provisional_bar(svc.history.bars("NIFTY50")) is None
+
+
+def test_iv_chart_carries_our_own_atm_iv_for_stored_sessions_and_leaves_other_days_empty(tmp_path: Path) -> None:
+    from app.prediction.sources.yahoo import RawRow
+
+    svc = make(tmp_path, 30, 30)  # one stored session, 2026-10-29, expiry EXP (5 days ahead)
+    svc.history.insert_bars("NIFTY50", [RawRow(date(2026, 10, 27), 24000, 24100, 23900, 24050, 0), RawRow(date(2026, 10, 28), 24050, 24200, 24000, 24100, 0)],
+                            source="yahoo", run_id="t", volume_meaningful=False)
+    svc.history.insert_bars("INDIAVIX", [RawRow(date(2026, 10, 28), 14, 15, 13, 14.5, 0)], source="yahoo", run_id="t", volume_meaningful=False)
+    out = svc.iv_chart(2)
+    assert out["dates"] == ["2026-10-28", "2026-10-29"]  # 29 Oct is the provisional day
+    assert out["own_iv"][0] is None  # no option chain was stored on 28 Oct: missing, not copied from the VIX
+    assert out["own_iv"][1] == pytest.approx(16.54, abs=0.3) and out["own_iv_expiry"][1] == EXP
+    assert out["iv"] == [14.5, None]  # India VIX of the provisional day is still unpublished

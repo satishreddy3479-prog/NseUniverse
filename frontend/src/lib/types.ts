@@ -874,6 +874,7 @@ export interface IndexBars { day: string | null; bars: IndexBar[]; note: string 
 export interface IvChart {
   window: number; dates: string[]; close: number[]; iv: (number | null)[]; hv: (number | null)[]; rv: (number | null)[]; rv_method?: string;
   provisional?: { date: string; close: number; note: string } | null;
+  own_iv?: (number | null)[]; own_iv_expiry?: (string | null)[]; own_iv_note?: string;
   nifty_bars: number; vix_bars: number; days: number; iv_source: string; method: string;
 }
 
