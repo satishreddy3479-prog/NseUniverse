@@ -78,3 +78,20 @@ describe("date axis", () => {
     expect(labelEvery(1)(0)).toBe(true);
   });
 });
+
+describe("provisional latest day", () => {
+  it("reaches the latest session with HV, RV and NIFTY, leaves India VIX empty, and says so", async () => {
+    const dates = ["2026-11-03", "2026-11-04", "2026-11-05"];
+    const body = { window: 21, dates, close: [23810.85, 23960.6, 24536.6], iv: [15.72, 15.19, null], hv: [16, 16.01, 16.83], rv: [17, 16.1, 17.75], nifty_bars: 2, vix_bars: 2, days: 3,
+      provisional: { date: "2026-11-05", close: 24536.6, note: "NIFTY close from our own stored index feed; India VIX for this day is not published yet and is left empty" },
+      iv_source: "India VIX daily close", method: "m" };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(body), { status: 200 })));
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><IvChartBody /></QueryClientProvider>);
+    const cards = (await screen.findByTestId("ivchart-cards")).textContent!;
+    expect(cards).toContain("15.19%"); // India VIX of the last day that has one (4 Nov), dated in its label
+    expect(cards).toContain("4 Nov 26");
+    expect(cards).toContain("16.83%"); // HV of the provisional 5 Nov
+    expect(cards).toContain("17.75%");
+    expect(cards).toContain("−0.82 pts"); // IV − HV is taken on 4 Nov for both: 15.19 − 16.01
+  });
+});

@@ -33,8 +33,11 @@ function problem(q: ReturnType<typeof useChart>) {
 const Stat = ({ label, value, tone }: { label: string; value: string; tone?: string }) => (
   <div><div className="text-[11px] text-muted">{label}</div><div className={`num text-lg font-semibold ${tone ?? "text-paper"}`}>{value}</div></div>
 );
-const Source = ({ text, last }: { text: string; last: string }) => (
-  <p className="mt-2 text-[11px] text-muted">Implied volatility here is {text}. History is stored through {last}. Our own at-the-money IV exists only for the sessions whose option chains were stored, so a long IV history, IVR and IVP come from India VIX, and that is what is plotted.</p>
+const Source = ({ text, last, prov }: { text: string; last: string; prov?: { date: string; close: number; note: string } | null }) => (
+  <>
+  {prov && <p className="mt-2 text-[11px] text-warn" data-testid="ivchart-provisional">{fmtDay(prov.date)} is provisional: {prov.note}. HV, RV and the NIFTY line include it (close {prov.close.toLocaleString("en-IN")}).</p>}
+  <p className="mt-2 text-[11px] text-muted">Implied volatility here is {text}. India VIX is stored through {fmtDay(last)}. Our own at-the-money IV exists only for the sessions whose option chains were stored, so a long IV history, IVR and IVP come from India VIX, and that is what is plotted.</p>
+  </>
 );
 
 /** IV (India VIX) against HV with IV rank and IV percentile, and NIFTY as the price line. */
@@ -48,8 +51,9 @@ export function IvChartBody() {
   const d = q.data;
   const days = RANGES.find((r) => r.id === range)!.days;
   const rk = rollingRank(d.iv, days);
-  const i = d.dates.length - 1;
-  const now = rankAt(d.iv, i, days);
+  const i = d.dates.length - 1; // newest day (may be provisional: no India VIX yet)
+  const j = d.iv.reduce<number>((a, v, k) => (v != null ? k : a), -1); // newest day with an India VIX
+  const now = rankAt(d.iv, j, days);
   const lo = d.dates.length - Math.min(d.dates.length, days); // the chart shows the chosen range, newest day last
   const x = d.dates.slice(lo);
   const every = labelEvery(x.length);
@@ -79,13 +83,14 @@ export function IvChartBody() {
     ],
   };
   const hvNow = d.hv[i] ?? null;
-  const gap = hvNow == null ? null : d.iv[i]! - hvNow;
+  const hvAtIv = d.hv[j] ?? null;
+  const gap = hvAtIv == null || d.iv[j] == null ? null : d.iv[j]! - hvAtIv;
   return (
     <div className="flex flex-col gap-3" data-testid="ivchart-tool">
       <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
         <Controls hv={hv} setHv={setHv} range={range} setRange={setRange} />
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-6" data-testid="ivchart-cards">
-          <Stat label="IV (India VIX)" value={pct(d.iv[i])} tone="text-brass" />
+          <Stat label={`IV (India VIX) ${j >= 0 ? fmtDay(d.dates[j]!) : ""}`} value={pct(d.iv[j])} tone="text-brass" />
           <Stat label={`HV ${hvLabel(d.window)}`} value={pct(hvNow)} />
           <Stat label={`RV ${hvLabel(d.window)}`} value={pct(d.rv[i] ?? null)} />
           <Stat label="IV − HV" value={gap == null ? MISSING : `${gap >= 0 ? "+" : "−"}${Math.abs(gap).toFixed(2)} pts`} />
@@ -100,7 +105,7 @@ export function IvChartBody() {
         <h2 className="mb-1 mt-3 text-sm font-semibold text-paper">IV rank and IV percentile</h2>
         <div style={{ height: 200 }} data-testid="ivchart-bottom"><EChart option={bottom} ariaLabel="IV rank and IV percentile through time" /></div>
         <p className="mt-1 text-[11px] text-muted">IVR = (IV − lowest) ÷ (highest − lowest) × 100 over the range. IVP = share of the range&apos;s days with a lower IV than that day. HV is the standard deviation of the window&apos;s daily log returns (divided by n) × √252; RV (dashed green) is the root mean square of the same returns × √252, so it counts the average move itself as volatility too. Both use closes only. Dashed lines at 30 and 70 are our reading thresholds. The first {range} of history has no rank (the range is not full yet); nothing is filled in.</p>
-        <Source text={d.iv_source} last={d.dates[d.dates.length - 1]!} />
+        <Source text={d.iv_source} last={d.dates[Math.max(0, d.iv.reduce<number>((a, v, k) => (v != null ? k : a), -1))]!} prov={d.provisional ?? null} />
       </div>
     </div>
   );
@@ -117,7 +122,7 @@ export function IvMinusHvChart() {
   const d = q.data;
   const lo = d.dates.length - Math.min(d.dates.length, RANGES.find((r) => r.id === range)!.days);
   const every = labelEvery(d.dates.length - lo);
-  const diff = d.iv.map((v, k) => (d.hv[k] == null ? null : +(v - d.hv[k]!).toFixed(2))).slice(lo);
+  const diff = d.iv.map((v, k) => (d.hv[k] == null || v == null ? null : +(v - d.hv[k]!).toFixed(2))).slice(lo);
   const valid = diff.filter((v): v is number => v != null);
   const above = valid.filter((v) => v > 0).length;
   const option = {
@@ -140,7 +145,7 @@ export function IvMinusHvChart() {
       <h2 className="mb-1 mt-3 text-sm font-semibold text-paper">IV − HV by day, {d.dates[lo]} to {d.dates[d.dates.length - 1]} ({d.dates.length - lo} days)</h2>
       <div style={{ height: 320 }} data-testid="ivminus-chart"><EChart option={option} ariaLabel="India VIX minus historical volatility by day with the NIFTY 50 close" /></div>
       <p className="mt-1 text-[11px] text-muted" data-testid="ivminus-note">{valid.length ? `IV was above HV on ${above} of ${valid.length} days (${((above / valid.length) * 100).toFixed(0)}%). ` : ""}Green bars: options priced above the realised move; red: below. It is context about how rich or cheap options are, not a signal.</p>
-      <Source text={d.iv_source} last={d.dates[d.dates.length - 1]!} />
+      <Source text={d.iv_source} last={d.dates[Math.max(0, d.iv.reduce<number>((a, v, k) => (v != null ? k : a), -1))]!} prov={d.provisional ?? null} />
     </div>
   );
 }

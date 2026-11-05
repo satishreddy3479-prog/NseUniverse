@@ -850,6 +850,8 @@ export interface SwingLiveView {
 // ---- Options Lab: historical volatility and the intraday IV series (/api/intraday/hv, /api/intraday/iv-series)
 export interface HvReport {
   as_of: string | null; days_behind: number | null; bars: number;
+  /** latest session not yet in the daily history: its close is our own feed's last index level */
+  provisional?: { date: string; close: number } | null;
   windows: Record<string, { hv: number | null; returns: number; gap_returns: number }>;
   series: { window: number; dates: string[]; hv: (number | null)[] };
   method: string;
@@ -870,7 +872,8 @@ export interface IndexBars { day: string | null; bars: IndexBar[]; note: string 
 
 /** Daily India VIX (implied volatility), NIFTY close and rolling HV, /api/intraday/iv-chart */
 export interface IvChart {
-  window: number; dates: string[]; close: number[]; iv: number[]; hv: (number | null)[]; rv: (number | null)[]; rv_method?: string;
+  window: number; dates: string[]; close: number[]; iv: (number | null)[]; hv: (number | null)[]; rv: (number | null)[]; rv_method?: string;
+  provisional?: { date: string; close: number; note: string } | null;
   nifty_bars: number; vix_bars: number; days: number; iv_source: string; method: string;
 }
 

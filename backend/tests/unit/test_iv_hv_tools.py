@@ -186,3 +186,35 @@ def test_rv_is_the_root_mean_square_of_returns_and_hv_divides_by_n() -> None:
     # HV takes the mean out and divides by n: deviations +-0.0148275 -> sd 0.0148275 x sqrt(252) = 23.54 %
     assert hv([(date(2026, 11, 3), rets[0], 1), (date(2026, 11, 4), rets[1], 1)], 2) == pytest.approx(23.54, abs=0.01)
     assert rv_annual([]) is None
+
+
+def test_iv_chart_reaches_a_provisional_latest_day_with_no_india_vix() -> None:
+    nifty = [bar("2026-11-02", 100), bar("2026-11-03", 102), bar("2026-11-04", 101)]
+    vix = [bar("2026-11-03", 14.5), bar("2026-11-04", 15.0)]
+    out = iv_chart(nifty, vix, 2, provisional=bar("2026-11-05", 103.02))
+    assert out["dates"] == ["2026-11-03", "2026-11-04", "2026-11-05"]
+    assert out["iv"] == [14.5, 15.0, None]  # the day's VIX is missing, not copied from the day before
+    # returns 4 Nov -0.0098523 and 5 Nov ln(103.02/101) = 0.0198026: HV is the population sd = 0.0148275 x sqrt(252) = 23.54
+    assert out["hv"][2] == pytest.approx(23.54, abs=0.02)
+    assert out["rv"][2] == pytest.approx(24.83, abs=0.02)  # root mean square of the same two returns
+    assert out["close"][2] == 103.02 and out["provisional"]["date"] == "2026-11-05" and out["nifty_bars"] == 3
+    # a provisional day that is not newer than the stored bars is ignored
+    assert iv_chart(nifty, vix, 2, provisional=bar("2026-11-04", 99))["provisional"] is None
+
+
+def test_service_adds_the_latest_stored_session_as_a_flagged_provisional_bar(tmp_path: Path) -> None:
+    from app.prediction.sources.yahoo import RawRow
+
+    svc = make(tmp_path, 30, 30)  # stored session 2026-10-29
+    svc.history.insert_bars("NIFTY50", [RawRow(date(2026, 10, 27), 24000, 24100, 23900, 24050, 0), RawRow(date(2026, 10, 28), 24050, 24200, 24000, 24100, 0)],
+                            source="yahoo", run_id="t", volume_meaningful=False)
+    bars = svc.history.bars("NIFTY50")
+    prov = svc._provisional_bar(bars)
+    assert prov is not None and prov.session == date(2026, 10, 29)
+    last_spot = svc.obs.samples("NIFTY", EXP, since=ist(9, 0), until=ist(16, 0), limit=5000)[-1].spot
+    assert prov.close == last_spot  # our own feed's last in-session level, nothing invented
+    assert svc.hv()["provisional"] == {"date": "2026-10-29", "close": last_spot}
+    assert svc.iv_chart(2)["provisional"]["date"] == "2026-10-29"
+    # once the real bar for that day is stored there is no provisional day
+    svc.history.insert_bars("NIFTY50", [RawRow(date(2026, 10, 29), 24100, 24300, 24050, 24250, 0)], source="yahoo", run_id="t2", volume_meaningful=False)
+    assert svc._provisional_bar(svc.history.bars("NIFTY50")) is None

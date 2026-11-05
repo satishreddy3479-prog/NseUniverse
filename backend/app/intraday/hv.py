@@ -80,12 +80,22 @@ def rv_annual(returns: list[float]) -> float | None:
     return math.sqrt(sum(r * r for r in returns) / len(returns) * TRADING_DAYS) * 100
 
 
-def iv_chart(nifty: list[Bar], vix: list[Bar], window: int, days: int = 750) -> dict[str, Any]:
+def iv_chart(
+    nifty: list[Bar], vix: list[Bar], window: int, days: int = 750, provisional: Bar | None = None
+) -> dict[str, Any]:
     """Daily series for the IV / HV / IV-percentile chart: NIFTY close, India VIX close (the implied-volatility proxy, the
     market's own 30-day figure) and the rolling ``window``-day historical volatility of NIFTY, on the dates both have a bar.
 
     The HV at a date uses the ``window`` returns ending that day (computed over the whole history first, so the first plotted
-    days are not short of returns). A date without enough returns, or without a VIX bar, is dropped rather than filled."""
+    days are not short of returns). A date without enough returns, or without a VIX bar, is dropped rather than filled.
+
+    ``provisional`` is a not-yet-published latest day (close taken from our own stored index feed): it is appended to the
+    NIFTY closes so HV, RV and the price line reach it, and its India VIX is missing (None), never filled."""
+    base = len(nifty)
+    if provisional is not None and (not nifty or provisional.session > nifty[-1].session):
+        nifty = [*nifty, provisional]
+    else:
+        provisional = None
     rets = log_returns(nifty)
     hv_at: dict[date, float | None] = {}
     rv_at: dict[date, float | None] = {}
@@ -96,16 +106,17 @@ def iv_chart(nifty: list[Bar], vix: list[Bar], window: int, days: int = 750) -> 
     vix_at = {b.session: b.close for b in vix}
     dates: list[str] = []
     close: list[float] = []
-    iv: list[float] = []
+    iv: list[float | None] = []
     hvs: list[float | None] = []
     rvs: list[float | None] = []
     for b in nifty:
         v = vix_at.get(b.session)
-        if v is None or b.session not in hv_at:
+        is_prov = provisional is not None and b.session == provisional.session
+        if (v is None and not is_prov) or b.session not in hv_at:
             continue
         dates.append(str(b.session))
         close.append(b.close)
-        iv.append(round(v, 2))
+        iv.append(None if v is None else round(v, 2))
         h = hv_at[b.session]
         hvs.append(None if h is None else round(h, 2))
         r = rv_at.get(b.session)
@@ -113,8 +124,12 @@ def iv_chart(nifty: list[Bar], vix: list[Bar], window: int, days: int = 750) -> 
     lo = max(0, len(dates) - days)
     return {
         "window": window, "dates": dates[lo:], "close": close[lo:], "iv": iv[lo:], "hv": hvs[lo:], "rv": rvs[lo:],
-        "nifty_bars": len(nifty), "vix_bars": len(vix), "days": len(dates[lo:]),
+        "nifty_bars": base, "vix_bars": len(vix), "days": len(dates[lo:]),
+        "provisional": None if provisional is None else {
+            "date": str(provisional.session), "close": provisional.close,
+            "note": "NIFTY close from our own stored index feed (the daily history is published the next morning); India VIX for this day is not published yet and is left empty",
+        },
         "iv_source": "India VIX daily close (NSE's 30-day implied volatility of NIFTY options); not the ATM IV of one expiry",
         "rv_method": "RV = sqrt(mean of squared daily log returns x 252), percent, same window (no mean subtracted)",
-        "method": "HV = sample stdev of daily log returns x sqrt(252), percent; dates present in both series only",
+        "method": "HV = population stdev of daily log returns x sqrt(252), percent; dates present in both series only",
     }

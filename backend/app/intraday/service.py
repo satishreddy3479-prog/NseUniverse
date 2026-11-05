@@ -535,16 +535,43 @@ class IntradayService:
     def hv(self) -> dict[str, Any]:
         """Historical volatility of NIFTY 50 from the stored final daily closes (10/20/30/60 days and a 20-day series)."""
         today = self._clock().astimezone(IST).date()
-        report = hvmod.hv_report(self.history.bars("NIFTY50"), today)
+        bars = self.history.bars("NIFTY50")
+        prov = self._provisional_bar(bars)
+        report = hvmod.hv_report([*bars, prov] if prov is not None else bars, today)
+        report["provisional"] = None if prov is None else {"date": str(prov.session), "close": prov.close}
         report["iv_by_session"] = self.iv_history()
         report["iv_by_session_note"] = (
             "ATM implied volatility at the end of each stored session, nearest expiry with at least 2 days left (the expiry is named)."
         )
         return report
 
+    def _provisional_bar(self, bars: list[Any]) -> Any:
+        """The newest stored session newer than the last daily bar, as a one-price bar (close = last in-session index level
+        of our own feed), or None. The daily history is published by Yahoo the next morning, so the latest day would
+        otherwise be missing from HV / RV; this day is flagged provisional wherever it is shown and is never stored."""
+        from app.prediction.targets import Bar
+
+        if not bars:
+            return None
+        sessions = self.iv_sessions(3)
+        if not sessions or date.fromisoformat(sessions[-1]) <= bars[-1].session:
+            return None
+        day = date.fromisoformat(sessions[-1])
+        if (day - bars[-1].session).days > hvmod.MAX_GAP_DAYS or day > self._clock().astimezone(IST).date():
+            return None
+        lo, hi = datetime.combine(day, OPEN, IST), datetime.combine(day, session_close(), IST)
+        counts = self.obs.day_counts(self.underlying, to_ms(lo), to_ms(hi))
+        if not counts:
+            return None
+        best = max(counts, key=lambda c: c[1])[0]
+        spots = [s.spot for s in self.obs.samples(self.underlying, best, since=lo, until=hi, limit=5000) if s.spot]
+        return Bar(day, spots[-1], spots[-1], spots[-1], spots[-1]) if spots else None
+
     def iv_chart(self, window: int = 21) -> dict[str, Any]:
-        """Daily India VIX (implied volatility), NIFTY close and rolling HV from the stored daily history."""
-        return hvmod.iv_chart(self.history.bars("NIFTY50"), self.history.bars("INDIAVIX"), window)
+        """Daily India VIX (implied volatility), NIFTY close and rolling HV / RV from the stored daily history, plus the
+        latest session as a flagged provisional day when the daily history is a day behind."""
+        nifty = self.history.bars("NIFTY50")
+        return hvmod.iv_chart(nifty, self.history.bars("INDIAVIX"), window, provisional=self._provisional_bar(nifty))
 
     def iv_sessions(self, limit: int = 30) -> list[str]:
         """IST dates with stored in-session samples, newest last."""
