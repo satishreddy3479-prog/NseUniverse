@@ -404,4 +404,4 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 ## 2026-11-05 Prediction audit (partial, uncommitted)
 - Found: model features reuse the last bar of a global series for up to 5 days (`Series.idx`), so a late DXY/Brent bar shows an older day's move without any warning.
 - Changed: the report now carries `data.input_dates` (bar date each input comes from, schema 6) and the Model inputs panel lists any series older than the reference session.
-- Not verified (no server access): whether forecasts were recorded on 3, 4 and 5 Nov, why Brent/DXY bars were late, and the Yahoo `hour >= 12` date shift. Check the server's `prediction_daylog.sqlite3` and `history_service` fetch runs.
+- Server check 5 Nov (read-only): 3 Nov preview only, 4 Nov no run, 5 Nov DXY not final in time; fixed by D67 (provisional, flagged overnight bars; not verified in a live morning yet). Earlier open point: the Yahoo `hour >= 12` date shift. Check the server's `prediction_daylog.sqlite3` and `history_service` fetch runs.

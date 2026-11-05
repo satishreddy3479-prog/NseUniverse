@@ -381,7 +381,19 @@ class PredictionResearch:
         return bars
 
     def _others(self) -> dict[str, list[Bar]]:
-        return {s.key: self._store.bars(s.key) for s in SYMBOLS if s.key != "NIFTY50" and s.timing_verified}
+        return {s.key: self._store.bars_with_provisional(s.key)[0] for s in SYMBOLS if s.key != "NIFTY50" and s.timing_verified}
+
+    def _provisional(self, ref: date) -> dict[str, str]:
+        """Series whose newest input (on or before the reference session) is a provisional, not yet final, bar."""
+        out: dict[str, str] = {}
+        for s in SYMBOLS:
+            if s.key == "NIFTY50" or not s.timing_verified:
+                continue
+            final = self._store.bars(s.key)
+            p = self._store.provisional_bar(s.key, final[-1].session if final else None)
+            if p is not None and p.session <= ref:
+                out[s.key] = str(p.session)
+        return out
 
     def _flows(self) -> dict[date, dict[str, dict[str, int]]]:
         return self._flows_store.participant_rows("fao_participant_oi") if self._flows_store is not None else {}
@@ -398,7 +410,8 @@ class PredictionResearch:
 
     def _key(self, bars: list[Bar]) -> list[Any]:
         others = self._store.coverage()
-        stamp = sorted((c["symbol"], c["last"], c["bars"]) for c in others)
+        stamp: list[Any] = sorted((c["symbol"], c["last"], c["bars"]) for c in others)
+        stamp += [("prov", s.key, str(p.session), p.close) for s in SYMBOLS if (p := self._store.provisional_bar(s.key, None)) is not None]
         fl = self._flows_store.coverage()["fao_participant_oi"] if self._flows_store is not None else {}
         key = [str(bars[-1].session), len(bars), MODEL_VERSION, REPORT_SCHEMA, T1_VERSION, T5_VERSION, stamp, (fl.get("files") or 0) // 100]  # flows: re-evaluate only every ~100 new files
         out: list[Any] = json.loads(json.dumps(key))  # plain lists: equal after a JSON round trip
@@ -498,6 +511,7 @@ class PredictionResearch:
         others = self._others()
         flows = self._flows()
         fresh, stale = self._fresh(others, ref.session, now)
+        prov = self._provisional(ref.session)
         # the bar date each input actually comes from (the models take the last bar on or before the reference session)
         input_dates = {k: str(max((b.session for b in v if b.session <= ref.session), default="")) or None for k, v in others.items()}
         horizons: dict[str, Any] = {}
@@ -525,19 +539,19 @@ class PredictionResearch:
             payloads = _forecast_payloads(data, ev, helpers)
             for nm, pl in payloads.items():
                 label = f"{nm}+flows" if v == "T5F" else nm
-                forecasts[hz]["models"][label] = self._forecast(hz, label, bars, ref, pl, now, fresh, stale)
+                forecasts[hz]["models"][label] = self._forecast(hz, label, bars, ref, pl, now, fresh, stale, prov)
             if v != "T5F":
                 forecasts[hz]["headline_model"] = ev["best_on_tuning"]
                 forecasts[hz]["calls"] = {"call": payloads[ENSEMBLE]["call"], "reason": payloads[ENSEMBLE]["call_reason"], "strength": payloads[ENSEMBLE]["call_strength"], "threshold": payloads[ENSEMBLE]["call_threshold"]}  # fmt: skip
         return {
             "ready": True, "model_version": MODEL_VERSION,
             "features": {"T1": {"version": T1_VERSION, "names": list(T1_NAMES)}, "T5": {"version": T5_VERSION, "names": list(T5_NAMES), "flows": list(FLOW_NAMES)}},
-            "data": {"symbol": "NIFTY 50 (^NSEI via Yahoo Finance) + global/sector series + NSE participant files", "bars": len(bars), "first": str(bars[0].session), "last": str(ref.session), "reference_close": ref.close, "up_rate_all": ups, "overnight_data_fresh": fresh, "stale_series": stale, "inputs": inputs, "input_dates": input_dates},  # fmt: skip
+            "data": {"symbol": "NIFTY 50 (^NSEI via Yahoo Finance) + global/sector series + NSE participant files", "bars": len(bars), "first": str(bars[0].session), "last": str(ref.session), "reference_close": ref.close, "up_rate_all": ups, "overnight_data_fresh": fresh, "stale_series": stale, "provisional_series": prov, "inputs": inputs, "input_dates": input_dates},  # fmt: skip
             "evaluation": {"initial_train": self._it, "test_size": self._ts, "scheme": "expanding window purged by the label horizon; early half tunes and calibrates, later half is an untouched holdout", "horizons": horizons},
             "forecasts": forecasts, "excluded_inputs": EXCLUDED, "computed_at": now.isoformat(),
         }  # fmt: skip
 
-    def _forecast(self, h: str, model: str, bars: list[Bar], ref: Bar, payload: dict[str, Any], now: datetime, fresh: bool, stale: list[str]) -> dict[str, Any]:
+    def _forecast(self, h: str, model: str, bars: list[Bar], ref: Bar, payload: dict[str, Any], now: datetime, fresh: bool, stale: list[str], prov: dict[str, str] | None = None) -> dict[str, Any]:
         out: dict[str, Any] = {"reference_session": str(ref.session), "reference_close": ref.close, "payload": payload}
         try:
             cal = self._cal()
@@ -562,10 +576,10 @@ class PredictionResearch:
             return {**out, "recorded": False, "preview": True, "reason": "preview: forecasts are recorded between 08:35 and 09:10 IST on the target day"}
         f = Forecast(
             horizon=h,  # type: ignore[arg-type]
-            model_name=model, model_version=MODEL_VERSION, dataset_version=f"yahoo+nse:{ref.session}:{len(bars)}",
+            model_name=model, model_version=MODEL_VERSION, dataset_version=f"yahoo+nse:{ref.session}:{len(bars)}" + ("+provisional" if prov else ""),
             feature_version=T1_VERSION if h == "T1" else T5_VERSION, cutoff=forecast_cutoff(first, 8, 30), generated_at=now,
             reference_session=ref.session, reference_price=ref.close, first_target_session=first, target_session=target,
-            payload=payload, data_quality={"bars": len(bars), "last_bar": str(ref.session)}, excluded_inputs=list(EXCLUDED),
+            payload=payload, data_quality={"bars": len(bars), "last_bar": str(ref.session), **({"provisional_series": prov} if prov else {})}, excluded_inputs=list(EXCLUDED),
         )  # fmt: skip
         try:
             fid = self._ledger.record(f)
@@ -677,7 +691,8 @@ class PredictionResearch:
                 pay = (m or {}).get("payload") or {}
                 recorded = bool(m and m.get("recorded"))
                 status = "recorded" if recorded else "missed"
-                reason = None if recorded else ((m or {}).get("reason") or "no forecast could be made")
+                prov = body["data"].get("provisional_series") or {}
+                reason = (f"recorded with provisional overnight bars: {', '.join(sorted(prov))}" if prov else None) if recorded else ((m or {}).get("reason") or "no forecast could be made")
                 p, c, model = pay.get("p_up_model"), pay.get("p_up_climatology"), name
             n = self._days.log(hz, target, ref, status, reason, stale, p, c, model, now=now)
             if n:

@@ -25,8 +25,10 @@ from app.prediction.sources.yahoo import (
     Downloader,
     SymbolSpec,
     complete_after,
+    final_after,
     yahoo_download,
 )
+from app.prediction.targets import Bar, BarError
 
 logger = logging.getLogger(__name__)
 SOURCE = "yahoo"
@@ -67,6 +69,18 @@ class HistoryService:
         self.last_attempt: datetime | None = None
         self.progress: str = ""
 
+    @staticmethod
+    def _provisional(early: list[Any]) -> Bar | None:
+        """Newest early row with four sane prices (a row mixed with a live tick is dropped)."""
+        for r in sorted(early, key=lambda x: x.session, reverse=True):
+            if None in (r.open, r.high, r.low, r.close):
+                continue
+            try:
+                return Bar(r.session, r.open, r.high, r.low, r.close)
+            except BarError:
+                continue
+        return None
+
     # ------------------------------------------------------------------ one refresh run
     def _fetch_one(self, spec: SymbolSpec, run_id: str) -> dict[str, Any]:
         last = self.store.last_session(spec.key, SOURCE)
@@ -77,8 +91,17 @@ class HistoryService:
         downloaded = self._download(spec, start, end)
         now = self._clock()
         # a bar whose session has not finished is partial (intraday): never stored as a daily bar
-        rows = [r for r in downloaded if complete_after(spec, r.session) <= now]
+        rows = [r for r in downloaded if final_after(spec, r.session) <= now]
         partial = len(downloaded) - len(rows)
+        # 24-hour series: the newest bar past the regular close but not yet final is kept apart as a
+        # provisional bar (valid prices only, replaced each refresh) for the morning run, flagged
+        early = [
+            r
+            for r in downloaded
+            if complete_after(spec, r.session) <= now < final_after(spec, r.session)
+        ]
+        prov = self._provisional(early)
+        self.store.set_provisional(spec.key, prov, now.astimezone(UTC).isoformat())
         repaired = self.store.repair_shifted_dates(
             spec.key, rows, source=SOURCE, run_id=run_id, now=self._clock()
         )
@@ -94,6 +117,7 @@ class HistoryService:
             "symbol": spec.key, "yahoo": spec.yahoo, "downloaded": len(rows),
             "partial_skipped": partial, "dates_repaired": repaired,
             "latest_downloaded": str(newest) if newest else None,
+            "provisional": str(prov.session) if prov else None,
             "corrected": res.corrected, "new": res.new,
             "unchanged": res.unchanged, "changed": res.changed, "invalid": res.invalid,
             "incomplete": res.incomplete, "error": None,

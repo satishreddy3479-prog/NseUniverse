@@ -256,3 +256,8 @@ Owner direction (29 Oct): breadth for NIFTY 500 is only the advance/decline coun
 - Stops are not moved intraday: that would add same-day stop-outs the backtest does not have. Targets (1.8R, 2.5R) are shown and logged.
 - The live volume rule is a straight-line pace against the full-day minimum; it is an approximation and is documented as such.
 
+## D67 — Overnight bars of 24-hour series are provisional until New York midnight (2026-11-05)
+- Server evidence (read-only, 5 Nov): T+1 for 3 Nov was a preview (BRENT, DXY late), 4 Nov had no morning run at all (3 Nov DXY bar missing), 5 Nov DXY had only a live-tick row. Yahoo keeps adding the evening session to the bar of a US-dated future, FX or yield until New York midnight (about 10:30 IST, after the 09:10 window); closes stored at 17:00-22:00 New York differed from the final ones by up to 0.9% (Brent) and 2.8% (WTI).
+- Rule: `final_after` (yahoo.py) = New York midnight + 30 min for those series; `complete_after` (17:00) now only means "usable provisionally". Before final, the bar is never stored as history; the newest row with sane prices is kept in `provisional_bars` (a working copy, replaced each refresh) and the morning forecast may use it. A row mixed with a live tick (open above high) is dropped and the series stays stale.
+- Forecasts made with a provisional input are recorded as usual but flagged: `data_quality.provisional_series`, dataset_version suffix `+provisional`, and the day-log reason. Stored bars taken before final now count as premature and are replaced by append-only corrections when the final bar arrives (existing mechanism; nothing deleted).
+

@@ -15,7 +15,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from app.prediction.sources.yahoo import BY_KEY, RawRow, complete_after
+from app.prediction.sources.yahoo import BY_KEY, RawRow, final_after
 from app.prediction.targets import Bar, BarError
 
 _SCHEMA = """
@@ -33,6 +33,10 @@ CREATE TABLE IF NOT EXISTS bar_changes (
 CREATE TABLE IF NOT EXISTS fetch_runs (
   run_id TEXT PRIMARY KEY, source TEXT NOT NULL, started_utc TEXT NOT NULL, finished_utc TEXT,
   summary TEXT
+);
+CREATE TABLE IF NOT EXISTS provisional_bars (
+  symbol TEXT PRIMARY KEY, session TEXT NOT NULL, open REAL NOT NULL, high REAL NOT NULL,
+  low REAL NOT NULL, close REAL NOT NULL, retrieved_utc TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS bar_corrections (
   symbol TEXT NOT NULL, session TEXT NOT NULL, source TEXT NOT NULL, open REAL NOT NULL,
@@ -91,7 +95,7 @@ class HistoryStore:
         spec = BY_KEY.get(symbol)
         if spec is None:
             return False
-        return datetime.fromisoformat(retrieved_utc) < complete_after(spec, date.fromisoformat(session))
+        return datetime.fromisoformat(retrieved_utc) < final_after(spec, date.fromisoformat(session))
 
     def _matches_correction(self, symbol: str, session: str, source: str, bar: Bar) -> bool:
         fix = self._db.execute(
@@ -290,6 +294,32 @@ class HistoryStore:
                 continue
             out.append(Bar(date.fromisoformat(s), o, h, lo, c))
         return out
+
+    def set_provisional(self, symbol: str, bar: Bar | None, retrieved_utc: str) -> None:
+        """Working copy of the newest not-yet-final bar of a 24-hour series (replaced each refresh, not history)."""
+        with self._lock:
+            if bar is None:
+                self._db.execute("DELETE FROM provisional_bars WHERE symbol=?", (symbol,))
+            else:
+                self._db.execute(
+                    "INSERT OR REPLACE INTO provisional_bars VALUES (?,?,?,?,?,?,?)",
+                    (symbol, str(bar.session), bar.open, bar.high, bar.low, bar.close, retrieved_utc),
+                )
+            self._db.commit()
+
+    def provisional_bar(self, symbol: str, after: date | None) -> Bar | None:
+        """The provisional bar, only if it is newer than the last final bar (``after``)."""
+        with self._lock:
+            r = self._db.execute("SELECT session, open, high, low, close FROM provisional_bars WHERE symbol=?", (symbol,)).fetchone()
+        if r is None or (after is not None and date.fromisoformat(r[0]) <= after):
+            return None
+        return Bar(date.fromisoformat(r[0]), r[1], r[2], r[3], r[4])
+
+    def bars_with_provisional(self, symbol: str, source: str = "yahoo") -> tuple[list[Bar], Bar | None]:
+        """Final bars plus the provisional bar that follows them (None when there is none)."""
+        final = self.bars(symbol, source)
+        prov = self.provisional_bar(symbol, final[-1].session if final else None)
+        return (final + [prov] if prov else final), prov
 
     def premature_bars(self, source: str = "yahoo") -> list[dict[str, Any]]:
         """Stored bars that were taken before their session ended, and whether a correction exists."""

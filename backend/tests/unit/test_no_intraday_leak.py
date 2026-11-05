@@ -181,3 +181,47 @@ def test_paused_state_still_serves_a_cached_report(tmp_path: Path) -> None:
     svc._pause_in_market_hours = True
     again = svc.summary()
     assert "paused" not in again and "forecasts" in again
+
+
+# ----------------------------------------------- provisional bars of 24-hour series (5 Nov 2026 incident)
+
+
+def test_futures_fx_yield_bars_are_final_only_after_new_york_midnight() -> None:
+    from app.prediction.sources.yahoo import final_after
+
+    # 4 Nov 2026 (EST, UTC-5): 00:00 on the 5th New York + 30 min = 05:30 UTC
+    for key in ("BRENT", "WTI", "GOLD", "DXY", "UST10Y"):
+        assert final_after(BY_KEY[key], D("2026-11-04")) == datetime(2026, 11, 5, 5, 30, tzinfo=UTC)
+    # series with a regular close, and USD/INR, keep their completion time
+    assert final_after(BY_KEY["SPX"], D("2026-10-28")) == complete_after(BY_KEY["SPX"], D("2026-10-28"))
+    assert final_after(BY_KEY["USDINR"], D("2026-10-28")) == complete_after(BY_KEY["USDINR"], D("2026-10-28"))
+
+
+async def test_an_evening_bar_of_a_24_hour_series_is_provisional_not_history(tmp_path: Path) -> None:
+    store = HistoryStore(tmp_path)
+    dl = FakeDownloader()
+    clock = Clock(datetime(2026, 11, 5, 3, 13, tzinfo=UTC))  # 08:43 IST, 22:13 New York on the 4th
+    dl.data = {"DXY": [row("2026-11-03", c=100.87), row("2026-11-04", c=100.51)]}
+    svc = HistoryService(store, downloader=dl, symbols=[BY_KEY["DXY"]], clock=clock, pause_between_s=0, start=D("2026-10-01"))
+    out = await svc.refresh()
+    assert [b.session for b in store.bars("DXY")] == [D("2026-11-03")]  # never stored as history
+    assert out["results"][0]["provisional"] == "2026-11-04"
+    bars, prov = store.bars_with_provisional("DXY")
+    assert prov is not None and prov.close == 100.51 and bars[-1].session == D("2026-11-04")
+    clock.now = datetime(2026, 11, 5, 6, 0, tzinfo=UTC)  # after New York midnight: the final bar is stored
+    dl.data = {"DXY": [row("2026-11-03", c=100.87), row("2026-11-04", c=100.6)]}
+    await svc.refresh()
+    assert store.bars("DXY")[-1].close == 100.6
+    assert store.bars_with_provisional("DXY")[1] is None  # nothing newer than the final bar
+
+
+async def test_a_row_mixed_with_a_live_tick_is_not_used_even_as_provisional(tmp_path: Path) -> None:
+    store = HistoryStore(tmp_path)
+    dl = FakeDownloader()
+    clock = Clock(datetime(2026, 11, 5, 3, 13, tzinfo=UTC))
+    bad = row("2026-11-04", c=100.28)
+    dl.data = {"DXY": [row("2026-11-03", c=100.87), type(bad)(bad.session, 101.474, 101.416, 101.261, 101.281, None)]}  # open above high
+    svc = HistoryService(store, downloader=dl, symbols=[BY_KEY["DXY"]], clock=clock, pause_between_s=0, start=D("2026-10-01"))
+    out = await svc.refresh()
+    assert out["results"][0]["provisional"] is None
+    assert store.bars_with_provisional("DXY")[1] is None  # stays missing and flagged stale; nothing is invented

@@ -108,6 +108,20 @@ def complete_after(spec: SymbolSpec, session: date) -> datetime:
     return (datetime.combine(session, close, tz) + COMPLETE_BUFFER).astimezone(UTC)
 
 
+def final_after(spec: SymbolSpec, session: date) -> datetime:
+    """UTC instant from which the daily bar of ``session`` can no longer change.
+
+    Same as ``complete_after`` except for US-dated futures, FX and yields: Yahoo keeps adding the evening
+    trading to the bar of that date until New York midnight (checked 2026-11-05 against 4 Nov: closes taken
+    at 17:00-22:00 New York were off by up to 0.9% for Brent and 2.8% for WTI), so they are final only then.
+    Before that the bar is provisional: usable for the morning forecast if flagged, never stored as history.
+    """
+    tz = ZoneInfo(spec.timezone)
+    if spec.close is None and tz.key == "America/New_York":
+        return (datetime.combine(session + timedelta(days=1), time(0, 0), tz) + COMPLETE_BUFFER).astimezone(UTC)
+    return complete_after(spec, session)
+
+
 @dataclass(frozen=True)
 class RawRow:
     session: date
