@@ -668,10 +668,10 @@ async def intraday_hv(request: Request) -> dict[str, Any]:
 
 
 @router.get("/intraday/iv-chart")
-async def intraday_iv_chart(request: Request, hv: int = 20) -> dict[str, Any]:
+async def intraday_iv_chart(request: Request, hv: int = 21) -> dict[str, Any]:
     """Daily India VIX, NIFTY close and rolling HV (IV / HV / IV percentile chart)."""
-    if hv not in (10, 20, 30, 60):
-        detail = {"code": "bad_window", "message": "hv must be 10, 20, 30 or 60"}
+    if hv not in (10, 20, 21, 30, 60, 63):
+        detail = {"code": "bad_window", "message": "hv must be 10, 20, 21, 30, 60 or 63"}
         raise HTTPException(status_code=422, detail=detail)
     return await asyncio.to_thread(request.app.state.intraday.iv_chart, hv)
 

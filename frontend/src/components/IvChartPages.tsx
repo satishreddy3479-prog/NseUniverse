@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../lib/api";
 import { MISSING } from "../lib/format";
-import { fmtDay, HV_WINDOWS, ivpReading, labelEvery, rankAt, RANGES, rollingRank } from "../lib/ivChart";
+import { fmtDay, HV_WINDOWS, hvLabel, ivpReading, labelEvery, rankAt, RANGES, rollingRank } from "../lib/ivChart";
 import { EChart, useChartColors } from "./EChart";
 
 const pct = (v: number | null | undefined, d = 2) => (v == null ? MISSING : `${v.toFixed(d)}%`);
@@ -12,7 +12,7 @@ function Controls({ hv, setHv, range, setRange, rangeLabel = "IVR / IVP range" }
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted">
       <div className="flex items-center gap-1" role="group" aria-label="HV window"><span className="mr-1">HV window</span>
-        {HV_WINDOWS.map((w) => <button key={w} type="button" aria-pressed={hv === w} className={btn(hv === w)} onClick={() => setHv(w)}>{w}d</button>)}
+        {HV_WINDOWS.map((w) => <button key={w} type="button" aria-pressed={hv === w} className={btn(hv === w)} onClick={() => setHv(w)}>{hvLabel(w)}</button>)}
       </div>
       {range != null && setRange && <div className="flex items-center gap-1" role="group" aria-label={rangeLabel}><span className="mr-1">{rangeLabel}</span>
         {RANGES.map((r) => <button key={r.id} type="button" aria-pressed={range === r.id} className={btn(range === r.id)} onClick={() => setRange(r.id)}>{r.id}</button>)}
@@ -40,7 +40,7 @@ const Source = ({ text, last }: { text: string; last: string }) => (
 /** IV (India VIX) against HV with IV rank and IV percentile, and NIFTY as the price line. */
 export function IvChartBody() {
   const c = useChartColors();
-  const [hv, setHv] = useState(20);
+  const [hv, setHv] = useState(21);
   const [range, setRange] = useState("1Y");
   const q = useChart(hv);
   const blocked = problem(q);
@@ -64,8 +64,8 @@ export function IvChartBody() {
     ],
     series: [
       { name: "IV (India VIX)", type: "line", showSymbol: false, data: d.iv.slice(lo), lineStyle: { color: c.brass, width: 2 }, itemStyle: { color: c.brass } },
-      { name: `HV ${d.window}d`, type: "line", showSymbol: false, data: d.hv.slice(lo), lineStyle: { color: c.info, width: 1.8 }, itemStyle: { color: c.info } },
-      { name: `RV ${d.window}d (range)`, type: "line", showSymbol: false, data: d.rv.slice(lo), lineStyle: { color: c.up, width: 1.5, type: "dashed" }, itemStyle: { color: c.up } },
+      { name: `HV ${hvLabel(d.window)}`, type: "line", showSymbol: false, data: d.hv.slice(lo), lineStyle: { color: c.info, width: 1.8 }, itemStyle: { color: c.info } },
+      { name: `RV ${hvLabel(d.window)}`, type: "line", showSymbol: false, data: d.rv.slice(lo), lineStyle: { color: c.up, width: 1.5, type: "dashed" }, itemStyle: { color: c.up } },
       { name: "NIFTY 50 close", type: "line", yAxisIndex: 1, showSymbol: false, data: d.close.slice(lo), lineStyle: { color: c.muted, width: 1, opacity: 0.8 }, itemStyle: { color: c.muted } },
     ],
   };
@@ -86,8 +86,8 @@ export function IvChartBody() {
         <Controls hv={hv} setHv={setHv} range={range} setRange={setRange} />
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-6" data-testid="ivchart-cards">
           <Stat label="IV (India VIX)" value={pct(d.iv[i])} tone="text-brass" />
-          <Stat label={`HV ${d.window}d`} value={pct(hvNow)} />
-          <Stat label={`RV ${d.window}d (range)`} value={pct(d.rv[i] ?? null)} />
+          <Stat label={`HV ${hvLabel(d.window)}`} value={pct(hvNow)} />
+          <Stat label={`RV ${hvLabel(d.window)}`} value={pct(d.rv[i] ?? null)} />
           <Stat label="IV − HV" value={gap == null ? MISSING : `${gap >= 0 ? "+" : "−"}${Math.abs(gap).toFixed(2)} pts`} />
           <Stat label={`IVR ${range}`} value={pct(now.ivr, 1)} />
           <Stat label={`IVP ${range}`} value={pct(now.ivp, 1)} />
@@ -99,7 +99,7 @@ export function IvChartBody() {
         <div style={{ height: 320 }} data-testid="ivchart-top"><EChart option={top} ariaLabel="India VIX against historical volatility with the NIFTY 50 close" /></div>
         <h2 className="mb-1 mt-3 text-sm font-semibold text-paper">IV rank and IV percentile</h2>
         <div style={{ height: 200 }} data-testid="ivchart-bottom"><EChart option={bottom} ariaLabel="IV rank and IV percentile through time" /></div>
-        <p className="mt-1 text-[11px] text-muted">IVR = (IV − lowest) ÷ (highest − lowest) × 100 over the range. IVP = share of the range&apos;s days with a lower IV than that day. RV (dashed green) is range-based (Parkinson) realised volatility from each day&apos;s high and low over the same window; HV uses closes only. Dashed lines at 30 and 70 are our reading thresholds. The first {range} of history has no rank (the range is not full yet); nothing is filled in.</p>
+        <p className="mt-1 text-[11px] text-muted">IVR = (IV − lowest) ÷ (highest − lowest) × 100 over the range. IVP = share of the range&apos;s days with a lower IV than that day. HV is the standard deviation of the window&apos;s daily log returns (divided by n) × √252; RV (dashed green) is the root mean square of the same returns × √252, so it counts the average move itself as volatility too. Both use closes only. Dashed lines at 30 and 70 are our reading thresholds. The first {range} of history has no rank (the range is not full yet); nothing is filled in.</p>
         <Source text={d.iv_source} last={d.dates[d.dates.length - 1]!} />
       </div>
     </div>
@@ -109,7 +109,7 @@ export function IvChartBody() {
 /** IV − HV by day as bars, with the NIFTY close as a line. */
 export function IvMinusHvChart() {
   const c = useChartColors();
-  const [hv, setHv] = useState(20);
+  const [hv, setHv] = useState(21);
   const [range, setRange] = useState("1Y");
   const q = useChart(hv);
   const blocked = problem(q);
@@ -130,7 +130,7 @@ export function IvMinusHvChart() {
       { type: "value", scale: true, position: "right", axisLabel: { color: c.muted }, splitLine: { show: false } },
     ],
     series: [
-      { name: `IV − HV ${d.window}d (pts)`, type: "bar", data: diff.map((v) => (v == null ? null : { value: v, itemStyle: { color: v >= 0 ? c.up : c.down } })) },
+      { name: `IV − HV ${hvLabel(d.window)} (pts)`, type: "bar", data: diff.map((v) => (v == null ? null : { value: v, itemStyle: { color: v >= 0 ? c.up : c.down } })) },
       { name: "NIFTY 50 close", type: "line", yAxisIndex: 1, showSymbol: false, data: d.close.slice(lo), lineStyle: { color: c.muted, width: 1.2 }, itemStyle: { color: c.muted } },
     ],
   };

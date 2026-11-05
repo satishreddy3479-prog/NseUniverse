@@ -1,6 +1,7 @@
 """Historical (realised) volatility of the index from stored daily closes, to set beside the options' implied volatility.
 
-HV(n) = sample standard deviation (n - 1) of the last n daily log returns ln(close_t / close_t-1), times sqrt(252), in percent.
+HV(n) = population standard deviation (divide by n) of the last n daily log returns ln(close_t / close_t-1), times sqrt(252), in percent.
+RV(n) = root mean square of the same returns (no mean taken out), times sqrt(252): the textbook realised volatility.
 252 trading days a year is the usual convention for daily closes; implied volatility from the option model is annualised on
 calendar time to expiry, so the two are comparable but not identical in basis. Only final daily bars are used (the history
 store holds nothing partial); a return that spans more than MAX_GAP_DAYS calendar days (a missing stretch) is counted and
@@ -34,7 +35,7 @@ def stdev_annual(returns: list[float]) -> float | None:
     if n < 2:
         return None
     mean = sum(returns) / n
-    var = sum((r - mean) ** 2 for r in returns) / (n - 1)
+    var = sum((r - mean) ** 2 for r in returns) / n
     return math.sqrt(var * TRADING_DAYS) * 100
 
 
@@ -68,21 +69,15 @@ def hv_report(bars: list[Bar], today: date, series_len: int = 120) -> dict[str, 
         "bars": len(bars),
         "windows": windows,
         "series": {"window": 20, "dates": dates, "hv": values},
-        "method": "sample standard deviation of daily log returns x sqrt(252), percent; final daily closes only",
+        "method": "population standard deviation of daily log returns x sqrt(252), percent; final daily closes only",
     }
 
 
-def parkinson_at(bars: list[Bar], window: int) -> dict[date, float | None]:
-    """Range-based realised volatility (Parkinson), percent annualised, by date: sqrt(mean(ln(H/L)^2) / (4 ln 2) x 252) over
-    the last ``window`` daily bars. It uses each day's high and low, so it reacts to intraday range that close-to-close HV misses.
-    A date with fewer than ``window`` valid bars (high >= low > 0) is None."""
-    sq = [(b.session, math.log(b.high / b.low) ** 2 if b.low > 0 and b.high >= b.low else None) for b in bars]
-    out: dict[date, float | None] = {}
-    for i, (d, _v) in enumerate(sq):
-        win = [v for _, v in sq[max(0, i + 1 - window) : i + 1]]
-        ok = i + 1 >= window and all(v is not None for v in win)
-        out[d] = math.sqrt(sum(v for v in win if v is not None) / window / (4 * math.log(2)) * TRADING_DAYS) * 100 if ok else None
-    return out
+def rv_annual(returns: list[float]) -> float | None:
+    """Realised volatility: sqrt(mean of squared returns x 252), percent. No mean is subtracted (a drift over a month is not volatility)."""
+    if not returns:
+        return None
+    return math.sqrt(sum(r * r for r in returns) / len(returns) * TRADING_DAYS) * 100
 
 
 def iv_chart(nifty: list[Bar], vix: list[Bar], window: int, days: int = 750) -> dict[str, Any]:
@@ -93,9 +88,11 @@ def iv_chart(nifty: list[Bar], vix: list[Bar], window: int, days: int = 750) -> 
     days are not short of returns). A date without enough returns, or without a VIX bar, is dropped rather than filled."""
     rets = log_returns(nifty)
     hv_at: dict[date, float | None] = {}
+    rv_at: dict[date, float | None] = {}
     for i, (d, _r, _g) in enumerate(rets):
-        hv_at[d] = stdev_annual([r for _, r, _ in rets[i + 1 - window : i + 1]]) if i + 1 >= window else None
-    rv_at = parkinson_at(nifty, window)
+        win = [r for _, r, _ in rets[i + 1 - window : i + 1]] if i + 1 >= window else []
+        hv_at[d] = stdev_annual(win) if win else None
+        rv_at[d] = rv_annual(win) if win else None
     vix_at = {b.session: b.close for b in vix}
     dates: list[str] = []
     close: list[float] = []
@@ -118,6 +115,6 @@ def iv_chart(nifty: list[Bar], vix: list[Bar], window: int, days: int = 750) -> 
         "window": window, "dates": dates[lo:], "close": close[lo:], "iv": iv[lo:], "hv": hvs[lo:], "rv": rvs[lo:],
         "nifty_bars": len(nifty), "vix_bars": len(vix), "days": len(dates[lo:]),
         "iv_source": "India VIX daily close (NSE's 30-day implied volatility of NIFTY options); not the ATM IV of one expiry",
-        "rv_method": "RV = Parkinson range-based volatility from each day's high and low, same window, x sqrt(252), percent",
+        "rv_method": "RV = sqrt(mean of squared daily log returns x 252), percent, same window (no mean subtracted)",
         "method": "HV = sample stdev of daily log returns x sqrt(252), percent; dates present in both series only",
     }

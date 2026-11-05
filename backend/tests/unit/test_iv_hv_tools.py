@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.intraday.hv import MAX_GAP_DAYS, hv, hv_report, iv_chart, log_returns, parkinson_at
+from app.intraday.hv import MAX_GAP_DAYS, hv, hv_report, iv_chart, log_returns, rv_annual
 from app.intraday.service import IntradayService
 from app.intraday.store import IntradayStore
 from app.intraday.volatility import skew_metrics
@@ -29,13 +29,13 @@ def bar(d: str, c: float) -> Bar:
 
 def test_hv_matches_the_hand_calculation() -> None:
     # closes 100, 102, 101 -> returns ln(1.02) = 0.0198026, ln(101/102) = -0.0098523
-    # mean 0.0049751; deviations +-0.0148275; sample variance (n-1 = 1) = 2 * 0.0148275^2 = 0.00043971
-    # sd = 0.0209693; x sqrt(252) = 0.332871 -> 33.29 %
+    # mean 0.0049751; deviations +-0.0148275; population variance (divide by n = 2) = 0.0148275^2
+    # sd = 0.0148275; x sqrt(252) = 0.235380 -> 23.54 %
     rets = log_returns([bar("2026-11-02", 100), bar("2026-11-03", 102), bar("2026-11-04", 101)])
     assert [round(r, 7) for _, r, _ in rets] == [0.0198026, -0.0098523]
     got = hv(rets, 2)
-    assert got == pytest.approx(math.sqrt(2 * 0.0148275**2 * 252) * 100, rel=1e-4)
-    assert got == pytest.approx(33.29, abs=0.02)
+    assert got == pytest.approx(math.sqrt(0.0148275**2 * 252) * 100, rel=1e-4)
+    assert got == pytest.approx(23.54, abs=0.02)
     assert hv(rets, 3) is None  # not enough returns: missing, never a shorter window passed off as longer
 
 
@@ -111,9 +111,9 @@ def test_iv_chart_aligns_vix_with_rolling_hv_and_drops_unpaired_days() -> None:
     # 2 Nov has no return and no VIX; 3 Nov has one return only, so its 2-day HV is missing (not a shorter window)
     assert out["dates"] == ["2026-11-03", "2026-11-04", "2026-11-05"]
     assert out["hv"][0] is None
-    assert out["hv"][1] == pytest.approx(33.29, abs=0.02)  # the hand calculation above (returns 0.0198026, -0.0098523)
-    # 5 Nov: returns -0.0098523 and 0 -> mean -0.0049262, deviations +-0.0049262, var = 2 x 0.0049262^2, HV = 0.0049262 x sqrt(2 x 252) x 100
-    assert out["hv"][2] == pytest.approx(0.0049262 * math.sqrt(504) * 100, abs=0.02)
+    assert out["hv"][1] == pytest.approx(23.54, abs=0.02)  # the hand calculation above (returns 0.0198026, -0.0098523)
+    # 5 Nov: returns -0.0098523 and 0 -> mean -0.0049262, deviations +-0.0049262, var = 0.0049262^2, HV = 0.0049262 x sqrt(252) x 100
+    assert out["hv"][2] == pytest.approx(0.0049262 * math.sqrt(252) * 100, abs=0.02)  # population sd of -0.0098523 and 0
     assert out["iv"] == [14.5, 15.0, 16.12] and out["close"] == [102, 101, 101]
     assert "India VIX" in out["iv_source"]
 
@@ -172,19 +172,17 @@ def test_api_iv_series_options_and_skew(tmp_path: Path) -> None:
         assert c.get("/api/intraday/iv-skew", params={"expiry": EXP}).json()["smile"] == []
 
 
-def test_parkinson_rv_matches_the_hand_calculation() -> None:
-    # ranges ln(102/100) = 0.0198026 and ln(103/100) = 0.0295588; squares 3.92144e-4 and 8.73721e-4, mean 6.32933e-4
-    # sqrt(6.32933e-4 / (4 ln 2) x 252) = sqrt(0.0575257) = 0.239845 -> 23.98 %
-    bars = [Bar(date(2026, 11, 2), 100, 102, 100, 101), Bar(date(2026, 11, 3), 100, 103, 100, 102), Bar(date(2026, 11, 4), 100, 100, 100, 100)]
-    out = parkinson_at(bars, 2)
-    assert out[date(2026, 11, 2)] is None  # one bar is not a 2-day window
-    assert out[date(2026, 11, 3)] == pytest.approx(23.98, abs=0.02)
-    assert out[date(2026, 11, 4)] == pytest.approx(math.sqrt((8.73721e-4 / 2) / (4 * math.log(2)) * 252) * 100, abs=0.02)  # a flat day adds zero range
-    bad = parkinson_at([Bar(date(2026, 11, 2), 100, 100, 100, 100), Bar(date(2026, 11, 3), 100, 100, 100, 100)], 2)
-    assert bad[date(2026, 11, 3)] == 0.0
-
 
 def test_iv_skew_after_the_close_still_lists_the_expiries_of_the_session(tmp_path: Path) -> None:
     # read at 01:05 the next morning: "today" has no samples, but the term view must follow the chain's own session
     out = make(tmp_path, 30, 950).iv_skew(EXP)
     assert out["status"] == "ok" and [t["expiry"] for t in out["term"]] == [EXP]
+
+
+def test_rv_is_the_root_mean_square_of_returns_and_hv_divides_by_n() -> None:
+    # returns 0.0198026 and -0.0098523: squares 3.92144e-4 and 9.7068e-5, mean 2.44606e-4; x 252 = 0.061641; sqrt = 0.248277 -> 24.83 %
+    rets = [0.0198026, -0.0098523]
+    assert rv_annual(rets) == pytest.approx(24.83, abs=0.01)
+    # HV takes the mean out and divides by n: deviations +-0.0148275 -> sd 0.0148275 x sqrt(252) = 23.54 %
+    assert hv([(date(2026, 11, 3), rets[0], 1), (date(2026, 11, 4), rets[1], 1)], 2) == pytest.approx(23.54, abs=0.01)
+    assert rv_annual([]) is None

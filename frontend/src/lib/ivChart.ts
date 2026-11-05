@@ -10,7 +10,9 @@ export const RANGES = [
   { id: "6M", days: 126 },
   { id: "1Y", days: 252 },
 ] as const;
-export const HV_WINDOWS = [10, 20, 30, 60] as const;
+export const HV_WINDOWS = [10, 21, 63] as const;
+/** 21 trading days is one month, 63 three months. */
+export const hvLabel = (w: number) => (w === 21 ? "1M" : w === 63 ? "3M" : `${w}d`);
 
 export interface Rank { ivr: number | null; ivp: number | null; low: number | null; high: number | null; n: number }
 

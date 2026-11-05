@@ -94,7 +94,7 @@ export function IvHvBody({ expiry }: { expiry: string | null }) {
             </tbody>
           </table>
         </div>
-        <p className="mt-2 text-[11px] text-muted">Historical volatility = standard deviation of daily log returns × √252, in percent, from final daily closes. Implied volatility is the at-the-money value of the Black-76 model for the chosen expiry; the two use different time bases, so read the gap as context (options priced rich or cheap against what the index has actually done), not as a signal.</p>
+        <p className="mt-2 text-[11px] text-muted">Historical volatility = standard deviation (divided by n) of daily log returns × √252, in percent, from final daily closes. Implied volatility is the at-the-money value of the Black-76 model for the chosen expiry; the two use different time bases, so read the gap as context (options priced rich or cheap against what the index has actually done), not as a signal.</p>
       </div>
       <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
         <h2 className="mb-1 text-sm font-semibold text-paper">Implied vs historical volatility, latest session</h2>

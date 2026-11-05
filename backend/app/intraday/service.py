@@ -542,7 +542,7 @@ class IntradayService:
         )
         return report
 
-    def iv_chart(self, window: int = 20) -> dict[str, Any]:
+    def iv_chart(self, window: int = 21) -> dict[str, Any]:
         """Daily India VIX (implied volatility), NIFTY close and rolling HV from the stored daily history."""
         return hvmod.iv_chart(self.history.bars("NIFTY50"), self.history.bars("INDIAVIX"), window)
 
