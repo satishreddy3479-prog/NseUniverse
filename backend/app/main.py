@@ -73,7 +73,8 @@ def build_servermgmt(settings: Settings) -> ServerMgmt:
 
     env_root = os.environ.get("NSE_ROOT")
     default = Path("/opt/nse-universe")
-    root = Path(env_root) if env_root else default if default.is_dir() else Path(__file__).resolve().parents[2]
+    repo_root = Path(__file__).resolve().parents[2]
+    root = Path(env_root) if env_root else default if default.is_dir() else repo_root
     areas = [
         Area("project", root, "Project root"),
         Area("data", settings.data_dir.resolve(), "Data directory"),

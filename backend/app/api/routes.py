@@ -597,8 +597,11 @@ async def storage_cleanup_run(body: CleanupRequest, request: Request) -> dict[st
         raise HTTPException(422, {"code": "validation_error", "message": str(e)}) from e
     a["obs"].record_event("cleanup", f"manual clean-up of {', '.join(body.items)}"[:300])
     sm = getattr(request.app.state, "servermgmt", None)
-    if sm is not None:  # the Server Management Centre keeps its own audit and re-measures storage afterwards
-        sm.store.audit("operator", "data_cleanup", ", ".join(body.items)[:300], "execute", "ok", "existing Data clean-up rules", "storage snapshot queued")
+    if sm is not None:  # the Server Management Centre audits it and re-measures storage afterwards
+        sm.store.audit(
+            "operator", "data_cleanup", ", ".join(body.items)[:300], "execute", "ok",
+            "existing Data clean-up rules", "storage snapshot queued",
+        )
         task = asyncio.create_task(asyncio.to_thread(sm.snapshot, "post_cleanup"))
         request.app.state.post_cleanup_task = task  # keep a reference until it finishes
     return {"ok": True, "result": res}
