@@ -60,10 +60,8 @@ export const TOOLS: Tool[] = [
   { id: "future-flow", label: "Future Flow & Heavyweights", menu: "futures", group: "Price tools", status: "ready", isNew: true, page: "futflow", blurb: "NIFTY current-month future flow (estimated net buying, book imbalance) and the top-5 heavyweights. Moved from the Intraday Booster." },
   { id: "future-sectors", label: "Future Sectors", menu: "futures", group: "Price tools", status: "ready", isNew: true, page: "futsectors", blurb: "Equal-weighted NIFTY 500 sector strength against the index, with rotation. Moved from the Intraday Booster." },
   { id: "market-movers", label: "Market Movers", menu: "futures", group: "Price tools", status: "ready", isNew: true, page: "movers", blurb: "NIFTY 50 stocks ranked by move and contribution (NIFTY 50 only)." },
-  { id: "future-heatmap", label: "Future Heatmap", menu: "futures", group: "Price tools", status: "planned", needs: "Needs futures data for more than NIFTY, which is out of scope for now.", blurb: "Futures across many instruments." },
   { id: "future-oi", label: "Future Open Interest", menu: "futures", group: "OI tools", status: "ready", widgets: ["futOi", "futOiChange"], blurb: "NIFTY futures open interest and its change." },
   { id: "future-price-oi", label: "Future Price vs OI", menu: "futures", group: "OI tools", status: "ready", isNew: true, page: "futbuildup", blurb: "NIFTY future price against open interest: long/short buildup, short covering, long unwinding per 15 minutes and for the session." },
-  { id: "sentiment-cycle", label: "Future Sentiment Cycle", menu: "futures", group: "OI tools", status: "planned", needs: "Needs a validated rule set; none has been agreed.", blurb: "Where the futures sit in the buildup cycle." },
   // ---- Analyse
   { id: "fii-dii-summary", label: "FII/DII Summary", menu: "analyse", group: "FII / DII", status: "ready", page: "flows", blurb: "Institutional derivatives positioning from the exchange's published data." },
   { id: "fii-dii-cash", label: "FII/DII Cash Market", menu: "analyse", group: "FII / DII", status: "ready", page: "cash", blurb: "Cash-market buying and selling by FII and DII, from the data you import." },

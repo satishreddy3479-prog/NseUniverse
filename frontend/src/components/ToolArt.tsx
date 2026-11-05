@@ -11,8 +11,8 @@ const ART: Record<string, ArtKind> = {
   "pe-ce-difference": "diverge", "smart-oi": "pulse", "oi-buildup": "heat", "vega-analysis": "bars",
   straddle: "area", "premium-decay": "area", "price-vs-oi": "candles", "multistrike-chart": "lines", "multi-straddle": "area", "volatility-skew": "smile", "iv-hv": "lines",
   "iv-intraday": "area", "oi-crossover": "lines", "intraday-booster": "pulse", "option-triggers": "gauge",
-  "future-dashboard": "candles", "future-intraday": "area", "market-movers": "diverge", "future-heatmap": "heat", "future-oi": "bars",
-  "future-price-oi": "candles", "sentiment-cycle": "donut", "fii-dii-summary": "flow", "fii-dii-cash": "flow", "index-contributors": "diverge",
+  "future-dashboard": "candles", "future-intraday": "area", "market-movers": "diverge", "future-oi": "bars",
+  "future-price-oi": "candles", "fii-dii-summary": "flow", "fii-dii-cash": "flow", "index-contributors": "diverge",
   "advance-decline": "donut", "index-weightage": "donut", "sector-rotation": "heat",
   strategy: "payoff", "option-chain": "table", portfolio: "area", prediction: "lines",
 };
