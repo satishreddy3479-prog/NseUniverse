@@ -667,6 +667,16 @@ async def intraday_hv(request: Request) -> dict[str, Any]:
     return await asyncio.to_thread(request.app.state.intraday.hv)
 
 
+@router.get("/intraday/iv-grid")
+async def intraday_iv_grid(request: Request, expiry: date, each_side: int = 10) -> dict[str, Any]:
+    """Implied volatility by strike and time through the latest stored session."""
+    if not 3 <= each_side <= 20:
+        detail = {"code": "bad_range", "message": "each_side must be 3 to 20"}
+        raise HTTPException(status_code=422, detail=detail)
+    svc = request.app.state.intraday
+    return await asyncio.to_thread(svc.iv_grid, expiry.isoformat(), each_side)
+
+
 @router.get("/intraday/iv-series")
 async def intraday_iv_series(request: Request, expiry: date) -> dict[str, Any]:
     """At-the-money implied volatility through the latest stored session."""

@@ -338,8 +338,9 @@ export function oiExplorerOption(
   const signed = (v: number | null) => (v == null ? "no baseline" : (v > 0 ? "+" : v < 0 ? "−" : "") + fmtInt(Math.abs(v)));
   return {
     animation: false,
-    grid: compact ? { left: 44, right: 8, top: 16, bottom: 22 } : { left: 62, right: 14, top: 34, bottom: 56 },
-    legend: compact ? { show: false } : { top: 0, right: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
+    grid: compact ? { left: 44, right: 8, top: 16, bottom: 22 } : { left: 62, right: 14, top: 46, bottom: 56 },
+    // a scrolling legend stays on one line (it wrapped onto a second row on a phone and was drawn over the axis and the ATM label)
+    legend: compact ? { show: false } : { type: "scroll", top: 0, left: 0, right: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 },
       formatter: (params: unknown) => {
         const ps = params as { axisValue: string }[];

@@ -91,3 +91,43 @@ def test_api_exposes_both_tools(tmp_path: Path) -> None:
         r2 = c.get('/api/intraday/iv-series', params={'expiry': EXP})
         assert r2.status_code == 200 and r2.json()['points'] == []  # nothing stored in the test app: says so
         assert c.get('/api/intraday/iv-series', params={'expiry': 'bad'}).status_code == 422
+
+
+# ---------------------------------------------------------------- IV grid and IV by session
+def test_iv_grid_is_strikes_by_time_with_the_otm_iv_in_each_cell(tmp_path: Path) -> None:
+    out = make(tmp_path, 30, 30).iv_grid(EXP, each_side=10, max_columns=40)
+    assert out["status"] == "ok" and out["columns"] == 30 and out["samples_in_session"] == 30
+    assert len(out["strikes"]) == 21 and out["strikes"] == sorted(out["strikes"])  # ATM +- 10 strikes, fixed for the whole grid
+    assert len(out["iv"]) == 21 and all(len(row) == 30 for row in out["iv"])
+    assert out["atm_strike"] in out["strikes"] and out["times"] == sorted(out["times"])
+    atm_row = out["iv"][out["strikes"].index(out["atm_strike"])]
+    assert all(v == pytest.approx(16.54, abs=0.2) for v in atm_row)  # the real chain's ATM IV, the same at every minute
+    # same prices every minute: IV only drifts as the time to expiry shortens over the 30 minutes
+    assert abs(out["change"][out["strikes"].index(out["atm_strike"])]) < 0.2
+    flat = [v for row in out["iv"] for v in row if v is not None]
+    assert out["min"] == min(flat) and out["max"] == max(flat) and all(1 < v < 80 for v in flat)
+
+
+def test_iv_grid_is_thinned_keeps_the_newest_snapshot_and_says_when_empty(tmp_path: Path) -> None:
+    svc = make(tmp_path / "a", 30, 30)
+    out = svc.iv_grid(EXP, each_side=10, max_columns=10)
+    assert out["columns"] <= 11 and out["thinned_every"] == 3 and out["times"][-1] == out["latest_at"]
+    empty = make(tmp_path / "b", 0, 30).iv_grid(EXP)
+    assert empty["iv"] == [] and "no stored" in empty["status"]
+    assert make(tmp_path / "c", 3, 30).iv_grid("not-a-date")["status"] == "bad expiry"
+
+
+def test_iv_by_session_names_the_expiry_and_feeds_the_hv_report(tmp_path: Path) -> None:
+    svc = make(tmp_path, 30, 30)
+    rows = svc.iv_history()
+    assert len(rows) == 1 and rows[0]["date"] == "2026-10-29" and rows[0]["expiry"] == EXP
+    assert rows[0]["atm_iv"] == pytest.approx(16.54, abs=0.2) and rows[0]["days_to_expiry"] > 2  # a contract with days left, not an expiring one
+    report = svc.hv()
+    assert report["iv_by_session"] == rows and "at least 2 days" in report["iv_by_session_note"]
+
+
+def test_api_iv_grid_validates_the_strike_range(tmp_path: Path) -> None:
+    with TestClient(make_app(tmp_path)) as c:
+        assert c.get("/api/intraday/iv-grid", params={"expiry": EXP}).json()["iv"] == []
+        assert c.get("/api/intraday/iv-grid", params={"expiry": EXP, "each_side": 2}).status_code == 422
+        assert c.get("/api/intraday/iv-grid", params={"expiry": "bad"}).status_code == 422

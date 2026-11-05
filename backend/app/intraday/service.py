@@ -129,6 +129,7 @@ class IntradayService:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._cache: dict[tuple[str, int, int], dict[str, Any]] = {}
         self._iv_cache: dict[tuple[str, str, int, int], dict[str, Any]] = {}  # one entry: the latest IV series
+        self._grid_cache: dict[tuple[str, str, int, int], dict[str, Any]] = {}  # one entry: the latest IV grid
         self._slow: dict[tuple[str, str], tuple[float, Any]] = {}
         self._task: asyncio.Task[None] | None = None
         self.loop_note = "not started"
@@ -493,10 +494,10 @@ class IntradayService:
             self.market.store.record_sample("breakout", stamp, {"or": b["or_minutes"], "dir": b["direction"], "status": b["status"], "q": b["quality"]["score"], "ext": b["extension_ow"], "px": b["last_price"]})  # fmt: skip
         return st, vb
 
-    def _surface_of(self, sample: Any, expiry_d: date, at: datetime) -> dict[str, Any]:
+    def _surface_of(self, sample: Any, expiry_d: date, at: datetime, each_side: int = 5) -> dict[str, Any]:
         prices = {k: c.ltp for k, c in self.obs.contracts(sample.values_from).items()}
         # time to expiry counts from the market time the prices belong to, not from an after-hours fetch
-        return volmod.surface(prices, sample.spot, expiry_d, market_time(at, self._trading), self.risk_free_rate)
+        return volmod.surface(prices, sample.spot, expiry_d, market_time(at, self._trading), self.risk_free_rate, each_side)
 
     def _volatility(self, expiry: str, now: datetime, latest: Any, session_samples: list[Any], pts: list[Any], chain_status: str) -> dict[str, Any]:
         """ATM IV, skew, Greeks and expected move from the latest stored chain; IV change against earlier samples of the same session."""
@@ -535,7 +536,12 @@ class IntradayService:
     def hv(self) -> dict[str, Any]:
         """Historical volatility of NIFTY 50 from the stored final daily closes (10/20/30/60 days and a 20-day series)."""
         today = self._clock().astimezone(IST).date()
-        return hvmod.hv_report(self.history.bars("NIFTY50"), today)
+        report = hvmod.hv_report(self.history.bars("NIFTY50"), today)
+        report["iv_by_session"] = self.iv_history()
+        report["iv_by_session_note"] = (
+            "ATM implied volatility at the end of each stored session, nearest expiry with at least 2 days left (the expiry is named)."
+        )
+        return report
 
     def iv_series(self, expiry: str, max_points: int = 90) -> dict[str, Any]:
         """At-the-money implied volatility through the latest stored session of this expiry, one value per stored
@@ -583,6 +589,94 @@ class IntradayService:
             "points": points,
         }
         self._iv_cache = {key: out}
+        return out
+
+    def iv_grid(self, expiry: str, each_side: int = 10, max_columns: int = 40) -> dict[str, Any]:
+        """Implied volatility by strike and time for the latest stored session of one expiry.
+
+        Rows are the strikes ATM +- ``each_side`` of the newest snapshot (fixed for the whole grid, so a row is one strike
+        all session). Each cell is the IV of the out-of-the-money option of that strike at that snapshot (call at or above
+        the at-the-money strike, put at or below it; the average of the two at the money), the usual smile convention.
+        A cell whose price was missing or could not be solved stays empty. Columns are the stored snapshots thinned to at
+        most ``max_columns``, the newest always kept."""
+        now = self._clock()
+        try:
+            exp_d = date.fromisoformat(expiry)
+        except ValueError:
+            return {"status": "bad expiry", "times": [], "strikes": [], "iv": []}
+        start = datetime.combine(now.astimezone(IST).date(), OPEN, IST)
+        samples = self.obs.samples(self.underlying, expiry, since=start - timedelta(days=4), until=now, limit=5000)
+        if not samples:
+            return {"status": "no stored option-chain sample for this expiry", "expiry": expiry, "times": [], "strikes": [], "iv": []}
+        day = samples[-1].received_at.astimezone(IST).date()
+        todays = [s for s in samples if s.received_at.astimezone(IST).date() == day and OPEN <= s.received_at.astimezone(IST).time() <= session_close()]
+        if not todays:
+            return {"status": "no stored sample inside the session", "expiry": expiry, "times": [], "strikes": [], "iv": []}
+        key = (expiry, str(todays[-1].sample_id), len(todays), each_side * 1000 + max_columns)
+        if key in self._grid_cache:
+            return self._grid_cache[key]
+        latest_sf = self._surface_of(todays[-1], exp_d, todays[-1].received_at, each_side)
+        if latest_sf.get("status") != "ok":
+            return {"status": str(latest_sf.get("status")), "expiry": expiry, "session": day.isoformat(), "times": [], "strikes": [], "iv": []}
+        strikes = sorted({r["strike"] for r in latest_sf["rows"]})
+        stride = max(1, -(-len(todays) // max_columns))
+        pick = todays[::stride]
+        if pick[-1] is not todays[-1]:
+            pick.append(todays[-1])
+        cols: list[dict[float, float | None]] = []
+        for s in pick:
+            sf = self._surface_of(s, exp_d, s.received_at, each_side + 4)  # a little wider: the ATM moves during the session
+            cell: dict[float, float | None] = {}
+            if sf.get("status") == "ok":
+                by: dict[float, list[float]] = {}
+                for r in sf["rows"]:
+                    if r["otm"] and r["iv"] is not None:
+                        by.setdefault(r["strike"], []).append(r["iv"])
+                cell = {k: sum(v) / len(v) for k, v in by.items()}
+            cols.append(cell)
+        grid: list[list[float | None]] = [[round(v, 2) if (v := cols[j].get(k)) is not None else None for j in range(len(pick))] for k in strikes]
+        flat = [v for row in grid for v in row if v is not None]
+        change = []
+        for row in grid:
+            vals = [v for v in row if v is not None]
+            change.append(None if len(vals) < 2 else round(vals[-1] - vals[0], 2))
+        out = {
+            "status": "ok" if flat else "no implied volatility could be computed",
+            "expiry": expiry, "session": day.isoformat(), "is_today": day == now.astimezone(IST).date(),
+            "samples_in_session": len(todays), "columns": len(pick), "thinned_every": stride,
+            "times": [s.received_at.isoformat() for s in pick], "spot": [s.spot for s in pick],
+            "strikes": strikes, "atm_strike": latest_sf["atm_strike"], "iv": grid, "change": change,
+            "min": min(flat) if flat else None, "max": max(flat) if flat else None,
+            "latest_at": todays[-1].received_at.isoformat(), "age_seconds": round((now - todays[-1].received_at).total_seconds(), 1),
+            "model": "Black-76; forward from put-call parity", "rate_assumed": self.risk_free_rate,
+            "note": "IV of the out-of-the-money option of each strike (call at or above ATM, put at or below, the average at ATM).",
+        }
+        self._grid_cache = {key: out}
+        return out
+
+    def iv_history(self, sessions: int = 20, min_days_left: int = 2) -> list[dict[str, Any]]:
+        """ATM implied volatility at the end of each stored session, for the IV against HV chart.
+
+        Per session: the nearest expiry that still has at least ``min_days_left`` calendar days to run (so the figure is not
+        the wild last-day IV of an expiring contract; if none, the best-covered expiry), read from the last stored
+        in-session snapshot of that expiry. The expiry is named, because IV differs a little between expiries."""
+        out: list[dict[str, Any]] = []
+        for d, _n in sorted(self.obs.session_sample_counts(self.underlying).items())[-sessions:]:
+            day = date.fromisoformat(d)
+            lo, hi = datetime.combine(day, OPEN, IST), datetime.combine(day, session_close(), IST)
+            counts = [(e, n) for e, n in self.obs.day_counts(self.underlying, to_ms(lo), to_ms(hi)) if n >= 10]
+            if not counts:
+                continue
+            ahead = [(e, n) for e, n in counts if (date.fromisoformat(e) - day).days >= min_days_left]
+            exp = min(ahead)[0] if ahead else max(counts, key=lambda x: x[1])[0]
+            smp = self.obs.samples(self.underlying, exp, since=lo, until=hi, limit=5000)
+            if not smp:
+                continue
+            last = smp[-1]
+            sf = self._surface_of(last, date.fromisoformat(exp), last.received_at)
+            if sf.get("status") != "ok" or sf.get("atm_iv") is None:
+                continue
+            out.append({"date": d, "atm_iv": sf["atm_iv"], "expiry": exp, "days_to_expiry": sf.get("time_to_expiry_days"), "at": last.received_at.isoformat()})
         return out
 
     def research(self, horizon: int = 15, k: float = labels.DEFAULT_K) -> dict[str, Any]:

@@ -42,9 +42,9 @@ describe("home", () => {
     renderAt("/");
     expect(await screen.findByRole("heading", { name: /option and futures tools/ })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /Smart OI/ }).length).toBeGreaterThan(0);
-    expect(screen.queryByRole("link", { name: /IV Grid/ })).toBeNull();
-    const card = screen.getByText("IV Grid").closest("[aria-disabled]") as HTMLElement;
-    expect(within(card).getByText(/Needs implied volatility/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /OI Crossover/ })).toBeNull();
+    const card = screen.getByText("OI Crossover").closest("[aria-disabled]") as HTMLElement;
+    expect(within(card).getByText(/Needs a rule for the crossover/)).toBeInTheDocument();
   });
 
   it("search narrows the tools", async () => {
@@ -59,7 +59,7 @@ describe("home", () => {
 describe("tool page", () => {
   it("a planned tool says it is not built and does not show a chart", async () => {
     mockApi();
-    renderAt("/tools/iv-grid");
+    renderAt("/tools/oi-crossover");
     expect(await screen.findByText(/Planned, not built yet/)).toBeInTheDocument();
   });
 

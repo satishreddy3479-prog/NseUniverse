@@ -10,7 +10,7 @@ import { FlowsPanel } from "../components/FlowsPanel";
 import { CashPanel } from "../components/CashPanel";
 import { FuturesFlowBody } from "../components/FuturesFlowTools";
 import { FuturesBuildupBody } from "../components/FuturesBuildupTool";
-import { IvHvBody, IvIntradayBody } from "../components/IvTools";
+import { IvGridBody, IvHvBody, IvIntradayBody } from "../components/IvTools";
 import { fmtExpiry } from "../lib/format";
 import { useExpiries } from "../lib/hooks";
 import { toolById, toolPath } from "../lib/tools";
@@ -41,8 +41,8 @@ export default function ToolPage() {
       </div>
     );
 
-  const usesChain = !!tool.widgets || !!tool.board || tool.page === "futflow" || tool.page === "futsectors" || tool.page === "ivhv" || tool.page === "ivintraday";
-  const strikeControls = !tool.board && tool.page !== "futflow" && tool.page !== "futsectors" && tool.page !== "ivhv" && tool.page !== "ivintraday"; // the boards pick their own strikes; these pages have no strike range
+  const usesChain = !!tool.widgets || !!tool.board || tool.page === "futflow" || tool.page === "futsectors" || tool.page === "ivhv" || tool.page === "ivintraday" || tool.page === "ivgrid";
+  const strikeControls = !tool.board && tool.page !== "futflow" && tool.page !== "futsectors" && tool.page !== "ivhv" && tool.page !== "ivintraday" && tool.page !== "ivgrid"; // the boards pick their own strikes; these pages have no strike range
   const modeBtn = (m: Mode, label: string, date?: string | null) => (
     <button type="button" key={m} aria-pressed={mode === m} disabled={m !== "manual" && !date} onClick={() => setMode(m)}
       className={`min-h-9 rounded-sm border px-3 text-sm disabled:opacity-40 ${mode === m ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>
@@ -112,7 +112,8 @@ export default function ToolPage() {
         {tool.page === "futbuildup" && <FuturesBuildupBody />}
         {tool.page === "ivhv" && <IvHvBody expiry={expiry} />}
         {tool.page === "ivintraday" && <IvIntradayBody expiry={expiry} />}
-        {tool.page && tool.page !== "flows" && tool.page !== "cash" && tool.page !== "futflow" && tool.page !== "futsectors" && tool.page !== "futbuildup" && tool.page !== "ivhv" && tool.page !== "ivintraday" && <IndexToolBody page={tool.page} />}
+        {tool.page === "ivgrid" && <IvGridBody expiry={expiry} />}
+        {tool.page && tool.page !== "flows" && tool.page !== "cash" && tool.page !== "futflow" && tool.page !== "futsectors" && tool.page !== "futbuildup" && tool.page !== "ivhv" && tool.page !== "ivintraday" && tool.page !== "ivgrid" && <IndexToolBody page={tool.page} />}
       </div>
     </DashProvider>
   );

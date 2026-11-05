@@ -847,6 +847,9 @@ export interface HvReport {
   windows: Record<string, { hv: number | null; returns: number; gap_returns: number }>;
   series: { window: number; dates: string[]; hv: (number | null)[] };
   method: string;
+  /** ATM implied volatility at the end of each stored session (nearest expiry with at least 2 days left) */
+  iv_by_session?: { date: string; atm_iv: number; expiry: string; days_to_expiry: number | null; at: string }[];
+  iv_by_session_note?: string;
 }
 export interface IvSeriesPoint { at: string; spot: number | null; atm_iv: number | null; straddle: number | null; skew: number | null; note: string | null }
 export interface IvSeries {
@@ -857,3 +860,10 @@ export interface IvSeries {
 // ---- One-minute NIFTY 50 bars from the live index feed (/api/market/index-bars)
 export interface IndexBar { at: string; o: number; h: number; l: number; c: number; n: number | null }
 export interface IndexBars { day: string | null; bars: IndexBar[]; note: string }
+
+/** Implied volatility by strike (rows) and stored snapshot (columns), /api/intraday/iv-grid */
+export interface IvGrid {
+  status: string; expiry?: string; session?: string; is_today?: boolean; samples_in_session?: number; columns?: number; thinned_every?: number;
+  times: string[]; spot?: (number | null)[]; strikes: number[]; atm_strike?: number; iv: (number | null)[][]; change: (number | null)[];
+  min?: number | null; max?: number | null; latest_at?: string; age_seconds?: number; model?: string; rate_assumed?: number; note?: string;
+}
