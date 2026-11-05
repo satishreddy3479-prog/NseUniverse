@@ -76,9 +76,14 @@ export function GammaAnalysisBoard() {
     if (!lv || visible.length === 0) return null;
     const strikes = visible.map((r) => r.strike);
     const pick = (r: GexRow) => (type === "ce" ? r.ce : type === "pe" ? r.pe : r.net);
-    const mark = (name: string, x: number | null, color: string, dash = "dashed") => (x == null || !levelsOn ? [] : [{ name, xAxis: posOf(strikes, x), lineStyle: { color, type: dash, width: 1.4 }, label: { formatter: `${name} ${fmtInt(Math.round(x))}`, color, fontSize: 10, position: "insideEndTop" } }]);
+    // level labels sit horizontally at the top, staggered over four rows so close levels (wall, flip, peak, spot) never overlap
+    const defs: [string, number | null, string, string][] = [["Spot", lv.spot, c.brass, "solid"], ["Call wall", lv.callWall, c.down, "dashed"], ["Put wall", lv.putWall, c.up, "dashed"], ["Peak", lv.peak, c.info, "dotted"], ["Flip", lv.flip, c.muted, "dotted"]];
+    const levelMarks = !levelsOn ? [] : defs.filter((x): x is [string, number, string, string] => x[1] != null).sort((p, q) => p[1] - q[1]).map(([name, x, color, dash], k) => ({
+      name, xAxis: posOf(strikes, x), lineStyle: { color, type: dash, width: 1.4 },
+      label: { formatter: `${name} ${fmtInt(Math.round(x))}`, color, fontSize: 10, position: "end", rotate: 0, align: "center", offset: [0, -13 * (k % 4)] },
+    }));
     return {
-      animation: false, grid: { left: 62, right: 14, top: 36, bottom: 56 },
+      animation: false, grid: { left: 62, right: 30, top: 84, bottom: 56 },
       legend: { type: "scroll", top: 0, left: 0, right: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
       tooltip: { trigger: "axis", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: number | null) => (v == null ? MISSING : `${fmtCrore(v)} cr`) },
       xAxis: { type: "category", data: strikes.map(String), axisLabel: { color: c.muted, fontSize: 10, rotate: 45, hideOverlap: true }, axisLine: { lineStyle: { color: c.rule } } },
@@ -88,18 +93,20 @@ export function GammaAnalysisBoard() {
         {
           name: type === "combined" ? "Net GEX" : type === "ce" ? "Call GEX" : "Put GEX", type: "bar", barMaxWidth: 22,
           data: visible.map((r) => ({ value: pick(r), itemStyle: { color: (pick(r) ?? 0) >= 0 ? c.info : c.down } })),
-          markLine: { symbol: "none", silent: true, data: [...mark("Spot", lv.spot, c.brass, "solid"), ...mark("Call wall", lv.callWall, c.down), ...mark("Put wall", lv.putWall, c.up), ...mark("Peak", lv.peak, c.info, "dotted"), ...mark("Flip", lv.flip, c.muted, "dotted")] },
+          markLine: { symbol: "none", silent: true, data: levelMarks },
         },
-        ...(absOn && type === "combined" ? [{ name: "Absolute GEX", type: "line", smooth: true, showSymbol: false, data: visible.map((r) => r.abs), lineStyle: { color: c.info, width: 1.6 }, itemStyle: { color: c.info } }] : []),
+        ...(absOn && type === "combined" ? [{ name: "Absolute GEX", type: "line", smooth: false, showSymbol: true, symbolSize: 4, data: visible.map((r) => r.abs), lineStyle: { color: c.info, width: 1.2, opacity: 0.8 }, itemStyle: { color: c.info } }] : []),
       ],
     };
   }, [lv, visible, type, levelsOn, absOn, c]);
   const densityOpt = useMemo(() => {
     if (!density || !lv) return null;
     const line = (name: string, color: string, data: number[], dotted = false) => ({ name, type: "line", showSymbol: false, smooth: true, data: density.xs.map((x, i) => [x, data[i]]), lineStyle: { color, width: 2, type: dotted ? "dotted" : "solid" }, itemStyle: { color } });
-    const vline = (name: string, x: number | null, color: string) => (x == null ? [] : [{ name, xAxis: x, lineStyle: { color, width: 1.2 }, label: { formatter: `${name} ${fmtInt(Math.round(x))}`, color, fontSize: 10, position: "insideEndTop" } }]);
+    // horizontal labels staggered over rows so close peaks never overlap
+    let row = 0;
+    const vline = (name: string, x: number | null, color: string) => (x == null ? [] : [{ name, xAxis: x, lineStyle: { color, width: 1.2 }, label: { formatter: `${name} ${fmtInt(Math.round(x))}`, color, fontSize: 10, position: "end", rotate: 0, align: "center", offset: [0, -13 * (row++ % 4)] } }]);
     return {
-      animation: false, grid: { left: 62, right: 14, top: 36, bottom: 40 },
+      animation: false, grid: { left: 62, right: 30, top: 84, bottom: 40 },
       legend: { type: "scroll", top: 0, left: 0, right: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
       tooltip: { trigger: "axis", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: number) => `${fmtCrore(v)} cr` },
       xAxis: { type: "value", scale: true, axisLabel: { color: c.muted, formatter: (v: number) => fmtInt(Math.round(v)) }, axisLine: { lineStyle: { color: c.rule } }, splitLine: { show: false } },
@@ -112,25 +119,31 @@ export function GammaAnalysisBoard() {
   }, [density, lv, c]);
   const structOpt = useMemo(() => {
     if (structure.length < 2) return null;
+    // a level more than 4% from spot is left off this panel (it would squash the price line); the table below has every level
+    const near = (p: (typeof structure)[number], v: number | null) => (v != null && Math.abs(v - p.spot) / p.spot <= 0.04 ? v : null);
     const ser = (name: string, color: string, f: (p: (typeof structure)[number]) => number | null, dash: string, width = 1.4) => ({
       name, type: "line", xAxisIndex: 0, yAxisIndex: 0, showSymbol: false, data: structure.map((p) => [p.t, f(p)]), lineStyle: { color, type: dash, width }, itemStyle: { color },
     });
     return {
       animation: false,
-      grid: [{ left: 62, right: 14, top: 36, height: "38%" }, { left: 62, right: 14, top: "52%", height: "20%" }, { left: 62, right: 14, top: "78%", height: "14%" }],
+      grid: [{ left: 76, right: 20, top: 56, height: "36%" }, { left: 76, right: 20, top: "55%", height: "17%" }, { left: 76, right: 20, top: "77%", height: "13%" }],
       legend: { type: "scroll", top: 0, left: 0, right: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
       axisPointer: { link: [{ xAxisIndex: "all" }] },
-      tooltip: { trigger: "axis", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 } },
+      tooltip: { trigger: "axis", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, extraCssText: "max-width:260px",
+        formatter: (ps: { value: [number, number | null]; seriesName: string; marker: string }[]) => {
+          const rows = ps.filter((x) => x.value?.[1] != null).map((x) => `${x.marker} ${x.seriesName}: <b>${x.seriesName.includes("GEX") ? `${fmtCrore(x.value[1])} cr` : fmtInt(Math.round(x.value[1] as number))}</b>`);
+          return `${ps[0] ? hhmm(ps[0].value[0]) : ""} IST<br/>${rows.join("<br/>")}`;
+        } },
       xAxis: [0, 1, 2].map((i) => ({ type: "time", gridIndex: i, ...(w.bounds ? { min: w.bounds.min, max: w.bounds.max } : {}), axisLabel: { show: i === 2, color: c.muted, fontSize: 11, hideOverlap: true, formatter: (v: number) => hhmm(v) }, axisLine: { lineStyle: { color: c.rule } }, splitLine: { show: true, lineStyle: { color: c.rule, opacity: 0.25 } } })),
       yAxis: [
-        { type: "value", gridIndex: 0, scale: true, axisLabel: { color: c.muted, formatter: (v: number) => fmtInt(Math.round(v)) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
-        { type: "value", gridIndex: 1, axisLabel: { color: c.muted, formatter: (v: number) => fmtCrore(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
-        { type: "value", gridIndex: 2, axisLabel: { color: c.muted, formatter: (v: number) => fmtCrore(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
+        { type: "value", gridIndex: 0, scale: true, name: "Spot and levels", nameTextStyle: { color: c.muted, fontSize: 10, align: "left" }, axisLabel: { color: c.muted, formatter: (v: number) => fmtInt(Math.round(v)) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
+        { type: "value", gridIndex: 1, name: "Net GEX (cr)", nameTextStyle: { color: c.muted, fontSize: 10, align: "left" }, axisLabel: { color: c.muted, formatter: (v: number) => fmtCrore(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
+        { type: "value", gridIndex: 2, name: "Change per minute (cr)", nameTextStyle: { color: c.muted, fontSize: 10, align: "left" }, axisLabel: { color: c.muted, formatter: (v: number) => fmtCrore(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
       ],
       series: [
         ser("Spot", c.brass, (p) => p.spot, "solid", 2),
-        ser("Call wall", c.down, (p) => p.callWall, "dashed"), ser("Put wall", c.up, (p) => p.putWall, "dashed"),
-        ser("Peak gamma", c.info, (p) => p.peak, "dotted"), ser("Gamma flip", c.muted, (p) => p.flip, "dotted"),
+        ser("Call wall", c.down, (p) => near(p, p.callWall), "dashed"), ser("Put wall", c.up, (p) => near(p, p.putWall), "dashed"),
+        ser("Peak gamma", c.info, (p) => near(p, p.peak), "dotted"), ser("Gamma flip", c.muted, (p) => near(p, p.flip), "dotted"),
         { name: "Net GEX", type: "bar", xAxisIndex: 1, yAxisIndex: 1, data: structure.map((p) => ({ value: [p.t, p.net], itemStyle: { color: (p.net ?? 0) >= 0 ? c.info : c.down } })) },
         { name: "GEX change per minute", type: "bar", xAxisIndex: 2, yAxisIndex: 2, data: structure.map((p) => ({ value: [p.t, p.roc], itemStyle: { color: (p.roc ?? 0) >= 0 ? c.up : c.down } })) },
       ],

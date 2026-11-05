@@ -5,7 +5,7 @@ import { fmtInt } from "../../lib/format";
 import { MISSING } from "../../lib/format";
 import { sessionDays, sessionWindow } from "../../lib/analytics";
 import { strikesAround } from "../../lib/optionTools";
-import { rupee, timeLinesOption, type Line } from "../../lib/priceCharts";
+import { rupee, TIME_LINES_RIGHT, timeLinesOption, type Line } from "../../lib/priceCharts";
 import { sessionOpenMin } from "../../lib/session";
 import {
   anchoredBand, candles, percentileRank, readingOf, regimeOf, stats, vegaChange, vegaLevel, vegaSamples,
@@ -160,7 +160,7 @@ export function VegaAnalysisBoard() {
   const optDiff = useMemo(() => {
     const shown = level.slice(0, at + 1);
     return {
-      animation: false, grid: { left: 58, right: 80, top: 8, bottom: 24 },
+      animation: false, grid: { left: 58, right: TIME_LINES_RIGHT, top: 8, bottom: 24 },
       tooltip: { trigger: "axis", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (x: number | null) => v3(x) },
       xAxis: { type: "time", ...(w.bounds ? { min: w.bounds.min, max: w.bounds.max } : {}), axisLabel: { color: c.muted, fontSize: 11, hideOverlap: true, formatter: (x: number) => new Date(x + 330 * 60_000).toISOString().slice(11, 16) }, axisLine: { lineStyle: { color: c.rule } } },
       yAxis: { type: "value", scale: true, axisLabel: { color: c.muted, fontSize: 10, formatter: (x: number) => x.toFixed(2) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },

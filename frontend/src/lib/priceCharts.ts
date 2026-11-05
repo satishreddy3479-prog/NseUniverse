@@ -33,13 +33,16 @@ export const dayLabel = (ms: number) => new Date(ms + 330 * 60_000).toISOString(
 /** Categorical colours for several strikes on one chart: distinguishable on both the light and the dark theme. */
 export const STRIKE_COLORS = ["#2f81f7", "#e8912d", "#a371f7", "#1fb5a5", "#e5568c", "#8fb339"];
 
+/** Right margin of a chart with a right axis: the latest-value tags sit first, the axis numbers after them. */
+export const TIME_LINES_RIGHT = 132;
+
 export function timeLinesOption(
   times: number[], lines: Line[], c: ChartColors, bounds: { min: number; max: number } | null,
   opts: { leftFmt?: (v: number) => string; rightFmt?: (v: number) => string; zeroLine?: boolean } = {},
 ): EChartsCoreOption {
   const hasRight = lines.some((l) => l.axis === 1);
   const yAxis = (right: boolean, f: (v: number) => string) => ({
-    type: "value", scale: true, position: right ? "right" : "left", axisLabel: { ...axisText(c), formatter: f },
+    type: "value", scale: true, position: right ? "right" : "left", axisLabel: { ...axisText(c), formatter: f, ...(right ? { margin: 70 } : {}) },
     splitLine: { show: !right, lineStyle: { color: c.rule, opacity: 0.5 } }, axisLine: { show: false },
   });
   const leftFmt = opts.leftFmt ?? ((v: number) => fmtInt(v));
@@ -56,7 +59,7 @@ export function timeLinesOption(
   }));
   return {
     animation: false,
-    grid: { left: 58, right: hasRight ? 80 : 64, top: 34, bottom: 28 },
+    grid: { left: 58, right: hasRight ? TIME_LINES_RIGHT : 64, top: 34, bottom: 28 },
     legend: { top: 0, left: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8, selected: Object.fromEntries(lines.map((l) => [l.name, !l.hidden])) },
     axisPointer: { link: [{ xAxisIndex: "all" }], lineStyle: { color: c.muted, type: "dashed" } },
     tooltip: {
