@@ -96,19 +96,7 @@ describe("MultiStrike and Multi-Straddle", () => {
   });
 });
 
-describe("Vega Analysis page and section tabs", () => {
-  it("draws call vega, put vega and NIFTY through the session with a table, not only the by-strike bars", async () => {
-    mockApi(history(IN_SESSION));
-    renderAt("/tools/vega-analysis");
-    const chart = await screen.findByRole("img", { name: "Call vega, put vega and NIFTY through the session" });
-    expect(chart.getAttribute("data-series")).toBe("Synth Future|Call Vega|Put Vega|Put − Call");
-    expect(screen.getByRole("group", { name: "Timeframe" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Δ Vega since open" })).toHaveAttribute("aria-pressed", "true"); // the Greek's change since the open is the default, not OI-weighted
-    expect(await screen.findByRole("table", { name: "Vega table" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Chart" }));
-    expect(screen.queryByRole("table", { name: "Vega table" })).toBeNull();
-  });
-
+describe("Price tool section tabs", () => {
   it("every tool page lists the tools of its section as tabs, with the current one marked", async () => {
     mockApi(history(IN_SESSION));
     renderAt("/tools/vega-analysis");
@@ -125,7 +113,7 @@ describe("session and timeline controls on the price boards", () => {
 
   it("every board offers a session and a timeline, fitted to the data by default", async () => {
     mockApi(history(TWO_DAYS));
-    renderAt("/tools/vega-analysis");
+    renderAt("/tools/price-vs-oi");
     const bar = await screen.findByTestId("session-timeline");
     const timeline = within(bar).getByRole("group", { name: "Timeline" });
     expect(within(timeline).getByRole("button", { name: "Fit" })).toHaveAttribute("aria-pressed", "true");

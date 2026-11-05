@@ -3,7 +3,8 @@ import { Link, useParams } from "react-router-dom";
 import { Info } from "../components/Info";
 import { DashProvider, type Range } from "../components/dashboard/DashContext";
 import { WIDGETS } from "../components/dashboard/widgets";
-import { MultiStrikeBoard, PriceOiBoard, VegaBoard } from "../components/dashboard/PriceBoards";
+import { MultiStrikeBoard, PriceOiBoard } from "../components/dashboard/PriceBoards";
+import { VegaAnalysisBoard } from "../components/dashboard/VegaAnalysis";
 import { StreamButtons } from "../components/LiveActivity";
 import { IndexToolBody } from "../components/IndexTools";
 import { FlowsPanel } from "../components/FlowsPanel";
@@ -101,7 +102,7 @@ export default function ToolPage() {
             })}
           </div>
         )}
-        {tool.board === "vega" && <VegaBoard />}
+        {tool.board === "vega" && <VegaAnalysisBoard />}
         {tool.board === "priceOi" && <PriceOiBoard />}
         {tool.board === "multiStrike" && <MultiStrikeBoard straddle={false} />}
         {tool.board === "multiStraddle" && <MultiStrikeBoard straddle />}
