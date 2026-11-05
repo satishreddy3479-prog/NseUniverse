@@ -35,7 +35,7 @@ function stamp(ms: number): string {
 const pill = (on: boolean) => `widget-nodrag min-h-8 rounded-sm border px-2.5 text-xs ${on ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`;
 const field = "widget-nodrag min-h-9 rounded-sm border border-rule bg-slate-2 px-2 text-sm text-paper";
 
-function Card({ label, value, sub, tone }: { label: string; value: ReactNode; sub: ReactNode; tone?: string }) {
+export function Card({ label, value, sub, tone }: { label: string; value: ReactNode; sub: ReactNode; tone?: string }) {
   return (
     <div className="rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2.5">
       <div className="text-[11px] uppercase tracking-wide text-muted">{label}</div>
@@ -45,7 +45,7 @@ function Card({ label, value, sub, tone }: { label: string; value: ReactNode; su
   );
 }
 
-function Section({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {
+export function Section({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {
   return (
     <section aria-label={title} className="overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate">
       <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-rule px-3 py-2">

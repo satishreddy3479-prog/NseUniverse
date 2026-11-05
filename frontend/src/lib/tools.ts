@@ -19,7 +19,7 @@ export interface Tool {
   /** dashboard widgets (ids in components/dashboard/widgets.tsx) stacked on the tool page */
   widgets?: string[];
   /** chart boards built from the stored per-strike series (components/dashboard/PriceBoards.tsx) */
-  board?: "priceOi" | "multiStrike" | "multiStraddle" | "vega";
+  board?: "priceOi" | "multiStrike" | "multiStraddle" | "vega" | "gamma";
   /** a special page body (see pages/ToolPage.tsx) */
   page?: "flows" | "cash" | "contributors" | "weightage" | "breadth" | "sectors" | "movers" | "futflow" | "futsectors" | "futbuildup" | "ivhv" | "ivintraday" | "ivgrid";
   /** why a planned tool is not available yet */
@@ -37,7 +37,7 @@ export const TOOLS: Tool[] = [
   { id: "multi-oi-volume", label: "Multi OI & Volume", menu: "options", group: "OI tools", status: "ready", widgets: ["oiTotalTrend", "oiChangeTrend", "oiVolumeTrend"], blurb: "Total call and put OI, OI change and volume through the session." },
   { id: "put-call-ratio", label: "Put-Call Ratio", menu: "options", group: "OI tools", status: "ready", widgets: ["pcr", "pcrTrend"], blurb: "PCR at the money and overall, and how it moved during the session." },
   { id: "max-pain", label: "Max Pain", menu: "options", group: "OI tools", status: "ready", widgets: ["levels"], blurb: "Max pain, highest call and put OI strikes and other key levels." },
-  { id: "gamma-exposure", label: "Gamma Exposure", menu: "options", group: "OI tools", status: "ready", isNew: true, widgets: ["gex"], blurb: "Strike-wise gamma from open interest, computed from the chain's own prices." },
+  { id: "gamma-exposure", label: "Gamma Exposure", menu: "options", group: "OI tools", status: "ready", isNew: true, board: "gamma", blurb: "Gamma exposure of the chain: regime, call and put walls, peak gamma, gamma flip, smoothed density, structure through the session and a strike table, from open interest and each contract\'s own implied volatility." },
   { id: "pe-ce-difference", label: "PE-CE Difference", menu: "options", group: "Popular tools", status: "ready", popular: true, isNew: true, widgets: ["peCe"], blurb: "Put minus call open interest, OI change and volume strike by strike." },
   { id: "smart-oi", label: "Smart OI", menu: "options", group: "Popular tools", status: "ready", isNew: true, popular: true, widgets: ["smartOi"], blurb: "Put OI change minus call OI change inside every 1, 3, 5 or 15 minute candle, beside NIFTY, with day change and PCR." },
   { id: "oi-buildup", label: "OI Buildup", menu: "options", group: "OI tools", status: "ready", isNew: true, widgets: ["oiBuildup"], blurb: "Long buildup, short buildup, short covering and long unwinding for every strike." },

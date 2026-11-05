@@ -5,6 +5,7 @@ import { DashProvider, type Range } from "../components/dashboard/DashContext";
 import { WIDGETS } from "../components/dashboard/widgets";
 import { MultiStrikeBoard, PriceOiBoard } from "../components/dashboard/PriceBoards";
 import { VegaAnalysisBoard } from "../components/dashboard/VegaAnalysis";
+import { GammaAnalysisBoard } from "../components/dashboard/GammaAnalysis";
 import { StreamButtons } from "../components/LiveActivity";
 import { IndexToolBody } from "../components/IndexTools";
 import { FlowsPanel } from "../components/FlowsPanel";
@@ -103,6 +104,7 @@ export default function ToolPage() {
           </div>
         )}
         {tool.board === "vega" && <VegaAnalysisBoard />}
+        {tool.board === "gamma" && <GammaAnalysisBoard />}
         {tool.board === "priceOi" && <PriceOiBoard />}
         {tool.board === "multiStrike" && <MultiStrikeBoard straddle={false} />}
         {tool.board === "multiStraddle" && <MultiStrikeBoard straddle />}
