@@ -21,7 +21,7 @@ export interface Tool {
   /** chart boards built from the stored per-strike series (components/dashboard/PriceBoards.tsx) */
   board?: "priceOi" | "multiStrike" | "multiStraddle" | "vega" | "gamma";
   /** a special page body (see pages/ToolPage.tsx) */
-  page?: "flows" | "cash" | "contributors" | "weightage" | "breadth" | "sectors" | "movers" | "futflow" | "futsectors" | "futbuildup" | "ivhv" | "ivintraday" | "ivgrid";
+  page?: "flows" | "cash" | "contributors" | "weightage" | "breadth" | "sectors" | "movers" | "futflow" | "futsectors" | "futbuildup" | "ivhv" | "ivchart" | "ivintraday";
   /** why a planned tool is not available yet */
   needs?: string;
   isNew?: boolean;
@@ -48,8 +48,8 @@ export const TOOLS: Tool[] = [
   { id: "multistrike-chart", label: "MultiStrike Chart", menu: "options", group: "Price tools", status: "ready", isNew: true, board: "multiStrike", blurb: "Price, OI or OI change of several strikes on one chart, calls and puts side by side." },
   { id: "multi-straddle", label: "Multi-Straddle Chart", menu: "options", group: "Price tools", status: "ready", isNew: true, board: "multiStraddle", blurb: "The straddle price of several strikes on one chart." },
   { id: "volatility-skew", label: "Volatility Skew", menu: "options", group: "IV tools", status: "ready", isNew: true, widgets: ["ivSkew"], blurb: "Implied volatility across strikes for calls and puts." },
+  { id: "iv-hvp", label: "IV / HV / IVP Chart", menu: "options", group: "IV tools", status: "ready", isNew: true, page: "ivchart", blurb: "India VIX against historical volatility with IV rank and IV percentile, and NIFTY as the price line." },
   { id: "iv-hv", label: "IV - HV", menu: "options", group: "IV tools", status: "ready", isNew: true, page: "ivhv", blurb: "At-the-money implied volatility against historical volatility (10, 20, 30 and 60 days) from stored daily closes." },
-  { id: "iv-grid", label: "IV Grid", menu: "options", group: "IV tools", status: "ready", isNew: true, page: "ivgrid", blurb: "Implied volatility by strike and time through the session, as a heat map from the stored snapshots." },
   { id: "iv-intraday", label: "IV - Intraday", menu: "options", group: "IV tools", status: "ready", isNew: true, page: "ivintraday", blurb: "At-the-money implied volatility through the session, one value per stored snapshot." },
   { id: "oi-crossover", label: "OI Crossover", menu: "options", group: "Screeners", status: "planned", needs: "Needs a rule for the crossover and its stored history.", blurb: "Strikes where call and put OI cross." },
   { id: "intraday-booster", label: "Intraday Booster", menu: "options", group: "Screeners", status: "ready", to: "/analysis", blurb: "Rules-based intraday command center built from the stored samples." },

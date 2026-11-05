@@ -47,7 +47,7 @@ _Last updated: 2026-11-04_
 - **Logo:** original mark (`public/logo.svg`: payoff line rising to a gold point inside an orbit ring), used in the top bar, favicon and app icons.
 - **Themes redesigned:** each theme now sets its own surfaces, not just colours. Light = pale page, white floating cards, soft shadows, 16 px corners, system font, darker up/down/amber for contrast. Ocean = water gradient page, glass-like teal cards, glow edges, 14 px corners. Dark = unchanged. Charts read the same variables. Browser/app title-bar colour follows the theme.
 - **Fix:** a menu opened by hover no longer closes on the click.
-- **Planned, not built:** IV-HV, IV Grid, IV Intraday, OI Crossover, MultiStrike Chart, Option Triggers, Future Heatmap, Future Price vs OI, Sentiment Cycle (each needs data not yet stored; reasons shown in the menu).
+- **Planned, not built:** OI Crossover, MultiStrike Chart, Option Triggers, Future Heatmap, Future Price vs OI, Sentiment Cycle (each needs data not yet stored; reasons shown in the menu).
 - **Verified:** tsc clean, 371 frontend tests pass, production build OK, screenshots of Home, menus and phone menu on a mocked-offline API. **Not verified:** live data in these pages (sandbox cannot reach the server); check after deploy in market hours.
 
 ## Futures and heavyweight flow never received ticks: root cause fixed (2 Nov 2026)
@@ -433,4 +433,4 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 - Swing page: single scrollbar (D76); entries, exits, decisions and orders show their day, when the job booked it and, where the live feed saw it, the exact time. Entry/exit minutes are unknown for the first two paper trades (before the live layer ran with a current queue).
 - Vega Analysis rebuilt (D77): level view with replay, six cards (percentile and regime need 100 samples over two sessions, so they read "not enough stored history" until the server has stored more sessions), and the vega change of the anchored band with table, statistics and insights. Not yet compared against live market data on the server.
 - Gamma Exposure rebuilt (D78): cards, regime, walls, peak, flip (by re-pricing), density, session structure, strike table. Tested on Black-76-generated prices with hand-derived checks; not yet compared with live data on the server. The old "Gamma exposure by strike" widget remains in the Analysis widget list.
-
+- IV tools (D79): IV Grid removed; new IV / HV / IVP Chart (India VIX vs HV with IVR/IVP) and daily IV − HV bars on the IV − HV page. Backend 710 and frontend tests pass (strategy tests time out only under full-suite load). IV − Intraday and Volatility Skew upgrades not built.

@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import { fmtInt, fmtTimeIST, MISSING } from "../lib/format";
+import { fmtTimeIST, MISSING } from "../lib/format";
 import type { HvReport, IvSeries } from "../lib/types";
 import { EChart, useChartColors } from "./EChart";
+import { IvMinusHvChart } from "./IvChartPages";
 
 const one = (v: number | null | undefined, unit = "%") => (v == null ? MISSING : `${v.toFixed(2)}${unit}`);
 const pts = (v: number | null | undefined) => (v == null ? MISSING : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)} pts`);
@@ -73,6 +74,7 @@ export function IvHvBody({ expiry }: { expiry: string | null }) {
   };
   return (
     <div className="flex flex-col gap-3" data-testid="ivhv-tool">
+      <IvMinusHvChart />
       <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
         <div className="text-xs text-muted">NIFTY 50 daily closes through {h.as_of ?? MISSING} ({h.bars} bars){h.days_behind != null && h.days_behind > 3 ? ` · ${h.days_behind} days old` : ""} · implied volatility: {iv == null ? MISSING : `ATM ${iv.toFixed(2)}%`}{vol?.as_of ? ` at ${fmtTimeIST(vol.as_of)} IST` : ""}</div>
         {ivNote && <p className="mt-1 text-xs text-warn" data-testid="ivhv-iv-note">{ivNote}</p>}
@@ -154,67 +156,6 @@ export function IvIntradayBody({ expiry }: { expiry: string | null }) {
         <h2 className="mb-1 text-sm font-semibold text-paper">At-the-money implied volatility through the session</h2>
         <div style={{ height: 320 }}><EChart option={option} ariaLabel="At-the-money implied volatility through the session" /></div>
         <p className="mt-2 text-[11px] text-muted">{s.model}; assumed rate {s.rate_assumed == null ? MISSING : `${(s.rate_assumed * 100).toFixed(2)}%`}. Computed from the stored option-chain snapshots, the same way as the command center&apos;s IV. A change in IV is context, not a prediction.</p>
-      </div>
-    </div>
-  );
-}
-
-/** Implied volatility by strike (rows) and time (columns) through the latest stored session. */
-export function IvGridBody({ expiry }: { expiry: string | null }) {
-  const colors = useChartColors();
-  const q = useQuery({ queryKey: ["ivGrid", expiry], queryFn: () => api.intradayIvGrid(expiry!), enabled: !!expiry, refetchInterval: 60_000, retry: false });
-  if (!expiry) return <p className="text-sm text-muted">Waiting for the expiry list from the broker.</p>;
-  if (q.isLoading) return <Loading />;
-  if (q.isError || !q.data) return <Problem what="The implied-volatility grid" e={q.error} />;
-  const g = q.data;
-  if (g.times.length === 0 || g.strikes.length === 0) return <p className="text-sm text-muted" data-testid="ivgrid-empty">{g.status}.</p>;
-  const stale = (g.age_seconds ?? 0) > 300 && g.is_today;
-  const labels = g.times.map((t) => fmtTimeIST(t));
-  const strikeLabel = (k: number) => `${fmtInt(k)}${k === g.atm_strike ? " ATM" : ""}`;
-  const cells: [number, number, number][] = [];
-  g.iv.forEach((row, yi) => row.forEach((v, xi) => { if (v != null) cells.push([xi, yi, v]); }));
-  const lo = g.min ?? 0, hi = g.max ?? 1;
-  const option = {
-    grid: { left: 82, right: 12, top: 8, bottom: 70 },
-    tooltip: { confine: true, backgroundColor: colors.slate, borderColor: colors.rule, textStyle: { color: colors.paper, fontSize: 12 },
-      formatter: (p: { value: [number, number, number] }) => `${labels[p.value[0]]} IST<br/>${strikeLabel(g.strikes[p.value[1]]!)}<br/><b>IV ${p.value[2].toFixed(2)}%</b>` },
-    xAxis: { type: "category", data: labels, splitArea: { show: false }, axisLabel: { color: colors.muted, hideOverlap: true }, axisLine: { lineStyle: { color: colors.rule } } },
-    yAxis: { type: "category", data: g.strikes.map(strikeLabel), axisLabel: { color: colors.paper, fontSize: 11 }, axisLine: { lineStyle: { color: colors.rule } }, splitArea: { show: false } },
-    visualMap: { min: lo, max: hi > lo ? hi : lo + 1, calculable: false, orient: "horizontal", left: "center", bottom: 4, itemWidth: 12, itemHeight: 140,
-      text: [`${hi.toFixed(1)}%`, `${lo.toFixed(1)}%`], textStyle: { color: colors.muted }, inRange: { color: [colors.info, colors.up, colors.brass, colors.down] } },
-    series: [{ name: "IV", type: "heatmap", data: cells, itemStyle: { borderColor: colors.slate, borderWidth: 1 }, emphasis: { itemStyle: { borderColor: colors.paper, borderWidth: 1 } } }],
-  };
-  return (
-    <div className="flex flex-col gap-3" data-testid="ivgrid-tool">
-      <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
-        <div className="text-xs text-muted">Expiry {g.expiry} · session {g.session}{g.is_today ? "" : " (not today: the last stored session)"} · {g.samples_in_session} stored snapshots{g.thinned_every && g.thinned_every > 1 ? `, every ${g.thinned_every}th shown` : ""} · newest {g.latest_at ? fmtTimeIST(g.latest_at) : MISSING} IST · IV from {one(g.min)} to {one(g.max)}</div>
-        {stale && <p className="mt-1 text-xs text-warn" data-testid="ivgrid-stale">The newest snapshot is {Math.round((g.age_seconds ?? 0) / 60)} minutes old: the sampler may have stopped.</p>}
-        {g.status !== "ok" && <p className="mt-1 text-xs text-warn">{g.status}.</p>}
-      </div>
-      <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
-        <h2 className="mb-1 text-sm font-semibold text-paper">Implied volatility by strike and time</h2>
-        <div style={{ height: Math.max(340, g.strikes.length * 22 + 110) }} data-testid="ivgrid-chart"><EChart option={option} ariaLabel="Implied volatility by strike and time" /></div>
-        <p className="mt-1 text-[11px] text-muted" data-testid="ivgrid-note">{g.note} Rows are the strikes around the newest at-the-money strike ({fmtInt(g.atm_strike)}), the same strikes all session; columns are stored snapshots. An empty cell means that price was missing or no IV could be solved; nothing is filled in. {g.model}; assumed rate {g.rate_assumed == null ? MISSING : `${(g.rate_assumed * 100).toFixed(2)}%`}.</p>
-      </div>
-      <div className="overflow-x-auto rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
-        <h2 className="mb-1 text-sm font-semibold text-paper">Latest IV by strike</h2>
-        <table className="w-full min-w-[22rem] max-w-[34rem] text-xs" data-testid="ivgrid-table">
-          <thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Strike</th><th className="py-1 text-right font-normal">IV now</th><th className="py-1 text-right font-normal">Change since first snapshot</th></tr></thead>
-          <tbody>
-            {[...g.strikes.keys()].reverse().map((i) => {
-              const row = g.iv[i]!;
-              const now = [...row].reverse().find((v) => v != null) ?? null;
-              const ch = g.change[i] ?? null;
-              return (
-                <tr key={g.strikes[i]} className={`border-t border-rule/50 ${g.strikes[i] === g.atm_strike ? "bg-brass/10" : ""}`}>
-                  <td className="num py-1 text-paper">{strikeLabel(g.strikes[i]!)}</td>
-                  <td className="num py-1 text-right text-paper">{one(now)}</td>
-                  <td className={`num py-1 text-right ${ch == null ? "text-muted" : ch >= 0 ? "text-up" : "text-down"}`}>{pts(ch)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
       </div>
     </div>
   );

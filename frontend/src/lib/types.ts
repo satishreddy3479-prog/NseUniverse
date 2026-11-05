@@ -867,9 +867,9 @@ export interface IvSeries {
 export interface IndexBar { at: string; o: number; h: number; l: number; c: number; n: number | null }
 export interface IndexBars { day: string | null; bars: IndexBar[]; note: string }
 
-/** Implied volatility by strike (rows) and stored snapshot (columns), /api/intraday/iv-grid */
-export interface IvGrid {
-  status: string; expiry?: string; session?: string; is_today?: boolean; samples_in_session?: number; columns?: number; thinned_every?: number;
-  times: string[]; spot?: (number | null)[]; strikes: number[]; atm_strike?: number; iv: (number | null)[][]; change: (number | null)[];
-  min?: number | null; max?: number | null; latest_at?: string; age_seconds?: number; model?: string; rate_assumed?: number; note?: string;
+
+/** Daily India VIX (implied volatility), NIFTY close and rolling HV, /api/intraday/iv-chart */
+export interface IvChart {
+  window: number; dates: string[]; close: number[]; iv: number[]; hv: (number | null)[];
+  nifty_bars: number; vix_bars: number; days: number; iv_source: string; method: string;
 }

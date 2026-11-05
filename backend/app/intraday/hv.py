@@ -70,3 +70,36 @@ def hv_report(bars: list[Bar], today: date, series_len: int = 120) -> dict[str, 
         "series": {"window": 20, "dates": dates, "hv": values},
         "method": "sample standard deviation of daily log returns x sqrt(252), percent; final daily closes only",
     }
+
+
+def iv_chart(nifty: list[Bar], vix: list[Bar], window: int, days: int = 750) -> dict[str, Any]:
+    """Daily series for the IV / HV / IV-percentile chart: NIFTY close, India VIX close (the implied-volatility proxy, the
+    market's own 30-day figure) and the rolling ``window``-day historical volatility of NIFTY, on the dates both have a bar.
+
+    The HV at a date uses the ``window`` returns ending that day (computed over the whole history first, so the first plotted
+    days are not short of returns). A date without enough returns, or without a VIX bar, is dropped rather than filled."""
+    rets = log_returns(nifty)
+    hv_at: dict[date, float | None] = {}
+    for i, (d, _r, _g) in enumerate(rets):
+        hv_at[d] = stdev_annual([r for _, r, _ in rets[i + 1 - window : i + 1]]) if i + 1 >= window else None
+    vix_at = {b.session: b.close for b in vix}
+    dates: list[str] = []
+    close: list[float] = []
+    iv: list[float] = []
+    hvs: list[float | None] = []
+    for b in nifty:
+        v = vix_at.get(b.session)
+        if v is None or b.session not in hv_at:
+            continue
+        dates.append(str(b.session))
+        close.append(b.close)
+        iv.append(round(v, 2))
+        h = hv_at[b.session]
+        hvs.append(None if h is None else round(h, 2))
+    lo = max(0, len(dates) - days)
+    return {
+        "window": window, "dates": dates[lo:], "close": close[lo:], "iv": iv[lo:], "hv": hvs[lo:],
+        "nifty_bars": len(nifty), "vix_bars": len(vix), "days": len(dates[lo:]),
+        "iv_source": "India VIX daily close (NSE's 30-day implied volatility of NIFTY options); not the ATM IV of one expiry",
+        "method": "HV = sample stdev of daily log returns x sqrt(252), percent; dates present in both series only",
+    }

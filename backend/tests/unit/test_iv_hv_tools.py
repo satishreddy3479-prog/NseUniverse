@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.intraday.hv import MAX_GAP_DAYS, hv, hv_report, log_returns
+from app.intraday.hv import MAX_GAP_DAYS, hv, hv_report, iv_chart, log_returns
 from app.intraday.service import IntradayService
 from app.intraday.store import IntradayStore
 from app.prediction.flows_store import FlowsStore
@@ -93,30 +93,7 @@ def test_api_exposes_both_tools(tmp_path: Path) -> None:
         assert c.get('/api/intraday/iv-series', params={'expiry': 'bad'}).status_code == 422
 
 
-# ---------------------------------------------------------------- IV grid and IV by session
-def test_iv_grid_is_strikes_by_time_with_the_otm_iv_in_each_cell(tmp_path: Path) -> None:
-    out = make(tmp_path, 30, 30).iv_grid(EXP, each_side=10, max_columns=40)
-    assert out["status"] == "ok" and out["columns"] == 30 and out["samples_in_session"] == 30
-    assert len(out["strikes"]) == 21 and out["strikes"] == sorted(out["strikes"])  # ATM +- 10 strikes, fixed for the whole grid
-    assert len(out["iv"]) == 21 and all(len(row) == 30 for row in out["iv"])
-    assert out["atm_strike"] in out["strikes"] and out["times"] == sorted(out["times"])
-    atm_row = out["iv"][out["strikes"].index(out["atm_strike"])]
-    assert all(v == pytest.approx(16.54, abs=0.2) for v in atm_row)  # the real chain's ATM IV, the same at every minute
-    # same prices every minute: IV only drifts as the time to expiry shortens over the 30 minutes
-    assert abs(out["change"][out["strikes"].index(out["atm_strike"])]) < 0.2
-    flat = [v for row in out["iv"] for v in row if v is not None]
-    assert out["min"] == min(flat) and out["max"] == max(flat) and all(1 < v < 80 for v in flat)
-
-
-def test_iv_grid_is_thinned_keeps_the_newest_snapshot_and_says_when_empty(tmp_path: Path) -> None:
-    svc = make(tmp_path / "a", 30, 30)
-    out = svc.iv_grid(EXP, each_side=10, max_columns=10)
-    assert out["columns"] <= 11 and out["thinned_every"] == 3 and out["times"][-1] == out["latest_at"]
-    empty = make(tmp_path / "b", 0, 30).iv_grid(EXP)
-    assert empty["iv"] == [] and "no stored" in empty["status"]
-    assert make(tmp_path / "c", 3, 30).iv_grid("not-a-date")["status"] == "bad expiry"
-
-
+# ---------------------------------------------------------------- IV by session
 def test_iv_by_session_names_the_expiry_and_feeds_the_hv_report(tmp_path: Path) -> None:
     svc = make(tmp_path, 30, 30)
     rows = svc.iv_history()
@@ -126,8 +103,22 @@ def test_iv_by_session_names_the_expiry_and_feeds_the_hv_report(tmp_path: Path) 
     assert report["iv_by_session"] == rows and "at least 2 days" in report["iv_by_session_note"]
 
 
-def test_api_iv_grid_validates_the_strike_range(tmp_path: Path) -> None:
+def test_iv_chart_aligns_vix_with_rolling_hv_and_drops_unpaired_days() -> None:
+    nifty = [bar("2026-11-02", 100), bar("2026-11-03", 102), bar("2026-11-04", 101), bar("2026-11-05", 101)]
+    vix = [bar("2026-11-03", 14.5), bar("2026-11-04", 15.0), bar("2026-11-05", 16.123)]  # no VIX bar for 2 Nov
+    out = iv_chart(nifty, vix, 2)
+    # 2 Nov has no return and no VIX; 3 Nov has one return only, so its 2-day HV is missing (not a shorter window)
+    assert out["dates"] == ["2026-11-03", "2026-11-04", "2026-11-05"]
+    assert out["hv"][0] is None
+    assert out["hv"][1] == pytest.approx(33.29, abs=0.02)  # the hand calculation above (returns 0.0198026, -0.0098523)
+    # 5 Nov: returns -0.0098523 and 0 -> mean -0.0049262, deviations +-0.0049262, var = 2 x 0.0049262^2, HV = 0.0049262 x sqrt(2 x 252) x 100
+    assert out["hv"][2] == pytest.approx(0.0049262 * math.sqrt(504) * 100, abs=0.02)
+    assert out["iv"] == [14.5, 15.0, 16.12] and out["close"] == [102, 101, 101]
+    assert "India VIX" in out["iv_source"]
+
+
+def test_api_iv_chart_validates_the_window(tmp_path: Path) -> None:
     with TestClient(make_app(tmp_path)) as c:
-        assert c.get("/api/intraday/iv-grid", params={"expiry": EXP}).json()["iv"] == []
-        assert c.get("/api/intraday/iv-grid", params={"expiry": EXP, "each_side": 2}).status_code == 422
-        assert c.get("/api/intraday/iv-grid", params={"expiry": "bad"}).status_code == 422
+        r = c.get("/api/intraday/iv-chart", params={"hv": 20})
+        assert r.status_code == 200 and set(r.json()) >= {"dates", "iv", "hv", "close", "iv_source"}
+        assert c.get("/api/intraday/iv-chart", params={"hv": 7}).status_code == 422

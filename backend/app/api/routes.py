@@ -667,14 +667,13 @@ async def intraday_hv(request: Request) -> dict[str, Any]:
     return await asyncio.to_thread(request.app.state.intraday.hv)
 
 
-@router.get("/intraday/iv-grid")
-async def intraday_iv_grid(request: Request, expiry: date, each_side: int = 10) -> dict[str, Any]:
-    """Implied volatility by strike and time through the latest stored session."""
-    if not 3 <= each_side <= 20:
-        detail = {"code": "bad_range", "message": "each_side must be 3 to 20"}
+@router.get("/intraday/iv-chart")
+async def intraday_iv_chart(request: Request, hv: int = 20) -> dict[str, Any]:
+    """Daily India VIX, NIFTY close and rolling HV (IV / HV / IV percentile chart)."""
+    if hv not in (10, 20, 30, 60):
+        detail = {"code": "bad_window", "message": "hv must be 10, 20, 30 or 60"}
         raise HTTPException(status_code=422, detail=detail)
-    svc = request.app.state.intraday
-    return await asyncio.to_thread(svc.iv_grid, expiry.isoformat(), each_side)
+    return await asyncio.to_thread(request.app.state.intraday.iv_chart, hv)
 
 
 @router.get("/intraday/iv-series")
