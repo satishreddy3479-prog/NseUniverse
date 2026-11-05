@@ -83,15 +83,22 @@ export default function ToolPage() {
             {strikeControls && <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={showPuts} onChange={(e) => setShowPuts(e.target.checked)} className="accent-[var(--brass)]" /> Puts</label>}
           </div>
         )}
-        {tool.widgets?.map((wid) => {
-          const w = WIDGETS.find((x) => x.id === wid);
-          return w ? (
-            <section key={wid} aria-label={w.title} className="flex flex-col overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate">
-              <header className="flex min-h-9 items-center border-b border-rule px-3"><h2 className="flex items-center gap-1.5 text-sm font-semibold text-paper">{w.title}<Info term={w.title} /></h2></header>
-              <div className="p-2" style={{ height: Math.max(340, w.h * 40) }}>{w.render()}</div>
-            </section>
-          ) : null;
-        })}
+        {tool.widgets && (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-12" data-testid="tool-widgets">
+            {tool.widgets.map((wid) => {
+              const w = WIDGETS.find((x) => x.id === wid);
+              if (!w) return null;
+              // small widgets (the registry's width is out of 12) sit two to a row at a compact height; wide ones keep the full width
+              const half = w.w <= 6;
+              return (
+                <section key={wid} aria-label={w.title} className={`flex flex-col overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate ${half ? "md:col-span-6" : "md:col-span-12"}`}>
+                  <header className="flex min-h-9 items-center border-b border-rule px-3"><h2 className="flex items-center gap-1.5 text-sm font-semibold text-paper">{w.title}<Info term={w.title} /></h2></header>
+                  <div className="p-2" style={{ height: w.w <= 4 ? 300 : Math.max(340, w.h * 40) }}>{w.render()}</div>
+                </section>
+              );
+            })}
+          </div>
+        )}
         {tool.board === "vega" && <VegaBoard />}
         {tool.board === "priceOi" && <PriceOiBoard />}
         {tool.board === "multiStrike" && <MultiStrikeBoard straddle={false} />}
