@@ -35,8 +35,8 @@ def test_basis_carry_fair_value_oi_change_and_volume_per_minute(tmp_path: Path) 
     assert abs(r["fair_basis"][0] - 23150 * (math.exp(0.06 * T) - 1)) < 1e-2
     assert abs(r["vs_fair"][0] - (50 - r["fair_basis"][0])) < 1e-2
     # OI change against the previous session's last OI of the same contract
-    assert r["oi_baseline"] == {"kind": "previous session close", "value": 1_000_000, "day": "2026-10-30"}
-    assert r["oi"] == [1_010_000, None] and r["oi_change"] == [10_000, None]  # a missing OI stays missing
+    assert r["oi_baseline"] == {"kind": "previous session close", "value": 1_000_000, "day": "2026-10-30", "sessions_ago": 1}
+    assert r["oi"] == [1_010_000, None] and r["oi_change"] == [10_000, None] and r["oi_per_min"] == [None, None]  # a missing OI stays missing
     assert r["volume"] == [50_000, 80_000] and r["volume_per_min"] == [None, 30_000]
     assert r["latest"]["basis"] == 50.0
 
@@ -65,3 +65,19 @@ def test_endpoint_returns_the_series_and_an_empty_state(tmp_path: Path) -> None:
         c.app.state.market.store.record_sample("fut", datetime.now(UTC).replace(second=0, microsecond=0).isoformat(), {"v": 5, "ltp": 100.0, "spot": 99.0, "oi": 10, "exp": None, "sym": "X"})
         r = c.get("/api/futures/series").json()
         assert r["basis"] == [1.0] and r["oi"] == [10] and r["carry_pct"] == [None]  # no expiry recorded: no annualised carry
+
+
+def test_stale_baseline_clock_and_oi_jump_warnings(tmp_path: Path) -> None:
+    m, o = MarketStore(tmp_path), ObservationStore(tmp_path)
+    put(m, "2026-11-03T10:00:00+00:00", v=1, ltp=23100.0, spot=23050.0, oi=1_445_000, exp="2026-11-23", sym="F")  # Tuesday
+    put(m, "2026-11-09T04:00:00+00:00", v=1, ltp=23200.0, spot=23150.0, oi=1_375_000, exp="2026-11-23", sym="F")  # Monday 9:30 IST
+    put(m, "2026-11-09T04:01:00+00:00", v=2, ltp=23201.0, spot=23151.0, oi=1_380_000, exp="2026-11-23", sym="F")  # +5,000 = 0.36 %
+    put(m, "2026-11-09T04:02:00+00:00", v=3, ltp=23202.0, spot=23152.0, oi=1_300_000, exp="2026-11-23", sym="F")  # -80,000 = 5.8 %
+    r = futures_series(m, o, "NIFTY", rate=0.06, day=date(2026, 11, 9))
+    assert r["oi_baseline"]["sessions_ago"] == 4  # Wed, Thu, Fri, Mon
+    assert r["oi_per_min"] == [None, 5_000, -80_000]
+    ws = " ".join(r["warnings"])
+    assert "4 weekdays before this day" in ws and "1 one-minute OI move" in ws
+    # the test runs after 9 Nov 2026 or not: only assert the clock warning when the sample really is in the future
+    future = datetime(2026, 11, 9, 4, 2, tzinfo=UTC) > datetime.now(UTC)
+    assert ("later than this computer's clock" in ws) == future

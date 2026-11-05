@@ -12,7 +12,8 @@ Basis (the gap), as institutions quote it:
                                                           of 365 days to the expiry close (same convention as the option model)
   fair basis   = index x (e^(r T) - 1)                   what financing alone would justify at an assumed rate r (no dividends)
   vs fair      = basis - fair basis                      positive: the future is rich to financing, negative: cheap
-OI change is OI now minus the previous session's last OI of the same contract (the open if that is not recorded).
+OI change is OI now minus the previous session's last OI of the same contract (the open if that is not recorded);
+OI per minute is the change since the previous recorded OI value.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from app.storage.observations import ObservationStore, to_ms
 
 IST = ZoneInfo("Asia/Kolkata")
 YEAR_DAYS = 365.0
+OI_JUMP = 0.01  # a one-minute OI move above 1 % is flagged
 
 DEFINITIONS = {
     "basis": "Future minus the index, in points, at the same moment.",
@@ -36,6 +38,7 @@ DEFINITIONS = {
     "fair_basis": "Index x (e^(rT) - 1) for the assumed rate r, with no dividends: what financing alone would justify.",
     "vs_fair": "Basis minus fair basis. Positive: the future is rich to financing; negative: cheap (dividends also push it down).",
     "oi_change": "Open interest now minus the previous session's last recorded open interest of the same contract (the session's first value when that is not recorded).",
+    "oi_per_min": "Open interest added (+) or removed (-) since the previous recorded value, in units.",
     "volume": "Contracts traded in the future today (cumulative since the open, units).",
 }
 
@@ -56,7 +59,7 @@ def futures_series(
         by_day.setdefault(t.astimezone(IST).date(), []).append((t, p))
     out: dict[str, Any] = {
         "day": None, "contract": None, "expiry": None, "rate_assumed": rate, "times": [], "future": [], "spot": [], "spot_source": [],
-        "basis": [], "basis_pct": [], "carry_pct": [], "fair_basis": [], "vs_fair": [], "oi": [], "oi_change": [], "volume": [], "volume_per_min": [],
+        "basis": [], "basis_pct": [], "carry_pct": [], "fair_basis": [], "vs_fair": [], "oi": [], "oi_change": [], "oi_per_min": [], "volume": [], "volume_per_min": [],
         "oi_baseline": None, "latest": None, "warnings": [], "definitions": DEFINITIONS,
     }
     days = sorted(d for d in by_day if day is None or d <= day)
@@ -79,9 +82,27 @@ def futures_series(
             break
     if base_val is None:
         base_val = first_oi
-    out["oi_baseline"] = None if base_val is None else {"kind": base_kind, "value": base_val, "day": base_day}
+    sessions_ago = None
+    if base_day is not None:
+        # weekdays after the baseline day up to this day (Friday -> Monday is 1): more than 1 means whole sessions are missing
+        b = date.fromisoformat(base_day)
+        sessions_ago = sum(1 for i in range(1, (d0 - b).days + 1) if (b + timedelta(days=i)).weekday() < 5)
+    out["oi_baseline"] = None if base_val is None else {"kind": base_kind, "value": base_val, "day": base_day, "sessions_ago": sessions_ago}
+    if sessions_ago is not None and sessions_ago > 1:
+        out["warnings"].append(
+            f"The OI baseline is the last recorded OI of {base_day}, {sessions_ago} weekdays before this day: "
+            "OI change spans several sessions (the sessions in between have no stored OI for this contract)."
+        )
+    now_utc = datetime.now(UTC)
+    if d0 > now_utc.astimezone(IST).date() or today[-1][0] > now_utc + timedelta(minutes=5):
+        out["warnings"].append(
+            f"These samples are stamped {today[-1][0].astimezone(IST):%d %b %Y %H:%M} IST, which is later than this computer's clock: "
+            "check the server's clock, because every stored time and the previous-session logic depend on it."
+        )
 
     prev_v: int | None = None
+    prev_oi: float | None = None
+    jumps = 0
     joined = 0
     for t, p in today:
         if since is not None and t < since:
@@ -116,10 +137,21 @@ def futures_series(
         out["vs_fair"].append(None if vs is None else round(vs, 2))
         out["oi"].append(oi)
         out["oi_change"].append(None if oi is None or base_val is None else oi - base_val)
+        per_min = None if oi is None or prev_oi is None else oi - prev_oi
+        out["oi_per_min"].append(per_min)
+        if per_min is not None and prev_oi and abs(per_min) / prev_oi > OI_JUMP:
+            jumps += 1
+        if oi is not None:
+            prev_oi = oi
         out["volume"].append(v)
         out["volume_per_min"].append(None if v is None or prev_v is None or v < prev_v else v - prev_v)
         if v is not None:
             prev_v = v
+    if jumps:
+        out["warnings"].append(
+            f"{jumps} one-minute OI move(s) larger than {OI_JUMP:.0%} of the open interest. Real futures OI rarely moves that fast, "
+            "so treat them as a possible feed artefact until compared with the exchange's end-of-day figure."
+        )
     if joined:
         out["warnings"].append(f"{joined} points had no live index level recorded; the nearest stored snapshot (within 90 s) was used for the basis there.")
     if out["times"] and all(o is None for o in out["oi"]):

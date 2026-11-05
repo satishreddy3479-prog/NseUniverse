@@ -457,17 +457,30 @@ export function futuresOption(res: FuturesSeries, kind: FuturesKind, c: ChartCol
   }
   const main =
     kind === "oi" ? [line("Open interest", c.info, res.oi, 1, { area: true })]
-    : kind === "change" ? [line("OI change", c.brass, res.oi_change, 1, { area: true, extra: { markLine: { silent: true, symbol: "none", data: [{ yAxis: 0 }], lineStyle: { color: c.muted, type: "dashed" }, label: { show: false } } } })]
+    : kind === "change" ? [{
+        // OI added (+) or removed (-) in each minute: the running change since the previous close is the same curve as OI shifted by a
+        // constant, so it is shown as a number in the corner instead of a second identical line
+        name: "OI per minute", type: "bar", yAxisIndex: 1, barMaxWidth: 5,
+        data: x.map((t, i) => [t, res.oi_per_min[i] ?? null]),
+        itemStyle: { color: (p: { value: [number, number | null] }) => ((p.value[1] ?? 0) >= 0 ? c.up : c.down) },
+        markLine: { silent: true, symbol: "none", data: [{ yAxis: 0 }], lineStyle: { color: c.muted, type: "dashed" }, label: { show: false } },
+      }]
     : [
         { name: "Volume per minute", type: "bar", yAxisIndex: 2, data: x.map((t, i) => [t, res.volume_per_min[i] ?? null]), itemStyle: { color: c.muted, opacity: 0.45 }, barMaxWidth: 4 },
         line("Volume today", c.info, res.volume, 1, { area: true }),
       ];
   const fmt = (n: string, v: number) => (n === "NIFTY future" ? fmtPrice(v) : `${sign(v, kind === "change")}${compactIN(Math.abs(v))}`);
+  const lastChange = [...res.oi_change].reverse().find((v) => v != null) ?? null;
+  const corner = kind === "change" && lastChange != null && res.oi_baseline
+    ? `Since ${res.oi_baseline.kind}${res.oi_baseline.day ? ` (${res.oi_baseline.day})` : ""}: ${sign(lastChange, true)}${compactIN(Math.abs(lastChange))}` : "";
+  // open interest axis in crore with three decimals (1.375 Cr), so neighbouring ticks never read the same
+  const oiAxis = kind === "oi" ? (v: number) => `${(v / 1e7).toFixed(3)} Cr` : (v: number) => `${sign(v)}${compactIN(Math.abs(v))}`;
   return {
     ...base,
-    grid: { left: 58, right: 62, top: 34, bottom: 44 },
+    grid: { left: 58, right: kind === "oi" ? 76 : 62, top: 34, bottom: 44 },
     tooltip: tip(fmt),
-    yAxis: [axis(false, (v) => fmtInt(Math.round(v))), axis(true, (v) => `${sign(v)}${compactIN(Math.abs(v))}`), { type: "value", show: false, scale: false, min: 0 }],
+    ...(corner ? { graphic: [{ type: "text", left: 64, top: 8, silent: true, style: { text: corner, fill: c.paper, font: "600 11px sans-serif", backgroundColor: c.slate, padding: [3, 6], borderRadius: 3 } }] } : {}),
+    yAxis: [axis(false, (v) => fmtInt(Math.round(v))), axis(true, oiAxis), { type: "value", show: false, scale: false, min: 0 }],
     series: [line("NIFTY future", c.muted, res.future, 0, { dotted: true }), ...main],
   };
 }

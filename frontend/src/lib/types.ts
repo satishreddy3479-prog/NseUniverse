@@ -731,8 +731,8 @@ export interface FuturesSeries {
   day: string | null; contract: string | null; expiry: string | null; rate_assumed: number;
   times: string[]; future: (number | null)[]; spot: (number | null)[]; spot_source: (string | null)[];
   basis: (number | null)[]; basis_pct: (number | null)[]; carry_pct: (number | null)[]; fair_basis: (number | null)[]; vs_fair: (number | null)[];
-  oi: (number | null)[]; oi_change: (number | null)[]; volume: (number | null)[]; volume_per_min: (number | null)[];
-  oi_baseline: { kind: string; value: number; day: string | null } | null;
+  oi: (number | null)[]; oi_change: (number | null)[]; oi_per_min: (number | null)[]; volume: (number | null)[]; volume_per_min: (number | null)[];
+  oi_baseline: { kind: string; value: number; day: string | null; sessions_ago?: number | null } | null;
   latest: { times: string; future: number; spot: number; basis: number; basis_pct: number | null; carry_pct: number | null; fair_basis: number | null; vs_fair: number | null } | null;
   warnings: string[]; definitions: Record<string, string>;
 }

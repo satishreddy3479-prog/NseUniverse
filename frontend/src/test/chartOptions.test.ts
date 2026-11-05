@@ -319,7 +319,7 @@ describe("futuresOption", () => {
     times: ["2026-11-02T03:46:00Z", "2026-11-02T03:47:00Z", "2026-11-02T03:48:00Z"],
     future: [23200, 23210, null], spot: [23150, 23160, null], spot_source: ["live tick", "live tick", null],
     basis: [50, 50, null], basis_pct: [0.216, 0.216, null], carry_pct: [3.4, 3.4, null], fair_basis: [90, 90, null], vs_fair: [-40, -40, null],
-    oi: [1_010_000, null, 1_012_000], oi_change: [10_000, null, 12_000], volume: [50_000, 80_000, null], volume_per_min: [null, 30_000, null],
+    oi: [1_010_000, null, 1_012_000], oi_change: [10_000, null, 12_000], oi_per_min: [null, null, 2_000], volume: [50_000, 80_000, null], volume_per_min: [null, 30_000, null],
     oi_baseline: { kind: "previous session close", value: 1_000_000, day: "2026-10-30" },
     latest: { times: "2026-11-02T03:47:00Z", future: 23210, spot: 23160, basis: 50, basis_pct: 0.216, carry_pct: 3.4, fair_basis: 90, vs_fair: -40 },
     warnings: [], definitions: {},
@@ -338,7 +338,8 @@ describe("futuresOption", () => {
   it("OI, OI change and volume keep missing values as gaps", async () => {
     const { futuresOption } = await import("../lib/chartOptions");
     expect(sx(futuresOption(res, "oi", colors)).at(-1)!.data.map((d) => d[1])).toEqual([1_010_000, null, 1_012_000]);
-    expect(sx(futuresOption(res, "change", colors)).at(-1)!.data.map((d) => d[1])).toEqual([10_000, null, 12_000]);
+    const ch = sx(futuresOption(res, "change", colors)).at(-1)!;
+    expect(ch.data.map((d) => d[1])).toEqual([null, null, 2_000]); // OI added per minute, not a second copy of the OI curve
     const v = sx(futuresOption(res, "volume", colors));
     expect(v.find((s) => s.name === "Volume per minute")!.data.map((d) => d[1])).toEqual([null, 30_000, null]);
     expect(v.find((s) => s.name === "Volume today")!.data.map((d) => d[1])).toEqual([50_000, 80_000, null]);

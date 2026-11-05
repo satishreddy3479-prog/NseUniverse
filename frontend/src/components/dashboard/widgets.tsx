@@ -399,7 +399,7 @@ function FuturesWidget({ kind, label }: { kind: FuturesKind; label: string }) {
   const res = q.data;
   const build = useMemo(() => (_o: Observation[], c: ReturnType<typeof useChartColors>) => (res && res.times.length ? futuresOption(res, kind, c) : { animation: false, series: [] }), [res, kind]);
   const what = kind === "oi" ? "open interest of the future (units)"
-    : kind === "change" ? `OI now minus ${res?.oi_baseline ? `the ${res.oi_baseline.kind} OI (${res.oi_baseline.value.toLocaleString("en-IN")}${res.oi_baseline.day ? `, ${res.oi_baseline.day}` : ""})` : "the baseline (not recorded yet)"}`
+    : kind === "change" ? `OI added (green) or removed (red) in each minute; the corner shows the change since ${res?.oi_baseline ? `the ${res.oi_baseline.kind} OI (${res.oi_baseline.value.toLocaleString("en-IN")}${res.oi_baseline.day ? `, ${res.oi_baseline.day}` : ""}${res.oi_baseline.sessions_ago && res.oi_baseline.sessions_ago > 1 ? `, ${res.oi_baseline.sessions_ago} sessions ago` : ""})` : "the baseline (not recorded yet)"}`
     : kind === "volume" ? "contracts traded today (line) and per minute (bars)"
     : "the index and the future on one axis; the gap is future minus index";
   const note = `${res?.contract ?? "NIFTY current-month future"}${res?.expiry ? ` (expires ${res.expiry})` : ""}: ${what}. ${kind === "basis" ? "" : "The future's price is the dotted line. "}${res?.warnings.length ? ` ${res.warnings.join(" ")}` : ""}`;
