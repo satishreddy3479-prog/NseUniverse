@@ -5,6 +5,13 @@ _Last updated: 2026-11-04_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Smart OI vs StockMojo gap (5 Nov 2026)
+- **Cause 1 (totals):** the page summed only ATM ±10 strikes (OI PCR 0.33–0.50 in the screenshot) while StockMojo's totals cover the whole chain (OI PCR 1.096). The default is now **All strikes**; the picker still offers ±5/±10/±20.
+- **Cause 2 (first candle and day lines):** StockMojo's 09:15 bar and day-change lines are against yesterday's closing OI (their Put +1.51L, Call −27.72L, PE−CE +29.23L at 09:15). Ours started at zero. They now use the stored OI change (OI now − previous-day OI) when present; the 09:15 candle gets a bar and its volume is everything traded since the open. Without stored previous-day OI the old baseline behaviour remains.
+- **Not closable from here:** NIFTY candles come from one-minute samples, so their highs and lows are narrower than the exchange's index candles (their 09:15 low 24,298 vs ours ~24,343). Whether StockMojo's chain is one expiry or all expiries is unknown; ours is the selected expiry.
+- **Layout:** main chart is taller (440 px), panels re-spaced, titled, and axis numbers in L/Cr. The "Mon, 09 Nov, 2026" in the footer is the selected expiry, not a sample date.
+- **Verified:** tsc clean, option-tools tests (new first-candle test). **Not verified:** the look in a browser (none available here) and the numbers against StockMojo during market hours.
+
 ## Smart OI: shared crosshair and full session (4 Nov 2026)
 - **Cause of the chart ending at 15:27:** the candle builder cut the session at 15:30, but the exchange session is 15:40 while the closing-auction alignment is on (`/api/market/session`), so the last ten minutes of stored samples were dropped. It now uses the backend's open and close (close minute included).
 - **Shared crosshair:** the three Smart OI charts form one ECharts group (`EChart group="smart-oi"`): hovering any chart marks the same candle time, with a time label and tooltip, in the other two (checked in a browser with both directions).

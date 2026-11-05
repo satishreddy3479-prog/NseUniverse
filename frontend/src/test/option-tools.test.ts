@@ -110,6 +110,17 @@ describe("smartOiCandles (Smart OI spec, section 5 worked example)", () => {
     expect(last.peVolDelta).toBe(50);
     expect(last.ceVolDelta).toBe(200);
   });
+  it("measures the first candle and the day lines against yesterday's close when the stored change exists", () => {
+    // 09:15 sample: put OI +151k and call OI −2.77M against yesterday, as in a platform's day-change view
+    const withChange = { ...series, pe_change: [151_000, 351_000, 851_000, 901_000], ce_change: [-2_772_000, -2_722_000, -2_672_000, -1_822_000] };
+    const r = smartOiCandles(withChange, 3);
+    expect(r.candles[0]!.fromPrevClose).toBe(true);
+    expect(r.candles[0]!.p).toBe(151_000 + 2_772_000);
+    expect(r.candles[1]!.p).toBe(150_000); // later bars are still candle against candle
+    expect(r.candles[0]!.diffDay).toBe(2_923_000);
+    expect(r.candles[3]!.peDay).toBe(901_000);
+    expect(r.candles[0]!.peVolDelta).toBe(100); // 09:15 candle: all volume since the open
+  });
   it("builds spot candles from the samples inside each candle, and uses the last sample's OI", () => {
     const s = { times: [t("03:45"), t("03:46"), t("03:47"), t("03:48")], spot: [100, 104, 99, 101], pe_oi: [10, 12, 15, 20], ce_oi: [10, 11, 12, 13] };
     const r = smartOiCandles(s, 3);

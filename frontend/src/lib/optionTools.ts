@@ -102,6 +102,9 @@ export interface SmartOiSeries {
   pe_oi: (number | null)[];
   ce_volume?: (number | null)[];
   pe_volume?: (number | null)[];
+  /** OI now minus the previous day's OI, summed over the same strikes (what the broker-day change means). Optional. */
+  ce_change?: (number | null)[];
+  pe_change?: (number | null)[];
 }
 
 export interface SmartOiCandle {
@@ -131,6 +134,8 @@ export interface SmartOiCandle {
   /** Option volume traded inside this candle (change in the cumulative total); null when unknown. */
   ceVolDelta: number | null;
   peVolDelta: number | null;
+  /** True when dPe/dCe/p of this (first) candle are measured against the previous day's closing OI, not a prior candle. */
+  fromPrevClose: boolean;
 }
 
 export interface SmartOiResult {
@@ -194,7 +199,12 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
     const ce = s.ce_oi[b.lastOi]!, pe = s.pe_oi[b.lastOi]!;
     const cev = s.ce_volume?.[b.lastOi] ?? null, pev = s.pe_volume?.[b.lastOi] ?? null;
     const prev = candles[candles.length - 1] ?? null;
-    const dPe = prev ? pe - prev.peOi : null, dCe = prev ? ce - prev.ceOi : null;
+    const chPe = s.pe_change?.[b.lastOi] ?? null, chCe = s.ce_change?.[b.lastOi] ?? null;
+    const hasChg = chPe != null && chCe != null;
+    // The first candle has no earlier candle: when the stored previous-day OI exists, its change is measured against yesterday's close
+    // (the "day change" the other platforms show at 09:15); otherwise it stays the baseline with no bar.
+    const fromPrevClose = !prev && hasChg;
+    const dPe = prev ? pe - prev.peOi : fromPrevClose ? chPe : null, dCe = prev ? ce - prev.ceOi : fromPrevClose ? chCe : null;
     const p = dPe != null && dCe != null ? dPe - dCe : null;
     const span = prev ? k - prev.slot : 1;
     if (prev && span > 1) gaps++;
@@ -203,11 +213,14 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
       slot: k, label: hhmm(openMin + k * timeframe),
       spot: b.spots.length ? { open: b.spots[0]!, high: Math.max(...b.spots), low: Math.min(...b.spots), close: b.spots[b.spots.length - 1]! } : null,
       ceOi: ce, peOi: pe, dPe, dCe, p, bullish: p == null ? null : p >= 0, span,
-      peDay: baseline ? pe - baseline.peOi : 0, ceDay: baseline ? ce - baseline.ceOi : 0,
-      diffDay: baseline ? pe - baseline.peOi - (ce - baseline.ceOi) : 0,
+      // day change: against yesterday's close when stored, else against the first candle (starts at 0)
+      peDay: hasChg ? chPe : baseline ? pe - baseline.peOi : 0, ceDay: hasChg ? chCe : baseline ? ce - baseline.ceOi : 0,
+      diffDay: hasChg ? chPe - chCe : baseline ? pe - baseline.peOi - (ce - baseline.ceOi) : 0,
       pcr: ce > 0 ? pe / ce : null,
       volPcr: cev != null && pev != null && cev > 0 ? pev / cev : null,
-      ceVolDelta: prev ? dv(cev, cumPrev?.ce ?? null) : null, peVolDelta: prev ? dv(pev, cumPrev?.pe ?? null) : null,
+      // the 09:15 candle's volume is everything traded since the open; later candles take the change in the cumulative total
+      ceVolDelta: prev ? dv(cev, cumPrev?.ce ?? null) : k === 0 ? cev : null, peVolDelta: prev ? dv(pev, cumPrev?.pe ?? null) : k === 0 ? pev : null,
+      fromPrevClose,
     };
     if (!baseline) baseline = c;
     cumPrev = { ce: cev, pe: pev };

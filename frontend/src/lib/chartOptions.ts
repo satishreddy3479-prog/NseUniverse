@@ -753,13 +753,23 @@ export function smartOiOption(r: SmartOiResult, c: ChartColors): EChartsCoreOpti
             (k.span > 1 ? `<br/>spans ${k.span} candles: samples missing in between` : ""));
       },
     },
+    // panel titles sit inside the top-left of each panel so the three charts read without a legend
+    title: [
+      { text: "NIFTY (from stored 1-min samples)", left: 66, top: "1%", textStyle: { color: c.muted, fontSize: 11, fontWeight: "normal" } },
+      { text: "Smart OI = ΔPut − ΔCall per candle", left: 66, top: "51%", textStyle: { color: c.muted, fontSize: 11, fontWeight: "normal" } },
+      { text: "Option volume per candle (put green, call red)", left: 66, top: "76%", textStyle: { color: c.muted, fontSize: 11, fontWeight: "normal" } },
+    ],
     grid: [
-      { left: 62, right: 14, top: 8, height: "48%" },
-      { left: 62, right: 14, top: "60%", height: "20%" },
-      { left: 62, right: 14, top: "88%", height: "8%" },
+      { left: 60, right: 12, top: "5%", height: "42%" },
+      { left: 60, right: 12, top: "55%", height: "17%" },
+      { left: 60, right: 12, top: "80%", height: "11%" },
     ],
     xAxis: [axis(0, false), axis(1, false), axis(2, true)],
-    yAxis: [val(0), val(1, { scale: false }), val(2, { scale: false, splitNumber: 1 })],
+    yAxis: [
+      val(0, { axisLabel: { ...axisText(c), formatter: (v: number) => v.toLocaleString("en-IN") } }),
+      val(1, { scale: false, axisLabel: { ...axisText(c), formatter: (v: number) => upTxt(v) } }),
+      val(2, { scale: false, splitNumber: 2, axisLabel: { ...axisText(c), formatter: (v: number) => compactIN(v) } }),
+    ],
     dataZoom: [{ type: "inside", xAxisIndex: [0, 1, 2], filterMode: "none" }],
     series: [
       {
