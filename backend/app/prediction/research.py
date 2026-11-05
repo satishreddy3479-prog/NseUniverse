@@ -59,7 +59,7 @@ from app.prediction.sources.yahoo import SYMBOLS
 from app.prediction.targets import Bar, make_labels
 
 MODEL_VERSION = "3"
-REPORT_SCHEMA = 5  # bump whenever the stored report gains or changes fields, so an older cached report is recomputed
+REPORT_SCHEMA = 6  # bump whenever the stored report gains or changes fields, so an older cached report is recomputed
 INITIAL_TRAIN = 1000
 TEST_SIZE = 250
 HORIZON_N: dict[str, int] = {"T1": 1, "T5": 5}
@@ -498,6 +498,8 @@ class PredictionResearch:
         others = self._others()
         flows = self._flows()
         fresh, stale = self._fresh(others, ref.session, now)
+        # the bar date each input actually comes from (the models take the last bar on or before the reference session)
+        input_dates = {k: str(max((b.session for b in v if b.session <= ref.session), default="")) or None for k, v in others.items()}
         horizons: dict[str, Any] = {}
         forecasts: dict[str, Any] = {"T1": {"models": {}}, "T5": {"models": {}}}
         ups: dict[str, float] = {}
@@ -530,7 +532,7 @@ class PredictionResearch:
         return {
             "ready": True, "model_version": MODEL_VERSION,
             "features": {"T1": {"version": T1_VERSION, "names": list(T1_NAMES)}, "T5": {"version": T5_VERSION, "names": list(T5_NAMES), "flows": list(FLOW_NAMES)}},
-            "data": {"symbol": "NIFTY 50 (^NSEI via Yahoo Finance) + global/sector series + NSE participant files", "bars": len(bars), "first": str(bars[0].session), "last": str(ref.session), "reference_close": ref.close, "up_rate_all": ups, "overnight_data_fresh": fresh, "stale_series": stale, "inputs": inputs},  # fmt: skip
+            "data": {"symbol": "NIFTY 50 (^NSEI via Yahoo Finance) + global/sector series + NSE participant files", "bars": len(bars), "first": str(bars[0].session), "last": str(ref.session), "reference_close": ref.close, "up_rate_all": ups, "overnight_data_fresh": fresh, "stale_series": stale, "inputs": inputs, "input_dates": input_dates},  # fmt: skip
             "evaluation": {"initial_train": self._it, "test_size": self._ts, "scheme": "expanding window purged by the label horizon; early half tunes and calibrates, later half is an untouched holdout", "horizons": horizons},
             "forecasts": forecasts, "excluded_inputs": EXCLUDED, "computed_at": now.isoformat(),
         }  # fmt: skip

@@ -400,3 +400,8 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 - **Data-quality warnings:** one-minute OI moves above 1 % of OI are counted and flagged as a possible feed artefact (the chart showed a sawtooth of 3–8 lakh drops that real futures OI does not do; cause NOT established, needs the server's stored `fut` samples and the exchange's end-of-day OI to compare); samples stamped later than the server clock are flagged (the audited screenshot showed 9 Nov 2026 while the clocks said 5 Nov).
 - OI axis now reads in crore with three decimals (1.375 Cr) so neighbouring ticks no longer repeat.
 - To do when the market opens: look at the OI chart live for the sawtooth; compare the last OI of the day with NSE's F&O bhavcopy for the same contract; check the server clock.
+
+## 2026-11-05 Prediction audit (partial, uncommitted)
+- Found: model features reuse the last bar of a global series for up to 5 days (`Series.idx`), so a late DXY/Brent bar shows an older day's move without any warning.
+- Changed: the report now carries `data.input_dates` (bar date each input comes from, schema 6) and the Model inputs panel lists any series older than the reference session.
+- Not verified (no server access): whether forecasts were recorded on 3, 4 and 5 Nov, why Brent/DXY bars were late, and the Yahoo `hour >= 12` date shift. Check the server's `prediction_daylog.sqlite3` and `history_service` fetch runs.

@@ -199,7 +199,8 @@ const sg = (v: number | undefined, d = 2) => (v == null ? "—" : sgn(v, d));
 const tn = (v: number | undefined): Tile["tone"] => (v == null || v === 0 ? undefined : v > 0 ? "up" : "down");
 
 /** What the models are looking at right now (values from the same rows the models use). */
-function InputsPanel({ inputs, last }: { inputs: PredictionSummaryReady["data"]["inputs"]; last: string }) {
+function InputsPanel({ inputs, last, dates }: { inputs: PredictionSummaryReady["data"]["inputs"]; last: string; dates?: Record<string, string | null> }) {
+  const lagging = Object.entries(dates ?? {}).filter(([, d]) => d && d < last).map(([k, d]) => `${k} ${d}`);
   const a = inputs?.T1 ?? {}, b = inputs?.T5 ?? {};
   if (!inputs?.T1) {
     return (
@@ -236,6 +237,9 @@ function InputsPanel({ inputs, last }: { inputs: PredictionSummaryReady["data"][
           </div>
         ))}
       </div>
+      {lagging.length > 0 && (
+        <p className="mt-2 text-xs text-warn" data-testid="inputs-lagging">Older than {last}, so its move is from an earlier day: {lagging.join(", ")}.</p>
+      )}
       <p className="mt-2 text-xs text-muted">Moves are the latest completed day (US and Europe: the session that closed before this morning). These are exactly the inputs the models see; nothing is added for display.</p>
     </section>
   );
@@ -532,7 +536,7 @@ export default function Prediction() {
                 })}
               </div>
               <SummaryStrip d={d} />
-              <InputsPanel inputs={d.data.inputs} last={d.data.last} />
+              <InputsPanel inputs={d.data.inputs} last={d.data.last} dates={d.data.input_dates} />
               <div className="flex flex-col gap-5">
                 {hzs.map((h) => <Leaderboard key={h} hz={h} ev={evs[h]} sel={sel[h] || evs[h].best_on_tuning || ""} onSel={(m) => setSel((s) => ({ ...s, [h]: m }))} />)}
               </div>

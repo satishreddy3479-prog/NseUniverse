@@ -422,7 +422,7 @@ export type PredictionSummary =
       computed_at: string;
       model_version: string;
       features: { T1: { version: string; names: string[] }; T5: { version: string; names: string[]; flows: string[] } };
-      data: { symbol: string; bars: number; first: string; last: string; reference_close: number; up_rate_all: Record<string, number>; overnight_data_fresh: boolean; stale_series: string[]; inputs: Partial<Record<"T1" | "T5", Record<string, number>>> };
+      data: { symbol: string; bars: number; first: string; last: string; reference_close: number; up_rate_all: Record<string, number>; overnight_data_fresh: boolean; stale_series: string[]; input_dates?: Record<string, string | null>; inputs: Partial<Record<"T1" | "T5", Record<string, number>>> };
       evaluation: { initial_train: number; test_size: number; scheme: string; horizons: Record<"T1" | "T5" | "T5F", HorizonEval> };
       forecasts: Record<"T1" | "T5", { headline_model?: string; calls?: { call: "up" | "down" | null; reason: string | null; strength: number | null; threshold: number | null }; models: Record<string, ModelForecast> }>;
       excluded_inputs: string[];
