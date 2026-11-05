@@ -5,6 +5,13 @@ _Last updated: 2026-11-04_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Smart OI audit (5 Nov 2026)
+- **How it is calculated:** per candle, total call OI and put OI over the chosen strikes (all strikes of the selected expiry by default) from the last stored sample in the candle; Smart OI = (put OI now − put OI previous candle) − (call OI now − call OI previous candle). The 09:15 candle uses yesterday's closing OI. Hand-checked on the spec example (+150k, +450k, −800k) in `option-tools.test.ts`.
+- **Volume:** Kotak `vol` is cumulative contracts-in-units traded today (3 Nov fixture: calls 187.8M, puts 176.8M, same scale as OI). Per-candle volume is the change in the cumulative sum; the 09:15 candle is everything since the open; a total that goes backwards is shown as missing, never negative.
+- **Fixed:** a strike with no OI in one sample changed the totals silently and created a fake jump. Candles where the strike count differs from the previous candle are now flagged in the tooltip and the footer (`strikesChanged`).
+- **Known limits:** candles use the local receipt time of each sample, not the exchange timestamp; a sample is stored only when the chain changed, so a candle with no sample is left out; volume sums do not report their own strike count, so a vanished volume strike shows only as a drop to missing.
+- **Not verified:** stored real samples (the sandbox has none), so how often strikes drop out in practice is unmeasured; compare with StockMojo during market hours.
+
 ## Smart OI vs StockMojo gap (5 Nov 2026)
 - **Cause 1 (totals):** the page summed only ATM ±10 strikes (OI PCR 0.33–0.50 in the screenshot) while StockMojo's totals cover the whole chain (OI PCR 1.096). The default is now **All strikes**; the picker still offers ±5/±10/±20.
 - **Cause 2 (first candle and day lines):** StockMojo's 09:15 bar and day-change lines are against yesterday's closing OI (their Put +1.51L, Call −27.72L, PE−CE +29.23L at 09:15). Ours started at zero. They now use the stored OI change (OI now − previous-day OI) when present; the 09:15 candle gets a bar and its volume is everything traded since the open. Without stored previous-day OI the old baseline behaviour remains.

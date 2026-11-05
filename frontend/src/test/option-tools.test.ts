@@ -121,6 +121,14 @@ describe("smartOiCandles (Smart OI spec, section 5 worked example)", () => {
     expect(r.candles[3]!.peDay).toBe(901_000);
     expect(r.candles[0]!.peVolDelta).toBe(100); // 09:15 candle: all volume since the open
   });
+  it("flags a candle whose strike count changed, and drops a volume total that went backwards", () => {
+    const s = { ...series, ce_strikes_used: [81, 81, 80, 80], pe_strikes_used: [81, 81, 81, 81], pe_volume: [100, 160, 250, 200], ce_volume: [100, 140, 200, 400] };
+    const r = smartOiCandles(s, 3);
+    expect(r.candles.map((c) => c.strikesChanged)).toEqual([false, false, true, false]);
+    expect(r.strikeChangeCandles).toBe(1);
+    expect(r.candles[3]!.peVolDelta).toBeNull(); // 250 → 200: a reset or a vanished strike, never a negative volume
+    expect(r.candles[3]!.ceVolDelta).toBe(200);
+  });
   it("builds spot candles from the samples inside each candle, and uses the last sample's OI", () => {
     const s = { times: [t("03:45"), t("03:46"), t("03:47"), t("03:48")], spot: [100, 104, 99, 101], pe_oi: [10, 12, 15, 20], ce_oi: [10, 11, 12, 13] };
     const r = smartOiCandles(s, 3);

@@ -750,7 +750,8 @@ export function smartOiOption(r: SmartOiResult, c: ChartColors): EChartsCoreOpti
         return `<b>${k.label}</b> (${r.timeframe} min)<br/>NIFTY ${sp}<br/>Call OI ${fmtInt(k.ceOi)} · Put OI ${fmtInt(k.peOi)}<br/>` +
           (k.p == null ? "Baseline candle: no change yet" :
             `ΔPut ${upTxt(k.dPe)} · ΔCall ${upTxt(k.dCe)}<br/><b>Smart OI ${upTxt(k.p)}</b> ${k.p >= 0 ? "(puts added faster)" : "(calls added faster)"}` +
-            (k.span > 1 ? `<br/>spans ${k.span} candles: samples missing in between` : ""));
+            (k.span > 1 ? `<br/>spans ${k.span} candles: samples missing in between` : "") +
+            (k.strikesChanged ? "<br/>⚠ the number of strikes behind the totals changed, so this bar is not like for like" : ""));
       },
     },
     // panel titles sit inside the top-left of each panel so the three charts read without a legend

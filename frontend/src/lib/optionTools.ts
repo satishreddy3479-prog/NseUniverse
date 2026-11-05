@@ -105,6 +105,9 @@ export interface SmartOiSeries {
   /** OI now minus the previous day's OI, summed over the same strikes (what the broker-day change means). Optional. */
   ce_change?: (number | null)[];
   pe_change?: (number | null)[];
+  /** How many strikes had a value in each sample. When it differs between two candles, part of the change is a strike appearing or vanishing. */
+  ce_strikes_used?: number[];
+  pe_strikes_used?: number[];
 }
 
 export interface SmartOiCandle {
@@ -136,6 +139,8 @@ export interface SmartOiCandle {
   peVolDelta: number | null;
   /** True when dPe/dCe/p of this (first) candle are measured against the previous day's closing OI, not a prior candle. */
   fromPrevClose: boolean;
+  /** The number of strikes behind the call or put total differs from the previous candle's, so this change is not like for like. */
+  strikesChanged: boolean;
 }
 
 export interface SmartOiResult {
@@ -149,6 +154,8 @@ export interface SmartOiResult {
   gapCandles: number;
   /** Samples left out because call or put OI was missing. */
   skippedSamples: number;
+  /** Candles whose change mixes in a strike that appeared or vanished between samples (see `strikesChanged`). */
+  strikeChangeCandles: number;
 }
 
 const IST_MS = 5.5 * 3600_000;
@@ -166,7 +173,7 @@ const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${St
  */
 export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?: string; openMin?: number; closeMin?: number } = {}): SmartOiResult {
   const day = opts.day, openMin = opts.openMin ?? OPEN_MIN, closeMin = opts.closeMin ?? CLOSE_MIN;
-  const empty: SmartOiResult = { day: null, timeframe, candles: [], baselineAt: null, gapCandles: 0, skippedSamples: 0 };
+  const empty: SmartOiResult = { day: null, timeframe, candles: [], baselineAt: null, gapCandles: 0, skippedSamples: 0, strikeChangeCandles: 0 };
   const n = Math.min(s.times.length, s.ce_oi.length, s.pe_oi.length, s.spot.length);
   const istOf = (iso: string) => new Date(new Date(iso).getTime() + IST_MS);
   let useDay = day ?? null;
@@ -191,7 +198,8 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
   }
   const slots = [...buckets.keys()].sort((a, b) => a - b).filter((k) => buckets.get(k)!.lastOi >= 0);
   const candles: SmartOiCandle[] = [];
-  let gaps = 0;
+  let gaps = 0, strikeChanges = 0;
+  let prevN: { ce: number; pe: number } | null = null;
   let baseline: SmartOiCandle | null = null;
   let cumPrev: { ce: number | null; pe: number | null } | null = null;
   for (const k of slots) {
@@ -199,6 +207,10 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
     const ce = s.ce_oi[b.lastOi]!, pe = s.pe_oi[b.lastOi]!;
     const cev = s.ce_volume?.[b.lastOi] ?? null, pev = s.pe_volume?.[b.lastOi] ?? null;
     const prev = candles[candles.length - 1] ?? null;
+    const nCe = s.ce_strikes_used?.[b.lastOi], nPe = s.pe_strikes_used?.[b.lastOi];
+    const strikesChanged = !!prev && prevN != null && nCe != null && nPe != null && (nCe !== prevN.ce || nPe !== prevN.pe);
+    if (strikesChanged) strikeChanges++;
+    prevN = nCe != null && nPe != null ? { ce: nCe, pe: nPe } : null;
     const chPe = s.pe_change?.[b.lastOi] ?? null, chCe = s.ce_change?.[b.lastOi] ?? null;
     const hasChg = chPe != null && chCe != null;
     // The first candle has no earlier candle: when the stored previous-day OI exists, its change is measured against yesterday's close
@@ -220,13 +232,13 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
       volPcr: cev != null && pev != null && cev > 0 ? pev / cev : null,
       // the 09:15 candle's volume is everything traded since the open; later candles take the change in the cumulative total
       ceVolDelta: prev ? dv(cev, cumPrev?.ce ?? null) : k === 0 ? cev : null, peVolDelta: prev ? dv(pev, cumPrev?.pe ?? null) : k === 0 ? pev : null,
-      fromPrevClose,
+      fromPrevClose, strikesChanged,
     };
     if (!baseline) baseline = c;
     cumPrev = { ce: cev, pe: pev };
     candles.push(c);
   }
-  return { day: useDay, timeframe, candles, baselineAt: baseline ? s.times[slots.length ? buckets.get(slots[0]!)!.lastOi : 0]! : null, gapCandles: gaps, skippedSamples: skipped };
+  return { day: useDay, timeframe, candles, baselineAt: baseline ? s.times[slots.length ? buckets.get(slots[0]!)!.lastOi : 0]! : null, gapCandles: gaps, skippedSamples: skipped, strikeChangeCandles: strikeChanges };
 }
 
 // ---------------------------------------------------------------- Price vs OI (one strike through the session)

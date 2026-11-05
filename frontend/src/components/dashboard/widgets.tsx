@@ -351,6 +351,7 @@ function SmartOiChartWidget() {
             {" "}NIFTY candles are built from the stored one-minute samples, so their highs and lows can be narrower than the exchange's index candles.
             {q.data?.stride && q.data.stride > 1 ? ` Showing every ${q.data.stride}th stored sample.` : ""}
             {res && res.gapCandles > 0 ? ` ${res.gapCandles} candle(s) follow a gap in stored samples, so their change covers more than one candle (see the tooltip).` : ""}
+            {res && res.strikeChangeCandles > 0 ? ` ${res.strikeChangeCandles} candle(s) have a different number of strikes behind the totals than the candle before (a strike had no OI in one sample), so those bars are not like for like (see the tooltip).` : ""}
             {res && res.skippedSamples > 0 ? ` ${res.skippedSamples} sample(s) skipped because call or put OI was missing.` : ""}
           </span>
         </Meta>
