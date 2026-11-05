@@ -857,9 +857,9 @@ export interface HvReport {
   iv_by_session?: { date: string; atm_iv: number; expiry: string; days_to_expiry: number | null; at: string }[];
   iv_by_session_note?: string;
 }
-export interface IvSeriesPoint { at: string; spot: number | null; atm_iv: number | null; straddle: number | null; skew: number | null; note: string | null }
+export interface IvSeriesPoint { at: string; spot: number | null; forward?: number | null; days?: number | null; atm_iv: number | null; straddle: number | null; skew: number | null; note: string | null }
 export interface IvSeries {
-  status: string; expiry?: string; session?: string; is_today?: boolean; samples_in_session?: number; points_shown?: number; thinned_every?: number;
+  status: string; tf_minutes?: number; expiry?: string; session?: string; is_today?: boolean; samples_in_session?: number; points_shown?: number; thinned_every?: number;
   latest_at?: string; age_seconds?: number; high?: number | null; low?: number | null; model?: string; rate_assumed?: number; points: IvSeriesPoint[];
 }
 
@@ -872,4 +872,14 @@ export interface IndexBars { day: string | null; bars: IndexBar[]; note: string 
 export interface IvChart {
   window: number; dates: string[]; close: number[]; iv: number[]; hv: (number | null)[];
   nifty_bars: number; vix_bars: number; days: number; iv_source: string; method: string;
+}
+
+/** Smile, skew measures and term view of the latest stored chain, /api/intraday/iv-skew */
+export interface SkewMeasures { skew_25d: number | null; skew_10d: number | null; butterfly_25d: number | null; slope_per_pct: number | null; put_25d_iv: number | null; call_25d_iv: number | null }
+export interface IvSkew {
+  status: string; expiry?: string; at?: string; age_seconds?: number; spot?: number; forward?: number; atm_strike?: number; atm_iv?: number | null; days?: number | null;
+  cards?: SkewMeasures & { term_slope_per_30d: number | null };
+  smile: { strike: number; side: "CE" | "PE"; iv: number | null; delta: number | null }[];
+  term: (SkewMeasures & { expiry: string; days: number | null; atm_iv: number | null })[];
+  model?: string; rate_assumed?: number;
 }

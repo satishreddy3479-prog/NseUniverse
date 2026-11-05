@@ -178,6 +178,33 @@ def surface(prices: Mapping[tuple[float, int], float | None], spot: float | None
     }  # fmt: skip
 
 
+def _nearest_delta(rows: Sequence[dict[str, Any]], side: str, target: float, tol: float) -> dict[str, Any] | None:
+    cand = [r for r in rows if r["side"] == side and r["otm"] and r["iv"] is not None and r["delta"] is not None]
+    best = min(cand, key=lambda r: abs(abs(r["delta"]) - target), default=None)
+    return best if best is not None and abs(abs(best["delta"]) - target) <= tol else None
+
+
+def skew_metrics(rows: Sequence[dict[str, Any]], forward: float, atm_iv: float | None) -> dict[str, Any]:
+    """Smile measures from one chain's solved rows (IV in percent). Put IV minus call IV at about 25 and 10 delta (a contract
+    counts only if its delta is within 0.1 / 0.05 of the target); butterfly = mean of the 25-delta wing IVs minus ATM IV;
+    slope = least-squares IV points per 1% of moneyness (strike / forward - 1) over the out-of-the-money options."""
+    p25, c25 = _nearest_delta(rows, "PE", 0.25, 0.1), _nearest_delta(rows, "CE", 0.25, 0.1)
+    p10, c10 = _nearest_delta(rows, "PE", 0.10, 0.05), _nearest_delta(rows, "CE", 0.10, 0.05)
+    pts = [((r["strike"] / forward - 1) * 100, r["iv"]) for r in rows if r["otm"] and r["iv"] is not None and forward > 0]
+    slope = None
+    if len(pts) >= 4:
+        mx, my = sum(x for x, _ in pts) / len(pts), sum(y for _, y in pts) / len(pts)
+        vx = sum((x - mx) ** 2 for x, _ in pts)
+        slope = None if vx == 0 else sum((x - mx) * (y - my) for x, y in pts) / vx
+    return {
+        "skew_25d": None if not (p25 and c25) else round(p25["iv"] - c25["iv"], 3),
+        "skew_10d": None if not (p10 and c10) else round(p10["iv"] - c10["iv"], 3),
+        "butterfly_25d": None if not (p25 and c25 and atm_iv is not None) else round((p25["iv"] + c25["iv"]) / 2 - atm_iv, 3),
+        "slope_per_pct": None if slope is None else round(slope, 4),
+        "put_25d_iv": None if not p25 else p25["iv"], "call_25d_iv": None if not c25 else c25["iv"],
+    }
+
+
 def realized_annualised(points: Sequence[tuple[datetime, float]]) -> float | None:
     """Annualised realised volatility (%) from consecutive samples over their actual elapsed time. Needs >= 5 points."""
     if len(points) < 5:

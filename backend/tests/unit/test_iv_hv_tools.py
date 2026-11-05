@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from app.intraday.hv import MAX_GAP_DAYS, hv, hv_report, iv_chart, log_returns
 from app.intraday.service import IntradayService
 from app.intraday.store import IntradayStore
+from app.intraday.volatility import skew_metrics
 from app.prediction.flows_store import FlowsStore
 from app.prediction.history_store import HistoryStore
 from app.prediction.targets import Bar
@@ -122,3 +123,50 @@ def test_api_iv_chart_validates_the_window(tmp_path: Path) -> None:
         r = c.get("/api/intraday/iv-chart", params={"hv": 20})
         assert r.status_code == 200 and set(r.json()) >= {"dates", "iv", "hv", "close", "iv_source"}
         assert c.get("/api/intraday/iv-chart", params={"hv": 7}).status_code == 422
+
+
+def test_skew_metrics_match_the_hand_calculation() -> None:
+    def r(k: float, side: str, iv: float, d: float) -> dict[str, object]:
+        return {"strike": k, "side": side, "otm": True, "iv": iv, "delta": d}
+
+    rows = [r(23900, "PE", 17, -0.40), r(23800, "PE", 18, -0.26), r(23600, "PE", 20, -0.10),
+            r(24100, "CE", 15, 0.40), r(24200, "CE", 14, 0.24), r(24400, "CE", 13.5, 0.09)]
+    m = skew_metrics(rows, 24000, 16.0)
+    assert m["skew_25d"] == 4.0  # 18 - 14 (the 0.26 and 0.24 delta contracts)
+    assert m["skew_10d"] == 6.5  # 20 - 13.5
+    assert m["butterfly_25d"] == 0.0  # (18 + 14) / 2 - 16
+    # moneyness % = -0.41667, -0.83333, -1.66667, +0.41667, +0.83333, +1.66667; mean IV 16.25; Sxy = -15.0; Sxx = 7.29167
+    assert m["slope_per_pct"] == pytest.approx(-2.0571, abs=1e-3)
+    far = skew_metrics([r(23000, "PE", 30, -0.02), r(25000, "CE", 12, 0.02)], 24000, 16.0)
+    assert far["skew_25d"] is None and far["slope_per_pct"] is None  # no contract near the target delta: missing
+
+
+def test_iv_series_for_a_chosen_session_and_candle_size(tmp_path: Path) -> None:
+    svc = make(tmp_path, 30, 30)
+    five = svc.iv_series(EXP, max_points=400, tf=5)
+    assert five["tf_minutes"] == 5 and five["samples_in_session"] == 6  # 30 one-minute samples = six 5-minute candles
+    assert five["points"][-1]["at"] == five["latest_at"]  # each candle keeps its last snapshot
+    named = svc.iv_series(EXP, session="2026-10-29")
+    assert named["session"] == "2026-10-29" and named["status"] == "ok"
+    assert svc.iv_series(EXP, session="2026-10-01")["points"] == []  # a session with nothing stored says so
+    assert svc.iv_series(EXP, session="nope")["status"] == "bad session"
+    assert svc.iv_sessions() == ["2026-10-29"]
+
+
+def test_iv_skew_gives_a_smile_cards_and_the_term_row(tmp_path: Path) -> None:
+    out = make(tmp_path, 30, 30).iv_skew(EXP)
+    assert out["status"] == "ok" and out["atm_iv"] == pytest.approx(16.54, abs=0.2)
+    strikes = [p["strike"] for p in out["smile"]]
+    assert len(strikes) >= 20 and all(p["iv"] is None or 1 < p["iv"] < 80 for p in out["smile"])
+    assert out["atm_strike"] in strikes and {"skew_25d", "skew_10d", "butterfly_25d", "slope_per_pct", "term_slope_per_30d"} <= set(out["cards"])
+    assert [t["expiry"] for t in out["term"]] == [EXP]  # one expiry stored: no term slope, said as missing
+    assert out["cards"]["term_slope_per_30d"] is None
+    assert make(tmp_path / "e", 0, 30).iv_skew(EXP)["smile"] == []
+
+
+def test_api_iv_series_options_and_skew(tmp_path: Path) -> None:
+    with TestClient(make_app(tmp_path)) as c:
+        assert c.get("/api/intraday/iv-series", params={"expiry": EXP, "tf": 2}).status_code == 422
+        assert c.get("/api/intraday/iv-series", params={"expiry": EXP, "tf": 5, "session": "2026-10-29"}).status_code == 200
+        assert c.get("/api/intraday/iv-sessions").json() == {"sessions": []}
+        assert c.get("/api/intraday/iv-skew", params={"expiry": EXP}).json()["smile"] == []

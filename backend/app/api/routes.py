@@ -677,9 +677,28 @@ async def intraday_iv_chart(request: Request, hv: int = 20) -> dict[str, Any]:
 
 
 @router.get("/intraday/iv-series")
-async def intraday_iv_series(request: Request, expiry: date) -> dict[str, Any]:
-    """At-the-money implied volatility through the latest stored session."""
-    return await asyncio.to_thread(request.app.state.intraday.iv_series, expiry.isoformat())
+async def intraday_iv_series(
+    request: Request, expiry: date, session: date | None = None, tf: int = 1, max_points: int = 90
+) -> dict[str, Any]:
+    """ATM implied volatility through a stored session (the latest unless `session` is given)."""
+    if tf not in (1, 3, 5, 15) or not 10 <= max_points <= 400:
+        msg = "tf must be 1, 3, 5 or 15 and max_points 10 to 400"
+        raise HTTPException(status_code=422, detail={"code": "bad_range", "message": msg})
+    svc = request.app.state.intraday
+    iso = None if session is None else session.isoformat()
+    return await asyncio.to_thread(svc.iv_series, expiry.isoformat(), max_points, iso, tf)
+
+
+@router.get("/intraday/iv-sessions")
+async def intraday_iv_sessions(request: Request) -> dict[str, Any]:
+    """IST dates that have stored option-chain samples."""
+    return {"sessions": await asyncio.to_thread(request.app.state.intraday.iv_sessions)}
+
+
+@router.get("/intraday/iv-skew")
+async def intraday_iv_skew(request: Request, expiry: date) -> dict[str, Any]:
+    """Volatility smile, skew measures and term view from the latest stored chain."""
+    return await asyncio.to_thread(request.app.state.intraday.iv_skew, expiry.isoformat())
 
 
 RESEARCH_K = (0.25, 0.5, 1.0)  # a fixed menu keeps the (cached) evaluation workload bounded

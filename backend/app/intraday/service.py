@@ -546,23 +546,45 @@ class IntradayService:
         """Daily India VIX (implied volatility), NIFTY close and rolling HV from the stored daily history."""
         return hvmod.iv_chart(self.history.bars("NIFTY50"), self.history.bars("INDIAVIX"), window)
 
-    def iv_series(self, expiry: str, max_points: int = 90) -> dict[str, Any]:
-        """At-the-money implied volatility through the latest stored session of this expiry, one value per stored
-        snapshot (thinned to at most ``max_points``). Same model and inputs as the command center's IV."""
+    def iv_sessions(self, limit: int = 30) -> list[str]:
+        """IST dates with stored in-session samples, newest last."""
+        return sorted(self.obs.session_sample_counts(self.underlying))[-limit:]
+
+    def iv_series(self, expiry: str, max_points: int = 90, session: str | None = None, tf: int = 1) -> dict[str, Any]:
+        """At-the-money implied volatility through one stored session of this expiry (the latest unless ``session`` is given),
+        the last snapshot of each ``tf``-minute candle counted from the open, thinned to at most ``max_points``. Same model
+        and inputs as the command center's IV."""
         now = self._clock()
         try:
             exp_d = date.fromisoformat(expiry)
         except ValueError:
             return {"status": "bad expiry", "points": []}
-        start = datetime.combine(now.astimezone(IST).date(), OPEN, IST)
-        samples = self.obs.samples(self.underlying, expiry, since=start - timedelta(days=4), until=now, limit=5000)
+        try:
+            want = date.fromisoformat(session) if session else None
+        except ValueError:
+            return {"status": "bad session", "points": []}
+        if want is None:
+            start = datetime.combine(now.astimezone(IST).date(), OPEN, IST)
+            samples = self.obs.samples(self.underlying, expiry, since=start - timedelta(days=4), until=now, limit=5000)
+        else:
+            lo = datetime.combine(want, OPEN, IST)
+            samples = self.obs.samples(self.underlying, expiry, since=lo, until=datetime.combine(want, session_close(), IST), limit=5000)
         if not samples:
             return {"status": "no stored option-chain sample for this expiry", "expiry": expiry, "points": []}
         day = samples[-1].received_at.astimezone(IST).date()
         todays = [s for s in samples if s.received_at.astimezone(IST).date() == day and OPEN <= s.received_at.astimezone(IST).time() <= session_close()]
         if not todays:
             return {"status": "no stored sample inside the session", "expiry": expiry, "points": []}
-        key = (expiry, str(todays[-1].sample_id), len(todays), max_points)
+        if tf > 1:
+            def bucket(s: Any) -> int:
+                t_ = s.received_at.astimezone(IST)
+                return int((t_.hour * 60 + t_.minute - (OPEN.hour * 60 + OPEN.minute)) // tf)
+
+            last: dict[int, Any] = {}
+            for s in todays:
+                last[bucket(s)] = s
+            todays = list(last.values())
+        key = (expiry, str(todays[-1].sample_id), len(todays), max_points, tf)
         if key in self._iv_cache:
             return self._iv_cache[key]
         stride = max(1, -(-len(todays) // max_points))
@@ -575,15 +597,17 @@ class IntradayService:
             ok = sf.get("status") == "ok"
             points.append({
                 "at": s.received_at.isoformat(), "spot": s.spot,
+                "forward": sf.get("forward") if ok else None,
                 "atm_iv": sf.get("atm_iv") if ok else None,
                 "straddle": sf.get("straddle") if ok else None,
                 "skew": sf.get("skew_25d_put_minus_call") if ok else None,
+                "days": sf.get("time_to_expiry_days"),
                 "note": None if ok else sf.get("status"),
             })
         valid = [p["atm_iv"] for p in points if p["atm_iv"] is not None]
         out = {
             "status": "ok" if valid else "no implied volatility could be computed",
-            "expiry": expiry, "session": day.isoformat(), "is_today": day == now.astimezone(IST).date(),
+            "expiry": expiry, "session": day.isoformat(), "is_today": day == now.astimezone(IST).date(), "tf_minutes": tf,
             "samples_in_session": len(todays), "points_shown": len(points), "thinned_every": stride,
             "latest_at": todays[-1].received_at.isoformat(),
             "age_seconds": round((now - todays[-1].received_at).total_seconds(), 1),
@@ -593,6 +617,52 @@ class IntradayService:
         }
         self._iv_cache = {key: out}
         return out
+
+    def iv_skew(self, expiry: str, each_side: int = 15) -> dict[str, Any]:
+        """Smile of the latest stored chain of ``expiry`` (out-of-the-money IV by strike), skew measures, and the same
+        measures for every expiry that has a sample within 5 minutes (term view)."""
+        try:
+            exp_d = date.fromisoformat(expiry)
+        except ValueError:
+            return {"status": "bad expiry", "smile": [], "term": []}
+        now = self._clock()
+        start = datetime.combine(now.astimezone(IST).date(), OPEN, IST)
+        ss = self.obs.samples(self.underlying, expiry, since=start - timedelta(days=4), until=now, limit=5000)
+        if not ss or ss[-1].spot is None:
+            return {"status": "no stored option-chain sample for this expiry", "expiry": expiry, "smile": [], "term": []}
+        latest = ss[-1]
+        sf = self._surface_of(latest, exp_d, latest.received_at, each_side)
+        if sf.get("status") != "ok":
+            return {"status": str(sf.get("status")), "expiry": expiry, "smile": [], "term": []}
+        rows = sf["rows"]
+        smile = [{"strike": r["strike"], "side": r["side"], "iv": r["iv"], "delta": r["delta"]} for r in rows if r["otm"]]
+        cards = volmod.skew_metrics(rows, sf["forward"], sf.get("atm_iv"))
+        term: list[dict[str, Any]] = []
+        at = latest.received_at
+        for other in self.expiries_today():
+            if other == expiry:
+                of = sf
+            else:
+                os_ = self.obs.samples(self.underlying, other, since=at - timedelta(minutes=5), until=at + timedelta(minutes=5), limit=1)
+                if not os_ or os_[-1].spot is None:
+                    continue
+                of = self._surface_of(os_[-1], date.fromisoformat(other), os_[-1].received_at, each_side)
+            if of.get("status") != "ok":
+                continue
+            m = volmod.skew_metrics(of["rows"], of["forward"], of.get("atm_iv"))
+            term.append({"expiry": other, "days": of.get("time_to_expiry_days"), "atm_iv": of.get("atm_iv"), **m})
+        term.sort(key=lambda x: x["days"] or 0.0)
+        with_iv = [t_ for t_ in term if t_["atm_iv"] is not None and t_["days"] is not None]
+        term_slope = None
+        if len(with_iv) >= 2 and with_iv[-1]["days"] != with_iv[0]["days"]:
+            term_slope = round((with_iv[-1]["atm_iv"] - with_iv[0]["atm_iv"]) / (with_iv[-1]["days"] - with_iv[0]["days"]) * 30, 3)
+        return {
+            "status": "ok", "expiry": expiry, "at": at.isoformat(), "age_seconds": round((now - at).total_seconds(), 1),
+            "spot": latest.spot, "forward": sf["forward"], "atm_strike": sf["atm_strike"], "atm_iv": sf.get("atm_iv"),
+            "days": sf.get("time_to_expiry_days"), "cards": {**cards, "term_slope_per_30d": term_slope},
+            "smile": smile, "term": term,
+            "model": "Black-76; forward from put-call parity", "rate_assumed": self.risk_free_rate,
+        }
 
     def iv_history(self, sessions: int = 20, min_days_left: int = 2) -> list[dict[str, Any]]:
         """ATM implied volatility at the end of each stored session, for the IV against HV chart.

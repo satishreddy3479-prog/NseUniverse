@@ -119,44 +119,4 @@ export function IvHvBody({ expiry }: { expiry: string | null }) {
   );
 }
 
-/** At-the-money implied volatility through the latest stored session, one value per stored snapshot. */
-export function IvIntradayBody({ expiry }: { expiry: string | null }) {
-  const colors = useChartColors();
-  const q = useQuery({ queryKey: ["ivSeries", expiry], queryFn: () => api.intradayIvSeries(expiry!), enabled: !!expiry, refetchInterval: 60_000, retry: false });
-  if (!expiry) return <p className="text-sm text-muted">Waiting for the expiry list from the broker.</p>;
-  if (q.isLoading) return <Loading />;
-  if (q.isError || !q.data) return <Problem what="The implied-volatility series" e={q.error} />;
-  const s = q.data;
-  if (s.points.length === 0) return <p className="text-sm text-muted" data-testid="ivintraday-empty">{s.status}.</p>;
-  const valid = s.points.filter((p) => p.atm_iv != null);
-  const first = valid[0]?.atm_iv ?? null;
-  const last = valid[valid.length - 1]?.atm_iv ?? null;
-  const stale = (s.age_seconds ?? 0) > 300 && s.is_today;
-  const option = {
-    grid: { left: 46, right: 14, top: 24, bottom: 28 },
-    tooltip: { trigger: "axis", valueFormatter: (v: number | null) => (v == null ? MISSING : `${v.toFixed(2)}%`) },
-    xAxis: { type: "category", data: s.points.map((p) => fmtTimeIST(p.at)), axisLabel: { color: colors.muted, hideOverlap: true } },
-    yAxis: { type: "value", scale: true, axisLabel: { color: colors.muted, formatter: "{value}%" }, splitLine: { lineStyle: { color: colors.rule } } },
-    series: [{ name: "ATM IV", type: "line", showSymbol: s.points.length < 40, data: s.points.map((p) => p.atm_iv), connectNulls: false, lineStyle: { color: colors.brass, width: 2 } }],
-  };
-  return (
-    <div className="flex flex-col gap-3" data-testid="ivintraday-tool">
-      <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
-        <div className="text-xs text-muted">Expiry {s.expiry} · session {s.session}{s.is_today ? "" : " (not today: the last stored session)"} · {s.samples_in_session} stored snapshots{s.thinned_every && s.thinned_every > 1 ? `, every ${s.thinned_every}th shown` : ""} · newest {s.latest_at ? fmtTimeIST(s.latest_at) : MISSING} IST</div>
-        {stale && <p className="mt-1 text-xs text-warn" data-testid="ivintraday-stale">The newest snapshot is {Math.round((s.age_seconds ?? 0) / 60)} minutes old: the sampler may have stopped.</p>}
-        <div className="mt-2 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4" data-testid="ivintraday-stats">
-          <div><div className="text-[11px] text-muted">Latest ATM IV</div><div className="num text-lg font-semibold text-paper">{one(last)}</div></div>
-          <div><div className="text-[11px] text-muted">Change since first</div><div className="num text-paper">{first == null || last == null ? MISSING : pts(last - first)}</div></div>
-          <div><div className="text-[11px] text-muted">Session high</div><div className="num text-paper">{one(s.high)}</div></div>
-          <div><div className="text-[11px] text-muted">Session low</div><div className="num text-paper">{one(s.low)}</div></div>
-        </div>
-        {valid.length < s.points.length && <p className="mt-1 text-[11px] text-muted">{s.points.length - valid.length} snapshot(s) had no computable IV (shown as gaps, never filled).</p>}
-      </div>
-      <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
-        <h2 className="mb-1 text-sm font-semibold text-paper">At-the-money implied volatility through the session</h2>
-        <div style={{ height: 320 }}><EChart option={option} ariaLabel="At-the-money implied volatility through the session" /></div>
-        <p className="mt-2 text-[11px] text-muted">{s.model}; assumed rate {s.rate_assumed == null ? MISSING : `${(s.rate_assumed * 100).toFixed(2)}%`}. Computed from the stored option-chain snapshots, the same way as the command center&apos;s IV. A change in IV is context, not a prediction.</p>
-      </div>
-    </div>
-  );
-}
+export { IvIntradayBody } from "./IvIntraday";

@@ -10,7 +10,7 @@ import type {
   ConfigStatus,
   ErrorEvent,
   ExpirySelection,
-  EventItem, FlowsLatest, StorageStatus, IntradayScoreRow, IntradaySummary, NewsStatus, FlowsStatus, HistoryFetchStatus, HistoryResponse, OiChange, OiHeatmap, OiSeries, StrikeSeries, FuturesSeries, HvReport, IvChart, IvSeries, IndexBars, PremiumDecay, PredictionSummary, SamplerStatus, SwingReport, SwingPaperView, SwingLiveView,
+  EventItem, FlowsLatest, StorageStatus, IntradayScoreRow, IntradaySummary, NewsStatus, FlowsStatus, HistoryFetchStatus, HistoryResponse, OiChange, OiHeatmap, OiSeries, StrikeSeries, FuturesSeries, HvReport, IvChart, IvSkew, IvSeries, IndexBars, PremiumDecay, PredictionSummary, SamplerStatus, SwingReport, SwingPaperView, SwingLiveView,
   SessionInfo,
   SnapshotSummary,
 } from "./types";
@@ -146,7 +146,10 @@ export const api = {
   indexBars: () => request<IndexBars>("/api/market/index-bars"),
   intradayHv: () => request<HvReport>("/api/intraday/hv"),
   intradayIvChart: (hv: number) => request<IvChart>(`/api/intraday/iv-chart?hv=${hv}`),
-  intradayIvSeries: (expiry: string) => request<IvSeries>(`/api/intraday/iv-series?expiry=${encodeURIComponent(expiry)}`),
+  intradayIvSeries: (expiry: string, o: { session?: string; tf?: number; maxPoints?: number } = {}) =>
+    request<IvSeries>(`/api/intraday/iv-series?expiry=${encodeURIComponent(expiry)}${o.session ? `&session=${o.session}` : ""}${o.tf ? `&tf=${o.tf}` : ""}${o.maxPoints ? `&max_points=${o.maxPoints}` : ""}`),
+  intradayIvSessions: () => request<{ sessions: string[] }>("/api/intraday/iv-sessions"),
+  intradayIvSkew: (expiry: string) => request<IvSkew>(`/api/intraday/iv-skew?expiry=${encodeURIComponent(expiry)}`),
   futuresSeries: (since?: string) => request<FuturesSeries>("/api/futures/series" + (since ? `?since=${encodeURIComponent(since)}` : "")),
   oiSeries: (expiry: string, strikes: string, since?: string, maxPoints?: number) =>
     request<OiSeries>(
