@@ -1089,8 +1089,11 @@ export const WIDGETS: WidgetDef[] = [
   { id: "detail", title: "Strike detail", render: () => <DetailWidget />, x: 9, y: 29, w: 3, h: 8, minW: 2, minH: 4 },
 ];
 
+/** Shown in the Options Lab (Open Interest tool) only, no longer on the Analysis page. */
+export const LAB_ONLY_WIDGETS = ["oiTotal", "oiChangeTotal"];
+
 /** First screen: the nine widgets of the reference layout; the rest are one click away in "Add widget". */
-export const DEFAULT_ACTIVE = ["spot", "oi", "oiChange", "chain", "premium", "decay", "oiTotal", "oiChangeTotal", "levels", "pcr", "pcrTrend", "oiChangeTrend", "oiTotalTrend", "futOi", "futOiChange", "futBasis", "futVolume", "oiVolumeTrend"];
+export const DEFAULT_ACTIVE = ["spot", "oi", "oiChange", "chain", "premium", "decay", "levels", "pcr", "pcrTrend", "oiChangeTrend", "oiTotalTrend", "futOi", "futOiChange", "futBasis", "futVolume", "oiVolumeTrend"];
 
 /** Widgets added after the first release: offered once to layouts saved earlier, so they are not hidden behind "Add widget". */
 export const NEW_DEFAULT_WIDGETS = ["pcr", "pcrTrend", "oiChangeTrend", "oiTotalTrend", "futOi", "futOiChange", "futBasis", "futVolume", "oiVolumeTrend"];

@@ -33,7 +33,7 @@ export const MENU_ORDER: MenuId[] = ["options", "futures", "analyse"];
 
 export const TOOLS: Tool[] = [
   // ---- Options Lab
-  { id: "open-interest", label: "Open Interest", menu: "options", group: "OI tools", status: "ready", popular: true, widgets: ["oi", "oiChange", "oiConcentration"], blurb: "Open interest and its change by strike, and where it is concentrated." },
+  { id: "open-interest", label: "Open Interest", menu: "options", group: "OI tools", status: "ready", popular: true, widgets: ["oi", "oiChange", "oiConcentration", "oiTotal", "oiChangeTotal"], blurb: "Open interest and its change by strike, where it is concentrated, and the total call and put open interest and its change." },
   { id: "multi-oi-volume", label: "Multi OI & Volume", menu: "options", group: "OI tools", status: "ready", widgets: ["oiTotalTrend", "oiChangeTrend", "oiVolumeTrend"], blurb: "Total call and put OI, OI change and volume through the session." },
   { id: "put-call-ratio", label: "Put-Call Ratio", menu: "options", group: "OI tools", status: "ready", widgets: ["pcr", "pcrTrend"], blurb: "PCR at the money and overall, and how it moved during the session." },
   { id: "max-pain", label: "Max Pain", menu: "options", group: "OI tools", status: "ready", widgets: ["levels"], blurb: "Max pain, highest call and put OI strikes and other key levels." },

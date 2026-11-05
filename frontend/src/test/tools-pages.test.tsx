@@ -63,6 +63,13 @@ describe("tool page", () => {
     expect(await screen.findByText(/Planned, not built yet/)).toBeInTheDocument();
   });
 
+  it("Open Interest also holds the two total-OI charts that moved from the Analysis page", async () => {
+    mockApi();
+    renderAt("/tools/open-interest");
+    for (const title of ["Open interest by strike", "Total OI — calls vs puts", "Total OI change — calls vs puts"])
+      expect(await screen.findByRole("region", { name: title })).toBeInTheDocument();
+  });
+
   it("an unknown tool says so", async () => {
     mockApi();
     renderAt("/tools/nope");

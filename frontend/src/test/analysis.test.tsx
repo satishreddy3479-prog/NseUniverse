@@ -89,6 +89,9 @@ describe("analysis dashboard", () => {
     for (const l of ["Last 3 min", "Last 5 min", "Last 10 min", "Last 30 min", "Last 1 hr", "All"])
       expect(within(await widget("Open interest by strike")).getByRole("button", { name: l })).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/demo|synthetic|mock/i);
+    // the two total-OI charts moved to the Options Lab (Open Interest tool)
+    expect(screen.queryByRole("region", { name: "Total OI — calls vs puts" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Total OI change — calls vs puts" })).toBeNull();
   });
 
   it("labels every widget with its source and expiry", async () => {

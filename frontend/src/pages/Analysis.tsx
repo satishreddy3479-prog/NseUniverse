@@ -3,7 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GridLayout, useContainerWidth, verticalCompactor, type Layout, type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import { DashProvider, useDash, type Range } from "../components/dashboard/DashContext";
-import { DEFAULT_ACTIVE, NEW_DEFAULT_WIDGETS, WIDGETS, type WidgetDef } from "../components/dashboard/widgets";
+import { DEFAULT_ACTIVE, LAB_ONLY_WIDGETS, NEW_DEFAULT_WIDGETS, WIDGETS as ALL_WIDGETS, type WidgetDef } from "../components/dashboard/widgets";
+
+/** The widgets of this page: the registry without those that moved to the Options Lab. Saved layouts that held them drop them. */
+const WIDGETS = ALL_WIDGETS.filter((w) => !LAB_ONLY_WIDGETS.includes(w.id));
 import { CommandCenter } from "../components/CommandCenter";
 import { StreamButtons } from "../components/LiveActivity";
 import { Button } from "../components/ui";
