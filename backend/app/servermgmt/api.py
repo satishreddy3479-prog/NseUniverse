@@ -94,7 +94,7 @@ async def processes(sort: Annotated[str, Query(pattern="^(rss|cpu|name|pid)$")] 
 @router.get("/storage/history")
 async def storage_history(
     request: Request, date_from: str = "", date_to: str = "", q: Annotated[str, Query(max_length=40)] = "", sort: Annotated[str, Query(pattern="^(asc|desc)$")] = "desc",
-    page: Annotated[int, Query(ge=1)] = 1, size: Annotated[int, Query(ge=5, le=200)] = 30,
+    page: Annotated[int, Query(ge=1)] = 1, size: Annotated[int, Query(ge=5, le=1000)] = 30,
 ) -> dict[str, Any]:
     sm = _sm(request)
     rows = await asyncio.to_thread(sm.history)

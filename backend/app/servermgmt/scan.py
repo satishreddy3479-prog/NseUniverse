@@ -67,6 +67,10 @@ class ScanResult:
     biggest: list[tuple[int, str, float]] = field(default_factory=list)  # (size, rel_path, mtime)
 
 
+def _is_link(e: os.DirEntry[str]) -> bool:
+    return e.is_symlink() or bool(getattr(e, "is_junction", lambda: False)())
+
+
 def scan_area(area: Area, *, timeout_s: float, top_n: int, excluded_dirs: list[str], excluded_patterns: list[str], split: tuple[str, ...] = (), skip: frozenset[str] = frozenset()) -> ScanResult:
     res = ScanResult(area.id)
     t0 = time.monotonic()
@@ -104,6 +108,8 @@ def scan_area(area: Area, *, timeout_s: float, top_n: int, excluded_dirs: list[s
                 if (is_dir and e.name in excluded_dirs) or (not is_dir and any(fnmatch.fnmatch(e.name, p) for p in excluded_patterns)):
                     continue  # excluded by configuration: left out of every total, and the snapshot says so
                 name_top = top or e.name
+                if is_dir and _is_link(e):
+                    is_dir = False  # a symlink or Windows junction is counted as the link itself and never entered
                 if is_dir and os.path.normcase(os.path.abspath(e.path)) in skip:
                     continue  # another approved area that lives inside this one: counted there, not twice
                 if is_dir:
@@ -163,7 +169,7 @@ def resolve_inside(root: Path, rel: str) -> Path:
     cur = base
     for p in parts:
         cur = cur / p
-        if cur.is_symlink():
+        if cur.is_symlink() or bool(getattr(os.path, "isjunction", lambda _p: False)(cur)):
             raise PathError("symbolic links are not followed")
     real = cur.resolve()
     if real != base and base not in real.parents:

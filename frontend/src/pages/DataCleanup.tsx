@@ -10,7 +10,7 @@ const n = (v: number): string => v.toLocaleString("en-IN");
 const TONE = { ok: "border-up/50 text-up", watch: "border-warn/50 text-warn", low: "border-warn/70 text-warn", critical: "border-down/60 text-down" } as const;
 
 /** What the server stores, what today holds and exactly what could be removed, with a preview before anything goes. */
-export function DataCleanup() {
+export function DataCleanup({ embedded = false }: { embedded?: boolean } = {}) {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["cleanup"], queryFn: api.cleanupOverview, refetchInterval: 60_000, retry: false });
   const [picked, setPicked] = useState<string[]>([]);
@@ -26,8 +26,8 @@ export function DataCleanup() {
   const chosenBytes = chosen.reduce((t, c) => t + c.bytes, 0);
 
   return (
-    <div className="mx-auto flex max-w-[1200px] flex-col gap-3">
-      <h1 className="text-xl font-semibold">Data clean-up</h1>
+    <div className={`flex flex-col gap-3 ${embedded ? "" : "mx-auto max-w-[1200px]"}`}>
+      {!embedded && <h1 className="text-xl font-semibold">Data clean-up</h1>}
       {q.isPending ? <p className="text-sm text-muted">Measuring the server…</p>
         : q.isError || !o ? <p role="alert" className="text-sm text-down">The storage overview is not available from the backend.</p>
         : (

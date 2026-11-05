@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily heartbeat so the website can see the management helper is installed
+
+[Timer]
+OnBootSec=2min
+OnCalendar=daily
+Persistent=true
+Unit=nse-universe-mgmt.service
+
+[Install]
+WantedBy=timers.target

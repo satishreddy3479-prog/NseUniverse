@@ -37,8 +37,8 @@ def make_redactor(secrets: list[str]) -> Callable[[str], str]:
     def redact(text: str) -> str:
         for s in exact:
             text = text.replace(s, "[redacted]")
+        text = _REDACT[1].sub(r"\1[redacted]", text)  # a bearer token first, so "Authorization: Bearer x" hides x
         text = _REDACT[0].sub(r"\1[redacted]", text)
-        text = _REDACT[1].sub(r"\1[redacted]", text)
         for rx in _REDACT[2:]:
             text = rx.sub("[redacted]", text)
         return text

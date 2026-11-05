@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
 import { DataCleanup } from "./pages/DataCleanup";
+import { ServerManagement } from "./pages/ServerManagement";
 import { Portfolio } from "./pages/Portfolio";
 import { DataSessions } from "./pages/DataSessions";
 import { Diagnostics } from "./pages/Diagnostics";
@@ -50,6 +51,7 @@ export function AppRoutes() {
         <Route path="data" element={<DataSessions />} />
         <Route path="portfolio" element={<Portfolio />} />
         <Route path="cleanup" element={<DataCleanup />} />
+        <Route path="server" element={<ServerManagement />} />
         <Route path="diagnostics" element={<Diagnostics />} />
         <Route path="settings" element={<Settings />} />
         <Route path="*" element={<p className="text-muted">Page not found.</p>} />

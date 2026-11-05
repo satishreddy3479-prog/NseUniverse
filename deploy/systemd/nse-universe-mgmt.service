@@ -1,0 +1,13 @@
+[Unit]
+Description=NSE Universe Server Management helper (restart one approved service on request)
+After=nse-universe.service
+
+[Service]
+Type=oneshot
+# Root-owned copy, installed once by the setup commands. It must NOT run from /opt/nse-universe/current: the
+# application user owns the releases, and a root service must never execute a file that user can edit.
+ExecStart=/usr/local/sbin/nse-mgmt-helper
+Environment=NSE_DATA_DIR=/var/lib/nse-universe/data
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes

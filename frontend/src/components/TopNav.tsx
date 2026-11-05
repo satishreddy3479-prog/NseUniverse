@@ -17,7 +17,7 @@ export const STRATEGY: { to: string; label: string }[] = [
 export const SYSTEM: { to: string; label: string }[] = [
   { to: "/overview", label: "Platform status" },
   { to: "/data", label: "Data & sessions" },
-  { to: "/cleanup", label: "Data clean-up" },
+  { to: "/server", label: "Server Management Centre" },
   { to: "/diagnostics", label: "Connection diagnostics" },
   { to: "/settings", label: "Settings" },
 ];

@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch for a Server Management restart request
+
+[Path]
+PathChanged=/var/lib/nse-universe/data/mgmt/restart-request.json
+Unit=nse-universe-mgmt.service
+
+[Install]
+WantedBy=multi-user.target

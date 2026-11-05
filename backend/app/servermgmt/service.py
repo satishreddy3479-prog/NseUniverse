@@ -231,8 +231,8 @@ class ServerMgmt:
         if g is None or g <= 0:
             return {**out, "available": False, "reason": "recent net growth is zero or negative: no countdown can be calculated"}
         sd = statistics.pstdev(ch[-7:]) if len(ch) >= 2 else 0.0
-        if sd > 3 * g:
-            return {**out, "available": False, "reason": "daily changes are too erratic for a reliable forecast (spread more than 3x the average)", "volatile": True}
+        if sd > 2 * g:
+            return {**out, "available": False, "reason": "daily changes are too erratic for a reliable forecast (spread more than 2x the average)", "volatile": True}
         limit = c["forecast_threshold_pct"] / 100.0 * last["fs_total"]
         days = max(0.0, (limit - last["fs_used"]) / g)
         return {**out, "available": True, "days_to_threshold": round(days, 1), "projection": {str(d): last["fs_used"] + g * d for d in (7, 30, 90)}, "reason": None}
