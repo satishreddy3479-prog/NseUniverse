@@ -334,7 +334,9 @@ function SmartOiChartWidget() {
     queryFn: () => api.oiSeries(d.expiry!, strikesParam(strikes), since, 1000),
     enabled: !!d.expiry && !!since, refetchInterval: 30_000, retry: false,
   });
-  const res = useMemo(() => (q.data ? smartOiCandles(q.data, tf, { openMin: sessionOpenMin(), closeMin: sessionCloseMin() }) : null), [q.data, tf]);
+  // One-minute index bars (real highs and lows). Not essential: without them the candles are cut from the stored samples.
+  const bars = useQuery({ queryKey: ["indexBars"], queryFn: () => api.indexBars(), refetchInterval: 30_000, retry: false });
+  const res = useMemo(() => (q.data ? smartOiCandles(q.data, tf, { openMin: sessionOpenMin(), closeMin: sessionCloseMin(), bars: bars.data?.bars }) : null), [q.data, tf, bars.data]);
   const main = useMemo(() => (res ? smartOiOption(res, colors) : null), [res, colors]);
   const dayOpt = useMemo(() => (res ? smartOiDayOption(res, colors) : null), [res, colors]);
   const ratioOpt = useMemo(() => (res ? smartOiRatioOption(res, colors) : null), [res, colors]);
@@ -348,7 +350,7 @@ function SmartOiChartWidget() {
           <span className="basis-full">
             Each bar is put OI change minus call OI change inside one candle ({strikes === "all" ? "all strikes of this expiry" : `ATM ±${strikes} strikes, as of the newest sample`}, the same strikes in every candle).
             Green = puts added faster than calls, red = calls added faster. {res?.candles[0]?.fromPrevClose ? "The 09:15 bar and the day-change lines are measured against yesterday's closing OI." : "The first candle is the baseline and has no bar."}
-            {" "}NIFTY candles are built from the stored one-minute samples, so their highs and lows can be narrower than the exchange's index candles.
+            {" "}{res && res.candles.some((k) => k.spotFromBars) ? `NIFTY candles use one-minute index bars from the live feed (read about once a second, so highs and lows can still be a little narrower than the exchange's tick-by-tick candles)${res.candles.some((k) => k.spot && !k.spotFromBars) ? "; candles before the bars started being recorded are cut from the stored samples, with no real highs and lows and a gap to the next candle" : ""}.` : "NIFTY candles are cut from the stored one-minute samples (about one a minute), so they have no real highs and lows and show a gap between one candle's close and the next one's open; one-minute index bars are recorded from the live feed during the session and will be used once stored."}
             {q.data?.stride && q.data.stride > 1 ? ` Showing every ${q.data.stride}th stored sample.` : ""}
             {res && res.gapCandles > 0 ? ` ${res.gapCandles} candle(s) follow a gap in stored samples, so their change covers more than one candle (see the tooltip).` : ""}
             {res && res.strikeChangeCandles > 0 ? ` ${res.strikeChangeCandles} candle(s) have a different number of strikes behind the totals than the candle before (a strike had no OI in one sample), so those bars are not like for like (see the tooltip).` : ""}

@@ -31,6 +31,7 @@ from app.market import technical as tech
 from app.market import vwap as vwapmod
 from app.market import weights as wmod
 from app.market.flow import FlowTracker, profile_fraction, volume_profile
+from app.market.index_bars import IndexBarBuilder
 from app.market.sources import (
     BHAV_URL,
     LIST_URL,
@@ -95,6 +96,8 @@ class MarketService:
         self.last_sample_note = "not started"
         self._monthly_expiry = monthly_expiry
         self.trackers: dict[str, FlowTracker] = {}
+        self._bars = IndexBarBuilder()  # one-minute NIFTY 50 bars from the live index feed
+        self._bars_task: asyncio.Task[None] | None = None
         # what the feed really delivered for the future and the heavyweights, kept separately from the flow classification so
         # a missing field or a key that does not match shows up here instead of as silence
         self.diag: dict[str, Any] = {"ticks": 0, "matched": 0, "unmatched_keys": [], "future": {"ticks": 0, "last_at": None, "ltp": None, "volume": None, "oi": None, "bid": None, "atp": None, "spot": None}}
@@ -981,6 +984,36 @@ class MarketService:
             d -= timedelta(days=1)
         return f"{got} sessions added in {tried} requests"
 
+    def observe_index(self, now: datetime) -> None:
+        """Read the live index once and extend its one-minute bar; a finished minute is stored (once, append-only)."""
+        t = now.astimezone(IST)
+        inside = t.weekday() < 5 and SESSION_OPEN <= t.time() <= session_close()
+        lt = self._index() if inside else None
+        fresh = lt is not None and lt.ltp is not None and (now - lt.received_at).total_seconds() <= 15
+        done = self._bars.observe(now, float(lt.ltp) if fresh and lt is not None and lt.ltp is not None else None, lt.received_at if fresh and lt is not None else None)
+        if not inside and done is None:
+            done = self._bars.flush()
+        if done is not None:
+            self.store.record_sample("index1m", done.minute, done.payload())
+
+    def index_bars(self) -> dict[str, Any]:
+        """The newest day's stored one-minute index bars (plus the minute in progress is not included: it is not final)."""
+        since = (self._clock() - timedelta(days=6)).astimezone(UTC).isoformat()
+        rows = [(datetime.fromisoformat(a), p) for a, p in self.store.samples_since("index1m", since)]
+        if not rows:
+            return {"day": None, "bars": [], "note": "No one-minute index bars are stored yet; they are recorded from the live index feed during the session."}
+        day = rows[-1][0].astimezone(IST).date()
+        bars = [{"at": a.isoformat(), "o": p["o"], "h": p["h"], "l": p["l"], "c": p["c"], "n": p.get("n")} for a, p in rows if a.astimezone(IST).date() == day]
+        return {"day": day.isoformat(), "bars": bars, "note": "Built from the live index feed, read about once a second: high and low are the extremes of those reads, not the exchange's tick tape."}
+
+    async def _bars_loop(self) -> None:
+        while True:
+            try:
+                self.observe_index(self._clock())
+            except Exception as e:  # noqa: BLE001 - the bar recorder must never take anything else down
+                log_event(logger, logging.WARNING, "index_bars_error", error=type(e).__name__)
+            await asyncio.sleep(1)
+
     async def _loop(self) -> None:
         await asyncio.sleep(45)
         last_min = ""
@@ -999,8 +1032,15 @@ class MarketService:
     def start(self) -> None:
         if self._task is None and self.enabled:
             self._task = asyncio.create_task(self._loop())
+        if self._bars_task is None and self.enabled:
+            self._bars_task = asyncio.create_task(self._bars_loop(), name="index-bars")
 
     async def stop(self) -> None:
+        if self._bars_task:
+            self._bars_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._bars_task
+            self._bars_task = None
         if self._task:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):

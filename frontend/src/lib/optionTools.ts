@@ -116,6 +116,8 @@ export interface SmartOiCandle {
   /** Start of the candle, "HH:MM" in IST. */
   label: string;
   spot: { open: number; high: number; low: number; close: number } | null;
+  /** True when the spot candle comes from one-minute index bars (real highs and lows), false when it is cut from the stored samples. */
+  spotFromBars: boolean;
   ceOi: number;
   peOi: number;
   /** Interval change against the previous candle with data; null on the first candle (the baseline). */
@@ -171,7 +173,7 @@ const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${St
  * no bar. Candles with no stored sample are left out, never filled in; the next change then spans the gap (`span` > 1)
  * and is counted in `gapCandles`. Only the newest day with data is used so no change ever crosses a night.
  */
-export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?: string; openMin?: number; closeMin?: number } = {}): SmartOiResult {
+export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?: string; openMin?: number; closeMin?: number; bars?: { at: string; o: number; h: number; l: number; c: number }[] } = {}): SmartOiResult {
   const day = opts.day, openMin = opts.openMin ?? OPEN_MIN, closeMin = opts.closeMin ?? CLOSE_MIN;
   const empty: SmartOiResult = { day: null, timeframe, candles: [], baselineAt: null, gapCandles: 0, skippedSamples: 0, strikeChangeCandles: 0 };
   const n = Math.min(s.times.length, s.ce_oi.length, s.pe_oi.length, s.spot.length);
@@ -196,6 +198,17 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
     b.last = i;
     buckets.set(slot, b);
   }
+  // One-minute index bars of the same day, grouped into the same candle slots: they carry the real highs and lows.
+  const barSlots = new Map<number, { at: string; o: number; h: number; l: number; c: number }[]>();
+  for (const bar of opts.bars ?? []) {
+    const t = istOf(bar.at);
+    if (Number.isNaN(t.getTime()) || t.toISOString().slice(0, 10) !== useDay) continue;
+    const m = t.getUTCHours() * 60 + t.getUTCMinutes();
+    if (m < openMin || m > closeMin) continue;
+    const slot = Math.floor((m - openMin) / timeframe);
+    barSlots.set(slot, [...(barSlots.get(slot) ?? []), bar]);
+  }
+  for (const list of barSlots.values()) list.sort((a, b) => a.at.localeCompare(b.at));
   const slots = [...buckets.keys()].sort((a, b) => a - b).filter((k) => buckets.get(k)!.lastOi >= 0);
   const candles: SmartOiCandle[] = [];
   let gaps = 0, strikeChanges = 0;
@@ -223,7 +236,10 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
     const dv = (cur: number | null, old: number | null) => (cur != null && old != null && cur >= old ? cur - old : null);
     const c: SmartOiCandle = {
       slot: k, label: hhmm(openMin + k * timeframe),
-      spot: b.spots.length ? { open: b.spots[0]!, high: Math.max(...b.spots), low: Math.min(...b.spots), close: b.spots[b.spots.length - 1]! } : null,
+      spot: barSlots.get(k)?.length
+        ? { open: barSlots.get(k)![0]!.o, high: Math.max(...barSlots.get(k)!.map((x) => x.h)), low: Math.min(...barSlots.get(k)!.map((x) => x.l)), close: barSlots.get(k)![barSlots.get(k)!.length - 1]!.c }
+        : b.spots.length ? { open: b.spots[0]!, high: Math.max(...b.spots), low: Math.min(...b.spots), close: b.spots[b.spots.length - 1]! } : null,
+      spotFromBars: !!barSlots.get(k)?.length,
       ceOi: ce, peOi: pe, dPe, dCe, p, bullish: p == null ? null : p >= 0, span,
       // day change: against yesterday's close when stored, else against the first candle (starts at 0)
       peDay: hasChg ? chPe : baseline ? pe - baseline.peOi : 0, ceDay: hasChg ? chCe : baseline ? ce - baseline.ceOi : 0,

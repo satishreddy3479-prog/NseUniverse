@@ -852,3 +852,7 @@ export interface IvSeries {
   status: string; expiry?: string; session?: string; is_today?: boolean; samples_in_session?: number; points_shown?: number; thinned_every?: number;
   latest_at?: string; age_seconds?: number; high?: number | null; low?: number | null; model?: string; rate_assumed?: number; points: IvSeriesPoint[];
 }
+
+// ---- One-minute NIFTY 50 bars from the live index feed (/api/market/index-bars)
+export interface IndexBar { at: string; o: number; h: number; l: number; c: number; n: number | null }
+export interface IndexBars { day: string | null; bars: IndexBar[]; note: string }

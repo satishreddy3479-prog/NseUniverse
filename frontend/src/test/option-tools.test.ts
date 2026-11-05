@@ -312,3 +312,30 @@ describe("Vega Analysis series", () => {
     expect(c.map((x) => x.call)).toEqual([3, 4]); // minutes 0-2 are one 3-minute candle (last value 3), minute 3 starts the next
   });
 });
+
+describe("smartOiCandles with one-minute index bars (real highs and lows, no gap to the next candle)", () => {
+  const t = (hm: string, day = "2026-11-04") => `${day}T${hm}:00Z`;
+  const series = {
+    times: [t("03:45"), t("03:48")], spot: [23300, 23310],
+    pe_oi: [10_000_000, 10_200_000], ce_oi: [10_000_000, 10_050_000], pe_volume: [100, 160], ce_volume: [100, 140],
+  };
+  // 09:15, 09:16, 09:17 IST are three minutes of the first 3-minute candle (hand calculation: open of the first, close of the last, extremes of all)
+  const bars = [
+    { at: t("03:45"), o: 23300, h: 23320, l: 23290, c: 23310 },
+    { at: t("03:46"), o: 23310, h: 23315, l: 23305, c: 23308 },
+    { at: t("03:47"), o: 23308, h: 23312, l: 23300, c: 23306 },
+    { at: t("03:45", "2026-11-03"), o: 1, h: 99999, l: 0.5, c: 2 }, // another day: ignored
+  ];
+  it("takes open, high, low and close from the minute bars of the slot and leaves a slot without bars on the samples", () => {
+    const r = smartOiCandles(series, 3, { bars });
+    expect(r.candles[0]!.spot).toEqual({ open: 23300, high: 23320, low: 23290, close: 23306 });
+    expect(r.candles[0]!.spotFromBars).toBe(true);
+    expect(r.candles[1]!.spot).toEqual({ open: 23310, high: 23310, low: 23310, close: 23310 }); // no bars for 09:18: the one stored sample
+    expect(r.candles[1]!.spotFromBars).toBe(false);
+  });
+  it("is unchanged without bars", () => {
+    const r = smartOiCandles(series, 3);
+    expect(r.candles[0]!.spot).toEqual({ open: 23300, high: 23300, low: 23300, close: 23300 });
+    expect(r.candles.every((c) => !c.spotFromBars)).toBe(true);
+  });
+});

@@ -440,6 +440,17 @@ async def market_summary(request: Request) -> dict[str, Any]:
     return await asyncio.to_thread(mk.summary)
 
 
+@router.get("/market/index-bars")
+async def market_index_bars(request: Request) -> dict[str, Any]:
+    """One-minute NIFTY 50 bars of the newest stored day, from the live index feed."""
+    mk = request.app.state.market
+    if not mk.enabled:
+        raise HTTPException(
+            status_code=404, detail={"code": "disabled", "message": "stock breadth is turned off"}
+        )
+    return await asyncio.to_thread(mk.index_bars)
+
+
 @router.get("/market/status")
 async def market_status(request: Request) -> dict[str, Any]:
     """Sources, counts and the live subscription of the breadth analysis."""

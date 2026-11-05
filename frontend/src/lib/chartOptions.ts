@@ -756,7 +756,7 @@ export function smartOiOption(r: SmartOiResult, c: ChartColors): EChartsCoreOpti
     },
     // panel titles sit inside the top-left of each panel so the three charts read without a legend
     title: [
-      { text: "NIFTY (from stored 1-min samples)", left: 66, top: "1%", textStyle: { color: c.muted, fontSize: 11, fontWeight: "normal" } },
+      { text: cs.length > 0 && cs.every((k) => k.spotFromBars || !k.spot) ? "NIFTY (1-minute bars from the live index feed)" : cs.some((k) => k.spotFromBars) ? "NIFTY (1-minute index bars where recorded, stored samples before)" : "NIFTY (from stored 1-min samples: no real highs and lows)", left: 66, top: "1%", textStyle: { color: c.muted, fontSize: 11, fontWeight: "normal" } },
       { text: "Smart OI = ΔPut − ΔCall per candle", left: 66, top: "51%", textStyle: { color: c.muted, fontSize: 11, fontWeight: "normal" } },
       { text: "Option volume per candle (put green, call red)", left: 66, top: "76%", textStyle: { color: c.muted, fontSize: 11, fontWeight: "normal" } },
     ],

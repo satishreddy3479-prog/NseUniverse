@@ -424,4 +424,5 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 - "Futures flow and top-5 heavyweights" and "Sectors" moved from the Intraday Booster to Future Lab tools (`future-flow`, `future-sectors`).
 - Audit results and fixes (coverage of day volume, freshness/stale flag, 60 s limit on the book imbalance, futures note after restart) are in D68. Verified live only for the first minutes after the 09:15 open on 5 Nov; CVD cannot be validated against a real trade tape.
 - Options Lab / Future Lab: IV - HV, IV - Intraday and Future Price vs OI are now ready tools (D69). Tested with hand calculations, the real captured chain and mocked pages; HV verified on the server's real closes. The intraday IV series and the buildup page have not yet been seen with live market-hours data.
+- Smart OI price candles (D70): one-minute NIFTY index bars are now recorded from the live feed and used for the candles (real wicks, no gap to the next candle); days before 5 Nov keep the sampled candles. Tested with a scripted feed and hand-calculated candles; not yet seen over a full live session.
 

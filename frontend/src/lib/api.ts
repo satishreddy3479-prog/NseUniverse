@@ -10,7 +10,7 @@ import type {
   ConfigStatus,
   ErrorEvent,
   ExpirySelection,
-  EventItem, FlowsLatest, StorageStatus, IntradayScoreRow, IntradaySummary, NewsStatus, FlowsStatus, HistoryFetchStatus, HistoryResponse, OiChange, OiHeatmap, OiSeries, StrikeSeries, FuturesSeries, HvReport, IvSeries, PremiumDecay, PredictionSummary, SamplerStatus, SwingReport, SwingPaperView, SwingLiveView,
+  EventItem, FlowsLatest, StorageStatus, IntradayScoreRow, IntradaySummary, NewsStatus, FlowsStatus, HistoryFetchStatus, HistoryResponse, OiChange, OiHeatmap, OiSeries, StrikeSeries, FuturesSeries, HvReport, IvSeries, IndexBars, PremiumDecay, PredictionSummary, SamplerStatus, SwingReport, SwingPaperView, SwingLiveView,
   SessionInfo,
   SnapshotSummary,
 } from "./types";
@@ -143,6 +143,7 @@ export const api = {
       `/api/oi/change?expiry=${encodeURIComponent(expiry)}&baseline=${baseline}&strikes=${strikes}` +
         (at ? `&at=${encodeURIComponent(at)}` : "") + (until ? `&until=${encodeURIComponent(until)}` : ""),
     ),
+  indexBars: () => request<IndexBars>("/api/market/index-bars"),
   intradayHv: () => request<HvReport>("/api/intraday/hv"),
   intradayIvSeries: (expiry: string) => request<IvSeries>(`/api/intraday/iv-series?expiry=${encodeURIComponent(expiry)}`),
   futuresSeries: (since?: string) => request<FuturesSeries>("/api/futures/series" + (since ? `?since=${encodeURIComponent(since)}` : "")),
