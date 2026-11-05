@@ -72,6 +72,19 @@ def hv_report(bars: list[Bar], today: date, series_len: int = 120) -> dict[str, 
     }
 
 
+def parkinson_at(bars: list[Bar], window: int) -> dict[date, float | None]:
+    """Range-based realised volatility (Parkinson), percent annualised, by date: sqrt(mean(ln(H/L)^2) / (4 ln 2) x 252) over
+    the last ``window`` daily bars. It uses each day's high and low, so it reacts to intraday range that close-to-close HV misses.
+    A date with fewer than ``window`` valid bars (high >= low > 0) is None."""
+    sq = [(b.session, math.log(b.high / b.low) ** 2 if b.low > 0 and b.high >= b.low else None) for b in bars]
+    out: dict[date, float | None] = {}
+    for i, (d, _v) in enumerate(sq):
+        win = [v for _, v in sq[max(0, i + 1 - window) : i + 1]]
+        ok = i + 1 >= window and all(v is not None for v in win)
+        out[d] = math.sqrt(sum(v for v in win if v is not None) / window / (4 * math.log(2)) * TRADING_DAYS) * 100 if ok else None
+    return out
+
+
 def iv_chart(nifty: list[Bar], vix: list[Bar], window: int, days: int = 750) -> dict[str, Any]:
     """Daily series for the IV / HV / IV-percentile chart: NIFTY close, India VIX close (the implied-volatility proxy, the
     market's own 30-day figure) and the rolling ``window``-day historical volatility of NIFTY, on the dates both have a bar.
@@ -82,11 +95,13 @@ def iv_chart(nifty: list[Bar], vix: list[Bar], window: int, days: int = 750) -> 
     hv_at: dict[date, float | None] = {}
     for i, (d, _r, _g) in enumerate(rets):
         hv_at[d] = stdev_annual([r for _, r, _ in rets[i + 1 - window : i + 1]]) if i + 1 >= window else None
+    rv_at = parkinson_at(nifty, window)
     vix_at = {b.session: b.close for b in vix}
     dates: list[str] = []
     close: list[float] = []
     iv: list[float] = []
     hvs: list[float | None] = []
+    rvs: list[float | None] = []
     for b in nifty:
         v = vix_at.get(b.session)
         if v is None or b.session not in hv_at:
@@ -96,10 +111,13 @@ def iv_chart(nifty: list[Bar], vix: list[Bar], window: int, days: int = 750) -> 
         iv.append(round(v, 2))
         h = hv_at[b.session]
         hvs.append(None if h is None else round(h, 2))
+        r = rv_at.get(b.session)
+        rvs.append(None if r is None else round(r, 2))
     lo = max(0, len(dates) - days)
     return {
-        "window": window, "dates": dates[lo:], "close": close[lo:], "iv": iv[lo:], "hv": hvs[lo:],
+        "window": window, "dates": dates[lo:], "close": close[lo:], "iv": iv[lo:], "hv": hvs[lo:], "rv": rvs[lo:],
         "nifty_bars": len(nifty), "vix_bars": len(vix), "days": len(dates[lo:]),
         "iv_source": "India VIX daily close (NSE's 30-day implied volatility of NIFTY options); not the ATM IV of one expiry",
+        "rv_method": "RV = Parkinson range-based volatility from each day's high and low, same window, x sqrt(252), percent",
         "method": "HV = sample stdev of daily log returns x sqrt(252), percent; dates present in both series only",
     }

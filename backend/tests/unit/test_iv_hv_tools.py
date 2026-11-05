@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.intraday.hv import MAX_GAP_DAYS, hv, hv_report, iv_chart, log_returns
+from app.intraday.hv import MAX_GAP_DAYS, hv, hv_report, iv_chart, log_returns, parkinson_at
 from app.intraday.service import IntradayService
 from app.intraday.store import IntradayStore
 from app.intraday.volatility import skew_metrics
@@ -170,3 +170,15 @@ def test_api_iv_series_options_and_skew(tmp_path: Path) -> None:
         assert c.get("/api/intraday/iv-series", params={"expiry": EXP, "tf": 5, "session": "2026-10-29"}).status_code == 200
         assert c.get("/api/intraday/iv-sessions").json() == {"sessions": []}
         assert c.get("/api/intraday/iv-skew", params={"expiry": EXP}).json()["smile"] == []
+
+
+def test_parkinson_rv_matches_the_hand_calculation() -> None:
+    # ranges ln(102/100) = 0.0198026 and ln(103/100) = 0.0295588; squares 3.92144e-4 and 8.73721e-4, mean 6.32933e-4
+    # sqrt(6.32933e-4 / (4 ln 2) x 252) = sqrt(0.0575257) = 0.239845 -> 23.98 %
+    bars = [Bar(date(2026, 11, 2), 100, 102, 100, 101), Bar(date(2026, 11, 3), 100, 103, 100, 102), Bar(date(2026, 11, 4), 100, 100, 100, 100)]
+    out = parkinson_at(bars, 2)
+    assert out[date(2026, 11, 2)] is None  # one bar is not a 2-day window
+    assert out[date(2026, 11, 3)] == pytest.approx(23.98, abs=0.02)
+    assert out[date(2026, 11, 4)] == pytest.approx(math.sqrt((8.73721e-4 / 2) / (4 * math.log(2)) * 252) * 100, abs=0.02)  # a flat day adds zero range
+    bad = parkinson_at([Bar(date(2026, 11, 2), 100, 100, 100, 100), Bar(date(2026, 11, 3), 100, 100, 100, 100)], 2)
+    assert bad[date(2026, 11, 3)] == 0.0

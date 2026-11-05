@@ -42,7 +42,7 @@ describe("IV / HV / IVP page", () => {
     const n = 130;
     const dates = Array.from({ length: n }, (_, i) => new Date(Date.UTC(2026, 0, 1) + i * 86_400_000).toISOString().slice(0, 10));
     const iv = Array.from({ length: n }, (_, i) => 10 + i * 0.1); // rising to 22.9, so today is the highest in any range
-    const body = { window: 20, dates, close: dates.map((_, i) => 24000 + i), iv, hv: dates.map((_, i) => (i < 19 ? null : 12)), nifty_bars: n, vix_bars: n, days: n,
+    const body = { window: 20, dates, close: dates.map((_, i) => 24000 + i), iv, hv: dates.map((_, i) => (i < 19 ? null : 12)), rv: dates.map((_, i) => (i < 19 ? null : 13.5)), nifty_bars: n, vix_bars: n, days: n,
       iv_source: "India VIX daily close (NSE's 30-day implied volatility of NIFTY options); not the ATM IV of one expiry", method: "m" };
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(body), { status: 200 })));
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><IvChartBody /></QueryClientProvider>);
@@ -50,6 +50,7 @@ describe("IV / HV / IVP page", () => {
     expect(cards.textContent).toContain("22.90%"); // IV now
     expect(cards.textContent).toContain("12.00%"); // HV 20d
     expect(cards.textContent).toContain("+10.90 pts"); // 22.9 - 12
+    expect(cards.textContent).toContain("13.50%"); // RV 20d (range)
     expect(screen.getByText("IVR 1Y")).toBeTruthy();
     // 130 days is fewer than the 252 of a 1Y range: no rank is shown, not a rank over a shorter range
     expect(cards.textContent).toContain("—");

@@ -870,7 +870,7 @@ export interface IndexBars { day: string | null; bars: IndexBar[]; note: string 
 
 /** Daily India VIX (implied volatility), NIFTY close and rolling HV, /api/intraday/iv-chart */
 export interface IvChart {
-  window: number; dates: string[]; close: number[]; iv: number[]; hv: (number | null)[];
+  window: number; dates: string[]; close: number[]; iv: number[]; hv: (number | null)[]; rv: (number | null)[]; rv_method?: string;
   nifty_bars: number; vix_bars: number; days: number; iv_source: string; method: string;
 }
 
