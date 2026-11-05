@@ -36,6 +36,10 @@ from app.prediction.ledger import ForecastLedger
 from app.prediction.news_service import NewsService
 from app.prediction.news_store import NewsStore
 from app.prediction.research import PredictionResearch
+from app.servermgmt.api import router as servermgmt_router
+from app.servermgmt.scan import Area
+from app.servermgmt.service import ServerMgmt
+from app.servermgmt.store import MgmtStore
 from app.services.backfill import backfill_observations
 from app.services.daily_login import DailyLogin
 from app.services.sampler import SnapshotSampler
@@ -61,6 +65,21 @@ def build_broker(settings: Settings) -> MarketDataBroker:
     from app.broker.kotak import KotakBroker
 
     return KotakBroker(settings)
+
+
+def build_servermgmt(settings: Settings) -> ServerMgmt:
+    """Server Management Centre: three approved areas, its own database in the data dir."""
+    import os
+
+    env_root = os.environ.get("NSE_ROOT")
+    default = Path("/opt/nse-universe")
+    root = Path(env_root) if env_root else default if default.is_dir() else Path(__file__).resolve().parents[2]
+    areas = [
+        Area("project", root, "Project root"),
+        Area("data", settings.data_dir.resolve(), "Data directory"),
+        Area("logs", settings.log_dir.resolve(), "Log directory"),
+    ]
+    return ServerMgmt(MgmtStore(settings.data_dir), areas, disk_path=settings.data_dir)
 
 
 def create_app(settings: Settings | None = None, broker: MarketDataBroker | None = None) -> FastAPI:
@@ -288,9 +307,13 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             session_id=session_id,
         )
         login_task = asyncio.create_task(b.ensure_login())
+        servermgmt = build_servermgmt(settings)
+        app.state.servermgmt = servermgmt
+        servermgmt.start()
         try:
             yield
         finally:
+            await servermgmt.stop()
             if not login_task.done():
                 login_task.cancel()
             await market.stop()
@@ -358,5 +381,6 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         )
 
     app.include_router(router)
+    app.include_router(servermgmt_router)
     app.include_router(ws_router)
     return app
