@@ -2,6 +2,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { FuturesBuildupBody } from "../components/FuturesBuildupTool";
 import { FuturesFlowBody } from "../components/FuturesFlowTools";
 import { toolById, toolPath } from "../lib/tools";
 import type { IntradaySummary, MarketSummary } from "../lib/types";
@@ -88,5 +89,27 @@ describe("Future Lab: flow and sectors", () => {
     expect(line).toHaveTextContent("covers 55% of today's volume");
     expect(line).toHaveTextContent("STALE: last push 400 s ago");
     expect(screen.getByTestId("cc-heavy5-coverage")).toHaveTextContent(`${stocks.flow!.heavy5.stocks[0]!.symbol} 42%`);
+  });
+});
+
+describe('Future Lab: price vs open interest', () => {
+  it('is a ready Future Lab tool', () => {
+    expect(toolById('future-price-oi')).toMatchObject({ menu: 'futures', status: 'ready' });
+  });
+
+  it('shows the session reading and the 15-minute windows from the stored futures series, and says when there is none', async () => {
+    const series = { day: '2026-11-05', contract: 'NIFTY26NOVFUT', expiry: '2026-11-24', rate_assumed: 0.07,
+      times: ['2026-11-05T03:45:00Z', '2026-11-05T03:50:00Z', '2026-11-05T04:01:00Z'], future: [100, 101, 100.5], spot: [], spot_source: [], basis: [], basis_pct: [], carry_pct: [], fair_basis: [], vs_fair: [],
+      oi: [1000, 1100, 1050], oi_change: [], oi_per_min: [], volume: [], volume_per_min: [], oi_baseline: null, latest: null, warnings: [], definitions: {} };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(series), { status: 200 })));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc}><FuturesBuildupBody /></QueryClientProvider>);
+    const session = await screen.findByTestId('buildup-session');
+    expect(session).toHaveTextContent('long buildup'); // 100 -> 100.5 and 1000 -> 1050: both up
+    expect(within(screen.getByTestId('buildup-table')).getAllByRole('row')).toHaveLength(1 + 2); // header + 09:15 and 09:30 windows
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ ...series, times: [], warnings: ['No futures samples are stored yet.'] }), { status: 200 })));
+    const qc2 = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc2}><FuturesBuildupBody /></QueryClientProvider>);
+    expect(await screen.findByTestId('buildup-empty')).toHaveTextContent('No futures samples');
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { atmStraddle, compactIN, computeTotals, maxPain, OI_WINDOWS, oiWindowStats, isSessionMs, pcr, rangeObservations, universeRows, windowEndIso, windowStartIso } from "../lib/analytics";
+import { atmStraddle, buildupRows, buildupSession, classifyBuildup, compactIN, computeTotals, maxPain, OI_WINDOWS, oiWindowStats, isSessionMs, pcr, rangeObservations, universeRows, windowEndIso, windowStartIso } from "../lib/analytics";
 import type { OptionChainRow, OptionQuote } from "../lib/types";
 
 const q = (over: Partial<OptionQuote> = {}): OptionQuote => ({
@@ -194,5 +194,38 @@ describe("windowEndIso", () => {
   it("falls back to the newest sample when nothing was taken in session that day; null when empty", () => {
     expect(windowEndIso(["2026-10-29T00:38:00Z"])).toBe("2026-10-29T00:38:00Z");
     expect(windowEndIso([])).toBeNull();
+  });
+});
+
+describe('futures buildup', () => {
+  it('classifies the four combinations, zero as unchanged and a missing change as missing', () => {
+    expect(classifyBuildup(1, 1)).toBe('long buildup');
+    expect(classifyBuildup(-1, 1)).toBe('short buildup');
+    expect(classifyBuildup(1, -1)).toBe('short covering');
+    expect(classifyBuildup(-1, -1)).toBe('long unwinding');
+    expect(classifyBuildup(0, 5)).toBe('unchanged');
+    expect(classifyBuildup(null, 5)).toBe('missing');
+    expect(classifyBuildup(5, null)).toBe('missing');
+  });
+
+  // 09:15 IST = 03:45 UTC. Hand calculation per 15-minute window; each starts from the last value known before it.
+  const T = ['2026-11-05T03:45:00Z', '2026-11-05T03:50:00Z', '2026-11-05T04:01:00Z', '2026-11-05T04:16:00Z', '2026-11-05T04:31:00Z', '2026-11-05T04:46:00Z'];
+  const P = [100, 101, 100.5, 101, 100, 101];
+  const O: (number | null)[] = [1000, 1100, 1050, null, 1200, 1100];
+  it('builds windows from the open and never fills a missing value', () => {
+    const r = buildupRows(T, P, O, 15);
+    expect(r.map((x) => x.state)).toEqual(['long buildup', 'long unwinding', 'missing', 'short buildup', 'short covering']);
+    expect(r[0]).toMatchObject({ priceFrom: 100, priceTo: 101, priceChg: 1, oiFrom: 1000, oiTo: 1100, oiChg: 100 });
+    expect(r[0]!.priceChgPct).toBeCloseTo(1, 10);
+    expect(r[0]!.oiChgPct).toBeCloseTo(10, 10);
+    expect(r[1]).toMatchObject({ priceChg: -0.5, oiChg: -50 }); // 101 -> 100.5 and 1100 -> 1050
+    expect(r[2]).toMatchObject({ priceChg: 0.5, oiTo: null, oiChg: null }); // OI not recorded in this window
+    expect(r[3]).toMatchObject({ priceChg: -1, oiFrom: 1050, oiChg: 150 }); // OI start is the last known value, 1050
+    expect(r[4]).toMatchObject({ priceChg: 1, oiChg: -100 });
+  });
+  it('gives the whole session as one window and ignores samples before the open', () => {
+    const s = buildupSession(['2026-11-05T03:30:00Z', ...T], [90, ...P], [500, ...O]);
+    expect(s).toMatchObject({ priceFrom: 100, priceTo: 101, oiFrom: 1000, oiTo: 1100, state: 'long buildup' });
+    expect(buildupSession([], [], [])).toBeNull();
   });
 });

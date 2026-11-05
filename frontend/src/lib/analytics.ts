@@ -229,3 +229,75 @@ export function oiWindowStats(t: { ce_oi: number | null; pe_oi: number | null; c
   return { ceOi: t.ce_oi, peOi: t.pe_oi, ceChange: t.ce_change, peChange: t.pe_change, pcr, pcrBaseline,
     pcrChange: pcr != null && pcrBaseline != null ? pcr - pcrBaseline : null, pcrOiChange, pcrOiChangeNote: note };
 }
+
+
+// ---- Futures price vs open interest buildup (standard four-way classification)
+export type Buildup = "long buildup" | "short buildup" | "short covering" | "long unwinding" | "unchanged" | "missing";
+
+/** price up + OI up = long buildup; price down + OI up = short buildup; price up + OI down = short covering;
+ *  price down + OI down = long unwinding. Either change missing -> missing; either exactly zero -> unchanged. */
+export function classifyBuildup(priceChg: number | null, oiChg: number | null): Buildup {
+  if (priceChg == null || oiChg == null) return "missing";
+  if (priceChg === 0 || oiChg === 0) return "unchanged";
+  if (priceChg > 0) return oiChg > 0 ? "long buildup" : "short covering";
+  return oiChg > 0 ? "short buildup" : "long unwinding";
+}
+
+export interface BuildupRow {
+  from: string; to: string; samples: number;
+  priceFrom: number | null; priceTo: number | null; priceChg: number | null; priceChgPct: number | null;
+  oiFrom: number | null; oiTo: number | null; oiChg: number | null; oiChgPct: number | null;
+  state: Buildup;
+}
+
+const IST_OFFSET_MIN = 330;
+const OPEN_MIN = 9 * 60 + 15;
+
+/** Buildup per window of `minutes` from the 09:15 IST open. Each window starts from the last value known before it
+ *  (the first value for the first window) and ends at its last recorded value; a value that was not recorded stays
+ *  missing (nothing is carried across a window that has none). Samples must be in time order. */
+export function buildupRows(times: string[], price: (number | null)[], oi: (number | null)[], minutes: number): BuildupRow[] {
+  const n = Math.min(times.length, price.length, oi.length);
+  const bucket = (iso: string) => {
+    const ms = Date.parse(iso) + IST_OFFSET_MIN * 60000;
+    const minOfDay = Math.floor(ms / 60000) % 1440;
+    return Math.floor((minOfDay - OPEN_MIN) / minutes);
+  };
+  const keys: number[] = [];
+  const groups = new Map<number, number[]>();
+  for (let i = 0; i < n; i++) {
+    const b = bucket(times[i]!);
+    if (b < 0) continue; // before 09:15: not part of the session
+    if (!groups.has(b)) { groups.set(b, []); keys.push(b); }
+    groups.get(b)!.push(i);
+  }
+  const out: BuildupRow[] = [];
+  let lastPrice: number | null = null;
+  let lastOi: number | null = null;
+  for (const b of keys) {
+    const idx = groups.get(b)!;
+    const ps = idx.map((i) => price[i]).filter((v): v is number => v != null);
+    const os = idx.map((i) => oi[i]).filter((v): v is number => v != null);
+    const priceFrom = lastPrice ?? ps[0] ?? null;
+    const oiFrom = lastOi ?? os[0] ?? null;
+    const priceTo = ps.length ? ps[ps.length - 1]! : null;
+    const oiTo = os.length ? os[os.length - 1]! : null;
+    const priceChg = priceFrom == null || priceTo == null ? null : priceTo - priceFrom;
+    const oiChg = oiFrom == null || oiTo == null ? null : oiTo - oiFrom;
+    out.push({
+      from: times[idx[0]!]!, to: times[idx[idx.length - 1]!]!, samples: idx.length, priceFrom, priceTo, priceChg,
+      priceChgPct: priceChg == null || !priceFrom ? null : (priceChg / priceFrom) * 100,
+      oiFrom, oiTo, oiChg, oiChgPct: oiChg == null || !oiFrom ? null : (oiChg / oiFrom) * 100,
+      state: classifyBuildup(priceChg, oiChg),
+    });
+    if (priceTo != null) lastPrice = priceTo;
+    if (oiTo != null) lastOi = oiTo;
+  }
+  return out;
+}
+
+/** The whole session so far as one window (first recorded value to last). */
+export function buildupSession(times: string[], price: (number | null)[], oi: (number | null)[]): BuildupRow | null {
+  const rows = buildupRows(times, price, oi, 24 * 60);
+  return rows[0] ?? null;
+}

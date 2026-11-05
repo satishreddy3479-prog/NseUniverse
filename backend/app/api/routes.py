@@ -650,6 +650,18 @@ async def intraday_summary(request: Request, expiry: date) -> dict[str, Any]:
     return await asyncio.to_thread(request.app.state.intraday.summary, expiry.isoformat())
 
 
+@router.get("/intraday/hv")
+async def intraday_hv(request: Request) -> dict[str, Any]:
+    """Historical volatility of NIFTY 50 from stored daily closes."""
+    return await asyncio.to_thread(request.app.state.intraday.hv)
+
+
+@router.get("/intraday/iv-series")
+async def intraday_iv_series(request: Request, expiry: date) -> dict[str, Any]:
+    """At-the-money implied volatility through the latest stored session."""
+    return await asyncio.to_thread(request.app.state.intraday.iv_series, expiry.isoformat())
+
+
 RESEARCH_K = (0.25, 0.5, 1.0)  # a fixed menu keeps the (cached) evaluation workload bounded
 
 

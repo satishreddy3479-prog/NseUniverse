@@ -840,3 +840,15 @@ export interface SwingLiveView {
   watching: SwingLiveRow[]; events: SwingLiveEvent[]; updated_at: string;
 }
 
+// ---- Options Lab: historical volatility and the intraday IV series (/api/intraday/hv, /api/intraday/iv-series)
+export interface HvReport {
+  as_of: string | null; days_behind: number | null; bars: number;
+  windows: Record<string, { hv: number | null; returns: number; gap_returns: number }>;
+  series: { window: number; dates: string[]; hv: (number | null)[] };
+  method: string;
+}
+export interface IvSeriesPoint { at: string; spot: number | null; atm_iv: number | null; straddle: number | null; skew: number | null; note: string | null }
+export interface IvSeries {
+  status: string; expiry?: string; session?: string; is_today?: boolean; samples_in_session?: number; points_shown?: number; thinned_every?: number;
+  latest_at?: string; age_seconds?: number; high?: number | null; low?: number | null; model?: string; rate_assumed?: number; points: IvSeriesPoint[];
+}

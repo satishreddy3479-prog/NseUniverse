@@ -21,7 +21,7 @@ export interface Tool {
   /** chart boards built from the stored per-strike series (components/dashboard/PriceBoards.tsx) */
   board?: "priceOi" | "multiStrike" | "multiStraddle" | "vega";
   /** a special page body (see pages/ToolPage.tsx) */
-  page?: "flows" | "cash" | "contributors" | "weightage" | "breadth" | "sectors" | "movers" | "futflow" | "futsectors";
+  page?: "flows" | "cash" | "contributors" | "weightage" | "breadth" | "sectors" | "movers" | "futflow" | "futsectors" | "futbuildup" | "ivhv" | "ivintraday";
   /** why a planned tool is not available yet */
   needs?: string;
   isNew?: boolean;
@@ -48,9 +48,9 @@ export const TOOLS: Tool[] = [
   { id: "multistrike-chart", label: "MultiStrike Chart", menu: "options", group: "Price tools", status: "ready", isNew: true, board: "multiStrike", blurb: "Price, OI or OI change of several strikes on one chart, calls and puts side by side." },
   { id: "multi-straddle", label: "Multi-Straddle Chart", menu: "options", group: "Price tools", status: "ready", isNew: true, board: "multiStraddle", blurb: "The straddle price of several strikes on one chart." },
   { id: "volatility-skew", label: "Volatility Skew", menu: "options", group: "IV tools", status: "ready", isNew: true, widgets: ["ivSkew"], blurb: "Implied volatility across strikes for calls and puts." },
-  { id: "iv-hv", label: "IV - HV", menu: "options", group: "IV tools", status: "planned", needs: "Historical volatility has to be computed from stored daily closes; the endpoint is not built yet.", blurb: "Implied against historical volatility." },
+  { id: "iv-hv", label: "IV - HV", menu: "options", group: "IV tools", status: "ready", isNew: true, page: "ivhv", blurb: "At-the-money implied volatility against historical volatility (10, 20, 30 and 60 days) from stored daily closes." },
   { id: "iv-grid", label: "IV Grid", menu: "options", group: "IV tools", status: "planned", needs: "Needs implied volatility stored per strike over time.", blurb: "Implied volatility by strike and time." },
-  { id: "iv-intraday", label: "IV - Intraday", menu: "options", group: "IV tools", status: "planned", needs: "Needs at-the-money IV computed for every stored snapshot.", blurb: "At-the-money implied volatility through the session." },
+  { id: "iv-intraday", label: "IV - Intraday", menu: "options", group: "IV tools", status: "ready", isNew: true, page: "ivintraday", blurb: "At-the-money implied volatility through the session, one value per stored snapshot." },
   { id: "oi-crossover", label: "OI Crossover", menu: "options", group: "Screeners", status: "planned", needs: "Needs a rule for the crossover and its stored history.", blurb: "Strikes where call and put OI cross." },
   { id: "intraday-booster", label: "Intraday Booster", menu: "options", group: "Screeners", status: "ready", to: "/analysis", blurb: "Rules-based intraday command center built from the stored samples." },
   { id: "option-triggers", label: "Option Triggers", menu: "options", group: "Screeners", status: "planned", needs: "Alerts need a server-side rule engine and a delivery channel; neither exists yet.", blurb: "Alerts on option conditions." },
@@ -62,7 +62,7 @@ export const TOOLS: Tool[] = [
   { id: "market-movers", label: "Market Movers", menu: "futures", group: "Price tools", status: "ready", isNew: true, page: "movers", blurb: "NIFTY 50 stocks ranked by move and contribution (NIFTY 50 only)." },
   { id: "future-heatmap", label: "Future Heatmap", menu: "futures", group: "Price tools", status: "planned", needs: "Needs futures data for more than NIFTY, which is out of scope for now.", blurb: "Futures across many instruments." },
   { id: "future-oi", label: "Future Open Interest", menu: "futures", group: "OI tools", status: "ready", widgets: ["futOi", "futOiChange"], blurb: "NIFTY futures open interest and its change." },
-  { id: "future-price-oi", label: "Future Price vs OI", menu: "futures", group: "OI tools", status: "planned", needs: "The futures price/OI buildup classification is not built yet.", blurb: "Futures price against OI." },
+  { id: "future-price-oi", label: "Future Price vs OI", menu: "futures", group: "OI tools", status: "ready", isNew: true, page: "futbuildup", blurb: "NIFTY future price against open interest: long/short buildup, short covering, long unwinding per 15 minutes and for the session." },
   { id: "sentiment-cycle", label: "Future Sentiment Cycle", menu: "futures", group: "OI tools", status: "planned", needs: "Needs a validated rule set; none has been agreed.", blurb: "Where the futures sit in the buildup cycle." },
   // ---- Analyse
   { id: "fii-dii-summary", label: "FII/DII Summary", menu: "analyse", group: "FII / DII", status: "ready", page: "flows", blurb: "Institutional derivatives positioning from the exchange's published data." },

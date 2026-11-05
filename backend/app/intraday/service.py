@@ -22,10 +22,11 @@ from typing import Any
 
 from app.domain.session import market_time, session_close
 from app.intraday import evaluate, labels, paper, positioning, price_structure, setups
+from app.intraday import hv as hvmod
 from app.intraday import volatility as volmod
 from app.intraday.costs import CostModel
 from app.intraday.features import (
-        IST,
+    IST,
     OPEN,
     DailyBar,
     Point,
@@ -127,6 +128,7 @@ class IntradayService:
         self._events = events
         self._clock = clock or (lambda: datetime.now(UTC))
         self._cache: dict[tuple[str, int, int], dict[str, Any]] = {}
+        self._iv_cache: dict[tuple[str, str, int, int], dict[str, Any]] = {}  # one entry: the latest IV series
         self._slow: dict[tuple[str, str], tuple[float, Any]] = {}
         self._task: asyncio.Task[None] | None = None
         self.loop_note = "not started"
@@ -528,6 +530,59 @@ class IntradayService:
         out["realized_vol_60m"] = None if rv is None else round(rv, 2)
         out["iv_minus_realized"] = None if rv is None else round(now_s["atm_iv"] - rv, 2)
         out["interpretation"] = volmod.interpret(spot_chg, changes.get("15"), straddle_chg) if chain_status == "fresh" else []
+        return out
+
+    def hv(self) -> dict[str, Any]:
+        """Historical volatility of NIFTY 50 from the stored final daily closes (10/20/30/60 days and a 20-day series)."""
+        today = self._clock().astimezone(IST).date()
+        return hvmod.hv_report(self.history.bars("NIFTY50"), today)
+
+    def iv_series(self, expiry: str, max_points: int = 90) -> dict[str, Any]:
+        """At-the-money implied volatility through the latest stored session of this expiry, one value per stored
+        snapshot (thinned to at most ``max_points``). Same model and inputs as the command center's IV."""
+        now = self._clock()
+        try:
+            exp_d = date.fromisoformat(expiry)
+        except ValueError:
+            return {"status": "bad expiry", "points": []}
+        start = datetime.combine(now.astimezone(IST).date(), OPEN, IST)
+        samples = self.obs.samples(self.underlying, expiry, since=start - timedelta(days=4), until=now, limit=5000)
+        if not samples:
+            return {"status": "no stored option-chain sample for this expiry", "expiry": expiry, "points": []}
+        day = samples[-1].received_at.astimezone(IST).date()
+        todays = [s for s in samples if s.received_at.astimezone(IST).date() == day and OPEN <= s.received_at.astimezone(IST).time() <= session_close()]
+        if not todays:
+            return {"status": "no stored sample inside the session", "expiry": expiry, "points": []}
+        key = (expiry, str(todays[-1].sample_id), len(todays), max_points)
+        if key in self._iv_cache:
+            return self._iv_cache[key]
+        stride = max(1, -(-len(todays) // max_points))
+        pick = todays[::stride]
+        if pick[-1] is not todays[-1]:
+            pick.append(todays[-1])
+        points: list[dict[str, Any]] = []
+        for s in pick:
+            sf = self._surface_of(s, exp_d, s.received_at)
+            ok = sf.get("status") == "ok"
+            points.append({
+                "at": s.received_at.isoformat(), "spot": s.spot,
+                "atm_iv": sf.get("atm_iv") if ok else None,
+                "straddle": sf.get("straddle") if ok else None,
+                "skew": sf.get("skew_25d_put_minus_call") if ok else None,
+                "note": None if ok else sf.get("status"),
+            })
+        valid = [p["atm_iv"] for p in points if p["atm_iv"] is not None]
+        out = {
+            "status": "ok" if valid else "no implied volatility could be computed",
+            "expiry": expiry, "session": day.isoformat(), "is_today": day == now.astimezone(IST).date(),
+            "samples_in_session": len(todays), "points_shown": len(points), "thinned_every": stride,
+            "latest_at": todays[-1].received_at.isoformat(),
+            "age_seconds": round((now - todays[-1].received_at).total_seconds(), 1),
+            "high": max(valid) if valid else None, "low": min(valid) if valid else None,
+            "model": "Black-76; forward from put-call parity", "rate_assumed": self.risk_free_rate,
+            "points": points,
+        }
+        self._iv_cache = {key: out}
         return out
 
     def research(self, horizon: int = 15, k: float = labels.DEFAULT_K) -> dict[str, Any]:
