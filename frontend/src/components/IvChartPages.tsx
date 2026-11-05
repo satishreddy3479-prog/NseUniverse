@@ -70,6 +70,7 @@ export function IvChartBody() {
       { name: "IV (India VIX)", type: "line", showSymbol: false, data: d.iv.slice(lo), lineStyle: { color: c.brass, width: 2 }, itemStyle: { color: c.brass } },
       { name: `HV ${hvLabel(d.window)}`, type: "line", showSymbol: false, data: d.hv.slice(lo), lineStyle: { color: c.info, width: 1.8 }, itemStyle: { color: c.info } },
       { name: `RV ${hvLabel(d.window)}`, type: "line", showSymbol: false, data: d.rv.slice(lo), lineStyle: { color: c.up, width: 1.5, type: "dashed" }, itemStyle: { color: c.up } },
+      ...(d.own_iv && d.own_iv.some((v) => v != null) ? [{ name: "ATM IV (ours, monthly)", type: "line", showSymbol: true, symbolSize: 9, symbol: "diamond", connectNulls: true, data: d.own_iv.slice(lo), lineStyle: { color: c.up, width: 1.2, type: "dotted" }, itemStyle: { color: c.up } }] : []),
       { name: "NIFTY 50 close", type: "line", yAxisIndex: 1, showSymbol: false, data: d.close.slice(lo), lineStyle: { color: c.muted, width: 1, opacity: 0.8 }, itemStyle: { color: c.muted } },
     ],
   };
@@ -123,6 +124,7 @@ export function IvMinusHvChart() {
   const lo = d.dates.length - Math.min(d.dates.length, RANGES.find((r) => r.id === range)!.days);
   const every = labelEvery(d.dates.length - lo);
   const diff = d.iv.map((v, k) => (d.hv[k] == null || v == null ? null : +(v - d.hv[k]!).toFixed(2))).slice(lo);
+  const ownDiff = (d.own_iv ?? []).map((v, k) => (v == null || d.hv[k] == null ? null : +(v - d.hv[k]!).toFixed(2))).slice(lo);
   const valid = diff.filter((v): v is number => v != null);
   const above = valid.filter((v) => v > 0).length;
   const option = {
@@ -136,6 +138,7 @@ export function IvMinusHvChart() {
     ],
     series: [
       { name: `IV − HV ${hvLabel(d.window)} (pts)`, type: "bar", data: diff.map((v) => (v == null ? null : { value: v, itemStyle: { color: v >= 0 ? c.up : c.down } })) },
+      ...(ownDiff.some((v) => v != null) ? [{ name: "ATM IV − HV (ours, monthly)", type: "line", showSymbol: true, symbolSize: 10, symbol: "diamond", connectNulls: true, data: ownDiff, lineStyle: { color: c.brass, width: 1.2, type: "dotted" }, itemStyle: { color: c.brass } }] : []),
       { name: "NIFTY 50 close", type: "line", yAxisIndex: 1, showSymbol: false, data: d.close.slice(lo), lineStyle: { color: c.muted, width: 1.2 }, itemStyle: { color: c.muted } },
     ],
   };
@@ -144,7 +147,7 @@ export function IvMinusHvChart() {
       <Controls hv={hv} setHv={setHv} range={range} setRange={setRange} rangeLabel="Range" />
       <h2 className="mb-1 mt-3 text-sm font-semibold text-paper">IV − HV by day, {d.dates[lo]} to {d.dates[d.dates.length - 1]} ({d.dates.length - lo} days)</h2>
       <div style={{ height: 320 }} data-testid="ivminus-chart"><EChart option={option} ariaLabel="India VIX minus historical volatility by day with the NIFTY 50 close" /></div>
-      <p className="mt-1 text-[11px] text-muted" data-testid="ivminus-note">{valid.length ? `IV was above HV on ${above} of ${valid.length} days (${((above / valid.length) * 100).toFixed(0)}%). ` : ""}Green bars: options priced above the realised move; red: below. It is context about how rich or cheap options are, not a signal.</p>
+      <p className="mt-1 text-[11px] text-muted" data-testid="ivminus-note">{valid.length ? `IV was above HV on ${above} of ${valid.length} days (${((above / valid.length) * 100).toFixed(0)}%). ` : ""}Green bars: India VIX above the realised move; red: below. Diamonds: our own at-the-money IV (monthly expiry) minus the same HV, for the sessions whose option chains we stored. It is context about how rich or cheap options are, not a signal.</p>
       <Source text={d.iv_source} last={d.dates[Math.max(0, d.iv.reduce<number>((a, v, k) => (v != null ? k : a), -1))]!} prov={d.provisional ?? null} />
     </div>
   );

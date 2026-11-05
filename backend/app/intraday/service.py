@@ -571,7 +571,12 @@ class IntradayService:
         """Daily India VIX (implied volatility), NIFTY close and rolling HV / RV from the stored daily history, plus the
         latest session as a flagged provisional day when the daily history is a day behind."""
         nifty = self.history.bars("NIFTY50")
-        return hvmod.iv_chart(nifty, self.history.bars("INDIAVIX"), window, provisional=self._provisional_bar(nifty))
+        out = hvmod.iv_chart(nifty, self.history.bars("INDIAVIX"), window, provisional=self._provisional_bar(nifty))
+        own = {r["date"]: r for r in self.iv_history(sessions=60, min_days_left=5, far=True)}
+        out["own_iv"] = [own[d]["atm_iv"] if d in own else None for d in out["dates"]]
+        out["own_iv_expiry"] = [own[d]["expiry"] if d in own else None for d in out["dates"]]
+        out["own_iv_note"] = "ATM implied volatility of the farthest stored expiry with 5+ days left (the monthly), from the last stored snapshot of each session; exists only for sessions whose option chains were stored"
+        return out
 
     def iv_sessions(self, limit: int = 30) -> list[str]:
         """IST dates with stored in-session samples, newest last."""
@@ -693,12 +698,14 @@ class IntradayService:
             "model": "Black-76; forward from put-call parity", "rate_assumed": self.risk_free_rate,
         }
 
-    def iv_history(self, sessions: int = 20, min_days_left: int = 2) -> list[dict[str, Any]]:
+    def iv_history(self, sessions: int = 20, min_days_left: int = 2, far: bool = False) -> list[dict[str, Any]]:
         """ATM implied volatility at the end of each stored session, for the IV against HV chart.
 
         Per session: the nearest expiry that still has at least ``min_days_left`` calendar days to run (so the figure is not
         the wild last-day IV of an expiring contract; if none, the best-covered expiry), read from the last stored
-        in-session snapshot of that expiry. The expiry is named, because IV differs a little between expiries."""
+        in-session snapshot of that expiry. The expiry is named, because IV differs a little between expiries.
+        With ``far`` the farthest stored expiry with enough days left is used (the monthly), which keeps one maturity from
+        day to day instead of switching between the weekly and the monthly."""
         out: list[dict[str, Any]] = []
         for d, _n in sorted(self.obs.session_sample_counts(self.underlying).items())[-sessions:]:
             day = date.fromisoformat(d)
@@ -707,7 +714,7 @@ class IntradayService:
             if not counts:
                 continue
             ahead = [(e, n) for e, n in counts if (date.fromisoformat(e) - day).days >= min_days_left]
-            exp = min(ahead)[0] if ahead else max(counts, key=lambda x: x[1])[0]
+            exp = (max(ahead) if far else min(ahead))[0] if ahead else max(counts, key=lambda x: x[1])[0]
             smp = self.obs.samples(self.underlying, exp, since=lo, until=hi, limit=5000)
             if not smp:
                 continue

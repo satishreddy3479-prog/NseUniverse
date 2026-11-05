@@ -136,7 +136,10 @@ function ExposureWidget({ kind }: { kind: "gamma" | "vega" }) {
   const { d, g, spot } = useChainGreeks();
   const c = useChartColors();
   const r = useMemo(() => (g && spot != null ? exposures(d.view, g.strikes, spot, kind) : null), [g, d.view, spot, kind]);
+  // a strike with no usable price has no exposure: it is left out of the total and counted, never added as zero
   const total = (k: "call" | "put") => (r?.points ?? []).reduce((t, p) => t + (p[k] ?? 0), 0);
+  const used = (k: "call" | "put") => (r?.points ?? []).filter((p) => p[k] != null).length;
+  const of = (k: "call" | "put") => (used(k) < (r?.points.length ?? 0) ? ` (${used(k)} of ${r?.points.length} strikes)` : "");
   const opt = useMemo(() => ({
     animation: false, legend: { textStyle: { color: c.muted }, top: 0 }, grid: { left: 8, right: 12, top: 28, bottom: 8, containLabel: true },
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v: number | null) => (v == null ? "—" : compactIN(v)) },
@@ -153,7 +156,7 @@ function ExposureWidget({ kind }: { kind: "gamma" | "vega" }) {
       <div className="flex h-full flex-col">
         {r && r.points.length > 0 && (
           <div className="mb-1 flex flex-wrap gap-x-6 text-sm text-muted">
-            <span>Calls: <b className="text-up">{compactIN(total("call"))}</b></span><span>Puts: <b className="text-down">{compactIN(total("put"))}</b></span>
+            <span>Calls: <b className="text-up">{compactIN(total("call"))}</b>{of("call")}</span><span>Puts: <b className="text-down">{compactIN(total("put"))}</b>{of("put")}</span>
             {kind === "gamma" && <span>Net (call − put): <b className="text-paper">{compactIN(total("call") - total("put"))}</b></span>}
           </div>
         )}
