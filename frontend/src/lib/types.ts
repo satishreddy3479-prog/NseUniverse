@@ -781,22 +781,28 @@ export interface SwingPaperOrder {
   id: number; session: string; symbol: string; sector: string; archetype: string; score: number; pillars: number[];
   close: number; dist_pct: number; pivot: number; trigger: number; max_open: number; initial_sl: number;
   risk_pct: number; atr14: number; min_volume: number; rank: number;
+  /** when the paper job recorded the scan that queued it */
+  scanned_at?: string | null;
 }
 export interface SwingPaperPosition {
   symbol: string; sector: string; archetype: string; score: number; pivot: number; entry_session: string; entry_no: number;
   fill: number; shares: number; initial_sl: number; tsl: number; hh: number; last_close: number;
   value: number; unrealized_pnl: number; unrealized_pct: number; stop_stage: "initial stop" | "breakeven" | "trailing";
   risk_to_stop_pct: number;
+  /** when the paper job recorded the entry day; when the live feed saw the trigger (null when it was not watching) */
+  entered_booked_at?: string | null; entry_seen_at?: string | null;
 }
 export interface SwingPaperDecision {
   decided_on: string; outcome: "filled" | "skipped"; reason: string; fill: number | null; shares: number | null;
   symbol: string; sector: string; score: number; signal_session: string; trigger_price: number; max_open: number;
   initial_sl: number; rank: number;
+  decided_booked_at?: string | null; scanned_at?: string | null; seen_at?: string | null;
 }
 export interface SwingPaperTrade {
   id: number; symbol: string; sector: string; archetype: string; score: number; entry_session: string; entry: number;
   pivot: number; initial_sl: number; shares: number; exit_session: string; exit: number; reason: string;
   gross_pnl: number; costs: number; pnl: number; r_mult: number | null; hold_sessions: number;
+  entered_booked_at?: string | null; exited_booked_at?: string | null; entry_seen_at?: string | null; exit_seen_at?: string | null;
 }
 export interface SwingPaperView {
   status: {

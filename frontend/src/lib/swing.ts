@@ -134,3 +134,12 @@ export const liveEventLabel = (k: string): string => LIVE_EVENT[k] ?? k;
 export const pctTo = (level: number | null | undefined, ltp: number | null | undefined): number | null =>
   level == null || ltp == null || ltp <= 0 ? null : (level / ltp - 1) * 100;
 
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "05 Nov 2026 09:37 IST" (with seconds when asked): date and time in IST, the same on every device. */
+export function fmtStamp(iso: string | null | undefined, seconds = false): string {
+  if (!iso) return "—";
+  const d = new Date(new Date(iso).getTime() + 5.5 * 3600_000);
+  if (Number.isNaN(d.getTime())) return "—";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getUTCDate())} ${MON[d.getUTCMonth()]} ${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}${seconds ? `:${p(d.getUTCSeconds())}` : ""} IST`;
+}

@@ -75,13 +75,15 @@ def service(tmp_path: Path, fetcher: FakeFetcher, clock) -> SwingPaperService:
 
 def tables(store: PaperStore) -> dict:
     snap = store.snapshot(trades_limit=100000, decisions_limit=100000)
-    strip = lambda rows, drop: [{k: v for k, v in r.items() if k not in drop} for r in rows]  # noqa: E731
+    # when a day was booked differs between day-by-day runs and one catch-up pass: that is the point of the field
+    when = lambda k: k.endswith("_booked_at") or k in ("scanned_at", "seen_at", "entry_seen_at", "exit_seen_at")  # noqa: E731
+    strip = lambda rows, drop: [{k: v for k, v in r.items() if k not in drop and not when(k)} for r in rows]  # noqa: E731
     return {
         "equity": snap["equity"],
         "trades": strip(snap["trades"], {"id"}),
         "decisions": strip(snap["decisions"], set()),
         "orders": strip(snap["orders"], {"id"}),
-        "positions": snap["positions"],
+        "positions": strip(snap["positions"], set()),
     }
 
 
@@ -370,3 +372,32 @@ async def test_an_unexpected_failure_in_the_pass_never_hangs_the_waiter(tmp_path
     with pytest.raises(ZeroDivisionError):
         await asyncio.wait_for(svc._manual, 5)
 
+
+def test_snapshot_says_when_each_day_was_booked_and_when_the_live_feed_saw_the_trigger(tmp_path: Path) -> None:
+    """The book is settled from daily bars after the close, so it knows the day of a fill, not the minute: the snapshot
+    carries when the job recorded the day and, only where the live layer was watching, the moment it saw the rule met."""
+    data = make_data()
+    f = FakeFetcher(data)
+    svc = service(tmp_path, f, lambda: None)
+    f.cut = FIRST
+    svc._clock = clock_after(data, FIRST - 1)
+    assert svc.run_once()["state"] == "ok"
+    f.cut = LAST + 1
+    svc._clock = clock_after(data, LAST)  # one catch-up pass replays every later session
+    assert svc.run_once()["state"] == "ok"
+    snap = svc.store.snapshot(trades_limit=1000)
+    runs = {r["session"]: r["ran_at"] for r in svc.store.snapshot()["recent_runs"]}
+    assert snap["trades"], "the scenario must trade, or the check means nothing"
+    last_run = svc.store.snapshot()["recent_runs"][0]
+    for x in snap["trades"][:3]:
+        assert x["entered_booked_at"] and x["exited_booked_at"]
+        assert x["entry_seen_at"] is None and x["exit_seen_at"] is None  # no live layer was watching: nothing is guessed
+    assert snap["orders"][0]["scanned_at"] == last_run["ran_at"] == runs[last_run["session"]]
+    # a live trigger logged for a traded stock and day appears on that trade, and a stop hit on its exit
+    x = snap["trades"][0]
+    when = datetime(2026, 11, 5, 4, 7, 57, tzinfo=UTC)
+    svc.store.record_live_event(x["entry_session"], when, "entry_trigger", x["symbol"], 100.0, 1, {})
+    svc.store.record_live_event(x["exit_session"], when, "stop_hit", x["symbol"], 99.0, 1, {})
+    again = svc.store.snapshot(trades_limit=1000)["trades"][0]
+    assert again["entry_seen_at"] == when.isoformat()
+    assert (again["exit_seen_at"] == when.isoformat()) == str(again["reason"]).startswith("STOP")

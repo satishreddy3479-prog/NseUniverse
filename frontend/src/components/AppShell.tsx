@@ -60,7 +60,7 @@ export function AppShell() {
           <MobileNav onNavigate={() => setMenuOpen(false)} />
         </div>
       )}
-      <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 md:p-4 lg:p-6">
+      <main className="relative min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 md:p-4 lg:p-6">
         <ToolTabs />
         <Outlet key={clockKey} />
       </main>

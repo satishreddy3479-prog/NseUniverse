@@ -1,12 +1,11 @@
 import { Panel } from "../ui";
 import { fmtInt, fmtPrice } from "../../lib/format";
-import { liveEventLabel, liveStateLabel, pct, pctTo, signedRupees } from "../../lib/swing";
+import { fmtStamp, liveEventLabel, liveStateLabel, pct, pctTo, signedRupees } from "../../lib/swing";
 import type { SwingLiveRow, SwingLiveView } from "../../lib/types";
 import { TABLE_WRAP, TD, TD_L, THEAD } from "./shared";
 
 const TH_L = "px-2 py-1.5 text-left font-medium";
 const TH_R = "px-2 py-1.5 text-right font-medium";
-const ist = (iso: string) => new Date(iso).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
 const good = new Set(["triggered", "holding"]);
 const bad = new Set(["stop_hit", "gap_skip"]);
 
@@ -85,7 +84,7 @@ export function SwingLivePanel({ live, loading, error }: { live: SwingLiveView |
             <ul className="space-y-1 text-sm" aria-label="Shadow decisions today">
               {live.events.map((e) => (
                 <li key={`${e.kind}-${e.symbol}`} className="num">
-                  <span className="text-muted">{ist(e.at)} IST</span> · <b>{e.symbol}</b> · {liveEventLabel(e.kind)}
+                  <span className="text-muted">{fmtStamp(e.at, true)}</span> · <b>{e.symbol}</b> · {liveEventLabel(e.kind)}
                   {e.price != null && <> at {fmtPrice(e.price)}</>}
                 </li>
               ))}

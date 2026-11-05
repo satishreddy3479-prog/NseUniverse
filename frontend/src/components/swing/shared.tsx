@@ -1,5 +1,5 @@
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
-import type { SortDir } from "../../lib/swing";
+import { fmtStamp, type SortDir } from "../../lib/swing";
 
 export interface TabDef { id: string; label: string }
 
@@ -89,3 +89,14 @@ export const TABLE_WRAP = "overflow-x-auto";
 export const THEAD = "bg-slate-2 text-xs text-muted";
 export const TD = "px-2 py-1.5 text-right";
 export const TD_L = "px-2 py-1.5 text-left";
+
+/** A trading day with what is known about its time: when the live feed saw the rule met (exact, seconds) and when the paper job recorded the day. */
+export function When({ day, seen, seenLabel, booked }: { day: string; seen?: string | null; seenLabel: string; booked?: string | null }) {
+  return (
+    <>
+      <div>{day}</div>
+      {seen && <div className="text-[11px] text-muted" title="The Kotak feed saw the rule met at this moment (shadow log)">{seenLabel} {fmtStamp(seen, true)}</div>}
+      {booked && <div className="text-[11px] text-muted" title="The paper book is settled from daily bars after the close: this is when the job recorded the day">booked {fmtStamp(booked)}</div>}
+    </>
+  );
+}

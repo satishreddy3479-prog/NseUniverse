@@ -2,10 +2,10 @@ import { useMemo, type ReactNode } from "react";
 import { EChart, useChartColors } from "../EChart";
 import { Button, EmptyState, Panel } from "../ui";
 import { fmtDateTimeIST, fmtInt, fmtPrice } from "../../lib/format";
-import { exitLabel, isStale, pct, plain, reportAgeDays, resultText, rupees, SECTOR_NAME, signedRupees } from "../../lib/swing";
+import { exitLabel, fmtStamp, isStale, pct, plain, reportAgeDays, resultText, rupees, SECTOR_NAME, signedRupees } from "../../lib/swing";
 import { paperEquityOption } from "../../lib/swingCharts";
 import type { SwingPaperView } from "../../lib/types";
-import { Stat, TABLE_WRAP, TD, TD_L, THEAD, Verdict } from "./shared";
+import { Stat, TABLE_WRAP, TD, TD_L, THEAD, Verdict, When } from "./shared";
 
 const TH_L = "px-2 py-1.5 text-left font-medium";
 const TH_R = "px-2 py-1.5 text-right font-medium";
@@ -117,7 +117,7 @@ export function SwingPaper({ view, onRun, runPending, runNote, live }: {
                 {view.positions.map((p) => (
                   <tr key={p.symbol} className="border-t border-rule">
                     <th scope="row" className={`${TD_L} font-medium text-paper`}>{p.symbol}</th>
-                    <td className={TD_L}>{p.entry_session}</td>
+                    <td className={TD_L}><When day={p.entry_session} seen={p.entry_seen_at} seenLabel="live trigger" booked={p.entered_booked_at} /></td>
                     <td className={TD}>{fmtPrice(p.fill)}</td><td className={TD}>{fmtInt(p.shares)}</td>
                     <td className={TD}>{fmtPrice(p.last_close)}</td>
                     <td className={`${TD} ${tone(p.unrealized_pnl)}`}>{signedRupees(p.unrealized_pnl)} ({pct(p.unrealized_pct, 1)})</td>
@@ -132,7 +132,7 @@ export function SwingPaper({ view, onRun, runPending, runNote, live }: {
         )}
       </Panel>
 
-      <Panel title={scan ? `Orders for the next session · scan of ${scan.session}` : "Orders for the next session"}>
+      <Panel title={scan ? `Orders for the next session · scan of ${scan.session}${view.orders[0]?.scanned_at ? ` (recorded ${fmtStamp(view.orders[0].scanned_at)})` : ""}` : "Orders for the next session"}>
         <p className="mb-3 max-w-[75ch] text-sm text-muted">
           Queued automatically at the close and recorded permanently. Next session each is taken only if the price trades through the trigger,
           the open is no higher than the &ldquo;do not chase&rdquo; price, volume reaches the minimum, a slot is free and the stock is out of its
@@ -194,7 +194,7 @@ export function SwingPaper({ view, onRun, runPending, runNote, live }: {
               <tbody>
                 {view.decisions.map((d) => (
                   <tr key={`${d.decided_on}-${d.symbol}`} className="border-t border-rule">
-                    <td className={TD_L}>{d.decided_on}</td>
+                    <td className={TD_L}><When day={d.decided_on} seen={d.seen_at} seenLabel="live trigger" booked={d.decided_booked_at} /></td>
                     <th scope="row" className={`${TD_L} font-medium text-paper`}>{d.symbol}</th>
                     <td className={TD}>{d.score.toFixed(0)}</td>
                     <td className={TD_L}>
@@ -226,8 +226,8 @@ export function SwingPaper({ view, onRun, runPending, runNote, live }: {
                 {view.trades.map((x) => (
                   <tr key={x.id} className="border-t border-rule">
                     <th scope="row" className={`${TD_L} font-medium text-paper`}>{x.symbol}</th>
-                    <td className={TD_L}>{x.entry_session}</td><td className={TD}>{fmtPrice(x.entry)}</td>
-                    <td className={TD_L}>{x.exit_session}</td><td className={TD}>{fmtPrice(x.exit)}</td>
+                    <td className={TD_L}><When day={x.entry_session} seen={x.entry_seen_at} seenLabel="live trigger" booked={x.entered_booked_at} /></td><td className={TD}>{fmtPrice(x.entry)}</td>
+                    <td className={TD_L}><When day={x.exit_session} seen={x.exit_seen_at} seenLabel="live stop hit" booked={x.exited_booked_at} /></td><td className={TD}>{fmtPrice(x.exit)}</td>
                     <td className={TD_L}>{exitLabel(x.reason)}</td><td className={TD}>{x.hold_sessions}</td>
                     <td className={TD}>{plain(x.r_mult)}</td>
                     <td className={`${TD} ${tone(x.pnl)}`}>{signedRupees(x.pnl)}</td>

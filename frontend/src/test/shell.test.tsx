@@ -79,8 +79,8 @@ describe("top menu bar", () => {
     renderAt("/overview");
     await screen.findByRole("heading", { name: "Overview" });
     await userEvent.click(within(bar()).getByRole("button", { name: /Options Lab/ }));
-    expect(within(bar()).queryByRole("link", { name: /IV Grid/ })).toBeNull();
-    const planned = within(bar()).getByText("IV Grid").closest("[aria-disabled]") as HTMLElement;
+    expect(within(bar()).queryByRole("link", { name: /OI Crossover/ })).toBeNull();
+    const planned = within(bar()).getByText("OI Crossover").closest("[aria-disabled]") as HTMLElement;
     expect(planned).toHaveAttribute("aria-disabled", "true");
     expect(planned.getAttribute("title")).toBeTruthy();
   });

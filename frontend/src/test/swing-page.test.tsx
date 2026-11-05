@@ -95,6 +95,23 @@ describe("Swing trading page: paper trading", () => {
     expect(screen.getByRole("table", { name: "Closed paper trades" })).toHaveTextContent("Day-1 cut: closed below pivot");
   });
 
+  it("gives every entry and exit its day, when the paper job recorded it and, where the live feed saw it, the exact moment", async () => {
+    const base = paperView();
+    mount(swingReport(), paperView({
+      positions: [{ ...base.positions[0]!, entry_session: "2026-11-05", entered_booked_at: "2026-11-05T11:45:00+00:00", entry_seen_at: "2026-11-05T04:27:52+00:00" }],
+      trades: [{ ...base.trades[0]!, entry_session: "2026-11-04", exit_session: "2026-11-05", reason: "STOP", entered_booked_at: "2026-11-04T11:50:00+00:00", exited_booked_at: "2026-11-05T11:45:00+00:00", entry_seen_at: null, exit_seen_at: "2026-11-05T05:30:01+00:00" }],
+      orders: base.orders.map((o, i) => (i === 0 ? { ...o, scanned_at: "2026-11-05T11:45:00+00:00" } : o)),
+    }));
+    const pos = within(await screen.findByRole("table", { name: "Open paper positions" }));
+    expect(pos.getByText("live trigger 05 Nov 2026 09:57:52 IST")).toBeInTheDocument(); // 04:27:52 UTC
+    expect(pos.getByText("booked 05 Nov 2026 17:15 IST")).toBeInTheDocument(); // 11:45 UTC
+    const closed = within(screen.getByRole("table", { name: "Closed paper trades" }));
+    expect(closed.getByText("booked 04 Nov 2026 17:20 IST")).toBeInTheDocument();
+    expect(closed.getByText("live stop hit 05 Nov 2026 11:00:01 IST")).toBeInTheDocument();
+    expect(closed.queryByText(/live trigger/)).toBeNull(); // not seen live: nothing is invented
+    expect(screen.getByText(/Orders for the next session · scan of .* \(recorded 05 Nov 2026 17:15 IST\)/)).toBeInTheDocument();
+  });
+
   it("explains an empty book instead of inventing numbers", async () => {
     const base = paperView();
     mount(swingReport(), paperView({

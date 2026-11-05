@@ -188,11 +188,32 @@ class PaperStore:
             runs = [dict(r) for r in c.execute(
                 "SELECT session, ran_at, universe_size, fetched_ok, candidates, blocked_by_gate, note "
                 "FROM scan_runs ORDER BY session_no DESC LIMIT 10")]
+            # When the paper job recorded each session, and the first moment the live feed saw a rule met (shadow log)
+            booked = {r["session"]: r["ran_at"] for r in c.execute("SELECT session, ran_at FROM scan_runs")}
+            seen = {(r["session"], r["symbol"], r["kind"]): r["at"] for r in c.execute(
+                "SELECT session, symbol, kind, MIN(at) AS at FROM live_events GROUP BY session, symbol, kind")}
         scan = None
         if last_scan:
             scan = {k: last_scan[k] for k in last_scan.keys() if k != "sectors"}
             scan["sectors"] = json.loads(last_scan["sectors"])
             scan["nifty_ok"] = None if last_scan["nifty_ok"] is None else bool(last_scan["nifty_ok"])
+        # The paper book is settled from daily bars after the close, so it knows the day of a fill, not the minute:
+        # ``*_booked_at`` is when the job recorded that day; ``*_seen_at`` is when the live feed saw the rule met (only
+        # for days the live layer was running), never a guess.
+        for o in pending:
+            o["scanned_at"] = booked.get(o["session"])
+        for d in decisions:
+            d["decided_booked_at"] = booked.get(d["decided_on"])
+            d["scanned_at"] = booked.get(d["signal_session"])
+            d["seen_at"] = seen.get((d["decided_on"], d["symbol"], "entry_trigger")) if d["outcome"] == "filled" else None
+        for p in positions:
+            p["entered_booked_at"] = booked.get(p["entry_session"])
+            p["entry_seen_at"] = seen.get((p["entry_session"], p["symbol"], "entry_trigger"))
+        for x in trades:
+            x["entered_booked_at"] = booked.get(x["entry_session"])
+            x["exited_booked_at"] = booked.get(x["exit_session"])
+            x["entry_seen_at"] = seen.get((x["entry_session"], x["symbol"], "entry_trigger"))
+            x["exit_seen_at"] = seen.get((x["exit_session"], x["symbol"], "stop_hit")) if str(x["reason"]).startswith("STOP") else None
         return {"meta": meta, "equity": equity, "scan": scan, "orders": pending, "decisions": decisions, "trades": trades,
                 "trade_totals": dict(agg), "positions": positions, "recent_runs": runs}
 
