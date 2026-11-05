@@ -197,8 +197,9 @@ class HistoryService:
             return True  # nothing downloaded yet: start straight away
         t = now.astimezone(IST)
         after_close = t.weekday() < 5 and (t.hour, t.minute) >= RUN_AFTER
-        if after_close and ok.astimezone(IST).date() < t.date():
-            return True
+        close_start = t.replace(hour=RUN_AFTER[0], minute=RUN_AFTER[1], second=0, microsecond=0)
+        if after_close and ok.astimezone(IST) < close_start:
+            return True  # a morning run does not count as the evening one
         h, m = RUN_MORNING
         morning_start = t.replace(hour=h, minute=m, second=0, microsecond=0)
         return t.weekday() < 5 and t >= morning_start and ok.astimezone(IST) < morning_start

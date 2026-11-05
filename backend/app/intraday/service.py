@@ -639,7 +639,9 @@ class IntradayService:
         cards = volmod.skew_metrics(rows, sf["forward"], sf.get("atm_iv"))
         term: list[dict[str, Any]] = []
         at = latest.received_at
-        for other in self.expiries_today():
+        sday = at.astimezone(IST).date()  # the session the chain belongs to (not "today": it is read after the close too)
+        lo_s, hi_s = datetime.combine(sday, OPEN, IST), datetime.combine(sday, session_close(), IST)
+        for other, _n in self.obs.day_counts(self.underlying, to_ms(lo_s), to_ms(hi_s)):
             if other == expiry:
                 of = sf
             else:

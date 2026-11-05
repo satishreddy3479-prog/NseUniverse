@@ -182,3 +182,9 @@ def test_parkinson_rv_matches_the_hand_calculation() -> None:
     assert out[date(2026, 11, 4)] == pytest.approx(math.sqrt((8.73721e-4 / 2) / (4 * math.log(2)) * 252) * 100, abs=0.02)  # a flat day adds zero range
     bad = parkinson_at([Bar(date(2026, 11, 2), 100, 100, 100, 100), Bar(date(2026, 11, 3), 100, 100, 100, 100)], 2)
     assert bad[date(2026, 11, 3)] == 0.0
+
+
+def test_iv_skew_after_the_close_still_lists_the_expiries_of_the_session(tmp_path: Path) -> None:
+    # read at 01:05 the next morning: "today" has no samples, but the term view must follow the chain's own session
+    out = make(tmp_path, 30, 950).iv_skew(EXP)
+    assert out["status"] == "ok" and [t["expiry"] for t in out["term"]] == [EXP]

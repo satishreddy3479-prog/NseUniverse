@@ -2,6 +2,7 @@
  * Calculations behind Smart OI, PE-CE difference, volatility skew and the gamma / vega exposure tools.
  * Pure functions on the option-chain rows: a value that cannot be computed stays null and is counted, never zero-filled.
  */
+import { RISK_FREE_RATE } from "./assumptions";
 import { carryFromForward, contractGreeks, impliedForward, type ContractGreeks } from "./optionModel";
 import { isSessionMs } from "./analytics";
 import type { OptionChainRow, OptionQuote, StrikeSeries } from "./types";
@@ -58,7 +59,7 @@ export interface StrikeGreeks { strike: number; ce: ContractGreeks | null; pe: C
  * from put-call parity at the strikes nearest spot; when it cannot be found the carry falls back to the interest rate.
  * `skipped` counts contracts whose price gave no volatility (no price, or outside what the model can fit).
  */
-export function chainGreeks(rows: OptionChainRow[], spot: number, expiry: string, nowMs: number, rate = 0.06): { strikes: StrikeGreeks[]; forward: number | null; carry: number; skipped: number } {
+export function chainGreeks(rows: OptionChainRow[], spot: number, expiry: string, nowMs: number, rate = RISK_FREE_RATE): { strikes: StrikeGreeks[]; forward: number | null; carry: number; skipped: number } {
   const fwd = impliedForward(rows.map((r) => ({ strike: r.strike, call: r.call?.ltp ?? null, put: r.put?.ltp ?? null })), spot, expiry, nowMs, rate);
   const carry = (fwd ? carryFromForward(spot, fwd.forward, expiry, nowMs) : null) ?? rate;
   let skipped = 0;
@@ -346,7 +347,7 @@ export interface VegaWindow { n: number; mode: "auto" | "fixed" }
  * below that sample's NIFTY level. Samples outside the session are left out; a contract with no usable price (or, for the OI
  * measures, no OI) is skipped and counted, never zero-filled.
  */
-export function vegaSeries(res: StrikeSeries, expiry: string, basis: VegaBasis = "greek", rate = 0.06, otmOnly = false, win?: VegaWindow): VegaPoint[] {
+export function vegaSeries(res: StrikeSeries, expiry: string, basis: VegaBasis = "greek", rate = RISK_FREE_RATE, otmOnly = false, win?: VegaWindow): VegaPoint[] {
   const listed = [...res.strikes].sort((a, b) => a - b);
   const around = (ref: number, n: number) => {
     let c = 0;

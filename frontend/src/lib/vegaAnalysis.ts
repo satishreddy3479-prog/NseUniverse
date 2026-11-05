@@ -8,6 +8,7 @@
  *    the puts from it downwards, measured from a baseline sample (each strike from its own value at the baseline).
  * A contract with no usable price gives no vega and is left out of the average or sum, never counted as zero.
  */
+import { RISK_FREE_RATE } from "./assumptions";
 import { isSessionMs } from "./analytics";
 import { chainGreeks } from "./optionTools";
 import type { OptionChainRow, OptionQuote, StrikeSeries } from "./types";
@@ -26,7 +27,7 @@ const istDay = (ms: number) => new Date(ms + 330 * 60_000).toISOString().slice(0
 const quote = (ltp: number | null) => ({ ltp, oi: null } as unknown as OptionQuote);
 
 /** Vega of every listed strike, both sides, at every in-session sample of the series. */
-export function vegaSamples(res: StrikeSeries, expiry: string, rate = 0.06): VegaSample[] {
+export function vegaSamples(res: StrikeSeries, expiry: string, rate = RISK_FREE_RATE): VegaSample[] {
   const out: VegaSample[] = [];
   res.times.forEach((iso, i) => {
     const t = new Date(iso).getTime();

@@ -64,3 +64,17 @@ describe("IV / HV / IVP page", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("could not be loaded");
   });
 });
+
+describe("date axis", () => {
+  it("writes days readably and always labels the newest day", async () => {
+    const { fmtDay, labelEvery } = await import("../lib/ivChart");
+    expect(fmtDay("2026-11-05")).toBe("5 Nov 26");
+    expect(fmtDay("2026-01-30")).toBe("30 Jan 26");
+    const show = labelEvery(100, 7); // step 15, counted back from the last index (99)
+    expect(show(99)).toBe(true);
+    expect(show(84)).toBe(true);
+    expect(show(98)).toBe(false);
+    expect([...Array(100).keys()].filter(show).length).toBeLessThanOrEqual(8);
+    expect(labelEvery(1)(0)).toBe(true);
+  });
+});

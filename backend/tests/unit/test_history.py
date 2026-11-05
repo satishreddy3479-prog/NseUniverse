@@ -198,6 +198,19 @@ class TestService:
         svc.last_attempt = None
         assert not svc.due()
 
+    async def test_the_evening_run_still_happens_after_a_morning_run_the_same_day(self, tmp_path: Path) -> None:
+        # Regression: a successful 08:10 IST morning run used to count as "today" and the 19:00 IST close run never came,
+        # so that day's NIFTY / India VIX bar stayed missing until the next morning.
+        svc, _, clock = make(tmp_path)
+        svc.store.last_success_utc = lambda: datetime(2026, 10, 29, 2, 40, tzinfo=UTC)  # type: ignore[method-assign]  # 08:10 IST
+        clock.now = datetime(2026, 10, 29, 12, 30, tzinfo=UTC)  # 18:00 IST: before the close run time
+        svc.last_attempt = None
+        assert not svc.due()
+        clock.now = datetime(2026, 10, 29, 13, 30, tzinfo=UTC)  # 19:00 IST
+        assert svc.due()
+        svc.store.last_success_utc = lambda: datetime(2026, 10, 29, 13, 31, tzinfo=UTC)  # type: ignore[method-assign]  # the evening run is done
+        assert not svc.due()
+
     async def test_a_failed_run_is_retried_after_an_hour_not_every_poll(
         self, tmp_path: Path
     ) -> None:

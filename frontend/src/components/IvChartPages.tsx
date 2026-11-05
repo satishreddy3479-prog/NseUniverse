@@ -2,19 +2,19 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../lib/api";
 import { MISSING } from "../lib/format";
-import { HV_WINDOWS, ivpReading, rankAt, RANGES, rollingRank } from "../lib/ivChart";
+import { fmtDay, HV_WINDOWS, ivpReading, labelEvery, rankAt, RANGES, rollingRank } from "../lib/ivChart";
 import { EChart, useChartColors } from "./EChart";
 
 const pct = (v: number | null | undefined, d = 2) => (v == null ? MISSING : `${v.toFixed(d)}%`);
 const btn = (on: boolean) => `min-h-9 rounded-sm border px-3 text-xs ${on ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`;
 
-function Controls({ hv, setHv, range, setRange }: { hv: number; setHv: (n: number) => void; range?: string; setRange?: (r: string) => void }) {
+function Controls({ hv, setHv, range, setRange, rangeLabel = "IVR / IVP range" }: { hv: number; setHv: (n: number) => void; range?: string; setRange?: (r: string) => void; rangeLabel?: string }) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted">
       <div className="flex items-center gap-1" role="group" aria-label="HV window"><span className="mr-1">HV window</span>
         {HV_WINDOWS.map((w) => <button key={w} type="button" aria-pressed={hv === w} className={btn(hv === w)} onClick={() => setHv(w)}>{w}d</button>)}
       </div>
-      {range != null && setRange && <div className="flex items-center gap-1" role="group" aria-label="IVR and IVP range"><span className="mr-1">IVR / IVP range</span>
+      {range != null && setRange && <div className="flex items-center gap-1" role="group" aria-label={rangeLabel}><span className="mr-1">{rangeLabel}</span>
         {RANGES.map((r) => <button key={r.id} type="button" aria-pressed={range === r.id} className={btn(range === r.id)} onClick={() => setRange(r.id)}>{r.id}</button>)}
       </div>}
     </div>
@@ -50,13 +50,14 @@ export function IvChartBody() {
   const rk = rollingRank(d.iv, days);
   const i = d.dates.length - 1;
   const now = rankAt(d.iv, i, days);
-  const lo = d.dates.length - Math.min(d.dates.length, Math.max(days, 126));
+  const lo = d.dates.length - Math.min(d.dates.length, days); // the chart shows the chosen range, newest day last
   const x = d.dates.slice(lo);
+  const every = labelEvery(x.length);
   const tip = { trigger: "axis", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 } };
   const legend = { top: 0, left: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 };
-  const axisX = { type: "category", data: x, axisLabel: { color: c.muted, hideOverlap: true, formatter: (v: string) => v.slice(2) }, axisLine: { lineStyle: { color: c.rule } } };
+  const axisX = { type: "category", data: x, axisLabel: { color: c.muted, interval: (i: number) => every(i), formatter: fmtDay, alignMinLabel: "left", alignMaxLabel: "right", margin: 10 }, axisLine: { lineStyle: { color: c.rule } } };
   const top = {
-    grid: { left: 46, right: 56, top: 40, bottom: 26 }, tooltip: tip, legend, xAxis: axisX,
+    grid: { left: 46, right: 56, top: 40, bottom: 40 }, tooltip: tip, legend, xAxis: axisX,
     yAxis: [
       { type: "value", scale: true, axisLabel: { color: c.muted, formatter: "{value}%" }, splitLine: { lineStyle: { color: c.rule, opacity: 0.6 } } },
       { type: "value", scale: true, position: "right", axisLabel: { color: c.muted }, splitLine: { show: false } },
@@ -69,7 +70,7 @@ export function IvChartBody() {
     ],
   };
   const bottom = {
-    grid: { left: 46, right: 56, top: 32, bottom: 26 }, tooltip: { ...tip, valueFormatter: (v: number | null) => (v == null ? MISSING : v.toFixed(1)) }, legend, xAxis: axisX,
+    grid: { left: 46, right: 56, top: 32, bottom: 40 }, tooltip: { ...tip, valueFormatter: (v: number | null) => (v == null ? MISSING : v.toFixed(1)) }, legend, xAxis: axisX,
     yAxis: { type: "value", min: 0, max: 100, axisLabel: { color: c.muted }, splitLine: { lineStyle: { color: c.rule, opacity: 0.6 } } },
     series: [
       { name: `IVR ${range}`, type: "line", showSymbol: false, data: rk.ivr.slice(lo), lineStyle: { color: c.up, width: 1.8 }, itemStyle: { color: c.up },
@@ -109,19 +110,21 @@ export function IvChartBody() {
 export function IvMinusHvChart() {
   const c = useChartColors();
   const [hv, setHv] = useState(20);
+  const [range, setRange] = useState("1Y");
   const q = useChart(hv);
   const blocked = problem(q);
   if (blocked || !q.data) return <div data-testid="ivminus-tool">{blocked}</div>;
   const d = q.data;
-  const lo = d.dates.length - Math.min(d.dates.length, 252);
+  const lo = d.dates.length - Math.min(d.dates.length, RANGES.find((r) => r.id === range)!.days);
+  const every = labelEvery(d.dates.length - lo);
   const diff = d.iv.map((v, k) => (d.hv[k] == null ? null : +(v - d.hv[k]!).toFixed(2))).slice(lo);
   const valid = diff.filter((v): v is number => v != null);
   const above = valid.filter((v) => v > 0).length;
   const option = {
-    grid: { left: 46, right: 56, top: 40, bottom: 26 },
+    grid: { left: 46, right: 56, top: 40, bottom: 40 },
     tooltip: { trigger: "axis", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 } },
     legend: { top: 0, left: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
-    xAxis: { type: "category", data: d.dates.slice(lo), axisLabel: { color: c.muted, hideOverlap: true, formatter: (v: string) => v.slice(2) }, axisLine: { lineStyle: { color: c.rule } } },
+    xAxis: { type: "category", data: d.dates.slice(lo), axisLabel: { color: c.muted, interval: (i: number) => every(i), formatter: fmtDay, alignMinLabel: "left", alignMaxLabel: "right", margin: 10 }, axisLine: { lineStyle: { color: c.rule } } },
     yAxis: [
       { type: "value", axisLabel: { color: c.muted }, splitLine: { lineStyle: { color: c.rule, opacity: 0.6 } } },
       { type: "value", scale: true, position: "right", axisLabel: { color: c.muted }, splitLine: { show: false } },
@@ -133,8 +136,8 @@ export function IvMinusHvChart() {
   };
   return (
     <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3" data-testid="ivminus-tool">
-      <Controls hv={hv} setHv={setHv} />
-      <h2 className="mb-1 mt-3 text-sm font-semibold text-paper">IV − HV by day, last {d.dates.length - lo} days</h2>
+      <Controls hv={hv} setHv={setHv} range={range} setRange={setRange} rangeLabel="Range" />
+      <h2 className="mb-1 mt-3 text-sm font-semibold text-paper">IV − HV by day, {d.dates[lo]} to {d.dates[d.dates.length - 1]} ({d.dates.length - lo} days)</h2>
       <div style={{ height: 320 }} data-testid="ivminus-chart"><EChart option={option} ariaLabel="India VIX minus historical volatility by day with the NIFTY 50 close" /></div>
       <p className="mt-1 text-[11px] text-muted" data-testid="ivminus-note">{valid.length ? `IV was above HV on ${above} of ${valid.length} days (${((above / valid.length) * 100).toFixed(0)}%). ` : ""}Green bars: options priced above the realised move; red: below. It is context about how rich or cheap options are, not a signal.</p>
       <Source text={d.iv_source} last={d.dates[d.dates.length - 1]!} />

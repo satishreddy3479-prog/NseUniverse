@@ -41,3 +41,12 @@ export function ivpReading(ivp: number | null, range: string): string {
   const band = ivp < 30 ? "low: options are cheap against the last " + range : ivp > 70 ? "high: options are expensive against the last " + range : "middle of its " + range + " range";
   return `IV is higher than on ${ivp.toFixed(0)}% of days in the last ${range}: ${band}.`;
 }
+
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "2026-11-05" -> "5 Nov 26" */
+export const fmtDay = (iso: string) => `${Number(iso.slice(8, 10))} ${MON[Number(iso.slice(5, 7)) - 1] ?? "?"} ${iso.slice(2, 4)}`;
+/** Show about `target` labels, counted back from the newest day so the latest date is always labelled. */
+export function labelEvery(n: number, target = 7): (i: number) => boolean {
+  const step = Math.max(1, Math.ceil(n / target));
+  return (i) => (n - 1 - i) % step === 0;
+}

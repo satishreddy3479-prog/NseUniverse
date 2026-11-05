@@ -12,6 +12,7 @@
  *  - Gamma flip: the spot level at which aggregate net GEX changes sign, found by re-pricing every contract's gamma at trial
  *    spot levels (its own implied volatility held fixed) and taking the crossing nearest to spot.
  */
+import { RISK_FREE_RATE } from "./assumptions";
 import { isSessionMs } from "./analytics";
 import { contractGreeks } from "./optionModel";
 import { chainGreeks } from "./optionTools";
@@ -34,7 +35,7 @@ const exposure = (gamma: number | null, oi: number | null | undefined, spot: num
   gamma == null || oi == null ? null : (gamma * oi * spot * spot * 0.01) / CRORE;
 
 /** The GEX of every listed strike of one chain. */
-export function gexProfile(rows: OptionChainRow[], spot: number, expiry: string, atMs: number, rate = 0.06): GexProfile {
+export function gexProfile(rows: OptionChainRow[], spot: number, expiry: string, atMs: number, rate = RISK_FREE_RATE): GexProfile {
   const g = chainGreeks(rows, spot, expiry, atMs, rate);
   const byStrike = new Map(g.strikes.map((x) => [x.strike, x]));
   const out: GexRow[] = rows.map((r) => {
@@ -184,7 +185,7 @@ const istDay = (ms: number) => new Date(ms + 330 * 60_000).toISOString().slice(0
 const quote = (ltp: number | null, oi: number | null) => ({ ltp, oi } as unknown as OptionQuote);
 
 /** The GEX profile of the series' strikes at every in-session sample. */
-export function gexSamples(res: StrikeSeries, expiry: string, rate = 0.06): GexSample[] {
+export function gexSamples(res: StrikeSeries, expiry: string, rate = RISK_FREE_RATE): GexSample[] {
   const out: GexSample[] = [];
   res.times.forEach((iso, i) => {
     const t = new Date(iso).getTime();
