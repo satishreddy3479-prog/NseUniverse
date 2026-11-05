@@ -18,7 +18,7 @@ import contextlib
 import logging
 import threading
 from collections.abc import Awaitable, Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from app.logging_setup import log_event
@@ -27,6 +27,7 @@ from app.stream.models import FeedToken, LiveTick
 from app.swing.engine import Config, Order, Position
 from app.swing.live_rules import (
     IST,
+    EntryCheck,
     check_entry,
     check_position,
     session_state,
@@ -37,6 +38,26 @@ from app.swing.store import PaperStore
 logger = logging.getLogger(__name__)
 
 STALE_AFTER_S = 120.0  # a tick older than this is shown, but never acted on
+ENTRY_EVENTS = ("entry_trigger", "entry_gap_skip")
+
+
+def previous_session(today: date) -> date:
+    """The trading day before ``today``: the verified exchange calendar, else the plain weekday rule."""
+    try:
+        from app.prediction.calendar import TradingCalendar
+
+        cal = TradingCalendar.load()
+        d = today - timedelta(days=1)
+        for _ in range(10):
+            if cal.is_session(d):
+                return d
+            d -= timedelta(days=1)
+    except Exception:  # noqa: BLE001, S110 - no calendar for that date: the weekday rule below stands
+        pass
+    d = today - timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d
 MASTER_RETRY_S = 600.0
 
 
@@ -47,12 +68,14 @@ class SwingLive:
         add_tokens: Callable[[list[FeedToken]], Awaitable[int]] | None,
         feed_state: Callable[[], str] = lambda: "unknown",
         clock: Callable[[], datetime] = lambda: datetime.now(UTC), enabled: bool = True,
-        poll_s: float = 2.0, refresh_s: float = 60.0,
+        poll_s: float = 2.0, refresh_s: float = 60.0, prev_session: Callable[[date], date] = previous_session,
     ) -> None:
         self.store, self.cfg, self._ticks, self._scrip = store, cfg, ticks, scrip_master
         self._add_tokens, self._feed_state, self._clock = add_tokens, feed_state, clock
         self.enabled, self.poll_s, self.refresh_s = enabled, poll_s, refresh_s
         self._lock = threading.Lock()
+        self._prev_session = prev_session
+        self._last_scan: str | None = None  # the session the queued orders were scanned at
         self._orders: list[Order] = []
         self._positions: list[Position] = []
         self._master: dict[str, TokenInfo] | None = None
@@ -65,9 +88,25 @@ class SwingLive:
 
     # ------------------------------------------------------------------ what is watched
     def load_watch(self) -> None:
-        book, _last, _no, pending = self.store.load_state(self.cfg)
+        book, last, _no, pending = self.store.load_state(self.cfg)
         with self._lock:
-            self._orders, self._positions = list(pending), list(book.positions.values())
+            self._orders, self._positions, self._last_scan = list(pending), list(book.positions.values()), last
+
+    def queue_state(self, now: datetime) -> dict[str, Any]:
+        """Are the queued orders the ones meant for today's session? They are when the book's last scan is the trading
+        day before today. If the book is behind (a missed evening run), those orders were meant for an earlier day, and
+        checking them against today's prices says nothing about the paper book: the catch-up run settles them first."""
+        today = now.astimezone(IST).date()
+        expected = self._prev_session(today)
+        scan = self._last_scan
+        current = scan is not None and scan >= expected.isoformat()
+        behind = 0
+        if scan is not None and not current:
+            d = date.fromisoformat(scan) + timedelta(days=1)
+            while d <= expected:
+                behind += d.weekday() < 5
+                d += timedelta(days=1)
+        return {"scan_session": scan, "expected_scan_session": expected.isoformat(), "current": current, "sessions_behind": behind}
 
     def _symbols(self) -> list[str]:
         with self._lock:
@@ -125,6 +164,7 @@ class SwingLive:
         if session_state(now) != "open":
             return 0  # the feed keeps the last values after the close: never act on them
         ticks, session = self._ticks(), now.astimezone(IST).date().isoformat()
+        queue_ok = bool(self.queue_state(now)["current"])
         with self._lock:
             orders, positions = list(self._orders), list(self._positions)
         new = 0
@@ -134,17 +174,17 @@ class SwingLive:
             if self.store.record_live_event(session, now, kind, sym, price, tick.volume if tick else None, detail):
                 new += 1
 
-        for o in orders:
+        for o in orders if queue_ok else []:  # a stale queue was meant for an earlier session: never acted on
             token = self._tokens.get(o.symbol)
             tick = self._fresh(ticks.get(token.key) if token else None, now)
             if tick is None:
                 continue
             chk = check_entry(o, tick, now)
             if chk.state == "gap_skip":
-                record("entry_gap_skip", o.symbol, tick.open, tick, {"note": chk.note, "pace": chk.pace})
+                record("entry_gap_skip", o.symbol, tick.open, tick, {"note": chk.note, "pace": chk.pace, "order_session": o.session})
             elif chk.state == "triggered" and tick.ltp is not None:
                 record("entry_trigger", o.symbol, max(tick.ltp, o.trigger), tick,
-                       {"note": chk.note, "pace": chk.pace, "ltp": tick.ltp, "trigger": o.trigger})
+                       {"note": chk.note, "pace": chk.pace, "ltp": tick.ltp, "trigger": o.trigger, "order_session": o.session})
         for p in positions:
             token = self._tokens.get(p.symbol)
             tick = self._fresh(ticks.get(token.key) if token else None, now)
@@ -166,6 +206,7 @@ class SwingLive:
         with self._lock:
             orders, positions = list(self._orders), list(self._positions)
         rows: list[dict[str, Any]] = []
+        queue = self.queue_state(now)
 
         def snap(sym: str) -> tuple[LiveTick | None, dict[str, Any]]:
             token = self._tokens.get(sym)
@@ -186,6 +227,8 @@ class SwingLive:
             tick, base = snap(o.symbol)
             chk = check_entry(o, tick, now)
             state = chk.state if not base["stale"] or chk.state in ("no_data",) else "stale"
+            if not queue["current"]:
+                state, chk = "stale_queue", EntryCheck("stale_queue", "queued for an earlier session; the book is catching up", chk.pace)
             rows.append(base | {
                 "kind": "order", "rank": o.rank, "state": state, "note": chk.note,
                 "pace": volume_pace(tick.volume, o.min_volume, now) if tick else None,
@@ -210,9 +253,19 @@ class SwingLive:
         elif missing:
             note = f"no Kotak token found for: {', '.join(missing[:6])}"
         session = now.astimezone(IST).date().isoformat()
+        events = self.store.live_events(session)
+        if not queue["current"]:  # entry decisions made from orders meant for an earlier session are not shown as today's
+            events = [e for e in events if e["kind"] not in ENTRY_EVENTS]
+        if not queue["current"] and self._orders and queue["scan_session"] is not None:
+            note = note or (
+                f"The paper book is {queue['sessions_behind']} session(s) behind: its queued orders come from the "
+                f"{queue['scan_session']} scan and were meant for an earlier session, so they are not checked against today's "
+                "prices. The next evening run settles them on their own days first, then queues the orders for the next session."
+            )
         return {
             "enabled": self.enabled, "mode": "shadow", "market": session_state(now), "feed_state": self._feed_state(),
-            "note": note, "watching": rows, "events": self.store.live_events(session),
+            "queue": queue,
+            "note": note, "watching": rows, "events": events,
             "updated_at": now.astimezone(UTC).isoformat(timespec="seconds"),
         }
 

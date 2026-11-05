@@ -11,6 +11,10 @@ from pathlib import Path
 from typing import Any
 
 REPORT_PATH = Path("swing") / "report.json"
+# A copy of the last built report travels with the release, so a server whose data folder has none
+# still shows the backtest (meta says how old it is). A report in the data folder takes precedence.
+_SWING_PKG = Path(__file__).resolve().parent.parent / "swing"
+BUNDLED_REPORT = _SWING_PKG / "report.json"
 SCHEMA = 1
 
 
@@ -24,6 +28,8 @@ class SwingReportError(RuntimeError):
 
 def load_report(data_dir: Path) -> dict[str, Any]:
     path = data_dir / REPORT_PATH
+    if not path.exists() and BUNDLED_REPORT.exists():
+        path = BUNDLED_REPORT
     if not path.exists():
         raise SwingReportError(
             404, "swing_report_missing",

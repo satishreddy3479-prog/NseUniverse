@@ -121,6 +121,7 @@ class Rig:
         self.live = SwingLive(self.store, CFG, ticks=lambda: dict(self.ticks), scrip_master=scrip, add_tokens=add,
                               feed_state=lambda: "streaming", clock=lambda: self.now)
         self.live._orders = [order("ABC")]
+        self.live._last_scan = "2026-11-03"  # the scan the order came from: the day before the (Wednesday) test clock
         self.live._positions = [position("XYZ")]
         # what load_watch would read from the book, without needing a stored session
         self.live.load_watch = lambda: None  # type: ignore[method-assign]
@@ -167,6 +168,7 @@ async def test_poll_records_each_event_once_a_day_and_only_while_the_market_is_o
     r.ticks["nse_cm|111"] = tick("nse_cm|111", ltp=150.0, received=r.now)
     assert r.live.poll() == 0
     r.now = at(11, day=5)  # next day, same facts, new session: logged again
+    r.live._last_scan = "2026-11-04"  # (the evening run of the 4th queued the orders for the 5th)
     for t in list(r.ticks):
         r.ticks[t] = r.ticks[t].model_copy(update={"received_at": r.now})
     assert r.live.poll() == 3
@@ -298,3 +300,53 @@ async def test_nothing_watched_means_no_broker_call(tmp_path: Path) -> None:
     await r.live.refresh()
     assert r.master_calls == 0 and not r.added  # no instrument file, no sign-in, no subscription
 
+
+# ---------------------------------------------------------------- stale queue and early volume (5 Nov 2026 audit)
+def test_volume_is_not_judged_in_the_opening_rush() -> None:
+    o = order("ABC", min_volume=1_000_000.0)
+    # 09:16:23: the straight-line pace (floored at 5%) says 2.26x, but the opening rush makes that meaningless
+    early = check_entry(o, tick(ltp=100.5, volume=150_000), at(9, 16))
+    assert early.state == "volume_early" and "before 09:45" in early.note
+    # at 09:45 the same price and a pace of 1.2x is judged
+    ok = check_entry(o, tick(ltp=100.5, volume=1_000_000 * 30 / 375 * 1.2, received=at(9, 45)), at(9, 45))
+    assert ok.state == "triggered" and ok.pace == pytest.approx(1.2)
+    short = check_entry(o, tick(ltp=100.5, volume=1_000_000 * 30 / 375 * 0.5, received=at(9, 45)), at(9, 45))
+    assert short.state == "volume_short" and "50% of the pace needed" in short.note and "1.25 x its 20-day average" in short.note
+
+
+def test_orders_from_an_old_scan_are_not_checked_against_todays_prices(tmp_path: Path) -> None:
+    r = Rig(tmp_path)
+    r.live._last_scan = "2026-11-02"  # the book missed the 3 Nov evening: its queue was meant for 3 Nov, not for today
+    q = r.live.queue_state(at(11))
+    assert q == {"scan_session": "2026-11-02", "expected_scan_session": "2026-11-03", "current": False, "sessions_behind": 1}
+    asyncio.run(r.live.refresh())
+    r.ticks["nse_cm|111"] = tick("nse_cm|111", ltp=110.0, open_=101.0, volume=5_000_000, received=at(11))
+    assert r.live.poll(at(11)) == 0  # through the trigger on plenty of volume, yet nothing is logged
+    assert r.store.live_events("2026-11-04") == []
+    view = r.live.view()
+    row = next(x for x in view["watching"] if x["symbol"] == "ABC")
+    assert row["state"] == "stale_queue" and "catching up" in row["note"]
+    assert view["queue"]["current"] is False and "1 session(s) behind" in view["note"]
+    # earlier entry events from such a queue are not shown as today's decisions
+    r.store.record_live_event("2026-11-04", at(10), "entry_trigger", "ABC", 100.5, 1, {})
+    r.store.record_live_event("2026-11-04", at(10), "stop_hit", "XYZ", 97.0, 1, {})
+    assert [e["kind"] for e in r.live.view()["events"]] == ["stop_hit"]
+
+
+def test_events_say_which_scan_the_order_came_from(tmp_path: Path) -> None:
+    r = Rig(tmp_path)
+    asyncio.run(r.live.refresh())
+    r.ticks["nse_cm|111"] = tick("nse_cm|111", ltp=101.0, open_=100.0, volume=3_000_000, received=at(11))
+    assert r.live.poll(at(11)) == 1
+    ev = r.store.live_events("2026-11-04")[0]
+    assert ev["kind"] == "entry_trigger" and ev["detail"]["order_session"] == "2026-11-03"
+    assert r.live.view()["queue"]["current"] is True
+
+
+def test_previous_session_skips_the_weekend_and_listed_holidays() -> None:
+    from datetime import date
+
+    from app.swing.live import previous_session
+
+    assert previous_session(date(2026, 11, 4)) == date(2026, 11, 3)
+    assert previous_session(date(2026, 11, 2)) == date(2026, 10, 30)  # Monday -> Friday

@@ -23,7 +23,8 @@ def _write(tmp_path: Path, body: str) -> None:
     p.write_text(body, encoding="utf-8")
 
 
-def test_report_missing_is_a_clear_404(client: TestClient) -> None:
+def test_report_missing_is_a_clear_404(client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("app.services.swing_report.BUNDLED_REPORT", tmp_path / "no-bundled-copy.json")
     r = client.get("/api/swing/report")
     assert r.status_code == 404
     assert r.json()["detail"]["code"] == "swing_report_missing"
@@ -45,7 +46,8 @@ def test_unreadable_and_wrong_schema_are_503_not_500(client: TestClient, tmp_pat
     assert r.status_code == 503 and r.json()["detail"]["code"] == "swing_report_schema"
 
 
-def test_load_report_error_carries_status(tmp_path: Path) -> None:
+def test_load_report_error_carries_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.services.swing_report.BUNDLED_REPORT", tmp_path / "no-bundled-copy.json")
     with pytest.raises(SwingReportError) as e:
         load_report(tmp_path)
     assert e.value.status == 404
@@ -59,3 +61,9 @@ def test_live_view_is_served_even_with_nothing_watched(client: TestClient) -> No
     assert body["enabled"] is False and body["market"] in ("open", "closed")
     assert body["note"] == "no broker instrument file available"  # the replay broker has no instrument file
 
+
+def test_the_report_bundled_with_the_release_is_served_when_the_data_folder_has_none(tmp_path: Path) -> None:
+    report = load_report(tmp_path)  # no data/swing/report.json here: the copy shipped with the release
+    assert report["schema"] == SCHEMA and report["kpis"] and report["equity"]
+    _write(tmp_path, json.dumps({"schema": SCHEMA, "meta": {"data_through": "x"}, "marker": "data folder wins"}))
+    assert load_report(tmp_path / "data")["marker"] == "data folder wins"

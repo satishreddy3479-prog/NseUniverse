@@ -111,6 +111,9 @@ describe("live labels and distances", () => {
   it("name every state in words and pass unknown ones through", () => {
     expect(liveStateLabel("triggered")).toContain("would be bought");
     expect(liveStateLabel("stop_hit")).toContain("would be sold");
+    expect(liveStateLabel("volume_short")).toBe("Price through the trigger, volume still short");
+    expect(liveStateLabel("volume_early")).toContain("too early to judge volume");
+    expect(liveStateLabel("stale_queue")).toContain("earlier session");
     expect(liveStateLabel("something_new")).toBe("something_new");
     expect(liveEventLabel("target_1_8r")).toContain("breakeven");
     expect(liveEventLabel("x")).toBe("x");

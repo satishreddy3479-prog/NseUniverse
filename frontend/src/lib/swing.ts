@@ -117,7 +117,8 @@ export function resultText(raw: string): string {
 
 const LIVE_STATE: Record<string, string> = {
   waiting: "Waiting for the trigger", triggered: "Triggered: would be bought", gap_skip: "Skipped: gapped above the limit",
-  volume_short: "Through the trigger, volume too low", no_data: "No live price yet", stale: "Price is stale",
+  volume_short: "Price through the trigger, volume still short", volume_early: "Price through the trigger, too early to judge volume",
+  stale_queue: "Not checked: queued for an earlier session", no_data: "No live price yet", stale: "Price is stale",
   holding: "Holding", stop_hit: "Stop breached: would be sold",
 };
 export const liveStateLabel = (s: string): string => LIVE_STATE[s] ?? s;

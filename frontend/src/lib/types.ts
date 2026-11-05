@@ -837,6 +837,7 @@ export interface SwingLiveEvent {
 }
 export interface SwingLiveView {
   enabled: boolean; mode: "shadow"; market: "open" | "closed"; feed_state: string; note: string | null;
+  queue?: { scan_session: string | null; expected_scan_session: string; current: boolean; sessions_behind: number };
   watching: SwingLiveRow[]; events: SwingLiveEvent[]; updated_at: string;
 }
 

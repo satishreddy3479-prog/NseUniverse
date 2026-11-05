@@ -18,6 +18,7 @@ IST = ZoneInfo("Asia/Kolkata")
 OPEN, CLOSE = time(9, 15), time(15, 30)
 SESSION_MINUTES = 375  # 09:15 to 15:30
 PACE_FLOOR = 0.05  # in the first minutes the elapsed share is tiny: do not divide by it
+MIN_JUDGE_FRACTION = 30 / SESSION_MINUTES  # before 09:45 the opening rush makes a straight-line pace meaningless
 
 
 def session_state(now: datetime) -> str:
@@ -46,7 +47,7 @@ def volume_pace(volume: int | None, min_volume: float, now: datetime) -> float |
 
 @dataclass(frozen=True)
 class EntryCheck:
-    state: str  # no_data | gap_skip | triggered | volume_short | waiting
+    state: str  # no_data | gap_skip | triggered | volume_short | volume_early | waiting
     note: str
     pace: float | None
 
@@ -61,10 +62,21 @@ def check_entry(order: Order, tick: LiveTick | None, now: datetime) -> EntryChec
         )
     if tick.ltp >= order.trigger:
         if pace is None:
-            return EntryCheck("volume_short", "through the trigger, but no volume is reported", pace)
+            return EntryCheck("volume_short", "price is through the trigger, but no volume is reported", pace)
+        if session_fraction(now) < MIN_JUDGE_FRACTION:
+            return EntryCheck(
+                "volume_early", "price is through the trigger; too early in the session (before 09:45) to judge volume", pace
+            )
         if pace >= 1.0:
-            return EntryCheck("triggered", "through the trigger on enough volume", pace)
-        return EntryCheck("volume_short", f"through the trigger, volume at {pace:.0%} of the pace needed", pace)
+            return EntryCheck(
+                "triggered", "price through the trigger and volume on pace (the full-day volume is judged at the close)", pace
+            )
+        return EntryCheck(
+            "volume_short",
+            f"price is through the trigger, but volume is only {pace:.0%} of the pace needed "
+            "(the rule needs the day's volume to reach 1.25 x its 20-day average)",
+            pace,
+        )
     return EntryCheck("waiting", f"{(order.trigger / tick.ltp - 1) * 100:.2f}% below the trigger", pace)
 
 
