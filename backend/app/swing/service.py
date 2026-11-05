@@ -56,6 +56,8 @@ class SwingPaperService:
         self.enabled, self.run_after, self.until, self.retry_s = enabled, run_after, until, retry_s
         self._clock = clock or (lambda: datetime.now(UTC))
         self.done_on: date | None = None
+        self._nse_days: dict[str, dict[str, Any]] = {}  # session -> NSE bhavcopy bars, one download per session per pass
+        self._filled: list[tuple[str, str]] = []  # (stock, session) bars taken from NSE instead of Yahoo in this pass
         self.last_attempt: datetime | None = None
         self.last_result = "not run yet"
         self._running = False
@@ -131,6 +133,25 @@ class SwingPaperService:
         threading.Thread(target=work, name="swing-paper-scan", daemon=True).start()
         return await fut
 
+    def _fill_from_nse(self, sym: str, raw: list[Any], sessions: list[str], nifty_close: dict[str, float]) -> list[Any]:
+        """A session NIFTY traded but this stock has no bar for (Yahoo sometimes sends the row without prices) is read
+        from NSE's own bhavcopy instead, for that one day. Without a second source the gap stays a gap."""
+        nse_day = getattr(self.fetcher, "nse_day", None)
+        have = {r[0] for r in raw}
+        gaps = [s for s in sessions if s not in have and s in nifty_close]
+        if nse_day is None or not gaps:
+            return raw
+        out = list(raw)
+        for s in gaps:
+            if s not in self._nse_days:
+                self._nse_days[s] = nse_day(s)
+            bar = self._nse_days[s].get(sym)
+            if bar is not None:
+                out.append(bar)
+                self._filled.append((sym, s))
+        out.sort(key=lambda r: r[0])
+        return out
+
     def _step(self, phase: str, done: int | None = None, total: int | None = None) -> None:
         started = self.progress["started_at"] if self.progress else self._clock().astimezone(UTC).isoformat(timespec="seconds")
         self.progress = {"phase": phase, "done": done, "total": total, "started_at": started}
@@ -167,6 +188,7 @@ class SwingPaperService:
     # ---- the job
     def _process(self, now: datetime) -> dict[str, Any]:
         cfg = self.cfg
+        self._nse_days, self._filled = {}, []
         book, last, no, pending = self.store.load_state(cfg)
         nifty = self.fetcher.daily(NIFTY)
         if not nifty:
@@ -215,6 +237,7 @@ class SwingPaperService:
                 if sym in must:
                     failed_must.append(sym)
                 continue
+            raw = self._fill_from_nse(sym, raw, sessions, nifty_close)
             ok += sym in symbols
             bars = Bars([r[0] for r in raw], [r[1] for r in raw], [r[2] for r in raw], [r[3] for r in raw],
                         [r[4] for r in raw], [r[5] for r in raw], [nifty_close.get(r[0]) for r in raw])
@@ -235,6 +258,14 @@ class SwingPaperService:
         self._step("Scoring, settling and queuing orders")
         defaulted = sum(1 for s in symbols if s not in self.sectors)
         for s in sessions:
+            # A held or queued stock with no bar for this day (a data hole at the source, not a market fact) must not
+            # become a permanent "skipped: no price bar" decision or a silently untested stop: retry later instead.
+            absent = sorted((set(book.positions) | {o.symbol for o in pending}) - set(bars_at[s]))
+            if absent:
+                raise FetchError(
+                    f"no price bar on {s} for held or queued stocks ({', '.join(absent[:5])}); "
+                    "nothing is recorded for that day, retrying"
+                )
             no += 1
             settle = settle_session(book, s, no, bars_at[s], setups_at[s], pending, cfg)
             nifty_gate = stage2_ok(nifty_closes_to[s], long=False)
@@ -251,7 +282,11 @@ class SwingPaperService:
                 "nifty_close": closes[-1], "nifty_ok": nifty_gate, "blocked": blocked,
                 "nifty_sma50": sum(closes[-50:]) / 50 if len(closes) >= 50 else None,
                 "sectors": [{"code": c, "ok": g} for c, g in sect_gate.items()],
-                "note": "" if len(sessions) == 1 else f"catch-up of {len(sessions)} sessions",
+                "note": "; ".join(x for x in (
+                    "" if len(sessions) == 1 else f"catch-up of {len(sessions)} sessions",
+                    (lambda f: f"{len(f)} bar(s) from NSE's bhavcopy because Yahoo sent none: {', '.join(sorted({a for a, _ in f})[:6])}")(
+                        [(a, b) for a, b in self._filled if b == s]) if any(b == s for _, b in self._filled) else "",
+                ) if x),
             }
             self.store.commit_session(
                 session=s, no=no, ran_at=now, rule_version=RULE_VERSION, scan=scan,

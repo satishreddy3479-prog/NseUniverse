@@ -50,6 +50,9 @@ class FetchError(RuntimeError):
 class Fetcher(Protocol):
     def universe(self) -> list[dict[str, Any]]: ...
     def daily(self, ticker: str) -> list[RawBar]: ...
+    # optional: every equity's bar for one finished session from the exchange's own file (a second source for
+    # days Yahoo sends without prices); a fetcher without it simply has no second source
+    # def nse_day(self, session: str) -> dict[str, RawBar]: ...
 
 
 def parse_universe(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -115,6 +118,29 @@ class HttpFetcher:
             return parse_universe(json.loads(self._get(opener, req)))
         except ValueError as e:
             raise FetchError("Chartink returned something that is not JSON") from e
+
+    def nse_day(self, session: str) -> dict[str, RawBar]:
+        """All equities' bars of one session from NSE's full bhavcopy (same unadjusted day values as Yahoo's;
+        checked 2026-11-05 on ANANDRATHI and KRISHANA). Empty when the file is not published yet."""
+        from app.market.sources import BHAV_URL, SourceError, fetch_text, parse_bhavcopy
+
+        d = date.fromisoformat(session)
+        res, text = fetch_text(BHAV_URL.format(d=d))
+        if text is None:
+            log_event(logger, logging.WARNING, "swing_nse_day_unavailable", session=session, error=str(res.error or res.status))
+            return {}
+        try:
+            rows = parse_bhavcopy(text)
+        except SourceError:
+            return {}
+        out: dict[str, RawBar] = {}
+        for r in rows:
+            if r.session != d or r.open is None or r.high is None or r.low is None or r.close is None or r.volume is None:
+                continue
+            if min(r.open, r.high, r.low, r.close) <= 0:
+                continue
+            out[r.symbol] = (session, r.open, r.high, r.low, r.close, float(r.volume))
+        return out
 
     def daily(self, ticker: str) -> list[RawBar]:
         url = YAHOO_URL.format(symbol=urllib.parse.quote(ticker, safe=""), range=self.range)

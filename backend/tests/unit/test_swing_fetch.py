@@ -79,3 +79,31 @@ def test_real_chartink_rows_are_parsed() -> None:
     assert [r["nsecode"] for r in rows][:2] == ["MRF", "BOSCHLTD"] and len(rows) == 6
     with pytest.raises(FetchError):
         parse_universe({"nodata": 1})
+
+
+def test_nse_day_reads_the_exchange_file_and_skips_rows_without_prices(monkeypatch) -> None:
+    """The columns and values are the real NSE bhavcopy layout (4 Nov 2026 lines for ANANDRATHI and ARIS)."""
+    import app.market.sources as sources
+    from app.swing.fetch import HttpFetcher
+
+    head = ("SYMBOL, SERIES, DATE1, PREV_CLOSE, OPEN_PRICE, HIGH_PRICE, LOW_PRICE, LAST_PRICE, CLOSE_PRICE, AVG_PRICE, "
+            "TTL_TRD_QNTY, TURNOVER_LACS, NO_OF_TRADES, DELIV_QTY, DELIV_PER")
+    lines = [
+        head,
+        "ANANDRATHI, EQ, 04-Nov-2026, 2288.00, 2296.00, 2309.00, 2285.00, 2296.00, 2296.00, 2297.00, 296347, 6807.0, 9000, 150000, 50.6",
+        "ARIS, EQ, 04-Nov-2026, 143.52, 145.20, 150.40, 141.21, 147.38, 147.38, 146.00, 1853837, 2706.0, 7000, 900000, 48.5",
+        "NOOPEN, EQ, 04-Nov-2026, 10.00, -, 11.00, 9.00, 10.00, 10.00, 10.00, 100, 1.0, 5, 50, 50.0",
+        "ABC, BE, 04-Nov-2026, 10.00, 10.00, 11.00, 9.00, 10.00, 10.00, 10.00, 100, 1.0, 5, 50, 50.0",
+    ]
+    text = chr(10).join(lines)
+
+    class Res:
+        error, status = None, 200
+
+    monkeypatch.setattr(sources, "fetch_text", lambda url: (Res(), text))
+    got = HttpFetcher().nse_day("2026-11-04")
+    assert got["ANANDRATHI"] == ("2026-11-04", 2296.0, 2309.0, 2285.0, 2296.0, 296347.0)
+    assert got["ARIS"][1:5] == (145.2, 150.4, 141.21, 147.38)
+    assert "NOOPEN" not in got and "ABC" not in got  # no open price: missing stays missing; other series are not equities here
+    monkeypatch.setattr(sources, "fetch_text", lambda url: (Res(), None))
+    assert HttpFetcher().nse_day("2026-11-04") == {}  # not published yet: no second source, the pass retries

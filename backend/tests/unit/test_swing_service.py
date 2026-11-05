@@ -145,6 +145,60 @@ def test_incomplete_data_changes_nothing_and_is_retried(tmp_path: Path) -> None:
     assert len(tables(svc.store)["equity"]) == len(before["equity"]) + 1
 
 
+def test_a_missing_bar_for_a_queued_stock_is_retried_not_recorded_as_skipped(tmp_path: Path) -> None:
+    """5 Nov 2026: Yahoo sent a 4 Nov row with no close or volume for four of the seven queued stocks. Writing
+    "skipped: no price bar" would have been permanent and wrong; the pass waits for the data instead."""
+    data = make_data()
+    f = FakeFetcher(data)
+    svc = service(tmp_path, f, lambda: None)
+    cut = FIRST
+    while True:  # replay day by day until the book has queued orders for the next session
+        f.cut = cut
+        svc._clock = clock_after(data, cut - 1)
+        assert svc.run_once()["state"] == "ok"
+        if svc.store.snapshot()["orders"] or cut >= LAST:
+            break
+        cut += 1
+    queued = svc.store.snapshot()["orders"][0]["symbol"]
+    before = tables(svc.store)
+    day = data["^NSEI"][cut][0]  # the session those orders are meant for
+    f.cut = cut + 1
+    f.data = {**data, f"{queued}.NS": [b for b in data[f"{queued}.NS"] if b[0] != day]}  # a hole in the source
+    svc._clock = clock_after(data, cut)
+    r = svc.run_once()
+    assert r["state"] == "data_unavailable" and queued in r["detail"] and day in r["detail"]
+    assert tables(svc.store) == before  # no decision, no stop test, nothing committed
+    f.data = data  # the source fills the hole
+    assert svc.run_once()["state"] == "ok"
+    assert not [d for d in tables(svc.store)["decisions"] if "no price bar" in str(d)]
+
+
+def test_a_day_yahoo_sent_without_prices_is_read_from_the_exchange_file_and_said_so(tmp_path: Path) -> None:
+    data = make_data()
+    f = FakeFetcher(data)
+    svc = service(tmp_path, f, lambda: None)
+    cut = FIRST
+    while True:
+        f.cut = cut
+        svc._clock = clock_after(data, cut - 1)
+        assert svc.run_once()["state"] == "ok"
+        if svc.store.snapshot()["orders"] or cut >= LAST:
+            break
+        cut += 1
+    queued = svc.store.snapshot()["orders"][0]["symbol"]
+    day = data["^NSEI"][cut][0]
+    hole = [b for b in data[f"{queued}.NS"] if b[0] == day][0]
+    f.cut = cut + 1
+    f.data = {**data, f"{queued}.NS": [b for b in data[f"{queued}.NS"] if b[0] != day]}
+    calls: list[str] = []
+    f.nse_day = lambda s: calls.append(s) or {queued: hole}  # type: ignore[attr-defined]  # NSE's file has the stock's real day
+    svc._clock = clock_after(data, cut)
+    assert svc.run_once()["state"] == "ok" and calls == [day]  # one download for the day, however many stocks need it
+    decided = [d for d in tables(svc.store)["decisions"] if d["symbol"] == queued]
+    assert decided and "no price bar" not in str(decided)  # judged on the real day, not skipped for lack of data
+    assert queued in svc.store.snapshot()["scan"]["note"] and "bhavcopy" in svc.store.snapshot()["scan"]["note"]
+
+
 def test_recorded_history_is_append_only(tmp_path: Path) -> None:
     data = make_data()
     f = FakeFetcher(data)
