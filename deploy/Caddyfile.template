@@ -1,9 +1,12 @@
 # Public HTTPS front door. Everything requires a login: the app has no user accounts of its own,
 # and its control endpoints trust the proxy (which only forwards authenticated requests).
+# The one exception is the app's install files (web manifest, service worker, icons): a browser fetches them without
+# the login, and without them the phone says "This app cannot be installed". They hold no data.
 __DOMAIN__ {
 	encode zstd gzip
 
-	basic_auth {
+	@private not path /manifest.webmanifest /sw.js /icon-192.png /icon-512.png /icon-maskable-512.png /apple-touch-icon.png /logo.svg /logo-maskable.svg
+	basic_auth @private {
 		import /etc/nse-universe/caddy-users
 	}
 

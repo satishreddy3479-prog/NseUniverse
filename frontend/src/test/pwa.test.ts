@@ -1,11 +1,12 @@
-// "This app cannot be installed" (Chrome, 5 Nov 2026): the web manifest, service worker and icons sit behind the site's login
-// and a browser fetches them without it (the server-side fix is pending approval, see D73). These checks keep the install
-// files themselves complete.
+// "This app cannot be installed" (Chrome, 5 Nov 2026) had one cause: the web manifest, service worker and icons sit behind the
+// site's login, and a browser fetches them without it. These checks keep the install files complete and keep the login
+// exemption in deploy/Caddyfile.template to exactly those files.
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const FRONTEND = resolve(__dirname, "..", "..");
+const REPO = resolve(FRONTEND, "..");
 const read = (p: string) => readFileSync(p, "utf8");
 const manifest = JSON.parse(read(resolve(FRONTEND, "public/manifest.webmanifest"))) as {
   name: string; short_name: string; start_url: string; scope: string; display: string; id?: string;
@@ -45,5 +46,23 @@ describe("installable app", () => {
     const sw = read(resolve(FRONTEND, "public/sw.js"));
     expect(sw).toContain('addEventListener("fetch"');
     expect(sw).toMatch(/startsWith\("\/api"\)[\s\S]*startsWith\("\/ws"\)/);
+  });
+});
+
+describe("login exemption in the Caddy template", () => {
+  const caddy = read(resolve(REPO, "deploy/Caddyfile.template"));
+  const line = caddy.split("\n").find((l) => l.includes("@private not path")) ?? "";
+  const exempt = line.replace(/^.*@private not path/, "").trim().split(/\s+/).filter(Boolean);
+
+  it("protects everything except the install files", () => {
+    expect(caddy).toMatch(/basic_auth @private \{/);
+    expect(exempt.length).toBeGreaterThan(0);
+    for (const p of exempt) expect(existsSync(resolve(FRONTEND, "public", p.replace(/^\//, ""))), `${p} must be a real public file`).toBe(true);
+    for (const p of exempt) expect(p.startsWith("/api") || p.startsWith("/ws") || p === "/" || p.includes("*"), p).toBe(false); // no data, no wildcards
+  });
+
+  it("covers every file the page and the manifest ask for", () => {
+    const needed = ["/manifest.webmanifest", "/sw.js", "/apple-touch-icon.png", "/logo.svg", ...manifest.icons.map((i) => i.src)];
+    for (const p of needed) expect(exempt, p).toContain(p);
   });
 });
