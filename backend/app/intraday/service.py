@@ -916,10 +916,12 @@ class IntradayService:
                 _health("Option chain + spot", "not_available", "no stored sample for this expiry")
             )
         else:
-            age = age or 0.0
-            det = {"fresh": f"last sample {age:.0f} s ago", "delayed": f"last sample {age / 60:.1f} min ago",
-                   "stale": f"no sample for {age / 60:.0f} min during market hours",
-                   "historical": f"market {phase.replace('_', ' ')}; last sample shown is not live"}[chain_status]  # fmt: skip
+            if age is None:  # an unknown age is said to be unknown, never shown as "0 s ago"
+                det = f"last sample at {_iso(latest.received_at)} (age not known)"
+            else:
+                det = {"fresh": f"last sample {age:.0f} s ago", "delayed": f"last sample {age / 60:.1f} min ago",
+                       "stale": f"no sample for {age / 60:.0f} min during market hours",
+                       "historical": f"market {phase.replace('_', ' ')}; last sample shown is not live"}[chain_status]  # fmt: skip
             h.append(_health("Option chain + spot", chain_status, det, _iso(latest.received_at)))
         if p.max_gap_min is not None and p.max_gap_min > 5:
             h.append(
