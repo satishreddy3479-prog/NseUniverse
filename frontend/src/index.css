@@ -27,6 +27,7 @@
   --body-bg: var(--ink);
   --header-bg: var(--slate);
   --font-ui: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark; /* native controls (drop-downs, scrollbars, date pickers) follow the theme */
 }
 
 /* Light: a clean, airy phone-style theme. White cards float on a pale grey page with soft shadows and
@@ -35,9 +36,9 @@
   --ink: #f1f3f7;
   --slate: #ffffff;
   --slate-2: #f4f6fa;
-  --rule: #e1e6ee;
-  --paper: #111827;
-  --muted: #546074;
+  --rule: #d3d9e4;
+  --paper: #0f172a;
+  --muted: #475467;
   --accent: #4f46e5;
   --brass: #9a5b00;
   --up: #0a7d55;
@@ -182,3 +183,7 @@ header.bg-slate { background: var(--header-bg); box-shadow: var(--shadow); }
 /* Home: hero panel and the illustration tiles on tool cards. */
 .hero { background: radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--brass) 14%, var(--slate)) 0%, var(--slate) 55%); }
 .tool-art { background: linear-gradient(160deg, color-mix(in srgb, var(--info) 9%, var(--slate-2)), var(--slate-2)); border: 1px solid var(--rule); }
+
+/* Phone layout of the Analysis widgets: each widget takes the height of its content and every chart inside keeps the
+   height the widget was designed for, so wrapped buttons, long notes or a larger system font never overlap a chart. */
+.widget-stacked .echart-box:not(.echart-fixed) { min-height: var(--chart-h, 220px); }

@@ -757,15 +757,15 @@ export default function StrategyBuilder() {
                     );
                     return (
                       <tr key={row.strike} onClick={() => setSel(row.strike)} data-testid={`chain-${row.strike}`} data-held={held ? "true" : undefined}
-                        className={`group num cursor-pointer border-t border-rule/40 ${on ? "bg-info/20" : held ? "bg-info/[0.08]" : isAtm ? "bg-brass/10" : row.strike < (spot ?? 0) ? "bg-up/[0.04]" : "bg-down/[0.03]"}`}>
+                        className={`group num cursor-pointer border-t border-rule/40 align-top ${on ? "bg-info/20" : held ? "bg-info/[0.08]" : isAtm ? "bg-brass/10" : row.strike < (spot ?? 0) ? "bg-up/[0.04]" : "bg-down/[0.03]"}`}>
                         {GCOLS.filter((x) => gcols.includes(x.key)).map((x) => cell(g?.ce, x.key, false))}
                         <td className={`px-2 py-1 text-left ${side(netCe)}`}><div className="flex items-center gap-1">{ltp(row.strike, "CE") == null ? "—" : fmtPrice(ltp(row.strike, "CE"))}{tag(netCe)}</div>
-                          <div className={`mt-0.5 flex items-center gap-1 ${on || netCe !== 0 ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}>{pm("CE", netCe)}{bs("CE")}</div></td>
+                          <div className={`mt-0.5 flex items-center gap-1 ${on || netCe !== 0 ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:hidden"}`}>{pm("CE", netCe)}{bs("CE")}</div></td>
                         <td className="w-[16%] px-1 py-1">{bar(row.call?.oi ?? null, colors.up, "right")}</td>
                         <td className={`px-2 py-1 text-center font-medium ${isAtm ? "text-brass" : "text-paper"}`}><span className={`inline-block min-w-[3.6rem] rounded-sm border px-1.5 py-0.5 ${held ? "border-info bg-info/25" : "border-rule bg-slate-2"}`}>{fmtInt(row.strike)}</span></td>
                         <td className="w-[16%] px-1 py-1">{bar(row.put?.oi ?? null, colors.down, "left")}</td>
                         <td className={`px-2 py-1 text-right ${side(netPe)}`}><div className="flex items-center justify-end gap-1">{tag(netPe)}{ltp(row.strike, "PE") == null ? "—" : fmtPrice(ltp(row.strike, "PE"))}</div>
-                          <div className={`mt-0.5 flex items-center justify-end gap-1 ${on || netPe !== 0 ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}>{pm("PE", netPe)}{bs("PE")}</div></td>
+                          <div className={`mt-0.5 flex items-center justify-end gap-1 ${on || netPe !== 0 ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:hidden"}`}>{pm("PE", netPe)}{bs("PE")}</div></td>
                         {[...GCOLS].reverse().filter((x) => gcols.includes(x.key)).map((x) => cell(g?.pe, x.key, true))}
                       </tr>
                     );

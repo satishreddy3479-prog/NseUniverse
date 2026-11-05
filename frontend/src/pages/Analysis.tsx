@@ -1,5 +1,5 @@
 import { Info } from "../components/Info";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { GridLayout, useContainerWidth, verticalCompactor, type Layout, type LayoutItem } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import { DashProvider, useDash, type Range } from "../components/dashboard/DashContext";
@@ -68,16 +68,18 @@ function saveLayout(s: SavedLayout) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch { /* storage unavailable: layout lasts for this visit only */ }
 }
 
-function Frame({ def, onClose }: { def: WidgetDef; onClose: () => void }) {
+function Frame({ def, onClose, chartH }: { def: WidgetDef; onClose: () => void; chartH?: number }) {
+  const stacked = chartH != null;
   return (
-    <section aria-label={def.title} className="flex h-full flex-col overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate">
+    <section aria-label={def.title} style={stacked ? ({ "--chart-h": `${chartH}px` } as CSSProperties) : undefined}
+      className={`flex flex-col overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate ${stacked ? "widget-stacked" : "h-full"}`}>
       <header className="widget-drag flex min-h-9 cursor-grab items-center justify-between gap-2 border-b border-rule px-3 active:cursor-grabbing">
         <h2 className="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-paper"><span className="truncate">{def.title}</span><Info term={def.title} /></h2>
         <button type="button" aria-label={`Remove ${def.title}`} title="Remove widget"
           onMouseDown={(e) => e.stopPropagation()} onClick={onClose}
           className="widget-nodrag -mr-1 inline-flex size-7 items-center justify-center rounded-sm text-muted hover:bg-slate-2 hover:text-paper">×</button>
       </header>
-      <div className="min-h-0 flex-1 p-2">{def.render()}</div>
+      <div className={stacked ? "p-2" : "min-h-0 flex-1 p-2"}>{def.render()}</div>
     </section>
   );
 }
@@ -186,7 +188,9 @@ function Board() {
         {mounted && active.length > 0 && width > 0 && width < NARROW && (
           <div className="flex flex-col gap-3" data-testid="board-stacked">
             {active.map((w) => (
-              <div key={w.id} style={{ height: Math.max(300, w.h * (ROW_HEIGHT + 12) - 12) }}><Frame def={w} onClose={() => close(w.id)} /></div>
+              w.id === "chain"
+                ? <div key={w.id} style={{ height: Math.max(300, w.h * (ROW_HEIGHT + 12) - 12) }}><Frame def={w} onClose={() => close(w.id)} /></div>
+                : <div key={w.id}><Frame def={w} onClose={() => close(w.id)} chartH={Math.max(220, w.h * (ROW_HEIGHT + 12) - 12 - 150)} /></div>
             ))}
           </div>
         )}

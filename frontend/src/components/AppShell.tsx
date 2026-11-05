@@ -27,25 +27,29 @@ export function AppShell() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="relative z-30 flex min-h-14 flex-wrap items-center gap-x-2 gap-y-1 md:flex-nowrap border-b border-rule bg-slate px-3 py-1">
+      <header className="relative z-30 flex min-h-14 flex-nowrap items-center gap-x-2 border-b border-rule bg-slate px-2 py-1 sm:px-3">
         <button
           type="button"
-          className="rounded-sm border border-rule px-2 py-1 text-sm md:hidden"
+          className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-sm border border-rule px-2 text-sm md:hidden"
           aria-expanded={menuOpen}
           aria-controls="mobile-nav"
+          aria-label="Menu"
           onClick={() => setMenuOpen((o) => !o)}
         >
-          Menu
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+            <path d="M4 7h16M4 12h16M4 17h16" />
+          </svg>
+          <span className="hidden min-[430px]:inline">Menu</span>
         </button>
         <Link to="/" className="flex min-w-0 shrink-0 items-center gap-2 leading-tight" aria-label="NSE Universe home">
           <img src="/logo.svg" alt="" width={34} height={34} className="h-[34px] w-[34px] shrink-0 rounded-[9px] ring-1 ring-black/10" />
-          <span className="flex flex-col">
+          <span className="hidden flex-col min-[520px]:flex">
             <span className="text-[15px] font-semibold tracking-tight text-paper">NSE Universe</span>
             <span className="hidden text-[11px] text-muted 2xl:block">{underlying} 50 options</span>
           </span>
         </Link>
         <TopNav />
-        <div className="ml-auto flex shrink-0 items-center justify-end gap-x-2.5 whitespace-nowrap">
+        <div className="ml-auto flex min-w-0 items-center justify-end gap-x-2 whitespace-nowrap sm:gap-x-2.5">
           <SpotBadge latest={spotSnapshot ?? latest} className="md:flex-nowrap" />
           <StatusPill signals={signals} />
           <ThemeSwitch />

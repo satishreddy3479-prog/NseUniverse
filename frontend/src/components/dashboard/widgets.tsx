@@ -347,7 +347,9 @@ function SmartOiChartWidget() {
         <Meta kind="history">
           {res?.day && <span>{res.day}</span>}
           {res && <span>{res.candles.length} candles of {tf} min</span>}
-          <span className="basis-full">
+          <details className="basis-full" data-testid="smart-oi-notes">
+            <summary className="cursor-pointer text-info">How to read this chart</summary>
+            <span className="mt-1 block">
             Each bar is put OI change minus call OI change inside one candle ({strikes === "all" ? "all strikes of this expiry" : `ATM ±${strikes} strikes, as of the newest sample`}, the same strikes in every candle).
             Green = puts added faster than calls, red = calls added faster. {res?.candles[0]?.fromPrevClose ? "The 09:15 bar and the day-change lines are measured against yesterday's closing OI." : "The first candle is the baseline and has no bar."}
             {" "}{res && res.candles.some((k) => k.spotFromBars) ? `NIFTY candles use one-minute index bars from the live feed (read about once a second, so highs and lows can still be a little narrower than the exchange's tick-by-tick candles)${res.candles.some((k) => k.spot && !k.spotFromBars) ? "; candles before the bars started being recorded are cut from the stored samples, with no real highs and lows and a gap to the next candle" : ""}.` : "NIFTY candles are cut from the stored one-minute samples (about one a minute), so they have no real highs and lows and show a gap between one candle's close and the next one's open; one-minute index bars are recorded from the live feed during the session and will be used once stored."}
@@ -355,7 +357,8 @@ function SmartOiChartWidget() {
             {res && res.gapCandles > 0 ? ` ${res.gapCandles} candle(s) follow a gap in stored samples, so their change covers more than one candle (see the tooltip).` : ""}
             {res && res.strikeChangeCandles > 0 ? ` ${res.strikeChangeCandles} candle(s) have a different number of strikes behind the totals than the candle before (a strike had no OI in one sample), so those bars are not like for like (see the tooltip).` : ""}
             {res && res.skippedSamples > 0 ? ` ${res.skippedSamples} sample(s) skipped because call or put OI was missing.` : ""}
-          </span>
+            </span>
+          </details>
         </Meta>
       }>
         <div className="flex h-full min-h-0 flex-col gap-2">
@@ -382,10 +385,10 @@ function SmartOiChartWidget() {
             </EmptyState>
           ) : (
             <div className="grid min-h-0 flex-1 gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-              <div className="min-h-[440px]"><EChart group="smart-oi" option={main} ariaLabel="NIFTY candles, Smart OI candles and option volume" /></div>
+              <div><EChart className="echart-fixed !h-[440px]" group="smart-oi" option={main} ariaLabel="NIFTY candles, Smart OI candles and option volume" /></div>
               <div className="grid min-h-0 grid-rows-2 gap-2">
-                <div className="min-h-[210px]"><EChart group="smart-oi" option={dayOpt} ariaLabel="Put, call and put minus call OI change since the first candle" /></div>
-                <div className="min-h-[210px]"><EChart group="smart-oi" option={ratioOpt} ariaLabel="OI put-call ratio and volume put-call ratio" /></div>
+                <div><EChart className="echart-fixed !h-[210px]" group="smart-oi" option={dayOpt} ariaLabel="Put, call and put minus call OI change since the first candle" /></div>
+                <div><EChart className="echart-fixed !h-[210px]" group="smart-oi" option={ratioOpt} ariaLabel="OI put-call ratio and volume put-call ratio" /></div>
               </div>
             </div>
           )}

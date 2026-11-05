@@ -70,6 +70,17 @@ describe("tool page", () => {
       expect(await screen.findByRole("region", { name: title })).toBeInTheDocument();
   });
 
+  it("tool widgets size to their content (a phone, a larger system font or a long footer never overlaps a chart) and sit in a grid", async () => {
+    mockApi();
+    renderAt("/tools/open-interest");
+    const total = await screen.findByRole("region", { name: "Total OI — calls vs puts" });
+    expect(total).toHaveClass("widget-stacked");
+    expect(total.getAttribute("style")).toMatch(/--chart-h: \d+px/);
+    expect(total.getAttribute("style")).not.toMatch(/(^|;)\s*height:/); // no fixed box height
+    expect(total.parentElement).toHaveAttribute("data-testid", "tool-widgets");
+    expect(total).toHaveClass("md:col-span-6"); // two to a row on a wide screen, one column on a phone
+  });
+
   it("an unknown tool says so", async () => {
     mockApi();
     renderAt("/tools/nope");

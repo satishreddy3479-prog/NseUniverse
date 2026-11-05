@@ -2,9 +2,13 @@
   "name": "NSE Universe",
   "short_name": "NSE Universe",
   "description": "NIFTY 50 option-chain research: live OI, Greeks, strategies and index tools.",
+  "id": "/",
+  "lang": "en-IN",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "orientation": "any",
+  "categories": ["finance", "productivity"],
   "background_color": "#0f1724",
   "theme_color": "#172233",
   "icons": [

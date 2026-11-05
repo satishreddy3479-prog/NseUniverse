@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Info } from "../components/Info";
 import { DashProvider, type Range } from "../components/dashboard/DashContext";
@@ -91,9 +91,11 @@ export default function ToolPage() {
               // small widgets (the registry's width is out of 12) sit two to a row at a compact height; wide ones keep the full width
               const half = w.w <= 6;
               return (
-                <section key={wid} aria-label={w.title} className={`flex flex-col overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate ${half ? "md:col-span-6" : "md:col-span-12"}`}>
+                <section key={wid} aria-label={w.title}
+                  style={wid === "chain" ? undefined : ({ "--chart-h": `${w.w <= 4 ? 260 : Math.max(300, w.h * 40 - 100)}px` } as CSSProperties)}
+                  className={`flex flex-col overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate ${wid === "chain" ? "" : "widget-stacked"} ${half ? "md:col-span-6" : "md:col-span-12"}`}>
                   <header className="flex min-h-9 items-center border-b border-rule px-3"><h2 className="flex items-center gap-1.5 text-sm font-semibold text-paper">{w.title}<Info term={w.title} /></h2></header>
-                  <div className="p-2" style={{ height: w.w <= 4 ? 300 : Math.max(340, w.h * 40) }}>{w.render()}</div>
+                  <div className="p-2" style={wid === "chain" ? { height: Math.max(340, w.h * 40) } : undefined}>{w.render()}</div>
                 </section>
               );
             })}

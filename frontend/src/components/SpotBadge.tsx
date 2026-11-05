@@ -20,12 +20,12 @@ export function SpotBadge({ latest, className = "" }: { latest: SnapshotSummary 
   const tone = chg == null || chg === 0 ? "" : chg > 0 ? "text-up" : "text-down";
   return (
     <div className={`flex min-w-0 items-center gap-x-3 leading-tight ${className}`} title={useLive ? "Live from the exchange feed" : "From the latest snapshot, not live"}>
-      <div className="flex flex-col items-start gap-0.5">
+      <div className="hidden flex-col items-start gap-0.5 min-[520px]:flex">
         <span className="flex items-center gap-1.5 text-xs text-muted">NIFTY 50 <SourceTag source={source} /></span>
         {!useLive && latest && <span className="num text-[11px] text-muted" title={`Stored snapshot of the ${latest.expiry} expiry; each expiry reads the index on its own, so the other expiry can differ by a point or so`}>{fmtTimeIST(latest.retrieved_at)} IST · {latest.expiry.slice(5)}</span>}
       </div>
       <div className="flex flex-col items-end gap-0.5">
-        <span className="num text-[17px] font-semibold text-paper md:text-[15px]">{fmtPrice(ltp)}</span>
+        <span className="num text-[16px] font-semibold text-paper md:text-[15px]"><span className="mr-1 text-[10px] font-normal text-muted min-[520px]:hidden">NIFTY</span>{fmtPrice(ltp)}</span>
         <span className={`num text-xs font-medium ${tone}`}>{chg == null ? "" : `${fmtSigned(Math.round(chg * 100) / 100)} (${fmtPct(pct)})`}</span>
       </div>
     </div>

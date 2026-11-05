@@ -262,10 +262,10 @@ export function VegaBoard() {
     const t = pts.map((p) => p.t);
     const line = (name: string, color: string, data: (number | null)[], extra: Partial<Line> = {}): Line => ({ name, color, data, fmt: vt, ...extra });
     return timeLinesOption(t, [
-      line("Synth Future", "#94a3b8", pts.map((p) => p.fwd), { dotted: true, fmt: rupee }),
-      line("Call Vega", "#34C759", pts.map((p) => p.call), { axis: 1, area: true }),
-      line("Put Vega", "#ef4444", pts.map((p) => p.put), { axis: 1, area: true }),
-      line("Put − Call", "#8b5cf6", pts.map((p) => p.diff), { axis: 1, hidden: true, dotted: true }),
+      line("Synth Future", c.muted, pts.map((p) => p.fwd), { dotted: true, fmt: rupee }),
+      line("Call Vega", c.up, pts.map((p) => p.call), { axis: 1, area: true }),
+      line("Put Vega", c.down, pts.map((p) => p.put), { axis: 1, area: true }),
+      line("Put − Call", c.info, pts.map((p) => p.diff), { axis: 1, hidden: true, dotted: true }),
     ], c, w.bounds, { leftFmt: (v) => fmtInt(v), rightFmt: vt, zeroLine: true });
   }, [pts, c, w.bounds, vt]);
   const thin = all.length ? Math.min(...all.map((p) => Math.min(p.callN, p.putN))) : 0;
@@ -277,7 +277,7 @@ export function VegaBoard() {
   };
   const cols = { call: ext((p) => p.call), put: ext((p) => p.put), diff: ext((p) => p.diff) };
   const shade = (v: number | null, prev: number | null, e: { hi: number | null; lo: number | null }) =>
-    v == null ? "" : v === e.hi ? "bg-emerald-600 font-bold text-white" : v === e.lo ? "bg-rose-700 font-bold text-white" : prev == null ? "" : v >= prev ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400";
+    v == null ? "" : v === e.hi ? "bg-up font-bold text-ink" : v === e.lo ? "bg-down font-bold text-ink" : prev == null ? "" : v >= prev ? "bg-up/10 text-up" : "bg-down/10 text-down";
   const tip = (v: number | null, e: { hi: number | null; lo: number | null }) => (v != null && v === e.hi ? "Day high" : v != null && v === e.lo ? "Day low" : undefined);
   return (
     <div className="flex flex-col gap-3" data-testid="vega-board">

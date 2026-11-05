@@ -55,7 +55,7 @@ export function EChart({ option, onClick, ariaLabel, className = "", group }: {
     chart.current?.setOption(option, { replaceMerge: ["series"] });
   }, [option]);
 
-  return <div ref={el} role="img" aria-label={ariaLabel} className={`h-full min-h-[120px] w-full ${className}`} />;
+  return <div ref={el} role="img" aria-label={ariaLabel} className={`echart-box h-full min-h-[120px] w-full ${className}`} />;
 }
 
 /** Chart colours follow the active theme (CSS variables) and update when the theme changes. */
