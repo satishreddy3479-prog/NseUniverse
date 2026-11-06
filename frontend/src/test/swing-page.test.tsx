@@ -278,7 +278,7 @@ describe("Swing trading page: live prices", () => {
     mount(swingReport(), paperView(), { started: true }, v);
     const table = await screen.findByRole("table", { name: "Live prices for watched stocks" });
     const rows = within(table).getAllByRole("row");
-    expect(rows[1]).toHaveTextContent("(stale)");
+    expect(rows[1]).toHaveTextContent("(stale 1 s)"); // the feed tick age is shown with the stale mark
     expect(rows[1]).toHaveTextContent("no Kotak token");
     expect(rows[2]).toHaveTextContent("Stop breached: would be sold");
   });

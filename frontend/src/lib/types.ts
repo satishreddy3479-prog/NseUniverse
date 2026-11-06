@@ -802,6 +802,8 @@ export interface SwingPaperTrade {
   id: number; symbol: string; sector: string; archetype: string; score: number; entry_session: string; entry: number;
   pivot: number; initial_sl: number; shares: number; exit_session: string; exit: number; reason: string;
   gross_pnl: number; costs: number; pnl: number; r_mult: number | null; hold_sessions: number;
+  /** ordinal of the exit session in the paper book (cooldowns count sessions) */
+  exit_no?: number;
   entered_booked_at?: string | null; exited_booked_at?: string | null; entry_seen_at?: string | null; exit_seen_at?: string | null;
 }
 export interface SwingPaperView {
@@ -817,7 +819,7 @@ export interface SwingPaperView {
   positions: SwingPaperPosition[];
   orders: SwingPaperOrder[];
   scan: {
-    session: string; ran_at: string; universe_size: number; fetched_ok: number; sectors_defaulted: number;
+    session: string; session_no?: number; ran_at: string; universe_size: number; fetched_ok: number; sectors_defaulted: number;
     nifty_close: number | null; nifty_sma50: number | null; nifty_ok: boolean | null;
     sectors: { code: string; ok: boolean | null }[]; candidates: number; blocked_by_gate: number; note: string;
   } | null;

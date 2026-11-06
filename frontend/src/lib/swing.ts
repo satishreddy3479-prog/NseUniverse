@@ -143,3 +143,19 @@ export function fmtStamp(iso: string | null | undefined, seconds = false): strin
   const p = (n: number) => String(n).padStart(2, "0");
   return `${p(d.getUTCDate())} ${MON[d.getUTCMonth()]} ${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}${seconds ? `:${p(d.getUTCSeconds())}` : ""} IST`;
 }
+
+
+/**
+ * The engine's cooldown (backend/app/swing/engine.py): an order is skipped when `session ordinal - ordinal of the stock's last exit`
+ * is below the cooldown. The scan queues every stock that passes the score and the gates, whatever its history, so a stock cut
+ * on day 1 can be queued again at once and is then skipped next session. Returns how many sessions it will still be skipped
+ * for, counting from the next session, or null when it is free to fill.
+ */
+export function cooldownLeft(symbol: string, trades: { symbol: string; exit_no?: number }[], nextNo: number | null, cooldown: number): { sessions: number; lastExitNo: number } | null {
+  if (nextNo == null) return null;
+  const exits = trades.filter((t) => t.symbol === symbol && t.exit_no != null).map((t) => t.exit_no as number);
+  if (exits.length === 0) return null;
+  const last = Math.max(...exits);
+  const left = cooldown - (nextNo - last);
+  return left > 0 ? { sessions: left, lastExitNo: last } : null;
+}

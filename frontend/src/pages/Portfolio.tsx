@@ -3,10 +3,12 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { mergeRows, type LiveMode } from "../components/ChainTable";
 import { useThrottledVersion } from "../components/dashboard/DashContext";
+import { EChart, useChartColors } from "../components/EChart";
 import { Info } from "../components/Info";
 import { Panel } from "../components/ui";
 import { api } from "../lib/api";
 import { fmtDateTimeIST, fmtInt } from "../lib/format";
+import { portfolioStats, type PortfolioStats } from "../lib/portfolioStats";
 import { isExited, strategyPnl, type Leg, type OptionType } from "../lib/strategy";
 import { useStreamStatus } from "../lib/useLive";
 import { CLOSED_KEY, SAVE_KEY, WORKING_KEY, type Closed, type Saved } from "./StrategyBuilder";
@@ -64,6 +66,9 @@ export function Portfolio() {
   const runningTotal = knownTotals.reduce((t, r) => t + (r.total as number), 0);
   const closedTotal = closed.reduce((t, c) => t + c.pnl, 0);
   const [confirm, setConfirm] = useState<string | null>(null);
+  const [capital, setCapital] = useState<number | null>(() => { try { const v = Number(localStorage.getItem("nse.portfolio.capital.v1")); return v > 0 ? v : null; } catch { return null; } });
+  const stats = useMemo(() => portfolioStats(closed.map((c) => ({ id: c.id, name: c.name, closedAt: c.closedAt, pnl: c.pnl })), capital), [closed, capital]);
+  const cumulative = useMemo(() => new Map(stats.curve.map((p, i) => [stats.curve[i]!.label + p.name, p.cum])), [stats]);
 
   const openInBuilder = (r: (typeof rows)[number]) => {
     if (!r.isDraft) {
@@ -111,11 +116,19 @@ export function Portfolio() {
         )}
       </Panel>
 
+      <Panel title="Performance of closed strategies" actions={
+        <label className="flex items-center gap-2 text-xs text-muted">Capital for % figures (₹)
+          <input aria-label="Capital for percentage figures" inputMode="numeric" className="num w-28 rounded-sm border border-rule bg-slate-2 px-2 py-1 text-right text-paper"
+            placeholder="optional" defaultValue={capital ?? ""} onBlur={(e) => { const v = Number(e.target.value.replace(/,/g, "")); const next = v > 0 ? v : null; setCapital(next); try { next ? localStorage.setItem("nse.portfolio.capital.v1", String(next)) : localStorage.removeItem("nse.portfolio.capital.v1"); } catch { /* this visit only */ } }} />
+        </label>}>
+        {stats.count === 0 ? <p className="text-sm text-muted" data-testid="portfolio-stats-empty">No closed strategy yet. These figures are computed only from strategies you have closed (their booked P&L); nothing is estimated.</p> : <PerformancePanel stats={stats} capital={capital} runningTotal={knownTotals.length ? runningTotal : null} />}
+      </Panel>
+
       <Panel title="Closed strategies">
         {closed.length === 0 ? <p className="text-sm text-muted">Nothing closed yet. Exit all in the strategy builder moves a strategy here.</p> : (
           <div className="overflow-x-auto" data-testid="portfolio-closed">
             <table className="w-full text-sm" aria-label="Closed strategies">
-              <thead className="text-xs text-muted"><tr>{["Strategy", "Closed", "Legs", "Realised P&L"].map((h) => <th key={h} className="px-2 py-1 text-left font-normal first:pl-0">{h}</th>)}</tr></thead>
+              <thead className="text-xs text-muted"><tr>{["Strategy", "Closed", "Legs", "Realised P&L", "Cumulative"].map((h) => <th key={h} className="px-2 py-1 text-left font-normal first:pl-0">{h}</th>)}</tr></thead>
               <tbody>
                 {closed.map((c) => (
                   <tr key={c.id} className="border-t border-rule/50">
@@ -123,9 +136,10 @@ export function Portfolio() {
                     <td className="num px-2 text-xs">{fmtDateTimeIST(c.closedAt)}</td>
                     <td className="num px-2">{c.legs.length}</td>
                     <td className={`num px-2 font-semibold ${tone(c.pnl)}`}>{money(c.pnl)}{c.stale && <span className="ml-2 text-xs font-normal text-warn" title="Exit prices were stored prices, not live">stale prices</span>}</td>
+                    <td className={`num px-2 ${tone(cumulative.get(c.closedAt + c.name) ?? null)}`}>{money(cumulative.get(c.closedAt + c.name) ?? null)}</td>
                   </tr>
                 ))}
-                <tr className="border-t border-rule"><td colSpan={3} className="py-2 text-right text-xs text-muted">Total</td><td className={`num px-2 font-semibold ${tone(closedTotal)}`}>{money(closedTotal)}</td></tr>
+                <tr className="border-t border-rule"><td colSpan={3} className="py-2 text-right text-xs text-muted">Total</td><td className={`num px-2 font-semibold ${tone(closedTotal)}`}>{money(closedTotal)}</td><td /></tr>
               </tbody>
             </table>
           </div>
@@ -141,6 +155,62 @@ function Tile({ label, value, sub, cls = "text-paper" }: { label: string; value:
       <div className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted">{label}<Info term={label} /></div>
       <div className={`num truncate text-lg font-semibold ${cls}`}>{value}</div>
       {sub && <div className="truncate text-[11px] text-muted" title={sub}>{sub}</div>}
+    </div>
+  );
+}
+
+
+function PerformancePanel({ stats, capital, runningTotal }: { stats: PortfolioStats; capital: number | null; runningTotal: number | null }) {
+  const colors = useChartColors();
+  const pctOf = (v: number | null) => (v == null ? "—" : `${v.toFixed(1)}%`);
+  const opt = useMemo(() => {
+    const ts = stats.curve.map((p) => p.t);
+    const tip = { trigger: "axis", confine: true, backgroundColor: colors.slate, borderColor: colors.rule, textStyle: { color: colors.paper, fontSize: 12 } };
+    const axisX = { type: "time", axisLabel: { color: colors.muted, hideOverlap: true }, axisLine: { lineStyle: { color: colors.rule } } };
+    return {
+      animation: false, tooltip: tip, axisPointer: { link: [{ xAxisIndex: "all" }] },
+      grid: [{ left: 64, right: 16, top: 24, height: "52%" }, { left: 64, right: 16, top: "72%", height: "18%" }],
+      xAxis: [{ ...axisX, gridIndex: 0, axisLabel: { show: false } }, { ...axisX, gridIndex: 1 }],
+      yAxis: [
+        { type: "value", gridIndex: 0, scale: true, name: "Cumulative P&L ₹", nameTextStyle: { color: colors.muted, fontSize: 10, align: "left" }, axisLabel: { color: colors.muted, formatter: (v: number) => fmtInt(v) }, splitLine: { lineStyle: { color: colors.rule, opacity: 0.5 } } },
+        { type: "value", gridIndex: 1, name: "Drawdown ₹", nameTextStyle: { color: colors.muted, fontSize: 10, align: "left" }, axisLabel: { color: colors.muted, formatter: (v: number) => fmtInt(v) }, splitLine: { lineStyle: { color: colors.rule, opacity: 0.4 } } },
+      ],
+      series: [
+        { name: "Cumulative P&L (closed)", type: "line", step: "end", xAxisIndex: 0, yAxisIndex: 0, showSymbol: true, symbolSize: 6, data: stats.curve.map((p) => [p.t, p.cum]), lineStyle: { color: colors.info, width: 2 }, itemStyle: { color: colors.info },
+          markLine: { silent: true, symbol: "none", label: { show: false }, lineStyle: { color: colors.muted, type: "dashed", opacity: 0.6 }, data: [{ yAxis: 0 }] } },
+        { name: "Drawdown", type: "line", xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, step: "end", data: ts.map((t, i) => [t, -stats.curve[i]!.dd]), lineStyle: { color: colors.down, width: 1.5 }, areaStyle: { color: colors.down, opacity: 0.18 }, itemStyle: { color: colors.down } },
+      ],
+    };
+  }, [stats, colors]);
+  const item = (label: string, value: string, sub?: string, cls = "text-paper") => (
+    <div key={label} className="rounded-sm border border-rule bg-slate-2/60 px-3 py-2"><div className="text-[11px] uppercase tracking-wide text-muted">{label}</div>
+      <div className={`num text-base font-semibold ${cls}`}>{value}</div>{sub && <div className="text-[11px] text-muted">{sub}</div>}</div>
+  );
+  const s = stats;
+  return (
+    <div className="flex flex-col gap-3" data-testid="portfolio-stats">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
+        {item("Net P&L (closed)", money(s.total), capital ? `${s.returnPct?.toFixed(2)}% of capital` : "no capital entered", tone(s.total))}
+        {item("Win rate", pctOf(s.winRate), `${s.wins} won · ${s.losses} lost${s.flat ? ` · ${s.flat} flat` : ""}`)}
+        {item("Expectancy", money(s.expectancy), "average per closed strategy", tone(s.expectancy))}
+        {item("Profit factor", s.profitFactor == null ? "—" : s.profitFactor.toFixed(2), s.profitFactor == null ? "needs a loss and a win" : `${money(s.grossProfit)} / ${money(Math.abs(s.grossLoss), false)}`)}
+        {item("Average win / loss", `${money(s.avgWin)} / ${money(s.avgLoss)}`, s.payoff == null ? "needs a win and a loss" : `payoff ${s.payoff.toFixed(2)} : 1`)}
+        {item("Max drawdown", money(-s.maxDrawdown, false), capital ? `${pctOf(s.maxDrawdownPct)} of capital` : "from the highest P&L reached", s.maxDrawdown > 0 ? "text-down" : "text-paper")}
+        {item("Best strategy", s.best ? money(s.best.pnl) : "—", s.best?.name, "text-up")}
+        {item("Worst strategy", s.worst ? money(s.worst.pnl) : "—", s.worst?.name, "text-down")}
+        {item("Longest win streak", String(s.longestWin), s.current?.kind === "win" ? `now ${s.current.length} in a row` : undefined, "text-up")}
+        {item("Longest loss streak", String(s.longestLoss), s.current?.kind === "loss" ? `now ${s.current.length} in a row` : undefined, "text-down")}
+        {item("Current drawdown", money(-s.currentDrawdown, false), s.currentDrawdown === 0 ? "at a new high" : `${s.drawdownTrades} closes under the peak`, s.currentDrawdown > 0 ? "text-down" : "text-up")}
+        {item("Recovery factor", s.recoveryFactor == null ? "—" : s.recoveryFactor.toFixed(2), s.recoveryFactor == null ? "needs a drawdown" : "net P&L / max drawdown")}
+      </div>
+      <div className="h-[300px]" data-testid="portfolio-equity"><EChart option={opt} ariaLabel="Cumulative closed P&L and drawdown" /></div>
+      <p className="text-[11px] text-muted">
+        Computed only from the {s.count} closed strateg{s.count === 1 ? "y" : "ies"} (booked P&L, in order of closing); the curve starts at zero and steps at each close.
+        Drawdown is the fall from the highest cumulative P&L reached. Expectancy = win rate × average win + loss rate × average loss = net P&L ÷ closed strategies.
+        {s.bestDay && s.worstDay ? ` Best day ${money(s.bestDay.pnl)} (${s.bestDay.day}), worst day ${money(s.worstDay.pnl)} (${s.worstDay.day}).` : ""}
+        {runningTotal != null ? ` Running strategies add ${money(runningTotal)} live and provisional (not in these figures).` : ""}
+        {s.count < 10 ? " With so few closed strategies these figures are not statistically meaningful." : ""}
+      </p>
     </div>
   );
 }

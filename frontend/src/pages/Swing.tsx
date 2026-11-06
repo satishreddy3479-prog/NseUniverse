@@ -101,7 +101,7 @@ export default function Swing() {
         <TabPanel id="paper">
           {paper.isPending ? <Loading what="the paper book" />
             : paper.isError ? <ErrorNote title="Could not load the paper book" message={paper.error instanceof Error ? paper.error.message : "Unknown error"} />
-              : <SwingPaper view={paper.data} live={<SwingLivePanel live={live.data} loading={live.isPending} error={live.error} />} runPending={run.isPending} runNote={runNote} onRun={() => { setRunNote(null); run.mutate(); }} />}
+              : <SwingPaper view={paper.data} liveRows={live.data?.watching} market={live.data?.market} live={<SwingLivePanel live={live.data} loading={live.isPending} error={live.error} />} runPending={run.isPending} runNote={runNote} onRun={() => { setRunNote(null); run.mutate(); }} />}
         </TabPanel>
       )}
       {tab === "overview" && <TabPanel id="overview">{withReport((r) => <SwingOverview report={r} basis={basis} />)}</TabPanel>}

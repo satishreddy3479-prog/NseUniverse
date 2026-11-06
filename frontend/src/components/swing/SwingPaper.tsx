@@ -2,9 +2,10 @@ import { useMemo, type ReactNode } from "react";
 import { EChart, useChartColors } from "../EChart";
 import { Button, EmptyState, Panel } from "../ui";
 import { fmtDateTimeIST, fmtInt, fmtPrice } from "../../lib/format";
-import { exitLabel, fmtStamp, isStale, pct, plain, reportAgeDays, resultText, rupees, SECTOR_NAME, signedRupees } from "../../lib/swing";
+import { cooldownLeft, exitLabel, fmtStamp, isStale, pct, plain, reportAgeDays, resultText, rupees, SECTOR_NAME, signedRupees } from "../../lib/swing";
+import { liveEquity, PositionsPanel } from "./PositionsPanel";
 import { paperEquityOption } from "../../lib/swingCharts";
-import type { SwingPaperView } from "../../lib/types";
+import type { SwingLiveRow, SwingPaperView } from "../../lib/types";
 import { Stat, TABLE_WRAP, TD, TD_L, THEAD, Verdict, When } from "./shared";
 
 const TH_L = "px-2 py-1.5 text-left font-medium";
@@ -13,8 +14,8 @@ const tone = (v: number) => (v >= 0 ? "text-up" : "text-down");
 
 export interface RunNote { kind: "info" | "error"; text: string }
 
-export function SwingPaper({ view, onRun, runPending, runNote, live }: {
-  view: SwingPaperView; onRun: () => void; runPending: boolean; runNote: RunNote | null; live?: ReactNode;
+export function SwingPaper({ view, onRun, runPending, runNote, live, liveRows, market }: {
+  view: SwingPaperView; onRun: () => void; runPending: boolean; runNote: RunNote | null; live?: ReactNode; liveRows?: SwingLiveRow[]; market?: "open" | "closed";
 }) {
   const colors = useChartColors();
   const opt = useMemo(() => paperEquityOption(view, colors), [view, colors]);
@@ -22,6 +23,9 @@ export function SwingPaper({ view, onRun, runPending, runNote, live }: {
   const t = view.trade_totals;
   const never = book.sessions === 0;
   const stale = book.as_of != null && isStale(book.as_of);
+  const lv = liveEquity(book.cash, view.positions, liveRows);
+  const nextNo = scan?.session_no != null ? scan.session_no + 1 : null;
+  const liveBy = new Map((liveRows ?? []).filter((r) => r.kind === "order").map((r) => [r.symbol, r]));
   return (
     <>
       <div role="note" className="rounded-sm border border-info/40 bg-info/10 px-3 py-2 text-sm">
@@ -80,8 +84,10 @@ export function SwingPaper({ view, onRun, runPending, runNote, live }: {
         </Panel>
       ) : (
         <>
-          <section aria-label="Paper book figures" className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          <section aria-label="Paper book figures" className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7">
             <Stat label={`Equity after ${book.sessions} session${book.sessions === 1 ? "" : "s"}`} value={rupees(book.equity)} sub={`as of ${book.as_of}`} />
+            <Stat label="Live equity (provisional)" value={lv.live ? rupees(lv.equity) : "—"} tone={lv.live && lv.equity >= book.equity ? "up" : lv.live ? "down" : undefined}
+              sub={lv.live ? `${signedRupees(lv.equity - book.equity)} vs settled · ${lv.live} of ${lv.total} live` : "no live prices"} />
             <Stat label="Return since start" value={pct(book.return_pct, 2)} tone={book.return_pct >= 0 ? "up" : "down"} sub={book.nifty_return_pct == null ? undefined : `NIFTY 50: ${pct(book.nifty_return_pct, 2)}`} />
             <Stat label="Cash" value={rupees(book.cash)} sub={`${rupees(book.invested)} invested`} />
             <Stat label="Open positions" value={`${book.open_positions} of ${book.slots}`} />
@@ -99,42 +105,11 @@ export function SwingPaper({ view, onRun, runPending, runNote, live }: {
         </>
       )}
 
-      <Panel title={`Open positions (${view.positions.length} of ${book.slots})`}>
-        {view.positions.length === 0 ? (
-          <EmptyState title="No open positions">{never ? "Positions appear after the first orders are filled." : "Slots are empty until a queued order triggers."}</EmptyState>
-        ) : (
-          <div className={TABLE_WRAP}>
-            <table className="num w-full min-w-[820px] text-sm">
-              <caption className="sr-only">Open paper positions</caption>
-              <thead className={THEAD}>
-                <tr><th scope="col" className={TH_L}>Stock</th><th scope="col" className={TH_L}>Entered</th>
-                  <th scope="col" className={TH_R}>Fill</th><th scope="col" className={TH_R}>Shares</th>
-                  <th scope="col" className={TH_R}>Last close</th><th scope="col" className={TH_R}>Unrealised</th>
-                  <th scope="col" className={TH_R}>Stop</th><th scope="col" className={TH_L}>Stop stage</th>
-                  <th scope="col" className={TH_R}>Room to stop</th></tr>
-              </thead>
-              <tbody>
-                {view.positions.map((p) => (
-                  <tr key={p.symbol} className="border-t border-rule">
-                    <th scope="row" className={`${TD_L} font-medium text-paper`}>{p.symbol}</th>
-                    <td className={TD_L}><When day={p.entry_session} seen={p.entry_seen_at} seenLabel="live trigger" booked={p.entered_booked_at} /></td>
-                    <td className={TD}>{fmtPrice(p.fill)}</td><td className={TD}>{fmtInt(p.shares)}</td>
-                    <td className={TD}>{fmtPrice(p.last_close)}</td>
-                    <td className={`${TD} ${tone(p.unrealized_pnl)}`}>{signedRupees(p.unrealized_pnl)} ({pct(p.unrealized_pct, 1)})</td>
-                    <td className={TD}>{fmtPrice(p.tsl)}</td>
-                    <td className={TD_L}>{p.stop_stage}</td>
-                    <td className={TD}>{p.risk_to_stop_pct.toFixed(1)}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
+      <PositionsPanel positions={view.positions} slots={book.slots} never={never} rows={liveRows} market={market} cash={book.cash} />
 
       <Panel title={scan ? `Orders for the next session · scan of ${scan.session}${view.orders[0]?.scanned_at ? ` (recorded ${fmtStamp(view.orders[0].scanned_at)})` : ""}` : "Orders for the next session"}>
         <p className="mb-3 max-w-[75ch] text-sm text-muted">
-          Queued automatically at the close and recorded permanently. Next session each is taken only if the price trades through the trigger,
+          Queued automatically at the close and recorded permanently. The scan lists every stock that passes the score and the gates, including one cut in the last few sessions; the cooldown is applied when the order is judged, so such a stock is shown here and then skipped (see the last column). Next session each is taken only if the price trades through the trigger,
           the open is no higher than the &ldquo;do not chase&rdquo; price, volume reaches the minimum, a slot is free and the stock is out of its
           {` ${view.config.cooldown}`}-session cooldown. Size = the smaller of {view.config.risk_pct}% of equity at risk ÷ (fill − stop) and 1/{view.config.slots} of equity.
         </p>
@@ -150,11 +125,11 @@ export function SwingPaper({ view, onRun, runPending, runNote, live }: {
                 <tr><th scope="col" className={TH_R}>#</th><th scope="col" className={TH_L}>Stock</th><th scope="col" className={TH_L}>Sector index</th>
                   <th scope="col" className={TH_L}>Pattern</th><th scope="col" className={TH_R}>Score</th><th scope="col" className={TH_R}>Close</th>
                   <th scope="col" className={TH_R}>Trigger</th><th scope="col" className={TH_R}>Do not chase above</th>
-                  <th scope="col" className={TH_R}>Initial stop</th><th scope="col" className={TH_R}>Risk to stop</th><th scope="col" className={TH_R}>Min volume</th></tr>
+                  <th scope="col" className={TH_R}>Initial stop</th><th scope="col" className={TH_R}>Risk to stop</th><th scope="col" className={TH_R}>Min volume</th><th scope="col" className={TH_L}>Next session</th></tr>
               </thead>
               <tbody>
                 {view.orders.map((o) => (
-                  <tr key={o.id} className="border-t border-rule">
+                  <tr key={o.id} className={`border-t border-rule ${cooldownLeft(o.symbol, view.trades, nextNo, view.config.cooldown) ? "opacity-70" : ""}`}>
                     <td className={TD}>{o.rank}</td>
                     <th scope="row" className={`${TD_L} font-medium text-paper`}>{o.symbol}</th>
                     <td className={TD_L}>{SECTOR_NAME[o.sector] ?? o.sector}</td>
@@ -164,6 +139,18 @@ export function SwingPaper({ view, onRun, runPending, runNote, live }: {
                     <td className={TD}>{fmtPrice(o.max_open)}</td><td className={TD}>{fmtPrice(o.initial_sl)}</td>
                     <td className={`${TD} ${o.risk_pct > 5.5 ? "text-warn" : ""}`}>{o.risk_pct.toFixed(1)}%{o.risk_pct > 5.5 ? " (wide)" : ""}</td>
                     <td className={TD}>{fmtInt(Math.round(o.min_volume))}</td>
+                    <td className={TD_L}>
+                      {(() => {
+                        const cd = cooldownLeft(o.symbol, view.trades, nextNo, view.config.cooldown);
+                        const lr = liveBy.get(o.symbol);
+                        return (
+                          <>
+                            {cd ? <span className="text-warn" title={`Cut or stopped out in session ${cd.lastExitNo}; the ${view.config.cooldown}-session cooldown skips it`}>Will be skipped: cooldown, {cd.sessions} more session{cd.sessions === 1 ? "" : "s"}</span> : <span className="text-up">Can fill</span>}
+                            {lr?.ltp != null && <div className="text-[11px] text-muted">price {fmtPrice(lr.ltp)}{lr.stale ? " (stale)" : ""} · {pct(((o.trigger - lr.ltp) / lr.ltp) * 100, 1)} to trigger</div>}
+                          </>
+                        );
+                      })()}
+                    </td>
                   </tr>
                 ))}
               </tbody>

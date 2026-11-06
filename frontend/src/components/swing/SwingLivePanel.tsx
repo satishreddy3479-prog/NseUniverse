@@ -26,7 +26,7 @@ function Levels({ r }: { r: SwingLiveRow }) {
 
 export function SwingLivePanel({ live, loading, error }: { live: SwingLiveView | undefined; loading: boolean; error: unknown }) {
   return (
-    <Panel title="Live prices from your Kotak feed">
+    <Panel title="Live prices from your Kotak feed" actions={<span className="rounded-sm border border-warn/50 px-1.5 py-px text-[11px] text-warn">Provisional</span>}>
       <div role="note" className="mb-3 rounded-sm border border-info/40 bg-info/10 px-3 py-2 text-sm">
         <p className="font-medium text-paper">Shadow mode: shown and logged, the paper book is not changed</p>
         <p className="mt-1 text-muted">
@@ -61,7 +61,7 @@ export function SwingLivePanel({ live, loading, error }: { live: SwingLiveView |
                     <tr key={`${r.kind}-${r.symbol}`} className="border-t border-rule">
                       <th scope="row" className={`${TD_L} font-medium text-paper`}>{r.symbol}</th>
                       <td className={TD_L}>{r.kind === "order" ? `Queued order #${r.rank ?? ""}` : `Position, ${fmtInt(r.shares ?? 0)} sh`}</td>
-                      <td className={TD}>{r.ltp == null ? "—" : fmtPrice(r.ltp)}{r.stale && r.ltp != null && <span className="text-warn"> (stale)</span>}</td>
+                      <td className={TD}>{r.ltp == null ? "—" : fmtPrice(r.ltp)}{r.stale && r.ltp != null && <span className="text-warn"> (stale{r.tick_age_s != null ? ` ${Math.round(r.tick_age_s)} s` : ""})</span>}</td>
                       <td className={`${TD} ${(r.change_pct ?? 0) >= 0 ? "text-up" : "text-down"}`}>{r.change_pct == null ? "—" : pct(r.change_pct, 2)}</td>
                       <td className={TD}>{r.volume == null ? "—" : fmtInt(r.volume)}
                         {r.kind === "order" && r.pace != null && <span className="text-muted"> ({Math.round(r.pace * 100)}% of pace)</span>}</td>
