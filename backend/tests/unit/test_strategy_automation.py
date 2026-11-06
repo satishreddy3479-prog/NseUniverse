@@ -80,7 +80,10 @@ def test_service_exits_without_any_browser_and_a_stale_browser_write_is_refused(
     with pytest.raises(RunningConflict) as e:  # the browser still has rev 1 and wants to write its old legs back
         auto.put(doc(), 1)
     assert e.value.current["legs"][0]["exitPrice"] == 131.0
-    assert auto.put(doc(), 2)["rev"] == 3
+    again = auto.put(doc(), 2)  # a copy that never saw the exit but carries the current revision (the bug of 6 Nov 2026)
+    assert again["rev"] == 3
+    assert again["legs"][0]["exitPrice"] == 131.0, "an old copy must not re-open a leg the server closed"
+    assert "Ignored an edit that would have re-opened SELL 23300 CE" in again["serverEvents"][-1]["text"]
     assert store.history(RUNNING_KIND, RUNNING_KEY) == []  # the running copy does not fill the revision history
     store.close()
 
@@ -205,4 +208,28 @@ def test_service_applies_the_rules_and_keeps_the_floor_unless_a_re_arm_is_asked(
     assert again["rstate"]["floor"] == 500
     rearmed = auto.put(doc(legs=[sold(stop=None, target=None)], rules=rules, rearmAt="x"), again["rev"])
     assert rearmed["rstate"] is None
+    store.close()
+
+
+def test_a_closed_leg_can_only_be_reopened_by_a_real_re_entry_or_a_fresh_start(tmp_path: Path) -> None:
+    auto, store = make(tmp_path, 131.0)
+    auto.put(doc(), None)
+    auto.check_once()  # the stop closes the leg at 131.00
+    closed = auto.get()["legs"][0]  # type: ignore[index]
+    rev = auto.get()["rev"]  # type: ignore[index]
+    # 1. the same leg open again with the same entry price and cycle count is an old copy: refused
+    kept = auto.put(doc(), rev)
+    assert kept["legs"][0]["exitPrice"] == 131.0 and kept["legs"][0]["realised"] == closed["realised"]
+    # 2. a real re-entry (the page's "Enter again": new entry price, one more cycle) is accepted
+    reopened = {**sold(premium=118.5, stop=154.05, cycles=1), "id": "a"}
+    out = auto.put(doc(legs=[reopened]), kept["rev"])
+    assert out["legs"][0].get("exitPrice") is None and out["legs"][0]["premium"] == 118.5
+    # 3. after another stop, a new leg id (a template or a saved strategy opened) is never treated as an old copy
+    store.put(RUNNING_KIND, RUNNING_KEY, {**auto.get(), "legs": [{**sold(), "exitPrice": 131.0, "exitReason": "stop"}]})  # type: ignore[dict-item]
+    fresh = auto.put(doc(legs=[sold(id="b")]), auto.get()["rev"])  # type: ignore[index]
+    assert [lg["id"] for lg in fresh["legs"]] == ["b"] and fresh["legs"][0].get("exitPrice") is None
+    # 4. an explicit fresh start (the Reset button sends a new rearmAt) may put the same leg back as it was
+    store.put(RUNNING_KIND, RUNNING_KEY, {**auto.get(), "legs": [{**sold(), "exitPrice": 131.0, "exitReason": "stop"}]})  # type: ignore[dict-item]
+    reset = auto.put(doc(rearmAt="2026-11-06T10:00:00Z"), auto.get()["rev"])  # type: ignore[index]
+    assert reset["legs"][0].get("exitPrice") is None
     store.close()

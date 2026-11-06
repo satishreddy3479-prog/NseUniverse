@@ -250,6 +250,27 @@ def apply_automation(
     return out, events
 
 
+def keep_exits(cur: dict[str, Any], doc: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """An exit cannot be undone by an old copy. A leg the server closed stays closed unless the incoming leg really was entered
+    again (a re-entry sets a new entry price and counts a cycle) or the editor asked for a fresh start (a new ``rearmAt``,
+    which the caller has already checked). Returns the document and a name for every leg that was kept closed."""
+    mine = {lg.get("id"): lg for lg in cur.get("legs") or [] if is_exited(lg)}
+    if not mine:
+        return doc, []
+    kept: list[str] = []
+    legs: list[Leg] = []
+    for lg in doc.get("legs") or []:
+        old = mine.get(lg.get("id"))
+        if old is not None and not is_exited(lg):
+            reentered = (lg.get("cycles") or 0) > (old.get("cycles") or 0) or lg.get("premium") != old.get("premium")
+            if not reentered:
+                legs.append(old)
+                kept.append(f"{old.get('action')} {old.get('strike')} {old.get('type')}")
+                continue
+        legs.append(lg)
+    return ({**doc, "legs": legs} if kept else doc), kept
+
+
 class RunningConflict(Exception):
     def __init__(self, current: dict[str, Any] | None) -> None:
         super().__init__("the server's copy changed")
@@ -292,7 +313,13 @@ class StrategyAutomation:
             # the state of the strategy rules (profit floor, which rule fired) belongs to the server; a browser edit only
             # replaces it when it asks for a re-arm (a new ``rearmAt``)
             keep = (cur or {}).get("rstate") if doc.get("rearmAt") == (cur or {}).get("rearmAt") else None
-            doc = {**doc, "rev": cur_rev + 1, "serverEvents": (cur or {}).get("serverEvents", []), "rstate": keep}
+            events = list((cur or {}).get("serverEvents", []))
+            if cur is not None and doc.get("rearmAt") == cur.get("rearmAt"):
+                doc, kept = keep_exits(cur, doc)
+                if kept:
+                    at = self._now()
+                    events = [*events, *({"at": at.isoformat(), "text": f"{_stamp(at)} Ignored an edit that would have re-opened {t}: the server had already closed it (a re-entry changes the entry price; a reset needs the Reset button)"} for t in kept)][-50:]
+            doc = {**doc, "rev": cur_rev + 1, "serverEvents": events, "rstate": keep}
             self.store.put(RUNNING_KIND, RUNNING_KEY, doc)
             return doc
 

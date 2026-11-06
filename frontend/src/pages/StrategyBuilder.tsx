@@ -341,7 +341,10 @@ export default function StrategyBuilder() {
   // Automatic stop, target and re-entry (paper only: nothing is sent to a broker). It runs on live streamed prices only,
   // and only while this page is open; with the stream stale or the market closed it is paused, never guessing from old prices.
   const [serverAuto, setServerAuto] = useState(false);
-  const autoActive = autoOn && liveMode === "fresh" && lotSize != null && !serverAuto;
+  // false until the server's copy has been fetched (or found unreachable): before that the legs are only the old copy kept in this
+  // browser, which can be hours behind (a stop the server executed, a strategy closed since) and must not trade on live prices
+  const [hydrated, setHydrated] = useState(false);
+  const autoActive = autoOn && liveMode === "fresh" && lotSize != null && hydrated && !serverAuto;
   // A target or stop that was just typed is not checked until the typing has settled: "30" passes through "3" on the way,
   // and that half-typed level must not close the leg.
   const lastExitEdit = useRef(-1e9);
@@ -373,7 +376,6 @@ export default function StrategyBuilder() {
   const sentRef = useRef("");
   const skipPush = useRef(false);
   const seenEvents = useRef<string | null>(null);
-  const [hydrated, setHydrated] = useState(false);
   const keyOf = (l: Leg): string | null => {
     const row = rows.find((r) => r.strike === l.strike);
     return liveKey(l.type === "CE" ? row?.call ?? null : row?.put ?? null) ?? l.key ?? null;
@@ -413,8 +415,9 @@ export default function StrategyBuilder() {
     if (!hydrated || !serverAuto) return;
     if (skipPush.current) { skipPush.current = false; sentRef.current = payloadJson; return; }
     if (payloadJson === sentRef.current) return;
+    const baseRev = revRef.current; // the revision this payload was built on: if the server moves on before the send, the send is refused
     const t = setTimeout(() => {
-      api.runningPut(JSON.parse(payloadJson), revRef.current).then((r) => { revRef.current = r.rev; sentRef.current = payloadJson; })
+      api.runningPut(JSON.parse(payloadJson), baseRev).then((r) => { revRef.current = r.rev; sentRef.current = payloadJson; })
         .catch(async (e: unknown) => {
           if (e instanceof ApiError && e.status === 409) {
             // the server closed or re-entered a leg meanwhile: its state wins, because an exit cannot be undone
@@ -618,7 +621,7 @@ export default function StrategyBuilder() {
   const canReset = legsChanged || controlsChanged;
   const canNew = legs.length > 0 || name !== "" || loaded != null || opened != null;
   /** Reset: undo edits, keeping the strategy. */
-  const resetStrategy = () => { setLegs(baseline.map((l) => ({ ...l }))); setMult(1); setDays(0); setIvPts(0); setWhatPct(0); setZoom(0); setNote(null); setSel(null); };
+  const resetStrategy = () => { setLegs(baseline.map((l) => ({ ...l }))); setRearmAt(new Date().toISOString()); setMult(1); setDays(0); setIvPts(0); setWhatPct(0); setZoom(0); setNote(null); setSel(null); };
   /** New: forget the strategy entirely and start from the gallery. */
   const newStrategy = () => { setLegs([]); setBaseline([]); setName(""); setLoaded(null); setOpened(null); setNote(null); setSel(null); setMult(1); setDays(0); setIvPts(0); setWhatPct(0); setZoom(0); };
   const savedEntry = loaded ? saved.find((x) => x.name === loaded) : undefined;
