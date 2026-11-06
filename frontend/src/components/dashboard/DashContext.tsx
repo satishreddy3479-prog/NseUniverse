@@ -135,3 +135,8 @@ export function DashProvider({ expiry, range, showCalls, showPuts, children }: {
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
+
+/** The dashboard state when a page is inside a DashProvider, otherwise null (pages that can also run on stored data alone). */
+export function useDashOptional(): DashState | null {
+  return useContext(Ctx);
+}

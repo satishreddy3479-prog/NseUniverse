@@ -1,7 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { fmtInt, fmtTimeIST, MISSING } from "../lib/format";
+import { chainGreeks } from "../lib/optionTools";
+import { marketClockMs } from "../lib/session";
+import { liveSmile, skewMeasures } from "../lib/skew";
+import { useLiveSpot } from "../lib/useLive";
+import { useDashOptional } from "./dashboard/DashContext";
 import { EChart, useChartColors } from "./EChart";
 
 const n2 = (v: number | null | undefined, unit = "") => (v == null ? MISSING : `${v.toFixed(2)}${unit}`);
@@ -21,14 +26,35 @@ export function skewReading(skew25: number | null): string {
 export function IvSkewBody({ expiry }: { expiry: string | null }) {
   const c = useChartColors();
   const [view, setView] = useState<(typeof VIEWS)[number]>("Smile");
-  const q = useQuery({ queryKey: ["ivSkew", expiry], queryFn: () => api.intradayIvSkew(expiry!), enabled: !!expiry, refetchInterval: 60_000, retry: false });
+  const q = useQuery({ queryKey: ["ivSkew", expiry], queryFn: () => api.intradayIvSkew(expiry!), enabled: !!expiry, refetchInterval: 30_000, retry: false });
+  // Live: while the stream is fresh the smile and every measure are recomputed from the option chain's live prices on each tick,
+  // exactly as the old skew widget did. The stored chain (a sample a minute) is the source when the stream is not live, and it
+  // always supplies the term view (other expiries).
+  const dash = useDashOptional();
+  const ls = useLiveSpot();
+  const liveOn = !!dash && !!expiry && dash.expiry === expiry && dash.liveMode === "fresh" && ls.live && ls.ltp != null && !!dash.snapshot;
+  const live = useMemo(() => {
+    if (!liveOn || !dash || !expiry || ls.ltp == null) return null;
+    const g = chainGreeks(dash.rows, ls.ltp, expiry, marketClockMs(Date.now()));
+    const sm = liveSmile(g.strikes, g.forward, ls.ltp);
+    if (g.forward == null || sm.rows.length === 0) return null;
+    return { ...sm, forward: g.forward, spot: ls.ltp, at: Date.now(), metrics: skewMeasures(sm.rows, g.forward, sm.atmIv) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveOn, dash?.rows, ls.ltp, expiry]);
   if (!expiry) return <p className="text-sm text-muted">Waiting for the expiry list from the broker.</p>;
-  if (q.isLoading) return <div className="h-40 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading" />;
-  if (q.isError || !q.data) return <p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down">The volatility skew could not be loaded: {q.error instanceof Error ? q.error.message : "unknown error"}.</p>;
-  const s = q.data;
-  if (s.smile.length === 0 || !s.cards) return <p className="text-sm text-muted" data-testid="ivskew-empty">{s.status}.</p>;
-  const k = s.cards;
-  const stale = (s.age_seconds ?? 0) > 300;
+  if (!live && q.isLoading) return <div className="h-40 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading" />;
+  if (!live && (q.isError || !q.data)) return <p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down">The volatility skew could not be loaded: {q.error instanceof Error ? q.error.message : "unknown error"}.</p>;
+  const stored = q.data;
+  if (!live && (!stored || stored.smile.length === 0 || !stored.cards)) return <p className="text-sm text-muted" data-testid="ivskew-empty">{stored?.status ?? "No stored chain"}.</p>;
+  // one view model for both sources
+  const s = {
+    expiry, days: stored?.days ?? null, term: stored?.term ?? [], model: stored?.model ?? "Black-76; forward from put-call parity", rate_assumed: stored?.rate_assumed,
+    smile: live ? live.rows.filter((r) => r.otm) : stored!.smile, atm_strike: live ? live.atmStrike : stored!.atm_strike, atm_iv: live ? live.atmIv : stored!.atm_iv,
+    spot: live ? live.spot : stored!.spot, forward: live ? live.forward : stored!.forward,
+    at: live ? new Date(live.at).toISOString() : stored!.at, age_seconds: live ? 0 : stored!.age_seconds,
+  };
+  const k = { ...(live ? live.metrics : stored!.cards!), term_slope_per_30d: stored?.cards?.term_slope_per_30d ?? null };
+  const stale = !live && (s.age_seconds ?? 0) > 300;
   const tip = { trigger: "axis", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: number | null) => (v == null ? MISSING : `${v.toFixed(2)}%`) };
   const smile = {
     grid: { left: 46, right: 14, top: 28, bottom: 28 }, tooltip: tip,
@@ -58,7 +84,7 @@ export function IvSkewBody({ expiry }: { expiry: string | null }) {
   return (
     <div className="flex flex-col gap-3" data-testid="ivskew-tool">
       <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
-        <div className="text-xs text-muted">Expiry {s.expiry} · {s.days == null ? MISSING : s.days.toFixed(1)} days · NIFTY {fmtInt(s.spot ?? null)} · forward {fmtInt(s.forward ?? null)} · ATM strike {fmtInt(s.atm_strike ?? null)} · stored chain at {s.at ? fmtTimeIST(s.at) : MISSING} IST</div>
+        <div className="text-xs text-muted">Expiry {s.expiry} · {s.days == null ? MISSING : s.days.toFixed(1)} days · NIFTY {fmtInt(s.spot ?? null)} · forward {fmtInt(s.forward ?? null)} · ATM strike {fmtInt(s.atm_strike ?? null)} · {live ? "live chain, updating with every tick" : "stored chain"} at {s.at ? fmtTimeIST(s.at) : MISSING} IST</div>
         {stale && <p className="mt-1 text-xs text-warn" data-testid="ivskew-stale">The newest stored chain is {Math.round((s.age_seconds ?? 0) / 60)} minutes old: the sampler may have stopped.</p>}
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6" data-testid="ivskew-cards">
           {card("ATM IV", n2(s.atm_iv, "%"), "Average of the ATM call and put implied volatility")}

@@ -251,23 +251,35 @@ def apply_automation(
 
 
 def keep_exits(cur: dict[str, Any], doc: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
-    """An exit cannot be undone by an old copy. A leg the server closed stays closed unless the incoming leg really was entered
-    again (a re-entry sets a new entry price and counts a cycle) or the editor asked for a fresh start (a new ``rearmAt``,
-    which the caller has already checked). Returns the document and a name for every leg that was kept closed."""
-    mine = {lg.get("id"): lg for lg in cur.get("legs") or [] if is_exited(lg)}
+    """What the server already did cannot be undone by an old copy. For each leg the browser sends back:
+    - a leg the server closed stays closed unless the incoming leg was really entered again (a re-entry sets a new entry price
+      and counts a cycle) or the editor asked for a fresh start (a new ``rearmAt``, checked by the caller);
+    - a leg with fewer cycles than the server's is an old copy (cycles only ever rise): the server's leg is kept;
+    - a trailed stop the old copy still has at its pre-trail level goes back to the trailed level (a trailing stop only tightens).
+    Returns the document and a name for every leg that was kept as the server had it."""
+    mine = {lg.get("id"): lg for lg in cur.get("legs") or []}
     if not mine:
         return doc, []
     kept: list[str] = []
     legs: list[Leg] = []
     for lg in doc.get("legs") or []:
         old = mine.get(lg.get("id"))
-        if old is not None and not is_exited(lg):
-            reentered = (lg.get("cycles") or 0) > (old.get("cycles") or 0) or lg.get("premium") != old.get("premium")
-            if not reentered:
-                legs.append(old)
-                kept.append(f"{old.get('action')} {old.get('strike')} {old.get('type')}")
-                continue
-        legs.append(lg)
+        if old is None:
+            legs.append(lg)
+            continue
+        name = f"{old.get('action')} {old.get('strike')} {old.get('type')}"
+        reentered = (lg.get("cycles") or 0) > (old.get("cycles") or 0) or lg.get("premium") != old.get("premium")
+        if is_exited(old) and not is_exited(lg) and not reentered:
+            legs.append(old)
+            kept.append(f"{name} (closed at {old.get('exitPrice')})")
+        elif (lg.get("cycles") or 0) < (old.get("cycles") or 0):
+            legs.append(old)
+            kept.append(f"{name} (entered again {old.get('cycles')} time(s))")
+        elif not is_exited(old) and not is_exited(lg) and old.get("stopTrailed") and not lg.get("stopTrailed") and lg.get("stop") == old.get("stopBase"):
+            legs.append({**lg, "stop": old.get("stop"), "stopBase": old.get("stopBase"), "stopTrailed": True})
+            kept.append(f"{name} (stop trailed to {old.get('stop')})")
+        else:
+            legs.append(lg)
     return ({**doc, "legs": legs} if kept else doc), kept
 
 
@@ -318,7 +330,7 @@ class StrategyAutomation:
                 doc, kept = keep_exits(cur, doc)
                 if kept:
                     at = self._now()
-                    events = [*events, *({"at": at.isoformat(), "text": f"{_stamp(at)} Ignored an edit that would have re-opened {t}: the server had already closed it (a re-entry changes the entry price; a reset needs the Reset button)"} for t in kept)][-50:]
+                    events = [*events, *({"at": at.isoformat(), "text": f"{_stamp(at)} Ignored an old copy of {t}: the server had already moved on (a re-entry changes the entry price; a reset needs the Reset button)"} for t in kept)][-50:]
             doc = {**doc, "rev": cur_rev + 1, "serverEvents": events, "rstate": keep}
             self.store.put(RUNNING_KIND, RUNNING_KEY, doc)
             return doc

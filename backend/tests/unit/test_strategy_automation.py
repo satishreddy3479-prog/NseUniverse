@@ -83,7 +83,7 @@ def test_service_exits_without_any_browser_and_a_stale_browser_write_is_refused(
     again = auto.put(doc(), 2)  # a copy that never saw the exit but carries the current revision (the bug of 6 Nov 2026)
     assert again["rev"] == 3
     assert again["legs"][0]["exitPrice"] == 131.0, "an old copy must not re-open a leg the server closed"
-    assert "Ignored an edit that would have re-opened SELL 23300 CE" in again["serverEvents"][-1]["text"]
+    assert "Ignored an old copy of SELL 23300 CE (closed at 131.0)" in again["serverEvents"][-1]["text"]
     assert store.history(RUNNING_KIND, RUNNING_KEY) == []  # the running copy does not fill the revision history
     store.close()
 
@@ -232,4 +232,21 @@ def test_a_closed_leg_can_only_be_reopened_by_a_real_re_entry_or_a_fresh_start(t
     store.put(RUNNING_KIND, RUNNING_KEY, {**auto.get(), "legs": [{**sold(), "exitPrice": 131.0, "exitReason": "stop"}]})  # type: ignore[dict-item]
     reset = auto.put(doc(rearmAt="2026-11-06T10:00:00Z"), auto.get()["rev"])  # type: ignore[index]
     assert reset["legs"][0].get("exitPrice") is None
+    store.close()
+
+
+def test_an_old_copy_cannot_loosen_a_trailed_stop_or_undo_a_re_entry(tmp_path: Path) -> None:
+    auto, store = make(tmp_path, 131.0)
+    trailed = sold(stop=112.0, stopBase=130.0, stopTrailed=True, cycles=0)
+    store.put(RUNNING_KIND, RUNNING_KEY, {**doc(legs=[trailed]), "rev": 5})  # type: ignore[dict-item]
+    # an old copy still has the stop at its pre-trail level 130.0: it goes back to the trailed 112.0
+    out = auto.put(doc(legs=[sold(stop=130.0)]), 5)
+    assert out["legs"][0]["stop"] == 112.0 and out["legs"][0]["stopTrailed"] is True and out["legs"][0]["stopBase"] == 130.0
+    # a stop the user typed to a different level on a trailed leg is their edit and is kept
+    mine = auto.put(doc(legs=[sold(stop=140.0)]), out["rev"])
+    assert mine["legs"][0]["stop"] == 140.0
+    # a leg that has been entered again twice cannot be taken back to one cycle by an old copy
+    store.put(RUNNING_KIND, RUNNING_KEY, {**doc(legs=[sold(cycles=2, premium=118.5, reentry=0)]), "rev": 9})  # type: ignore[dict-item]
+    back = auto.put(doc(legs=[sold(cycles=1, premium=118.5, reentry=1)]), 9)
+    assert back["legs"][0]["cycles"] == 2 and back["legs"][0]["reentry"] == 0
     store.close()
