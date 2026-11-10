@@ -14,9 +14,8 @@ export function ToolTabs() {
         const to = toolPath(t);
         const on = t.id === here.id;
         const cls = `inline-flex min-h-9 items-center gap-1.5 rounded-sm px-3 py-1.5 text-sm ${on ? "bg-brass/15 text-paper" : to ? "text-muted hover:text-paper" : "cursor-not-allowed text-muted/50"}`;
-        const badge = t.isNew && to ? <span className="rounded-sm bg-up/20 px-1 text-[10px] font-semibold text-up">NEW</span> : null;
         return to ? (
-          <Link key={t.id} to={to} aria-current={on ? "page" : undefined} className={cls}>{t.label}{badge}</Link>
+          <Link key={t.id} to={to} aria-current={on ? "page" : undefined} className={cls}>{t.label}</Link>
         ) : (
           <span key={t.id} className={cls} title={`Planned, not built yet. ${t.needs ?? ""}`}>{t.label}</span>
         );

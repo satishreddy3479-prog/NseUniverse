@@ -278,3 +278,28 @@ def test_a_failed_check_is_not_recorded_as_a_successful_one(tmp_path: Path) -> N
     s.run("auto")
     runs = s.store.last_runs()
     assert runs["participant_oi"]["last"]["ok"] is False and runs["participant_oi"]["last_auto_ok"] is None
+
+
+def test_an_nsdl_row_does_not_hide_missing_fii_dii_figures(tmp_path: Path) -> None:
+    """Regression (6 Nov 2026): the NSDL foreign-investor row of a session made the session look stored, so automatic checks stopped and NSE's
+    FII/DII figures for that day were never collected."""
+    friday = datetime(2026, 11, 6, 14, 0, tzinfo=UTC)  # 19:30 IST
+    s, _ = _live(tmp_path, Fake(set()), [], friday)
+    nse = lambda d, c, n: {"session": d, "category": c, "buy": n + 1.0, "sell": 1.0, "net": n}  # noqa: E731
+    s.store.save_cash([nse(date(2026, 11, 5), "FII/FPI *", 5.0), nse(date(2026, 11, 5), "DII *", -2.0)])
+    s.store.save_cash([nse(date(2026, 11, 6), "FPI equity (stock exchange)", 2.0), nse(date(2026, 11, 6), "FPI equity (incl. primary market)", 3.0)])
+    cov = s.store.coverage()["fii_dii_cash"]
+    assert cov["last"] == "2026-11-05" and cov["fpi_nsdl_last"] == "2026-11-06"  # the NSE figures end on the 5th; NSDL has the 6th
+    assert "cash" in s.missing_expected() and s.cash_gaps() == ["2026-11-06"]
+    s.last_attempt = None
+    assert s.due()  # the check goes on instead of reporting "everything is stored"
+    assert s.status()["cash_gaps"] == ["2026-11-06"]
+    s.store.save_cash([nse(date(2026, 11, 6), "FII/FPI *", 7.0), nse(date(2026, 11, 6), "DII *", -3.0)])
+    assert "cash" not in s.missing_expected() and s.cash_gaps() == []
+
+
+def test_a_session_with_only_an_older_nse_gap_is_listed_so_it_can_be_imported(tmp_path: Path) -> None:
+    s, _ = _live(tmp_path, Fake(set()), [], datetime(2026, 11, 9, 14, 0, tzinfo=UTC))  # Monday evening
+    nse = lambda d, n: {"session": d, "category": "FII/FPI *", "buy": n + 1.0, "sell": 1.0, "net": n}  # noqa: E731
+    s.store.save_cash([nse(date(2026, 11, 5), 5.0), nse(date(2026, 11, 9), 7.0)])  # Friday the 6th is not there
+    assert s.cash_gaps() == ["2026-11-06"]  # NSE's feed shows only the latest day, so only a CSV import can fill it

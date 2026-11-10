@@ -11,7 +11,6 @@ function ToolLink({ t }: { t: Tool }) {
   const body = (
     <>
       <span className="flex items-center gap-2"><span className="min-w-0 flex-1 truncate text-sm font-medium text-paper">{t.label}</span>
-        {t.isNew && !planned && <span className="rounded-sm bg-up/20 px-1 text-[10px] font-semibold text-up">NEW</span>}
         {planned && <span className="rounded-sm border border-rule px-1 text-[10px] text-muted">Planned</span>}</span>
       <span className="mt-0.5 line-clamp-2 block text-xs text-muted">{t.blurb}</span>
       {planned && t.needs && <span className="mt-0.5 block text-[11px] text-warn">{t.needs}</span>}

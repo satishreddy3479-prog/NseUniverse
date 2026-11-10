@@ -30,7 +30,6 @@ function ToolItem({ t, onPick }: { t: Tool; onPick: () => void }) {
   const body = (
     <>
       <span className="min-w-0 flex-1 truncate">{t.label}</span>
-      {t.isNew && t.status === "ready" && <span className="rounded-sm bg-up/20 px-1 text-[10px] font-semibold text-up">NEW</span>}
       {t.status === "planned" && <span className="rounded-sm border border-rule px-1 text-[10px] text-muted">Planned</span>}
     </>
   );

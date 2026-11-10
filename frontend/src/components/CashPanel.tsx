@@ -14,6 +14,7 @@ const tone = (v: number) => (v > 0 ? "text-up" : v < 0 ? "text-down" : "");
 export function CashPanel() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["cash"], queryFn: api.flowsCash, retry: false });
+  const st = useQuery({ queryKey: ["flows-status"], queryFn: api.flowsStatus, retry: false, refetchInterval: 60_000 });
   const [text, setText] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const imp = useMutation({
@@ -29,6 +30,11 @@ export function CashPanel() {
     <Panel title="FII / DII cash activity — newest 7 sessions (₹ crore)">
       <div className="space-y-3">
         <FlowsUpdateLoader components={["cash"]} />
+        {(st.data?.cash_gaps ?? []).length > 0 && (
+          <p role="note" className="rounded-lg border border-warn/50 px-3 py-1.5 text-sm text-warn" data-testid="cash-gaps">
+            NSE’s FII/DII figures were not collected for {(st.data?.cash_gaps ?? []).join(", ")}. NSE’s feed shows only the latest session, so a missed day cannot be fetched again; paste NSE’s FII/DII report CSV under “Import from an NSE CSV” to fill it.
+          </p>
+        )}
         {q.isPending ? <p className="text-sm text-muted">Loading…</p>
           : q.error ? <p className="text-sm text-muted">Not available: the running backend does not have this module yet.</p>
           : days.length === 0 ? <p className="text-sm text-muted" data-testid="cash-empty">No cash-market data yet. NSE does not allow automated downloads of this feed. Download the CSV from NSE’s FII/DII report page and paste its contents below.</p>
@@ -50,7 +56,7 @@ export function CashPanel() {
                     const tot = (f?.net ?? 0) + (di?.net ?? 0);
                     return (
                       <tr key={d} className="num border-t border-rule/50">
-                        <td>{d}</td><td className="text-right">{f ? fmtInt(f.buy) : "—"}</td><td className="text-right">{f ? fmtInt(f.sell) : "—"}</td>
+                        <td>{d}{!f && !di && <span className="ml-1 text-[10px] text-warn" title="NSE’s FII/DII figures were not collected for this session">not collected</span>}</td><td className="text-right">{f ? fmtInt(f.buy) : "—"}</td><td className="text-right">{f ? fmtInt(f.sell) : "—"}</td>
                         <td className={`text-right ${f ? tone(f.net) : ""}`}>{f ? fmtInt(f.net) : "—"}</td><td className={`text-right ${di ? tone(di.net) : ""}`}>{di ? fmtInt(di.net) : "—"}</td>
                         <td className={`text-right ${f && di ? tone(tot) : ""}`}>{f && di ? fmtInt(tot) : "—"}</td>
                         <td className={`text-right ${nsdl(d) ? tone(nsdl(d)!.net) : ""}`}>{nsdl(d) ? fmtInt(nsdl(d)!.net) : "—"}</td>

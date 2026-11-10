@@ -86,6 +86,29 @@ describe("FII/DII cash panel", () => {
   });
 });
 
+describe("FII/DII cash gaps", () => {
+  it("marks a session whose NSE figures were not collected, says why it cannot be re-fetched, and still shows the NSDL value", async () => {
+    const rows = [
+      { session: "2026-11-09", category: "FII/FPI", buy: 20311, sell: 13099, net: 7212 }, { session: "2026-11-09", category: "DII", buy: 1, sell: 7174, net: -7173 },
+      { session: "2026-11-06", category: "FPI equity (stock exchange)", buy: 20000, sell: 3831, net: 16169 },
+    ];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input).split("?")[0]!;
+      if (url === "/api/prediction/flows/cash") return new Response(JSON.stringify({ rows, window_sessions: 7 }), { status: 200 });
+      if (url === "/api/prediction/flows/status") return new Response(JSON.stringify({ enabled: true, running: false, progress: "", blocked: null, cash_note: null, source: "x", last_run: null, coverage: { fao_participant_oi: { first: null, last: null, files: 0, not_published_404: 0, last_stored_utc: null }, fao_participant_vol: { first: null, last: null, files: 0, not_published_404: 0, last_stored_utc: null }, fii_dii_cash: { first: "2026-11-02", last: "2026-11-09", files: 7, not_published_404: 0, last_stored_utc: null } }, cash_gaps: ["2026-11-06"], missing_expected: [], expected_session: "2026-11-09" }), { status: 200 });
+      return new Response("{}", { status: 404 });
+    }));
+    const { CashPanel } = await import("../components/CashPanel");
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><CashPanel /></QueryClientProvider>);
+    const gap = await screen.findByTestId("cash-gaps");
+    expect(gap).toHaveTextContent("not collected for 2026-11-06");
+    expect(gap).toHaveTextContent("cannot be fetched again");
+    const table = await screen.findByRole("table", { name: "FII DII cash" });
+    expect(table).toHaveTextContent("2026-11-06not collected");
+    expect(table).toHaveTextContent("16,169"); // the NSDL column is still shown for that day
+  });
+});
+
 describe("Prediction page", () => {
   it("shows both models separately, the call banner, calls statistics and a verdict per model", async () => {
     mount(data());

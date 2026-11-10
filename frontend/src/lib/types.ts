@@ -438,6 +438,7 @@ export interface FlowsStatus {
   coverage: Record<"fao_participant_oi" | "fao_participant_vol" | "fii_dii_cash", FlowsCoverage>;
   expected_session?: string;
   missing_expected?: string[];
+  cash_gaps?: string[];
   last_attempt_utc?: string | null;
   components?: Record<string, { last: FlowsRun | null; last_auto_ok: FlowsRun | null; last_manual_ok: FlowsRun | null }>;
 }

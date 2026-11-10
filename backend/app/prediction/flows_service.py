@@ -121,6 +121,14 @@ class FlowsService:
 
         return {"participant_oi": newest("fao_participant_oi"), "participant_vol": newest("fao_participant_vol"), "cash": newest("fii_dii_cash")}
 
+    def cash_gaps(self) -> list[str]:
+        """Recent sessions that have no NSE FII/DII figures. NSE's feed only ever shows the latest session, so an old gap cannot be fetched again:
+        it can be filled from a CSV of NSE's FII/DII report (Import). The newest session is still retried by the schedule."""
+        have = self.store.nse_cash_sessions()
+        recent = [d for d in self.candidate_sessions() if d <= self.expected_session()][:CASH_KEEP_SESSIONS]
+        oldest_have = min(have) if have else None
+        return [str(d) for d in recent if str(d) not in have and (oldest_have is None or str(d) > oldest_have)]
+
     def missing_expected(self) -> list[str]:
         exp = self.expected_session()
         return [c for c, d in self.newest_stored().items() if d is None or d < exp]
@@ -333,7 +341,7 @@ class FlowsService:
             "enabled": self.enabled, "running": self.running(), "progress": self.progress,
             "blocked": self.blocked, "cash_note": self.cash_note, "nsdl_note": self.nsdl_note, "last_run": self.last_run,
             "coverage": self.store.coverage(), "expected_session": str(self.expected_session()),
-            "missing_expected": self.missing_expected(), "components": self.store.last_runs(),
+            "missing_expected": self.missing_expected(), "cash_gaps": self.cash_gaps(), "components": self.store.last_runs(),
             "last_attempt_utc": None if self.last_attempt is None else self.last_attempt.isoformat(),
             "source": "NSE public archive files (archives.nseindia.com) and the NSE FII/DII feed; personal research use, low rate",
         }  # fmt: skip

@@ -43,6 +43,10 @@ CREATE TRIGGER IF NOT EXISTS cash_no_update BEFORE UPDATE ON cash_flows BEGIN SE
 """
 
 
+#: NSE's own FII/DII rows are every cash row that is not one of the NSDL foreign-investor rows (categories "FPI equity (...)")
+NSE_ONLY = "category NOT LIKE 'FPI equity%'"
+
+
 class FlowsStore:
     def __init__(self, data_dir: Path) -> None:
         data_dir.mkdir(parents=True, exist_ok=True)
@@ -136,6 +140,11 @@ class FlowsStore:
             self._db.commit()
         return n
 
+    def nse_cash_sessions(self) -> set[str]:
+        """Sessions that hold NSE's FII/DII figures (not merely an NSDL row)."""
+        with self._lock:
+            return {r[0] for r in self._db.execute(f"SELECT DISTINCT session FROM cash_flows WHERE {NSE_ONLY}")}  # noqa: S608
+
     def prune_participant(self, keep_sessions: int = 7, backup_dir: Path | None = None) -> dict[str, int]:
         """Rolling window for the participant files: keep the newest sessions per kind, delete older ones.
 
@@ -211,7 +220,10 @@ class FlowsStore:
                 miss = self._db.execute("SELECT COUNT(*) FROM attempts WHERE kind=? AND status=404", (k,)).fetchone()[0]
                 last_seen = self._db.execute("SELECT MAX(first_seen_utc) FROM raw_files WHERE kind=?", (k,)).fetchone()[0]
                 kinds[k] = {"first": r[0], "last": r[1], "files": r[2], "not_published_404": miss, "last_stored_utc": last_seen}
-            r = self._db.execute("SELECT MIN(session), MAX(session), COUNT(DISTINCT session) FROM cash_flows").fetchone()
-            seen = self._db.execute("SELECT MAX(first_seen_utc) FROM cash_flows").fetchone()[0]
-            kinds["fii_dii_cash"] = {"first": r[0], "last": r[1], "files": r[2], "not_published_404": 0, "last_stored_utc": seen}
+            # "cash" means NSE's FII/DII figures. The NSDL foreign-investor rows live in the same table under their own category names and
+            # must not stand in for them: a session with only an NSDL row has NOT got its FII/DII figures.
+            r = self._db.execute(f"SELECT MIN(session), MAX(session), COUNT(DISTINCT session) FROM cash_flows WHERE {NSE_ONLY}").fetchone()  # noqa: S608
+            seen = self._db.execute(f"SELECT MAX(first_seen_utc) FROM cash_flows WHERE {NSE_ONLY}").fetchone()[0]  # noqa: S608
+            fpi = self._db.execute(f"SELECT MAX(session) FROM cash_flows WHERE NOT ({NSE_ONLY})").fetchone()[0]  # noqa: S608
+            kinds["fii_dii_cash"] = {"first": r[0], "last": r[1], "files": r[2], "not_published_404": 0, "last_stored_utc": seen, "fpi_nsdl_last": fpi}
         return kinds
