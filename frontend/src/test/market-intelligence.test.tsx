@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MarketIntelligence } from "../pages/MarketIntelligence";
 import { Home } from "../pages/Home";
-import type { EngineView, HeavyStock, Heavyweights, Intelligence, Timeline } from "../lib/intelligence";
+import type { EngineView, HeavyStock, Heavyweights, Intelligence, MlDigest, Timeline } from "../lib/intelligence";
 
 vi.mock("../components/EChart", () => ({
   useChartColors: () => ({ up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" }),
@@ -38,6 +38,15 @@ const hw: Heavyweights = {
   series: [{ t: "2026-11-09T04:10:00Z", session: 30, w5: 40, w15: null, spot: 24050 }, { t: "2026-11-09T04:20:00Z", session: 35, w5: 45, w15: 38, spot: 24080 }, { t: "2026-11-09T04:30:00Z", session: 38, w5: 52, w15: 41, spot: 24100 }],
   quality: { valid: 4, of: 5, weight_share: 0.89, aggregate_available: true, weights: { as_of: "2026-06-30", source: "NSE index tracker", age_days: 132, stale: true, approximate: false, basis: "official index weights" } },
 };
+const ml: MlDigest = {
+  status: { status: "collecting", stage_name: "Collecting labelled data", labelled_sessions: 3, complete_sessions: 4, sessions_with_samples: 5, next: { name: "Experimental training", at_sessions: 5, sessions_to_go: 2 },
+    stages: [{ id: "collecting", name: "Collecting labelled data", from_sessions: 0, what: "x" }, { id: "experimental", name: "Experimental training", from_sessions: 5, what: "y" }, { id: "validated", name: "Eligible for 'validated'", from_sessions: 60, what: "z" }] },
+  computing: false, next_run: "once a session day after 15:45 IST",
+  last_evaluation: { computed_at: "2026-11-10T10:40:00Z", horizon_minutes: 15, barrier_k: 0.5, status: "experimental", sessions: 8, test_sessions: 5, rows: 900, reason: null,
+    models: { majority: { log_loss: 1.0912, brier: 0.6, n: 400, ece: 0.02 }, momentum: { log_loss: 1.0987, brier: 0.61, n: 400, ece: 0.03 }, logistic: { log_loss: 1.1034, brier: 0.62, n: 400, ece: 0.06 } },
+    best_baseline_log_loss: 1.0912, model_log_loss_gain: -0.0122, feature_groups: { options: { log_loss: 1.1, delta_vs_price_only: -0.0021 }, breadth: { log_loss: 1.12, delta_vs_price_only: 0.0105 } },
+    gate: { status: "experimental", show_probabilities: false, beat_share: 0.2, mean_log_loss_gain: -0.0122, sign_test_p: 0.81, ece: 0.06, reasons: ["only 8 labelled sessions (validation needs 60)", "calibration error 0.060 exceeds 0.05"] } },
+};
 const base: Intelligence = {
   generated_at: "2026-11-09T04:30:00Z", expiry: "2026-11-10", session: "2026-11-09", enabled: true,
   status: { market: { ok: true, age_s: 2, ms: 3 }, gex: { ok: false, age_s: null, ms: 1, error: "RuntimeError: module down" }, intraday: { ok: true, age_s: 20, ms: 40 } },
@@ -60,7 +69,7 @@ const base: Intelligence = {
     volatility: { atm_iv: 15.2, iv_change_15m: -0.4, hv: 11, rv: 10, india_vix: 14.1, india_vix_label: "India VIX – Last Daily Close", india_vix_as_of: "2026-11-06", ivr_252: 42, ivp_252: 55, skew_25d: 2.1, skew_10d: 4.0, risk_reversal_25d: -2.1, butterfly_25d: 0.4, term_slope_30d: 1.2, term_shape: "contango", term: [{ expiry: "2026-11-10", days: 1, atm_iv: 15.2 }], expected_move_1sd_pts: 160, straddle: 183, interpretation: null, note: "India VIX is a daily close." },
     futures: { series: { future: 24148, basis: 48 }, contract: "NIFTY26NOVFUT", oi_change: 52000, volume: 900000, buildup: "long buildup", flow: { cvd_pct: 25, classified_share: 0.9, depth_imbalance: 0.1 }, vwap: { vwap: 24050, distance_pct: 0.2, slope_pts_per_15m: 4 }, rolling: { estimated: true, momentum_per_min: 12.5, ok_windows: 2, windows: { "5": { minutes: 5, cvd: 1000, cvd_pct: 20, volume: 5000, classified: 5000, from: "t0", to: "t1", status: "ok" }, "15": { minutes: 15, cvd: 2400, cvd_pct: 16, volume: 15000, classified: 15000, from: "t0", to: "t1", status: "ok" }, "30": { minutes: 30, cvd: null, cvd_pct: null, volume: null, classified: null, from: null, to: "t1", status: "unavailable: fewer than 30 minutes of flow samples stored today" } } }, unavailable: ["rollover data (needs near-month and next-month contract OI and volume history)"], note: "CVD is an estimate by the quote and tick rule." },
   },
-  heavyweights: hw,
+  heavyweights: hw, intraday_ml: ml,
   alerts: [{ id: 1, at: "2026-11-09T04:15:00Z", kind: "VWAP reclaim", severity: "medium", direction: "bullish", text: "Future reclaimed its day VWAP", evidence: [], confirmation: "holds for 5 minutes", invalidation: "price crosses back" }],
   config: { weights: { positioning: 30, orderflow: 20, volatility: 10, structure: 20, participation: 20 }, min_coverage: 0.55, min_engines: 3, note: "Provisional weights – not yet statistically calibrated." }, compute_ms: 38,
   capabilities: [
@@ -233,6 +242,36 @@ describe("Market Intelligence page", () => {
   it("shows an error state without breaking when the service is down", async () => {
     view({ detail: { code: "disabled", message: "the market-intelligence dashboard is turned off" } }, timeline, 404);
     expect((await screen.findByRole("alert")).textContent).toContain("could not be loaded");
+  });
+});
+
+describe("Intraday ML panel", () => {
+  it("says what the model does, where it stands, how it scored against the baselines and why it is not trusted yet", async () => {
+    view(base);
+    const p = await screen.findByTestId("ml-panel");
+    expect(within(p).getByTestId("ml-what").textContent).toContain("tested against simple baselines on later sessions only");
+    expect(within(p).getByTestId("ml-stage").textContent).toBe("Collecting labelled data");
+    expect(p.textContent).toContain("2 to go");
+    expect(within(p).getByTestId("ml-verdict").textContent).toBe("Experimental");
+    expect(p.textContent).toContain("no probability is shown");
+    const t = within(p).getByTestId("ml-table");
+    expect(t.textContent).toContain("Majority class");
+    expect(t.textContent).toContain("1.0912");
+    expect(t.textContent).toContain("Logistic model (all features)");
+    expect(within(p).getByTestId("ml-gain").textContent).toContain("0.0122 worse");
+    expect(within(p).getByTestId("ml-reasons").textContent).toContain("only 8 labelled sessions");
+    expect(within(p).getByTestId("ml-groups").textContent).toContain("options −0.0021");
+    expect(p.textContent).toContain("research only, not part of the sentiment score");
+    expect(within(p).getByRole("link", { name: /intraday analysis/ }).getAttribute("href")).toBe("/analysis");
+  });
+  it("says plainly when no evaluation has been stored yet, and when the service did not answer", async () => {
+    view({ ...base, intraday_ml: { ...ml, last_evaluation: null } });
+    expect((await screen.findByTestId("ml-none")).textContent).toContain("No evaluation has been stored yet");
+    expect(screen.getByTestId("ml-verdict").textContent).toBe("Not evaluated yet");
+  });
+  it("shows an explicit state when the research service is not answering", async () => {
+    view({ ...base, intraday_ml: null });
+    expect((await screen.findByTestId("ml-panel")).textContent).toContain("did not answer");
   });
 });
 

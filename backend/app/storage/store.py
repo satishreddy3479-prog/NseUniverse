@@ -84,6 +84,8 @@ class SnapshotStore:
         self.export_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._db = sqlite3.connect(data_dir / "index.sqlite3", check_same_thread=False)
+        self._db.execute("PRAGMA journal_mode=WAL")  # readers do not wait for a snapshot write
+        self._db.execute("PRAGMA busy_timeout=5000")
         self._db.executescript(_SCHEMA)
         self._db.commit()
 

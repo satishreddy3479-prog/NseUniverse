@@ -15,7 +15,7 @@ import logging
 import threading
 import time as _time
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import asdict
 from datetime import UTC, date, datetime, time, timedelta
 from statistics import pstdev
@@ -120,6 +120,19 @@ STRUCTURE_MAX_AGE_S = 180  # a breakout call needs a spot sample this fresh
 MIN_SESSION_SAMPLES = 10
 
 
+class _Bounded(dict):  # type: ignore[type-arg]
+    """A dict that forgets its oldest entries beyond ``maxlen``: results keyed by a changing value (a row count, a minute) cannot pile up for days."""
+
+    def __init__(self, maxlen: int) -> None:
+        super().__init__()
+        self.maxlen = maxlen
+
+    def __setitem__(self, key: Any, value: Any) -> None:
+        super().__setitem__(key, value)
+        while len(self) > self.maxlen:
+            del self[next(iter(self))]
+
+
 class IntradayService:
     def __init__(
         self,
@@ -152,7 +165,8 @@ class IntradayService:
         self._bt_job: dict[str, Any] | None = None
         self._bt_lock = threading.Lock()
         self._iv_cache: dict[tuple[Any, ...], dict[str, Any]] = {}  # one entry: the latest IV series
-        self._slow: dict[tuple[str, str], tuple[float, Any]] = {}
+        self._ml_job: threading.Thread | None = None
+        self._slow: dict[Any, tuple[float, Any]] = _Bounded(48)  # cached slow results, keyed by (kind, ...); the oldest are dropped
         self._task: asyncio.Task[None] | None = None
         self.loop_note = "not started"
 
@@ -1134,12 +1148,12 @@ class IntradayService:
         from app.intraday.forward import score_forward
 
         key = ("forward", expiry, self.store.count())
-        hit = self._slow.get(key)  # type: ignore[call-overload]
+        hit = self._slow.get(key)
         if hit and _time.monotonic() - hit[0] < 600:
             return hit[1]  # type: ignore[no-any-return]
-        sessions = {d: self.store.session_rows(d, expiry, limit=2000) for d in self.store.score_sessions(expiry)}
+        sessions: dict[str, Sequence[dict[str, Any]]] = {d: self.store.session_rows(d, expiry, limit=2000) for d in self.store.score_sessions(expiry)}
         res = score_forward(sessions)
-        self._slow[key] = (_time.monotonic(), res)  # type: ignore[index]
+        self._slow[key] = (_time.monotonic(), res)
         return res
 
     def replay_sessions(self) -> dict[str, Any]:
@@ -1232,6 +1246,33 @@ class IntradayService:
             sf = self._surface_of(ss[-1], date.fromisoformat(other), ss[-1].received_at)
             pts.append((date.fromisoformat(other), sf.get("time_to_expiry_days"), sf.get("atm_iv") if sf.get("status") == "ok" else None))
         return volmod.term_structure(pts)
+
+    def ml_digest(self, now: datetime | None = None) -> dict[str, Any]:
+        """Where the intraday model research stands and the result of its last evaluation (cheap: reads a small stored file).
+
+        The evaluation itself is heavy, so it is started in the background once per session day after 15:45 IST, never in market hours and
+        never twice at once; until it has run the digest says so. Nothing here is a prediction."""
+        from app.intraday import mldigest
+
+        folder = self.store.path.parent
+        now_ist = (now or datetime.now(IST)).astimezone(IST)
+        last = mldigest.load(folder)
+        if mldigest.due(last, now_ist) and self._ml_job is None:
+            def job() -> None:
+                try:
+                    res = self.research(15, 0.5)
+                    mldigest.save(folder, mldigest.digest(res, 15, 0.5, datetime.now(IST)))
+                except Exception:  # noqa: BLE001 - a failed night run must never reach the dashboard; it is tried again next call
+                    logger.exception("intraday ml digest failed")
+                finally:
+                    self._ml_job = None
+
+            self._ml_job = threading.Thread(target=job, daemon=True, name="intraday-ml-digest")
+            self._ml_job.start()
+        counts = self.obs.session_sample_counts(self.underlying)
+        complete = sum(1 for n in counts.values() if n >= COMPLETE_SESSION_SAMPLES)
+        status = self._ml_status(complete, len(counts))
+        return {"status": status, "last_evaluation": last, "computing": self._ml_job is not None, "next_run": "once a session day after 15:45 IST"}
 
     def _ml_status(self, complete_sessions: int, sessions_with_samples: int) -> dict[str, Any]:
         """Where the intraday model effort stands, from the labelled sessions actually stored."""

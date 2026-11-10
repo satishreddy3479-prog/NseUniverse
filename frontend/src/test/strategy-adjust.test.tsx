@@ -47,7 +47,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 const mount = (at = "/strategy") => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter initialEntries={[at]}><AppRoutes /></MemoryRouter></QueryClientProvider>);
 const build = async (id: string) => {
-  await waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"), { timeout: 5000 });
+  await waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"), { timeout: 15000 });
   await userEvent.click(await screen.findByRole("tab", { name: TEMPLATE_BIAS[id]! }));
   await userEvent.click(await screen.findByRole("button", { name: TEMPLATES.find((t) => t.id === id)!.label }));
 };

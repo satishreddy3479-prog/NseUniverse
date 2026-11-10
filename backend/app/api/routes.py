@@ -203,13 +203,19 @@ async def option_chain(
     """Latest stored snapshot for the expiry. Capture a new one with POST /api/snapshots/capture."""
     svc = _svc(request)
     _check_underlying(svc, underlying)
-    snap = _store(request).latest(svc.underlying, expiry.isoformat())
-    if snap is None:
+    store = _store(request)
+
+    def read() -> ChainResponse | None:  # off the event loop: the busiest endpoint
+        snap = store.latest(svc.underlying, expiry.isoformat())
+        return None if snap is None else _chain_response(request, snap, latest=True)
+
+    out = await asyncio.to_thread(read)
+    if out is None:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
             {"code": "no_snapshot", "message": "no snapshot captured for expiry"},
         )
-    return _chain_response(request, snap, latest=True)
+    return out
 
 
 def _chain_response(request: Request, snap: OptionChainSnapshot, *, latest: bool) -> ChainResponse:

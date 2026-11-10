@@ -124,8 +124,12 @@ def forward_from_parity(prices: Mapping[tuple[float, int], float | None], spot: 
         return None
     grow = math.exp(r * t)
     ks = sorted({k for k, _ in prices}, key=lambda k: (abs(k - spot), k))
-    both = [(k, prices[(k, CALL)], prices[(k, PUT)]) for k in ks if prices.get((k, CALL)) is not None and prices.get((k, PUT)) is not None]
-    both = [(k, c, p) for k, c, p in both if c is not None and p is not None and c > 0 and p > 0][:5]
+    both: list[tuple[float, float, float]] = []
+    for k in ks:
+        c, p = prices.get((k, CALL)), prices.get((k, PUT))
+        if c is not None and p is not None and c > 0 and p > 0:
+            both.append((k, c, p))
+    both = both[:5]
     if len(both) >= 3:
         fs = sorted(k + grow * (c - p) for k, c, p in both)
         mid = fs[len(fs) // 2] if len(fs) % 2 else (fs[len(fs) // 2 - 1] + fs[len(fs) // 2]) / 2
@@ -270,7 +274,10 @@ def iv_term_structure(term: Sequence[dict[str, Any]]) -> dict[str, Any]:
     same moment for every expiry; an expiry lacking one is left out of that series only. Mirrors the registry entry ``term_slope``."""
     series = {k: _term_series(term, k) for k in TERM_KEYS}
     atm = series["atm_iv"]
-    shape_pts = lambda x: None if x is None else {"expiry": x["expiry"], "days": x["days"], "atm_iv": x["value"]}  # noqa: E731
+
+    def shape_pts(x: dict[str, Any] | None) -> dict[str, Any] | None:
+        return None if x is None else {"expiry": x["expiry"], "days": x["days"], "atm_iv": x["value"]}
+
     return {
         "slope_per_30d": atm["slope_per_30d"], "shape": atm["shape"], "near": shape_pts(atm["near"]), "far": shape_pts(atm["far"]),
         "pairs": atm["pairs"], "left_out": atm["left_out"], "iv_difference": atm["difference"], "series": series,

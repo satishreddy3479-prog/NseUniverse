@@ -679,6 +679,12 @@ def capabilities(inp: Mapping[str, Any], status: Mapping[str, Any], gx: Mapping[
     add("hw_cvd", "Heavyweight CVD (per stock, rolling 5/15/30 min, aggregate)", UNAVAILABLE if not h.get("available") else (AVAILABLE if q.get("aggregate_available") and q.get("valid") == q.get("of") else PARTIAL if q.get("aggregate_available") else UNAVAILABLE),
         "CVD PROXY by the quote and tick rule; " + ("all stocks valid" if q.get("valid") == q.get("of") else f"{q.get('valid')} of {q.get('of')} stocks valid") if h.get("available") else "no heavyweight flow", "market", "/tools/future-flow")
     add("hw_genuine_cvd", "Genuine aggressor-side CVD for the heavyweights", UNAVAILABLE, "the feed carries no aggressor-side trade tape or per-trade timestamps; only a labelled proxy exists", "market", None)
+    ml = inp.get("ml") or {}
+    st_ml, ev = ml.get("status") or {}, ml.get("last_evaluation") or {}
+    gate_ok = bool((ev.get("gate") or {}).get("show_probabilities"))
+    add("intraday_ml", "Intraday ML model", AVAILABLE if gate_ok else (PARTIAL if ml else UNAVAILABLE),
+        ("passed its validation gate; shown as context, not scored" if gate_ok else f"research only: {st_ml.get('labelled_sessions', 0)} labelled session(s), stage '{st_ml.get('stage_name', 'unknown')}'; no probability may be shown until the gate passes, and it is not part of the score") if ml else "the intraday research service is not running",
+        "ml", "/analysis")
     add("rollover", "Rollover data", UNAVAILABLE, ROLLOVER_NEED, "futures", None)
     add("stock_futures", "Individual stock futures", UNAVAILABLE, "stock futures are not subscribed or stored; heavyweight analysis uses cash-market prices and flow only", "market", None)
     add("option_aggressor", "Option trade-side (aggressor) data", UNAVAILABLE, "the feed carries no aggressor side for options; buyer- or seller-initiated trades are never inferred", "positioning", None)

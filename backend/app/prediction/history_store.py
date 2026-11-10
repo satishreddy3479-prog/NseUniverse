@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -122,8 +123,8 @@ class HistoryStore:
             return 0
         stamp = (now or datetime.now(UTC)).astimezone(UTC).isoformat()
 
-        def same(a: tuple[float, ...], b: tuple[float, ...]) -> bool:
-            return all(abs(x - y) <= _TOL * max(1.0, abs(x)) for x, y in zip(a, b, strict=True))
+        def same(a: Sequence[float | None], b: Sequence[float | None]) -> bool:
+            return all(x is not None and y is not None and abs(x - y) <= _TOL * max(1.0, abs(x)) for x, y in zip(a, b, strict=True))
 
         with self._lock:
             lo = str(min(good) - timedelta(days=7))

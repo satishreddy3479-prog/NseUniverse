@@ -22,5 +22,6 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     css: false,
+    testTimeout: 20000, // the first render of a code-split page compiles its chunk, which is slow when many test files run at once
   },
 });

@@ -48,7 +48,7 @@ def hit_of(leg: Leg, kind: str, price: float) -> bool:
     trailed = kind == "stop" and bool(leg.get("stopTrailed"))  # a stop that has trailed may sit on the profit side
     if not trailed and prem is not None and (lvl <= prem if up else lvl >= prem):
         return False
-    return price >= lvl if up else price <= lvl
+    return bool(price >= lvl if up else price <= lvl)
 
 
 def _stamp(at: datetime) -> str:
@@ -146,7 +146,7 @@ def lock_floor(rules: dict[str, Any], pnl: float) -> float | None:
         return None
     every, by = rules.get("trailEvery"), rules.get("trailBy")
     extra = math.floor((pnl - lock_at) / every + 1e-9) * by if every and by else 0
-    return lock_profit + extra
+    return float(lock_profit + extra)
 
 
 def has_rules(rules: dict[str, Any] | None) -> bool:

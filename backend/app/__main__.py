@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import uvicorn
 from pydantic import ValidationError
@@ -12,7 +13,7 @@ from pydantic import ValidationError
 from app.config import get_settings
 
 
-def server_options() -> dict[str, object]:
+def server_options() -> dict[str, Any]:
     """Options both ways of starting uvicorn share.
 
     ``proxy_headers=False``: behind Caddy every request arrives from 127.0.0.1 with the

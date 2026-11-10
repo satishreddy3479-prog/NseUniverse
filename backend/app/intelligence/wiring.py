@@ -38,7 +38,7 @@ def create(settings: Any, observations: Any, intraday: Any, market: Any, market_
         return dict(market.heavy_meta())
 
     providers = {
-        "flow": flow, "heavymeta": heavymeta,
+        "flow": flow, "heavymeta": heavymeta, "ml": lambda: intraday.ml_digest(),
         "market": market.summary, "intraday": intraday.summary, "futures": futures,
         "skew": lambda e: intraday.iv_skew(e), "momentum": lambda e: intraday.iv_momentum(e),
         "positioning": lambda e: intraday.strike_positioning(e, "15"),

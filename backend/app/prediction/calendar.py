@@ -34,6 +34,9 @@ class SessionLookup(Protocol):
     def prev_session(self, d: date, n: int = 1) -> date: ...
 
 
+_LOADED: dict[Path, TradingCalendar] = {}
+
+
 class TradingCalendar:
     def __init__(
         self,
@@ -47,6 +50,14 @@ class TradingCalendar:
 
     @classmethod
     def load(cls, path: Path = REFERENCE) -> TradingCalendar:
+        """The verified calendar, parsed once per file and shared (it is never modified)."""
+        hit = _LOADED.get(path)
+        if hit is None:
+            hit = _LOADED[path] = cls._parse(path)
+        return hit
+
+    @classmethod
+    def _parse(cls, path: Path) -> TradingCalendar:
         raw = json.loads(path.read_text(encoding="utf-8"))
         return cls(
             {date.fromisoformat(k): v for k, v in raw["weekday_holidays"].items()},

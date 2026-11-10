@@ -42,13 +42,13 @@ const pick = async (id: string) => {
   await userEvent.click(await screen.findByRole("tab", { name: TEMPLATE_BIAS[id]! }));
   await userEvent.click(await screen.findByRole("button", { name: t.label }));
 };
-const loaded = () => waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"), { timeout: 5000 });
+const loaded = () => waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"), { timeout: 15000 });
 
 describe("Strategy builder page", () => {
   it("shows the instrument, the stored chain's lot size and never hard-codes one", async () => {
     mount();
     expect(await screen.findByText("NIFTY 50")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByTitle(/instrument data in the stored chain/)).toHaveTextContent("75"), { timeout: 5000 }); // the fixture's lot size, not a built-in number
+    await waitFor(() => expect(screen.getByTitle(/instrument data in the stored chain/)).toHaveTextContent("75"), { timeout: 15000 }); // the fixture's lot size, not a built-in number
   });
 
   it("a long straddle template fills editable legs and shows hand-calculated risk (premium 100 + 100, lot 75)", async () => {

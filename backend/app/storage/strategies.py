@@ -6,6 +6,7 @@ write is also appended to a revision history. A strategy document is stored exac
 
 from __future__ import annotations
 
+import builtins
 import json
 import sqlite3
 import threading
@@ -119,7 +120,7 @@ class StrategyStore:
             ).fetchall()
         return [json.loads(r[0]) for r in rows]
 
-    def history(self, kind: str, key: str) -> list[dict[str, Any]]:
+    def history(self, kind: str, key: str) -> builtins.list[dict[str, Any]]:
         self._check(kind, key)
         with self._lock:
             rows = self._db.execute(
