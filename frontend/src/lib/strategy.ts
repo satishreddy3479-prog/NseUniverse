@@ -455,3 +455,53 @@ export function adoptExits(local: Leg[], server: Leg[]): Leg[] {
   });
   return changed ? out : local;
 }
+
+
+// ---- holding period: intraday closes every open leg at a time of day, overnight holds to expiry and closes at that time on expiry day.
+// Mirrors apply_hold in backend/app/strategy/automation.py (same moments, same label, nothing re-enters afterwards).
+export interface HoldRule { mode: "intraday" | "overnight" | "manual"; closeAt: string }
+export const DEFAULT_HOLD: HoldRule = { mode: "overnight", closeAt: "15:20" };
+
+export function holdProblem(h: HoldRule): string | null {
+  if (!["intraday", "overnight", "manual"].includes(h.mode)) return "Choose intraday, overnight or manual.";
+  if (!/^\d\d:\d\d$/.test(h.closeAt) || h.closeAt <= "09:15" || h.closeAt > "15:40" || Number(h.closeAt.slice(3)) > 59) return "The close time has to be a time inside the session (09:15-15:40), for example 15:20.";
+  return null;
+}
+
+const istDate = (ms: number) => new Date(ms + 330 * 60_000).toISOString().slice(0, 10);
+const istAt = (day: string, hhmm: string) => Date.parse(`${day}T${hhmm}:00+05:30`);
+
+/** When the holding rule closes a leg (epoch ms), or null: never (manual, a bad time) or already past when the rule was armed (overnight). */
+export function holdMoment(h: HoldRule, heldFromMs: number, expiry: string | null | undefined): number | null {
+  if (holdProblem(h) || h.mode === "manual") return null;
+  if (h.mode === "overnight") {
+    if (!expiry) return null;
+    const m = istAt(expiry, h.closeAt);
+    return m > heldFromMs ? m : null;
+  }
+  let day = istDate(heldFromMs);
+  let m = istAt(day, h.closeAt);
+  while (m <= heldFromMs || [0, 6].includes(new Date(`${day}T00:00:00Z`).getUTCDay())) {
+    day = new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+    m = istAt(day, h.closeAt);
+  }
+  return m;
+}
+
+export function applyHold(legs: Leg[], h: HoldRule, heldFrom: string | null, priceOf: (strike: number, type: OptionType) => number | null, lotSize: number, at: string, lotsFactor = 1): { legs: Leg[]; events: string[] } {
+  const from = heldFrom ? Date.parse(heldFrom) : NaN;
+  if (!Number.isFinite(from)) return { legs, events: [] };
+  const label = `Auto close (${h.mode === "intraday" ? "intraday" : "expiry day"} ${h.closeAt})`;
+  const events: string[] = [];
+  const out = legs.map((l) => {
+    const m = holdMoment(h, from, l.expiry);
+    if (l.enabled === false || m == null || Date.parse(at) < m) return l;
+    if (isExited(l)) return (l.reentry ?? 0) ? { ...l, reentry: 0 } : l; // a stopped leg waiting to re-enter is not entered after the close
+    const px = priceOf(l.strike, l.type);
+    if (px == null || !(px > 0) || l.premium == null) return l;
+    const n = { ...exitLeg(l, px, "strategy", lotSize, at, lotsFactor, label), reentry: 0 };
+    events.push(n.log![n.log!.length - 1]!.text);
+    return n;
+  });
+  return { legs: out, events };
+}

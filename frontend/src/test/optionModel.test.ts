@@ -189,3 +189,18 @@ describe("same reference as the backend model", () => {
     expect(impliedVol("CE", 142.5695634102632, 22700, 22800, t, 0.06)).toBeCloseTo(0.15, 6);
   });
 });
+
+describe("estimate with a closed leg", () => {
+  const val = { spotNow: 24_900, nowMs: Date.parse("2026-11-02T04:00:00Z"), rate: 0.06, carry: 0.06, ivShift: 0 };
+  const short = (type: "CE" | "PE", k: number, p: number) => ({ ...leg("SELL", type, k, p), iv: 0.15 });
+  it("a leg closed by its stop keeps its booked loss, so the estimate is not lifted above the expiry curve", () => {
+    const stopped: Leg = { ...short("CE", 24_900, 150), exitPrice: 195, exitReason: "stop", realised: -(195 - 150) * LOT };
+    const legs = [stopped, short("PE", 24_900, 150)];
+    const at = Date.parse("2026-11-03T04:00:00Z");
+    for (const s of [24_300, 24_600, 24_900, 25_200]) {
+      const est = theoreticalPnl(legs, s, at, LOT, val) as number;
+      if (s >= 24_900) expect(est).toBeLessThanOrEqual(pnl(legs, s) + 1e-9); // time value only lowers a sold option's profit (deep in the money a European put can sit slightly under intrinsic, so that side is not asserted)
+      expect(est - theoreticalPnl([legs[1]!], s, at, LOT, val)!).toBeCloseTo(-45 * LOT, 6); // exactly the loss the stop booked
+    }
+  });
+});

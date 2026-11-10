@@ -13,7 +13,7 @@ import logging
 import math
 import threading
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from typing import Any
 
 from app.storage.strategies import StrategyStore
@@ -209,6 +209,82 @@ def apply_strategy_rules(
     return out, {"floor": floor, "done": done, "at": at.isoformat(), "pnl": total}, events
 
 
+# ---- holding period: intraday (close every open leg at a set time of day) or overnight (hold to expiry, close at that time on expiry day)
+DEFAULT_HOLD: dict[str, Any] = {"mode": "overnight", "closeAt": "15:20"}
+
+
+def _hhmm(text: Any) -> time | None:
+    try:
+        h, m = str(text).split(":")
+        return time(int(h), int(m)) if len(h) == 2 and len(m) == 2 else None
+    except ValueError:
+        return None
+
+
+def hold_problem(hold: dict[str, Any] | None) -> str | None:
+    """Why a holding rule cannot be used, or None. The close time has to lie inside the 09:15-15:40 session."""
+    h = hold or DEFAULT_HOLD
+    if h.get("mode") not in ("intraday", "overnight", "manual"):
+        return "Choose intraday, overnight or manual."
+    t = _hhmm(h.get("closeAt", "15:20"))
+    if t is None or not time(9, 15) < t <= time(15, 40):
+        return "The close time has to be a time inside the session (09:15-15:40), for example 15:20."
+    return None
+
+
+def _at_ist(day: date, t: time) -> datetime:
+    return datetime.combine(day, t, tzinfo=IST)
+
+
+def hold_moment(hold: dict[str, Any] | None, held_from: datetime, expiry: str | None) -> datetime | None:
+    """When the holding rule closes a leg. Intraday: the first close time after the strategy was armed (weekends skipped, so a strategy
+    armed on a Friday evening closes on Monday). Overnight: the close time on the leg's expiry day, unless it was armed after that."""
+    h = hold or DEFAULT_HOLD
+    if hold_problem(h) or h.get("mode") == "manual":
+        return None
+    t = _hhmm(h.get("closeAt", "15:20")) or time(15, 20)
+    if h["mode"] == "overnight":
+        if not expiry:
+            return None
+        m = _at_ist(date.fromisoformat(expiry), t)
+        return m if m > held_from else None
+    day = held_from.astimezone(IST).date()
+    m = _at_ist(day, t)
+    while m <= held_from or m.weekday() >= 5:
+        day += timedelta(days=1)
+        m = _at_ist(day, t)
+    return m
+
+
+def apply_hold(
+    legs: list[Leg], hold: dict[str, Any] | None, held_from: datetime | None, price_of: Callable[[Leg], float | None],
+    lot_size: int, at: datetime, mult: float = 1,
+) -> tuple[list[Leg], list[str]]:
+    """Close the open legs whose holding time has come, at their live price (reason ``strategy``: nothing re-enters). Mirrors
+    ``applyHold`` in ``frontend/src/lib/strategy.ts``. A leg without a live price stays open and is tried again on the next check."""
+    if held_from is None:
+        return legs, []
+    h = hold or DEFAULT_HOLD
+    label = f"Auto close ({'intraday' if h.get('mode') == 'intraday' else 'expiry day'} {h.get('closeAt', '15:20')})"
+    out: list[Leg] = []
+    events: list[str] = []
+    for lg in legs:
+        m = hold_moment(h, held_from, lg.get("expiry"))
+        if lg.get("enabled") is False or m is None or at < m:
+            out.append(lg)
+        elif is_exited(lg):
+            out.append({**lg, "reentry": 0} if (lg.get("reentry") or 0) else lg)  # a stopped leg waiting to re-enter is not entered after the close
+        else:
+            px = price_of(lg)
+            if px is None or not px > 0 or lg.get("premium") is None:
+                out.append(lg)
+                continue
+            n = {**exit_leg(lg, px, "strategy", lot_size, at, mult, label), "reentry": 0}
+            events.append(n["log"][-1]["text"])
+            out.append(n)
+    return out, events
+
+
 def apply_automation(
     legs: list[Leg], price_of: Callable[[Leg], float | None], lot_size: int, at: datetime, mult: float = 1
 ) -> tuple[list[Leg], list[str]]:
@@ -299,6 +375,13 @@ class RunningConflict(Exception):
         self.current = current
 
 
+def _parse(text: Any) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(text).replace("Z", "+00:00")) if text else None
+    except ValueError:
+        return None
+
+
 class StrategyAutomation:
     """Holds the running document and checks it every second against the live prices."""
 
@@ -341,7 +424,10 @@ class StrategyAutomation:
                 if kept:
                     at = self._now()
                     events = [*events, *({"at": at.isoformat(), "text": f"{_stamp(at)} Ignored an old copy of {t}: the server had already moved on (a re-entry changes the entry price; a reset needs the Reset button)"} for t in kept)][-50:]
-            doc = {**doc, "rev": cur_rev + 1, "serverEvents": events, "rstate": keep}
+            # when the holding rule started counting: the browser's value, else the one kept while the rule is unchanged, else now
+            same_hold = cur is not None and doc.get("hold") == cur.get("hold") and doc.get("rearmAt") == cur.get("rearmAt")
+            hold_from = doc.get("holdFrom") or ((cur or {}).get("holdFrom") if same_hold else None) or self._now().isoformat()
+            doc = {**doc, "rev": cur_rev + 1, "serverEvents": events, "rstate": keep, "holdFrom": hold_from}
             self.store.put(RUNNING_KIND, RUNNING_KEY, doc)
             return doc
 
@@ -364,6 +450,8 @@ class StrategyAutomation:
             rstate = doc.get("rstate") or {}
             legs, new_state, rule_events = apply_strategy_rules(legs, doc.get("rules") or {}, rstate, price, int(lot), at, mult)
             events = [*events, *rule_events]
+            legs, hold_events = apply_hold(legs, doc.get("hold"), _parse(doc.get("holdFrom")), price, int(lot), at, mult)
+            events = [*events, *hold_events]
             if not events and new_state == rstate:
                 return []
             ev = [*(doc.get("serverEvents") or []), *({"at": at.isoformat(), "text": t} for t in events)][-50:]

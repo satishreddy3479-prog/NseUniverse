@@ -5,6 +5,9 @@ _Last updated: 2026-11-04_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Strategy Builder: payoff estimate, hide chain, holding rule (10 Nov 2026)
+The blue model curve now includes closed legs' booked P&L (it had sat above the green curve after a stop-out). The option chain can be hidden. New Intraday / Overnight / Manual holding rule with customisable auto-close time (default 15:20 IST), run on the server; see D96. Tests: optionModel, strategy-hold (browser) and test_strategy_hold (server) pass; full backend run has one failure in test_events_news that exists without these changes. Not verified live in market hours.
+
 ## Smart OI audit (5 Nov 2026)
 - **How it is calculated:** per candle, total call OI and put OI over the chosen strikes (all strikes of the selected expiry by default) from the last stored sample in the candle; Smart OI = (put OI now − put OI previous candle) − (call OI now − call OI previous candle). The 09:15 candle uses yesterday's closing OI. Hand-checked on the spec example (+150k, +450k, −800k) in `option-tools.test.ts`.
 - **Volume:** Kotak `vol` is cumulative contracts-in-units traded today (3 Nov fixture: calls 187.8M, puts 176.8M, same scale as OI). Per-candle volume is the change in the cumulative sum; the 09:15 candle is everything since the open; a total that goes backwards is shown as missing, never negative.

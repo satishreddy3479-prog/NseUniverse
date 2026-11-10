@@ -14,7 +14,7 @@ import { useExpiries, useThrottledValue } from "../lib/hooks";
 import { marketClockMs } from "../lib/session";
 import { carryFromForward, contractGreeks, expiryEnd, impliedForward, legGreeks, sdLevel, netGreeks, probabilityOfProfit, scenarioGrid, sdBands, spotAtPremium, theoreticalPnl, type ContractGreeks, type Valuation } from "../lib/optionModel";
 import { adoptExits,
-  analyzeExpiry, applyAutomation, applyStrategyRules, exitLeg, expiryPnl, hitOf, isExited, newLegId, reenterLeg, rollLeg, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds, NO_RULES, hasRules, lockFloor, rulesProblem, type StrategyRules, type RulesState,
+  analyzeExpiry, applyAutomation, applyHold, DEFAULT_HOLD, holdProblem, type HoldRule, applyStrategyRules, exitLeg, expiryPnl, hitOf, isExited, newLegId, reenterLeg, rollLeg, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds, NO_RULES, hasRules, lockFloor, rulesProblem, type StrategyRules, type RulesState,
   type Action, type Bias, type Leg, type OptionType, type Template,
 } from "../lib/strategy";
 
@@ -109,7 +109,7 @@ export default function StrategyBuilder() {
   // repeat exits that already happened. Copies older than three days are ignored.
   const [work] = useState(() => {
     try {
-      const w = JSON.parse(localStorage.getItem(WORKING_KEY) ?? "null") as { legs?: Leg[]; expiry?: string | null; name?: string; loaded?: string | null; baseline?: Leg[]; at?: number; rules?: StrategyRules; rstate?: RulesState | null; rearmAt?: string | null } | null;
+      const w = JSON.parse(localStorage.getItem(WORKING_KEY) ?? "null") as { legs?: Leg[]; expiry?: string | null; name?: string; loaded?: string | null; baseline?: Leg[]; at?: number; rules?: StrategyRules; rstate?: RulesState | null; rearmAt?: string | null; hold?: HoldRule; holdFrom?: string | null } | null;
       return w && Array.isArray(w.legs) && w.at && Date.now() - w.at < 3 * 86_400_000 ? w : null;
     } catch { return null; }
   });
@@ -124,6 +124,9 @@ export default function StrategyBuilder() {
   const [rules, setRules] = useState<StrategyRules>(work?.rules ?? NO_RULES);
   const [rstate, setRstate] = useState<RulesState | null>(work?.rstate ?? null);
   const [rearmAt, setRearmAt] = useState<string | null>(work?.rearmAt ?? null);
+  const [hold, setHold] = useState<HoldRule>(work?.hold ?? DEFAULT_HOLD);
+  // when the holding rule started counting (set by the server when a strategy is first sent; changed when the rule is changed)
+  const [holdFrom, setHoldFrom] = useState<string | null>(work?.holdFrom ?? null);
   const [tab, setTab] = useState<"positions" | "greeks" | "scenarios">("positions");
   const [bias, setBias] = useState<Bias>("Neutral");
   const [rate, setRate] = useState(6);
@@ -149,6 +152,9 @@ export default function StrategyBuilder() {
   const [baseline, setBaseline] = useState<Leg[]>(work?.baseline ?? []);
   const [gcols, setGcols] = useState<GKey[]>(["delta", "iv"]);
   const [wide, setWide] = useState(false);
+  // hiding the chain leaves its header bar and gives the payoff chart the whole width; remembered in this browser
+  const [chainHidden, setChainHidden] = useState(() => { try { return localStorage.getItem("nse.builder.chainHidden") === "1"; } catch { return false; } });
+  const toggleChain = () => setChainHidden((h) => { try { localStorage.setItem("nse.builder.chainHidden", h ? "0" : "1"); } catch { /* this visit only */ } return !h; });
   const [whatPct, setWhatPct] = useState(0);
   const [saved, setSaved] = useState<Saved[]>(loadSaved);
   const [name, setName] = useState(work?.name ?? "");
@@ -274,6 +280,11 @@ export default function StrategyBuilder() {
   const mlegs = useMemo(() => open.map((l) => ({ ...l, iv: l.iv ?? marketIv(l) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [open, deltas]);
+  // the legs the estimate sums: the open ones valued by the model plus the closed ones at their booked P&L, exactly as the expiry curve counts them
+  // (leaving the closed ones out put the blue curve above the green one by whatever a stopped leg had lost)
+  const mAll = useMemo(() => live.map((l) => (isExited(l) ? l : { ...l, iv: l.iv ?? marketIv(l) })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [live, deltas]);
   const bands = expiry && spot && atmIv ? sdBands(spot, atmIv, expiry, snapMs) : null;
   const curve = useMemo(() => {
     if (!ready || !a?.defined || !lotSize || !spot) return null;
@@ -285,9 +296,9 @@ export default function StrategyBuilder() {
     const step = Math.max(1, Math.round((hi - lo) / 240));
     return payoffCurve(live, lotSize, Math.floor(lo / step) * step, hi, step);
   }, [ready, a, lotSize, spot, live, bands]);
-  const target = useMemo(() => (curve && lotSize ? curve.map((p) => ({ s: p.s, pnl: theoreticalPnl(mlegs, p.s, targetMs, lotSize, val) })) : null),
+  const target = useMemo(() => (curve && lotSize ? curve.map((p) => ({ s: p.s, pnl: theoreticalPnl(mAll, p.s, targetMs, lotSize, val) })) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [curve, mlegs, lotSize, targetMs, r, carry, ivPts]);
+    [curve, mAll, lotSize, targetMs, r, carry, ivPts]);
   const levels = useMemo(() => {
     if (!curve?.length || !spot) return [];
     const lo = curve[0]!.s, hi = curve[curve.length - 1]!.s;
@@ -358,16 +369,18 @@ export default function StrategyBuilder() {
     const cur: RulesState = rstate ?? { floor: null, done: null };
     const q = applyStrategyRules(r.legs, rules, cur, ltp, lotSize, at, mult);
     if (q.state !== cur) setRstate(q.state);
-    const events = [...r.events, ...q.events];
+    const hd = applyHold(q.legs, hold, holdFrom ?? at, ltp, lotSize, at, mult);
+    if (holdFrom == null) setHoldFrom(at);
+    const events = [...r.events, ...q.events, ...hd.events];
     if (events.length) {
-      commitTrades(q.legs);
+      commitTrades(hd.legs);
       setAutoNote(events.join(" · "));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, legs, autoActive, mult, lotSize, settle, rules]);
+  }, [rows, legs, autoActive, mult, lotSize, settle, rules, hold, holdFrom]);
   useEffect(() => {
-    try { localStorage.setItem(WORKING_KEY, JSON.stringify({ legs, expiry, name, loaded, baseline, rules, rstate, rearmAt, at: Date.now() })); } catch { /* this visit only */ }
-  }, [legs, expiry, name, loaded, baseline, rules, rstate, rearmAt]);
+    try { localStorage.setItem(WORKING_KEY, JSON.stringify({ legs, expiry, name, loaded, baseline, rules, rstate, rearmAt, hold, holdFrom, at: Date.now() })); } catch { /* this visit only */ }
+  }, [legs, expiry, name, loaded, baseline, rules, rstate, rearmAt, hold, holdFrom]);
 
   // ---- the server keeps this strategy and checks its stops and targets every second, with or without a page open.
   // The browser sends every change (after a short pause) and takes back what the server did; if the server cannot be
@@ -380,15 +393,15 @@ export default function StrategyBuilder() {
     const row = rows.find((r) => r.strike === l.strike);
     return liveKey(l.type === "CE" ? row?.call ?? null : row?.put ?? null) ?? l.key ?? null;
   };
-  const payloadJson = JSON.stringify({ name, loaded, expiry, lotSize, mult, auto: autoOn, rules, rearmAt, baseline, legs: legs.map((l) => ({ ...l, key: keyOf(l) })) });
+  const payloadJson = JSON.stringify({ name, loaded, expiry, lotSize, mult, auto: autoOn, rules, rearmAt, hold, holdFrom, baseline, legs: legs.map((l) => ({ ...l, key: keyOf(l) })) });
   // what the page compares to know whether anything it has not sent is waiting: the same document without the live-feed keys, which come and
   // go with the stream and must not make an idle page look as if it had unsent edits (it would then never take the server's exits)
-  const coreJson = JSON.stringify({ name, loaded, expiry, lotSize, mult, auto: autoOn, rules, rearmAt, baseline, legs });
+  const coreJson = JSON.stringify({ name, loaded, expiry, lotSize, mult, auto: autoOn, rules, rearmAt, hold, baseline, legs });
   const adoptServer = (d: RunningDoc, announce: boolean) => {
     revRef.current = d.rev ?? null;
     skipPush.current = true;
     setLegs(d.legs ?? []); setBaseline(d.baseline ?? d.legs ?? []); setName(d.name ?? ""); setLoaded(d.loaded ?? null); setMult(d.mult ?? 1);
-    setRules(d.rules ?? NO_RULES); setRstate(d.rstate ?? null); setRearmAt(d.rearmAt ?? null);
+    setRules(d.rules ?? NO_RULES); setRstate(d.rstate ?? null); setRearmAt(d.rearmAt ?? null); setHold(d.hold ?? DEFAULT_HOLD); setHoldFrom(d.holdFrom ?? null);
     if (d.expiry) setPicked(d.expiry);
     const last = d.serverEvents?.[d.serverEvents.length - 1];
     if (last && last.at !== seenEvents.current) {
@@ -506,7 +519,7 @@ export default function StrategyBuilder() {
   };
   const ifTarget = exitPnl("target"), ifStop = exitPnl("stop");
   const whatSpot = spot == null ? null : spot * (1 + whatPct / 100);
-  const whatEst = whatSpot != null && lotSize && ready ? theoreticalPnl(mlegs, whatSpot, targetMs, lotSize, val) : null;
+  const whatEst = whatSpot != null && lotSize && ready ? theoreticalPnl(mAll, whatSpot, targetMs, lotSize, val) : null;
   const whatExp = whatSpot != null && lotSize && ready ? expiryPnl(live, whatSpot, lotSize) : null;
   // scenario grid: spot rows at standard deviations of the model distribution, date columns from the snapshot to expiry
   const grid = useMemo(() => {
@@ -516,9 +529,9 @@ export default function StrategyBuilder() {
     if (spots.length !== ks.length) return null;
     const dayOffsets = [...new Set(Array.from({ length: Math.min(dte, 5) + 1 }, (_, i) => Math.round((i * dte) / Math.max(1, Math.min(dte, 5)))))];
     const dates = dayOffsets.map((d) => (d >= dte ? expiryEnd(expiry) : snapMs + d * 86_400_000));
-    return { ks, spots, dayOffsets, cells: scenarioGrid(mlegs, lotSize, spots, dates, val) };
+    return { ks, spots, dayOffsets, cells: scenarioGrid(mAll, lotSize, spots, dates, val) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, lotSize, expiry, spot, atmIv, tab, dte, snapMs, carry, mlegs, ivPts, r]);
+  }, [ready, lotSize, expiry, spot, atmIv, tab, dte, snapMs, carry, mAll, ivPts, r]);
   const rr = a?.defined && a.maxProfit != null && a.maxLoss != null && a.maxLoss < 0 ? a.maxProfit / -a.maxLoss : null;
 
   const update = (id: string, patch: Partial<Leg>) => setLegs((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -551,7 +564,7 @@ export default function StrategyBuilder() {
     const out = t.build({ strikes, atm, expiry, premium: (_e, k, ty) => ltp(k, ty) });
     return "error" in out ? null : withIds(out);
   };
-  const loadLegs = (ls: Leg[]) => { setLegs(ls); setBaseline(ls); setRearmAt(new Date().toISOString()); }; // a strategy opened on purpose is a fresh start for the server
+  const loadLegs = (ls: Leg[]) => { setLegs(ls); setBaseline(ls); setRearmAt(new Date().toISOString()); setHoldFrom(null); }; // a strategy opened on purpose is a fresh start for the server
   const apply = (t: Template) => {
     if (!expiry || atm == null) { setNote("Load an option chain first."); return; }
     const out = t.build({ strikes, atm, expiry, premium: (_e, k, ty) => ltp(k, ty) });
@@ -626,7 +639,7 @@ export default function StrategyBuilder() {
     const closedName = name.trim() || loaded || opened?.name;
     persistClosed([{ id: opened?.id ?? newLegId(), name: closedName || `Strategy ${at.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`, closedAt: at.toISOString(), snapshotAt: snap.retrieved_at, expiry, lotSize, pnl, legs: out, stale: !!chain.data?.stale }, ...closed.filter((x) => x.id !== opened?.id)]);
     if (loaded) persist(saved.filter((x) => x.name !== loaded)); // the strategy moves from Saved to Closed, it is not copied
-    setLegs([]); setRearmAt(new Date().toISOString()); setNote(null); setSel(null); setMult(1); setDays(0); setName(""); setOpened(null); setLoaded(null);
+    setLegs([]); setRearmAt(new Date().toISOString()); setHoldFrom(null); setNote(null); setSel(null); setMult(1); setDays(0); setName(""); setOpened(null); setLoaded(null);
   };
   const openClosed = (c: Closed) => { setPicked(c.expiry); loadLegs(c.legs.map(({ exit: _e, ...l }) => ({ ...l, id: newLegId() }))); setMult(1); setNote(null); setOpened(c); setLoaded(null); };
   const persist = (s: Saved[]) => { pushDiff("saved", saved, s, (x) => x.name); setSaved(s); try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch { /* storage unavailable: kept for this visit only */ } };
@@ -636,9 +649,9 @@ export default function StrategyBuilder() {
   const canReset = legsChanged || controlsChanged;
   const canNew = legs.length > 0 || name !== "" || loaded != null || opened != null;
   /** Reset: undo edits, keeping the strategy. */
-  const resetStrategy = () => { setLegs(baseline.map((l) => ({ ...l }))); setRearmAt(new Date().toISOString()); setMult(1); setDays(0); setIvPts(0); setWhatPct(0); setZoom(0); setNote(null); setSel(null); };
+  const resetStrategy = () => { setLegs(baseline.map((l) => ({ ...l }))); setRearmAt(new Date().toISOString()); setHoldFrom(null); setMult(1); setDays(0); setIvPts(0); setWhatPct(0); setZoom(0); setNote(null); setSel(null); };
   /** New: forget the strategy entirely and start from the gallery. */
-  const newStrategy = () => { setLegs([]); setRearmAt(new Date().toISOString()); setBaseline([]); setName(""); setLoaded(null); setOpened(null); setNote(null); setSel(null); setMult(1); setDays(0); setIvPts(0); setWhatPct(0); setZoom(0); };
+  const newStrategy = () => { setLegs([]); setRearmAt(new Date().toISOString()); setHoldFrom(null); setBaseline([]); setName(""); setLoaded(null); setOpened(null); setNote(null); setSel(null); setMult(1); setDays(0); setIvPts(0); setWhatPct(0); setZoom(0); };
   const savedEntry = loaded ? saved.find((x) => x.name === loaded) : undefined;
   const sig = (ls: Leg[]) => JSON.stringify(ls.map(({ id: _i, ...r }) => r));
   const dirty = !!savedEntry && (sig(legs) !== sig(savedEntry.legs) || savedEntry.expiry !== expiry);
@@ -703,14 +716,15 @@ export default function StrategyBuilder() {
         <span className="text-xs text-muted sm:ml-auto" title={liveMode === "fresh" ? "Streamed last traded prices overlay the stored snapshot, as on the Option chain page" : "Premiums are the last traded prices in this stored snapshot, not live quotes"}>{liveMode === "fresh" ? <span className="mr-2 rounded-sm border border-up/60 px-1 text-up">LIVE</span> : null}Snapshot <span className={`num ${chain.data?.stale ? "text-warn" : "text-paper"}`}>{snap ? fmtDateTimeIST(snap.retrieved_at) : "—"}</span>{chain.data?.stale ? " · stale" : ""}</span>
       </div>
 
-      <div className={`grid gap-3 [&>*]:min-w-0 ${wide ? "" : "xl:grid-cols-[minmax(480px,36%)_1fr]"}`}>
+      <div className={`grid gap-3 [&>*]:min-w-0 ${wide || chainHidden ? "" : "xl:grid-cols-[minmax(480px,36%)_1fr]"}`}>
         {/* ------------------------------------------------------------ chain */}
-        <section aria-label="Option chain" className={`flex h-fit flex-col rounded-[var(--radius-panel)] border border-rule bg-slate ${wide ? "" : "xl:sticky xl:top-2 xl:self-start"}`}>
+        <section aria-label="Option chain" className={`flex h-fit flex-col rounded-[var(--radius-panel)] border border-rule bg-slate ${wide || chainHidden ? "" : "xl:sticky xl:top-2 xl:self-start"}`}>
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-rule px-3 py-2 text-sm">
             <span className="text-xs text-muted">SPOT <span className="num text-[15px] font-semibold text-paper">{spot == null ? "—" : fmtPrice(spot)}</span></span>
             <span className="text-xs text-muted" title="Average implied volatility of the call and put at the strike nearest the forward, from their stored prices (model)">ATM IV <span className="num text-paper">{atmIv == null ? "—" : `${(atmIv * 100).toFixed(1)}%`}</span></span>
             <span className="text-xs text-muted" title="From the broker's instrument data in the stored chain">LOT <span className="num text-paper">{lotSize ?? "—"}</span></span>
-            <button type="button" aria-pressed={wide} onClick={() => setWide((w) => !w)} className="ml-auto rounded-sm border border-rule px-2 py-0.5 text-xs text-muted hover:text-paper" title="Give the option chain the full width, useful with several Greeks columns">{wide ? "⤡ Narrow" : "⤢ Wide"}</button>
+            <button type="button" aria-pressed={chainHidden} aria-expanded={!chainHidden} onClick={toggleChain} className="ml-auto rounded-sm border border-rule px-2 py-0.5 text-xs text-muted hover:text-paper" title={chainHidden ? "Show the option chain again" : "Hide the option chain for a larger payoff chart"}>{chainHidden ? "Show chain" : "Hide chain"}</button>
+            {!chainHidden && <button type="button" aria-pressed={wide} onClick={() => setWide((w) => !w)} className="rounded-sm border border-rule px-2 py-0.5 text-xs text-muted hover:text-paper" title="Give the option chain the full width, useful with several Greeks columns">{wide ? "⤡ Narrow" : "⤢ Wide"}</button>}
             <details className="text-xs">
               <summary className="cursor-pointer text-info">Settings</summary>
               <div className="absolute z-10 mt-1 flex w-64 flex-col gap-2 rounded-sm border border-rule bg-slate p-3 shadow-lg">
@@ -722,9 +736,10 @@ export default function StrategyBuilder() {
               </div>
             </details>
           </div>
+          {!chainHidden && (<>
           <div className="flex flex-wrap gap-2 border-b border-rule px-3 py-2">
             {available.map((e) => (
-              <button key={e} type="button" aria-pressed={e === expiry} onClick={() => { if (legs.length) setNote("The legs were cleared because the expiry changed."); setLegs([]); setRearmAt(new Date().toISOString()); setLoaded(null); setPicked(e); }}
+              <button key={e} type="button" aria-pressed={e === expiry} onClick={() => { if (legs.length) setNote("The legs were cleared because the expiry changed."); setLegs([]); setRearmAt(new Date().toISOString()); setHoldFrom(null); setLoaded(null); setPicked(e); }}
                 className={`min-h-8 rounded-sm border px-3 text-sm ${e === expiry ? "border-info bg-info/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{dmy(e)} ({dayDiff(e, snapMs)}d) · {e === ex.data?.weekly ? "weekly" : "monthly"}</button>
             ))}
           </div>
@@ -793,6 +808,7 @@ export default function StrategyBuilder() {
             </div>
           )}
           <p className="border-t border-rule px-3 py-2 text-[11px] text-muted">Hover or click a strike, then B to buy or S to sell one lot at the last traded price in the snapshot; click again for another lot. A dash means no stored price: add the leg and enter the premium. Δ is a Black-76 model value from those prices.</p>
+          </>)}
         </section>
 
         {/* ------------------------------------------------------------ payoff and positions */}
@@ -945,6 +961,28 @@ export default function StrategyBuilder() {
                     </span>
                     {autoNote && <button type="button" onClick={() => setAutoNote(null)} className="ml-auto max-w-full truncate text-left text-warn" title="Click to dismiss" data-testid="auto-note">{autoNote} ✕</button>}
                   </div>
+                  {(() => {
+                    const bad = holdProblem(hold);
+                    const modes: { key: HoldRule["mode"]; label: string; hint: string }[] = [
+                      { key: "intraday", label: "Intraday", hint: "Every open leg is closed at the close time below, today (or the next trading day if it is already past)." },
+                      { key: "overnight", label: "Overnight", hint: "Legs are held until their expiry; on the expiry day they are closed at the close time below." },
+                      { key: "manual", label: "Manual only", hint: "Nothing is closed by the clock: only stops, targets and your own exits close a leg." },
+                    ];
+                    const change = (patch: Partial<HoldRule>) => { setHold((h) => ({ ...h, ...patch })); setHoldFrom(null); };
+                    const note = hold.mode === "manual" ? "Nothing closes by the clock." : hold.mode === "intraday" ? `Closes every open leg at ${hold.closeAt} IST.` : `Held to expiry; closed at ${hold.closeAt} IST on the expiry day${expiry ? ` (${dmy(expiry)})` : ""}.`;
+                    return (
+                      <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-sm bg-slate-2 px-3 py-2 text-xs text-muted" data-testid="hold-rule">
+                        <span className="text-paper">Holding</span>
+                        <div role="group" aria-label="Holding period" className="flex gap-1">
+                          {modes.map((m) => <button key={m.key} type="button" aria-pressed={hold.mode === m.key} title={m.hint} onClick={() => change({ mode: m.key })}
+                            className={`min-h-7 rounded-sm border px-2 ${hold.mode === m.key ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate text-muted hover:text-paper"}`}>{m.label}</button>)}
+                        </div>
+                        {hold.mode !== "manual" && <label className="flex items-center gap-1">Auto-close at
+                          <input type="time" aria-label="Auto-close time" className={`${field} w-24`} min="09:16" max="15:40" value={hold.closeAt} onChange={(e) => e.target.value && change({ closeAt: e.target.value })} /> IST</label>}
+                        <span data-testid="hold-note">{bad ?? note}{!autoOn && hold.mode !== "manual" ? " Auto stop & target is off, so nothing will close." : ""} You can always close a leg or the whole strategy yourself.</span>
+                      </div>
+                    );
+                  })()}
                   {(() => {
                     const bad = rulesProblem(rules);
                     const setR = (patch: Partial<StrategyRules>) => setRules((r) => ({ ...r, ...patch }));
