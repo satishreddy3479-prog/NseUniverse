@@ -52,9 +52,11 @@ describe("top menu bar", () => {
     mockApi();
     renderAt("/overview");
     await screen.findByRole("heading", { name: "Overview" });
-    for (const name of ["Option Chain", "Prediction"])
+    for (const name of ["Market Intelligence", "Swing trading", "Prediction"])
       expect(within(bar()).getByRole("link", { name })).toBeInTheDocument();
-    for (const name of ["Strategy Builder", "Options Lab", "Future Lab", "Analyse", "System"])
+    expect(within(bar()).queryByRole("link", { name: "Option Chain" })).toBeNull(); // the chain lives under FNO Tools now
+    expect(within(bar()).queryByRole("button", { name: /Options Lab|Future Lab/ })).toBeNull(); // the two labs became one menu
+    for (const name of ["Strategy Builder", "FNO Tools", "Analyse", "System"])
       expect(within(bar()).getByRole("button", { name: new RegExp(name) })).toBeInTheDocument();
   });
 
@@ -62,7 +64,7 @@ describe("top menu bar", () => {
     mockApi();
     renderAt("/overview");
     await screen.findByRole("heading", { name: "Overview" });
-    const lab = within(bar()).getByRole("button", { name: /Options Lab/ });
+    const lab = within(bar()).getByRole("button", { name: /FNO Tools/ });
     expect(lab).toHaveAttribute("aria-expanded", "false");
     await userEvent.click(lab);
     expect(lab).toHaveAttribute("aria-expanded", "true");
@@ -78,11 +80,30 @@ describe("top menu bar", () => {
     mockApi();
     renderAt("/overview");
     await screen.findByRole("heading", { name: "Overview" });
-    await userEvent.click(within(bar()).getByRole("button", { name: /Options Lab/ }));
+    await userEvent.click(within(bar()).getByRole("button", { name: /FNO Tools/ }));
     expect(within(bar()).queryByRole("link", { name: /OI Crossover/ })).toBeNull();
     const planned = within(bar()).getByText("OI Crossover").closest("[aria-disabled]") as HTMLElement;
     expect(planned).toHaveAttribute("aria-disabled", "true");
     expect(planned.getAttribute("title")).toBeTruthy();
+  });
+
+  it("FNO Tools holds the option chain, the options tools and the futures tools together", async () => {
+    mockApi();
+    renderAt("/overview");
+    await screen.findByRole("heading", { name: "Overview" });
+    await userEvent.click(within(bar()).getByRole("button", { name: /FNO Tools/ }));
+    expect(within(bar()).getByRole("link", { name: "Option Chain" })).toHaveAttribute("href", "/option-chain");
+    expect(within(bar()).getByRole("link", { name: /Smart OI/ })).toBeInTheDocument(); // an options tool
+    expect(within(bar()).getByRole("link", { name: /Future Dashboard/ })).toBeInTheDocument(); // a futures tool
+  });
+
+  it("Swing trading is a main section of its own, not inside Strategy Builder", async () => {
+    mockApi();
+    renderAt("/overview");
+    await screen.findByRole("heading", { name: "Overview" });
+    expect(within(bar()).getByRole("link", { name: "Swing trading" })).toHaveAttribute("href", "/swing");
+    await userEvent.click(within(bar()).getByRole("button", { name: /Strategy Builder/ }));
+    expect(within(bar()).getAllByRole("link", { name: "Swing trading" })).toHaveLength(1); // only the main one
   });
 
   it("System menu reaches the platform pages", async () => {
@@ -156,3 +177,43 @@ describe("status summary", () => {
   });
 });
 
+
+describe("phone menu", () => {
+  const open = async () => {
+    mockApi();
+    renderAt("/overview");
+    await screen.findByRole("heading", { name: "Overview" });
+    await userEvent.click(screen.getByRole("button", { name: "Menu" }));
+    return within(document.getElementById("mobile-nav") as HTMLElement);
+  };
+
+  it("lists the main destinations first and the sections collapsed", async () => {
+    const m = await open();
+    for (const name of ["Home · all tools", "Market Intelligence", "Swing trading", "Prediction"]) expect(m.getByRole("link", { name })).toBeInTheDocument();
+    for (const name of ["Strategy Builder", "FNO Tools", "Analyse", "System"]) expect(m.getByRole("button", { name })).toHaveAttribute("aria-expanded", "false");
+    expect(m.queryByRole("link", { name: "Smart OI" })).toBeNull();
+  });
+
+  it("tapping a section shows its tools, and opening another closes the first", async () => {
+    const m = await open();
+    await userEvent.click(m.getByRole("button", { name: "Strategy Builder" }));
+    expect(m.getByRole("link", { name: "Strategy builder" })).toBeInTheDocument();
+    expect(m.getByRole("link", { name: "Strategy portfolio" })).toBeInTheDocument();
+    await userEvent.click(m.getByRole("button", { name: "FNO Tools" }));
+    expect(m.getByRole("button", { name: "FNO Tools" })).toHaveAttribute("aria-expanded", "true");
+    expect(m.queryByRole("link", { name: "Strategy portfolio" })).toBeNull();
+    expect(m.getByRole("button", { name: /Live chain/ })).toBeInTheDocument(); // its tool groups, collapsed
+    await userEvent.click(m.getByRole("button", { name: /Live chain/ }));
+    expect(m.getByRole("link", { name: "Option Chain" })).toHaveAttribute("href", "/option-chain");
+    await userEvent.click(m.getByRole("button", { name: /Futures price/ }));
+    expect(m.getByRole("link", { name: /Future Dashboard/ })).toBeInTheDocument();
+    expect(m.queryByRole("link", { name: "Option Chain" })).toBeNull(); // one group at a time
+  });
+
+  it("choosing a tool closes the menu", async () => {
+    const m = await open();
+    await userEvent.click(m.getByRole("button", { name: "System" }));
+    await userEvent.click(m.getByRole("link", { name: "Settings" }));
+    expect(document.getElementById("mobile-nav")).toBeNull();
+  });
+});

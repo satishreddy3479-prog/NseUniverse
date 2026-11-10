@@ -33,7 +33,7 @@ describe("Future Lab: flow and sectors", () => {
   it("are registered as ready Future Lab tools", () => {
     for (const id of ["future-flow", "future-sectors"]) {
       const t = toolById(id);
-      expect(t?.menu).toBe("futures");
+      expect(t?.menu).toBe("fno");
       expect(t?.status).toBe("ready");
       expect(toolPath(t!)).toBeTruthy();
     }
@@ -94,7 +94,7 @@ describe("Future Lab: flow and sectors", () => {
 
 describe('Future Lab: price vs open interest', () => {
   it('is a ready Future Lab tool', () => {
-    expect(toolById('future-price-oi')).toMatchObject({ menu: 'futures', status: 'ready' });
+    expect(toolById('future-price-oi')).toMatchObject({ menu: 'fno', status: 'ready' });
   });
 
   it('shows the session reading and the 15-minute windows from the stored futures series, and says when there is none', async () => {

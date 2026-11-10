@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { MENU_ORDER, MENU_TITLES, menuGroups, toolPath, type MenuId, type Tool } from "../lib/tools";
 
-/** Top-level links; the three tool menus open as drop-downs between them. */
+/** Top-level links; the tool menus open as drop-downs between them. */
 const LEFT: { to: string; label: string }[] = [
   { to: "/market-intelligence", label: "Market Intelligence" },
-  { to: "/option-chain", label: "Option Chain" },
+  { to: "/swing", label: "Swing trading" },
 ];
 const RIGHT: { to: string; label: string }[] = [
   { to: "/prediction", label: "Prediction" },
@@ -13,7 +13,6 @@ const RIGHT: { to: string; label: string }[] = [
 export const STRATEGY: { to: string; label: string }[] = [
   { to: "/strategy", label: "Strategy builder" },
   { to: "/portfolio", label: "Strategy portfolio" },
-  { to: "/swing", label: "Swing trading" },
 ];
 export const SYSTEM: { to: string; label: string }[] = [
   { to: "/overview", label: "Platform status" },
@@ -53,7 +52,7 @@ function Dropdown({ id, open, setOpen, children, label, wide }: { id: string; op
         {label}<span aria-hidden className="text-[10px]">{open ? "▴" : "▾"}</span>
       </button>
       {open && (
-        <div id={`menu-${id}`} className={`absolute left-0 top-full z-40 rounded-[var(--radius-panel)] border border-rule bg-slate p-3 shadow-xl ${wide ? "w-[min(62rem,92vw)]" : "w-72"}`}>
+        <div id={`menu-${id}`} className={`absolute left-0 top-full z-40 max-h-[78vh] overflow-y-auto rounded-[var(--radius-panel)] border border-rule bg-slate p-3 shadow-xl ${wide ? "w-[min(62rem,92vw)]" : "w-72"}`}>
           {children}
         </div>
       )}
@@ -105,31 +104,57 @@ export function TopNav() {
   );
 }
 
-/** Phone menu: every destination in one scrolling list, tool groups as headings. */
-export function MobileNav({ onNavigate }: { onNavigate: () => void }) {
+const row = (active: boolean) => `flex min-h-11 items-center rounded-sm px-3 text-[15px] ${active ? "bg-slate-2 font-medium text-paper" : "text-paper/90"}`;
+
+function Section({ id, title, open, setOpen, children }: { id: string; title: string; open: boolean; setOpen: (o: boolean) => void; children: React.ReactNode }) {
   return (
-    <nav aria-label="Main" className="max-h-[75vh] overflow-y-auto p-2">
-      {[...STRATEGY, ...LEFT, ...RIGHT].map((n) => (
-        <NavLink key={n.to} to={n.to} onClick={onNavigate} className={({ isActive }) => `flex min-h-10 items-center rounded-sm px-2.5 text-sm ${isActive ? "bg-slate-2 font-medium text-paper" : "text-muted"}`}>{n.label}</NavLink>
-      ))}
-      <NavLink to="/" end onClick={onNavigate} className={({ isActive }) => `flex min-h-10 items-center rounded-sm px-2.5 text-sm ${isActive ? "bg-slate-2 font-medium text-paper" : "text-muted"}`}>All tools</NavLink>
+    <div className="border-t border-rule/60">
+      <button type="button" aria-expanded={open} aria-controls={`m-${id}`} onClick={() => setOpen(!open)}
+        className="flex min-h-12 w-full items-center justify-between px-3 text-left text-[15px] font-medium text-paper">
+        {title}<span aria-hidden className={`text-xs text-muted transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
+      </button>
+      {open && <div id={`m-${id}`} className="pb-2">{children}</div>}
+    </div>
+  );
+}
+
+/** Phone menu. Plain destinations are one tap; the sections (Strategy Builder, FNO Tools, Analyse, System) open to show their tools,
+ *  one section at a time, and the tool groups inside FNO Tools and Analyse open the same way. */
+export function MobileNav({ onNavigate }: { onNavigate: () => void }) {
+  const [sec, setSec] = useState<string | null>(null);
+  const [grp, setGrp] = useState<string | null>(null);
+  const loc = useLocation();
+  const toggle = (id: string) => (o: boolean) => { setSec(o ? id : null); setGrp(null); };
+  const direct = (n: { to: string; label: string }, end = false) => (
+    <NavLink key={n.to} to={n.to} end={end} onClick={onNavigate} className={({ isActive }) => `${row(isActive)} border-t border-rule/60 font-medium`}>{n.label}</NavLink>
+  );
+  return (
+    <nav aria-label="Main" className="max-h-[80vh] overflow-y-auto pb-2" data-path={loc.pathname}>
+      {direct({ to: "/", label: "Home · all tools" }, true)}
+      {LEFT.map((n) => direct(n))}
+      <Section id="strategy" title="Strategy Builder" open={sec === "strategy"} setOpen={toggle("strategy")}>
+        {STRATEGY.map((n) => <NavLink key={n.to} to={n.to} onClick={onNavigate} className={({ isActive }) => `${row(isActive)} pl-6`}>{n.label}</NavLink>)}
+      </Section>
       {MENU_ORDER.map((m) => (
-        <details key={m} className="rounded-sm">
-          <summary className="flex min-h-10 cursor-pointer items-center px-2.5 text-sm text-paper">{MENU_TITLES[m]}</summary>
-          <div className="pb-2 pl-3">
-            {menuGroups(m).map((g) => (
-              <div key={g.group}>
-                <div className="px-2 pt-2 text-[11px] uppercase tracking-wide text-muted">{g.group}</div>
-                {g.tools.map((t) => <ToolItem key={t.id} t={t} onPick={onNavigate} />)}
+        <Section key={m} id={m} title={MENU_TITLES[m]} open={sec === m} setOpen={toggle(m)}>
+          {menuGroups(m).map((g) => {
+            const key = `${m}:${g.group}`;
+            const on = grp === key;
+            return (
+              <div key={key}>
+                <button type="button" aria-expanded={on} onClick={() => setGrp(on ? null : key)} className="flex min-h-10 w-full items-center justify-between px-3 pl-6 text-left text-xs font-medium uppercase tracking-wide text-muted">
+                  <span>{g.group} <span className="font-normal normal-case">· {g.tools.length}</span></span><span aria-hidden>{on ? "−" : "+"}</span>
+                </button>
+                {on && <div className="pb-1 pl-4">{g.tools.map((t) => <ToolItem key={t.id} t={t} onPick={onNavigate} />)}</div>}
               </div>
-            ))}
-          </div>
-        </details>
+            );
+          })}
+        </Section>
       ))}
-      <details>
-        <summary className="flex min-h-10 cursor-pointer items-center px-2.5 text-sm text-paper">System</summary>
-        <div className="pb-2 pl-3">{SYSTEM.map((n) => <NavLink key={n.to} to={n.to} onClick={onNavigate} className="flex min-h-9 items-center px-2 text-sm text-muted">{n.label}</NavLink>)}</div>
-      </details>
+      {RIGHT.map((n) => direct(n))}
+      <Section id="system" title="System" open={sec === "system"} setOpen={toggle("system")}>
+        {SYSTEM.map((n) => <NavLink key={n.to} to={n.to} onClick={onNavigate} className={({ isActive }) => `${row(isActive)} pl-6`}>{n.label}</NavLink>)}
+      </Section>
     </nav>
   );
 }

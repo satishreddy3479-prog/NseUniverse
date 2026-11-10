@@ -30,28 +30,31 @@
   color-scheme: dark; /* native controls (drop-downs, scrollbars, date pickers) follow the theme */
 }
 
-/* Light: a clean, airy phone-style theme. White cards float on a pale grey page with soft shadows and
-   large corners, hairline borders, system fonts, and darker data colours so numbers and charts stay readable. */
+/* Daylight. Designed for reading in a bright room, not derived from the dark theme: a warm paper page, white cards with a hairline
+   edge and a very small shadow, ink-blue text, and data colours chosen for contrast on white (green, red, amber and blue all
+   at 5:1 or better against the card). Corners are modest (10 px cards, 6 px controls), the type is the same IBM Plex Sans as the
+   dark theme so numbers keep their shapes, and charts take every colour from these tokens, so lines, grids, labels and
+   tooltips are re-tuned together. Rules for this theme that are not just a colour live at the bottom of this file. */
 [data-theme="light"] {
-  --ink: #f1f3f7;
-  --slate: #ffffff;
-  --slate-2: #f4f6fa;
-  --rule: #d3d9e4;
-  --paper: #0f172a;
-  --muted: #475467;
-  --accent: #4f46e5;
-  --brass: #9a5b00;
-  --up: #0a7d55;
-  --down: #c5283a;
-  --warn: #b45309;
-  --info: #0a68b0;
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
-  --shadow-pop: 0 12px 32px rgba(16, 24, 40, 0.16);
-  --r-panel: 16px;
-  --r-ctl: 10px;
+  --ink: #f2f0ea;          /* page: warm paper, easier on the eye than pure white */
+  --slate: #ffffff;        /* cards and panels */
+  --slate-2: #f6f4ee;      /* inset areas: table heads, tiles, inputs' hover */
+  --rule: #d8d3c6;         /* hairlines */
+  --paper: #1a2030;        /* text: ink blue-black, 15:1 on white */
+  --muted: #566073;        /* secondary text, 6:1 on white and 5.4:1 on the page */
+  --accent: #5239d1;       /* brand violet, deepened for white */
+  --brass: #8c5a00;        /* ATM / second series: amber that still reads as text */
+  --up: #0f7a58;
+  --down: #c0293a;
+  --warn: #aa5508;
+  --info: #14659f;
+  --shadow: 0 0 0 0 transparent, 0 1px 2px rgba(26, 32, 48, 0.05);
+  --shadow-pop: 0 1px 2px rgba(26, 32, 48, 0.06), 0 12px 28px rgba(26, 32, 48, 0.14);
+  --r-panel: 10px;
+  --r-ctl: 6px;
   --body-bg: var(--ink);
-  --header-bg: rgba(255, 255, 255, 0.92);
-  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --header-bg: #fffefa;
+  --font-ui: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   color-scheme: light;
 }
 
@@ -168,12 +171,40 @@ body {
 /* Theme surfaces: cards, bars and pop-ups take their elevation from the active theme. */
 .bg-slate { box-shadow: var(--shadow); }
 header.bg-slate { background: var(--header-bg); box-shadow: var(--shadow); }
-[data-theme="light"] header.bg-slate { backdrop-filter: blur(10px); }
 .shadow-xl { box-shadow: var(--shadow-pop); }
-[data-theme="light"] .bg-slate-2, [data-theme="light"] input, [data-theme="light"] select { border-color: var(--rule); }
-[data-theme="light"] ::selection { background: color-mix(in srgb, var(--accent) 22%, white); }
-/* Light: hover and active states stay visible on white. */
-[data-theme="light"] .hover\:bg-slate-2:hover { background: #eaeef5; }
+
+/* ---- Daylight details ---- */
+[data-theme="light"] header.bg-slate { border-bottom-color: #cfc9ba; box-shadow: 0 1px 0 rgba(26, 32, 48, 0.04); }
+[data-theme="light"] .bg-slate { border-color: var(--rule); }
+[data-theme="light"] input,
+[data-theme="light"] select,
+[data-theme="light"] textarea { background-color: #ffffff; border-color: #c5bfae; color: var(--paper); }
+[data-theme="light"] input::placeholder,
+[data-theme="light"] textarea::placeholder { color: #8a8f9b; }
+[data-theme="light"] input:hover,
+[data-theme="light"] select:hover { border-color: #a9a28f; }
+[data-theme="light"] input:focus,
+[data-theme="light"] select:focus,
+[data-theme="light"] textarea:focus { border-color: var(--accent); outline: 2px solid color-mix(in srgb, var(--accent) 28%, transparent); outline-offset: 0; }
+[data-theme="light"] ::selection { background: color-mix(in srgb, var(--accent) 20%, white); }
+[data-theme="light"] .hover\:bg-slate-2:hover { background: #ebe8df; }
+[data-theme="light"] button:not(:disabled):hover { filter: none; }
+/* Tables: a quiet header, a hairline between rows, and a visible row under the pointer. */
+[data-theme="light"] thead { color: var(--muted); }
+[data-theme="light"] tbody tr { border-color: #e6e1d4; }
+[data-theme="light"] tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+/* Tints built on direction colours (badges, chips) keep their text readable on white. */
+[data-theme="light"] .bg-up\/15, [data-theme="light"] .bg-up\/20 { background: color-mix(in srgb, var(--up) 11%, white); }
+[data-theme="light"] .bg-down\/15, [data-theme="light"] .bg-down\/20 { background: color-mix(in srgb, var(--down) 10%, white); }
+[data-theme="light"] .bg-warn\/15, [data-theme="light"] .bg-warn\/20 { background: color-mix(in srgb, var(--warn) 12%, white); }
+[data-theme="light"] .bg-brass\/20 { background: color-mix(in srgb, var(--brass) 14%, white); }
+/* Pop-ups and the chart full-screen backdrop: a soft ink wash instead of near-black. */
+[data-theme="light"] .bg-black\/70 { background: rgba(26, 32, 48, 0.45); }
+/* Scrollbars that match the page rather than the operating system. */
+[data-theme="light"] * { scrollbar-color: #c5bfae transparent; }
+[data-theme="light"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="light"] ::-webkit-scrollbar-thumb { background: #c5bfae; border-radius: 6px; border: 2px solid var(--ink); }
+[data-theme="light"] ::-webkit-scrollbar-track { background: transparent; }
 /* Installed app: respect the phone's notch and home bar. */
 @supports (padding: env(safe-area-inset-top)) {
   header.bg-slate { padding-top: max(0.25rem, env(safe-area-inset-top)); }
@@ -182,7 +213,9 @@ header.bg-slate { background: var(--header-bg); box-shadow: var(--shadow); }
 
 /* Home: hero panel and the illustration tiles on tool cards. */
 .hero { background: radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--brass) 14%, var(--slate)) 0%, var(--slate) 55%); }
+[data-theme="light"] .hero { background: linear-gradient(135deg, #fffdf6 0%, #ffffff 60%); border-left: 3px solid var(--brass); }
 .tool-art { background: linear-gradient(160deg, color-mix(in srgb, var(--info) 9%, var(--slate-2)), var(--slate-2)); border: 1px solid var(--rule); }
+[data-theme="light"] .tool-art { background: linear-gradient(160deg, #f3f6f9, #f6f4ee); }
 
 /* Phone layout of the Analysis widgets: each widget takes the height of its content and every chart inside keeps the
    height the widget was designed for, so wrapped buttons, long notes or a larger system font never overlap a chart. */

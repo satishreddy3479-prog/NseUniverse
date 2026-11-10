@@ -13,10 +13,10 @@ export function StatusPill({ signals }: { signals: Signal[] }) {
       to="/settings#status"
       title={`${s.detail}. Open Settings for details.`}
       aria-label={`System status: ${s.label}`}
-      className="flex min-h-8 shrink-0 max-w-[26vw] items-center gap-1.5 sm:max-w-none rounded-full border border-rule bg-slate-2 px-2.5 text-xs font-medium text-paper hover:border-muted"
+      className="flex min-h-8 shrink-0 items-center gap-1.5 rounded-full border border-rule bg-slate-2 px-2.5 text-xs font-medium text-paper hover:border-muted max-sm:size-8 max-sm:justify-center max-sm:px-0 sm:max-w-none"
     >
-      <span aria-hidden className={`size-2 rounded-full ${DOT[s.tone]}`} />
-      <span className={`truncate ${s.tone === "bad" ? "text-down" : s.tone === "warn" ? "text-warn" : ""}`}>{s.label}</span>
+      <span aria-hidden className={`size-2.5 shrink-0 rounded-full sm:size-2 ${DOT[s.tone]}`} />
+      <span className={`truncate max-sm:sr-only ${s.tone === "bad" ? "text-down" : s.tone === "warn" ? "text-warn" : ""}`}>{s.label}</span>
     </Link>
   );
 }

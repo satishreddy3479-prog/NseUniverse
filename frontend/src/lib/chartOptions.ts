@@ -118,7 +118,7 @@ function tsBase(c: ChartColors, valueFormatter: (v: number) => string) {
     legend: { top: 0, right: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
     tooltip: { trigger: "axis", backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 },
       axisPointer: { type: "line", lineStyle: { color: c.muted, type: "dashed" }, label: { backgroundColor: c.slate } },
-      extraCssText: "border-radius:4px;box-shadow:0 4px 14px rgba(0,0,0,.35)",
+      extraCssText: "border-radius:6px;box-shadow:var(--shadow-pop)",
       formatter: (params: unknown) => {
         const ps = params as { axisValue: number; seriesName: string; value: [number, number | null] }[];
         return `<b>${fmtDateTimeIST(new Date(ps[0]!.axisValue).toISOString())}</b><br/>` +

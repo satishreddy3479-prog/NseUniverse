@@ -42,14 +42,14 @@ export function AppShell() {
           <span className="hidden min-[430px]:inline">Menu</span>
         </button>
         <Link to="/" className="flex min-w-0 shrink-0 items-center gap-2 leading-tight" aria-label="NSE Universe home">
-          <img src="/logo.svg" alt="" width={34} height={34} className="h-[34px] w-[34px] shrink-0 rounded-[9px] ring-1 ring-black/10" />
+          <img src="/logo.svg" alt="" width={34} height={34} className="h-[34px] w-[34px] shrink-0 rounded-[9px] ring-1 ring-black/10 max-[340px]:hidden" />
           <span className="hidden flex-col min-[520px]:flex">
             <span className="text-[15px] font-semibold tracking-tight text-paper">NSE Universe</span>
             <span className="hidden text-[11px] text-muted 2xl:block">{underlying} 50 options</span>
           </span>
         </Link>
         <TopNav />
-        <div className="ml-auto flex min-w-0 items-center justify-end gap-x-2 whitespace-nowrap sm:gap-x-2.5">
+        <div className="ml-auto flex shrink-0 items-center justify-end gap-x-2 whitespace-nowrap sm:gap-x-2.5">
           <SpotBadge latest={spotSnapshot ?? latest} className="md:flex-nowrap" />
           <StatusPill signals={signals} />
           <ThemeSwitch />

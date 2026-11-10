@@ -19,7 +19,7 @@ export function SpotBadge({ latest, className = "" }: { latest: SnapshotSummary 
   const source = useLive ? "live" : (latest?.source ?? "snapshot");
   const tone = chg == null || chg === 0 ? "" : chg > 0 ? "text-up" : "text-down";
   return (
-    <div className={`flex min-w-0 items-center gap-x-3 leading-tight ${className}`} title={useLive ? "Live from the exchange feed" : "From the latest snapshot, not live"}>
+    <div className={`flex shrink-0 items-center gap-x-3 whitespace-nowrap leading-tight ${className}`} title={useLive ? "Live from the exchange feed" : "From the latest snapshot, not live"}>
       <div className="hidden flex-col items-start gap-0.5 min-[520px]:flex">
         <span className="flex items-center gap-1.5 text-xs text-muted">NIFTY 50 <SourceTag source={source} /></span>
         {!useLive && latest && <span className="num text-[11px] text-muted" title={`Stored snapshot of the ${latest.expiry} expiry; each expiry reads the index on its own, so the other expiry can differ by a point or so`}>{fmtTimeIST(latest.retrieved_at)} IST · {latest.expiry.slice(5)}</span>}

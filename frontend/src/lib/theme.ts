@@ -15,7 +15,7 @@ export function loadTheme(): Theme {
 }
 
 /** Browser / installed-app title bar colour for each theme. */
-const BAR: Record<Theme, string> = { dark: "#172233", light: "#ffffff" };
+const BAR: Record<Theme, string> = { dark: "#172233", light: "#fffefa" };
 
 export function applyTheme(t: Theme): void {
   document.documentElement.dataset.theme = t;
