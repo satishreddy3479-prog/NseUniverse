@@ -4,6 +4,7 @@ import { MENU_ORDER, MENU_TITLES, menuGroups, toolPath, type MenuId, type Tool }
 
 /** Top-level links; the three tool menus open as drop-downs between them. */
 const LEFT: { to: string; label: string }[] = [
+  { to: "/market-intelligence", label: "Market Intelligence" },
   { to: "/option-chain", label: "Option Chain" },
 ];
 const RIGHT: { to: string; label: string }[] = [

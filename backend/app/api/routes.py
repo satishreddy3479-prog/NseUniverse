@@ -642,6 +642,26 @@ async def swing_live(request: Request) -> dict[str, Any]:
     return await asyncio.to_thread(request.app.state.swing_live.view)
 
 
+@router.get("/intelligence/summary")
+async def intelligence_summary(request: Request, expiry: date | None = None) -> dict[str, Any]:
+    """The NIFTY 50 market-intelligence dashboard: fused sentiment, engines, regime, scenarios."""
+    svc = getattr(request.app.state, "intelligence", None)
+    if svc is None or not svc.enabled:
+        msg = "the market-intelligence dashboard is turned off"
+        raise HTTPException(status_code=404, detail={"code": "disabled", "message": msg})
+    return await asyncio.to_thread(svc.summary, None if expiry is None else expiry.isoformat())
+
+
+@router.get("/intelligence/timeline")
+async def intelligence_timeline(request: Request, session: date | None = None) -> dict[str, Any]:
+    """The per-minute fused readings that were recorded for a session (nothing is back-filled)."""
+    svc = getattr(request.app.state, "intelligence", None)
+    if svc is None or not svc.enabled:
+        msg = "the market-intelligence dashboard is turned off"
+        raise HTTPException(status_code=404, detail={"code": "disabled", "message": msg})
+    return await asyncio.to_thread(svc.timeline, None if session is None else session.isoformat())
+
+
 @router.get("/swing/live-fills")
 async def swing_live_fills(request: Request) -> dict[str, Any]:
     """The live paper ledger: provisional intraday fills, apart from the official paper book."""

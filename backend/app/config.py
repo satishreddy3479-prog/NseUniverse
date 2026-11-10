@@ -81,6 +81,8 @@ class Settings(BaseSettings):
     backup_keep_monthly: int = 6
     swing_paper_enabled: bool = True  # after-close swing scan + paper trades (paper only)
     swing_live_enabled: bool = True  # live prices for the swing paper book (shadow decisions only)
+    intelligence_enabled: bool = True  # market-intelligence dashboard
+    intelligence_weights: str = ""  # JSON object overriding engine weights, e.g. {"futures": 30}
     swing_live_fills_enabled: bool = True  # live paper ledger; never touches the official book
     swing_paper_capital: float = Field(default=1_000_000.0, ge=10_000)
     swing_paper_cost_per_side: float = Field(default=0.0015, ge=0, le=0.02)

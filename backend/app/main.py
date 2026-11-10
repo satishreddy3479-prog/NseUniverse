@@ -19,6 +19,7 @@ from app.api.routes import router
 from app.api.ws import router as ws_router
 from app.broker.base import MarketDataBroker
 from app.config import Settings, get_settings
+from app.intelligence.wiring import create as create_intelligence
 from app.intraday.costs import CostModel
 from app.intraday.service import IntradayService
 from app.intraday.setups import RiskConfig
@@ -283,6 +284,9 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         app.state.daily_login = daily_login
         daily_login.start()
         sh, sm = (int(x) for x in settings.swing_paper_run_after.split(":"))
+        intelligence = create_intelligence(settings, observations, intraday, market, market_store)
+        app.state.intelligence = intelligence
+        intelligence.start()
         swing_paper = SwingPaperService(
             PaperStore(settings.data_dir), HttpFetcher(), enabled=settings.swing_paper_enabled,
             run_after=time(sh, sm),
@@ -329,6 +333,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             await strategy_automation.stop()
             await eod.stop()
             await swing_live.stop()
+            await intelligence.stop()
             await swing_paper.stop()
             await daily_login.stop()
             await intraday.stop()

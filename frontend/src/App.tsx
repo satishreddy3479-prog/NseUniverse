@@ -1,3 +1,4 @@
+import { MarketIntelligence } from "./pages/MarketIntelligence";
 import { lazy, Suspense, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
@@ -31,6 +32,7 @@ export function AppRoutes() {
     <Routes>
       <Route element={<AppShell />}>
         <Route index element={<Home />} />
+        <Route path="market-intelligence" element={<MarketIntelligence />} />
         <Route path="overview" element={<Overview />} />
         <Route path="tools/:id" element={
           <Suspense fallback={<p className="text-muted">Loading tool…</p>}><ToolPage /></Suspense>} />

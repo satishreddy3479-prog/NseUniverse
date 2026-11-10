@@ -5,6 +5,9 @@ _Last updated: 2026-11-04_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## NIFTY 50 Market Intelligence (10 Nov 2026)
+New first menu item and Home strip: fused sentiment (-100..+100), separate confidence, regime, six engines with evidence, divergences, heuristic scenarios, timeline of recorded minutes and alerts, with drill-down links to every existing page (D102, [audit and integration map](market-intelligence-audit.md)). Tested with fixtures and fake providers; not seen with live data in market hours or on a phone.
+
 ## Swing live paper ledger (10 Nov 2026)
 Orders that read triggered on two consecutive fresh live prices now get a provisional paper fill in a separate ledger (new panel under Live prices), reconciled against the evening run as confirmed or rejected-and-voided (D101, plan in swing-live-paper-fills-plan.md). The official paper book is unchanged. Not seen with real ticks yet; the first market-hours session is the check.
 

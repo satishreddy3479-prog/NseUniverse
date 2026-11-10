@@ -40,7 +40,7 @@ describe("home", () => {
   it("lists ready tools as links and planned tools as disabled cards with their reason", async () => {
     mockApi();
     renderAt("/");
-    expect(await screen.findByRole("heading", { name: /option and futures tools/ })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /NIFTY 50 command centre/ })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /Smart OI/ }).length).toBeGreaterThan(0);
     expect(screen.queryByRole("link", { name: /OI Crossover/ })).toBeNull();
     const card = screen.getByText("OI Crossover").closest("[aria-disabled]") as HTMLElement;

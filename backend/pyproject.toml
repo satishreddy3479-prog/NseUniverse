@@ -50,6 +50,9 @@ ignore = ["S101"]
 "app/lifecycle/**" = ["E501"]
 # swing: formula-style expressions and rule texts read better on one line
 "app/swing/**" = ["E501"]
+# intelligence: rule texts and evidence strings read better on one line
+"app/intelligence/**" = ["E501"]
+"tests/unit/test_intelligence*.py" = ["E501"]
 "tests/unit/test_swing_*.py" = ["E501"]
 "app/market/futures_series.py" = ["E501"]
 "tests/unit/test_futures_series.py" = ["E501"]
