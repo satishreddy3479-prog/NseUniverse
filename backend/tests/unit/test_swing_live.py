@@ -350,3 +350,16 @@ def test_previous_session_skips_the_weekend_and_listed_holidays() -> None:
 
     assert previous_session(date(2026, 11, 4)) == date(2026, 11, 3)
     assert previous_session(date(2026, 11, 2)) == date(2026, 10, 30)  # Monday -> Friday
+
+
+async def test_a_trade_for_trade_stock_gets_a_token_from_its_be_row_and_a_truly_missing_one_says_why(tmp_path: Path) -> None:
+    master = [*MASTER, {"pSymbol": "9001", "pTrdSymbol": "SWARAJ-BE", "pExchSeg": "nse_cm"}]
+    r = Rig(tmp_path, master=master)
+    r.live._orders.append(order("SWARAJ", id=8, rank=8))
+    await r.live.refresh()
+    assert "nse_cm|9001" in [t.key for t in r.added[0]]  # SWARAJ trades in the BE series: it has no -EQ row
+    assert r.live.view()["note"] is None
+    r.live._orders.append(order("GONE", id=9, rank=9))
+    await r.live.refresh()
+    note = r.live.view()["note"]
+    assert note.startswith("no Kotak token found for: GONE") and "suspended, delisted or renamed" in note

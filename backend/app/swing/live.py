@@ -22,7 +22,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from app.logging_setup import log_event
-from app.market.sources import TokenInfo, parse_scrip_master
+from app.market.sources import TokenInfo, parse_scrip_master_any_series
 from app.stream.models import FeedToken, LiveTick
 from app.swing.engine import Config, Order, Position
 from app.swing.live_rules import (
@@ -120,7 +120,7 @@ class SwingLive:
             return
         self._master_tried = now
         try:
-            self._master = parse_scrip_master(await self._scrip())
+            self._master = parse_scrip_master_any_series(await self._scrip())
             self._master_day, self._master_error = today, None
         except Exception as e:  # noqa: BLE001 - the live view degrades, nothing else depends on it
             self._master_error = type(e).__name__
@@ -251,7 +251,8 @@ class SwingLive:
         elif self._master_error:
             note = f"Kotak instrument file not loaded ({self._master_error}); it retries every 10 minutes"
         elif missing:
-            note = f"no Kotak token found for: {', '.join(missing[:6])}"
+            note = (f"no Kotak token found for: {', '.join(missing[:6])} (not in the Kotak cash instrument file under EQ, BE, BZ, SM, ST or SZ: "
+                    "the symbol may be suspended, delisted or renamed)")
         session = now.astimezone(IST).date().isoformat()
         events = self.store.live_events(session)
         if not queue["current"]:  # entry decisions made from orders meant for an earlier session are not shown as today's

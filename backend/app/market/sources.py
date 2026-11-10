@@ -162,6 +162,29 @@ def parse_scrip_master(rows: Iterable[Mapping[str, Any]]) -> dict[str, TokenInfo
     return out
 
 
+#: cash series a stock can trade in on NSE, best first. A stock in the trade-for-trade segment (BE), for example, has no "-EQ" row at all.
+CASH_SERIES = ("EQ", "BE", "BZ", "SM", "ST", "SZ")
+
+
+def parse_scrip_master_any_series(rows: Iterable[Mapping[str, Any]]) -> dict[str, TokenInfo]:
+    """Cash-segment symbol -> token over every NSE cash series in ``CASH_SERIES``, "-EQ" preferred, then BE, BZ, SM, ST, SZ.
+    The swing book can hold a stock that trades in the trade-for-trade segment: ``parse_scrip_master`` drops it (its row is "-BE")
+    and the live page then has no price for it. ``TokenInfo.trading_symbol`` shows which series was used."""
+    best: dict[str, tuple[int, TokenInfo]] = {}
+    for r in rows:
+        low = {str(k).strip().lower(): v for k, v in r.items()}
+        trd = str(low.get("ptrdsymbol", "") or "").strip()
+        tok = str(low.get("psymbol", "") or "").strip()
+        seg = str(low.get("pexchseg", "nse_cm") or "nse_cm").strip().lower()
+        base, _, series = trd.rpartition("-")
+        if not base or series not in CASH_SERIES or not tok or seg != "nse_cm":
+            continue
+        rank = CASH_SERIES.index(series)
+        if base not in best or rank < best[base][0]:
+            best[base] = (rank, TokenInfo(base, tok, trd))
+    return {k: v[1] for k, v in best.items()}
+
+
 _FUT = re.compile(r"^NIFTY(\d{2})([A-Z]{3})FUT$")
 _MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
 

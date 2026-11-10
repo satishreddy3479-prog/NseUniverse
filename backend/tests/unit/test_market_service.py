@@ -592,3 +592,23 @@ def test_the_index_level_comes_from_the_public_book_for_index_change_and_the_fut
     svc.on_tick(LiveTick(key="nse_fo|55001", kind="scrip", exchange_segment="nse_fo", instrument_token="55001", ltp=23346.0, oi=15_397_460, volume=755_950, received_at=NOW))
     assert svc.sample(NOW) is True
     assert svc.store.recent_samples("fut")[0]["spot"] == 23266.85  # the same-moment index level is stored with the future
+
+
+def test_any_series_scrip_master_keeps_trade_for_trade_stocks_and_prefers_eq() -> None:
+    from app.market.sources import parse_scrip_master_any_series
+
+    rows = [
+        {"pSymbol": "1333", "pTrdSymbol": "HDFCBANK-EQ", "pExchSeg": "nse_cm"},
+        {"pSymbol": "9001", "pTrdSymbol": "SWARAJ-BE", "pExchSeg": "nse_cm"},  # trade-for-trade: no EQ row exists
+        {"pSymbol": "7001", "pTrdSymbol": "DUAL-BE", "pExchSeg": "nse_cm"},
+        {"pSymbol": "7002", "pTrdSymbol": "DUAL-EQ", "pExchSeg": "nse_cm"},  # EQ wins over BE whatever the row order
+        {"pSymbol": "4963", "pTrdSymbol": "BAJAJ-AUTO-EQ", "pExchSeg": "nse_cm"},
+        {"pSymbol": "55", "pTrdSymbol": "SBIN-EQ", "pExchSeg": "bse_cm"},  # other exchange segment
+        {"pSymbol": "66", "pTrdSymbol": "SOMEETF-GS", "pExchSeg": "nse_cm"},  # not a stock series
+        {"pSymbol": "", "pTrdSymbol": "X-EQ", "pExchSeg": "nse_cm"},
+    ]
+    t = parse_scrip_master_any_series(rows)
+    assert set(t) == {"HDFCBANK", "SWARAJ", "DUAL", "BAJAJ-AUTO"}
+    assert t["SWARAJ"].token == "9001" and t["SWARAJ"].trading_symbol == "SWARAJ-BE"
+    assert t["DUAL"].token == "7002"
+    assert parse_scrip_master(rows).get("SWARAJ") is None  # the strict parser (used elsewhere) is unchanged

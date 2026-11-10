@@ -258,7 +258,7 @@ describe("Swing trading page: live prices", () => {
     expect(rows[2]).toHaveTextContent("+₹15.0 K");
     expect(screen.getByTestId("live-status")).toHaveTextContent("Market: open");
     expect(screen.getByTestId("live-status")).toHaveTextContent("Kotak feed: streaming");
-    expect(screen.getByRole("list", { name: "Shadow decisions today" })).toHaveTextContent("Would buy: price through the trigger on enough volume at 148.40");
+    expect(screen.getByRole("list", { name: "Shadow decisions today" })).toHaveTextContent("Trigger reached on enough volume so far (provisional; the buy is booked at tonight's run) at 148.40");
   });
 
   it("when the market is closed or the token file is missing it says so instead of implying live data", async () => {

@@ -34,6 +34,11 @@ export function SwingLivePanel({ live, loading, error }: { live: SwingLiveView |
           What the rules would do right now is logged once a day. The paper book still follows the end-of-day settlement until a
           session&apos;s live decisions have been compared with it.
         </p>
+        <p className="mt-1 text-muted" data-testid="swing-when-bought">
+          When is a stock bought? Not during the day. The paper book records every buy in the evening run (after 17:00 IST), judged on the whole
+          day: the price must go through the trigger and the day&apos;s volume must reach 1.25 times its 20-day average. &quot;Triggered so far&quot;
+          is only the live reading of that rule; it can still fail by the close.
+        </p>
       </div>
       {loading && <p className="text-sm text-muted">Reading the live view…</p>}
       {error != null && !live && <p role="alert" className="text-sm text-down">Could not read the live view: {error instanceof Error ? error.message : "unknown error"}</p>}

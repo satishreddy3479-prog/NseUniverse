@@ -109,7 +109,7 @@ describe("scanner result in plain words", () => {
 
 describe("live labels and distances", () => {
   it("name every state in words and pass unknown ones through", () => {
-    expect(liveStateLabel("triggered")).toContain("would be bought");
+    expect(liveStateLabel("triggered")).toContain("only if the day confirms");
     expect(liveStateLabel("stop_hit")).toContain("would be sold");
     expect(liveStateLabel("volume_short")).toBe("Price through the trigger, volume still short");
     expect(liveStateLabel("volume_early")).toContain("too early to judge volume");

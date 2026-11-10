@@ -116,7 +116,7 @@ export function resultText(raw: string): string {
 }
 
 const LIVE_STATE: Record<string, string> = {
-  waiting: "Waiting for the trigger", triggered: "Triggered: would be bought", gap_skip: "Skipped: gapped above the limit",
+  waiting: "Waiting for the trigger", triggered: "Triggered so far: bought at tonight's run only if the day confirms", gap_skip: "Skipped: gapped above the limit",
   volume_short: "Price through the trigger, volume still short", volume_early: "Price through the trigger, too early to judge volume",
   stale_queue: "Not checked: queued for an earlier session", no_data: "No live price yet", stale: "Price is stale",
   holding: "Holding", stop_hit: "Stop breached: would be sold",
@@ -124,7 +124,7 @@ const LIVE_STATE: Record<string, string> = {
 export const liveStateLabel = (s: string): string => LIVE_STATE[s] ?? s;
 
 const LIVE_EVENT: Record<string, string> = {
-  entry_trigger: "Would buy: price through the trigger on enough volume", entry_gap_skip: "Would skip: opened above the no-chase limit",
+  entry_trigger: "Trigger reached on enough volume so far (provisional; the buy is booked at tonight's run)", entry_gap_skip: "Would skip: opened above the no-chase limit",
   stop_hit: "Would sell: stop breached", target_1_8r: "Reached 1.8R: the stop moves to breakeven at the close",
   target_2_5r: "Reached 2.5R: the trailing stop starts at the close",
 };
