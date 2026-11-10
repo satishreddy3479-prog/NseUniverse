@@ -180,18 +180,31 @@ export function gammaDensity(rows: GexRow[], smooth = 1): Density | null {
 }
 
 // ---------------------------------------------------------------- through the session
+/** The `each` strikes either side of the strike nearest `centre` (a smaller set at the edge of the list). */
+export function nearestStrikes(strikes: number[], centre: number, each: number): number[] {
+  const ks = [...strikes].sort((a, b) => a - b);
+  let i = 0;
+  ks.forEach((k, j) => { if (Math.abs(k - centre) < Math.abs(ks[i]! - centre)) i = j; });
+  return ks.slice(Math.max(0, i - each), i + each + 1);
+}
+
 export interface GexSample { t: number; day: string; profile: GexProfile }
 const istDay = (ms: number) => new Date(ms + 330 * 60_000).toISOString().slice(0, 10);
 const quote = (ltp: number | null, oi: number | null) => ({ ltp, oi } as unknown as OptionQuote);
 
-/** The GEX profile of the series' strikes at every in-session sample. */
-export function gexSamples(res: StrikeSeries, expiry: string, rate = RISK_FREE_RATE): GexSample[] {
+/**
+ * The GEX profile of the series' strikes at every in-session sample. With `dynamicEach`, each sample keeps only the ATM +/- `dynamicEach`
+ * strikes around that sample's own spot (the dynamic universe); without it the series' strikes are used as given (the fixed universe,
+ * when the series was fetched around the opening ATM).
+ */
+export function gexSamples(res: StrikeSeries, expiry: string, rate = RISK_FREE_RATE, dynamicEach?: number): GexSample[] {
   const out: GexSample[] = [];
   res.times.forEach((iso, i) => {
     const t = new Date(iso).getTime();
     const spot = res.spot[i];
     if (!isSessionMs(t) || spot == null) return;
-    const rows = res.strikes.map((k) => ({ strike: k, call: quote(res.ce_price[String(k)]?.[i] ?? null, res.ce_oi[String(k)]?.[i] ?? null), put: quote(res.pe_price[String(k)]?.[i] ?? null, res.pe_oi[String(k)]?.[i] ?? null) }) as OptionChainRow);
+    const ks = dynamicEach == null ? res.strikes : nearestStrikes(res.strikes, spot, dynamicEach);
+    const rows = ks.map((k) => ({ strike: k, call: quote(res.ce_price[String(k)]?.[i] ?? null, res.ce_oi[String(k)]?.[i] ?? null), put: quote(res.pe_price[String(k)]?.[i] ?? null, res.pe_oi[String(k)]?.[i] ?? null) }) as OptionChainRow);
     out.push({ t, day: istDay(t), profile: gexProfile(rows, spot, expiry, t, rate) });
   });
   return out;

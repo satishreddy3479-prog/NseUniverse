@@ -12,6 +12,9 @@ import {
 import { candles } from "../../lib/vegaAnalysis";
 import { EChart, useChartColors } from "../EChart";
 import { EmptyState } from "../ui";
+import { MethodologyPanel } from "../MethodologyPanel";
+import { METRICS } from "../../lib/metricRegistry";
+import { GexSessionIntel, GexUniversesSection } from "./GexIntelligence";
 import { useDash } from "./DashContext";
 import { useSessionWindow } from "./PriceBoards";
 import { Card, Section } from "./VegaAnalysis";
@@ -226,6 +229,8 @@ export function GammaAnalysisBoard() {
         <div className="p-2">{profileOpt && <div style={{ height: 380 }}><EChart option={profileOpt} ariaLabel="Gamma exposure by strike" /></div>}</div>
       </Section>
 
+      <GexUniversesSection rows={d.rows} spot={lv.spot} expiry={d.expiry!} atMs={atMs} openAtm={openAtm} />
+
       <Section title="Gamma density (all strikes)" right={<label className="flex items-center gap-1.5 text-xs text-muted"><input type="checkbox" checked={extra} onChange={(e) => setExtra(e.target.checked)} className="accent-[var(--brass)]" /> Extra smooth</label>}>
         <div className="p-2">
           {densityOpt && density ? (
@@ -236,6 +241,11 @@ export function GammaAnalysisBoard() {
               </p>
             </>
           ) : <p className="p-3 text-sm text-muted">Too few strikes with exposure to draw a density.</p>}
+          {density && (
+            <MethodologyPanel metrics={[METRICS.gamma_density!]}
+              example={[`Smoothing ${extra ? "extra wide (×2)" : "normal (×1)"}: kernel width h = 1.5 × median strike gap × smooth`, `Sell-gamma peak ${lvl(density.sellPeak)}, buy-gamma peak ${lvl(density.buyPeak)}, total peak ${lvl(density.neutralPeak)}`, `Sell/buy intersections: ${density.sellBuy.length ? density.sellBuy.map((x) => fmtInt(Math.round(x))).join(", ") : "none"}`]}
+              freshness={{ updatedAt: new Date(atMs).toISOString(), session: new Date(atMs + 330 * 60_000).toISOString().slice(0, 10), expiry: d.expiry, used: profile.rows.filter((r) => r.ce != null || r.pe != null).length, missing: profile.rows.length - profile.rows.filter((r) => r.ce != null || r.pe != null).length, timeframe: "snapshot, full chain" }} />
+          )}
         </div>
       </Section>
 
@@ -254,6 +264,8 @@ export function GammaAnalysisBoard() {
             ) : <p className="p-3 text-sm text-muted" data-testid="gamma-structure-empty">Not enough stored samples with prices and open interest to draw the session ({structure.length} usable).</p>}
         </div>
       </Section>
+
+      {d.expiry && <GexSessionIntel expiry={d.expiry} listed={listed} openAtm={openAtm} curAtm={lv.atmStrike} />}
 
       <div className="grid gap-3 lg:grid-cols-3" data-testid="gamma-dashboard">
         <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3 text-sm"><div className="mb-1 text-[11px] font-semibold uppercase text-info">Intraday</div><p className="text-muted">Resistance {lvl(lv.callWall)}, support {lvl(lv.putWall)}, peak gamma {lvl(lv.peak)}. {regime?.name === "Positive Gamma" ? `Mean reversion toward ${lvl(lv.peak)} is the modelled tendency.` : regime?.name === "Negative Gamma" ? "Moves that break a wall are more likely to extend, in the model." : "The regime is unstable here; give the walls less weight."}</p></div>
