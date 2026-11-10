@@ -5,6 +5,9 @@ _Last updated: 2026-11-04_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Options intelligence programme (10 Nov 2026)
+Added under Options: IV Momentum, Strike Positioning, Market Structure (regime classifier) and Signal Backtest; GEX universes, sign sensitivity, intraday dynamics and divergence on the gamma page; Calculation Methodology & Formulas panels on skew, momentum, IV/HV, positioning, GEX, regime and backtest. Details, limits and what is not built: [options-intelligence](options-intelligence.md) (D97, D98). Not verified live in market hours or visually on a phone.
+
 ## Options intelligence, step 1 (10 Nov 2026)
 Volatility Skew now interpolates the 25Δ and 10Δ wing IVs in delta, shows call−put skew, 10Δ butterfly and the wing IVs, and ends with a closed Calculation Methodology & Formulas panel fed by a metric registry (D97). Not built yet: IV momentum, per-delta IV history storage, multi-expiry delta term structure, GEX universes/divergence, regime classifier, demand analyser, backtests, central dashboard.
 

@@ -13,6 +13,7 @@ import { CashPanel } from "../components/CashPanel";
 import { FuturesFlowBody } from "../components/FuturesFlowTools";
 import { FuturesBuildupBody } from "../components/FuturesBuildupTool";
 import { IvChartBody } from "../components/IvChartPages";
+import { SignalBacktestBody } from "../components/SignalBacktest";
 import { MarketStructureBody } from "../components/MarketStructure";
 import { StrikePositioningBody } from "../components/StrikePositioning";
 import { IvMomentumBody } from "../components/IvMomentum";
@@ -57,8 +58,8 @@ export default function ToolPage() {
       </div>
     );
 
-  const usesChain = !!tool.widgets || !!tool.board || tool.page === "futflow" || tool.page === "futsectors" || tool.page === "ivhv" || tool.page === "ivchart" || tool.page === "ivskew" || tool.page === "ivmomentum" || tool.page === "strikepos" || tool.page === "marketstructure" || tool.page === "ivintraday";
-  const strikeControls = !tool.board && tool.page !== "futflow" && tool.page !== "futsectors" && tool.page !== "ivhv" && tool.page !== "ivchart" && tool.page !== "ivskew" && tool.page !== "ivmomentum" && tool.page !== "strikepos" && tool.page !== "marketstructure" && tool.page !== "ivintraday"; // the boards pick their own strikes; these pages have no strike range
+  const usesChain = !!tool.widgets || !!tool.board || tool.page === "futflow" || tool.page === "futsectors" || tool.page === "ivhv" || tool.page === "ivchart" || tool.page === "ivskew" || tool.page === "ivmomentum" || tool.page === "backtest" || tool.page === "strikepos" || tool.page === "marketstructure" || tool.page === "ivintraday";
+  const strikeControls = !tool.board && tool.page !== "futflow" && tool.page !== "futsectors" && tool.page !== "ivhv" && tool.page !== "ivchart" && tool.page !== "ivskew" && tool.page !== "ivmomentum" && tool.page !== "strikepos" && tool.page !== "backtest" && tool.page !== "marketstructure" && tool.page !== "ivintraday"; // the boards pick their own strikes; these pages have no strike range
   const modeBtn = (m: Mode, label: string, date?: string | null) => (
     <button type="button" key={m} aria-pressed={mode === m} disabled={m !== "manual" && !date} onClick={() => setMode(m)}
       className={`min-h-9 rounded-sm border px-3 text-sm disabled:opacity-40 ${mode === m ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>
@@ -139,7 +140,8 @@ export default function ToolPage() {
         {tool.page === "ivmomentum" && <IvMomentumBody expiry={expiry} />}
         {tool.page === "strikepos" && <StrikePositioningBody expiry={expiry} />}
         {tool.page === "marketstructure" && <MarketStructureBody expiry={expiry} />}
-        {tool.page && tool.page !== "flows" && tool.page !== "cash" && tool.page !== "futflow" && tool.page !== "futsectors" && tool.page !== "futbuildup" && tool.page !== "ivhv" && tool.page !== "ivchart" && tool.page !== "ivskew" && tool.page !== "ivmomentum" && tool.page !== "strikepos" && tool.page !== "marketstructure" && tool.page !== "ivintraday" && <IndexToolBody page={tool.page} />}
+        {tool.page === "backtest" && <SignalBacktestBody expiry={expiry} />}
+        {tool.page && tool.page !== "flows" && tool.page !== "cash" && tool.page !== "futflow" && tool.page !== "futsectors" && tool.page !== "futbuildup" && tool.page !== "ivhv" && tool.page !== "ivchart" && tool.page !== "ivskew" && tool.page !== "ivmomentum" && tool.page !== "strikepos" && tool.page !== "marketstructure" && tool.page !== "backtest" && tool.page !== "ivintraday" && <IndexToolBody page={tool.page} />}
       </div>
     </DashProvider>
   );

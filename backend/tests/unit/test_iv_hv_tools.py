@@ -237,3 +237,33 @@ def test_iv_chart_carries_our_own_atm_iv_for_stored_sessions_and_leaves_other_da
     assert out["own_iv"][0] is None  # no option chain was stored on 28 Oct: missing, not copied from the VIX
     assert out["own_iv"][1] == pytest.approx(16.54, abs=0.3) and out["own_iv_expiry"][1] == EXP
     assert out["iv"] == [14.5, None]  # India VIX of the provisional day is still unpublished
+
+
+def test_iv_momentum_service_returns_a_table_and_series_from_stored_samples(tmp_path: Path) -> None:
+    out = make(tmp_path, 30, 30).iv_momentum(EXP)
+    assert out["status"] == "ok" and out["samples_in_session"] == 30 and len(out["series"]) >= 25
+    assert set(out["table"]["periods"]) == {"1", "5", "15", "30", "60"}
+    five = out["table"]["periods"]["5"]
+    assert set(five) >= {"atm", "d25", "d10", "spot_change"} and set(five["d25"]) >= {"ce_change", "pe_change", "momentum"}
+    assert out["table"]["periods"]["60"]["from"] is None  # only 30 minutes stored: no hour-earlier snapshot, so no figure
+    assert make(tmp_path / "e", 0, 30).iv_momentum(EXP)["series"] == []
+
+
+def test_strike_positioning_service_compares_with_an_earlier_snapshot(tmp_path: Path) -> None:
+    svc = make(tmp_path, 30, 30)
+    out = svc.strike_positioning(EXP, "15")
+    assert out["status"] == "ok" and out["then_at"] is not None and len(out["rows"]) > 10
+    row = next(r for r in out["rows"] if r["strike"] == out["atm_strike"])
+    assert {"premium", "premium_pct", "oi", "oi_session_change", "iv", "delta", "class"} <= set(row["ce"])
+    assert out["baskets"] and {b["kind"] for b in out["baskets"]} == {"fixed", "dynamic"}
+    assert svc.strike_positioning(EXP, "prev")["then_at"] is None  # nothing stored for an earlier session: no comparison, said plainly
+    assert svc.strike_positioning(EXP, "x")["status"] == "bad window"
+
+
+def test_backtest_service_reports_insufficient_sample_instead_of_a_result(tmp_path: Path) -> None:
+    out = make(tmp_path, 30, 30).backtest(EXP, 5)
+    assert out["status"] in ("ok", "no stored sessions with a solvable chain for this expiry")
+    assert len(out["not_testable"]) == 4
+    for t in out["tests"]:
+        assert t["status"].startswith("insufficient") or t["status"] == "ok"
+        assert t["out_of_sample"]["events"] < 20  # a single synthetic session cannot support a result

@@ -725,6 +725,18 @@ async def intraday_strike_positioning(
     return await asyncio.to_thread(svc.strike_positioning, expiry.isoformat(), window, iso)
 
 
+@router.get("/intraday/backtest")
+async def intraday_backtest(
+    request: Request, expiry: date, sessions: int = 15, cost_bps: float = 5.0
+) -> dict[str, Any]:
+    """Chronological out-of-sample test of the options signals against NIFTY's next 30 minutes."""
+    if not 3 <= sessions <= 60 or not 0 <= cost_bps <= 100:
+        msg = "sessions must be 3 to 60 and cost_bps 0 to 100"
+        raise HTTPException(status_code=422, detail={"code": "bad_range", "message": msg})
+    svc = request.app.state.intraday
+    return await asyncio.to_thread(svc.backtest, expiry.isoformat(), sessions, cost_bps)
+
+
 @router.get("/intraday/iv-sessions")
 async def intraday_iv_sessions(request: Request) -> dict[str, Any]:
     """IST dates that have stored option-chain samples."""

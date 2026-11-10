@@ -22,6 +22,7 @@ from typing import Any
 
 from app.domain.session import market_time, session_close
 from app.intraday import (
+    backtest,
     evaluate,
     labels,
     momentum,
@@ -141,7 +142,7 @@ class IntradayService:
         self._events = events
         self._clock = clock or (lambda: datetime.now(UTC))
         self._cache: dict[tuple[str, int, int], dict[str, Any]] = {}
-        self._iv_cache: dict[tuple[str, str, int, int], dict[str, Any]] = {}  # one entry: the latest IV series
+        self._iv_cache: dict[tuple[Any, ...], dict[str, Any]] = {}  # one entry: the latest IV series
         self._slow: dict[tuple[str, str], tuple[float, Any]] = {}
         self._task: asyncio.Task[None] | None = None
         self.loop_note = "not started"
@@ -643,7 +644,7 @@ class IntradayService:
         prev_day: str | None = None
         lo_prev = datetime.combine(day - timedelta(days=6), OPEN, IST)
         before = self.obs.samples(self.underlying, expiry, since=lo_prev, until=datetime.combine(day, OPEN, IST), limit=5000)
-        closes = [s for s in before if s.received_at.astimezone(IST).time() <= session_close() and s.spot is not None]
+        closes = [s for s in before if s.received_at.astimezone(IST).date() < day and s.received_at.astimezone(IST).time() <= session_close() and s.spot is not None]
         if closes:
             c = closes[-1]
             prev = momentum.delta_point(c.received_at, c.spot, self._surface_of(c, exp_d, c.received_at, 25))
@@ -681,7 +682,7 @@ class IntradayService:
         elif window == "prev":
             lo = datetime.combine(day - timedelta(days=6), OPEN, IST)
             before = self.obs.samples(self.underlying, expiry, since=lo, until=datetime.combine(day, OPEN, IST), limit=5000)
-            closes = [x for x in before if x.received_at.astimezone(IST).time() <= session_close() and x.spot is not None]
+            closes = [x for x in before if x.received_at.astimezone(IST).date() < day and x.received_at.astimezone(IST).time() <= session_close() and x.spot is not None]
             then = closes[-1] if closes else None
         elif window.isdigit():
             target = latest.received_at - timedelta(minutes=int(window))
@@ -707,6 +708,53 @@ class IntradayService:
             "demand": strike_positioning.demand(rows, atm_now, spot_pct) if then is not None else [],
             "model": "Black-76; forward from put-call parity", "rate_assumed": self.risk_free_rate,
             "note": None if then is not None else "no stored snapshot for the chosen comparison: changes are not available",
+        }
+        self._iv_cache = {key: out}
+        return out
+
+    def backtest(self, expiry: str, sessions: int = 15, cost_bps: float = 5.0) -> dict[str, Any]:
+        """Out-of-sample test of the options signals against NIFTY's next 30 minutes, over the last ``sessions`` stored sessions of
+        ``expiry`` (5-minute snapshots). Features come from the stored chains only; see ``backtest.py`` for the rules."""
+        try:
+            exp_d = date.fromisoformat(expiry)
+        except ValueError:
+            return {"status": "bad expiry", "tests": []}
+        now_t = self._clock()
+        lo = datetime.combine(now_t.astimezone(IST).date() - timedelta(days=int(sessions * 1.6) + 5), OPEN, IST)
+        samples = [x for x in self.obs.samples(self.underlying, expiry, since=lo, until=now_t, limit=40000) if x.spot is not None]
+        by_day: dict[str, dict[int, Any]] = {}
+        for x in samples:
+            t_ = x.received_at.astimezone(IST)
+            if not OPEN <= t_.time() <= session_close():
+                continue
+            by_day.setdefault(t_.date().isoformat(), {})[(t_.hour * 60 + t_.minute) // 5] = x  # the last sample of each 5-minute bucket
+        days = sorted(by_day)[-sessions:]
+        key = ("bt", expiry, tuple(days), str(by_day[days[-1]][max(by_day[days[-1]])].sample_id) if days else "", cost_bps)
+        if key in self._iv_cache:
+            return self._iv_cache[key]
+        snaps: list[backtest.Snap] = []
+        for d_ in days:
+            for _b, x in sorted(by_day[d_].items()):
+                sf = self._surface_of(x, exp_d, x.received_at, 25)
+                if sf.get("status") != "ok":
+                    continue
+                pt = momentum.delta_point(x.received_at, x.spot, sf)
+                ch = self.obs.contracts(x.values_from)
+                atm = sf.get("atm_strike")
+                near = {k for k, _ in ch if atm is not None and abs(k - atm) <= 10 * 50}
+                oi_ce = sum(c.oi for (k, side), c in ch.items() if side == 0 and k in near and c.oi is not None) or None
+                oi_pe = sum(c.oi for (k, side), c in ch.items() if side == 1 and k in near and c.oi is not None) or None
+                skew = volmod.skew_metrics(sf["rows"], sf["forward"], sf.get("atm_iv"))
+                snaps.append(backtest.Snap(
+                    at=x.received_at, session=d_, spot=float(x.spot), skew25=skew["skew_25d"], butterfly25=skew["butterfly_25d"], atm_iv=sf.get("atm_iv"),
+                    ce25=pt["d25"]["ce"], pe25=pt["d25"]["pe"], oi_ce=oi_ce, oi_pe=oi_pe,
+                ))
+        tests = [backtest.run(snaps, h, cost_bps) for h in backtest.HYPOTHESES] if snaps else []
+        out = {
+            "status": "ok" if snaps else "no stored sessions with a solvable chain for this expiry", "expiry": expiry, "sessions": days, "snapshots": len(snaps),
+            "horizon_minutes": backtest.HORIZON_MIN, "oos_share": backtest.OOS_SHARE, "min_events": backtest.MIN_EVENTS, "cost_bps": cost_bps, "tests": tests,
+            "not_testable": [{"id": i, "title": t, "reason": r} for i, t, r in backtest.NOT_TESTABLE],
+            "note": "Signals are tested against NIFTY, not against an options position: option spreads, theta and gamma are not modelled.",
         }
         self._iv_cache = {key: out}
         return out

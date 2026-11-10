@@ -926,3 +926,18 @@ export interface StrikePositioning {
   atm_strike: number | null; atm_strike_then: number | null; samples_in_session: number; note: string | null;
   rows: { strike: number; ce: PositioningQuote; pe: PositioningQuote }[]; baskets: PositioningBasket[]; demand: PositioningDemand[];
 }
+
+export interface BacktestStats { n: number; win_rate: number | null; mean: number | null; total: number | null; ci95: [number, number] | null; max_drawdown: number | null; risk_reward: number | null }
+export interface BacktestSide {
+  events: number; others: number; unavailable: number; enough: boolean;
+  net_return_pct?: BacktestStats; baseline_mean_pct?: number | null;
+  difference?: { diff: number | null; ci95: [number, number] | null; mean_event: number | null; mean_other: number | null };
+}
+export interface BacktestResult {
+  id: string; title: string; rule: string; side: number; target: string; cost_bps: number; status: string;
+  sessions: { in_sample: string[]; out_of_sample: string[] }; in_sample: BacktestSide; out_of_sample: BacktestSide;
+}
+export interface Backtest {
+  status: string; expiry: string; sessions: string[]; snapshots: number; horizon_minutes: number; oos_share: number; min_events: number; cost_bps: number;
+  tests: BacktestResult[]; not_testable: { id: string; title: string; reason: string }[]; note: string;
+}

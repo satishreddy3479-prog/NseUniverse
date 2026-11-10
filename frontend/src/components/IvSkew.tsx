@@ -4,7 +4,7 @@ import { api } from "../lib/api";
 import { fmtInt, fmtTimeIST, MISSING } from "../lib/format";
 import { chainGreeks } from "../lib/optionTools";
 import { marketClockMs } from "../lib/session";
-import { liveSmile, skewMeasures, skewWorkedExample, type SmileRow } from "../lib/skew";
+import { ivAtDelta, liveSmile, skewMeasures, skewWorkedExample, type SmileRow } from "../lib/skew";
 import { METRICS } from "../lib/metricRegistry";
 import { MethodologyPanel } from "./MethodologyPanel";
 import { useLiveSpot } from "../lib/useLive";
@@ -58,14 +58,28 @@ export function IvSkewBody({ expiry }: { expiry: string | null }) {
   const k = { ...(live ? live.metrics : stored!.cards!), term_slope_per_30d: stored?.cards?.term_slope_per_30d ?? null };
   const stale = !live && (s.age_seconds ?? 0) > 300;
   const tip = { trigger: "axis", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: number | null) => (v == null ? MISSING : `${v.toFixed(2)}%`) };
+  // call and put curves on one strike axis, the spot and ATM lines, and the interpolated 25- and 10-delta points (diamonds, placed between their two strikes)
+  const strikeAxis = [...new Set(s.smile.map((p) => p.strike))].sort((x, y) => x - y);
+  const smileRows: SmileRow[] = s.smile.map((p): SmileRow => ({ strike: p.strike, side: p.side, iv: p.iv, delta: p.delta ?? null, otm: true }));
+  const idx = (k: number) => strikeAxis.indexOf(k);
+  const nearestIdx = (v: number) => strikeAxis.reduce((best, k, i) => (Math.abs(k - v) < Math.abs(strikeAxis[best]! - v) ? i : best), 0);
+  const deltaPoints = ([["CE", 0.25, "25Δ call"], ["PE", 0.25, "25Δ put"], ["CE", 0.1, "10Δ call"], ["PE", 0.1, "10Δ put"]] as const).flatMap(([side, t, name]) => {
+    const d = ivAtDelta(smileRows, side, t);
+    if (!d || idx(d.lo.strike) < 0 || idx(d.hi.strike) < 0) return [];
+    const frac = d.hi.delta === d.lo.delta ? 0 : (t - d.lo.delta) / (d.hi.delta - d.lo.delta);
+    return [{ name, coord: [idx(d.lo.strike) + frac * (idx(d.hi.strike) - idx(d.lo.strike)), d.iv], value: d.iv.toFixed(2), itemStyle: { color: side === "CE" ? c.up : c.down } }];
+  });
   const smile = {
-    grid: { left: 46, right: 14, top: 28, bottom: 28 }, tooltip: tip,
-    xAxis: { type: "category", data: s.smile.map((p) => String(p.strike)), axisLabel: { color: c.muted, hideOverlap: true }, axisLine: { lineStyle: { color: c.rule } } },
+    grid: { left: 46, right: 14, top: 36, bottom: 28 }, tooltip: tip,
+    legend: { top: 0, left: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
+    xAxis: { type: "category", data: strikeAxis.map(String), axisLabel: { color: c.muted, hideOverlap: true }, axisLine: { lineStyle: { color: c.rule } } },
     yAxis: { type: "value", scale: true, axisLabel: { color: c.muted, formatter: "{value}%" }, splitLine: { lineStyle: { color: c.rule, opacity: 0.6 } } },
-    series: [{
-      name: "OTM IV", type: "line", showSymbol: true, symbolSize: 5, connectNulls: false, data: s.smile.map((p) => p.iv), lineStyle: { color: c.brass, width: 2 }, itemStyle: { color: c.brass },
-      markLine: { silent: true, symbol: "none", label: { color: c.muted, formatter: "ATM", fontSize: 10 }, lineStyle: { color: c.muted, type: "dashed" }, data: [{ xAxis: String(s.atm_strike) }] },
-    }],
+    series: [
+      { name: "Call IV (OTM)", type: "line", showSymbol: true, symbolSize: 5, connectNulls: false, data: strikeAxis.map((k) => s.smile.find((p) => p.strike === k && p.side === "CE")?.iv ?? null), lineStyle: { color: c.up, width: 2 }, itemStyle: { color: c.up },
+        markLine: { silent: true, symbol: "none", label: { color: c.muted, fontSize: 10 }, lineStyle: { color: c.muted, type: "dashed" }, data: [{ xAxis: idx(s.atm_strike ?? NaN), label: { formatter: "ATM" } }, ...(s.spot != null ? [{ xAxis: nearestIdx(s.spot), label: { formatter: "Spot" }, lineStyle: { color: c.brass, type: "solid" } }] : [])] },
+        markPoint: { symbol: "diamond", symbolSize: 11, label: { show: false }, data: deltaPoints } },
+      { name: "Put IV (OTM)", type: "line", showSymbol: true, symbolSize: 5, connectNulls: false, data: strikeAxis.map((k) => s.smile.find((p) => p.strike === k && p.side === "PE")?.iv ?? null), lineStyle: { color: c.down, width: 2 }, itemStyle: { color: c.down } },
+    ],
   };
   const term = {
     grid: { left: 46, right: 46, top: 36, bottom: 28 }, tooltip: { ...tip, valueFormatter: (v: number | null) => (v == null ? MISSING : v.toFixed(2)) },
@@ -118,6 +132,10 @@ export function IvSkewBody({ expiry }: { expiry: string | null }) {
         {view === "Term" && (s.term.length >= 2 ? (
           <>
             <div style={{ height: 320 }} data-testid="ivskew-term"><EChart option={term} ariaLabel="ATM implied volatility and 25 delta skew by expiry" /></div>
+            <div className="mt-2 overflow-x-auto"><table className="w-full min-w-[34rem] text-xs" data-testid="ivskew-term-table">
+              <thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Expiry</th><th className="py-1 text-right font-normal">Days</th><th className="py-1 text-right font-normal">ATM IV</th><th className="py-1 text-right font-normal">25Δ call / put IV</th><th className="py-1 text-right font-normal">10Δ call / put IV</th><th className="py-1 text-right font-normal">25Δ skew</th></tr></thead>
+              <tbody>{s.term.map((t) => <tr key={t.expiry} className="border-t border-rule/50"><td className="py-1 text-paper">{t.expiry}</td><td className="num py-1 text-right text-muted">{t.days == null ? MISSING : t.days.toFixed(2)}</td><td className="num py-1 text-right text-paper">{n2(t.atm_iv)}</td><td className="num py-1 text-right text-muted">{n2(t.call_25d_iv)} / {n2(t.put_25d_iv)}</td><td className="num py-1 text-right text-muted">{n2(t.call_10d_iv)} / {n2(t.put_10d_iv)}</td><td className="num py-1 text-right text-paper">{sgn(t.skew_25d)}</td></tr>)}</tbody>
+            </table></div>
             {stored?.term_structure && (
               <div className="mt-2 rounded-sm bg-slate-2 p-2 text-xs text-muted" data-testid="ivskew-term-structure">
                 {stored.term_structure.shape && stored.term_structure.near && stored.term_structure.far ? (
