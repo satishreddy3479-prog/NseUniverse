@@ -34,8 +34,11 @@ def create(settings: Any, observations: Any, intraday: Any, market: Any, market_
         start = datetime.combine(datetime.now(IST).date(), time(9, 0), IST).astimezone(UTC).isoformat()
         return {"fut": market_store.samples_since("fut", start), "heavy5": market_store.samples_since("heavy5", start)}
 
+    def heavymeta() -> dict[str, Any]:
+        return dict(market.heavy_meta())
+
     providers = {
-        "flow": flow,
+        "flow": flow, "heavymeta": heavymeta,
         "market": market.summary, "intraday": intraday.summary, "futures": futures,
         "skew": lambda e: intraday.iv_skew(e), "momentum": lambda e: intraday.iv_momentum(e),
         "positioning": lambda e: intraday.strike_positioning(e, "15"),

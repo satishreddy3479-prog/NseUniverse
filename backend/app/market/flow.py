@@ -38,6 +38,8 @@ class FlowTracker:
     depth_n: int = 0
     last_imbalance: float | None = None
     last_spread: float | None = None  # best ask - best bid in points
+    last_bid: float | None = None
+    last_ask: float | None = None
     last_update: datetime | None = None
     last_depth_at: datetime | None = None  # when the order-book imbalance was last computed
     last_atp: float | None = (
@@ -78,6 +80,7 @@ class FlowTracker:
             self.last_oi = oi
         if bid is not None and ask is not None and ask >= bid:
             self.last_spread = ask - bid
+            self.last_bid, self.last_ask = bid, ask
         if atp is not None and atp > 0:
             self.last_atp = atp
         if bid_qty is not None and ask_qty is not None and bid_qty + ask_qty > 0:
@@ -186,6 +189,9 @@ class FlowTracker:
             "quote_rule_share": None if classified == 0 else round(self.by_quote / classified, 3),
             "volume": self.last_volume,
             "last_price": self.last_ltp,
+            "vwap": self.last_atp,  # the exchange average traded price of the day (day VWAP)
+            "bid": self.last_bid,
+            "ask": self.last_ask,
             "depth_imbalance": round(self.last_imbalance, 3) if depth_ok and self.last_imbalance is not None else None,
             "depth_updated": None if self.last_depth_at is None else self.last_depth_at.isoformat(),
             "age_seconds": None if age is None else round(age, 1),

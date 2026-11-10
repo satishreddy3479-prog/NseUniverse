@@ -7,6 +7,7 @@ Kotak tokens and live ticks are stand-ins (no stock ticks have been captured yet
 
 from __future__ import annotations
 
+import math
 import sqlite3
 from datetime import UTC, date, datetime, timedelta, timezone
 from pathlib import Path
@@ -612,3 +613,34 @@ def test_any_series_scrip_master_keeps_trade_for_trade_stocks_and_prefers_eq() -
     assert t["SWARAJ"].token == "9001" and t["SWARAJ"].trading_symbol == "SWARAJ-BE"
     assert t["DUAL"].token == "7002"
     assert parse_scrip_master(rows).get("SWARAJ") is None  # the strict parser (used elsewhere) is unchanged
+
+
+def test_the_heavyweight_sample_stores_price_vwap_weight_and_methodology_and_stays_readable(tmp_path: Path) -> None:
+    svc = build(tmp_path, {s: 101.0 for s in SYMS})
+    k = f"nse_cm|{TOKENS['AXISBANK']}"
+    svc.on_tick(depth_tick(k, "AXISBANK", 100.0, 1000, 99.95, 100.0))
+    svc.on_tick(depth_tick(k, "AXISBANK", 100.0, 1300, 99.95, 100.0).model_copy(update={"avg_price": 99.8}))  # 300 at the ask, the exchange day VWAP 99.8
+    assert svc.sample(NOW) is True
+    sample = svc.store.recent_samples("heavy5")[-1]
+    row = next(r for r in sample["rows"] if r[0] == "AXISBANK")
+    assert row[:5] == ["AXISBANK", 300, 300, 0, 1300] and row[6] == 100.0 and row[7] == 99.8 and row[8] == 25.0  # price, day VWAP, index weight
+    assert row[10] == pytest.approx(100 * math.tanh(100 / 25), abs=0.1) and row[11] is False  # normalised session CVD (100 % of classified), not stale
+    assert sample["m"] == "cvd_proxy_quote_tick" and sample["w"]["source"]
+    from app.intelligence import heavyweights as hw
+
+    pts = hw.points([(NOW.isoformat(), sample)])
+    assert pts["AXISBANK"][0].atp == 99.8 and pts["AXISBANK"][0].weight == 25.0
+    fl = next(r for r in svc.summary(NOW)["flow"]["heavy5"]["stocks"] if r["symbol"] == "AXISBANK")["flow"]
+    assert fl["vwap"] == 99.8 and fl["bid"] == 99.95 and fl["ask"] == 100.0
+
+
+def test_heavy_meta_gives_names_weights_previous_weights_and_staleness(tmp_path: Path) -> None:
+    svc = build(tmp_path, {s: 101.0 for s in SYMS})
+    svc.store.save_weights("nifty50", {"AXISBANK": 20.0, "BSE": 5.0}, date(2026, 3, 31), "NSE index tracker", NOW)
+    meta = svc.heavy_meta()
+    assert meta["top"][0] == "AXISBANK" and meta["stocks"][0]["weight"] == 25.0 and meta["stocks"][0]["previous_weight"] == 20.0 and meta["stocks"][0]["name"]
+    w = meta["weights"]
+    assert w["source"] and w["previous_as_of"] == "2026-03-31" and w["stale"] is False  # the fixture weights are 2026-09-30 or later: fresh on 29 Oct
+    before = svc.store.weights_before("nifty50", w["as_of"])
+    assert before is not None and before[1] == "2026-03-31" and before[0]["AXISBANK"] == 20.0
+    assert svc.store.weights_before("nifty50", "2026-01-01") is None

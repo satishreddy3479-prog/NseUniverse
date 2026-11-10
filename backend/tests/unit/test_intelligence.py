@@ -167,26 +167,37 @@ def test_a_stale_or_thin_cvd_is_left_out_not_used() -> None:
 
 def test_heavyweight_cvd_is_normalised_per_stock_and_weighted_never_a_sum_of_raw_values() -> None:
     def stock(sym: str, w: float, cvd_pct: float, raw: float) -> dict[str, Any]:
-        return {"symbol": sym, "weight": w, "change_pct": 0.3, "flow": {"cvd": raw, "cvd_pct": cvd_pct, "classified_share": 0.9, "stale": False}}
+        return {"symbol": sym, "weight": w, "change_pct": 0.3, "flow": {"cvd": raw, "cvd_pct": cvd_pct, "classified_share": 0.9, "stale": False, "age_seconds": 3.0}}
 
     for scale in (1, 1000):  # a stock trading a thousand times the volume has a thousand times the raw CVD: the result must not change
-        inp = {"market": {"flow": {"heavy5": {"stocks": [stock("A", 10, 25, 1e5 * scale), stock("B", 5, -25, -1e5)]}}, "nifty50": {"stocks": [{"symbol": "A", "contribution": 0.03}, {"symbol": "B", "contribution": -0.01}]}, "index_change_pct": 0.2}}
+        inp = {"market": {"flow": {"heavy5": {"stocks": [stock("A", 10, 25, 1e5 * scale), stock("B", 5, -25, -1e5), stock("C", 5, 25, 1e5)]}}, "nifty50": {"stocks": [{"symbol": "A", "contribution": 0.03}, {"symbol": "B", "contribution": -0.01}]}, "index_change_pct": 0.2}}
         e = fz.orderflow_engine(inp, ST_OK)
-        assert e["metrics"]["weighted_cvd_score"] == pytest.approx(100 * (10 * math.tanh(1) - 5 * math.tanh(1)) / 15, abs=0.1)
-    assert e["metrics"]["positive_cvd"] == 1 and e["metrics"]["negative_cvd"] == 1
+        assert e["metrics"]["weighted_cvd_score"] == pytest.approx(100 * (10 * math.tanh(1) - 5 * math.tanh(1) + 5 * math.tanh(1)) / 20, abs=0.1)
+    assert e["metrics"]["positive_cvd"] == 2 and e["metrics"]["negative_cvd"] == 1
     assert next(t for t in e["terms"] if t["name"] == "Heavyweight CVD (Proxy), session")["proxy"] is True
     p = fz.participation_engine(inp, ST_OK)  # participation reads prices only: no CVD
     assert p["metrics"]["aggregate_points_pct"] == pytest.approx(0.02)
     t = {x["name"]: x for x in p["terms"]}
     assert t["Index points from the heavyweights"]["score"] == pytest.approx(100 * math.tanh(0.02 / 0.15), abs=0.1)
-    assert t["Heavyweights advancing versus declining (by weight)"]["score"] == 100.0  # both stocks +0.3 %: all 15 of the weight advancing
+    assert t["Heavyweights advancing versus declining (by weight)"]["score"] == 100.0  # all three stocks +0.3 %: all 20 of the weight advancing
     assert not any("CVD" in x["name"] for x in p["terms"])
 
 
+def test_heavyweight_aggregate_is_unavailable_with_fewer_than_three_valid_stocks() -> None:
+    two = [{"symbol": s_, "weight": 10, "change_pct": 0.1, "flow": {"cvd_pct": 30.0, "classified_share": 0.9, "stale": False, "age_seconds": 3.0}} for s_ in ("A", "B")]
+    e = fz.orderflow_engine({"market": {"flow": {"heavy5": {"stocks": two}}}}, ST_OK)
+    assert e["metrics"]["weighted_cvd_score"] is None  # a two-stock figure is never offered as the five-stock aggregate
+    term = next(t for t in e["terms"] if t["name"] == "Heavyweight CVD (Proxy), session")
+    assert term["available"] is False and "unavailable" in term["detail"]
+
+
 def test_heavyweight_divergence_when_the_index_rises_against_selling() -> None:
-    sell = [{"symbol": "A", "weight": 10, "change_pct": 0.1, "flow": {"cvd_pct": -40.0, "classified_share": 0.9, "stale": False}}]
-    e = fz.orderflow_engine({"market": {"flow": {"heavy5": {"stocks": sell}}, "index_change_pct": 0.3}}, ST_OK)
+    heavy = {"available": True, "aggregate": {"15": {"score": -60.0, "valid": 5}, "session": {"score": -50.0, "valid": 5}, "momentum": -5.0}, "participation": {"class": "Heavyweight divergence", "positive": 0, "negative": 4, "valid": 5, "weight_share_positive": 0.0, "weight_share_negative": 0.8},
+             "stocks": [{"symbol": "A", "valid": True}], "signals": []}
+    e = fz.orderflow_engine({"heavy": heavy}, ST_OK)
     assert e["metrics"]["divergence"] == "index and heavyweight flow disagree"
+    part = next(t for t in e["terms"] if t["name"] == "Heavyweight CVD participation (Proxy)")
+    assert part["score"] == pytest.approx(-80.0)
 
 
 def test_gex_state_reads_the_flip_distance_and_the_price_relationship() -> None:
@@ -402,7 +413,7 @@ class Rig:
             "momentum": p("momentum", {"age_seconds": 30, "table": {"periods": {"15": {"atm": {"ce_change": 0.1, "pe_change": 0.1}, "spot_change_pct": 0.3, "d25": {"momentum": 0.2}}}}}),
             "positioning": p("positioning", {"age_seconds": 30, "demand": [], "rows": []}),
             "gex": p("gex", lambda: gex_points([100, 90, 80, 70], [24020, 24050, 24080, 24100])), "vix": p("vix", {"iv": [14.0, 15.0], "dates": ["2026-11-06", "2026-11-09"], "hv": [10.0, 11.0], "rv": [9.0, 10.0]}),
-            "flow": p("flow", lambda: {"fut": flow_samples(40), "heavy5": []}),
+            "flow": p("flow", lambda: {"fut": flow_samples(40), "heavy5": []}), "heavymeta": p("heavymeta", {"weights": {"as_of": "2026-09-30", "source": "NSE index tracker", "age_days": 40, "stale": False}, "stocks": []}),
         }
         self.svc = MarketIntelligence(providers=self.providers, store=self.store, default_expiry=lambda: "2026-11-10", clock=lambda: self.clock)
 

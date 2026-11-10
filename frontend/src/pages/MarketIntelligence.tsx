@@ -5,8 +5,9 @@ import { fmtTimeIST, MISSING } from "../lib/format";
 import { DetailPanels } from "../components/intelligence/Detail";
 import { AlertsPanel, DivergencePanel, ScenarioPanel, TimelinePanel } from "../components/intelligence/Insight";
 import { CommandStrip, EngineMatrix, Interpretation, PulseCards } from "../components/intelligence/Overview";
+import { HeavyweightPanel } from "../components/intelligence/Heavyweight";
 
-const LABELS: Record<string, string> = { flow: "Stored per-minute flow (rolling CVD)", market: "Market flow, breadth and heavyweights", intraday: "Command centre (stored chain)", futures: "Futures series", skew: "Volatility skew", momentum: "IV momentum", positioning: "Strike positioning", gex: "GEX (rebuilt)", vix: "India VIX, HV and RV (daily closes)" };
+const LABELS: Record<string, string> = { flow: "Stored per-minute flow (rolling CVD)", market: "Market flow, breadth and heavyweights", intraday: "Command centre (stored chain)", futures: "Futures series", skew: "Volatility skew", momentum: "IV momentum", positioning: "Strike positioning", gex: "GEX (rebuilt)", vix: "India VIX, HV and RV (daily closes)", heavymeta: "Heavyweight index weights" };
 const STATE_TONE: Record<string, string> = { AVAILABLE: "text-up", PARTIAL: "text-warn", UNAVAILABLE: "text-down" };
 
 /** NIFTY 50 Market Intelligence: one page that fuses the existing analytics into a sentiment, a regime and the evidence behind them. */
@@ -21,6 +22,7 @@ export function MarketIntelligence() {
       <CommandStrip d={d} />
       <PulseCards d={d} />
       <EngineMatrix d={d} />
+      <HeavyweightPanel d={d} />
       <Interpretation d={d} />
       <div className="grid gap-3 xl:grid-cols-2"><DivergencePanel d={d} /><AlertsPanel alerts={d.alerts} /></div>
       <ScenarioPanel s={d.scenarios} />

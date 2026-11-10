@@ -257,6 +257,17 @@ class MarketStore:
             ).fetchall()
         return {s: float(w) for s, w in rows}, r[0], r[1]
 
+    def weights_before(self, index: str, as_of: str) -> tuple[dict[str, float], str] | None:
+        """The official weight set that preceded ``as_of`` (symbol -> weight %, its as_of), or None."""
+        with self._lock:
+            r = self._db.execute(
+                "SELECT as_of, source FROM weights WHERE index_name=? AND as_of<? AND source NOT LIKE 'approx%' GROUP BY as_of, source ORDER BY as_of DESC LIMIT 1", (index, as_of)
+            ).fetchone()
+            if r is None:
+                return None
+            rows = self._db.execute("SELECT symbol, weight_pct FROM weights WHERE index_name=? AND as_of=? AND source=?", (index, r[0], r[1])).fetchall()
+        return {s: float(w) for s, w in rows}, r[0]
+
     # ---------------------------------------------------------------- tokens
     def save_tokens(self, tokens: dict[str, TokenInfo], day: date) -> int:
         with self._lock:

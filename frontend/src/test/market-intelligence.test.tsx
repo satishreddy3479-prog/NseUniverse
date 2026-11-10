@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MarketIntelligence } from "../pages/MarketIntelligence";
 import { Home } from "../pages/Home";
-import type { EngineView, Intelligence, Timeline } from "../lib/intelligence";
+import type { EngineView, HeavyStock, Heavyweights, Intelligence, Timeline } from "../lib/intelligence";
 
 vi.mock("../components/EChart", () => ({
   useChartColors: () => ({ up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" }),
@@ -18,6 +18,26 @@ const eng = (key: string, name: string, score: number | null, o: Partial<EngineV
   terms: score == null ? [{ name: "ATM IV change against price (15 min)", score: null, detail: "no snapshot 15 minutes earlier", available: false, proxy: false }] : [{ name: "Futures CVD (Proxy), session", score: 40, detail: "session CVD +25.0% of classified volume", available: true, proxy: true, family: "futures_cvd", weight: 1, shares: [] }, { name: "Spot versus the gamma flip (modelled)", score: 20, detail: "spot +0.41% from the modelled flip", available: true, proxy: false, family: "gex", weight: 0.5, shares: ["price"], overlap_adjustment: "weight 0.5: shares price with another group" }],
   supporting: [], conflicting: score != null ? ["Price versus VWAP: future below its VWAP"] : [], unavailable: [], freshness: { fresh: score == null ? null : true, age_s: 12, inputs: [], failed: [] }, ...o,
 });
+const win = (m: number, p: number | null, n: number | null, status = "ok") => ({ minutes: m, cvd: p == null ? null : p * 100, pct: p, norm: n, price_change_pct: 0.1, status });
+const hstock = (symbol: string, name: string, weight: number, prev: number, sess: number, n15: number | null, bias: string, o: Partial<HeavyStock> = {}): HeavyStock => ({
+  symbol, name, weight, previous_weight: prev, price: 1500, change_pct: 0.4, vwap: 1495, price_vs_vwap_pct: 0.33, session: { cvd: sess * 100, pct: sess, norm: sess * 3, buy_volume: 6000, sell_volume: 4000 },
+  windows: { "5": win(5, 20, 66.4), "15": n15 == null ? win(15, null, null, "unavailable: fewer than 15 minutes of continuous stored flow") : win(15, 20, n15), "30": win(30, null, null, "unavailable: fewer than 30 minutes of continuous stored flow") },
+  momentum: 8.5, acceleration: -2.0, basis_norm: n15, bias, price_cvd_divergence: null, contribution_pct: 30, methodology: "CVD PROXY", valid: true,
+  freshness: { updated: "2026-11-09T04:29:58Z", age_s: 3, feed: "live", fresh: true, classified_share: 0.95, coverage_of_day_volume: 0.9, quote_rule_share: 0.7, stored_samples: 40 }, ...o,
+});
+const hw: Heavyweights = {
+  available: true, method: "CVD PROXY: quote rule, then tick rule; estimated from the quote stream, no aggressor-side trade tape", limits: ["Buyer- and seller-initiated volume are not observed: every CVD figure is an estimate (CVD PROXY).", "Trade timestamps are not available from the feed."],
+  as_of: "2026-11-09T04:29:58Z",
+  stocks: [hstock("HDFCBANK", "HDFC Bank Ltd.", 13.1, 12.4, 20, 66.4, "Buying · above VWAP (confirmed)"), hstock("RELIANCE", "Reliance Industries Ltd.", 8.9, 9.0, 15, 50, "Buying · above VWAP (confirmed)"),
+    hstock("ICICIBANK", "ICICI Bank Ltd.", 8.5, 8.4, -10, -30, "Selling · below VWAP (confirmed)", { contribution_pct: -12 }), hstock("INFY", "Infosys Ltd.", 5.0, 5.1, 12, 40, "Buying · above VWAP (confirmed)"),
+    hstock("TCS", "Tata Consultancy Services Ltd.", 4.0, 4.0, 0, null, "No reading", { valid: false, session: { cvd: null, pct: null, norm: null, buy_volume: null, sell_volume: null }, contribution_pct: null, freshness: { updated: "2026-11-09T04:20:00Z", age_s: 600, feed: "STALE", fresh: false, classified_share: null, coverage_of_day_volume: null, quote_rule_share: null, stored_samples: 30 } })],
+  aggregate: { session: { score: 38, valid: 4, of: 5, weight_share: 0.89, status: "PARTIAL: 4 of 5 stocks" }, "5": { score: 52, valid: 4, of: 5, weight_share: 0.89, status: "PARTIAL: 4 of 5 stocks" }, "15": { score: 41, valid: 4, of: 5, weight_share: 0.89, status: "PARTIAL: 4 of 5 stocks" },
+    "30": { score: null, valid: 0, of: 5, weight_share: 0, status: "unavailable: 0 of 5 stocks valid (need 3 and 60% of the weight)" }, momentum: 11, acceleration: 4 },
+  participation: { class: "Broad heavyweight buying", valid: 4, positive: 3, negative: 1, neutral: 0, weight_share_positive: 0.76, weight_share_negative: 0.24, top_contributor: { symbol: "HDFCBANK", share: 0.45 }, reason: null },
+  nifty: { change_15m_pct: 0.12, day_change_pct: 0.3, vwap_side: "above" }, relative_strength_pct: 0.15,
+  series: [{ t: "2026-11-09T04:10:00Z", session: 30, w5: 40, w15: null, spot: 24050 }, { t: "2026-11-09T04:20:00Z", session: 35, w5: 45, w15: 38, spot: 24080 }, { t: "2026-11-09T04:30:00Z", session: 38, w5: 52, w15: 41, spot: 24100 }],
+  quality: { valid: 4, of: 5, weight_share: 0.89, aggregate_available: true, weights: { as_of: "2026-06-30", source: "NSE index tracker", age_days: 132, stale: true, approximate: false, basis: "official index weights" } },
+};
 const base: Intelligence = {
   generated_at: "2026-11-09T04:30:00Z", expiry: "2026-11-10", session: "2026-11-09", enabled: true,
   status: { market: { ok: true, age_s: 2, ms: 3 }, gex: { ok: false, age_s: null, ms: 1, error: "RuntimeError: module down" }, intraday: { ok: true, age_s: 20, ms: 40 } },
@@ -39,8 +59,8 @@ const base: Intelligence = {
     vega: { ce_avg_vega: 5.2, pe_avg_vega: 5.0, strikes: 11, note: "Average vega per option." },
     volatility: { atm_iv: 15.2, iv_change_15m: -0.4, hv: 11, rv: 10, india_vix: 14.1, india_vix_label: "India VIX – Last Daily Close", india_vix_as_of: "2026-11-06", ivr_252: 42, ivp_252: 55, skew_25d: 2.1, skew_10d: 4.0, risk_reversal_25d: -2.1, butterfly_25d: 0.4, term_slope_30d: 1.2, term_shape: "contango", term: [{ expiry: "2026-11-10", days: 1, atm_iv: 15.2 }], expected_move_1sd_pts: 160, straddle: 183, interpretation: null, note: "India VIX is a daily close." },
     futures: { series: { future: 24148, basis: 48 }, contract: "NIFTY26NOVFUT", oi_change: 52000, volume: 900000, buildup: "long buildup", flow: { cvd_pct: 25, classified_share: 0.9, depth_imbalance: 0.1 }, vwap: { vwap: 24050, distance_pct: 0.2, slope_pts_per_15m: 4 }, rolling: { estimated: true, momentum_per_min: 12.5, ok_windows: 2, windows: { "5": { minutes: 5, cvd: 1000, cvd_pct: 20, volume: 5000, classified: 5000, from: "t0", to: "t1", status: "ok" }, "15": { minutes: 15, cvd: 2400, cvd_pct: 16, volume: 15000, classified: 15000, from: "t0", to: "t1", status: "ok" }, "30": { minutes: 30, cvd: null, cvd_pct: null, volume: null, classified: null, from: null, to: "t1", status: "unavailable: fewer than 30 minutes of flow samples stored today" } } }, unavailable: ["rollover data (needs near-month and next-month contract OI and volume history)"], note: "CVD is an estimate by the quote and tick rule." },
-    heavyweight: { stocks: [{ symbol: "HDFCBANK", weight: 13, change_pct: 0.4, relative_volume: 1.1, cvd_pct: 20, divergence: null, contribution: 0.05 }], metrics: { weighted_cvd_score: 31, positive_cvd: 4, negative_cvd: 1, stocks_used: [], aggregate_points_pct: 0.09, participation_ratio: 0.8, divergence: null, symbols: ["HDFCBANK"] }, unavailable: ["stock futures and their OI"], note: "The five largest constituents." },
   },
+  heavyweights: hw,
   alerts: [{ id: 1, at: "2026-11-09T04:15:00Z", kind: "VWAP reclaim", severity: "medium", direction: "bullish", text: "Future reclaimed its day VWAP", evidence: [], confirmation: "holds for 5 minutes", invalidation: "price crosses back" }],
   config: { weights: { positioning: 30, orderflow: 20, volatility: 10, structure: 20, participation: 20 }, min_coverage: 0.55, min_engines: 3, note: "Provisional weights – not yet statistically calibrated." }, compute_ms: 38,
   capabilities: [
@@ -165,10 +185,9 @@ describe("Market Intelligence page", () => {
   it("the detail panels link to the existing analysis pages and keep their notes", async () => {
     view(base);
     const d = await screen.findByTestId("mi-details");
-    expect(within(d).getAllByRole("link", { name: /Open the full analysis/ }).map((l) => l.getAttribute("href"))).toEqual(["/tools/strike-positioning", "/tools/gamma-exposure", "/tools/volatility-skew", "/tools/future-flow", "/tools/future-flow"]);
+    expect(within(d).getAllByRole("link", { name: /Open the full analysis/ }).map((l) => l.getAttribute("href"))).toEqual(["/tools/strike-positioning", "/tools/gamma-exposure", "/tools/volatility-skew", "/tools/future-flow"]);
     expect(d.textContent).toContain("not observed dealer positioning");
     expect(d.textContent).toContain("OI does not identify who bought or sold");
-    expect(within(screen.getByTestId("mi-heavy")).getByText("HDFCBANK")).toBeTruthy();
     expect(d.textContent).toContain("rollover data");
     expect(d.textContent).toContain("Modelled GEX exposure (not observed dealer positioning)");
     expect(d.textContent).toContain("India VIX – Last Daily Close");
@@ -214,6 +233,71 @@ describe("Market Intelligence page", () => {
   it("shows an error state without breaking when the service is down", async () => {
     view({ detail: { code: "disabled", message: "the market-intelligence dashboard is turned off" } }, timeline, 404);
     expect((await screen.findByRole("alert")).textContent).toContain("could not be loaded");
+  });
+});
+
+describe("Heavyweight Intelligence panel", () => {
+  it("shows each stock with weight, price change, CVD proxy, momentum, VWAP, bias and feed freshness", async () => {
+    view(base);
+    const panel = await screen.findByTestId("hw-panel");
+    expect(within(panel).getByTestId("hw-proxy").textContent).toBe("CVD PROXY");
+    const row = within(panel).getByTestId("hw-row-HDFCBANK");
+    expect(row.textContent).toContain("HDFC Bank Ltd.");
+    expect(row.textContent).toContain("13.10%");
+    expect(row.textContent).toContain("was 12.40%"); // the previous index weight
+    expect(row.textContent).toContain("+0.40%");
+    expect(row.textContent).toContain("+20.0% session");
+    expect(row.textContent).toContain("15 min +20.0%");
+    expect(row.textContent).toContain("accel −2.0");
+    expect(row.textContent).toContain("1,495.00");
+    expect(row.textContent).toContain("Buying · above VWAP (confirmed)");
+    expect(row.textContent).toContain("live · 3 s");
+    expect(row.textContent).toContain("CVD PROXY");
+    expect(within(panel).getByTestId("hw-row-ICICIBANK").textContent).toContain("Selling · below VWAP (confirmed)");
+  });
+  it("marks an unavailable stock instead of substituting another, and never presents a partial aggregate as five stocks", async () => {
+    view(base);
+    const panel = await screen.findByTestId("hw-panel");
+    const tcs = within(panel).getByTestId("hw-row-TCS");
+    expect(tcs.textContent).toContain("STALE · 600 s");
+    expect(tcs.textContent).toContain("No reading");
+    expect(within(panel).getByTestId("hw-quality").textContent).toContain("4 of 5 heavyweights valid");
+    expect(panel.textContent).toContain("4 of 5 stocks (PARTIAL)");
+    expect(panel.textContent).toContain("unavailable: 0 of 5 stocks valid (need 3 and 60% of the weight)"); // the 30-minute aggregate
+  });
+  it("shows the aggregate windows, momentum, acceleration, participation breadth and NIFTY context", async () => {
+    view(base);
+    const panel = await screen.findByTestId("hw-panel");
+    expect(panel.textContent).toContain("Aggregate session");
+    expect(panel.textContent).toContain("+38");
+    expect(panel.textContent).toContain("+52");
+    expect(panel.textContent).toContain("+11.0"); // aggregate momentum
+    expect(panel.textContent).toContain("+4.0"); // aggregate acceleration
+    const part = within(panel).getByTestId("hw-participation");
+    expect(part.textContent).toContain("Broad heavyweight buying");
+    expect(part.textContent).toContain("3 buying · 1 selling · 0 neutral of 4 valid");
+    expect(part.textContent).toContain("largest HDFCBANK (45% of that side)");
+    expect(within(panel).getByTestId("hw-nifty").textContent).toContain("+0.12%");
+    expect(within(panel).getByTestId("hw-nifty").textContent).toContain("above");
+    expect(panel.querySelectorAll('[role="img"]').length).toBe(2); // the aggregate-versus-NIFTY chart and the five-stock contribution chart
+  });
+  it("warns that the index weights are stale and says where they came from", async () => {
+    view(base);
+    expect((await screen.findByTestId("hw-stale-weights")).textContent).toContain("132 days old");
+    expect(screen.getByTestId("hw-quality").textContent).toContain("as of 2026-06-30 (NSE index tracker");
+  });
+  it("shows an explicit unavailable state when no heavyweight flow is tracked", async () => {
+    view({ ...base, heavyweights: { ...hw, available: false, reason: "no heavyweight flow is tracked yet", stocks: [] } });
+    expect((await screen.findByTestId("hw-panel")).textContent).toContain("Nothing is estimated in its place");
+  });
+  it("lists the divergence signals with their evidence and timestamp in the divergence panel", async () => {
+    const sig = { id: "hw_up_cvd_down", name: "NIFTY rising while heavyweight CVD falls", direction: "bearish", severity: "medium" as const, kind: "divergence" as const, reading: "NIFTY +0.30% while aggregate heavyweight CVD proxy is -40", explanation: "The index is rising against estimated selling pressure in its five largest stocks.", invalidation: "aggregate CVD turns positive or NIFTY stops rising",
+      evidence: ["aggregate 15-min -40", "NIFTY +0.30% (15 min)", "participation: Heavyweight divergence"], at: "2026-11-09T04:29:58Z", status: "early warning" as const, since: null, previous: null };
+    view({ ...base, divergences: [sig] });
+    const ev = await screen.findByTestId("mi-div-evidence");
+    expect(ev.textContent).toContain("aggregate 15-min -40");
+    expect(ev.textContent).toContain("participation: Heavyweight divergence");
+    expect(ev.textContent).toContain("as of");
   });
 });
 

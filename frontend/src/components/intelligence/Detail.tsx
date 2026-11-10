@@ -71,14 +71,6 @@ export function DetailPanels({ d }: { d: Intelligence }) {
         )}
         <Note>{p.futures.note} Not available today: {p.futures.unavailable.join("; ")}.</Note>
       </Block>
-      <Block id="heavyweight" title="Heavyweight intelligence" link="/tools/future-flow">
-        {p.heavyweight.stocks.length === 0 ? <p className="text-muted">No heavyweight flow is available yet.</p> : (
-          <div className="overflow-x-auto"><table className="w-full min-w-[40rem]" data-testid="mi-heavy"><thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Stock</th><th className="py-1 text-right font-normal">Weight %</th><th className="py-1 text-right font-normal">Change %</th><th className="py-1 text-right font-normal">Rel. volume</th><th className="py-1 text-right font-normal" title={CVD_TIP}>CVD % (Proxy)</th><th className="py-1 text-right font-normal">Index pts %</th></tr></thead>
-            <tbody>{p.heavyweight.stocks.map((s) => <tr key={s.symbol} className="border-t border-rule/50"><td className="py-1 text-paper">{s.symbol}</td><td className="num py-1 text-right">{n(s.weight)}</td><td className={`num py-1 text-right ${(s.change_pct ?? 0) >= 0 ? "text-up" : "text-down"}`}>{sg(s.change_pct)}</td><td className="num py-1 text-right">{n(s.relative_volume)}</td><td className={`num py-1 text-right ${(s.cvd_pct ?? 0) >= 0 ? "text-up" : "text-down"}`}>{sg(s.cvd_pct, 1)}</td><td className="num py-1 text-right">{sg(s.contribution, 3)}</td></tr>)}</tbody></table></div>
-        )}
-        {p.heavyweight.metrics && <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-5"><Kv k="Weighted CVD score (Proxy)" tip={CVD_TIP} v={sg(p.heavyweight.metrics.weighted_cvd_score ?? null, 0)} /><Kv k="Positive / negative CVD" v={`${p.heavyweight.metrics.positive_cvd ?? MISSING} / ${p.heavyweight.metrics.negative_cvd ?? MISSING}`} /><Kv k="Aggregate points" v={`${sg(p.heavyweight.metrics.aggregate_points_pct ?? null, 3)}%`} /><Kv k="Weight advancing / declining" v={`${p.heavyweight.metrics.heavy_up_weight ?? MISSING} / ${p.heavyweight.metrics.heavy_down_weight ?? MISSING}`} /><Kv k="Index vs heavyweights" v={p.heavyweight.metrics.divergence ?? "agree"} /></div>}
-        <Note>{p.heavyweight.note} Each stock's CVD is normalised before the index-weighted average, never added raw. Not available today: {p.heavyweight.unavailable.join("; ")}.</Note>
-      </Block>
     </section>
   );
 }

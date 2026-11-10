@@ -26,6 +26,8 @@ import math
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
+from app.intelligence import heavyweights as hw
+
 #: default engine weights (percent); overridable through ``Settings.intelligence_weights``
 DEFAULT_WEIGHTS: dict[str, float] = {"positioning": 30.0, "orderflow": 20.0, "volatility": 10.0, "structure": 20.0, "participation": 20.0}
 ENGINE_NAMES = {
@@ -114,8 +116,10 @@ def engine(key: str, terms: Sequence[Term], inputs: Sequence[str], status: Mappi
     known = [a for a in ages if a is not None]
     worst = max(known) if known else None
     fresh = None if score is None else (not errs and (worst is None or worst <= limit))
-    total_w = sum(t.weight for t in terms)
-    fraction = 1.0 if not total_w else sum(t.weight for t in avail) / total_w
+    # the share of the group's evidence that exists is counted by family (a family is one reading however many terms it has)
+    fam_all = {f: sum(t.weight for t in terms if t.family == f) / sum(1 for t in terms if t.family == f) for f in dict.fromkeys(t.family for t in terms)}
+    total_w = sum(fam_all.values())
+    fraction = 1.0 if not total_w else sum(fam_all[f] for f in fam_w) / total_w
     state = "UNAVAILABLE" if score is None else ("AVAILABLE" if len(avail) == len(terms) else "PARTIAL")
     return {
         "key": key, "name": ENGINE_NAMES[key], "score": score, "class": classify(score), "tilt": tilt(score), "link": ENGINE_LINKS[key],
@@ -277,37 +281,22 @@ def orderflow_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[
     terms.append(Term("Futures CVD (Proxy), rolling 15 min", squash(r15v, 25), f"last 15 minutes {r15v:+.1f}% of classified volume (stored per-minute flow, estimate)" if r15v is not None else str(r15.get("status") or "no rolling flow"), proxy=True, family="futures_cvd"))
     imb = num(g(flow, "depth_imbalance"))
     terms.append(Term("Order-book depth imbalance (Proxy)", squash(imb, 0.3) if stale is not True else None, f"bid minus ask depth share {imb:+.2f} (resting quotes, not trades)" if imb is not None else "no fresh depth", proxy=True, family="depth"))
-    stocks = g(inp.get("market"), "flow", "heavy5", "stocks") or []
-    idx = num(g(inp.get("market"), "index_change_pct"))
-    used, num_w, den_w, pos, neg = [], 0.0, 0.0, 0, 0
-    for s in stocks:
-        fl, w = s.get("flow") or {}, num(s.get("weight"))
-        c, sh = num(fl.get("cvd_pct")), num(fl.get("classified_share"))
-        if w and c is not None and fl.get("stale") is not True and (sh is None or sh >= 0.5):
-            num_w += w * math.tanh(c / 25)  # normalised per stock first: raw CVDs of stocks with different volumes are never added
-            den_w += w
-            pos += c > 0
-            neg += c < 0
-            used.append(s.get("symbol"))
-    agg = None if den_w == 0 else 100 * num_w / den_w
-    rh = inp.get("rolling_heavy") or {}
-    rn, rd, rused = 0.0, 0.0, 0
-    for s_ in stocks:
-        w_ = num(s_.get("weight"))
-        r_ = rh.get(s_.get("symbol")) or {}
-        c_ = num(r_.get("cvd_pct")) if r_.get("status") == "ok" else None
-        if w_ and c_ is not None:
-            rn += w_ * math.tanh(c_ / 25)
-            rd += w_
-            rused += 1
-    agg15 = None if rd == 0 else 100 * rn / rd
-    terms.append(Term("Heavyweight CVD (Proxy), rolling 15 min", agg15, f"{rused} of {len(stocks)} stocks, last 15 minutes of stored flow, each normalised then weighted (estimate)" if agg15 is not None else str((rh.get("_status") or {}).get("status") or "no rolling heavyweight flow"), proxy=True, family="heavy_cvd"))
-    terms.append(Term("Heavyweight CVD (Proxy), session", agg, f"{len(used)} of {len(stocks)} stocks, each normalised then weighted by index weight; {pos} positive, {neg} negative (estimate)" if agg is not None else "no heavyweight flow", proxy=True, family="heavy_cvd"))
-    div = None
-    if agg is not None and idx is not None and abs(idx) >= 0.1 and abs(agg) >= 15 and agg * idx < 0:
-        div = "index and heavyweight flow disagree"
-    return engine("orderflow", terms, ["market", "flow"], status, extra={"metrics": {"weighted_cvd_score": None if agg is None else round(agg, 1), "positive_cvd": pos, "negative_cvd": neg, "stocks_used": used,
-                                                                                    "weighted_cvd_15m_score": None if agg15 is None else round(agg15, 1), "divergence": div, "symbols": [s.get("symbol") for s in stocks]}})
+    h = inp.get("heavy") or hw.assess(inp)
+    agg = h.get("aggregate") or {}
+    s15, ssess = (agg.get("15") or {}).get("score"), (agg.get("session") or {}).get("score")
+    mom = agg.get("momentum")
+    part = h.get("participation") or {}
+    rows_h = h.get("stocks") or []
+    n_ok = (agg.get("session") or {}).get("valid", 0)
+    why = (agg.get("15") or {}).get("status") or "no rolling heavyweight flow"
+    terms.append(Term("Heavyweight CVD (Proxy), rolling 15 min", s15, f"weighted over {(agg.get('15') or {}).get('valid')} of {len(rows_h)} stocks, last 15 minutes of stored flow, each normalised then index-weighted (estimate)" if s15 is not None else why, proxy=True, family="heavy_cvd"))
+    terms.append(Term("Heavyweight CVD (Proxy), session", ssess, f"{n_ok} of {len(rows_h)} stocks, each normalised then weighted by index weight (estimate)" if ssess is not None else str((agg.get("session") or {}).get("status") or "no heavyweight flow"), proxy=True, family="heavy_cvd"))
+    terms.append(Term("Heavyweight CVD momentum (Proxy), 5 vs 15 min", None if mom is None else clip(mom), f"5-minute aggregate less 15-minute aggregate {mom:+.0f} (positive: pressure strengthening)" if mom is not None else "needs both rolling windows", proxy=True, family="heavy_cvd"))
+    wp, wn = part.get("weight_share_positive"), part.get("weight_share_negative")
+    terms.append(Term("Heavyweight CVD participation (Proxy)", None if wp is None or wn is None else (wp - wn) * 100, f"{part.get('positive')} stocks buying, {part.get('negative')} selling of {part.get('valid')} valid; weight share {wp:.0%} vs {wn:.0%}" if wp is not None and wn is not None else "fewer than 3 valid heavyweights", proxy=True, family="heavy_cvd"))
+    div = "index and heavyweight flow disagree" if part.get("class") == "Heavyweight divergence" else None
+    return engine("orderflow", terms, ["market", "flow"], status, extra={"metrics": {"weighted_cvd_score": ssess, "positive_cvd": part.get("positive"), "negative_cvd": part.get("negative"), "stocks_used": [r["symbol"] for r in rows_h if r.get("valid")],
+                                                                                    "weighted_cvd_15m_score": s15, "divergence": div, "symbols": [r["symbol"] for r in rows_h], "participation": part.get("class")}})
 
 
 def volatility_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[str, Any]:
@@ -381,6 +370,8 @@ def participation_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> d
     ad_h = None if not n_ch or (up_w + dn_w) == 0 else (up_w - dn_w) / (up_w + dn_w) * 100
     terms.append(Term("Heavyweights advancing versus declining (by weight)", ad_h, f"{n_ch} heavyweights: weight advancing {up_w:.1f}, declining {dn_w:.1f}" if ad_h is not None else "no heavyweight prices", family="heavy_price", weight=0.5, shares=("price",)))
     terms.append(Term("Index points from the heavyweights", squash(pts, 0.15) if n_pts else None, f"{pts:+.3f}% of the index from {n_pts} stocks" if n_pts else "no contributions", family="heavy_price", weight=0.5, shares=("price",)))
+    rs = (inp.get("heavy") or hw.assess(inp)).get("relative_strength_pct")
+    terms.append(Term("Heavyweights versus the index (relative strength)", None if rs is None else squash(rs, 0.3), f"weight-averaged heavyweight change less the index change {rs:+.3f} pts" if rs is not None else "no heavyweight prices", family="heavy_price", weight=0.5, shares=("price",)))
     return engine("participation", terms, ["market"], status, extra={"breadth": {"advancing": b.get("advancing"), "declining": b.get("declining"), "covered": b.get("covered")},
                                                                     "metrics": {"aggregate_points_pct": round(pts, 4) if n_pts else None, "heavy_up_weight": round(up_w, 2), "heavy_down_weight": round(dn_w, 2)}})
 
@@ -562,10 +553,8 @@ def divergences(inp: Mapping[str, Any], engines: Mapping[str, Mapping[str, Any]]
     f_s, o_s = fut.get("score"), opt.get("score")
     if f_s is not None and o_s is not None and abs(f_s) >= 25 and abs(o_s) >= 25 and f_s * o_s < 0:
         add("fut_opt", "Derivatives positioning versus order flow", "neutral", "medium", f"positioning group {f_s:+.0f}, order-flow proxy group {o_s:+.0f}", "Open-interest positioning and the estimated order flow point opposite ways.", "either group crosses zero")
-    h_div = g(hv, "metrics", "divergence")
-    if h_div:
-        add("idx_heavy", "NIFTY versus heavyweight CVD", "bearish" if (hv["metrics"].get("weighted_cvd_score") or 0) < 0 else "bullish", "medium", f"weighted heavyweight CVD {hv['metrics']['weighted_cvd_score']:+.0f}, index move {g(inp.get('market'), 'index_change_pct')}%",
-            "The index is moving against the flow in its largest stocks (estimated).", "heavyweight flow turns to the index direction")
+    for sig in (inp.get("heavy") or hw.assess(inp)).get("signals", []):
+        out.append(sig)
     vw = g(inp.get("intraday"), "vwap") or {}
     if cvd_t is not None and vw.get("side") in ("above", "below") and abs(cvd_t["score"]) >= 25 and ((vw["side"] == "above") != (cvd_t["score"] > 0)):
         add("vwap_cvd", "VWAP versus CVD", "bearish" if vw["side"] == "above" else "bullish", "low", f"future {vw['side']} VWAP while estimated CVD is {'negative' if cvd_t['score'] < 0 else 'positive'}", "Price location and order flow disagree.", "price crosses VWAP or CVD changes sign")
@@ -682,6 +671,14 @@ def capabilities(inp: Mapping[str, Any], status: Mapping[str, Any], gx: Mapping[
     stocks = g(mk, "flow", "heavy5", "stocks") or []
     add("heavyweights", "Heavyweight stock analytics", AVAILABLE if stocks else UNAVAILABLE, "the five largest constituents by current weight; stock prices and estimated CVD only" if stocks else "no heavyweight flow", "market", "/tools/future-flow")
     add("structure", "Market structure and breadth", AVAILABLE if g(mk, "nifty50", "breadth") else UNAVAILABLE, "advance/decline, above-VWAP share, opening range, day range", "market", "/tools/market-movers")
+    h = inp.get("heavy") or {}
+    q = h.get("quality") or {}
+    w = q.get("weights") or {}
+    add("hw_weights", "Heavyweight index weights", UNAVAILABLE if not w.get("as_of") else (PARTIAL if w.get("stale") or w.get("approximate") else AVAILABLE),
+        "no stored weights" if not w.get("as_of") else f"as of {w.get('as_of')} from {w.get('source')}" + (" (STALE: older than 60 days, a newer official composition has not been loaded)" if w.get("stale") else "") + (" (approximate)" if w.get("approximate") else ""), "market", "/tools/future-flow")
+    add("hw_cvd", "Heavyweight CVD (per stock, rolling 5/15/30 min, aggregate)", UNAVAILABLE if not h.get("available") else (AVAILABLE if q.get("aggregate_available") and q.get("valid") == q.get("of") else PARTIAL if q.get("aggregate_available") else UNAVAILABLE),
+        "CVD PROXY by the quote and tick rule; " + ("all stocks valid" if q.get("valid") == q.get("of") else f"{q.get('valid')} of {q.get('of')} stocks valid") if h.get("available") else "no heavyweight flow", "market", "/tools/future-flow")
+    add("hw_genuine_cvd", "Genuine aggressor-side CVD for the heavyweights", UNAVAILABLE, "the feed carries no aggressor-side trade tape or per-trade timestamps; only a labelled proxy exists", "market", None)
     add("rollover", "Rollover data", UNAVAILABLE, ROLLOVER_NEED, "futures", None)
     add("stock_futures", "Individual stock futures", UNAVAILABLE, "stock futures are not subscribed or stored; heavyweight analysis uses cash-market prices and flow only", "market", None)
     add("option_aggressor", "Option trade-side (aggressor) data", UNAVAILABLE, "the feed carries no aggressor side for options; buyer- or seller-initiated trades are never inferred", "positioning", None)

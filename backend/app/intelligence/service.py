@@ -18,13 +18,13 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.intelligence import fusion as fz
-from app.intelligence import rolling, validation
+from app.intelligence import heavyweights, rolling, validation
 from app.intelligence.store import IntelligenceStore
 
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 #: seconds an input is reused before the service is asked again
-TTL = {"market": 5.0, "intraday": 15.0, "futures": 15.0, "skew": 30.0, "momentum": 30.0, "positioning": 30.0, "gex": 30.0, "vix": 300.0, "flow": 15.0}
+TTL = {"market": 5.0, "intraday": 15.0, "futures": 15.0, "skew": 30.0, "momentum": 30.0, "positioning": 30.0, "gex": 30.0, "vix": 300.0, "flow": 15.0, "heavymeta": 300.0}
 ALERT_COOLDOWN_S = 600.0
 
 
@@ -143,7 +143,7 @@ class MarketIntelligence:
             data[name], status[name] = self._get(name, expiry, now)
         # rolling windows come from the per-minute flow samples the market service already stores; nothing new is collected
         data["rolling"] = rolling.futures(fz.g(data["flow"], "fut") or []) if status["flow"]["ok"] else None
-        data["rolling_heavy"] = rolling.heavy(fz.g(data["flow"], "heavy5") or [], 15) if status["flow"]["ok"] else None
+        data["heavy"] = heavyweights.assess(data, now)
         return data, status
 
     # ------------------------------------------------------------------ summary
@@ -179,7 +179,7 @@ class MarketIntelligence:
         return {
             "generated_at": now.isoformat(timespec="seconds"), "expiry": expiry, "session": session, "enabled": self.enabled,
             "status": status, "sentiment": sent, "regime": {**reg, "previous": None if prev_reg is None else prev_reg["regime"], "changed_at": since},
-            "engines": engines, "pulse": self._pulse(inp, by, gx, expiry), "gex": gx,
+            "engines": engines, "pulse": self._pulse(inp, by, gx, expiry), "gex": gx, "heavyweights": inp["heavy"],
             "interpretation": fz.interpretation(fused, engines, reg, divs, gx, inp),
             "divergences": divs, "divergences_invalidated": gone, "divergences_unavailable": divs_missing,
             "scenarios": fz.scenarios(fused, engines, gx, inp, spot), "panels": self._panels(inp, by, gx), "capabilities": fz.capabilities(inp, status, gx),
@@ -271,10 +271,6 @@ class MarketIntelligence:
                         "volume": next((v for v in reversed(g(fut, "volume") or []) if v is not None), None), "buildup": by["positioning"].get("buildup"), "flow": g(flow, "futures"), "vwap": g(ins, "vwap"),
                         "rolling": inp.get("rolling"), "unavailable": ["rollover data (needs near-month and next-month contract OI and volume history)"],
                         "note": "CVD is an estimate by the quote and tick rule, not a trade-by-trade tape. Rolling windows are differences of the stored per-minute cumulative flow."},
-            "heavyweight": {"stocks": [{"symbol": s.get("symbol"), "weight": s.get("weight"), "change_pct": s.get("change_pct"), "relative_volume": s.get("relative_volume"), "cvd_pct": g(s, "flow", "cvd_pct"), "divergence": g(s, "flow", "divergence"),
-                                        "contribution": next((r.get("contribution") for r in (g(mk, "nifty50", "stocks") or []) if r.get("symbol") == s.get("symbol")), None)} for s in (g(flow, "heavy5", "stocks") or [])],
-                            "basis": g(flow, "heavy5", "basis"), "metrics": {**(by["orderflow"].get("metrics") or {}), **(by["participation"].get("metrics") or {})}, "unavailable": ["stock futures and their OI", "per-stock price versus VWAP"],
-                            "note": "The five largest constituents by the current index weights (official or estimated); CVD is an estimate."},
         }
 
     # ------------------------------------------------------------------ timeline and alerts
@@ -296,7 +292,7 @@ class MarketIntelligence:
                 "gamma_regime": gx.get("regime"), "engines": eng,
                 "metrics": {"arch": validation.ARCH, "cvd_pct": pl["futures_cvd_pct"], "fut_oi_change": pl["futures_oi_change"], "net_gex": gx.get("net"), "flip": gx.get("flip"), "flip_side": None if gx.get("flip_distance_pct") is None else (1 if gx["flip_distance_pct"] >= 0 else -1),
                             "atm_iv": pl["atm_iv"], "iv_change_15m": fz.g(vol_e, "atm_iv_change_15m"), "d25": next((t["score"] for t in vol_e.get("terms", []) if t["name"].startswith("Call versus put")), None),
-                            "heavy_cvd": pl["heavyweight_cvd"], "vwap_side": fz.g(intraday, "vwap", "side")},
+                            "heavy_cvd": pl["heavyweight_cvd"], "hw15": fz.g(s["heavyweights"], "aggregate", "15", "score"), "hw_valid": fz.g(s["heavyweights"], "quality", "valid"), "hw_class": fz.g(s["heavyweights"], "participation", "class"), "vwap_side": fz.g(intraday, "vwap", "side")},
                 "divs": [{"id": d["id"], "reading": d["reading"], "direction": d["direction"], "severity": d["severity"]} for d in s["divergences"]]}
         prev = self.store.rows(s["session"], 1, newest_first=True)
         if not self.store.record(s["session"], now, s["expiry"] or "", snap):

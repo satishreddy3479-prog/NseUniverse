@@ -21,11 +21,12 @@ export function DivergencePanel({ d }: { d: Intelligence }) {
                 <span className="font-medium text-paper">{x.name}</span>
                 <span className={`rounded-sm border px-1.5 py-px text-[11px] ${SEV[x.severity]}`}>{x.severity}</span>
                 <span className={`text-[11px] ${STATUS[x.status]}`}>{x.status}{x.since ? ` since ${fmtTimeIST(x.since)}` : ""}</span>
-                <span className="text-[11px] text-muted">leans {x.direction}</span>
+                <span className="text-[11px] text-muted">{x.kind === "confirmation" ? "confirms" : "leans"} {x.direction}</span>
               </div>
               <p className="mt-1 text-xs text-paper">Now: {x.reading}</p>
               {x.previous && x.previous !== x.reading && <p className="text-[11px] text-muted">Earlier: {x.previous}</p>}
               <p className="text-[11px] text-muted">{x.explanation}</p>
+              {x.evidence && x.evidence.length > 0 && <p className="text-[11px] text-muted" data-testid="mi-div-evidence">Evidence{x.at ? ` as of ${fmtTimeIST(x.at)}` : ""}: {x.evidence.join(" · ")}</p>}
               <p className="text-[11px] text-warn">Invalidated if: {x.invalidation}</p>
             </li>
           ))}

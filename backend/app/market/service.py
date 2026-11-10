@@ -16,6 +16,7 @@ import contextlib
 import csv
 import io
 import logging
+import math
 import time as time_mod
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime, time, timedelta
@@ -170,6 +171,20 @@ class MarketService:
         raw = {k: w[k] * ratio[k] for k in w}
         tot = sum(raw.values())
         return {k: v / tot * sum(w.values()) for k, v in raw.items()}, as_of, source, sessions[-1]
+
+    def heavy_meta(self) -> dict[str, Any]:
+        """The five largest weights with company name, previous weight, effective date, source and age (stale beyond STALE_WEIGHTS_DAYS)."""
+        top, basis = self.heavy()
+        wt = self.weights_now()
+        names = {c.symbol: c.name for c in (self.store.current_list("nifty50") or ([], {}))[0]}
+        prev = self.store.weights_before("nifty50", wt[1]) if wt else None
+        now = self._clock().astimezone(IST).date()
+        age = None if wt is None else now.toordinal() - date.fromisoformat(wt[1]).toordinal()
+        return {
+            "basis": basis, "top": top, "updated": self._clock().isoformat(),
+            "weights": None if wt is None else {"as_of": wt[1], "source": wt[2], "approximate": wt[2].startswith("approx"), "rolled_to": wt[3], "age_days": age, "stale": bool(age is not None and age > STALE_WEIGHTS_DAYS), "previous_as_of": None if prev is None else prev[1]},
+            "stocks": [{"symbol": k, "name": names.get(k), "weight": None if wt is None else round(wt[0].get(k, 0.0), 4), "previous_weight": None if prev is None or k not in prev[0] else round(prev[0][k], 4)} for k in top],
+        }
 
     def seed_weights(self) -> str:
         """Load the official weights shipped with the code (captured from NSE's index tracker) when none are stored."""
@@ -875,13 +890,18 @@ class MarketService:
                     "sym": (self.token_map().get(FUT_SYMBOL) or TokenInfo("", "", "")).trading_symbol or None,
                 },
             )
+        wt_now = self.weights_now()
+        chg = {r["symbol"]: r.get("change_pct") for r in s["nifty50"]["stocks"]}
         rows = [
-            [k, tr.buy - tr.sell, tr.buy, tr.sell, tr.last_volume, tr.imbalance_at(now)]
+            # [symbol, CVD, buy, sell, volume, depth imbalance, last price, day VWAP, index weight %, day change %, normalised session CVD, stale]; the first six are the
+            # original fields, the rest are appended so older samples stay readable. Rolling windows and the aggregate are derived from these on read.
+            [k, tr.buy - tr.sell, tr.buy, tr.sell, tr.last_volume, tr.imbalance_at(now), tr.last_ltp, tr.last_atp, None if not wt_now else round(wt_now[0].get(k, 0.0), 4) or None,
+             chg.get(k), None if tr.buy + tr.sell == 0 else round(100.0 * math.tanh((tr.buy - tr.sell) / (tr.buy + tr.sell) * 100 / 25.0), 1), bool((now - tr.last_update).total_seconds() > 120) if tr.last_update else None]
             for k in self.heavy()[0]
             if (tr := self.trackers.get(k)) and tr.last_volume is not None
         ]
         if rows:
-            self.store.record_sample("heavy5", stamp, {"rows": rows})
+            self.store.record_sample("heavy5", stamp, {"rows": rows, "m": "cvd_proxy_quote_tick", "w": None if not wt_now else {"as_of": wt_now[1], "source": wt_now[2]}})
         return True
 
     def due(self, kind: str, now: datetime) -> bool:

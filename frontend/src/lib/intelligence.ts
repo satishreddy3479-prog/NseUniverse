@@ -18,6 +18,7 @@ export interface Sentiment {
 export interface Divergence {
   id: string; name: string; direction: string; severity: "low" | "medium" | "high"; reading: string; explanation: string; invalidation: string;
   status: "early warning" | "developing" | "confirmed"; since: string | null; previous: string | null;
+  kind?: "divergence" | "confirmation"; evidence?: string[]; at?: string | null;
 }
 export interface Scenario { score: number; supporting?: string[]; resistance?: number | null; support?: number | null; confirmation?: string | null; invalidation?: string | null; range?: (number | null)[]; gamma?: string; volatility?: string }
 export interface Scenarios {
@@ -44,7 +45,22 @@ export interface Panels {
   volatility: { atm_iv: number | null; iv_change_15m: number | null; hv: number | null; rv: number | null; india_vix: number | null; india_vix_label?: string; india_vix_as_of?: string | null; ivr_252?: number | null; ivp_252?: number | null; skew_25d: number | null; skew_10d: number | null; risk_reversal_25d: number | null;
     butterfly_25d: number | null; term_slope_30d: number | null; term_shape: string | null; term: { expiry: string; days: number | null; atm_iv: number | null }[]; expected_move_1sd_pts: number | null; straddle: number | null; interpretation: string[] | string | null; note: string };
   futures: { series: Record<string, number | null> | null; contract: string | null; oi_change: number | null; volume: number | null; buildup?: string; flow: Record<string, number | boolean | string | null> | null; vwap: Record<string, number | string | null> | null; rolling?: Rolling | null; unavailable: string[]; note: string };
-  heavyweight: { stocks: { symbol: string; weight: number | null; change_pct: number | null; relative_volume: number | null; cvd_pct: number | null; divergence: string | null; contribution: number | null }[]; metrics?: EngineView["metrics"]; unavailable: string[]; note: string };
+}
+export interface HeavyWindow { minutes: number; cvd: number | null; pct: number | null; norm: number | null; price_change_pct: number | null; status: string }
+export interface HeavyStock {
+  symbol: string; name: string | null; weight: number; previous_weight: number | null; price: number | null; change_pct: number | null; vwap: number | null; price_vs_vwap_pct: number | null;
+  session: { cvd: number | null; pct: number | null; norm: number | null; buy_volume: number | null; sell_volume: number | null }; windows: Record<"5" | "15" | "30", HeavyWindow>;
+  momentum: number | null; acceleration: number | null; basis_norm: number | null; bias: string; price_cvd_divergence: string | null; contribution_pct?: number | null; methodology: string; valid: boolean;
+  freshness: { updated: string | null; age_s: number | null; feed: string; fresh: boolean; classified_share: number | null; coverage_of_day_volume: number | null; quote_rule_share: number | null; stored_samples: number };
+}
+export interface HeavyAgg { score: number | null; valid: number; of: number; weight_share: number; status: string }
+export interface Heavyweights {
+  available: boolean; reason?: string; method: string; limits: string[]; as_of?: string | null; stocks: HeavyStock[];
+  aggregate: { session: HeavyAgg; "5": HeavyAgg; "15": HeavyAgg; "30": HeavyAgg; momentum: number | null; acceleration: number | null };
+  participation: { class: string; valid: number; positive: number | null; negative: number | null; neutral: number | null; weight_share_positive: number | null; weight_share_negative: number | null; top_contributor: { symbol: string; share: number } | null; reason: string | null };
+  nifty: { change_15m_pct: number | null; day_change_pct: number | null; vwap_side: string | null }; relative_strength_pct: number | null;
+  series: { t: string; session: number | null; w5: number | null; w15: number | null; spot: number | null }[];
+  quality: { valid: number; of: number; weight_share: number; aggregate_available: boolean; weights: { as_of?: string; source?: string; age_days?: number | null; stale: boolean; approximate: boolean; rolled_to?: string | null; basis?: string } };
 }
 export interface Pulse {
   spot: number | null; change_pct: number | null; futures: number | null; basis: number | null; basis_pct: number | null; atm_strike: number | null; expiry: string | null; atm_ce_premium: number | null; atm_pe_premium: number | null;
@@ -55,7 +71,7 @@ export interface Intelligence {
   regime: { name: string; evidence: string[]; volatility: string; gamma: string; previous: string | null; changed_at: string | null };
   engines: EngineView[]; pulse: Pulse; gex: GexState; interpretation: string; divergences: Divergence[]; divergences_invalidated: { id: string; status: string }[]; divergences_unavailable: string[];
   scenarios: Scenarios; panels: Panels; alerts: AlertRow[]; config: { weights: Record<string, number>; min_coverage: number; min_engines: number; note: string; groups?: Record<string, string> }; compute_ms: number;
-  capabilities?: Capability[]; overlap_audit?: OverlapAudit;
+  capabilities?: Capability[]; overlap_audit?: OverlapAudit; heavyweights?: Heavyweights;
 }
 export interface TimelinePoint {
   session: string; at: string; spot: number | null; score: number | null; confidence: number | null; coverage: number | null; regime: string | null; vol_regime: string | null; gamma_regime: string | null;
