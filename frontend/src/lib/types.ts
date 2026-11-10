@@ -883,7 +883,7 @@ export interface IvChart {
 }
 
 /** Smile, skew measures and term view of the latest stored chain, /api/intraday/iv-skew */
-export interface SkewMeasures { skew_25d: number | null; skew_10d: number | null; butterfly_25d: number | null; slope_per_pct: number | null; put_25d_iv: number | null; call_25d_iv: number | null }
+export interface SkewMeasures { skew_25d: number | null; skew_10d: number | null; call_minus_put_25d: number | null; call_minus_put_10d: number | null; butterfly_25d: number | null; butterfly_10d: number | null; slope_per_pct: number | null; put_25d_iv: number | null; call_25d_iv: number | null; put_10d_iv: number | null; call_10d_iv: number | null }
 export interface IvSkew {
   status: string; expiry?: string; at?: string; age_seconds?: number; spot?: number; forward?: number; atm_strike?: number; atm_iv?: number | null; days?: number | null;
   cards?: SkewMeasures & { term_slope_per_30d: number | null };

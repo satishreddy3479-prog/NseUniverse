@@ -4,7 +4,9 @@ import { api } from "../lib/api";
 import { fmtInt, fmtTimeIST, MISSING } from "../lib/format";
 import { chainGreeks } from "../lib/optionTools";
 import { marketClockMs } from "../lib/session";
-import { liveSmile, skewMeasures } from "../lib/skew";
+import { liveSmile, skewMeasures, skewWorkedExample, type SmileRow } from "../lib/skew";
+import { METRICS } from "../lib/metricRegistry";
+import { MethodologyPanel } from "./MethodologyPanel";
 import { useLiveSpot } from "../lib/useLive";
 import { useDashOptional } from "./dashboard/DashContext";
 import { EChart, useChartColors } from "./EChart";
@@ -86,12 +88,16 @@ export function IvSkewBody({ expiry }: { expiry: string | null }) {
       <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
         <div className="text-xs text-muted">Expiry {s.expiry} · {s.days == null ? MISSING : s.days.toFixed(1)} days · NIFTY {fmtInt(s.spot ?? null)} · forward {fmtInt(s.forward ?? null)} · ATM strike {fmtInt(s.atm_strike ?? null)} · {live ? "live chain, updating with every tick" : "stored chain"} at {s.at ? fmtTimeIST(s.at) : MISSING} IST</div>
         {stale && <p className="mt-1 text-xs text-warn" data-testid="ivskew-stale">The newest stored chain is {Math.round((s.age_seconds ?? 0) / 60)} minutes old: the sampler may have stopped.</p>}
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6" data-testid="ivskew-cards">
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" data-testid="ivskew-cards">
           {card("ATM IV", n2(s.atm_iv, "%"), "Average of the ATM call and put implied volatility")}
           {card("25Δ skew", sgn(k.skew_25d), "Put IV minus call IV at about 25 delta")}
           {card("25Δ butterfly", sgn(k.butterfly_25d), "Mean of the 25-delta wing IVs minus ATM IV")}
           {card("10Δ skew", sgn(k.skew_10d), "Put IV minus call IV at about 10 delta")}
           {card("Skew slope", sgn(k.slope_per_pct, " pts/%"), "IV points per 1% of moneyness, over the out-of-the-money options")}
+          {card("25Δ call − put", sgn(k.call_minus_put_25d), "Call IV minus put IV at 25 delta: the same number as the skew with the opposite sign (negative: calls richer)")}
+          {card("10Δ butterfly", sgn(k.butterfly_10d), "Mean of the 10-delta wing IVs minus ATM IV")}
+          {card("25Δ call / put IV", `${n2(k.call_25d_iv)} / ${n2(k.put_25d_iv)}`, "Interpolated at 0.25 absolute delta")}
+          {card("10Δ call / put IV", `${n2(k.call_10d_iv)} / ${n2(k.put_10d_iv)}`, "Interpolated at 0.10 absolute delta")}
           {card("Term slope", sgn(k.term_slope_per_30d, " pts/30d"), "ATM IV, farthest minus nearest stored expiry, per 30 days")}
         </div>
         <p className="mt-2 text-xs text-paper" data-testid="ivskew-reading">{skewReading(k.skew_25d)}</p>
@@ -133,6 +139,9 @@ export function IvSkewBody({ expiry }: { expiry: string | null }) {
           </div>
         )}
         <p className="mt-2 text-[11px] text-muted">{s.model}; assumed rate {s.rate_assumed == null ? MISSING : `${(s.rate_assumed * 100).toFixed(2)}%`}. Skew = put IV − call IV at the same delta; butterfly = mean of the wing IVs − ATM IV. These describe how options are priced, not where the index will go.</p>
+        <MethodologyPanel metrics={[METRICS.iv_skew!, METRICS.iv_butterfly!, METRICS.iv_slope!, METRICS.term_slope!]}
+          example={skewWorkedExample(s.smile.map((p): SmileRow => ({ strike: p.strike, side: p.side, iv: p.iv, delta: p.delta ?? null, otm: true })), s.atm_iv ?? null)}
+          freshness={{ updatedAt: s.at ?? null, session: s.at ? s.at.slice(0, 10) : null, expiry: s.expiry, used: s.smile.filter((p) => p.iv != null).length, missing: s.smile.filter((p) => p.iv == null).length, timeframe: live ? "live stream, recomputed on each tick" : "latest stored chain" }} />
       </div>
     </div>
   );

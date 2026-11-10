@@ -132,9 +132,14 @@ def test_skew_metrics_match_the_hand_calculation() -> None:
     rows = [r(23900, "PE", 17, -0.40), r(23800, "PE", 18, -0.26), r(23600, "PE", 20, -0.10),
             r(24100, "CE", 15, 0.40), r(24200, "CE", 14, 0.24), r(24400, "CE", 13.5, 0.09)]
     m = skew_metrics(rows, 24000, 16.0)
-    assert m["skew_25d"] == 4.0  # 18 - 14 (the 0.26 and 0.24 delta contracts)
-    assert m["skew_10d"] == 6.5  # 20 - 13.5
-    assert m["butterfly_25d"] == 0.0  # (18 + 14) / 2 - 16
+    # put IV at 0.25 delta: between (0.26, 18) and (0.10, 20): 20 + (0.25-0.10)/(0.26-0.10) * (18-20) = 18.125
+    # call IV at 0.25 delta: between (0.40, 15) and (0.24, 14): 14 + (0.25-0.24)/(0.40-0.24) * (15-14) = 14.0625
+    assert m["put_25d_iv"] == pytest.approx(18.125, abs=1e-3) and m["call_25d_iv"] == pytest.approx(14.0625, abs=1e-3)
+    assert m["skew_25d"] == pytest.approx(4.0625, abs=1e-3) and m["call_minus_put_25d"] == pytest.approx(-4.0625, abs=1e-3)
+    # 0.10 delta: the put sits exactly on it (20); call between (0.24, 14) and (0.09, 13.5): 13.5 + (0.10-0.09)/(0.24-0.09) * 0.5 = 13.5333
+    assert m["skew_10d"] == pytest.approx(6.4667, abs=1e-3)
+    assert m["butterfly_25d"] == pytest.approx(0.09375, abs=1e-3)  # (18.125 + 14.0625) / 2 - 16
+    assert m["butterfly_10d"] == pytest.approx(0.7667, abs=1e-3)  # (20 + 13.5333) / 2 - 16
     # moneyness % = -0.41667, -0.83333, -1.66667, +0.41667, +0.83333, +1.66667; mean IV 16.25; Sxy = -15.0; Sxx = 7.29167
     assert m["slope_per_pct"] == pytest.approx(-2.0571, abs=1e-3)
     far = skew_metrics([r(23000, "PE", 30, -0.02), r(25000, "CE", 12, 0.02)], 24000, 16.0)

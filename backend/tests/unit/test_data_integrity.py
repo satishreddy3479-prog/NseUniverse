@@ -72,13 +72,19 @@ def test_skew_measures_follow_from_the_solved_rows() -> None:
     atm = out["atm_strike"]
     puts = [x for x in rows if x["side"] == "PE" and x["otm"] and x["delta"] is not None and x["iv"] is not None and x["strike"] < atm]  # type: ignore[attr-defined]
     calls = [x for x in rows if x["side"] == "CE" and x["otm"] and x["delta"] is not None and x["iv"] is not None and x["strike"] > atm]  # type: ignore[attr-defined]
-    p25 = min(puts, key=lambda x: abs(abs(x["delta"]) - 0.25))
-    c25 = min(calls, key=lambda x: abs(x["delta"] - 0.25))
-    if abs(abs(p25["delta"]) - 0.25) <= 0.1 and abs(c25["delta"] - 0.25) <= 0.1:
-        assert m["skew_25d"] == pytest.approx(p25["iv"] - c25["iv"], abs=0.002)
-        assert m["butterfly_25d"] == pytest.approx((p25["iv"] + c25["iv"]) / 2 - float(out["atm_iv"]), abs=0.002)  # type: ignore[arg-type]
+    def at(side_rows: list[dict[str, object]], target: float) -> float | None:  # separate interpolation, written out for the check
+        pts = sorted(((abs(x["delta"]), x["iv"]) for x in side_rows), reverse=True)  # type: ignore[arg-type]
+        for (d1, v1), (d2, v2) in zip(pts, pts[1:], strict=False):
+            if d1 >= target >= d2 and d1 != d2:
+                return v2 + (target - d2) / (d1 - d2) * (v1 - v2)
+        return None
+
+    p25, c25 = at(puts, 0.25), at(calls, 0.25)
+    if p25 is not None and c25 is not None:
+        assert m["skew_25d"] == pytest.approx(p25 - c25, abs=0.002)
+        assert m["butterfly_25d"] == pytest.approx((p25 + c25) / 2 - float(out["atm_iv"]), abs=0.002)  # type: ignore[arg-type]
     else:
-        assert m["skew_25d"] is None  # no contract near 25 delta: missing, not a number from a far strike
+        assert m["skew_25d"] is None  # 25 delta lies outside the listed range: missing, not extrapolated
 
 
 def test_time_to_expiry_runs_to_the_expiry_close_in_calendar_time() -> None:

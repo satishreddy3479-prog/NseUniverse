@@ -5,6 +5,9 @@ _Last updated: 2026-11-04_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Options intelligence, step 1 (10 Nov 2026)
+Volatility Skew now interpolates the 25Δ and 10Δ wing IVs in delta, shows call−put skew, 10Δ butterfly and the wing IVs, and ends with a closed Calculation Methodology & Formulas panel fed by a metric registry (D97). Not built yet: IV momentum, per-delta IV history storage, multi-expiry delta term structure, GEX universes/divergence, regime classifier, demand analyser, backtests, central dashboard.
+
 ## Strategy Builder: payoff estimate, hide chain, holding rule (10 Nov 2026)
 The blue model curve now includes closed legs' booked P&L (it had sat above the green curve after a stop-out). The option chain can be hidden. New Intraday / Overnight / Manual holding rule with customisable auto-close time (default 15:20 IST), run on the server; see D96. Tests: optionModel, strategy-hold (browser) and test_strategy_hold (server) pass; full backend run has one failure in test_events_news that exists without these changes. Not verified live in market hours.
 

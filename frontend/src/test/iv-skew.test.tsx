@@ -28,13 +28,13 @@ afterEach(() => vi.unstubAllGlobals());
 
 const skew: IvSkew = {
   status: "ok", expiry: "2026-11-10", at: "2026-11-05T04:30:00Z", age_seconds: 60, spot: 24000, forward: 24010, atm_strike: 24000, atm_iv: 16, days: 5,
-  cards: { skew_25d: 4, skew_10d: 6.5, butterfly_25d: 0, slope_per_pct: -2.0571, put_25d_iv: 18, call_25d_iv: 14, term_slope_per_30d: 1.2 },
+  cards: { skew_25d: 4, skew_10d: 6.5, butterfly_25d: 0, slope_per_pct: -2.0571, put_25d_iv: 18, call_25d_iv: 14, call_minus_put_25d: null, call_minus_put_10d: null, butterfly_10d: null, put_10d_iv: null, call_10d_iv: null, term_slope_per_30d: 1.2 },
   smile: [
     { strike: 23900, side: "PE", iv: 17, delta: -0.4 }, { strike: 24000, side: "CE", iv: 16, delta: 0.5 }, { strike: 24100, side: "CE", iv: null, delta: null },
   ],
   term: [
-    { expiry: "2026-11-10", days: 5, atm_iv: 16, skew_25d: 4, skew_10d: 6.5, butterfly_25d: 0, slope_per_pct: -2, put_25d_iv: 18, call_25d_iv: 14 },
-    { expiry: "2026-11-24", days: 19, atm_iv: 16.56, skew_25d: 3, skew_10d: null, butterfly_25d: 0.2, slope_per_pct: -1, put_25d_iv: 17, call_25d_iv: 14 },
+    { expiry: "2026-11-10", days: 5, atm_iv: 16, skew_25d: 4, skew_10d: 6.5, butterfly_25d: 0, slope_per_pct: -2, put_25d_iv: 18, call_25d_iv: 14, call_minus_put_25d: null, call_minus_put_10d: null, butterfly_10d: null, put_10d_iv: null, call_10d_iv: null },
+    { expiry: "2026-11-24", days: 19, atm_iv: 16.56, skew_25d: 3, skew_10d: null, butterfly_25d: 0.2, slope_per_pct: -1, put_25d_iv: 17, call_25d_iv: 14, call_minus_put_25d: null, call_minus_put_10d: null, butterfly_10d: null, put_10d_iv: null, call_10d_iv: null },
   ],
 };
 

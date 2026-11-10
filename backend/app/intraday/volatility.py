@@ -178,30 +178,42 @@ def surface(prices: Mapping[tuple[float, int], float | None], spot: float | None
     }  # fmt: skip
 
 
-def _nearest_delta(rows: Sequence[dict[str, Any]], side: str, target: float, tol: float) -> dict[str, Any] | None:
-    cand = [r for r in rows if r["side"] == side and r["otm"] and r["iv"] is not None and r["delta"] is not None]
-    best = min(cand, key=lambda r: abs(abs(r["delta"]) - target), default=None)
-    return best if best is not None and abs(abs(best["delta"]) - target) <= tol else None
+def iv_at_delta(rows: Sequence[dict[str, Any]], side: str, target: float) -> float | None:
+    """IV (percent) of the out-of-the-money ``side`` option at absolute delta ``target``, by linear interpolation in delta between the
+    two neighbouring solved contracts that bracket it (exact when a contract sits on the target). No extrapolation: a target outside the
+    listed range, or a side with fewer than two solved contracts, gives None. Mirrors ``ivAtDelta`` in frontend/src/lib/skew.ts."""
+    pts = sorted(
+        {round(abs(r["delta"]), 6): r["iv"] for r in rows if r["side"] == side and r["otm"] and r["iv"] is not None and r["delta"] is not None}.items(),
+        reverse=True,
+    )
+    for (d_hi, iv_hi), (d_lo, iv_lo) in zip(pts, pts[1:], strict=False):
+        if d_hi >= target >= d_lo:
+            return float(iv_hi) if d_hi == d_lo else float(iv_lo + (target - d_lo) / (d_hi - d_lo) * (iv_hi - iv_lo))
+    return None
 
 
 def skew_metrics(rows: Sequence[dict[str, Any]], forward: float, atm_iv: float | None) -> dict[str, Any]:
-    """Smile measures from one chain's solved rows (IV in percent). Put IV minus call IV at about 25 and 10 delta (a contract
-    counts only if its delta is within 0.1 / 0.05 of the target); butterfly = mean of the 25-delta wing IVs minus ATM IV;
-    slope = least-squares IV points per 1% of moneyness (strike / forward - 1) over the out-of-the-money options."""
-    p25, c25 = _nearest_delta(rows, "PE", 0.25, 0.1), _nearest_delta(rows, "CE", 0.25, 0.1)
-    p10, c10 = _nearest_delta(rows, "PE", 0.10, 0.05), _nearest_delta(rows, "CE", 0.10, 0.05)
+    """Smile measures from one chain's solved rows (IV in percent), at 25 and 10 absolute delta found by interpolation (``iv_at_delta``).
+    Skew = put IV minus call IV (positive: puts richer; the call-minus-put figure is its negation); butterfly = mean of the two wing
+    IVs minus ATM IV; slope = least-squares IV points per 1% of moneyness (strike / forward - 1) over the out-of-the-money options."""
+    p25, c25 = iv_at_delta(rows, "PE", 0.25), iv_at_delta(rows, "CE", 0.25)
+    p10, c10 = iv_at_delta(rows, "PE", 0.10), iv_at_delta(rows, "CE", 0.10)
     pts = [((r["strike"] / forward - 1) * 100, r["iv"]) for r in rows if r["otm"] and r["iv"] is not None and forward > 0]
     slope = None
     if len(pts) >= 4:
         mx, my = sum(x for x, _ in pts) / len(pts), sum(y for _, y in pts) / len(pts)
         vx = sum((x - mx) ** 2 for x, _ in pts)
         slope = None if vx == 0 else sum((x - mx) * (y - my) for x, y in pts) / vx
+    r3 = lambda v: None if v is None else round(v, 3)  # noqa: E731
     return {
-        "skew_25d": None if not (p25 and c25) else round(p25["iv"] - c25["iv"], 3),
-        "skew_10d": None if not (p10 and c10) else round(p10["iv"] - c10["iv"], 3),
-        "butterfly_25d": None if not (p25 and c25 and atm_iv is not None) else round((p25["iv"] + c25["iv"]) / 2 - atm_iv, 3),
+        "skew_25d": None if p25 is None or c25 is None else r3(p25 - c25),
+        "skew_10d": None if p10 is None or c10 is None else r3(p10 - c10),
+        "call_minus_put_25d": None if p25 is None or c25 is None else r3(c25 - p25),
+        "call_minus_put_10d": None if p10 is None or c10 is None else r3(c10 - p10),
+        "butterfly_25d": None if p25 is None or c25 is None or atm_iv is None else r3((p25 + c25) / 2 - atm_iv),
+        "butterfly_10d": None if p10 is None or c10 is None or atm_iv is None else r3((p10 + c10) / 2 - atm_iv),
         "slope_per_pct": None if slope is None else round(slope, 4),
-        "put_25d_iv": None if not p25 else p25["iv"], "call_25d_iv": None if not c25 else c25["iv"],
+        "put_25d_iv": r3(p25), "call_25d_iv": r3(c25), "put_10d_iv": r3(p10), "call_10d_iv": r3(c10),
     }
 
 
