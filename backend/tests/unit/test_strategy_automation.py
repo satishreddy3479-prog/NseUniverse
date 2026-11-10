@@ -224,13 +224,16 @@ def test_a_closed_leg_can_only_be_reopened_by_a_real_re_entry_or_a_fresh_start(t
     reopened = {**sold(premium=118.5, stop=154.05, cycles=1), "id": "a"}
     out = auto.put(doc(legs=[reopened]), kept["rev"])
     assert out["legs"][0].get("exitPrice") is None and out["legs"][0]["premium"] == 118.5
-    # 3. after another stop, a new leg id (a template or a saved strategy opened) is never treated as an old copy
+    # 3. after another stop, the same contract and entry price under a new leg id is an old copy from another device, unless the
+    #    page asked for a fresh start (it does when a saved strategy or a template is opened or a new strategy begins)
     store.put(RUNNING_KIND, RUNNING_KEY, {**auto.get(), "legs": [{**sold(), "exitPrice": 131.0, "exitReason": "stop"}]})  # type: ignore[dict-item]
-    fresh = auto.put(doc(legs=[sold(id="b")]), auto.get()["rev"])  # type: ignore[index]
+    kept_again = auto.put(doc(legs=[sold(id="b")]), auto.get()["rev"])  # type: ignore[index]
+    assert [lg["id"] for lg in kept_again["legs"]] == ["a"] and kept_again["legs"][0]["exitPrice"] == 131.0
+    fresh = auto.put(doc(legs=[sold(id="b")], rearmAt="2026-11-06T09:00:00Z"), auto.get()["rev"])  # type: ignore[index]
     assert [lg["id"] for lg in fresh["legs"]] == ["b"] and fresh["legs"][0].get("exitPrice") is None
     # 4. an explicit fresh start (the Reset button sends a new rearmAt) may put the same leg back as it was
     store.put(RUNNING_KIND, RUNNING_KEY, {**auto.get(), "legs": [{**sold(), "exitPrice": 131.0, "exitReason": "stop"}]})  # type: ignore[dict-item]
-    reset = auto.put(doc(rearmAt="2026-11-06T10:00:00Z"), auto.get()["rev"])  # type: ignore[index]
+    reset = auto.put(doc(rearmAt="2026-11-06T10:00:00Z"), auto.get()["rev"])  # type: ignore[index]  # a newer rearmAt than the current one
     assert reset["legs"][0].get("exitPrice") is None
     store.close()
 
@@ -249,4 +252,31 @@ def test_an_old_copy_cannot_loosen_a_trailed_stop_or_undo_a_re_entry(tmp_path: P
     store.put(RUNNING_KIND, RUNNING_KEY, {**doc(legs=[sold(cycles=2, premium=118.5, reentry=0)]), "rev": 9})  # type: ignore[dict-item]
     back = auto.put(doc(legs=[sold(cycles=1, premium=118.5, reentry=1)]), 9)
     assert back["legs"][0]["cycles"] == 2 and back["legs"][0]["reentry"] == 0
+    store.close()
+
+
+def test_an_old_copy_from_another_device_with_different_leg_ids_cannot_re_open_a_closed_leg(tmp_path: Path) -> None:
+    # 9 Nov 2026: the phone and the desktop held the same short straddle under different leg ids, so an id-only guard let
+    # the phone's copy (leg still open) re-open the leg the server had stopped
+    auto, store = make(tmp_path, 131.0)
+    auto.put(doc(), None)
+    auto.check_once()  # stop closes the leg (id "a") at 131.00
+    rev = auto.get()["rev"]  # type: ignore[index]
+    other_device = doc(legs=[sold(id="ch-0")])  # same contract, side and entry price under another id
+    out = auto.put(other_device, rev)
+    assert out["legs"][0]["exitPrice"] == 131.0 and out["legs"][0]["id"] == "a"
+    assert "Ignored an old copy of SELL 23300 CE" in out["serverEvents"][-1]["text"]
+    # a different entry price under another id is a different leg (a strategy started again): accepted
+    fresh = auto.put(doc(legs=[sold(id="ch-1", premium=118.5, stop=154.05)]), out["rev"])
+    assert fresh["legs"][0].get("exitPrice") is None and fresh["legs"][0]["premium"] == 118.5
+    store.close()
+
+
+def test_a_stop_the_server_executes_is_written_back_to_the_saved_strategy(tmp_path: Path) -> None:
+    auto, store = make(tmp_path, 131.0)
+    store.put("saved", "Expiry straddle", {"name": "Expiry straddle", "savedAt": "2026-11-09T04:08:00Z", "expiry": "2026-11-09", "legs": [sold()]})
+    auto.put(doc(loaded="Expiry straddle"), None)
+    assert auto.check_once()
+    saved = store.get("saved", "Expiry straddle")
+    assert saved is not None and saved["legs"][0]["exitPrice"] == 131.0 and saved["updatedAt"]
     store.close()

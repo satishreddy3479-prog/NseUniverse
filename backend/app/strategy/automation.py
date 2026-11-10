@@ -250,20 +250,30 @@ def apply_automation(
     return out, events
 
 
+def leg_identity(lg: Leg) -> tuple[Any, ...]:
+    """Which contract and side a leg is, independent of the id a browser gave it (two devices open the same strategy under
+    different leg ids, which is how an old copy slipped past an id-only check on 9 Nov 2026)."""
+    return (lg.get("expiry"), lg.get("strike"), lg.get("type"), lg.get("action"))
+
+
 def keep_exits(cur: dict[str, Any], doc: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
-    """What the server already did cannot be undone by an old copy. For each leg the browser sends back:
+    """What the server already did cannot be undone by an old copy. For each leg the browser sends back (matched to the
+    server's leg by id, else by contract, side and entry price):
     - a leg the server closed stays closed unless the incoming leg was really entered again (a re-entry sets a new entry price
       and counts a cycle) or the editor asked for a fresh start (a new ``rearmAt``, checked by the caller);
     - a leg with fewer cycles than the server's is an old copy (cycles only ever rise): the server's leg is kept;
     - a trailed stop the old copy still has at its pre-trail level goes back to the trailed level (a trailing stop only tightens).
     Returns the document and a name for every leg that was kept as the server had it."""
-    mine = {lg.get("id"): lg for lg in cur.get("legs") or []}
-    if not mine:
+    cur_legs: list[Leg] = list(cur.get("legs") or [])
+    if not cur_legs:
         return doc, []
+    by_id = {lg.get("id"): lg for lg in cur_legs}
     kept: list[str] = []
     legs: list[Leg] = []
     for lg in doc.get("legs") or []:
-        old = mine.get(lg.get("id"))
+        old = by_id.get(lg.get("id"))
+        if old is None:  # another device's ids: the same contract, side and entry price is the same leg
+            old = next((c for c in cur_legs if leg_identity(c) == leg_identity(lg) and c.get("premium") == lg.get("premium")), None)
         if old is None:
             legs.append(lg)
             continue
@@ -361,8 +371,21 @@ class StrategyAutomation:
                 RUNNING_KIND, RUNNING_KEY,
                 {**doc, "legs": legs, "rstate": new_state, "rev": int(doc.get("rev", 0)) + 1, "serverEvents": ev},
             )
+            self._write_back_saved(doc.get("loaded"), legs, doc.get("expiry"), at)
             logger.info("strategy_automation", extra={"fields": {"events": events}})
             return events
+
+    def _write_back_saved(self, name: Any, legs: list[Leg], expiry: Any, at: datetime) -> None:
+        """A stop the server executes is also written to the saved strategy the page has open, as the page does for its own exits:
+        a saved copy left with the leg still open would bring the leg back the next time it is opened on any device."""
+        if not isinstance(name, str) or not name:
+            return
+        try:
+            saved = self.store.get("saved", name)
+            if saved is not None:
+                self.store.put("saved", name, {**saved, "legs": legs, "expiry": expiry or saved.get("expiry"), "updatedAt": at.isoformat()})
+        except Exception:  # the running document is the authority; a failed copy must not stop the next check
+            logger.warning("strategy_saved_write_back_failed")
 
     async def _run(self) -> None:
         while True:

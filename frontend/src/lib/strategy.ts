@@ -431,3 +431,27 @@ export const TEMPLATE_BIAS: Record<string, Bias> = {
   short_straddle: "Neutral", short_strangle: "Neutral", iron_condor: "Neutral", iron_butterfly: "Neutral", butterfly: "Neutral",
   long_straddle: "Other", long_strangle: "Other", ratio_spread: "Other",
 };
+
+
+/** Which contract and side a leg is, whatever id a device gave it. */
+export const legIdentity = (l: Pick<Leg, "expiry" | "strike" | "type" | "action">) => `${l.expiry}|${l.strike}|${l.type}|${l.action}`;
+
+/**
+ * Carry the server's exits into the legs held here. An exit cannot be undone, so a leg the server has closed is closed here too,
+ * whatever else is being edited. A local leg matches the server's by id, else by contract, side and entry premium; a leg entered
+ * again here (another entry premium) does not match, and a server leg that is still open changes nothing. Returns the same array
+ * when nothing needed adopting.
+ */
+export function adoptExits(local: Leg[], server: Leg[]): Leg[] {
+  const closed = server.filter(isExited);
+  if (closed.length === 0) return local;
+  let changed = false;
+  const out = local.map((l) => {
+    if (isExited(l)) return l;
+    const s = closed.find((c) => c.id === l.id) ?? closed.find((c) => legIdentity(c) === legIdentity(l) && c.premium === l.premium);
+    if (!s || s.premium !== l.premium) return l;
+    changed = true;
+    return { ...l, exitPrice: s.exitPrice, exitReason: s.exitReason, exitedAt: s.exitedAt, realised: s.realised, reentryLevel: s.reentryLevel, stopPct: s.stopPct ?? l.stopPct, targetPct: s.targetPct ?? l.targetPct, log: s.log ?? l.log };
+  });
+  return changed ? out : local;
+}

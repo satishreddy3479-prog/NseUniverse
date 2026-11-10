@@ -13,7 +13,7 @@ import { fmtDateTimeIST, fmtInt, fmtPrice } from "../lib/format";
 import { useExpiries, useThrottledValue } from "../lib/hooks";
 import { marketClockMs } from "../lib/session";
 import { carryFromForward, contractGreeks, expiryEnd, impliedForward, legGreeks, sdLevel, netGreeks, probabilityOfProfit, scenarioGrid, sdBands, spotAtPremium, theoreticalPnl, type ContractGreeks, type Valuation } from "../lib/optionModel";
-import {
+import { adoptExits,
   analyzeExpiry, applyAutomation, applyStrategyRules, exitLeg, expiryPnl, hitOf, isExited, newLegId, reenterLeg, rollLeg, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds, NO_RULES, hasRules, lockFloor, rulesProblem, type StrategyRules, type RulesState,
   type Action, type Bias, type Leg, type OptionType, type Template,
 } from "../lib/strategy";
@@ -381,6 +381,9 @@ export default function StrategyBuilder() {
     return liveKey(l.type === "CE" ? row?.call ?? null : row?.put ?? null) ?? l.key ?? null;
   };
   const payloadJson = JSON.stringify({ name, loaded, expiry, lotSize, mult, auto: autoOn, rules, rearmAt, baseline, legs: legs.map((l) => ({ ...l, key: keyOf(l) })) });
+  // what the page compares to know whether anything it has not sent is waiting: the same document without the live-feed keys, which come and
+  // go with the stream and must not make an idle page look as if it had unsent edits (it would then never take the server's exits)
+  const coreJson = JSON.stringify({ name, loaded, expiry, lotSize, mult, auto: autoOn, rules, rearmAt, baseline, legs });
   const adoptServer = (d: RunningDoc, announce: boolean) => {
     revRef.current = d.rev ?? null;
     skipPush.current = true;
@@ -413,11 +416,11 @@ export default function StrategyBuilder() {
   }, []);
   useEffect(() => {
     if (!hydrated || !serverAuto) return;
-    if (skipPush.current) { skipPush.current = false; sentRef.current = payloadJson; return; }
-    if (payloadJson === sentRef.current) return;
+    if (skipPush.current) { skipPush.current = false; sentRef.current = coreJson; return; }
+    if (coreJson === sentRef.current) return;
     const baseRev = revRef.current; // the revision this payload was built on: if the server moves on before the send, the send is refused
     const t = setTimeout(() => {
-      api.runningPut(JSON.parse(payloadJson), baseRev).then((r) => { revRef.current = r.rev; sentRef.current = payloadJson; })
+      api.runningPut(JSON.parse(payloadJson), baseRev).then((r) => { revRef.current = r.rev; sentRef.current = coreJson; })
         .catch(async (e: unknown) => {
           if (e instanceof ApiError && e.status === 409) {
             // the server closed or re-entered a leg meanwhile: its state wins, because an exit cannot be undone
@@ -427,7 +430,7 @@ export default function StrategyBuilder() {
     }, 600);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payloadJson, hydrated, serverAuto]);
+  }, [coreJson, hydrated, serverAuto]);
   useEffect(() => {
     if (!hydrated) return;
     const poll = async () => {
@@ -435,9 +438,21 @@ export default function StrategyBuilder() {
         const r = await api.runningGet();
         setServerAuto(true);
         const d = r.doc;
-        if (d && payloadJson === sentRef.current) setRstate(d.rstate ?? null); // the profit floor moves without a new revision
-        // adopt what the server did (an exit, a re-entry) unless an edit made here is still waiting to be sent
-        if (d && d.rev !== revRef.current && payloadJson === sentRef.current) adoptServer(d, true);
+        if (d && coreJson === sentRef.current) setRstate(d.rstate ?? null); // the profit floor moves without a new revision
+        // an exit the server made is taken at once, even while an edit made here is waiting: it cannot be undone, and a page that kept
+        // its old open leg would send it back (the repeated stop-outs of 6 and 9 Nov 2026)
+        if (d && d.rev !== revRef.current && (d.rearmAt ?? null) === (rearmAt ?? null)) {
+          const merged = adoptExits(legs, d.legs ?? []);
+          if (merged !== legs) {
+            revRef.current = d.rev ?? null;
+            setLegs(merged);
+            const last = d.serverEvents?.[d.serverEvents.length - 1];
+            if (last) { setAutoNote(last.text); seenEvents.current = last.at; }
+            return;
+          }
+        }
+        // adopt what the server did (a re-entry, a trailed stop) unless an edit made here is still waiting to be sent
+        if (d && d.rev !== revRef.current && coreJson === sentRef.current) adoptServer(d, true);
       } catch { setServerAuto(false); }
     };
     const t = setInterval(() => { void poll(); }, 4000);
@@ -445,7 +460,7 @@ export default function StrategyBuilder() {
     document.addEventListener("visibilitychange", vis);
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", vis); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated, payloadJson]);
+  }, [hydrated, coreJson]);
   // The working copy survives a refresh for three days, so it can point at an expiry that has since expired and is no longer
   // listed (it kept the builder on 03 Nov after that day). Once the listed expiries are known, such a strategy is set aside
   // (a copy stays in this browser) and the builder starts on the latest weekly expiry.
@@ -536,7 +551,7 @@ export default function StrategyBuilder() {
     const out = t.build({ strikes, atm, expiry, premium: (_e, k, ty) => ltp(k, ty) });
     return "error" in out ? null : withIds(out);
   };
-  const loadLegs = (ls: Leg[]) => { setLegs(ls); setBaseline(ls); };
+  const loadLegs = (ls: Leg[]) => { setLegs(ls); setBaseline(ls); setRearmAt(new Date().toISOString()); }; // a strategy opened on purpose is a fresh start for the server
   const apply = (t: Template) => {
     if (!expiry || atm == null) { setNote("Load an option chain first."); return; }
     const out = t.build({ strikes, atm, expiry, premium: (_e, k, ty) => ltp(k, ty) });
@@ -611,7 +626,7 @@ export default function StrategyBuilder() {
     const closedName = name.trim() || loaded || opened?.name;
     persistClosed([{ id: opened?.id ?? newLegId(), name: closedName || `Strategy ${at.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`, closedAt: at.toISOString(), snapshotAt: snap.retrieved_at, expiry, lotSize, pnl, legs: out, stale: !!chain.data?.stale }, ...closed.filter((x) => x.id !== opened?.id)]);
     if (loaded) persist(saved.filter((x) => x.name !== loaded)); // the strategy moves from Saved to Closed, it is not copied
-    setLegs([]); setNote(null); setSel(null); setMult(1); setDays(0); setName(""); setOpened(null); setLoaded(null);
+    setLegs([]); setRearmAt(new Date().toISOString()); setNote(null); setSel(null); setMult(1); setDays(0); setName(""); setOpened(null); setLoaded(null);
   };
   const openClosed = (c: Closed) => { setPicked(c.expiry); loadLegs(c.legs.map(({ exit: _e, ...l }) => ({ ...l, id: newLegId() }))); setMult(1); setNote(null); setOpened(c); setLoaded(null); };
   const persist = (s: Saved[]) => { pushDiff("saved", saved, s, (x) => x.name); setSaved(s); try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch { /* storage unavailable: kept for this visit only */ } };
@@ -623,7 +638,7 @@ export default function StrategyBuilder() {
   /** Reset: undo edits, keeping the strategy. */
   const resetStrategy = () => { setLegs(baseline.map((l) => ({ ...l }))); setRearmAt(new Date().toISOString()); setMult(1); setDays(0); setIvPts(0); setWhatPct(0); setZoom(0); setNote(null); setSel(null); };
   /** New: forget the strategy entirely and start from the gallery. */
-  const newStrategy = () => { setLegs([]); setBaseline([]); setName(""); setLoaded(null); setOpened(null); setNote(null); setSel(null); setMult(1); setDays(0); setIvPts(0); setWhatPct(0); setZoom(0); };
+  const newStrategy = () => { setLegs([]); setRearmAt(new Date().toISOString()); setBaseline([]); setName(""); setLoaded(null); setOpened(null); setNote(null); setSel(null); setMult(1); setDays(0); setIvPts(0); setWhatPct(0); setZoom(0); };
   const savedEntry = loaded ? saved.find((x) => x.name === loaded) : undefined;
   const sig = (ls: Leg[]) => JSON.stringify(ls.map(({ id: _i, ...r }) => r));
   const dirty = !!savedEntry && (sig(legs) !== sig(savedEntry.legs) || savedEntry.expiry !== expiry);
@@ -709,7 +724,7 @@ export default function StrategyBuilder() {
           </div>
           <div className="flex flex-wrap gap-2 border-b border-rule px-3 py-2">
             {available.map((e) => (
-              <button key={e} type="button" aria-pressed={e === expiry} onClick={() => { if (legs.length) setNote("The legs were cleared because the expiry changed."); setLegs([]); setLoaded(null); setPicked(e); }}
+              <button key={e} type="button" aria-pressed={e === expiry} onClick={() => { if (legs.length) setNote("The legs were cleared because the expiry changed."); setLegs([]); setRearmAt(new Date().toISOString()); setLoaded(null); setPicked(e); }}
                 className={`min-h-8 rounded-sm border px-3 text-sm ${e === expiry ? "border-info bg-info/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{dmy(e)} ({dayDiff(e, snapMs)}d) · {e === ex.data?.weekly ? "weekly" : "monthly"}</button>
             ))}
           </div>

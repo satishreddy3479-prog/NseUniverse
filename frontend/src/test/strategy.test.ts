@@ -156,7 +156,7 @@ describe("templates and validation", () => {
   });
 });
 
-import { applyAutomation, applyStrategyRules, hitOf, lockFloor, NO_RULES, rulesProblem, trailLeg } from "../lib/strategy";
+import { adoptExits, applyAutomation, applyStrategyRules, hitOf, lockFloor, NO_RULES, rulesProblem, trailLeg } from "../lib/strategy";
 
 describe("percentage trailing stop (hand calculated)", () => {
   const sold: Leg = { id: "a", expiry: "2026-11-09", strike: 23300, type: "CE", action: "SELL", lots: 1, premium: 100, premiumSource: "market", stop: 130, trailEvery: 10, trailBy: 5 };
@@ -246,5 +246,24 @@ describe("strategy stop loss, target and lock-and-trail (hand calculated, lot 65
     const r = applyStrategyRules(legs, { ...NO_RULES, sl: 10 }, { floor: null, done: null }, (k) => (k === 23300 ? 500 : null), 65, "t");
     expect(r.legs).toBe(legs);
     expect(r.events).toEqual([]);
+  });
+});
+
+describe("adoptExits: the server's exits are carried into an open local copy", () => {
+  const mk = (o: Partial<Leg> = {}): Leg => ({ id: "x", expiry: "2026-11-09", strike: 24900, type: "PE", action: "SELL", lots: 1, premium: 81.55, premiumSource: "market", stop: 106, ...o });
+  const closed = mk({ id: "srv", exitPrice: 107.25, exitReason: "stop", exitedAt: "2026-11-09T04:11:06Z", realised: -1671, reentryLevel: 81.55 });
+  it("closes the local leg whatever id the device gave it", () => {
+    const local = [mk({ id: "ch-0" }), mk({ id: "ch-1", type: "CE", premium: 121.65 })];
+    const out = adoptExits(local, [closed]);
+    expect(out[0]).toMatchObject({ id: "ch-0", exitPrice: 107.25, exitReason: "stop", realised: -1671 });
+    expect(out[1]).toBe(local[1]); // the other leg is untouched
+  });
+  it("leaves a leg entered again here (another entry premium), an already closed leg and a server leg that is open alone", () => {
+    const again = mk({ id: "ch-0", premium: 90 });
+    expect(adoptExits([again], [closed])[0]).toBe(again);
+    const mine = mk({ id: "ch-0", exitPrice: 100, exitReason: "manual", realised: 50 });
+    expect(adoptExits([mine], [closed])[0]).toBe(mine);
+    const local = [mk({ id: "ch-0" })];
+    expect(adoptExits(local, [mk({ id: "srv" })])).toBe(local); // nothing closed on the server: the same array back
   });
 });
