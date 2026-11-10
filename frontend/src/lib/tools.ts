@@ -21,7 +21,7 @@ export interface Tool {
   /** chart boards built from the stored per-strike series (components/dashboard/PriceBoards.tsx) */
   board?: "priceOi" | "multiStrike" | "multiStraddle" | "vega" | "gamma";
   /** a special page body (see pages/ToolPage.tsx) */
-  page?: "flows" | "cash" | "contributors" | "weightage" | "breadth" | "sectors" | "movers" | "futflow" | "futsectors" | "futbuildup" | "ivhv" | "ivchart" | "ivskew" | "ivmomentum" | "strikepos" | "ivintraday";
+  page?: "flows" | "cash" | "contributors" | "weightage" | "breadth" | "sectors" | "movers" | "futflow" | "futsectors" | "futbuildup" | "ivhv" | "ivchart" | "ivskew" | "ivmomentum" | "marketstructure" | "strikepos" | "ivintraday";
   /** why a planned tool is not available yet */
   needs?: string;
   isNew?: boolean;
@@ -47,6 +47,7 @@ export const TOOLS: Tool[] = [
   { id: "price-vs-oi", label: "Price vs OI", menu: "options", group: "Price tools", status: "ready", board: "priceOi", blurb: "One strike's call and put price against its open interest and OI change through the session." },
   { id: "multistrike-chart", label: "MultiStrike Chart", menu: "options", group: "Price tools", status: "ready", isNew: true, board: "multiStrike", blurb: "Price, OI or OI change of several strikes on one chart, calls and puts side by side." },
   { id: "multi-straddle", label: "Multi-Straddle Chart", menu: "options", group: "Price tools", status: "ready", isNew: true, board: "multiStraddle", blurb: "The straddle price of several strikes on one chart." },
+  { id: "market-structure", label: "Market Structure", menu: "options", group: "Positioning", status: "ready", isNew: true, page: "marketstructure", blurb: "One view of regime, volatility, positioning and gamma, with the evidence for and against each reading." },
   { id: "strike-positioning", label: "Strike Positioning", menu: "options", group: "Positioning", status: "ready", isNew: true, page: "strikepos", blurb: "Strike-by-strike premium, OI, volume, IV and delta changes, OTM demand readings and premium baskets, with every label tied to its evidence." },
   { id: "iv-momentum", label: "IV Momentum", menu: "options", group: "IV tools", status: "ready", isNew: true, page: "ivmomentum", blurb: "Call versus put IV change at ATM, 25 and 10 delta over 1 minute to 1 hour and since the previous close." },
   { id: "volatility-skew", label: "Volatility Skew", menu: "options", group: "IV tools", status: "ready", isNew: true, page: "ivskew", blurb: "The volatility smile, 25 and 10 delta skew, butterfly, slope and term structure from the stored chain." },

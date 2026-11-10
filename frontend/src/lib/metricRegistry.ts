@@ -268,4 +268,32 @@ export const METRICS: Record<string, MetricDef> = {
     reading: { positive: "Not applicable (labels).", negative: "Not applicable.", rising: "A growing negative net GEX with a trending NIFTY is the amplifying pattern.", falling: "A growing positive net GEX with a trending NIFTY is the stabilising pattern.", nearZero: "Flat NIFTY or unchanged GEX gives no reading." },
     assumptions: ["The readings rest on the unverified dealer sign assumption.", "Thresholds are ours and uncalibrated.", "A divergence is a description of two series, not a forecast."],
   },
+  regime_classifier: {
+    id: "regime_classifier", version: "1", title: "Market regime classifier",
+    measures: "A rule-based summary of what independent indicators (price, IV, skew, momentum, positioning, GEX) jointly point to over the last 15 minutes.",
+    formula: [
+      "Each indicator becomes a yes / no / not-evaluable condition against a fixed threshold (listed below)",
+      "Directional gap = (bullish conditions met) − (bearish conditions met); bullish if ≥ 2, bearish if ≤ −2, conflicting if both sides have ≥ 2, else neutral",
+      "Volatility: expanding if ATM IV change ≥ +0.3 pt, contracting if ≤ −0.3, else stable. Gamma: negative if net GEX < 0; near flip if spot is within 0.2 % of the flip; else positive",
+      "Regime, first rule that applies: fewer than 5 evaluable conditions → Insufficient data; negative gamma and |NIFTY move| ≥ 0.1 % → Negative gamma / momentum amplification; bullish or bearish direction with expanding or contracting IV → the four directional regimes; expanding IV with neutral or conflicting direction → Uncertainty expansion; neutral, positive gamma, IV not expanding → Range-bound / positive gamma; otherwise Mixed / conflicting",
+      "Upside / downside demand score = conditions met ÷ conditions evaluable × 100 (an index, not a probability); stability score likewise over: positive GEX away from the flip, IV not expanding, NIFTY flat",
+      "Confidence = High if completeness ≥ 80 %, agreement ≥ 75 % and at least 3 directional conditions evaluable; Medium if ≥ 60 % and ≥ 60 %; else Low. completeness = evaluable ÷ all conditions; agreement = larger of (bull, bear) ÷ (bull + bear)",
+    ],
+    computedBy: { frontend: "classifyRegime (lib/regime.ts)" },
+    unit: "labels, indices 0 to 100, completeness and agreement in %", sign: "Not applicable.",
+    inputs: [
+      { name: "NIFTY change, ATM IV change, 25Δ IV momentum", source: "IV Momentum section (15-minute window)", unit: "%, IV points, IV points", kind: "derived" },
+      { name: "25Δ skew, 25Δ butterfly", source: "Volatility Skew section", unit: "IV points", kind: "derived" },
+      { name: "IV − HV", source: "IV, HV and RV section (India VIX less 1-month HV)", unit: "IV points", kind: "derived" },
+      { name: "Demand labels", source: "Strike Positioning section", unit: "labels", kind: "derived" },
+      { name: "Net GEX, gamma flip", source: "GEX dynamic ATM ±10 universe (model sign)", unit: "₹ crore per 1 %, index points", kind: "derived" },
+    ],
+    steps: ["Read each section's already-computed figures (nothing is recalculated here).", "Evaluate the conditions; a missing input leaves its conditions not evaluable.", "Apply the regime rules in the order stated.", "List the conditions that support the direction, those that contradict it and those that could not be evaluated."],
+    reading: {
+      positive: "Not applicable (labels).", negative: "Not applicable.",
+      rising: "A higher score means more of that side's conditions hold now.", falling: "Fewer hold.",
+      nearZero: "A score near 0 means almost none of that side's evaluable conditions hold.",
+    },
+    assumptions: ["Thresholds (0.1 % move, 0.3 pt IV, 0.2 pt momentum, 3 pt put skew, 1 pt butterfly, 0.2 % flip distance) are our own and uncalibrated.", "Confidence reflects data completeness and agreement between indicators. It is not a calibrated probability and no probability of any outcome is shown.", "The GEX leg rests on an unverified dealer sign assumption; positioning labels cannot identify buyers or sellers.", "The GEX-price divergence is not included in this version's inputs."],
+  },
 };
