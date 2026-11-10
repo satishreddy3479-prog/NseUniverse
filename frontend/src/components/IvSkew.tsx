@@ -118,6 +118,17 @@ export function IvSkewBody({ expiry }: { expiry: string | null }) {
         {view === "Term" && (s.term.length >= 2 ? (
           <>
             <div style={{ height: 320 }} data-testid="ivskew-term"><EChart option={term} ariaLabel="ATM implied volatility and 25 delta skew by expiry" /></div>
+            {stored?.term_structure && (
+              <div className="mt-2 rounded-sm bg-slate-2 p-2 text-xs text-muted" data-testid="ivskew-term-structure">
+                {stored.term_structure.shape && stored.term_structure.near && stored.term_structure.far ? (
+                  <>
+                    <div className="text-paper"><span className="font-semibold">{stored.term_structure.shape === "contango" ? "Contango" : stored.term_structure.shape === "backwardation" ? "Backwardation" : "Flat"}</span>: term slope {sgn(stored.term_structure.slope_per_30d, " pts/30d")} = ({n2(stored.term_structure.far.atm_iv)} − {n2(stored.term_structure.near.atm_iv)}) / ({stored.term_structure.far.days.toFixed(2)} − {stored.term_structure.near.days.toFixed(2)}) × 30, far {stored.term_structure.far.expiry}, near {stored.term_structure.near.expiry}.</div>
+                    <div>{(stored.term_structure.iv_difference ?? 0) >= 0 ? "Longer-term volatility premium" : "Near-term volatility premium"}: {Math.abs(stored.term_structure.iv_difference ?? 0).toFixed(2)} IV points. Pairs: {stored.term_structure.pairs.map((q) => `${q.near.slice(5)}→${q.far.slice(5)} ${sgn(q.slope, "")}`).join("; ") || MISSING}.</div>
+                  </>
+                ) : <div>Fewer than two expiries with a solved IV and at least half a day left: no slope.</div>}
+                {stored.term_structure.left_out.length > 0 && <div className="text-warn">Left out of the slope: {stored.term_structure.left_out.map((l) => `${l.expiry} (${l.reason})`).join("; ")}.</div>}
+              </div>
+            )}
             <p className="mt-1 text-[11px] text-muted">Expiries with a chain stored within 5 minutes of this one. Near expiries carry event and expiry-day effects, so a difference is an observation, not a signal.</p>
           </>
         ) : <p className="text-sm text-muted" data-testid="ivskew-term-empty">Only {s.term.length} expiry has a stored chain at this moment: a term view needs at least two.</p>)}

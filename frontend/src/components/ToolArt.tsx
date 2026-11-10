@@ -9,7 +9,7 @@ export type ArtKind = "bars" | "hbars" | "lines" | "area" | "candles" | "heat" |
 const ART: Record<string, ArtKind> = {
   "open-interest": "hbars", "multi-oi-volume": "bars", "put-call-ratio": "gauge", "max-pain": "payoff", "gamma-exposure": "diverge",
   "pe-ce-difference": "diverge", "smart-oi": "pulse", "oi-buildup": "heat", "vega-analysis": "bars",
-  straddle: "area", "premium-decay": "area", "price-vs-oi": "candles", "multistrike-chart": "lines", "multi-straddle": "area", "volatility-skew": "smile", "iv-hv": "lines",
+  straddle: "area", "premium-decay": "area", "price-vs-oi": "candles", "multistrike-chart": "lines", "multi-straddle": "area", "volatility-skew": "smile", "iv-momentum": "lines", "iv-hv": "lines",
   "iv-intraday": "area", "oi-crossover": "lines", "intraday-booster": "pulse", "option-triggers": "gauge",
   "future-dashboard": "candles", "future-intraday": "area", "market-movers": "diverge", "future-oi": "bars",
   "future-price-oi": "candles", "fii-dii-summary": "flow", "fii-dii-cash": "flow", "index-contributors": "diverge",

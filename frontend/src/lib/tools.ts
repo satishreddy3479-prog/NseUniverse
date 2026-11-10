@@ -21,7 +21,7 @@ export interface Tool {
   /** chart boards built from the stored per-strike series (components/dashboard/PriceBoards.tsx) */
   board?: "priceOi" | "multiStrike" | "multiStraddle" | "vega" | "gamma";
   /** a special page body (see pages/ToolPage.tsx) */
-  page?: "flows" | "cash" | "contributors" | "weightage" | "breadth" | "sectors" | "movers" | "futflow" | "futsectors" | "futbuildup" | "ivhv" | "ivchart" | "ivskew" | "ivintraday";
+  page?: "flows" | "cash" | "contributors" | "weightage" | "breadth" | "sectors" | "movers" | "futflow" | "futsectors" | "futbuildup" | "ivhv" | "ivchart" | "ivskew" | "ivmomentum" | "ivintraday";
   /** why a planned tool is not available yet */
   needs?: string;
   isNew?: boolean;
@@ -47,6 +47,7 @@ export const TOOLS: Tool[] = [
   { id: "price-vs-oi", label: "Price vs OI", menu: "options", group: "Price tools", status: "ready", board: "priceOi", blurb: "One strike's call and put price against its open interest and OI change through the session." },
   { id: "multistrike-chart", label: "MultiStrike Chart", menu: "options", group: "Price tools", status: "ready", isNew: true, board: "multiStrike", blurb: "Price, OI or OI change of several strikes on one chart, calls and puts side by side." },
   { id: "multi-straddle", label: "Multi-Straddle Chart", menu: "options", group: "Price tools", status: "ready", isNew: true, board: "multiStraddle", blurb: "The straddle price of several strikes on one chart." },
+  { id: "iv-momentum", label: "IV Momentum", menu: "options", group: "IV tools", status: "ready", isNew: true, page: "ivmomentum", blurb: "Call versus put IV change at ATM, 25 and 10 delta over 1 minute to 1 hour and since the previous close." },
   { id: "volatility-skew", label: "Volatility Skew", menu: "options", group: "IV tools", status: "ready", isNew: true, page: "ivskew", blurb: "The volatility smile, 25 and 10 delta skew, butterfly, slope and term structure from the stored chain." },
   { id: "iv-hvp", label: "IV / HV / IVP Chart", menu: "options", group: "IV tools", status: "ready", isNew: true, page: "ivchart", blurb: "India VIX against historical volatility with IV rank and IV percentile, and NIFTY as the price line." },
   { id: "iv-hv", label: "IV - HV", menu: "options", group: "IV tools", status: "ready", isNew: true, page: "ivhv", blurb: "At-the-money implied volatility against historical volatility (10, 20, 30 and 60 days) from stored daily closes." },

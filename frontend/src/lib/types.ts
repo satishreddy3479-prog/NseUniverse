@@ -886,8 +886,25 @@ export interface IvChart {
 export interface SkewMeasures { skew_25d: number | null; skew_10d: number | null; call_minus_put_25d: number | null; call_minus_put_10d: number | null; butterfly_25d: number | null; butterfly_10d: number | null; slope_per_pct: number | null; put_25d_iv: number | null; call_25d_iv: number | null; put_10d_iv: number | null; call_10d_iv: number | null }
 export interface IvSkew {
   status: string; expiry?: string; at?: string; age_seconds?: number; spot?: number; forward?: number; atm_strike?: number; atm_iv?: number | null; days?: number | null;
+  term_structure?: TermStructure;
   cards?: SkewMeasures & { term_slope_per_30d: number | null };
   smile: { strike: number; side: "CE" | "PE"; iv: number | null; delta: number | null }[];
   term: (SkewMeasures & { expiry: string; days: number | null; atm_iv: number | null })[];
   model?: string; rate_assumed?: number;
+}
+
+export interface IvMomentumBucket { ce_now: number | null; ce_then: number | null; ce_change: number | null; pe_now: number | null; pe_then: number | null; pe_change: number | null; momentum: number | null }
+export interface IvMomentumChange { from: string | null; spot_change: number | null; spot_change_pct: number | null; atm: IvMomentumBucket; d25: IvMomentumBucket; d10: IvMomentumBucket }
+export interface IvMomentum {
+  status: string; expiry: string; session: string; tf_minutes: number; samples_in_session: number; previous_session: string | null;
+  latest_at: string; age_seconds: number; excluded: number;
+  table: { now: string | null; periods: Record<string, IvMomentumChange>; previous_close: IvMomentumChange | null } | null;
+  series: { at: string; spot: number | null; atm: { ce: number | null; pe: number | null }; d25: { ce: number | null; pe: number | null }; d10: { ce: number | null; pe: number | null } }[];
+  model: string; rate_assumed: number;
+}
+
+export interface TermStructure {
+  slope_per_30d: number | null; shape: "contango" | "backwardation" | "flat" | null; iv_difference?: number;
+  near: { expiry: string; days: number; atm_iv: number } | null; far: { expiry: string; days: number; atm_iv: number } | null;
+  pairs: { near: string; far: string; slope: number }[]; left_out: { expiry: string; reason: string }[];
 }

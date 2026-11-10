@@ -699,6 +699,19 @@ async def intraday_iv_series(
     return await asyncio.to_thread(svc.iv_series, expiry.isoformat(), max_points, iso, tf)
 
 
+@router.get("/intraday/iv-momentum")
+async def intraday_iv_momentum(
+    request: Request, expiry: date, session: date | None = None, tf: int = 1
+) -> dict[str, Any]:
+    """Call-versus-put IV momentum (ATM, 25 and 10 delta) through a stored session."""
+    if tf not in (1, 3, 5, 15):
+        msg = "tf must be 1, 3, 5 or 15"
+        raise HTTPException(status_code=422, detail={"code": "bad_range", "message": msg})
+    svc = request.app.state.intraday
+    iso = None if session is None else session.isoformat()
+    return await asyncio.to_thread(svc.iv_momentum, expiry.isoformat(), iso, tf)
+
+
 @router.get("/intraday/iv-sessions")
 async def intraday_iv_sessions(request: Request) -> dict[str, Any]:
     """IST dates that have stored option-chain samples."""

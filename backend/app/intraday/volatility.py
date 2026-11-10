@@ -217,6 +217,40 @@ def skew_metrics(rows: Sequence[dict[str, Any]], forward: float, atm_iv: float |
     }
 
 
+#: an expiry with less than this many days left is on its last session: its IV is dominated by expiry-day effects and a time
+#: difference this small makes the slope explode, so it stays in the table but is left out of the slope
+MIN_TERM_DAYS = 0.5
+#: a term slope within this many IV points per 30 days counts as flat
+FLAT_TERM_SLOPE = 0.5
+
+
+def iv_term_structure(term: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """Term structure of ATM IV across the expiries of one moment (rows with ``expiry``, ``days``, ``atm_iv``, sorted by days).
+    Term slope = (IV_far - IV_near) / (DTE_far - DTE_near) * 30 in IV points per 30 days, between the nearest and the farthest expiry
+    that has an IV and at least ``MIN_TERM_DAYS`` left; ``pairs`` gives the same slope between each neighbouring pair. Contango when
+    the slope is above ``FLAT_TERM_SLOPE``, backwardation when below minus it, otherwise flat. Mirrors the registry entry ``term_slope``."""
+    usable = [t for t in term if t.get("atm_iv") is not None and t.get("days") is not None]
+    used = [t for t in usable if t["days"] >= MIN_TERM_DAYS]
+    left_out = [{"expiry": t["expiry"], "reason": f"{t['days']:.2f} days left: expiry-day effects"} for t in usable if t["days"] < MIN_TERM_DAYS]
+    left_out += [{"expiry": t["expiry"], "reason": "no solved ATM IV"} for t in term if t.get("atm_iv") is None or t.get("days") is None]
+    pairs = [
+        {"near": a["expiry"], "far": b["expiry"], "slope": round((b["atm_iv"] - a["atm_iv"]) / (b["days"] - a["days"]) * 30, 3)}
+        for a, b in zip(used, used[1:], strict=False) if b["days"] != a["days"]
+    ]
+    out: dict[str, Any] = {"slope_per_30d": None, "shape": None, "near": None, "far": None, "pairs": pairs, "left_out": left_out}
+    if len(used) >= 2 and used[-1]["days"] != used[0]["days"]:
+        near, far = used[0], used[-1]
+        slope = round((far["atm_iv"] - near["atm_iv"]) / (far["days"] - near["days"]) * 30, 3)
+        out.update(
+            slope_per_30d=slope,
+            shape="contango" if slope > FLAT_TERM_SLOPE else "backwardation" if slope < -FLAT_TERM_SLOPE else "flat",
+            near={"expiry": near["expiry"], "days": near["days"], "atm_iv": near["atm_iv"]},
+            far={"expiry": far["expiry"], "days": far["days"], "atm_iv": far["atm_iv"]},
+            iv_difference=round(far["atm_iv"] - near["atm_iv"], 3),
+        )
+    return out
+
+
 def realized_annualised(points: Sequence[tuple[datetime, float]]) -> float | None:
     """Annualised realised volatility (%) from consecutive samples over their actual elapsed time. Needs >= 5 points."""
     if len(points) < 5:

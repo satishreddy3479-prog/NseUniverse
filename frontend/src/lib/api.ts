@@ -149,6 +149,7 @@ export const api = {
   intradayIvSeries: (expiry: string, o: { session?: string; tf?: number; maxPoints?: number } = {}) =>
     request<IvSeries>(`/api/intraday/iv-series?expiry=${encodeURIComponent(expiry)}${o.session ? `&session=${o.session}` : ""}${o.tf ? `&tf=${o.tf}` : ""}${o.maxPoints ? `&max_points=${o.maxPoints}` : ""}`),
   intradayIvSessions: () => request<{ sessions: string[] }>("/api/intraday/iv-sessions"),
+  intradayIvMomentum: (expiry: string, tf = 1) => request<import("./types").IvMomentum>(`/api/intraday/iv-momentum?expiry=${encodeURIComponent(expiry)}&tf=${tf}`),
   intradayIvSkew: (expiry: string) => request<IvSkew>(`/api/intraday/iv-skew?expiry=${encodeURIComponent(expiry)}`),
   futuresSeries: (since?: string) => request<FuturesSeries>("/api/futures/series" + (since ? `?since=${encodeURIComponent(since)}` : "")),
   oiSeries: (expiry: string, strikes: string, since?: string, maxPoints?: number) =>

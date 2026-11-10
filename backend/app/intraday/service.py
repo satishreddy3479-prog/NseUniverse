@@ -21,7 +21,7 @@ from statistics import pstdev
 from typing import Any
 
 from app.domain.session import market_time, session_close
-from app.intraday import evaluate, labels, paper, positioning, price_structure, setups
+from app.intraday import evaluate, labels, momentum, paper, positioning, price_structure, setups
 from app.intraday import hv as hvmod
 from app.intraday import volatility as volmod
 from app.intraday.costs import CostModel
@@ -587,19 +587,17 @@ class IntradayService:
         counts = self.obs.session_sample_counts(self.underlying)
         return sorted(d for d, n in counts.items() if n >= MIN_SESSION_SAMPLES)[-limit:]
 
-    def iv_series(self, expiry: str, max_points: int = 90, session: str | None = None, tf: int = 1) -> dict[str, Any]:
-        """At-the-money implied volatility through one stored session of this expiry (the latest unless ``session`` is given),
-        the last snapshot of each ``tf``-minute candle counted from the open, thinned to at most ``max_points``. Same model
-        and inputs as the command center's IV."""
-        now = self._clock()
+    def _session_samples(self, expiry: str, session: str | None, now: datetime) -> dict[str, Any]:
+        """The in-session stored samples of one session of ``expiry`` (the latest unless ``session`` is given): ``exp_d``, ``day``,
+        ``todays``; or a ``status`` saying why there are none."""
         try:
             exp_d = date.fromisoformat(expiry)
         except ValueError:
-            return {"status": "bad expiry", "points": []}
+            return {"status": "bad expiry"}
         try:
             want = date.fromisoformat(session) if session else None
         except ValueError:
-            return {"status": "bad session", "points": []}
+            return {"status": "bad session"}
         if want is None:
             start = datetime.combine(now.astimezone(IST).date(), OPEN, IST)
             samples = self.obs.samples(self.underlying, expiry, since=start - timedelta(days=4), until=now, limit=5000)
@@ -607,11 +605,61 @@ class IntradayService:
             lo = datetime.combine(want, OPEN, IST)
             samples = self.obs.samples(self.underlying, expiry, since=lo, until=datetime.combine(want, session_close(), IST), limit=5000)
         if not samples:
-            return {"status": "no stored option-chain sample for this expiry", "expiry": expiry, "points": []}
+            return {"status": "no stored option-chain sample for this expiry"}
         day = samples[-1].received_at.astimezone(IST).date()
         todays = [s for s in samples if s.received_at.astimezone(IST).date() == day and OPEN <= s.received_at.astimezone(IST).time() <= session_close()]
         if not todays:
-            return {"status": "no stored sample inside the session", "expiry": expiry, "points": []}
+            return {"status": "no stored sample inside the session"}
+        return {"exp_d": exp_d, "day": day, "todays": todays}
+
+    def iv_momentum(self, expiry: str, session: str | None = None, tf: int = 1) -> dict[str, Any]:
+        """Call-versus-put IV momentum for one stored session of ``expiry``: CE and PE IV at ATM, 25 and 10 delta through the session,
+        and the change since 1, 5, 15, 30 and 60 minutes earlier and since the previous stored session's close (see ``momentum.py``)."""
+        now = self._clock()
+        sel = self._session_samples(expiry, session, now)
+        if "status" in sel:
+            return {"status": sel["status"], "expiry": expiry, "series": [], "table": None}
+        exp_d, day, todays = sel["exp_d"], sel["day"], sel["todays"]
+        key = ("mom", expiry, str(todays[-1].sample_id), len(todays), tf)
+        if key in self._iv_cache:
+            return self._iv_cache[key]
+        if tf > 1:
+            last: dict[int, Any] = {}
+            for s in todays:
+                t_ = s.received_at.astimezone(IST)
+                last[int((t_.hour * 60 + t_.minute - (OPEN.hour * 60 + OPEN.minute)) // tf)] = s
+            todays = list(last.values())
+        pts = [momentum.delta_point(s.received_at, s.spot, self._surface_of(s, exp_d, s.received_at, 25)) for s in todays]
+        prev: dict[str, Any] | None = None
+        prev_day: str | None = None
+        lo_prev = datetime.combine(day - timedelta(days=6), OPEN, IST)
+        before = self.obs.samples(self.underlying, expiry, since=lo_prev, until=datetime.combine(day, OPEN, IST), limit=5000)
+        closes = [s for s in before if s.received_at.astimezone(IST).time() <= session_close() and s.spot is not None]
+        if closes:
+            c = closes[-1]
+            prev = momentum.delta_point(c.received_at, c.spot, self._surface_of(c, exp_d, c.received_at, 25))
+            prev_day = c.received_at.astimezone(IST).date().isoformat()
+        valid = [p for p in pts if p["spot"] is not None]
+        out = {
+            "status": "ok" if valid else "no implied volatility could be computed", "expiry": expiry, "session": day.isoformat(),
+            "tf_minutes": tf, "samples_in_session": len(todays), "previous_session": prev_day,
+            "latest_at": todays[-1].received_at.isoformat(), "age_seconds": round((now - todays[-1].received_at).total_seconds(), 1),
+            "table": momentum.momentum_table(valid, prev), "series": momentum.series(valid),
+            "excluded": len(pts) - len(valid),
+            "model": "Black-76; forward from put-call parity", "rate_assumed": self.risk_free_rate,
+        }
+        self._iv_cache = {key: out}
+        return out
+
+    def iv_series(self, expiry: str, max_points: int = 90, session: str | None = None, tf: int = 1) -> dict[str, Any]:
+        """At-the-money implied volatility through one stored session of this expiry (the latest unless ``session`` is given),
+        the last snapshot of each ``tf``-minute candle counted from the open, thinned to at most ``max_points``. Same model
+        and inputs as the command center's IV."""
+        now = self._clock()
+        sel = self._session_samples(expiry, session, now)
+        if "status" in sel:
+            return {"status": sel["status"], "expiry": expiry, "points": []}
+        exp_d, day, todays = sel["exp_d"], sel["day"], sel["todays"]
         if tf > 1:
             def bucket(s: Any) -> int:
                 t_ = s.received_at.astimezone(IST)
@@ -691,15 +739,13 @@ class IntradayService:
             m = volmod.skew_metrics(of["rows"], of["forward"], of.get("atm_iv"))
             term.append({"expiry": other, "days": of.get("time_to_expiry_days"), "atm_iv": of.get("atm_iv"), **m})
         term.sort(key=lambda x: x["days"] or 0.0)
-        with_iv = [t_ for t_ in term if t_["atm_iv"] is not None and t_["days"] is not None]
-        term_slope = None
-        if len(with_iv) >= 2 and with_iv[-1]["days"] != with_iv[0]["days"]:
-            term_slope = round((with_iv[-1]["atm_iv"] - with_iv[0]["atm_iv"]) / (with_iv[-1]["days"] - with_iv[0]["days"]) * 30, 3)
+        structure = volmod.iv_term_structure(term)
+        term_slope = structure["slope_per_30d"]
         return {
             "status": "ok", "expiry": expiry, "at": at.isoformat(), "age_seconds": round((now - at).total_seconds(), 1),
             "spot": latest.spot, "forward": sf["forward"], "atm_strike": sf["atm_strike"], "atm_iv": sf.get("atm_iv"),
             "days": sf.get("time_to_expiry_days"), "cards": {**cards, "term_slope_per_30d": term_slope},
-            "smile": smile, "term": term,
+            "smile": smile, "term": term, "term_structure": structure,
             "model": "Black-76; forward from put-call parity", "rate_assumed": self.risk_free_rate,
         }
 
