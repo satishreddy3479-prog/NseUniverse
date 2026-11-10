@@ -108,6 +108,27 @@ describe("Prediction page", () => {
     expect(inputs).toHaveTextContent("4 of 8");
     expect(screen.getByTestId("postmortem-empty")).toBeInTheDocument();
   });
+  it("explains why the T+5 probability stays near the base rate, only where no model beat it", async () => {
+    mount(data());
+    const note = await screen.findByTestId("flat-note");
+    expect(within(screen.getByTestId("forecast-T5")).getByTestId("flat-note")).toBe(note);
+    expect(note).toHaveTextContent("no model tested here predicted direction better than quoting the historical up-frequency");
+    expect(note).toHaveTextContent("not a stale feed");
+    expect(within(screen.getByTestId("forecast-T1")).queryByTestId("flat-note")).toBeNull(); // T+1 has a confirmed edge: no such note
+  });
+  it("lists each overnight series with its newest bar, whether final or provisional, and what the forecast needs", async () => {
+    const d = data();
+    if (d.ready) d.data.freshness = { required_session: "2026-11-10", cutoff_date: "2026-11-10", reference_session: "2026-11-09", checked_at: "2026-11-11T03:40:00Z",
+      series: { SPX: { last_final: "2026-11-10", provisional: null, newest: "2026-11-10", ok: true }, BRENT: { last_final: "2026-11-09", provisional: "2026-11-10", newest: "2026-11-10", ok: true }, DXY: { last_final: "2026-11-09", provisional: null, newest: "2026-11-09", ok: false }, VIX: { last_final: null, provisional: null, newest: null, ok: false } } };
+    mount(d);
+    const f = await screen.findByTestId("freshness-detail");
+    expect(f).toHaveTextContent("2 of 4 current");
+    expect(f).toHaveTextContent("a bar dated 2026-11-10");
+    expect(f).toHaveTextContent("a US holiday is not counted as late");
+    expect(f.textContent).toMatch(/BRENT\s*2026-11-10\s*provisional \(final later today\)/);
+    expect(f.textContent).toMatch(/DXY\s*2026-11-09\s*late/);
+    expect(f.textContent).toMatch(/VIX\s*none\s*missing/);
+  });
   it("shows event risk on the forecast and the events panel with its caveat", async () => {
     const d = data();
     if (d.ready) {

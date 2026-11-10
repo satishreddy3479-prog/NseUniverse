@@ -5,6 +5,10 @@
   (the overlap lets us notice when Yahoo corrects an old bar) and stores anything new.
 * A failure on one symbol never stops the others and is shown in the status; a failed run is retried
   after an hour. Nothing is invented or filled: missing days stay missing.
+* With a trading calendar the schedule also looks at the DATA, not only the clock: when the newest NIFTY 50 bar is older than the last
+  completed session, or an overnight series lacks the world session the next forecast needs, a run is due again (every 10 minutes in the
+  morning, hourly otherwise). A run that "succeeded" for 24 of 25 symbols therefore no longer ends the day's attempts, and a restart of the
+  program (which forgets its last attempt) cannot leave a gap unfilled.
 """
 
 from __future__ import annotations
@@ -18,9 +22,11 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from app.logging_setup import log_event
+from app.prediction.calendar import SessionLookup
 from app.prediction.history_store import HistoryStore, InsertResult
 from app.prediction.pit import IST
 from app.prediction.sources.yahoo import (
+    BY_KEY,
     SYMBOLS,
     Downloader,
     SymbolSpec,
@@ -29,6 +35,7 @@ from app.prediction.sources.yahoo import (
     yahoo_download,
 )
 from app.prediction.targets import Bar, BarError
+from app.prediction.usmarket import last_us_session_on_or_before
 
 logger = logging.getLogger(__name__)
 SOURCE = "yahoo"
@@ -55,8 +62,10 @@ class HistoryService:
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         pause_between_s: float = 1.0,
         after_refresh: Callable[[], object] | None = None,
+        calendar: SessionLookup | None = None,
     ) -> None:
         self._after_refresh = after_refresh
+        self.calendar = calendar
         self.store = store
         self._download = downloader
         self.start_date = start
@@ -181,11 +190,62 @@ class HistoryService:
         last = {c["symbol"]: c["last"] for c in self.store.coverage()}  # usable (final) bars only
         return [k for k in OVERNIGHT_KEYS if (last.get(k) or "") < str(d)]
 
+    def data_gaps(self, now: datetime) -> list[str]:
+        """What the stored data lacks that a forecast needs and that is already published (empty without a calendar).
+
+        * NIFTY50: the final bar of the last completed NSE session.
+        * Overnight series (OVERNIGHT_KEYS): a final or provisional bar of the US trading day the next forecast needs, once that US session is over.
+        """
+        cal = self.calendar
+        if cal is None:
+            return []
+        try:
+            ist = now.astimezone(IST)
+            nifty = BY_KEY["NIFTY50"]
+            d = ist.date()
+            for _ in range(12):  # the newest session whose daily bar is final by now
+                if cal.is_session(d) and final_after(nifty, d) <= now:
+                    break
+                d -= timedelta(days=1)
+            else:
+                return []
+            cov = {c["symbol"]: c["last"] for c in self.store.coverage(SOURCE)}
+            gaps: list[str] = []
+            if (cov.get("NIFTY50") or "") < str(d):
+                gaps.append(f"NIFTY50 {d}")
+            first = cal.next_session(d, 1)
+            req = last_us_session_on_or_before(max(d, first - timedelta(days=1)))
+            if now >= datetime(req.year, req.month, req.day, 3, 0, tzinfo=IST) + timedelta(days=1):  # that US session is over
+                for k in OVERNIGHT_KEYS:
+                    final = cov.get(k) or ""
+                    prov = self.store.provisional_bar(k, None)
+                    newest = max(final, str(prov.session) if prov is not None else "")
+                    if newest < str(req):
+                        gaps.append(f"{k} {req}")
+            return gaps
+        except Exception:  # noqa: BLE001 - a calendar gap must never stop the clock-based schedule
+            return []
+
+    def _last_started(self) -> datetime | None:
+        """When a run last started: this process's memory, else the stored run log (a restart empties the memory only)."""
+        if self.last_attempt is not None:
+            return self.last_attempt
+        run = self.store.last_run()
+        try:
+            return datetime.fromisoformat(run["started_at"]) if run and run.get("started_at") else None
+        except (TypeError, ValueError):
+            return None
+
     def due(self, now: datetime | None = None) -> bool:
         now = now or self._clock()
         if not self.enabled or self.running:
             return False
         t0 = now.astimezone(IST)
+        if self.calendar is not None and self.data_gaps(now):
+            in_morning = t0.weekday() < 5 and RUN_MORNING <= (t0.hour, t0.minute) < MORNING_END
+            last = self._last_started()
+            if last is None or now - last >= (MORNING_RETRY if in_morning else RETRY_AFTER):
+                return True  # the data the next forecast needs is published but not stored: look again, whatever the clock rules say
         morning = t0.weekday() < 5 and RUN_MORNING <= (t0.hour, t0.minute) < MORNING_END
         retry_gap = self.last_attempt is not None and now - self.last_attempt >= MORNING_RETRY
         if morning and retry_gap and self.overnight_missing(now):
@@ -235,6 +295,7 @@ class HistoryService:
             "source": "Yahoo Finance via yfinance (unofficial, personal use)",
             "running": self.running,
             "progress": self.progress,
+            "data_gaps": self.data_gaps(self._clock()),
             "weekend_dated_bars": self.store.suspect_weekend_bars(SOURCE),
             "partial_bars_held_back": [
                 b for b in self.store.premature_bars(SOURCE) if not b["corrected"]

@@ -161,6 +161,11 @@ function ForecastCard({ hz, f, evs, runs, busy, onCompute }: { hz: "T1" | "T5"; 
             </p>
           )}
           <p className="mt-3 text-sm text-muted">{VERDICT[evOf(head!)].text}</p>
+          {hz === "T5" && (evOf(head!) === "no_difference" || evOf(head!) === "worse") && p.p_up_model != null && p.p_up_climatology != null && (
+            <p className="mt-2 rounded-lg border border-rule px-3 py-1.5 text-xs text-muted" data-testid="flat-note">
+              Why this stays near {pct(p.p_up_climatology)}: over five sessions no model tested here predicted direction better than quoting the historical up-frequency, so the calibrated probability is pulled back to that base rate (today {pct(p.p_up_model)}, {Math.abs((p.p_up_model - p.p_up_climatology) * 100).toFixed(1)} points away). This is the result of the test, not a stale feed: the value moves a little each day with the inputs. The ranges below and the event flags say more than the up-probability does.
+            </p>
+          )}
           {q && (
             <div className="mt-3 rounded-xl border border-rule bg-ink/40 p-3"><p className={MONO}>Where the close could land (history)</p><ConeBar close={m!.reference_close} q={q} /></div>
           )}
@@ -199,7 +204,7 @@ const sg = (v: number | undefined, d = 2) => (v == null ? "—" : sgn(v, d));
 const tn = (v: number | undefined): Tile["tone"] => (v == null || v === 0 ? undefined : v > 0 ? "up" : "down");
 
 /** What the models are looking at right now (values from the same rows the models use). */
-function InputsPanel({ inputs, last, dates }: { inputs: PredictionSummaryReady["data"]["inputs"]; last: string; dates?: Record<string, string | null> }) {
+function InputsPanel({ inputs, last, dates, freshness }: { inputs: PredictionSummaryReady["data"]["inputs"]; last: string; dates?: Record<string, string | null>; freshness?: PredictionSummaryReady["data"]["freshness"] }) {
   const lagging = Object.entries(dates ?? {}).filter(([, d]) => d && d < last).map(([k, d]) => `${k} ${d}`);
   const a = inputs?.T1 ?? {}, b = inputs?.T5 ?? {};
   if (!inputs?.T1) {
@@ -237,6 +242,14 @@ function InputsPanel({ inputs, last, dates }: { inputs: PredictionSummaryReady["
           </div>
         ))}
       </div>
+      {freshness && (
+        <details className="mt-2 text-xs" data-testid="freshness-detail">
+          <summary className="cursor-pointer text-info">Data freshness by overnight series ({Object.values(freshness.series).filter((s) => s.ok).length} of {Object.keys(freshness.series).length} current)</summary>
+          <p className="mt-1 text-muted">The next forecast needs a bar dated {freshness.required_session} (the latest US trading day before the next session opens; after an Indian holiday that is the world session that traded meanwhile, and a US holiday is not counted as late). The models use world-market bars up to {freshness.cutoff_date}; Indian series are as of {freshness.reference_session}.</p>
+          <table className="mt-1 w-full"><thead className="text-muted"><tr><th className="text-left font-normal">Series</th><th className="text-left font-normal">Newest bar</th><th className="text-left font-normal">State</th></tr></thead>
+            <tbody>{Object.entries(freshness.series).map(([k, s]) => <tr key={k} className="border-t border-rule/50"><td className="py-0.5">{k}</td><td className="num">{s.newest ?? "none"}</td><td className={s.ok ? "text-up" : "text-warn"}>{s.newest == null ? "missing" : s.newest === s.provisional && s.newest !== s.last_final ? (s.ok ? "provisional (final later today)" : "provisional, too old") : s.ok ? "final" : "late"}</td></tr>)}</tbody></table>
+        </details>
+      )}
       {lagging.length > 0 && (
         <p className="mt-2 text-xs text-warn" data-testid="inputs-lagging">Older than {last}, so its move is from an earlier day: {lagging.join(", ")}.</p>
       )}
@@ -536,7 +549,7 @@ export default function Prediction() {
                 })}
               </div>
               <SummaryStrip d={d} />
-              <InputsPanel inputs={d.data.inputs} last={d.data.last} dates={d.data.input_dates} />
+              <InputsPanel inputs={d.data.inputs} last={d.data.last} dates={d.data.input_dates} freshness={d.data.freshness} />
               <div className="flex flex-col gap-5">
                 {hzs.map((h) => <Leaderboard key={h} hz={h} ev={evs[h]} sel={sel[h] || evs[h].best_on_tuning || ""} onSel={(m) => setSel((s) => ({ ...s, [h]: m }))} />)}
               </div>

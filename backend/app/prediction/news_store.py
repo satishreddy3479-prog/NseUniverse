@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS gdelt_daily (
   theme TEXT NOT NULL, day TEXT NOT NULL, tone REAL, volume_pct REAL, fetched_utc TEXT NOT NULL,
   PRIMARY KEY (theme, day, fetched_utc)
 );
+CREATE TABLE IF NOT EXISTS gdelt_headlines (
+  theme TEXT NOT NULL, url TEXT NOT NULL, title TEXT NOT NULL, domain TEXT, seen_utc TEXT NOT NULL, fetched_utc TEXT NOT NULL,
+  PRIMARY KEY (theme, url)
+);
 CREATE TRIGGER IF NOT EXISTS gdelt_no_update BEFORE UPDATE ON gdelt_daily BEGIN SELECT RAISE(ABORT, 'stored news values are never changed'); END;
 CREATE TRIGGER IF NOT EXISTS gdelt_no_delete BEFORE DELETE ON gdelt_daily BEGIN SELECT RAISE(ABORT, 'stored news values are never deleted'); END;
 """
@@ -60,6 +64,31 @@ class NewsStore:
             if len(out.setdefault(t, [])) < days:
                 out[t].append({"day": d, "tone": tone, "volume_pct": vol, "fetched_utc": f})
         return out
+
+    def save_headlines(self, theme: str, rows: list[tuple[str, str, str | None, str]], now: datetime | None = None) -> int:
+        """Headline metadata only (title, link, site, the time GDELT saw it): no article text. A link already stored is kept as first seen."""
+        stamp = (now or datetime.now(UTC)).isoformat()
+        with self._lock:
+            n = 0
+            for url, title, domain, seen in rows:
+                n += self._db.execute("INSERT OR IGNORE INTO gdelt_headlines VALUES (?,?,?,?,?,?)", (theme, url, title, domain, seen, stamp)).rowcount
+            self._db.commit()
+        return n
+
+    def headlines(self, per_theme: int = 5) -> dict[str, list[dict[str, Any]]]:
+        """The newest headlines of each theme, newest first."""
+        with self._lock:
+            rows = self._db.execute("SELECT theme, title, url, domain, seen_utc, fetched_utc FROM gdelt_headlines ORDER BY theme, seen_utc DESC").fetchall()
+        out: dict[str, list[dict[str, Any]]] = {}
+        for t, title, url, domain, seen, fetched in rows:
+            if len(out.setdefault(t, [])) < per_theme:
+                out[t].append({"title": title, "url": url, "domain": domain, "seen_utc": seen, "fetched_utc": fetched})
+        return out
+
+    def last_headline_fetch(self) -> str | None:
+        with self._lock:
+            r = self._db.execute("SELECT MAX(fetched_utc) FROM gdelt_headlines").fetchone()
+        return None if r is None else r[0]
 
     def coverage(self) -> dict[str, Any]:
         with self._lock:

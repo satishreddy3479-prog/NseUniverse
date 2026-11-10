@@ -18,3 +18,7 @@ Backtests do not establish that a forecaster works going forward. Forward testin
 
 ## Approval gates
 A model is "research-approved" only when: leakage tests pass; chronological evaluation passes; sample size supports the claim; calibration is evaluated; baselines are beaten (or the report says they were not); forward results are reported honestly; limitations are written down. There is no predetermined accuracy target. Approval never enables trading.
+
+## Why a day can be "not recorded", and how it recovers (11 Nov 2026)
+A day is recorded only when, inside 08:35-09:10 IST on the target day, every overnight series has the bar of the required US trading day (final, or provisional for series that settle after the morning). The requirement is the latest NYSE session on or before the day before the next Indian session: after an Indian holiday it is the world session that traded meanwhile; a US holiday is skipped. If the data is late, the run is a preview, is never counted, and is retried every four minutes until 09:10. The day is marked done only when the forecasts are in the ledger. The day log reads the ledger and the saved report, so a restart cannot change a recorded day into a missed one; a missed day keeps its reason and the preview number. See D105.
+

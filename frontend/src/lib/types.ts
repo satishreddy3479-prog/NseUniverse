@@ -424,7 +424,7 @@ export type PredictionSummary =
       computed_at: string;
       model_version: string;
       features: { T1: { version: string; names: string[] }; T5: { version: string; names: string[]; flows: string[] } };
-      data: { symbol: string; bars: number; first: string; last: string; reference_close: number; up_rate_all: Record<string, number>; overnight_data_fresh: boolean; stale_series: string[]; input_dates?: Record<string, string | null>; inputs: Partial<Record<"T1" | "T5", Record<string, number>>> };
+      data: { symbol: string; bars: number; first: string; last: string; reference_close: number; up_rate_all: Record<string, number>; overnight_data_fresh: boolean; stale_series: string[]; input_dates?: Record<string, string | null>; freshness?: SeriesFreshness; inputs: Partial<Record<"T1" | "T5", Record<string, number>>> };
       evaluation: { initial_train: number; test_size: number; scheme: string; horizons: Record<"T1" | "T5" | "T5F", HorizonEval> };
       forecasts: Record<"T1" | "T5", { headline_model?: string; calls?: { call: "up" | "down" | null; reason: string | null; strength: number | null; threshold: number | null }; models: Record<string, ModelForecast> }>;
       excluded_inputs: string[];
@@ -447,11 +447,17 @@ export interface FlowsDay { session: string; participants: Record<string, Record
 export interface FlowsLatest { open_interest: FlowsDay[]; volume: FlowsDay[] }
 
 export interface EventItem { id: string; name: string; kind: string; impact: string; start_ist: string; all_day: boolean; time_verified: boolean; tentative: boolean; source: string }
+export interface SeriesFreshness {
+  required_session: string; cutoff_date: string; reference_session: string; checked_at: string;
+  series: Record<string, { last_final: string | null; provisional: string | null; newest: string | null; ok: boolean }>;
+}
+export interface NewsHeadline { title: string; url: string; domain: string | null; seen_utc: string; fetched_utc: string }
 export interface NewsStatus {
   enabled: boolean; running: boolean; problems: string[]; source: string; not_used: string; model_use: string;
   coverage: { first_day: string | null; last_day: string | null; days: number; collecting_since: string | null; last_fetch: string | null };
   themes: Record<string, string>;
   latest: Record<string, { day: string; tone: number | null; volume_pct: number | null }[]>;
+  headlines?: Record<string, NewsHeadline[]>; headlines_fetched?: string | null; headline_problems?: string[]; headline_source?: string;
 }
 
 // ---- Intraday command center (/api/intraday/summary). Rules-based, provisional; never ML.

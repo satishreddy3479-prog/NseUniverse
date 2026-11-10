@@ -1,8 +1,11 @@
-"""Horizon-specific point-in-time feature sets (``t1-v1`` overnight, ``t5-v1`` broad).
+"""Horizon-specific point-in-time feature sets (``t1-v2`` overnight, ``t5-v2`` broad).
 
-Rule for every outside series: for reference session ``t`` only bars dated on or before ``t`` are
-used. All of them are complete by 08:30 IST on the next session (US cash close 01:30/02:30 IST,
-commodity settlements, Europe 21:00-22:00 IST, Asia and Indian closes during day ``t``), which is
+Rule for every outside series: for reference session ``t`` whose next session is ``n``, only bars dated on or before ``n - 1 day`` are
+used. That is ``t`` itself on an ordinary day and over a weekend (no market bar is dated Saturday or Sunday), but after an Indian
+market holiday it also takes in the world markets that traded while India was shut (a Tuesday holiday: the US, Europe and Asia sessions of
+that Tuesday, all complete by 08:30 IST on the Wednesday). Before ``t1-v2`` the rule was "on or before ``t``", which left the models a
+day behind after every holiday. All of the bars are complete by 08:30 IST on session ``n`` (US cash close 01:30/02:30 IST,
+commodity settlements, Europe 21:00-22:00 IST, Asia and Indian closes during the day), which is
 the forecast cutoff. ``tests`` check that altering any later bar changes nothing. NSE participant
 files are used only for sessions on or before ``t`` (published after the close).
 """
@@ -12,12 +15,12 @@ from __future__ import annotations
 import bisect
 import math
 from collections.abc import Callable
-from datetime import date
+from datetime import date, timedelta
 
 from app.prediction.targets import Bar
 
-T1_VERSION = "t1-v1"
-T5_VERSION = "t5-v1"
+T1_VERSION = "t1-v2"
+T5_VERSION = "t5-v2"
 SECTORS = ("NIFTYBANK", "NIFTYIT", "NIFTYAUTO", "NIFTYPHARMA", "NIFTYFMCG", "NIFTYMETAL", "NIFTYENERGY", "NIFTYREALTY")
 
 T1_NAMES: tuple[str, ...] = (
@@ -114,14 +117,19 @@ def _nifty_block(nifty: list[Bar], i: int) -> dict[str, float]:
 def build_rows(
     nifty: list[Bar], others: dict[str, list[Bar]], horizon: str,
     flows: dict[date, dict[str, dict[str, int]]] | None = None, with_flows: bool = False,
+    next_session: Callable[[date], date | None] | None = None,
 ) -> tuple[list[str], dict[date, list[float]]]:  # fmt: skip
-    """Feature rows keyed by reference session. Rows with any missing feature are dropped, never filled."""
+    """Feature rows keyed by reference session. Rows with any missing feature are dropped, never filled.
+
+    ``next_session`` (the calendar) gives the session after the newest bar; every earlier row uses the actual next bar."""
     S = {k: Series(v) for k, v in others.items() if v}
     names = list(T1_NAMES if horizon == "T1" else T5_NAMES) + (list(FLOW_NAMES) if with_flows else [])
     flow_days = sorted(flows or {})
     rows: dict[date, list[float]] = {}
     for i in range(61, len(nifty)):
         t = nifty[i].session
+        n_ = nifty[i + 1].session if i + 1 < len(nifty) else (next_session(t) if next_session is not None else None)
+        u = t if n_ is None else max(t, n_ - timedelta(days=1))  # newest date whose world-market bars are complete by the next 08:30 IST
         f: dict[str, float | None] = dict(_nifty_block(nifty, i))
 
         def g(key: str, fn: Callable[[Series], float | None]) -> float | None:
@@ -129,34 +137,34 @@ def build_rows(
 
         if horizon == "T1":
             f.update(
-                indiavix_ln=g("INDIAVIX", lambda s: _ln(s.level(t))), indiavix_chg_1d=g("INDIAVIX", lambda s: s.ret(t)),
-                spx_ret=g("SPX", lambda s: s.ret(t)), ndx_ret=g("NDX_COMP", lambda s: s.ret(t)), dji_ret=g("DJI", lambda s: s.ret(t)),
-                usvix_ln=g("VIX", lambda s: _ln(s.level(t))), usvix_chg=g("VIX", lambda s: s.ret(t)),
-                brent_ret=g("BRENT", lambda s: s.ret(t)), gold_ret=g("GOLD", lambda s: s.ret(t)), dxy_ret=g("DXY", lambda s: s.ret(t)),
-                usdinr_ret=g("USDINR", lambda s: s.ret(t)), ust10y_chg=g("UST10Y", lambda s: s.diff(t)),
-                n225_ret=g("N225", lambda s: s.ret(t)), hsi_ret=g("HSI", lambda s: s.ret(t)), ssec_ret=g("SSEC", lambda s: s.ret(t)),
-                dax_ret=g("DAX", lambda s: s.ret(t)), ftse_ret=g("FTSE", lambda s: s.ret(t)),
+                indiavix_ln=g("INDIAVIX", lambda s: _ln(s.level(u))), indiavix_chg_1d=g("INDIAVIX", lambda s: s.ret(u)),
+                spx_ret=g("SPX", lambda s: s.ret(u)), ndx_ret=g("NDX_COMP", lambda s: s.ret(u)), dji_ret=g("DJI", lambda s: s.ret(u)),
+                usvix_ln=g("VIX", lambda s: _ln(s.level(u))), usvix_chg=g("VIX", lambda s: s.ret(u)),
+                brent_ret=g("BRENT", lambda s: s.ret(u)), gold_ret=g("GOLD", lambda s: s.ret(u)), dxy_ret=g("DXY", lambda s: s.ret(u)),
+                usdinr_ret=g("USDINR", lambda s: s.ret(u)), ust10y_chg=g("UST10Y", lambda s: s.diff(u)),
+                n225_ret=g("N225", lambda s: s.ret(u)), hsi_ret=g("HSI", lambda s: s.ret(u)), ssec_ret=g("SSEC", lambda s: s.ret(u)),
+                dax_ret=g("DAX", lambda s: s.ret(u)), ftse_ret=g("FTSE", lambda s: s.ret(u)),
                 next_is_monday=1.0 if t.weekday() == 4 else 0.0,
             )  # fmt: skip
         else:
             f.update(
-                indiavix_ln=g("INDIAVIX", lambda s: _ln(s.level(t))), indiavix_chg_5d=g("INDIAVIX", lambda s: s.ret(t, 5)),
-                indiavix_vs_60d=g("INDIAVIX", lambda s: s.ratio_to_mean(t, 60)),
-                spx_ret_5d=g("SPX", lambda s: s.ret(t, 5)), spx_ret_20d=g("SPX", lambda s: s.ret(t, 20)),
-                spx_dist_sma50=g("SPX", lambda s: s.dist_sma(t, 50)), usvix_ln=g("VIX", lambda s: _ln(s.level(t))),
-                ndx_ret_20d=g("NDX_COMP", lambda s: s.ret(t, 20)), dxy_ret_20d=g("DXY", lambda s: s.ret(t, 20)),
-                usdinr_ret_5d=g("USDINR", lambda s: s.ret(t, 5)), usdinr_ret_20d=g("USDINR", lambda s: s.ret(t, 20)),
-                brent_ret_5d=g("BRENT", lambda s: s.ret(t, 5)), brent_ret_20d=g("BRENT", lambda s: s.ret(t, 20)),
-                ust10y_chg_5d=g("UST10Y", lambda s: s.diff(t, 5)), ust10y_chg_20d=g("UST10Y", lambda s: s.diff(t, 20)),
-                gold_ret_20d=g("GOLD", lambda s: s.ret(t, 20)), n225_ret_5d=g("N225", lambda s: s.ret(t, 5)),
-                hsi_ret_5d=g("HSI", lambda s: s.ret(t, 5)), dax_ret_5d=g("DAX", lambda s: s.ret(t, 5)),
+                indiavix_ln=g("INDIAVIX", lambda s: _ln(s.level(u))), indiavix_chg_5d=g("INDIAVIX", lambda s: s.ret(u, 5)),
+                indiavix_vs_60d=g("INDIAVIX", lambda s: s.ratio_to_mean(u, 60)),
+                spx_ret_5d=g("SPX", lambda s: s.ret(u, 5)), spx_ret_20d=g("SPX", lambda s: s.ret(u, 20)),
+                spx_dist_sma50=g("SPX", lambda s: s.dist_sma(u, 50)), usvix_ln=g("VIX", lambda s: _ln(s.level(u))),
+                ndx_ret_20d=g("NDX_COMP", lambda s: s.ret(u, 20)), dxy_ret_20d=g("DXY", lambda s: s.ret(u, 20)),
+                usdinr_ret_5d=g("USDINR", lambda s: s.ret(u, 5)), usdinr_ret_20d=g("USDINR", lambda s: s.ret(u, 20)),
+                brent_ret_5d=g("BRENT", lambda s: s.ret(u, 5)), brent_ret_20d=g("BRENT", lambda s: s.ret(u, 20)),
+                ust10y_chg_5d=g("UST10Y", lambda s: s.diff(u, 5)), ust10y_chg_20d=g("UST10Y", lambda s: s.diff(u, 20)),
+                gold_ret_20d=g("GOLD", lambda s: s.ret(u, 20)), n225_ret_5d=g("N225", lambda s: s.ret(u, 5)),
+                hsi_ret_5d=g("HSI", lambda s: s.ret(u, 5)), dax_ret_5d=g("DAX", lambda s: s.ret(u, 5)),
             )  # fmt: skip
             nifty20 = f.get("nifty_ret_20d")
             above = 0
             for sec in SECTORS:
-                r20 = g(sec, lambda s: s.ret(t, 20))
+                r20 = g(sec, lambda s: s.ret(u, 20))
                 f[f"rs20_{sec.removeprefix('NIFTY').lower()}"] = None if r20 is None or nifty20 is None else r20 - nifty20
-                d = g(sec, lambda s: s.dist_sma(t, 20))
+                d = g(sec, lambda s: s.dist_sma(u, 20))
                 above += 1 if d is not None and d > 0 else 0
             f["sectors_above_sma20"] = float(above)
         if with_flows:

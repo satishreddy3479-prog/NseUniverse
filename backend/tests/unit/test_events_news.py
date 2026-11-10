@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -82,3 +82,44 @@ def test_one_429_is_retried_once(tmp_path: Path) -> None:
     svc = NewsService(NewsStore(tmp_path), getter=getter, pause_s=0, clock=lambda: datetime(2026, 10, 29, 3, 0, tzinfo=UTC))
     assert svc.run()["problems"] == []
     assert len(seen) == 11  # ten requests plus the one retry
+
+
+ARTICLES = json.dumps({"articles": [
+    {"url": "https://example.com/a", "title": "Nifty  ends   higher on banks", "seendate": "20261110T103000Z", "domain": "example.com"},
+    {"url": "https://example.org/b", "title": "Sensex slips", "seendate": "20261110T093000Z", "domain": "example.org"},
+    {"url": "", "title": "no link", "seendate": "20261110T093000Z"},
+    {"url": "https://example.net/c", "title": "", "seendate": "20261110T093000Z"},
+    {"url": "https://example.net/d", "title": "bad date", "seendate": "yesterday"},
+]}).encode()
+
+
+def test_parse_articles_keeps_usable_headlines_only_and_tidies_titles() -> None:
+    from app.prediction.news_service import parse_articles
+
+    got = parse_articles(ARTICLES)
+    assert [g[0] for g in got] == ["https://example.com/a", "https://example.org/b"]
+    assert got[0][1] == "Nifty ends higher on banks" and got[0][3] == "2026-11-10T10:30:00+00:00" and got[0][2] == "example.com"
+
+
+def test_headlines_are_stored_newest_first_deduplicated_and_survive_a_restart(tmp_path: Path) -> None:
+    urls: list[str] = []
+
+    def getter(url: str) -> Fetched:
+        urls.append(url)
+        return Fetched(500, None, "HTTP 500") if "Federal" in url else Fetched(200, ARTICLES if "artlist" in url else GDELT)
+
+    t0 = datetime(2026, 11, 10, 11, 0, tzinfo=UTC)
+    svc = NewsService(NewsStore(tmp_path), getter=getter, pause_s=0, clock=lambda: t0)
+    r = svc.run_headlines()
+    assert r["saved"] == 8 and any("us_fed headlines" in p for p in r["problems"])  # four themes x two usable articles; one theme failed
+    assert all("mode=artlist" in u and "sort=datedesc" in u and "timespan=24h" in u for u in urls)
+    h = svc.store.headlines(5)["india_markets"]
+    assert [x["title"] for x in h] == ["Nifty ends higher on banks", "Sensex slips"]  # newest seen first
+    assert svc.run_headlines()["saved"] == 0  # the same links are not stored twice
+    assert svc.status()["headlines"]["india_markets"][0]["url"] == "https://example.com/a" and svc.status()["headlines_fetched"]
+    # a restart: new object, empty memory, same store
+    again = NewsService(svc.store, getter=getter, pause_s=0, clock=lambda: t0 + timedelta(minutes=30))
+    assert again.headlines_due() is False  # fetched half an hour ago
+    assert NewsService(svc.store, getter=getter, pause_s=0, clock=lambda: t0 + timedelta(minutes=61)).headlines_due() is True
+    svc.run()
+    assert NewsService(svc.store, getter=getter, pause_s=0, clock=lambda: t0 + timedelta(hours=1)).due() is False  # the daily-tone fetch is remembered too

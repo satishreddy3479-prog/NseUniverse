@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -85,6 +86,16 @@ def build_servermgmt(settings: Settings) -> ServerMgmt:
     return ServerMgmt(MgmtStore(settings.data_dir), areas, disk_path=settings.data_dir)
 
 
+def _trading_calendar() -> Any:
+    """The verified NSE calendar, or None if it cannot load (clock schedules then run alone)."""
+    try:
+        from app.prediction.calendar import TradingCalendar
+
+        return TradingCalendar.load()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def create_app(settings: Settings | None = None, broker: MarketDataBroker | None = None) -> FastAPI:
     settings = settings or get_settings()
     setup_logging(settings.log_level, settings.log_dir, settings.secret_values())
@@ -149,6 +160,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             start=settings.history_start,
             # new final price bars -> the daily T+1/T+5 models retrain (never in market hours)
             after_refresh=lambda: research_ref["r"].summary() if "r" in research_ref else None,
+            calendar=_trading_calendar(),
         )
         app.state.history = history
         ledger = ForecastLedger(settings.data_dir)

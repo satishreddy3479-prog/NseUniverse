@@ -52,6 +52,21 @@ export function EventsNewsPanel() {
             )}
           <p className="mt-1 text-xs text-muted">Dates come from the official central-bank, statistics-office and election calendars (hover a row for its source). For the next-session forecast, a directional call is withheld when a high-impact event falls before the target close. That is a precaution, not a validated improvement.</p>
         </div>
+        <div data-testid="news-headlines">
+          <p className="mb-1 text-sm font-medium">Latest headlines <span className="font-normal text-muted">· refreshed hourly{n?.headlines_fetched ? `, last fetched ${new Date(n.headlines_fetched).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} IST` : ""}</span></p>
+          {!n ? null : !n.headlines || Object.keys(n.headlines).length === 0 ? <p className="text-sm text-muted" data-testid="headlines-empty">No headlines fetched yet. They are collected by themselves every hour{(n.headline_problems ?? []).length > 0 ? `; last problem: ${n.headline_problems![0]}` : ""}.</p> : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {(Object.entries(n.headlines) as [string, NonNullable<NewsStatus["headlines"]>[string]][]).map(([k, rows]) => (
+                <div key={k}><p className="text-xs text-muted">{n.themes[k] ?? k}</p>
+                  <ul className="mt-0.5 space-y-1">{rows.slice(0, 4).map((h) => (
+                    <li key={h.url} className="text-sm leading-snug"><a href={h.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{h.title}</a>
+                      <span className="num ml-1 whitespace-nowrap text-[11px] text-muted">{h.domain ?? ""} · {new Date(h.seen_utc).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })} IST</span></li>
+                  ))}</ul></div>
+              ))}
+            </div>
+          )}
+          {n && <p className="mt-1 text-xs text-muted">{n.headline_source ?? "GDELT article list"}. Headlines are shown for reading only; the models do not use news.</p>}
+        </div>
         <div>
           <p className="mb-1 text-sm font-medium">News tone (GDELT, daily average; negative = gloomier coverage)</p>
           {news.isPending ? <p className="text-sm text-muted">Loading…</p>

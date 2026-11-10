@@ -57,9 +57,10 @@ from app.prediction.models import _np, fit_boost, fit_logistic
 from app.prediction.pit import IST, forecast_cutoff
 from app.prediction.sources.yahoo import SYMBOLS
 from app.prediction.targets import Bar, make_labels
+from app.prediction.usmarket import last_us_session_on_or_before
 
 MODEL_VERSION = "3"
-REPORT_SCHEMA = 6  # bump whenever the stored report gains or changes fields, so an older cached report is recomputed
+REPORT_SCHEMA = 7  # bump whenever the stored report gains or changes fields, so an older cached report is recomputed
 INITIAL_TRAIN = 1000
 TEST_SIZE = 250
 HORIZON_N: dict[str, int] = {"T1": 1, "T5": 5}
@@ -123,9 +124,9 @@ def _core_idx(variant: str, names: list[str]) -> tuple[int, ...]:
     return tuple(names.index(c) for c in core)
 
 
-def _dataset(nifty: list[Bar], others: dict[str, list[Bar]], flows: Any, variant: str) -> _Data:
+def _dataset(nifty: list[Bar], others: dict[str, list[Bar]], flows: Any, variant: str, next_session: Callable[[date], date | None] | None = None) -> _Data:
     horizon = "T1" if variant == "T1" else "T5"
-    names, rows = build_rows(nifty, others, horizon, flows, with_flows=variant == "T5F")
+    names, rows = build_rows(nifty, others, horizon, flows, with_flows=variant == "T5F", next_session=next_session)
     labels = make_labels(nifty)
     lab = (
         [(x.reference_session, x.positive, x.close_to_close) for x in labels.t1]
@@ -383,6 +384,17 @@ class PredictionResearch:
     def _others(self) -> dict[str, list[Bar]]:
         return {s.key: self._store.bars_with_provisional(s.key)[0] for s in SYMBOLS if s.key != "NIFTY50" and s.timing_verified}
 
+    def _next_session_or_none(self, d: date) -> date | None:
+        try:
+            return self._cal().next_session(d, 1)
+        except Exception:  # noqa: BLE001 - calendar gap: the reference session itself is then the cutoff date
+            return None
+
+    def cutoff_date(self, ref: date) -> date:
+        """Newest date whose world-market bars are complete by 08:30 IST on the session after ``ref`` (see features_multi)."""
+        n = self._next_session_or_none(ref)
+        return ref if n is None else max(ref, n - timedelta(days=1))
+
     def _provisional(self, ref: date) -> dict[str, str]:
         """Series whose newest input (on or before the reference session) is a provisional, not yet final, bar."""
         out: dict[str, str] = {}
@@ -391,7 +403,7 @@ class PredictionResearch:
                 continue
             final = self._store.bars(s.key)
             p = self._store.provisional_bar(s.key, final[-1].session if final else None)
-            if p is not None and p.session <= ref:
+            if p is not None and p.session <= self.cutoff_date(ref):
                 out[s.key] = str(p.session)
         return out
 
@@ -426,6 +438,7 @@ class PredictionResearch:
             return {"ready": False, "reason": f"only {len(bars)} NIFTY 50 bars stored (need {need}); refresh the price history in Settings first"}
         key = self._key(bars)
         settling = False
+        mine = False
         with self._lock:
             if not force and key != self._seen_key:
                 self._seen_key, self._seen_at = key, time.monotonic()
@@ -442,6 +455,7 @@ class PredictionResearch:
                 self._worker = threading.Thread(target=self._run, args=(bars, key, now, trigger, only if base is not None else None, base), daemon=True, name="prediction-research")
                 self._run_started, self._run_scope = now, (only if base is not None else None) or "all"
                 self._worker.start()
+                mine = True
             worker = self._worker
         if body is None and settling:
             old = self._cache[1] if self._cache else None
@@ -452,6 +466,10 @@ class PredictionResearch:
         if body is None:
             if block and worker is not None:
                 worker.join()
+                if force and not mine:
+                    # another training (started by a data refresh, usually before the recording window) was running: its result may be a preview
+                    # made earlier. A forced run is a request for fresh numbers now, so it trains again instead of returning that result.
+                    return self.summary(force=True, block=True, trigger=trigger, only=only)
                 return self.summary()
             if self._error:
                 raise RuntimeError(self._error)
@@ -496,15 +514,38 @@ class PredictionResearch:
         out["data"]["up_rate_all"].update(new["data"]["up_rate_all"])
         out["data"]["inputs"].update(new["data"]["inputs"])
         out["data"]["overnight_data_fresh"], out["data"]["stale_series"] = new["data"]["overnight_data_fresh"], new["data"]["stale_series"]
+        out["data"]["freshness"] = new["data"].get("freshness")
+        out["data"]["input_dates"] = new["data"].get("input_dates")
         out["computed_at"] = new["computed_at"]
         return out  # type: ignore[no-any-return]
 
+    def required_us_session(self, ref: date) -> date:
+        """The US trading day whose bar every overnight series must have: the latest NYSE session on or before the cutoff date.
+        A US holiday therefore does not make the day stale, and an Indian holiday makes the models wait for the world session that
+        traded while India was shut."""
+        return last_us_session_on_or_before(self.cutoff_date(ref))
+
     def _fresh(self, others: dict[str, list[Bar]], ref: date, now: datetime) -> tuple[bool, list[str]]:
-        stale = [k for k in FRESH_KEYS if k in others and (not others[k] or others[k][-1].session < ref)]
-        done_at = datetime(ref.year, ref.month, ref.day, 3, 0, tzinfo=IST) + timedelta(days=1)  # US close + margin
+        req = self.required_us_session(ref)
+        stale = [k for k in FRESH_KEYS if k in others and (not others[k] or others[k][-1].session < req)]
+        done_at = datetime(req.year, req.month, req.day, 3, 0, tzinfo=IST) + timedelta(days=1)  # US close + margin
         if not stale and now < done_at:
             stale = ["US session still open (complete after 03:00 IST)"]
         return not stale, stale
+
+    def freshness_detail(self, others: dict[str, list[Bar]], ref: date, now: datetime) -> dict[str, Any]:
+        """Per overnight series: the newest bar the models would use, whether it is final or provisional, and whether it meets the requirement."""
+        req = self.required_us_session(ref)
+        out: dict[str, Any] = {}
+        for k in FRESH_KEYS:
+            final = self._store.bars(k)
+            last_final = final[-1].session if final else None
+            prov = self._store.provisional_bar(k, last_final)
+            newest = max((d for d in (last_final, prov.session if prov is not None else None) if d is not None), default=None)
+            out[k] = {"last_final": None if last_final is None else str(last_final), "provisional": None if prov is None else str(prov.session), "newest": None if newest is None else str(newest),
+                      "ok": newest is not None and newest >= req}
+        return {"required_session": str(req), "cutoff_date": str(self.cutoff_date(ref)), "reference_session": str(ref), "series": out,
+                "us_close_complete_after": (datetime(req.year, req.month, req.day, 3, 0, tzinfo=IST) + timedelta(days=1)).isoformat(), "checked_at": now.isoformat()}
 
     def _compute(self, bars: list[Bar], now: datetime, only: str | None = None) -> dict[str, Any]:
         ref = bars[-1]
@@ -513,7 +554,8 @@ class PredictionResearch:
         fresh, stale = self._fresh(others, ref.session, now)
         prov = self._provisional(ref.session)
         # the bar date each input actually comes from (the models take the last bar on or before the reference session)
-        input_dates = {k: str(max((b.session for b in v if b.session <= ref.session), default="")) or None for k, v in others.items()}
+        cut = self.cutoff_date(ref.session)
+        input_dates = {k: str(max((b.session for b in v if b.session <= cut), default="")) or None for k, v in others.items()}
         horizons: dict[str, Any] = {}
         forecasts: dict[str, Any] = {"T1": {"models": {}}, "T5": {"models": {}}}
         ups: dict[str, float] = {}
@@ -521,7 +563,7 @@ class PredictionResearch:
         for v in VARIANTS:
             if only is not None and (v == "T1") != (only == "T1"):
                 continue  # the other horizon keeps its stored result
-            data = _dataset(bars, others, flows, v)
+            data = _dataset(bars, others, flows, v, self._next_session_or_none)
             if v == "T5F" and len(data.y) < self._it + 2 * self._ts:
                 horizons[v] = {"available": False, "reason": f"NSE participant history is too short so far ({len(data.y)} usable sessions; needs {self._it + 2 * self._ts}); it keeps growing as files download"}
                 continue
@@ -546,7 +588,7 @@ class PredictionResearch:
         return {
             "ready": True, "model_version": MODEL_VERSION,
             "features": {"T1": {"version": T1_VERSION, "names": list(T1_NAMES)}, "T5": {"version": T5_VERSION, "names": list(T5_NAMES), "flows": list(FLOW_NAMES)}},
-            "data": {"symbol": "NIFTY 50 (^NSEI via Yahoo Finance) + global/sector series + NSE participant files", "bars": len(bars), "first": str(bars[0].session), "last": str(ref.session), "reference_close": ref.close, "up_rate_all": ups, "overnight_data_fresh": fresh, "stale_series": stale, "provisional_series": prov, "inputs": inputs, "input_dates": input_dates},  # fmt: skip
+            "data": {"symbol": "NIFTY 50 (^NSEI via Yahoo Finance) + global/sector series + NSE participant files", "bars": len(bars), "first": str(bars[0].session), "last": str(ref.session), "reference_close": ref.close, "up_rate_all": ups, "overnight_data_fresh": fresh, "stale_series": stale, "freshness": self.freshness_detail(others, ref.session, now), "provisional_series": prov, "inputs": inputs, "input_dates": input_dates},  # fmt: skip
             "evaluation": {"initial_train": self._it, "test_size": self._ts, "scheme": "expanding window purged by the label horizon; early half tunes and calibrates, later half is an untouched holdout", "horizons": horizons},
             "forecasts": forecasts, "excluded_inputs": EXCLUDED, "computed_at": now.isoformat(),
         }  # fmt: skip
@@ -660,6 +702,31 @@ class PredictionResearch:
         ist = now.astimezone(IST)
         return ist.weekday() < 5 and WINDOW[0] <= (ist.hour, ist.minute) < WINDOW[1]
 
+    def _recorded_for(self, hz: str, target: date) -> list[dict[str, Any]]:
+        """Forecasts of horizon ``hz`` already locked in the ledger for ``target``: the ledger is the truth, never this process's memory."""
+        out = []
+        for r in self._ledger.list(hz, 200):  # type: ignore[arg-type]
+            f = r["forecast"]
+            if f.get("target_session") == str(target):
+                out.append(r)
+        return out
+
+    def _recorded_today(self, now: datetime) -> bool:
+        ist = now.astimezone(IST)
+        try:
+            ref = self._cal().prev_session(ist.date())
+            return bool(self._recorded_for("T1", self._cal().next_session(ref, 1)))
+        except Exception:  # noqa: BLE001 - no verified calendar: fall back on the in-memory flag
+            return self._morning_done == ist.date()
+
+    def _report_body(self, bars: list[Bar]) -> dict[str, Any] | None:
+        """The newest computed report: in memory, else the one saved on disk (a restart empties memory, not the disk)."""
+        if self._cache:
+            return self._cache[1]
+        if not bars:
+            return None
+        return self._read_disk(self._key(bars))
+
     def log_day(self, now: datetime) -> int:
         """After the recording window closes, write down each horizon's day: recorded or not, and why not."""
         ist = now.astimezone(IST)
@@ -673,7 +740,7 @@ class PredictionResearch:
             targets = {"T1": cal.next_session(ref, 1), "T5": cal.next_session(ref, 5)}
         except Exception:  # noqa: BLE001 - no verified calendar for that date: log nothing rather than guess
             return 0
-        body: dict[str, Any] | None = self._cache[1] if self._cache else None
+        body: dict[str, Any] | None = self._report_body(self._complete_bars(now))
         wrote = 0
         for hz, target in targets.items():
             if self._days.has(hz, target):
@@ -681,8 +748,14 @@ class PredictionResearch:
             stale = list((body or {}).get("data", {}).get("stale_series", []))
             status: str
             reason: str | None
-            if body is None or body.get("data", {}).get("last") != str(ref):
-                status, reason, p, c, model = "missed", f"the report was not computed from the {ref} close", None, None, None
+            locked = self._recorded_for(hz, target)
+            if locked:
+                head = next((r for r in locked if r["forecast"].get("model_name") == ENSEMBLE), locked[0])["forecast"]
+                pay = head.get("payload") or {}
+                status, reason, p, c, model = "recorded", None, pay.get("p_up_model"), pay.get("p_up_climatology"), head.get("model_name")
+            elif body is None or body.get("data", {}).get("last") != str(ref):
+                last = (body or {}).get("data", {}).get("last")
+                status, reason, p, c, model = "missed", (f"the report was not computed from the {ref} close" + (f" (the newest report used the {last} close)" if last else " (no report was available)")), None, None, None
             else:
                 models = body["forecasts"][hz]["models"]
                 head = body["forecasts"][hz].get("headline_model")
@@ -713,7 +786,7 @@ class PredictionResearch:
 
     def morning_ready(self, now: datetime) -> bool:
         """Inside the 08:35-09:10 window, not yet recorded today, and every overnight series has its final bar."""
-        if not self._window_due(now) or self._morning_done == now.astimezone(IST).date():
+        if not self._window_due(now) or self._morning_done == now.astimezone(IST).date() or self._recorded_today(now):
             return False
         bars = self._complete_bars(now)
         return bool(bars) and self._fresh(self._others(), bars[-1].session, now)[0]
@@ -726,8 +799,10 @@ class PredictionResearch:
                 # Train and record only when the overnight data is complete. If a series is late, look again in
                 # four minutes until the window closes instead of giving the day up (a stale run is only a preview).
                 if self.morning_ready(now):
-                    self._morning_done = now.astimezone(IST).date()
                     await asyncio.to_thread(self.summary, True, True)  # force: new overnight data must be used
+                    # done only once the forecasts are really in the ledger; a run that came out as a preview (or failed) is tried again
+                    if self._recorded_today(self._clock()):
+                        self._morning_done = now.astimezone(IST).date()
                 self.log_day(now)
             except Exception:  # noqa: BLE001 - the scheduler must survive
                 self._error = "morning run failed"
