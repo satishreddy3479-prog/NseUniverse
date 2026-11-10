@@ -389,6 +389,23 @@ class ObservationStore:
             out[str(d)] = max(out.get(str(d), 0), int(n))
         return out
 
+    def last_session_by_expiry(self, underlying: str, min_samples: int = 10) -> dict[str, str]:
+        """expiry -> IST date of the latest session (09:15-15:40) with at least ``min_samples`` stored samples of that expiry.
+        An expiry that was only ever sampled after hours is absent: it has no session to show (read-only)."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT expiry, date(received_ms/1000 + 19800, 'unixepoch') AS d, COUNT(*) FROM samples"
+                " WHERE underlying=?"
+                " AND time(received_ms/1000 + 19800, 'unixepoch') BETWEEN '09:15:00' AND '15:40:59'"
+                " GROUP BY expiry, d",
+                (underlying,),
+            ).fetchall()
+        out: dict[str, str] = {}
+        for e, d, n in rows:
+            if int(n) >= min_samples and str(d) > out.get(str(e), ""):
+                out[str(e)] = str(d)
+        return out
+
     def window_counts(self, underlying: str, start_ms: int, end_ms: int) -> tuple[int, int]:
         """(samples, contract rows) received in [start_ms, end_ms) (read-only; used to verify archives)."""
         with self._lock:

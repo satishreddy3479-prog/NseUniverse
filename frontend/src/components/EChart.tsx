@@ -20,6 +20,29 @@ export interface PointClick {
   value?: unknown;
 }
 
+/** Below this container width (px) the chart's side margins shrink so the plot is not squeezed into a sliver on a phone. */
+export const NARROW_CHART_PX = 560;
+
+type Obj = Record<string, unknown>;
+/**
+ * The same option, made to fit a narrow container: numeric grid margins are capped, a right axis whose numbers were pushed out
+ * beside the latest-value tags (a large label margin) hides them (the tags carry the values and the tooltip has them all), and the
+ * tags use a smaller font. Wide containers get the option unchanged.
+ */
+export function fitNarrow(option: EChartsCoreOption, width: number): EChartsCoreOption {
+  if (width <= 0 || width >= NARROW_CHART_PX) return option;
+  const o = { ...(option as Obj) };
+  const fixGrid = (g: Obj): Obj => ({ ...g, ...(typeof g.left === "number" ? { left: Math.min(g.left, 46) } : {}), ...(typeof g.right === "number" ? { right: Math.min(g.right, 66) } : {}) });
+  if (Array.isArray(o.grid)) o.grid = o.grid.map((g) => fixGrid(g as Obj)); else if (o.grid) o.grid = fixGrid(o.grid as Obj);
+  const fixAxis = (a: Obj): Obj => {
+    const label = a.axisLabel as Obj | undefined;
+    return a.position === "right" && typeof label?.margin === "number" && label.margin >= 30 ? { ...a, axisLabel: { ...label, show: false } } : a;
+  };
+  if (Array.isArray(o.yAxis)) o.yAxis = o.yAxis.map((a) => fixAxis(a as Obj)); else if (o.yAxis) o.yAxis = fixAxis(o.yAxis as Obj);
+  if (Array.isArray(o.series)) o.series = o.series.map((x) => { const e = (x as Obj).endLabel as Obj | undefined; return e ? { ...(x as Obj), endLabel: { ...e, fontSize: 10, offset: [2, 0] } } : x; });
+  return o as EChartsCoreOption;
+}
+
 /** Thin ECharts wrapper: owns the instance, resizes with its container, keeps zoom across updates. */
 export function EChart({ option, onClick, ariaLabel, className = "", group }: {
   option: EChartsCoreOption;
@@ -33,6 +56,7 @@ export function EChart({ option, onClick, ariaLabel, className = "", group }: {
   const chart = useRef<ECharts | null>(null);
   const clickRef = useRef(onClick);
   clickRef.current = onClick;
+  const [width, setWidth] = useState(0);
 
   useEffect(() => {
     const node = el.current;
@@ -41,7 +65,8 @@ export function EChart({ option, onClick, ariaLabel, className = "", group }: {
     chart.current = c;
     if (group) { c.group = group; echarts.connect(group); }
     c.on("click", (p) => clickRef.current?.(p as PointClick));
-    const ro = new ResizeObserver(() => c.resize());
+    const ro = new ResizeObserver(() => { c.resize(); setWidth(node.clientWidth); });
+    setWidth(node.clientWidth);
     ro.observe(node);
     return () => {
       ro.disconnect();
@@ -52,8 +77,9 @@ export function EChart({ option, onClick, ariaLabel, className = "", group }: {
 
   useEffect(() => {
     // replaceMerge keeps the user's zoom while series appear/disappear with the CE/PE toggles.
-    chart.current?.setOption(option, { replaceMerge: ["series"] });
-  }, [option]);
+    // No chart animates: a live chart redrawn on every tick must not keep sliding, and a still chart can be read (animation off everywhere).
+    chart.current?.setOption({ ...(fitNarrow(option, width) as Obj), animation: false, animationDuration: 0, animationDurationUpdate: 0 }, { replaceMerge: ["series"] });
+  }, [option, width]);
 
   return <div ref={el} role="img" aria-label={ariaLabel} className={`echart-box h-full min-h-[120px] w-full ${className}`} />;
 }

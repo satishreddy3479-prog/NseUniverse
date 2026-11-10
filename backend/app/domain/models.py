@@ -44,6 +44,11 @@ class ExpirySelection(BaseModel):
     source: DataSource
     retrieved_at: datetime
     warnings: list[str] = []
+    last_session: dict[str, str] = Field(
+        default_factory=dict,
+        description="expiry (ISO date) -> IST date of its latest session with 10+ stored "
+        "in-session samples; an expiry missing here has no stored session yet",
+    )
 
 
 class OptionQuote(BaseModel):

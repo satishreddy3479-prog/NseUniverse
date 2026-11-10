@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Info } from "../components/Info";
 import { DashProvider, type Range } from "../components/dashboard/DashContext";
@@ -27,11 +27,20 @@ export default function ToolPage() {
   const { id } = useParams();
   const tool = toolById(id);
   const exp = useExpiries().data;
-  const [mode, setMode] = useState<Mode>("weekly");
+  const [mode, setModeState] = useState<Mode>("weekly");
+  const chose = useRef(false); // true once the user has picked an expiry themselves: the page then never changes it for them
+  const setMode = (m: Mode) => { chose.current = true; setModeState(m); };
   const [manual, setManual] = useState("");
   const [range, setRange] = useState<Range>(10);
   const [showCalls, setShowCalls] = useState(true);
   const [showPuts, setShowPuts] = useState(true);
+  // The new weekly expiry has no stored session until the sampler has run through one (the old weekly expires and the next is only
+  // sampled from its own first session), so on the morning after an expiry, or on a holiday, the weekly shows nothing. Until the user
+  // picks an expiry the page opens on the monthly, which has the last session's samples, and says why.
+  const last = exp?.last_session;
+  const fellBack = !!exp && !chose.current && mode === "weekly" && !!exp.weekly && !!exp.monthly && last != null && !last[exp.weekly] && !!last[exp.monthly];
+  useEffect(() => { if (fellBack) setModeState("monthly"); }, [fellBack]);
+  const showingFallback = !!exp && !chose.current && mode === "monthly" && !!exp.weekly && !!exp.monthly && last != null && !last[exp.weekly] && !!last[exp.monthly];
   const expiry = mode === "weekly" ? exp?.weekly ?? null : mode === "monthly" ? exp?.monthly ?? null : manual || exp?.available[0] || null;
 
   if (!tool) return <p className="text-muted">There is no such tool. <Link className="text-info underline" to="/">See all tools</Link>.</p>;
@@ -77,6 +86,11 @@ export default function ToolPage() {
                 </select>
               )}
             </div>
+            {showingFallback && exp?.weekly && exp.monthly && last && (
+              <p className="basis-full text-xs text-warn" role="status" data-testid="expiry-fallback">
+                Weekly {fmtExpiry(exp.weekly)} has no stored session yet (the sampler stores an expiry from its own first session), so this opened on the monthly {fmtExpiry(exp.monthly)}: its last stored session is {last[exp.monthly]}. Pick Weekly to see the weekly anyway.
+              </p>
+            )}
             {strikeControls && <label className="flex items-center gap-2 text-sm text-muted">
               Strikes around ATM
               <select aria-label="Strike range" value={String(range)} onChange={(e) => setRange(e.target.value === "all" ? "all" : Number(e.target.value))} className="min-h-9 rounded-sm border border-rule bg-slate-2 px-2 text-paper">

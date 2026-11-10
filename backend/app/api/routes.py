@@ -189,9 +189,11 @@ async def expiries(
     svc = _svc(request)
     _check_underlying(svc, underlying)
     try:
-        return await svc.expiries(force=refresh)
+        sel = await svc.expiries(force=refresh)
     except BrokerError as e:
         raise _broker_http_error(e) from None
+    last = await asyncio.to_thread(_obs(request).last_session_by_expiry, svc.underlying)
+    return sel.model_copy(update={"last_session": last})
 
 
 @router.get("/option-chain", response_model=ChainResponse)

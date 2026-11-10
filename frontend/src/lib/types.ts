@@ -134,6 +134,8 @@ export interface ExpirySelection {
   source: DataSource;
   retrieved_at: string;
   warnings: string[];
+  /** expiry -> IST date of its latest session with stored in-session samples; an expiry missing has none yet */
+  last_session?: Record<string, string>;
 }
 
 export interface OptionQuote {

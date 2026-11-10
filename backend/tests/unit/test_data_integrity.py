@@ -87,3 +87,20 @@ def test_time_to_expiry_runs_to_the_expiry_close_in_calendar_time() -> None:
     close = datetime(expiry.year, expiry.month, expiry.day, 10, 10, tzinfo=UTC)  # 15:40 IST: derivatives close since 3 Aug 2026 (app/domain/session.py)
     assert t == pytest.approx((close - AT).total_seconds() / (365 * 86400), rel=1e-6)
     assert volmod.years_to_expiry(expiry, AT + timedelta(days=30)) < 0  # past expiry is never a positive time
+
+
+def test_expiries_report_the_latest_stored_session_of_each_expiry(tmp_path: object) -> None:
+    from pathlib import Path
+
+    from app.storage.observations import ObservationStore
+    from tests.unit.test_intraday import ist, seed
+
+    base = Path(str(tmp_path))
+    times = [ist(9, 15) + timedelta(minutes=i) for i in range(12)]
+    obs = seed(base / "a", times)  # 12 in-session samples of EXP on 2026-10-29
+    assert isinstance(obs, ObservationStore)
+    assert obs.last_session_by_expiry("NIFTY") == {EXP: "2026-10-29"}
+    after = seed(base / "b", [ist(16, 30) + timedelta(minutes=i) for i in range(12)])  # only after hours
+    assert after.last_session_by_expiry("NIFTY") == {}  # no session: the expiry is absent, not dated
+    few = seed(base / "c", times[:5])
+    assert few.last_session_by_expiry("NIFTY") == {}  # fewer than 10 samples is not a session
