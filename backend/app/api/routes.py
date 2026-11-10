@@ -725,16 +725,48 @@ async def intraday_strike_positioning(
     return await asyncio.to_thread(svc.strike_positioning, expiry.isoformat(), window, iso)
 
 
+_UNIVERSES = ("fixed", "dynamic", "full")
+
+
 @router.get("/intraday/backtest")
 async def intraday_backtest(
-    request: Request, expiry: date, sessions: int = 15, cost_bps: float = 5.0
+    request: Request, expiry: date, sessions: int = 15, cost_bps: float = 5.0,
+    universe: str = "dynamic",
 ) -> dict[str, Any]:
-    """Chronological out-of-sample test of the options signals against NIFTY's next 30 minutes."""
-    if not 3 <= sessions <= 60 or not 0 <= cost_bps <= 100:
-        msg = "sessions must be 3 to 60 and cost_bps 0 to 100"
+    """Out-of-sample test of options and GEX signals against NIFTY's next 30 minutes."""
+    if not 3 <= sessions <= 60 or not 0 <= cost_bps <= 100 or universe not in _UNIVERSES:
+        msg = "sessions must be 3 to 60, cost_bps 0 to 100, universe fixed, dynamic or full"
         raise HTTPException(status_code=422, detail={"code": "bad_range", "message": msg})
     svc = request.app.state.intraday
-    return await asyncio.to_thread(svc.backtest, expiry.isoformat(), sessions, cost_bps)
+    return await asyncio.to_thread(svc.backtest, expiry.isoformat(), sessions, cost_bps, universe)
+
+
+@router.get("/intraday/gex-history")
+async def intraday_gex_history(
+    request: Request, expiry: date, session: date | None = None, universe: str = "dynamic"
+) -> dict[str, Any]:
+    """GEX and gamma flip rebuilt at each 5-minute stored snapshot of a session."""
+    if universe not in _UNIVERSES:
+        msg = "universe must be fixed, dynamic or full"
+        raise HTTPException(status_code=422, detail={"code": "bad_range", "message": msg})
+    svc = request.app.state.intraday
+    iso = None if session is None else session.isoformat()
+    return await asyncio.to_thread(svc.gex_history, expiry.isoformat(), iso, universe)
+
+
+@router.get("/intraday/premium-baskets")
+async def intraday_premium_baskets(
+    request: Request, expiry: date, session: date | None = None, window: str = "10",
+    kind: str = "fixed",
+) -> dict[str, Any]:
+    """Aggregate CE and PE premium of a fixed or recentred ATM basket through a session."""
+    if window not in ("5", "10", "20", "all") or kind not in ("fixed", "dynamic"):
+        msg = "window must be 5, 10, 20 or all and kind fixed or dynamic"
+        raise HTTPException(status_code=422, detail={"code": "bad_range", "message": msg})
+    svc = request.app.state.intraday
+    iso = None if session is None else session.isoformat()
+    n = None if window == "all" else int(window)
+    return await asyncio.to_thread(svc.premium_baskets, expiry.isoformat(), iso, n, kind)
 
 
 @router.get("/intraday/iv-sessions")
@@ -744,9 +776,13 @@ async def intraday_iv_sessions(request: Request) -> dict[str, Any]:
 
 
 @router.get("/intraday/iv-skew")
-async def intraday_iv_skew(request: Request, expiry: date) -> dict[str, Any]:
-    """Volatility smile, skew measures and term view from the latest stored chain."""
-    return await asyncio.to_thread(request.app.state.intraday.iv_skew, expiry.isoformat())
+async def intraday_iv_skew(
+    request: Request, expiry: date, session: date | None = None
+) -> dict[str, Any]:
+    """Smile, skew measures and term view of the newest stored chain, or of a session."""
+    iso = None if session is None else session.isoformat()
+    svc = request.app.state.intraday
+    return await asyncio.to_thread(svc.iv_skew, expiry.isoformat(), 15, iso)
 
 
 RESEARCH_K = (0.25, 0.5, 1.0)  # a fixed menu keeps the (cached) evaluation workload bounded

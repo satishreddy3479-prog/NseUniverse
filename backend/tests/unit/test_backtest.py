@@ -87,3 +87,70 @@ def test_non_directional_target_is_a_difference_of_means() -> None:
     d = bt._mean_diff([2.0, 4.0, 6.0], [1.0, 2.0, 3.0])
     assert d["diff"] == pytest.approx(2.0) and d["mean_event"] == 4.0 and d["mean_other"] == 2.0
     assert bt._mean_diff([1.0], [1.0, 2.0])["diff"] is None
+
+
+# ---------------------------------------------------------------- GEX and gamma-flip hypotheses
+def gsnaps(day: int, spots: list[float], net: list[float | None], flip: list[float | None], ab: float = 100.0) -> list[bt.Snap]:
+    s = snaps(day, spots)
+    for x, n, f in zip(s, net, flip, strict=True):
+        x.extra = {"dynamic.net": n, "dynamic.abs": ab, "dynamic.flip": f}
+    return s
+
+
+def hyp(h_id: str, u: str = "dynamic") -> bt.Hypothesis:
+    return next(h for h in bt.gex_hypotheses(u) if h.id == h_id)
+
+
+def test_flip_crossing_is_detected_only_from_two_consecutive_snapshots_with_known_flips() -> None:
+    s = gsnaps(0, [99.0, 101.0, 102.0, 98.0], [1, 1, 1, 1], [100.0, 100.0, None, 100.0])
+    up, down = hyp("flip_cross_up"), hyp("flip_cross_down")
+    assert up.event(s, 1) is True and down.event(s, 1) is False  # 99 -> 101 through 100
+    assert up.event(s, 2) is None  # this snapshot's own flip is missing: not evaluable
+    known = gsnaps(0, [99.0, 98.0, 102.0], [1, 1, 1], [100.0, 100.0, 100.0])
+    assert up.event(known, 1) is False and up.event(known, 2) is True  # 98 -> 102 crosses; 99 -> 98 does not
+    assert up.event(s, 3) is None and down.event(s, 3) is None  # the previous flip is missing: not evaluable, never a guess
+    assert up.event(s, 0) is None  # first snapshot of a session has no previous one
+
+
+def test_divergence_reads_the_signs_of_spot_and_net_gex_over_15_minutes() -> None:
+    # 5-minute steps; spot +0.2 % over 15 minutes while net GEX falls from 100 to 60 (-40 % of the larger |net|): amplifying up
+    s = gsnaps(0, [100.0, 100.05, 100.1, 100.2], [100.0, 90.0, 75.0, 60.0], [None] * 4)
+    assert hyp("div_amp_up").event(s, 3) is True
+    assert hyp("div_stab_up").event(s, 3) is False and hyp("div_amp_down").event(s, 3) is False
+    flat = gsnaps(0, [100.0, 100.0, 100.0, 100.01], [100.0, 99.0, 99.0, 98.0], [None] * 4)
+    assert hyp("div_amp_up").event(flat, 3) is False  # NIFTY flat and a 2 % GEX change: neither condition holds
+    assert hyp("div_amp_up").event(s, 1) is None  # no snapshot 15 minutes earlier yet
+
+
+def test_a_feature_known_only_later_never_changes_an_earlier_event() -> None:
+    s = gsnaps(0, [100.0, 100.05, 100.1, 100.2, 100.3], [100.0, 90.0, 75.0, 60.0, 10.0], [None] * 5)
+    before = hyp("div_amp_up").event(s, 3)
+    s[4].extra["dynamic.net"] = -999.0
+    s[4].spot = 50.0
+    assert hyp("div_amp_up").event(s, 3) == before
+
+
+def test_gex_versus_rv_correlation_is_computed_out_of_sample_with_an_interval() -> None:
+    # volatility falls as the net/abs ratio rises: build 10 sessions, a ratio per snapshot and a spot path whose step size follows it
+    allsnaps: list[bt.Snap] = []
+    for d in range(10):
+        spots, nets = [100.0], []
+        for i in range(60):
+            ratio = -1 + 2 * ((i * 7 + d) % 20) / 19  # -1 .. 1
+            nets.append(ratio * 100)
+            step = 0.2 * (1.5 - ratio) * (1 if i % 2 else -1)  # larger swings when the ratio is low
+            spots.append(spots[-1] * (1 + step / 100))
+        s = snaps(d, spots[:60])
+        for x, n in zip(s, nets, strict=True):
+            x.extra = {"dynamic.net": n, "dynamic.abs": 100.0}
+        allsnaps += s
+    out = bt.run(allsnaps, hyp("gex_vs_rv"))
+    c = out["out_of_sample"]["correlation"]
+    assert c is not None and c["n"] >= bt.MIN_EVENTS and -1 <= c["r"] <= 1 and c["ci95"][0] <= c["r"] <= c["ci95"][1]
+    assert max(out["sessions"]["in_sample"]) < min(out["sessions"]["out_of_sample"])
+
+
+def test_universe_is_a_parameter_so_the_same_one_is_used_throughout() -> None:
+    fixed = bt.gex_hypotheses("fixed")
+    assert all("fixed universe" in h.rule for h in fixed)
+    assert len(fixed) == 10 and len(bt.NOT_TESTABLE) == 1

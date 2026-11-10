@@ -56,3 +56,41 @@ describe("regime classifier", () => {
     expect(["High", "Medium", "Low"]).toContain(r.confidence.level);
   });
 });
+
+describe("regime with the GEX-price relationship", () => {
+  const calm = { spotPct: 0.3, momentum25: 0.5, skew25: -0.5, atmIvChange: 0.0, netGex: 40, flip: 23500, spot: 24000, demand: { "CE:otm": "Upside speculation" } } as const;
+  it("an amplifying relationship with a real NIFTY move is amplification even while net GEX is still positive", () => {
+    const r = classifyRegime(mk({ ...calm, divergence: "amplifying", divergenceLabel: "NIFTY up while net GEX becomes more negative: potentially amplifying.", gexNetChange: -30, gexNetPct: -42.9, universe: "dynamic" }));
+    expect(r.gamma).toBe("positive");
+    expect(r.regime).toBe("Negative gamma / momentum amplification");
+    expect(r.gexView).toMatchObject({ universe: "dynamic", netChange: -30, netPct: -42.9, relationship: expect.stringContaining("amplifying") });
+    expect(r.supporting).toContain("NIFTY and net GEX move so that hedging could amplify (potentially, not guaranteed)");
+  });
+  it("without a real move the same relationship does not trigger amplification", () => {
+    const r = classifyRegime(mk({ ...calm, spotPct: 0.02, momentum25: 0, skew25: 1, demand: null, divergence: "amplifying" }));
+    expect(r.regime).not.toBe("Negative gamma / momentum amplification");
+  });
+  it("a stabilising relationship and positive near-ATM GEX raise the stability score and are listed as supporting evidence", () => {
+    const flat = mk({ spotPct: 0.02, atmIvChange: 0, momentum25: 0, skew25: 1, netGex: 30, flip: 23000, spot: 24000, divergence: "stabilising", nearAtmNet: 12, ivMinusHv: 1, butterfly25: 0.2 });
+    const r = classifyRegime(flat);
+    expect(r.stabilityScore).toBe(100); // gex_pos, gex_stab, near_pos, iv_calm and flat all hold
+    expect(r.regime).toBe("Range-bound / positive gamma");
+    expect(r.supporting).toContain("near-ATM net GEX positive");
+    const mixed = classifyRegime({ ...flat, nearAtmNet: -5 });
+    expect(mixed.stabilityScore).toBeLessThan(100);
+    expect(mixed.contradicting.length + mixed.supporting.length).toBeGreaterThan(0);
+  });
+  it("an unavailable relationship is not evaluable rather than false, and the flip distance is reported", () => {
+    const r = classifyRegime(mk({ ...calm, divergence: "unavailable", flip: 23880 }));
+    expect(r.unavailable).toContain("NIFTY and net GEX move so that hedging could amplify (potentially, not guaranteed)");
+    expect(r.gexView.flipDistancePct).toBeCloseTo(((23880 - 24000) / 24000) * 100, 6);
+  });
+  it("every condition has an explicit weight of 1, and a weight change changes the scores", async () => {
+    const { WEIGHTS, classifyRegime: c2 } = await import("../lib/regime");
+    expect(Object.values(WEIGHTS).every((v) => v === 1)).toBe(true);
+    const base = c2(mk({ spotPct: 0.3, momentum25: -0.5, skew25: 4, atmIvChange: 0.6, netGex: 5, flip: 23000, spot: 24000 }));
+    const before = base.upsideScore;
+    WEIGHTS.spot_up = 3;
+    try { expect(c2(mk({ spotPct: 0.3, momentum25: -0.5, skew25: 4, atmIvChange: 0.6, netGex: 5, flip: 23000, spot: 24000 })).upsideScore).not.toBe(before); } finally { WEIGHTS.spot_up = 1; }
+  });
+});

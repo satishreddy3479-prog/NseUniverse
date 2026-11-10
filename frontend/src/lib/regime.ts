@@ -19,9 +19,19 @@ export interface RegimeInputs {
   demand: Partial<Record<"CE:otm" | "CE:deep" | "PE:otm" | "PE:deep", string>> | null;
   /** aggregate net GEX of the chosen universe (₹ crore per 1 %) and the gamma flip */
   netGex: number | null; flip: number | null; spot: number | null;
-  /** reading of the GEX-price divergence, if computed */
+  /** the GEX-price relationship over the same window, from the same GEX universe as `netGex` (see lib/gexIntel.ts gexPriceDivergence) */
   divergence: "amplifying" | "stabilising" | "none" | "unavailable" | null;
+  /** its label, the net GEX change (₹ crore) and percentage over the window, and the universe they belong to (shown, never mixed) */
+  divergenceLabel?: string | null; gexNetChange?: number | null; gexNetPct?: number | null; universe?: string | null;
+  /** net GEX of the ATM ± 5 strikes of that universe */
+  nearAtmNet?: number | null;
 }
+
+/** Weight of every condition in the direction gap and the scores. All are 1: no condition is trusted more than another, because none has been calibrated. */
+export const WEIGHTS: Record<string, number> = {
+  spot_up: 1, mom_up: 1, skew_call: 1, ce_spec: 1, pe_write: 1, spot_dn: 1, mom_dn: 1, skew_put: 1, pe_spec: 1, ce_write: 1,
+  iv_up: 1, iv_dn: 1, wings: 1, iv_rich: 1, tail: 1, gex_pos: 1, gex_neg: 1, gex_amp: 1, gex_stab: 1, near_neg: 1, near_pos: 1,
+};
 
 export type RegimeName =
   | "Bullish volatility expansion" | "Bullish volatility contraction" | "Bearish volatility expansion" | "Bearish volatility contraction"
@@ -33,6 +43,8 @@ export interface RegimeResult {
   gamma: "positive" | "negative" | "near flip" | "unknown";
   upsideScore: number | null; downsideScore: number | null; stabilityScore: number | null;
   confidence: { level: "High" | "Medium" | "Low"; completeness: number; agreement: number | null };
+  /** the GEX-side readings shown beside the regime, all from one universe */
+  gexView: { universe: string | null; spotPct: number | null; netChange: number | null; netPct: number | null; gammaRegime: "positive" | "negative" | "near flip" | "unknown"; relationship: string | null; flipDistancePct: number | null; nearAtmNet: number | null };
   supporting: string[]; contradicting: string[]; unavailable: string[]; evidence: Evidence[];
 }
 
@@ -64,10 +76,15 @@ export function classifyRegime(i: RegimeInputs): RegimeResult {
     { id: "tail", text: "deep OTM options read as tail hedging or speculation", side: "vol", met: d ? ["CE:deep", "PE:deep"].some((k) => is(d[k as "CE:deep"], "Upside tail hedging", "Downside tail hedging", "Upside speculation", "Downside speculation")) : null },
     { id: "gex_pos", text: "net GEX positive (model sign) and spot not within 0.2% of the flip", side: "gamma", met: i.netGex == null ? null : i.netGex >= 0 && !(dist != null && dist <= T.nearFlip) },
     { id: "gex_neg", text: "net GEX negative (model sign)", side: "gamma", met: i.netGex == null ? null : i.netGex < 0 },
-    { id: "gex_amp", text: "GEX-price divergence reads amplifying", side: "gamma", met: i.divergence == null || i.divergence === "unavailable" ? null : i.divergence === "amplifying" },
+    { id: "gex_amp", text: "NIFTY and net GEX move so that hedging could amplify (potentially, not guaranteed)", side: "gamma", met: i.divergence == null || i.divergence === "unavailable" ? null : i.divergence === "amplifying" },
+    { id: "gex_stab", text: "NIFTY and net GEX move so that hedging could stabilise (potentially, not guaranteed)", side: "gamma", met: i.divergence == null || i.divergence === "unavailable" ? null : i.divergence === "stabilising" },
+    { id: "near_neg", text: "near-ATM net GEX negative", side: "gamma", met: i.nearAtmNet == null ? null : i.nearAtmNet < 0 },
+    { id: "near_pos", text: "near-ATM net GEX positive", side: "gamma", met: i.nearAtmNet == null ? null : i.nearAtmNet >= 0 },
   ];
   const by = (side: Evidence["side"]) => ev.filter((e) => e.side === side);
-  const count = (es: Evidence[]) => es.filter((e) => e.met === true).length;
+  const w = (e: Evidence) => WEIGHTS[e.id] ?? 1;
+  const count = (es: Evidence[]) => es.filter((e) => e.met === true).reduce((a, e) => a + w(e), 0);
+  const possible = (es: Evidence[]) => es.filter((e) => e.met !== null).reduce((a, e) => a + w(e), 0);
   const bull = count(by("bull")), bear = count(by("bear"));
   const evaluable = ev.filter((e) => e.met !== null).length;
   const direction: RegimeResult["direction"] = bull - bear >= T.directionGap ? "bullish" : bear - bull >= T.directionGap ? "bearish" : bull >= 2 && bear >= 2 ? "conflicting" : "neutral";
@@ -77,7 +94,7 @@ export function classifyRegime(i: RegimeInputs): RegimeResult {
 
   let regime: RegimeName;
   if (evaluable < T.minEvaluable) regime = "Insufficient data";
-  else if (gamma === "negative" && moved) regime = "Negative gamma / momentum amplification";
+  else if (moved && (gamma === "negative" || i.divergence === "amplifying")) regime = "Negative gamma / momentum amplification";
   else if (direction === "bullish" && vol === "expanding") regime = "Bullish volatility expansion";
   else if (direction === "bullish" && vol === "contracting") regime = "Bullish volatility contraction";
   else if (direction === "bearish" && vol === "expanding") regime = "Bearish volatility expansion";
@@ -86,8 +103,8 @@ export function classifyRegime(i: RegimeInputs): RegimeResult {
   else if (direction === "neutral" && gamma === "positive" && vol !== "expanding") regime = "Range-bound / positive gamma";
   else regime = "Mixed / conflicting signals";
 
-  const ratio = (es: Evidence[]) => { const n = es.filter((e) => e.met !== null).length; return n ? Math.round((count(es) / n) * 100) : null; };
-  const stableConds: Evidence[] = [ev.find((e) => e.id === "gex_pos")!, { id: "iv_calm", text: "ATM IV not expanding", side: "vol", met: i.atmIvChange == null ? null : i.atmIvChange < T.ivMove }, { id: "flat", text: "NIFTY flat", side: "vol", met: i.spotPct == null ? null : Math.abs(i.spotPct) < T.spot }];
+  const ratio = (es: Evidence[]) => { const n = possible(es); return n ? Math.round((count(es) / n) * 100) : null; };
+  const stableConds: Evidence[] = [ev.find((e) => e.id === "gex_pos")!, ev.find((e) => e.id === "gex_stab")!, ev.find((e) => e.id === "near_pos")!, { id: "iv_calm", text: "ATM IV not expanding", side: "vol", met: i.atmIvChange == null ? null : i.atmIvChange < T.ivMove }, { id: "flat", text: "NIFTY flat", side: "vol", met: i.spotPct == null ? null : Math.abs(i.spotPct) < T.spot }];
   const dirEvaluable = by("bull").concat(by("bear")).filter((e) => e.met !== null).length;
   const completeness = Math.round((evaluable / ev.length) * 100) / 100;
   const agreement = bull + bear === 0 ? null : Math.round((Math.max(bull, bear) / (bull + bear)) * 100) / 100;
@@ -100,5 +117,6 @@ export function classifyRegime(i: RegimeInputs): RegimeResult {
     supporting: ev.filter((e) => e.met === true && (chosenSide ? e.side === chosenSide || e.side !== (chosenSide === "bull" ? "bear" : "bull") : true)).map((e) => e.text),
     contradicting: ev.filter((e) => e.met === true && chosenSide != null && e.side === (chosenSide === "bull" ? "bear" : "bull")).map((e) => e.text),
     unavailable: ev.filter((e) => e.met === null).map((e) => e.text), evidence: ev,
+    gexView: { universe: i.universe ?? null, spotPct: i.spotPct, netChange: i.gexNetChange ?? null, netPct: i.gexNetPct ?? null, gammaRegime: gamma, relationship: i.divergenceLabel ?? null, flipDistancePct: i.flip != null && i.spot ? ((i.flip - i.spot) / i.spot) * 100 : null, nearAtmNet: i.nearAtmNet ?? null },
   };
 }

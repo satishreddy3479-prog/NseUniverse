@@ -41,19 +41,28 @@ class Snap:
 
 
 def _back(snaps: Sequence[Snap], i: int, minutes: int, tol_min: int = 3) -> Snap | None:
-    """The snapshot closest to ``minutes`` before ``snaps[i]`` among earlier ones of the same session, within ``tol_min``."""
+    """The snapshot closest to ``minutes`` before ``snaps[i]`` among earlier ones of the same session, within ``tol_min``.
+    Walks back from i and stops at the first snapshot at or before the target, so it costs a few steps, not a scan of the whole run."""
     target = snaps[i].at - timedelta(minutes=minutes)
-    best = None
-    for s in snaps[:i]:
-        if s.session == snaps[i].session and s.at <= target and (best is None or s.at > best.at):
-            best = s
-    return best if best is not None and target - best.at <= timedelta(minutes=tol_min) else None
+    for j in range(i - 1, -1, -1):
+        s = snaps[j]
+        if s.session != snaps[i].session:
+            return None
+        if s.at <= target:
+            return s if target - s.at <= timedelta(minutes=tol_min) else None
+    return None
+
+
+def val(s: Snap, key: str) -> float | None:
+    """A feature of one snapshot: a field of ``Snap`` or an entry of ``extra`` (the reconstructed GEX metrics, e.g. ``dynamic.net``)."""
+    v = s.extra.get(key) if key in s.extra else getattr(s, key, None)
+    return None if v is None else float(v)
 
 
 def change(snaps: Sequence[Snap], i: int, key: str, minutes: int = 15) -> float | None:
     """Change of a feature over the last ``minutes`` (uses only snapshots up to i)."""
     then = _back(snaps, i, minutes)
-    a, b = getattr(snaps[i], key), None if then is None else getattr(then, key)
+    a, b = val(snaps[i], key), None if then is None else val(then, key)
     return None if a is None or b is None else float(a - b)
 
 
@@ -62,7 +71,11 @@ def forward(snaps: Sequence[Snap], i: int, minutes: int = HORIZON_MIN, tol_min: 
     returns (percent per snapshot step, not annualised). None if the session ends before the horizon."""
     start = snaps[i]
     end_t = start.at + timedelta(minutes=minutes)
-    path = [s for s in snaps[i:] if s.session == start.session and s.at <= end_t + timedelta(minutes=tol_min)]
+    path = []
+    for s in snaps[i:]:  # snapshots are in time order: stop at the end of the window or of the session
+        if s.session != start.session or s.at > end_t + timedelta(minutes=tol_min):
+            break
+        path.append(s)
     if not path or path[-1].at < end_t - timedelta(minutes=tol_min) or len(path) < 3:
         return None
     last = path[-1]
@@ -131,8 +144,9 @@ class Hypothesis:
     event: Callable[[Sequence[Snap], int], bool | None]
     #: directional: +1 long / -1 short, scored on the next-30-minute return. 0: non-directional, scored on ``target``
     side: int
-    target: str  # "ret_pct", "rv" or "big_move"
+    target: str  # "ret_pct", "rv", "big_move" or "corr" (correlation of ``feature`` with the next-30-minute realised volatility)
     rule: str
+    feature: Callable[[Sequence[Snap], int], float | None] | None = None
 
 
 def _flag(v: float | None, test: Callable[[float], bool]) -> bool | None:
@@ -148,11 +162,79 @@ HYPOTHESES: list[Hypothesis] = [
     Hypothesis("butterfly_rise", "Rising 25-delta butterfly then a large move", lambda s, i: _flag(change(s, i, "butterfly25"), lambda v: v >= 0.3), 0, "big_move", f"event: 15-min butterfly25 change ≥ +0.3 pts; target: |next 30-min return| ≥ {BIG_MOVE_PCT} %"),
 ]
 NOT_TESTABLE = [
-    ("gex_vs_rv", "Net GEX versus realised intraday volatility", "GEX history is computed in the browser; no server-side GEX series is stored yet."),
-    ("flip_crossings", "Gamma-flip crossings versus price behaviour", "needs the same stored GEX/flip series."),
-    ("gex_migration", "GEX migration versus market direction", "needs the same stored GEX series."),
-    ("term_slope_vs_vol", "Term slope versus subsequent volatility", "needs several expiries sampled at the same moments across enough sessions."),
+    ("term_slope_vs_vol", "Term slope versus subsequent volatility", "needs several expiries sampled at the same moments across enough sessions; one expiry per run is reconstructed today."),
 ]
+
+
+SPOT_MOVE_PCT = 0.05
+GEX_MOVE_SHARE = 0.05
+FLIP_MOVE_PCT = 0.1
+
+
+def _ratio(s: Sequence[Snap], i: int, u: str) -> float | None:
+    net, ab = val(s[i], f"{u}.net"), val(s[i], f"{u}.abs")
+    return None if net is None or not ab else net / ab
+
+
+def _cross(s: Sequence[Snap], i: int, u: str, up: bool) -> bool | None:
+    """Spot crossed the gamma flip between the previous snapshot and this one (both flips known)."""
+    if i == 0 or s[i - 1].session != s[i].session or s[i].at - s[i - 1].at > timedelta(minutes=7):
+        return None
+    f0, f1 = val(s[i - 1], f"{u}.flip"), val(s[i], f"{u}.flip")
+    if f0 is None or f1 is None:
+        return None
+    return (s[i - 1].spot < f0 and s[i].spot >= f1) if up else (s[i - 1].spot > f0 and s[i].spot <= f1)
+
+
+def _spot15(s: Sequence[Snap], i: int) -> float | None:
+    then = _back(s, i, 15)
+    return None if then is None or not then.spot else (s[i].spot / then.spot - 1) * 100
+
+
+def _gexmove(s: Sequence[Snap], i: int, u: str) -> int | None:
+    """Direction (-1 / 0 / +1) of the 15-minute change of net GEX: a change under 5 % of the larger |net| counts as unchanged."""
+    then = _back(s, i, 15)
+    a, b = val(s[i], f"{u}.net"), None if then is None else val(then, f"{u}.net")
+    if a is None or b is None:
+        return None
+    scale = max(abs(a), abs(b))
+    return 0 if scale == 0 or abs(a - b) < GEX_MOVE_SHARE * scale else (1 if a > b else -1)
+
+
+def _div(s: Sequence[Snap], i: int, u: str, spot_dir: int, gex_dir: int) -> bool | None:
+    sp, gx = _spot15(s, i), _gexmove(s, i, u)
+    if sp is None or gx is None:
+        return None
+    moved = 0 if abs(sp) < SPOT_MOVE_PCT else (1 if sp > 0 else -1)
+    return moved == spot_dir and gx == gex_dir
+
+
+def _flipmove(s: Sequence[Snap], i: int, u: str) -> float | None:
+    d = change(s, i, f"{u}.flip")
+    return None if d is None or not s[i].spot else d / s[i].spot * 100
+
+
+def gex_hypotheses(u: str) -> list[Hypothesis]:
+    """The GEX and gamma-flip hypotheses for one universe (fixed, dynamic or full). Every rule uses only snapshots up to the event time."""
+    hs = [
+        Hypothesis("gex_vs_rv", "Net GEX (net / absolute) versus subsequent realised volatility", lambda s, i: None, 0, "corr",
+                   f"{u} universe: correlation of net GEX ÷ absolute GEX with the next-30-minute realised volatility (a negative figure supports 'negative GEX, more movement')",
+                   feature=lambda s, i: _ratio(s, i, u)),
+        Hypothesis("neg_gamma_rv", "Negative versus positive gamma regime versus subsequent volatility", lambda s, i: _flag(val(s[i], f"{u}.net"), lambda v: v < 0), 0, "rv",
+                   f"event: {u} net GEX < 0 (model sign); target: realised vol of the next 30 min, compared with net GEX ≥ 0"),
+        Hypothesis("flip_cross_up", "NIFTY crosses up through the gamma flip then rises", lambda s, i: _cross(s, i, u, True), 1, "ret_pct", f"event: spot moves from below to at/above the {u} gamma flip between snapshots; long next 30 min"),
+        Hypothesis("flip_cross_down", "NIFTY crosses down through the gamma flip then falls", lambda s, i: _cross(s, i, u, False), -1, "ret_pct", f"event: spot moves from above to at/below the {u} gamma flip; short next 30 min"),
+        Hypothesis("flip_migration_up", "Gamma flip migrating up then NIFTY up", lambda s, i: _flag(_flipmove(s, i, u), lambda v: v >= FLIP_MOVE_PCT), 1, "ret_pct", f"event: {u} flip up ≥ {FLIP_MOVE_PCT} % of spot over 15 min; long next 30 min"),
+        Hypothesis("flip_migration_down", "Gamma flip migrating down then NIFTY down", lambda s, i: _flag(_flipmove(s, i, u), lambda v: v <= -FLIP_MOVE_PCT), -1, "ret_pct", f"event: {u} flip down ≥ {FLIP_MOVE_PCT} % of spot over 15 min; short next 30 min"),
+        Hypothesis("div_amp_up", "NIFTY up with net GEX falling (potentially amplifying) then continues up", lambda s, i: _div(s, i, u, 1, -1), 1, "ret_pct", f"event: 15-min spot ≥ +{SPOT_MOVE_PCT} % and {u} net GEX down by ≥ {int(GEX_MOVE_SHARE * 100)} % of the larger |net|; long next 30 min"),
+        Hypothesis("div_amp_down", "NIFTY down with net GEX falling (potential downside amplification) then continues down", lambda s, i: _div(s, i, u, -1, -1), -1, "ret_pct", f"event: 15-min spot ≤ −{SPOT_MOVE_PCT} % and net GEX down; short next 30 min"),
+        Hypothesis("div_stab_up", "NIFTY up with net GEX rising (potentially stabilising) then fades", lambda s, i: _div(s, i, u, 1, 1), -1, "ret_pct", "event: 15-min spot up and net GEX up by ≥ 5 %; short next 30 min (fade)"),
+        Hypothesis("div_stab_down", "NIFTY down with net GEX rising (potential stabilisation) then recovers", lambda s, i: _div(s, i, u, -1, 1), 1, "ret_pct", "event: 15-min spot down and net GEX up; long next 30 min (recovery)"),
+    ]
+    for h in hs:
+        if not h.rule.startswith(f"{u} universe"):
+            h.rule = f"{u} universe · {h.rule}"
+    return hs
 
 
 def _mom(s: Sequence[Snap], i: int) -> float | None:
@@ -166,6 +248,31 @@ def _oi(s: Sequence[Snap], i: int) -> float | None:
     if a is None or b is None or ce is None or pe is None or ce + pe == 0:
         return None
     return (b - a) / (ce + pe) * 100
+
+
+def _correlation(snaps: Sequence[Snap], h: Hypothesis, days: set[str]) -> dict[str, Any]:
+    """Pearson correlation of a continuous feature with the next-30-minute realised volatility over non-overlapping snapshots, with a
+    Fisher-z 95 % interval. Snapshots without the feature or without a full forward window are counted as unavailable."""
+    assert h.feature is not None
+    idx = thin([i for i, s in enumerate(snaps) if s.session in days and h.feature(snaps, i) is not None], snaps)
+    pairs: list[tuple[float, float]] = []
+    for i in idx:
+        f = forward(snaps, i)
+        x = h.feature(snaps, i)
+        if f is not None and x is not None:
+            pairs.append((x, f["rv"]))
+    n = len(pairs)
+    res: dict[str, Any] = {"events": n, "others": 0, "unavailable": sum(1 for i, s in enumerate(snaps) if s.session in days and h.feature(snaps, i) is None), "enough": n >= MIN_EVENTS, "correlation": None}
+    if n >= 4:
+        mx, my = sum(p[0] for p in pairs) / n, sum(p[1] for p in pairs) / n
+        sxx = sum((p[0] - mx) ** 2 for p in pairs)
+        syy = sum((p[1] - my) ** 2 for p in pairs)
+        sxy = sum((p[0] - mx) * (p[1] - my) for p in pairs)
+        if sxx > 0 and syy > 0:
+            rr = sxy / math.sqrt(sxx * syy)
+            z, se = math.atanh(max(min(rr, 0.999999), -0.999999)), 1 / math.sqrt(n - 3) if n > 3 else None
+            res["correlation"] = {"r": round(rr, 4), "n": n, "ci95": None if se is None else [round(math.tanh(z - 1.96 * se), 4), round(math.tanh(z + 1.96 * se), 4)]}
+    return res
 
 
 def run(snaps: Sequence[Snap], h: Hypothesis, cost_bps: float = 5.0, oos_share: float = OOS_SHARE) -> dict[str, Any]:
@@ -184,6 +291,10 @@ def run(snaps: Sequence[Snap], h: Hypothesis, cost_bps: float = 5.0, oos_share: 
                 fw[i] = f
         ev = [i for i in ev if i in fw]
         oth = [i for i in oth if i in fw]
+        if h.target == "corr" and h.feature is not None:
+            res_c = _correlation(snaps, h, days)
+            out[name] = res_c
+            continue
         res: dict[str, Any] = {"events": len(ev), "others": len(oth), "unavailable": sum(1 for _, f in flags if f is None)}
         if h.side != 0:
             rets = [h.side * fw[i]["ret_pct"] - cost_bps / 100 for i in ev]

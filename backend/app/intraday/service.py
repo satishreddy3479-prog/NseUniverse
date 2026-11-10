@@ -14,16 +14,19 @@ import asyncio
 import logging
 import threading
 import time as _time
+from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import asdict
 from datetime import UTC, date, datetime, time, timedelta
 from statistics import pstdev
+from time import perf_counter
 from typing import Any
 
 from app.domain.session import market_time, session_close
 from app.intraday import (
     backtest,
     evaluate,
+    gex_history,
     labels,
     momentum,
     paper,
@@ -142,6 +145,12 @@ class IntradayService:
         self._events = events
         self._clock = clock or (lambda: datetime.now(UTC))
         self._cache: dict[tuple[str, int, int], dict[str, Any]] = {}
+        # per-sample derived features of the backtest and GEX history: a stored sample never changes, so an entry is valid for as long as the
+        # feature code (FEATURE_VERSION), the rate and the opening ATM it was built with are the same; bounded so it cannot grow without limit
+        self._feat_cache: OrderedDict[tuple[Any, ...], dict[str, Any]] = OrderedDict()
+        self._bt_results: OrderedDict[tuple[Any, ...], dict[str, Any]] = OrderedDict()
+        self._bt_job: dict[str, Any] | None = None
+        self._bt_lock = threading.Lock()
         self._iv_cache: dict[tuple[Any, ...], dict[str, Any]] = {}  # one entry: the latest IV series
         self._slow: dict[tuple[str, str], tuple[float, Any]] = {}
         self._task: asyncio.Task[None] | None = None
@@ -712,49 +721,227 @@ class IntradayService:
         self._iv_cache = {key: out}
         return out
 
-    def backtest(self, expiry: str, sessions: int = 15, cost_bps: float = 5.0) -> dict[str, Any]:
-        """Out-of-sample test of the options signals against NIFTY's next 30 minutes, over the last ``sessions`` stored sessions of
-        ``expiry`` (5-minute snapshots). Features come from the stored chains only; see ``backtest.py`` for the rules."""
+    # ------------------------------------------------------------------ backtest and GEX history (shared per-sample features)
+    FEATURE_VERSION = 3
+    FEATURE_CACHE_MAX = 15000
+    #: uncached snapshots a request may compute itself; more than this runs as a background job with progress
+    SYNC_SNAPSHOTS = 60
+
+    def _bt_plan(self, expiry: str, sessions: int) -> dict[str, Any]:
+        """Which stored samples a run reads: the last sample of every 5-minute bucket of the last ``sessions`` sessions (in-session only),
+        found with one indexed query, before any calculation. Also each session's opening ATM (nearest listed strike to the first spot)."""
+        t0 = perf_counter()
         try:
             exp_d = date.fromisoformat(expiry)
         except ValueError:
-            return {"status": "bad expiry", "tests": []}
+            return {"error": "bad expiry"}
         now_t = self._clock()
         lo = datetime.combine(now_t.astimezone(IST).date() - timedelta(days=int(sessions * 1.6) + 5), OPEN, IST)
-        samples = [x for x in self.obs.samples(self.underlying, expiry, since=lo, until=now_t, limit=40000) if x.spot is not None]
         by_day: dict[str, dict[int, Any]] = {}
-        for x in samples:
+        first: dict[str, Any] = {}
+        for x in self.obs.samples(self.underlying, expiry, since=lo, until=now_t, limit=60000):
+            if x.spot is None:
+                continue
             t_ = x.received_at.astimezone(IST)
             if not OPEN <= t_.time() <= session_close():
                 continue
-            by_day.setdefault(t_.date().isoformat(), {})[(t_.hour * 60 + t_.minute) // 5] = x  # the last sample of each 5-minute bucket
+            d_ = t_.date().isoformat()
+            first.setdefault(d_, x)
+            by_day.setdefault(d_, {})[(t_.hour * 60 + t_.minute) // 5] = x
         days = sorted(by_day)[-sessions:]
-        key = ("bt", expiry, tuple(days), str(by_day[days[-1]][max(by_day[days[-1]])].sample_id) if days else "", cost_bps)
+        opening: dict[str, float | None] = {}
+        for d_ in days:
+            ks = sorted({k for k, _ in self.obs.contracts(first[d_].values_from)})
+            opening[d_] = min(ks, key=lambda k: (abs(k - first[d_].spot), k)) if ks else None
+        return {"exp_d": exp_d, "days": days, "by_day": by_day, "opening": opening, "read_ms": (perf_counter() - t0) * 1000}
+
+    def _fkey(self, x: Any, opening: float | None) -> tuple[Any, ...]:
+        return (x.sample_id, self.FEATURE_VERSION, self.risk_free_rate, opening)
+
+    def _feature(self, x: Any, exp_d: date, opening: float | None, timing: dict[str, float]) -> dict[str, Any]:
+        """Everything the backtests need from one stored sample, computed once: IV features (ATM, 25 and 10 delta, skew, butterfly), OI sums,
+        and the reconstructed GEX of the fixed, dynamic and full universes. ``{"skip": reason}`` when the chain cannot be solved."""
+        key = self._fkey(x, opening)
+        hit = self._feat_cache.get(key)
+        if hit is not None:
+            self._feat_cache.move_to_end(key)
+            timing["cached"] = timing.get("cached", 0) + 1
+            return hit
+        t0 = perf_counter()
+        ch = self.obs.contracts(x.values_from)
+        t1 = perf_counter()
+        sf = self._surface_of(x, exp_d, x.received_at, 400)
+        t2 = perf_counter()
+        if sf.get("status") != "ok":
+            feat: dict[str, Any] = {"skip": str(sf.get("status"))}
+        else:
+            pt = momentum.delta_point(x.received_at, x.spot, sf)
+            sk = volmod.skew_metrics(sf["rows"], sf["forward"], sf.get("atm_iv"))
+            atm = sf.get("atm_strike")
+            near = {k for k, _ in ch if atm is not None and abs(k - atm) <= 10 * 50}
+            t_yr = volmod.years_to_expiry(exp_d, market_time(x.received_at, self._trading))
+            gx = gex_history.reconstruct(sf["rows"], ch, float(x.spot), float(sf["forward"]), t_yr, self.risk_free_rate, opening)
+            extra: dict[str, float | None] = {}
+            for u, lv in gx["universes"].items():
+                for k_ in ("ce", "pe", "net", "abs", "flip", "near_net", "call_wall", "put_wall", "peak"):
+                    extra[f"{u}.{k_}"] = None if lv is None else lv[k_]
+                extra[f"{u}.used"] = None if lv is None else float(lv["used"])
+            feat = {
+                "at": x.received_at, "spot": float(x.spot), "skew25": sk["skew_25d"], "butterfly25": sk["butterfly_25d"], "atm_iv": sf.get("atm_iv"),
+                "ce25": pt["d25"]["ce"], "pe25": pt["d25"]["pe"],
+                "oi_ce": sum(c.oi for (k, sd), c in ch.items() if sd == 0 and k in near and c.oi is not None) or None,
+                "oi_pe": sum(c.oi for (k, sd), c in ch.items() if sd == 1 and k in near and c.oi is not None) or None,
+                "extra": extra, "missing": gx["missing"],
+            }
+        t3 = perf_counter()
+        timing["contracts_ms"] = timing.get("contracts_ms", 0.0) + (t1 - t0) * 1000
+        timing["solve_ms"] = timing.get("solve_ms", 0.0) + (t2 - t1) * 1000
+        timing["gex_ms"] = timing.get("gex_ms", 0.0) + (t3 - t2) * 1000
+        timing["computed"] = timing.get("computed", 0) + 1
+        self._feat_cache[key] = feat
+        while len(self._feat_cache) > self.FEATURE_CACHE_MAX:
+            self._feat_cache.popitem(last=False)
+        return feat
+
+    def _bt_snaps(self, plan: dict[str, Any], timing: dict[str, float], progress: dict[str, Any] | None = None) -> tuple[list[backtest.Snap], dict[str, Any]]:
+        snaps: list[backtest.Snap] = []
+        skipped: dict[str, int] = {}
+        for d_ in plan["days"]:
+            for _b, x in sorted(plan["by_day"][d_].items()):
+                before = timing.get("computed", 0)
+                f = self._feature(x, plan["exp_d"], plan["opening"][d_], timing)
+                if progress is not None and timing.get("computed", 0) > before:
+                    progress["done"] += 1
+                    _time.sleep(0.001)  # yield the interpreter to the API threads: a long job must not starve live requests
+                if "skip" in f:
+                    skipped[f["skip"]] = skipped.get(f["skip"], 0) + 1
+                    continue
+                snaps.append(backtest.Snap(at=f["at"], session=d_, spot=f["spot"], skew25=f["skew25"], butterfly25=f["butterfly25"], atm_iv=f["atm_iv"], ce25=f["ce25"], pe25=f["pe25"], oi_ce=f["oi_ce"], oi_pe=f["oi_pe"], extra=dict(f["extra"])))
+        return snaps, skipped
+
+    def _bt_result(self, plan: dict[str, Any], expiry: str, cost_bps: float, universe: str, timing: dict[str, float], elapsed_ms: float) -> dict[str, Any]:
+        snaps, skipped = self._bt_snaps(plan, timing)
+        hs = [*backtest.HYPOTHESES, *backtest.gex_hypotheses(universe)]
+        tests = [backtest.run(snaps, h, cost_bps) for h in hs] if snaps else []
+        keys = (f"{universe}.net", f"{universe}.flip", f"{universe}.call_wall", f"{universe}.put_wall", f"{universe}.peak", f"{universe}.near_net")
+        recon = {k.split(".", 1)[1]: sum(1 for x in snaps if x.extra.get(k) is not None) for k in keys}
+        return {
+            "status": "ok" if snaps else "no stored sessions with a solvable chain for this expiry", "expiry": expiry, "universe": universe, "sessions": plan["days"],
+            "snapshots": len(snaps), "horizon_minutes": backtest.HORIZON_MIN, "oos_share": backtest.OOS_SHARE, "min_events": backtest.MIN_EVENTS, "cost_bps": cost_bps,
+            "tests": tests, "not_testable": [{"id": i, "title": t, "reason": r} for i, t, r in backtest.NOT_TESTABLE],
+            "reconstruction": {"snapshots_with": recon, "snapshots_skipped": skipped, "opening_atm": plan["opening"]},
+            "timing": {"plan_read_ms": round(plan["read_ms"], 1), "total_ms": round(elapsed_ms, 1), **{k: round(v, 1) for k, v in timing.items()}},
+            "note": "Signals are tested against NIFTY, not against an options position: option spreads, theta and gamma are not modelled. GEX history is rebuilt from the stored chains (prices and open interest) at each snapshot; the sign (calls +, puts −) is a model assumption.",
+        }
+
+    def backtest(self, expiry: str, sessions: int = 15, cost_bps: float = 5.0, universe: str = "dynamic") -> dict[str, Any]:
+        """Out-of-sample test of the options and GEX signals against NIFTY's next 30 minutes, over the last ``sessions`` stored sessions of
+        ``expiry`` (5-minute snapshots). Small requests are answered at once; a request that needs more than ``SYNC_SNAPSHOTS`` uncomputed
+        snapshots runs as one background job (one at a time) and answers with progress until it is done. Features are cached per stored sample."""
+        if universe not in ("fixed", "dynamic", "full"):
+            return {"status": "bad universe", "tests": []}
+        t0 = perf_counter()
+        plan = self._bt_plan(expiry, sessions)
+        if "error" in plan:
+            return {"status": plan["error"], "tests": []}
+        days = plan["days"]
+        newest = max(plan["by_day"][days[-1]].values(), key=lambda x: x.sample_id).sample_id if days else None
+        key = ("bt", expiry, tuple(days), newest, cost_bps, universe, self.FEATURE_VERSION, self.risk_free_rate)
+        done = self._bt_results.get(key)
+        if done is not None:
+            return done
+        total = sum(len(plan["by_day"][d_]) for d_ in days)
+        job = self._bt_job
+        if job is not None and job["key"] == key:  # the job for this very request answers it: never start a second computation of the same features
+            if job["state"] == "failed":
+                return {"status": f"failed: {job['error']}", "tests": []}
+            if job["state"] == "running":
+                return {"status": "computing", "expiry": expiry, "progress": {"done": job["done"], "total": job["total"]}, "tests": []}
+        pending = [x for d_ in days for x in plan["by_day"][d_].values() if self._fkey(x, plan["opening"][d_]) not in self._feat_cache]
+        if len(pending) <= self.SYNC_SNAPSHOTS:
+            out = self._bt_result(plan, expiry, cost_bps, universe, {}, (perf_counter() - t0) * 1000)
+            self._store_result(key, out)
+            return out
+        with self._bt_lock:
+            job = self._bt_job
+            if job is not None and job["state"] == "running" and job["key"] != key:
+                return {"status": "busy", "message": "another large backtest is running; try again when it finishes", "progress": {"done": job["done"], "total": job["total"]}, "tests": []}
+            if job is not None and job["key"] == key:
+                if job["state"] == "failed":
+                    return {"status": f"failed: {job['error']}", "tests": []}
+                return {"status": "computing", "expiry": expiry, "progress": {"done": job["done"], "total": job["total"], "uncached": len(pending)}, "tests": []}
+            job = {"key": key, "state": "running", "done": total - len(pending), "total": total, "error": None}
+            self._bt_job = job
+
+            def work() -> None:
+                try:
+                    timing: dict[str, float] = {}
+                    tw = perf_counter()
+                    self._bt_snaps(plan, timing, job)
+                    out = self._bt_result(plan, expiry, cost_bps, universe, timing, (perf_counter() - tw) * 1000)
+                    self._store_result(key, out)
+                    job["state"] = "done"
+                except Exception as exc:  # noqa: BLE001
+                    job["state"], job["error"] = "failed", f"{type(exc).__name__}: {exc}"[:200]
+                    logger.warning("backtest_job_failed", extra={"fields": {"error": job["error"]}})
+
+            threading.Thread(target=work, name="backtest-job", daemon=True).start()
+        return {"status": "computing", "expiry": expiry, "progress": {"done": job["done"], "total": total, "uncached": len(pending)}, "tests": []}
+
+    def _store_result(self, key: tuple[Any, ...], out: dict[str, Any]) -> None:
+        self._bt_results[key] = out
+        while len(self._bt_results) > 6:
+            self._bt_results.popitem(last=False)
+
+    def gex_history(self, expiry: str, session: str | None = None, universe: str = "dynamic") -> dict[str, Any]:
+        """The GEX and gamma flip rebuilt at each 5-minute snapshot of one stored session (the latest unless given), from the stored prices
+        and open interest only; a snapshot that cannot be solved is listed as skipped with its reason, never filled."""
+        if universe not in ("fixed", "dynamic", "full"):
+            return {"status": "bad universe", "points": []}
+        plan = self._bt_plan(expiry, 60)
+        if "error" in plan:
+            return {"status": plan["error"], "points": []}
+        day = session if session else (plan["days"][-1] if plan["days"] else None)
+        if day is None or day not in plan["by_day"]:
+            return {"status": "no stored session", "points": [], "sessions": plan["days"]}
+        timing: dict[str, float] = {}
+        pts, skipped = [], []
+        for _b, x in sorted(plan["by_day"][day].items()):
+            f = self._feature(x, plan["exp_d"], plan["opening"][day], timing)
+            if "skip" in f:
+                skipped.append({"at": x.received_at.isoformat(), "reason": f["skip"]})
+                continue
+            pts.append({"at": f["at"].isoformat(), "spot": f["spot"], **{k.split(".", 1)[1]: v for k, v in f["extra"].items() if k.startswith(f"{universe}.")}})
+        return {"status": "ok" if pts else "no solvable snapshot", "expiry": expiry, "session": day, "universe": universe, "sessions": plan["days"], "opening_atm": plan["opening"][day], "points": pts, "skipped": skipped,
+                "timing": {k: round(v, 1) for k, v in timing.items()}, "units": "₹ crore per 1 % move; calls +, puts − (model sign)"}
+
+    def premium_baskets(self, expiry: str, session: str | None = None, n: int | None = 10, kind: str = "fixed") -> dict[str, Any]:
+        """Aggregate call and put premium of an ATM +/- ``n`` basket (``None`` = all strikes), fixed or dynamically recentred, at each
+        5-minute stored snapshot of a session, with the change since the first snapshot and the premium asymmetry. See ``basket_series``."""
+        if kind not in ("fixed", "dynamic"):
+            return {"status": "bad kind", "points": []}
+        now_t = self._clock()
+        sel = self._session_samples(expiry, session, now_t)
+        if "status" in sel:
+            return {"status": sel["status"], "expiry": expiry, "points": []}
+        day, todays = sel["day"], sel["todays"]
+        last: dict[int, Any] = {}
+        for x in todays:
+            t_ = x.received_at.astimezone(IST)
+            if x.spot is not None:
+                last[(t_.hour * 60 + t_.minute) // 5] = x
+        samples = [last[b] for b in sorted(last)]
+        key = ("prem", expiry, str(samples[-1].sample_id) if samples else "", n, kind)
         if key in self._iv_cache:
             return self._iv_cache[key]
-        snaps: list[backtest.Snap] = []
-        for d_ in days:
-            for _b, x in sorted(by_day[d_].items()):
-                sf = self._surface_of(x, exp_d, x.received_at, 25)
-                if sf.get("status") != "ok":
-                    continue
-                pt = momentum.delta_point(x.received_at, x.spot, sf)
-                ch = self.obs.contracts(x.values_from)
-                atm = sf.get("atm_strike")
-                near = {k for k, _ in ch if atm is not None and abs(k - atm) <= 10 * 50}
-                oi_ce = sum(c.oi for (k, side), c in ch.items() if side == 0 and k in near and c.oi is not None) or None
-                oi_pe = sum(c.oi for (k, side), c in ch.items() if side == 1 and k in near and c.oi is not None) or None
-                skew = volmod.skew_metrics(sf["rows"], sf["forward"], sf.get("atm_iv"))
-                snaps.append(backtest.Snap(
-                    at=x.received_at, session=d_, spot=float(x.spot), skew25=skew["skew_25d"], butterfly25=skew["butterfly_25d"], atm_iv=sf.get("atm_iv"),
-                    ce25=pt["d25"]["ce"], pe25=pt["d25"]["pe"], oi_ce=oi_ce, oi_pe=oi_pe,
-                ))
-        tests = [backtest.run(snaps, h, cost_bps) for h in backtest.HYPOTHESES] if snaps else []
+        pts = [{"at": x.received_at.isoformat(), "spot": x.spot, "chain": self.obs.contracts(x.values_from)} for x in samples]
+        series = strike_positioning.basket_series(pts, n, kind)
+        label = "ATM ±" + str(n) if n is not None else "all strikes"
         out = {
-            "status": "ok" if snaps else "no stored sessions with a solvable chain for this expiry", "expiry": expiry, "sessions": days, "snapshots": len(snaps),
-            "horizon_minutes": backtest.HORIZON_MIN, "oos_share": backtest.OOS_SHARE, "min_events": backtest.MIN_EVENTS, "cost_bps": cost_bps, "tests": tests,
-            "not_testable": [{"id": i, "title": t, "reason": r} for i, t, r in backtest.NOT_TESTABLE],
-            "note": "Signals are tested against NIFTY, not against an options position: option spreads, theta and gamma are not modelled.",
+            "status": "ok" if series else "no snapshot with call and put premiums", "expiry": expiry, "session": day.isoformat(), "kind": kind, "window": n,
+            "snapshots": len(samples), "points": series, "age_seconds": round((now_t - todays[-1].received_at).total_seconds(), 1),
+            "latest_at": todays[-1].received_at.isoformat(),
+            "basket": label + (" fixed at the first snapshot ATM" if kind == "fixed" else ", recentred on each snapshot ATM"),
         }
         self._iv_cache = {key: out}
         return out
@@ -811,16 +998,34 @@ class IntradayService:
         self._iv_cache = {key: out}
         return out
 
-    def iv_skew(self, expiry: str, each_side: int = 15) -> dict[str, Any]:
-        """Smile of the latest stored chain of ``expiry`` (out-of-the-money IV by strike), skew measures, and the same
-        measures for every expiry that has a sample within 5 minutes (term view)."""
+    def expiry_sessions(self, expiry: str) -> list[str]:
+        """The sessions (IST dates) with in-session stored samples of ``expiry``, oldest first: what a comparison can be made against."""
+        now = self._clock()
+        lo = datetime.combine(now.astimezone(IST).date() - timedelta(days=120), OPEN, IST)
+        days: set[str] = set()
+        for x in self.obs.samples(self.underlying, expiry, since=lo, until=now, limit=60000):
+            t_ = x.received_at.astimezone(IST)
+            if x.spot is not None and OPEN <= t_.time() <= session_close():
+                days.add(t_.date().isoformat())
+        return sorted(days)
+
+    def iv_skew(self, expiry: str, each_side: int = 15, session: str | None = None) -> dict[str, Any]:
+        """Smile of the newest stored chain of ``expiry`` (or the last in-session chain of ``session``): out-of-the-money IV by strike,
+        skew measures, and the same measures for every expiry that has a sample within 5 minutes of it (term view). Comparing two
+        sessions always uses the same expiry: the call for each session is made with the same ``expiry``."""
         try:
             exp_d = date.fromisoformat(expiry)
         except ValueError:
             return {"status": "bad expiry", "smile": [], "term": []}
         now = self._clock()
-        start = datetime.combine(now.astimezone(IST).date(), OPEN, IST)
-        ss = self.obs.samples(self.underlying, expiry, since=start - timedelta(days=4), until=now, limit=5000)
+        if session:
+            sel = self._session_samples(expiry, session, now)
+            if "status" in sel:
+                return {"status": sel["status"], "expiry": expiry, "smile": [], "term": []}
+            ss = sel["todays"]
+        else:
+            start = datetime.combine(now.astimezone(IST).date(), OPEN, IST)
+            ss = self.obs.samples(self.underlying, expiry, since=start - timedelta(days=4), until=now, limit=5000)
         if not ss or ss[-1].spot is None:
             return {"status": "no stored option-chain sample for this expiry", "expiry": expiry, "smile": [], "term": []}
         latest = ss[-1]
@@ -853,7 +1058,7 @@ class IntradayService:
             "status": "ok", "expiry": expiry, "at": at.isoformat(), "age_seconds": round((now - at).total_seconds(), 1),
             "spot": latest.spot, "forward": sf["forward"], "atm_strike": sf["atm_strike"], "atm_iv": sf.get("atm_iv"),
             "days": sf.get("time_to_expiry_days"), "cards": {**cards, "term_slope_per_30d": term_slope},
-            "smile": smile, "term": term, "term_structure": structure,
+            "smile": smile, "term": term, "term_structure": structure, "session": sday.isoformat(), "sessions": self.expiry_sessions(expiry),
             "model": "Black-76; forward from put-call parity", "rate_assumed": self.risk_free_rate,
         }
 

@@ -36,4 +36,21 @@ describe("Market Structure", () => {
     expect(cards).toContain("India VIX15.00%");
     expect(cards).toContain("HV 1M11.00%");
   });
+  it("includes the GEX-price relationship from one universe, and an amplifying relationship with a real move reads as amplification", async () => {
+    const mkp = (min: number, spot: number, net: number) => ({ at: `2026-11-09T09:${String(15 + min).padStart(2, "0")}:00+05:30`, spot, ce: 150, pe: -100, net, abs: 250, flip: 23900, near_net: -8, call_wall: 24100, put_wall: 23900, peak: 24000, used: 21 });
+    const gexh = { status: "ok", expiry: "2026-11-10", session: "2026-11-09", universe: "dynamic", points: [mkp(0, 24000, 100), mkp(5, 24020, 90), mkp(10, 24050, 70), mkp(15, 24072, 40)], skipped: [], units: "" };
+    const routes: Record<string, unknown> = { "/api/intraday/iv-skew": skew, "/api/intraday/iv-momentum": mom, "/api/intraday/strike-positioning": pos, "/api/intraday/iv-chart": chart, "/api/intraday/gex-history": gexh };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => { const u = String(input); const hit = Object.entries(routes).find(([k]) => u.startsWith(k)); return new Response(JSON.stringify(hit ? hit[1] : {}), { status: hit ? 200 : 404 }); }));
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MarketStructureBody expiry="2026-11-10" /></QueryClientProvider>);
+    // NIFTY +0.3 % over the 15 minutes while net GEX falls 100 -> 40 (-60 %): amplifying; spot moved >= 0.1 %
+    expect((await screen.findByTestId("ms-regime")).textContent).toBe("Negative gamma / momentum amplification");
+    const view = screen.getByTestId("ms-gexview").textContent!;
+    expect(view).toContain("dynamic ATM ±10");
+    expect(view).toContain("−60.00 cr");
+    expect(view).toContain("−60.0%");
+    expect(view).toContain("Near-ATM net GEX−8.00"); // ATM ±5
+    expect(screen.getByTestId("ms-relationship").textContent).toContain("NIFTY up while net GEX becomes more negative: potentially amplifying.");
+    expect(screen.getByTestId("ms-relationship").textContent).toContain("not guaranteed dealer hedging");
+    expect(screen.getByTestId("ms-support").textContent).toContain("could amplify");
+  });
 });

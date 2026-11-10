@@ -36,3 +36,17 @@ def test_missing_iv_is_not_zero_and_one_expiry_gives_no_slope() -> None:
     out = term_structure([row("a", 5, None), row("b", 35, 15.0)])
     assert out["slope_per_30d"] is None and out["shape"] is None
     assert {"expiry": "a", "reason": "no solved ATM IV"} in out["left_out"]
+
+
+def test_every_series_gets_its_own_slope_with_consistent_expiry_matching() -> None:
+    term = [
+        {"expiry": "a", "days": 5.0, "atm_iv": 14.0, "call_25d_iv": 13.0, "put_25d_iv": 15.5, "call_10d_iv": 12.0, "put_10d_iv": 17.0, "skew_25d": 2.5, "skew_10d": 5.0},
+        {"expiry": "b", "days": 35.0, "atm_iv": 15.0, "call_25d_iv": 14.5, "put_25d_iv": 16.0, "call_10d_iv": None, "put_10d_iv": 17.5, "skew_25d": 1.5, "skew_10d": None},
+    ]
+    s = term_structure(term)["series"]
+    assert s["atm_iv"]["slope_per_30d"] == pytest.approx(1.0)  # (15 - 14) / 30 x 30
+    assert s["call_25d_iv"]["slope_per_30d"] == pytest.approx(1.5) and s["put_25d_iv"]["slope_per_30d"] == pytest.approx(0.5)
+    assert s["put_10d_iv"]["slope_per_30d"] == pytest.approx(0.5) and s["skew_25d"]["slope_per_30d"] == pytest.approx(-1.0)
+    assert s["call_10d_iv"]["slope_per_30d"] is None and {"expiry": "b", "reason": "no call 10d iv"} in s["call_10d_iv"]["left_out"]  # missing, not zero
+    assert s["call_25d_iv"]["difference"] == pytest.approx(1.5) and s["call_25d_iv"]["near"]["value"] == 13.0
+    assert term_structure(term)["slope_per_30d"] == s["atm_iv"]["slope_per_30d"]  # the original top-level fields still equal the ATM series

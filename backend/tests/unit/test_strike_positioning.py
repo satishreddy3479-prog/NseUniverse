@@ -96,3 +96,21 @@ def test_demand_needs_enough_evidence_and_names_what_it_rests_on() -> None:
     assert pe["label"] == "Downside speculation" and pe["evidence"]["score"] == 5 and "NIFTY falling" in pe["evidence"]["met"]
     assert out[("CE", "otm")]["label"] == "INSUFFICIENT EVIDENCE"  # call strikes are not out of the money here: nothing to judge
     assert out[("PE", "deep")]["label"] == "INSUFFICIENT EVIDENCE" and out[("PE", "deep")]["summary"]["strikes"] == 0
+
+
+def test_basket_series_fixed_keeps_the_opening_strikes_and_dynamic_recentres() -> None:
+    def pt(spot: float, ce: dict[float, float], pe: dict[float, float]) -> dict[str, object]:
+        chain = {(k, CALL): C(v, 1, 1, 1) for k, v in ce.items()} | {(k, PUT): C(v, 1, 1, 1) for k, v in pe.items()}
+        return {"at": "t", "spot": spot, "chain": chain}
+
+    ks = [100.0, 110.0, 120.0, 130.0, 140.0]
+    p0 = pt(120.0, dict(zip(ks, [30, 22, 15, 9, 5], strict=True)), dict(zip(ks, [1, 3, 8, 14, 21], strict=True)))
+    p1 = pt(130.0, dict(zip(ks, [33, 24, 17, 11, 6], strict=True)), dict(zip(ks, [1, 2, 5, 9, 15], strict=True)))
+    fixed = sp.basket_series([p0, p1], 1, "fixed")  # strikes 110, 120, 130 all session
+    assert (fixed[0]["ce"], fixed[0]["pe"]) == (46, 25) and (fixed[1]["ce"], fixed[1]["pe"]) == (52, 16)
+    assert fixed[1]["ce_change"] == 6 and fixed[1]["pe_change"] == -9 and fixed[1]["asymmetry"]["ratio"] == pytest.approx(1.5)
+    assert fixed[1]["ce_pct"] == pytest.approx(13.0435, abs=1e-3) and fixed[1]["ce_idx"] == pytest.approx(113.0435, abs=1e-3)
+    dyn = sp.basket_series([p0, p1], 1, "dynamic")  # second point recentres on 130: strikes 120, 130, 140
+    assert dyn[1]["ce"] == 17 + 11 + 6 and dyn[1]["strikes"] == 3
+    assert dyn[1]["ce_idx"] == pytest.approx((34 / 3) / (46 / 3) * 100, abs=1e-3)  # index on the mean premium per strike, not the total
+    assert sp.basket_series([p0], None, "fixed")[0]["strikes"] == 5  # all strikes

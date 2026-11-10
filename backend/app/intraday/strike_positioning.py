@@ -204,3 +204,57 @@ def asymmetry(ce: Mapping[str, Any], pe: Mapping[str, Any]) -> dict[str, Any]:
     if abs(dc) < base * MIN_BASE_PCT / 100:
         return {"ratio": None, "note": f"call premium change below {MIN_BASE_PCT}% of the call basket: ratio not meaningful"}
     return {"ratio": round(abs(dp) / abs(dc), 4), "note": None}
+
+
+def _nearest(strikes: Sequence[float], x: float) -> float | None:
+    return min(strikes, key=lambda k: (abs(k - x), k)) if strikes else None
+
+
+def _window_of(strikes: Sequence[float], centre: float, n: int | None) -> set[float]:
+    ks = sorted(set(strikes))
+    if n is None or not ks:
+        return set(ks)
+    i = min(range(len(ks)), key=lambda j: (abs(ks[j] - centre), ks[j]))
+    return set(ks[max(0, i - n): i + n + 1])
+
+
+def basket_series(points: Sequence[Mapping[str, Any]], n: int | None, kind: str) -> list[dict[str, Any]]:
+    """Aggregate call and put premium of a basket at every snapshot of a session, and what changed since the first one.
+    ``points`` are ``{at, spot, chain}`` in time order. ``fixed``: the ATM +/- n strikes of the first snapshot, kept all session;
+    ``dynamic``: ATM +/- n re-chosen around each snapshot's own spot (the strike set changes as NIFTY moves). Only strikes with a
+    premium count; the number counted is returned. Normalised index = 100 x total / first total for the fixed basket and
+    100 x mean premium per strike / first mean for the dynamic one (a mean, so a change of strikes does not look like a change of price).
+    Asymmetry = |PE change since the first snapshot| / |CE change|, missing when the CE change is insignificant."""
+    out: list[dict[str, Any]] = []
+    first: dict[str, Any] | None = None
+    fixed_set: set[float] | None = None
+    for p in points:
+        chain = p["chain"]
+        strikes = sorted({k for k, _ in chain})
+        if not strikes or p.get("spot") is None:
+            continue
+        centre = _nearest(strikes, p["spot"]) or p["spot"]
+        if kind == "fixed":
+            if fixed_set is None:
+                fixed_set = _window_of(strikes, centre, n)
+            chosen = fixed_set
+        else:
+            chosen = _window_of(strikes, centre, n)
+        row: dict[str, Any] = {"at": p["at"], "spot": p["spot"], "strikes": len(chosen)}
+        for side, name in ((CALL, "ce"), (PUT, "pe")):
+            prem = [chain[(k, side)].ltp for k in chosen if (k, side) in chain and chain[(k, side)].ltp is not None]
+            row[name] = float(sum(prem)) if prem else None
+            row[f"{name}_n"] = len(prem)
+            row[f"{name}_mean"] = float(sum(prem)) / len(prem) if prem else None
+        if first is None and row["ce"] is not None and row["pe"] is not None:
+            first = row
+        base = "" if kind == "fixed" else "_mean"
+        for name in ("ce", "pe"):
+            b, v = (first or {}).get(f"{name}{base}"), row.get(f"{name}{base}")
+            row[f"{name}_idx"] = None if not b or v is None else round(v / b * 100, 3)
+            tb, tv = (first or {}).get(name), row[name]
+            row[f"{name}_change"] = None if tb is None or tv is None else round(tv - tb, 4)
+            row[f"{name}_pct"] = None if not tb or tv is None else round((tv / tb - 1) * 100, 4)
+        row["asymmetry"] = asymmetry({"change": row["ce_change"], "then": (first or {}).get("ce")}, {"change": row["pe_change"]})
+        out.append(row)
+    return out

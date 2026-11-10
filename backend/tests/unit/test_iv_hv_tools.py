@@ -263,7 +263,65 @@ def test_strike_positioning_service_compares_with_an_earlier_snapshot(tmp_path: 
 def test_backtest_service_reports_insufficient_sample_instead_of_a_result(tmp_path: Path) -> None:
     out = make(tmp_path, 30, 30).backtest(EXP, 5)
     assert out["status"] in ("ok", "no stored sessions with a solvable chain for this expiry")
-    assert len(out["not_testable"]) == 4
+    assert len(out["not_testable"]) == 1 and out["universe"] == "dynamic" and set(out["reconstruction"]["snapshots_with"]) >= {"net", "flip", "call_wall", "put_wall", "peak", "near_net"}
+    assert out["timing"]["total_ms"] >= 0 and len(out["tests"]) in (0, 16)
     for t in out["tests"]:
         assert t["status"].startswith("insufficient") or t["status"] == "ok"
         assert t["out_of_sample"]["events"] < 20  # a single synthetic session cannot support a result
+
+
+def test_gex_history_service_rebuilds_the_gex_at_each_snapshot(tmp_path: Path) -> None:
+    out = make(tmp_path, 30, 30).gex_history(EXP)
+    assert out["status"] == "ok" and out["universe"] == "dynamic" and len(out["points"]) >= 5
+    p = out["points"][-1]
+    assert {"net", "abs", "ce", "pe", "flip", "call_wall", "put_wall", "peak", "near_net"} <= set(p)
+    assert p["ce"] is not None and p["ce"] > 0 and p["pe"] is not None and p["pe"] < 0  # calls positive, puts negative
+    assert p["net"] == pytest.approx(p["ce"] + p["pe"], rel=1e-6, abs=1e-6)  # every strike of this chain has both sides, so net is the sum of the two totals
+    assert p["abs"] == pytest.approx(p["ce"] - p["pe"], rel=1e-6)
+    full = make(tmp_path / "f", 30, 30).gex_history(EXP, universe="full")
+    assert full["points"][-1]["ce"] != p["ce"]  # the full chain holds more strikes than the dynamic ATM ±10 set
+    assert make(tmp_path / "x", 30, 30).gex_history(EXP, universe="bogus")["status"] == "bad universe"
+    assert make(tmp_path / "y", 30, 30).gex_history(EXP, session="2026-01-01")["status"] == "no stored session"
+
+
+def test_large_backtests_run_as_one_background_job_and_report_progress(tmp_path: Path) -> None:
+    import time as t_
+
+    svc = make(tmp_path, 30, 30)
+    svc.SYNC_SNAPSHOTS = 1  # force the job path
+    first = svc.backtest(EXP, 5)
+    assert first["status"] == "computing" and first["progress"]["total"] >= 1
+    other = svc.backtest(EXP, 5, cost_bps=7.0)
+    assert other["status"] in ("busy", "computing", "ok")  # a second large run is refused while one is running, or served from the cache
+    for _ in range(100):
+        out = svc.backtest(EXP, 5)
+        if out["status"] != "computing":
+            break
+        t_.sleep(0.1)
+    assert out["status"] == "ok" and out["timing"]["computed"] >= 1
+    again = svc.backtest(EXP, 5)
+    assert again is out  # the finished result is reused as it is, not recomputed
+    svc2_cached = svc.backtest(EXP, 5, cost_bps=7.0)
+    assert svc2_cached["status"] == "ok" and svc2_cached["timing"].get("cached", 0) >= 1 and svc2_cached["timing"].get("computed", 0) == 0  # new cost, same features: nothing is recomputed
+
+
+def test_iv_skew_for_a_chosen_session_lists_the_sessions_available_for_comparison(tmp_path: Path) -> None:
+    svc = make(tmp_path, 30, 30)
+    now = svc.iv_skew(EXP)
+    assert now["session"] == "2026-10-29" and now["sessions"] == ["2026-10-29"]
+    named = svc.iv_skew(EXP, session="2026-10-29")
+    assert named["status"] == "ok" and named["smile"] == now["smile"]  # the same session's last chain is the same smile
+    assert svc.iv_skew(EXP, session="2026-10-01")["status"] == "no stored option-chain sample for this expiry"
+    assert svc.expiry_sessions(EXP) == ["2026-10-29"] and svc.expiry_sessions("2026-12-31") == []
+
+
+def test_the_backtest_queries_use_the_existing_indexes(tmp_path: Path) -> None:
+    """No new index is needed: the sample lookup and the per-sample contract read are index searches, not table scans."""
+    obs = make(tmp_path, 5, 5).obs
+    plans = [
+        obs._db.execute("EXPLAIN QUERY PLAN SELECT sample_id, received_ms, spot_p FROM samples WHERE underlying=? AND expiry=? AND received_ms>=? AND received_ms<=? ORDER BY received_ms DESC, sample_id DESC LIMIT 100", ("NIFTY", EXP, 0, 10**15)).fetchall(),
+        obs._db.execute("EXPLAIN QUERY PLAN SELECT strike, side, ltp_p, oi, oi_prev, volume FROM contracts WHERE sample_id=?", (1,)).fetchall(),
+    ]
+    text = [" ".join(str(c) for r in p for c in r) for p in plans]
+    assert "ix_samples_lookup" in text[0] and "SCAN samples" not in text[0]
+    assert "SEARCH contracts" in text[1] and "SCAN contracts" not in text[1]

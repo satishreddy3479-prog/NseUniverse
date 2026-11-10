@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { MISSING } from "../lib/format";
 import { METRICS } from "../lib/metricRegistry";
 import type { BacktestResult, BacktestSide } from "../lib/types";
+import { GexHistoryChart } from "./GexHistoryChart";
 import { MethodologyPanel } from "./MethodologyPanel";
 
 const f = (v: number | null | undefined, d = 3) => (v == null ? MISSING : v.toFixed(d));
@@ -28,6 +29,15 @@ export function backtestExample(tests: BacktestResult[]): string[] {
 }
 
 function Side({ s, directional }: { s: BacktestSide; directional: boolean }) {
+  if (s.correlation !== undefined) {
+    return (
+      <>
+        <td className="num px-2 py-1.5 text-right">{s.events}</td><td className="px-2 py-1.5 text-right text-muted">—</td>
+        <td className="num px-2 py-1.5 text-right" title="Pearson correlation of net GEX / absolute GEX with the next-30-minute realised volatility">{s.correlation ? `r = ${s.correlation.r.toFixed(3)}` : MISSING}</td>
+        <td className="num px-2 py-1.5 text-right text-muted">{s.correlation ? ci(s.correlation.ci95, 3) : MISSING}</td><td className="px-2 py-1.5 text-right text-muted">—</td><td className="px-2 py-1.5 text-right text-muted">—</td>
+      </>
+    );
+  }
   return (
     <>
       <td className="num px-2 py-1.5 text-right">{s.events}<span className="text-muted"> / {s.others}</span></td>
@@ -54,11 +64,26 @@ function Side({ s, directional }: { s: BacktestSide; directional: boolean }) {
 export function SignalBacktestBody({ expiry }: { expiry: string | null }) {
   const [sessions, setSessions] = useState(15);
   const [cost, setCost] = useState(5);
-  const q = useQuery({ queryKey: ["backtest", expiry, sessions, cost], queryFn: () => api.intradayBacktest(expiry!, sessions, cost), enabled: !!expiry, staleTime: 120_000, retry: false });
+  const [universe, setUniverse] = useState<"fixed" | "dynamic" | "full">("dynamic");
+  const q = useQuery({
+    queryKey: ["backtest", expiry, sessions, cost, universe], queryFn: () => api.intradayBacktest(expiry!, sessions, cost, universe), enabled: !!expiry, staleTime: 120_000, retry: false,
+    refetchInterval: (query) => (query.state.data?.status === "computing" ? 1500 : false), // a large run reports progress until it is done
+  });
   if (!expiry) return <p className="text-sm text-muted">Waiting for the expiry list from the broker.</p>;
   if (q.isLoading) return <div className="h-40 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading (the test reads every stored chain of the sessions: it can take a while)" />;
   if (q.isError || !q.data) return <p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down">The backtest could not be run: {q.error instanceof Error ? q.error.message : "unknown error"}.</p>;
   const d = q.data;
+  if (d.status === "computing" || d.status === "busy") {
+    const p = d.progress;
+    const pct = p && p.total > 0 ? Math.round((p.done / p.total) * 100) : 0;
+    return (
+      <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-4 text-sm" data-testid="bt-progress" role="status">
+        {d.status === "busy" ? <p className="text-warn">{d.message}</p> : <p className="text-paper">Rebuilding the stored chains of {sessions} sessions (volatility, GEX and flip at each 5-minute snapshot): {p ? `${p.done} of ${p.total} snapshots, ${pct}%` : "starting"}.</p>}
+        <div className="mt-2 h-2 w-full max-w-md rounded-sm bg-slate-2"><div className="h-2 rounded-sm bg-brass" style={{ width: `${pct}%` }} /></div>
+        <p className="mt-2 text-xs text-muted">This runs once on the server and is then reused: a repeat request, or a different cost or universe, answers from the saved features. Only one large run executes at a time.</p>
+      </div>
+    );
+  }
   const th = "px-2 py-1.5 text-right font-normal";
   return (
     <div className="flex flex-col gap-3" data-testid="bt-tool">
@@ -66,6 +91,7 @@ export function SignalBacktestBody({ expiry }: { expiry: string | null }) {
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
           <span>Expiry {d.expiry} · {d.sessions.length} stored sessions · {d.snapshots} five-minute snapshots · horizon {d.horizon_minutes} min · last {Math.round(d.oos_share * 100)}% of sessions out-of-sample</span>
           <label className="flex items-center gap-1">Sessions<select aria-label="Sessions" value={sessions} onChange={(e) => setSessions(Number(e.target.value))} className="min-h-8 rounded-sm border border-rule bg-slate-2 px-1 text-paper">{[5, 10, 15, 30, 60].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
+          <label className="flex items-center gap-1">GEX universe<select aria-label="GEX universe" value={universe} onChange={(e) => setUniverse(e.target.value as typeof universe)} className="min-h-8 rounded-sm border border-rule bg-slate-2 px-1 text-paper"><option value="fixed">Fixed opening ATM ±10</option><option value="dynamic">Dynamic ATM ±10</option><option value="full">Full chain</option></select></label>
           <label className="flex items-center gap-1">Round-trip cost (bps of NIFTY)<select aria-label="Cost" value={cost} onChange={(e) => setCost(Number(e.target.value))} className="min-h-8 rounded-sm border border-rule bg-slate-2 px-1 text-paper">{[0, 2, 5, 10, 20].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
         </div>
         <p className="mt-2 text-xs text-warn" data-testid="bt-note">{d.note}</p>
@@ -92,10 +118,19 @@ export function SignalBacktestBody({ expiry }: { expiry: string | null }) {
           <p className="mt-2 text-[11px] text-muted">Returns are percent of NIFTY. A row with fewer than {d.min_events} out-of-sample events is marked insufficient: its numbers are shown but do not support a conclusion.</p>
         </div>
       )}
+      {d.reconstruction && (
+        <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3" data-testid="bt-recon">
+          <h2 className="mb-1 text-sm font-semibold text-paper">Reconstruction and missing data ({d.universe} universe)</h2>
+          <p className="text-xs text-muted">{d.snapshots} snapshots solved. Snapshots with each GEX metric: {Object.entries(d.reconstruction.snapshots_with).map(([k, v]) => `${k.replace("_", " ")} ${v}`).join(" · ")}. A level missing at a snapshot (for example no gamma flip within ±8 %, or no put wall because every strike is above spot) stays missing and is not carried forward.</p>
+          {Object.keys(d.reconstruction.snapshots_skipped).length > 0 && <p className="mt-1 text-xs text-warn" data-testid="bt-skipped">Snapshots skipped: {Object.entries(d.reconstruction.snapshots_skipped).map(([k, v]) => `${v} (${k})`).join("; ")}.</p>}
+          {d.timing && <p className="mt-1 text-[11px] text-muted">Server work: {Math.round(d.timing.total_ms ?? 0)} ms · {d.timing.computed ?? 0} snapshots computed, {d.timing.cached ?? 0} reused.</p>}
+        </div>
+      )}
+      {expiry && <GexHistoryChart expiry={expiry} universe={universe} />}
       <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
         <h2 className="mb-1 text-sm font-semibold text-paper">Not testable with the data stored today</h2>
         <ul className="list-disc pl-5 text-xs text-muted" data-testid="bt-untestable">{d.not_testable.map((n) => <li key={n.id}><span className="text-paper">{n.title}</span>: {n.reason}</li>)}</ul>
-        <MethodologyPanel metrics={[METRICS.backtest_construction!, METRICS.backtest_metrics!]} example={backtestExample(d.tests)}
+        <MethodologyPanel metrics={[METRICS.backtest_construction!, METRICS.backtest_metrics!, METRICS.gex_reconstruction!]} example={backtestExample(d.tests)}
           freshness={{ updatedAt: d.sessions.length ? d.sessions[d.sessions.length - 1]! : null, session: d.sessions.length ? `${d.sessions[0]} to ${d.sessions[d.sessions.length - 1]}` : null, expiry: d.expiry, used: d.snapshots, missing: null, timeframe: `5-minute snapshots, ${d.horizon_minutes}-minute forward window, cost ${d.cost_bps} bps` }} />
       </div>
     </div>

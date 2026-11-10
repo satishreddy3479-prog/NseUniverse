@@ -887,6 +887,7 @@ export interface SkewMeasures { skew_25d: number | null; skew_10d: number | null
 export interface IvSkew {
   status: string; expiry?: string; at?: string; age_seconds?: number; spot?: number; forward?: number; atm_strike?: number; atm_iv?: number | null; days?: number | null;
   term_structure?: TermStructure;
+  session?: string; sessions?: string[];
   cards?: SkewMeasures & { term_slope_per_30d: number | null };
   smile: { strike: number; side: "CE" | "PE"; iv: number | null; delta: number | null }[];
   term: (SkewMeasures & { expiry: string; days: number | null; atm_iv: number | null })[];
@@ -903,10 +904,16 @@ export interface IvMomentum {
   model: string; rate_assumed: number;
 }
 
+export interface TermSeries {
+  slope_per_30d: number | null; shape: "contango" | "backwardation" | "flat" | null; difference: number | null;
+  near: { expiry: string; days: number; value: number } | null; far: { expiry: string; days: number; value: number } | null;
+  pairs: { near: string; far: string; slope: number }[]; left_out: { expiry: string; reason: string }[];
+}
 export interface TermStructure {
-  slope_per_30d: number | null; shape: "contango" | "backwardation" | "flat" | null; iv_difference?: number;
+  slope_per_30d: number | null; shape: "contango" | "backwardation" | "flat" | null; iv_difference?: number | null;
   near: { expiry: string; days: number; atm_iv: number } | null; far: { expiry: string; days: number; atm_iv: number } | null;
   pairs: { near: string; far: string; slope: number }[]; left_out: { expiry: string; reason: string }[];
+  series?: Record<string, TermSeries>;
 }
 
 export interface PositioningQuote {
@@ -932,12 +939,31 @@ export interface BacktestSide {
   events: number; others: number; unavailable: number; enough: boolean;
   net_return_pct?: BacktestStats; baseline_mean_pct?: number | null;
   difference?: { diff: number | null; ci95: [number, number] | null; mean_event: number | null; mean_other: number | null };
+  correlation?: { r: number; n: number; ci95: [number, number] | null } | null;
 }
 export interface BacktestResult {
   id: string; title: string; rule: string; side: number; target: string; cost_bps: number; status: string;
   sessions: { in_sample: string[]; out_of_sample: string[] }; in_sample: BacktestSide; out_of_sample: BacktestSide;
 }
 export interface Backtest {
-  status: string; expiry: string; sessions: string[]; snapshots: number; horizon_minutes: number; oos_share: number; min_events: number; cost_bps: number;
-  tests: BacktestResult[]; not_testable: { id: string; title: string; reason: string }[]; note: string;
+  status: string; expiry: string; universe?: "fixed" | "dynamic" | "full"; sessions: string[]; snapshots: number; horizon_minutes: number; oos_share: number; min_events: number; cost_bps: number;
+  tests: BacktestResult[]; not_testable: { id: string; title: string; reason: string }[]; note: string; message?: string;
+  progress?: { done: number; total: number; uncached?: number };
+  reconstruction?: { snapshots_with: Record<string, number>; snapshots_skipped: Record<string, number>; opening_atm: Record<string, number | null> };
+  timing?: Record<string, number>;
+}
+export interface GexHistoryPoint { at: string; spot: number; ce: number | null; pe: number | null; net: number | null; abs: number | null; flip: number | null; near_net: number | null; call_wall: number | null; put_wall: number | null; peak: number | null; used: number | null }
+export interface GexHistory {
+  status: string; expiry: string; session?: string; universe: "fixed" | "dynamic" | "full"; sessions?: string[]; opening_atm?: number | null;
+  points: GexHistoryPoint[]; skipped?: { at: string; reason: string }[]; timing?: Record<string, number>; units?: string;
+}
+
+export interface PremiumBasketPoint {
+  at: string; spot: number; strikes: number; ce: number | null; pe: number | null; ce_n: number; pe_n: number; ce_mean: number | null; pe_mean: number | null;
+  ce_idx: number | null; pe_idx: number | null; ce_change: number | null; pe_change: number | null; ce_pct: number | null; pe_pct: number | null;
+  asymmetry: { ratio: number | null; note: string | null };
+}
+export interface PremiumBaskets {
+  status: string; expiry: string; session: string; kind: "fixed" | "dynamic"; window: number | null; snapshots: number; points: PremiumBasketPoint[];
+  age_seconds: number; latest_at: string; basket: string;
 }

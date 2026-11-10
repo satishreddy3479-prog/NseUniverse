@@ -2,8 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { api } from "../lib/api";
 import { fmtInt, MISSING } from "../lib/format";
-import { fmtCrore } from "../lib/gammaAnalysis";
-import { gexUniverses } from "../lib/gexIntel";
+import { fmtCrore, type StructurePoint } from "../lib/gammaAnalysis";
+import { gexPriceDivergence, gexUniverses } from "../lib/gexIntel";
 import { rankAt } from "../lib/ivChart";
 import { METRICS } from "../lib/metricRegistry";
 import { classifyRegime, type RegimeInputs, type RegimeResult } from "../lib/regime";
@@ -29,6 +29,9 @@ export function MarketStructureBody({ expiry }: { expiry: string | null }) {
   const skew = useQuery({ queryKey: ["ivSkew", expiry], queryFn: () => api.intradayIvSkew(expiry!), ...on });
   const mom = useQuery({ queryKey: ["ivMomentum", expiry, 1], queryFn: () => api.intradayIvMomentum(expiry!, 1), ...on });
   const pos = useQuery({ queryKey: ["strikePos", expiry, "15"], queryFn: () => api.intradayStrikePositioning(expiry!, "15"), ...on });
+  // GEX inputs of the regime come from ONE universe (the dynamic ATM ±10 rebuild of the stored chains), the same series for the level, the
+  // change, the flip, the near-ATM figure and the GEX-price relationship
+  const gexh = useQuery({ queryKey: ["gexHistory", expiry, "dynamic"], queryFn: () => api.intradayGexHistory(expiry!, "dynamic"), ...on });
   const chart = useQuery({ queryKey: ["ivchart", 21], queryFn: () => api.intradayIvChart(21), refetchInterval: 300_000, retry: false });
   if (!expiry) return <p className="text-sm text-muted">Waiting for the expiry list from the broker.</p>;
   if ([skew, mom, pos, chart].every((q) => q.isLoading)) return <div className="h-40 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading" />;
@@ -45,13 +48,18 @@ export function MarketStructureBody({ expiry }: { expiry: string | null }) {
     return gexUniverses(dash.rows, spot, expiry, Date.parse(dash.snapshot!.retrieved_at) || marketClockMs(Date.now()), null, 10);
   })() : [];
   const full = gex.find((u) => u.id === "full"), dyn = gex.find((u) => u.id === "dynamic");
+  const gh = gexh.data?.status === "ok" && Array.isArray(gexh.data.points) ? gexh.data.points : [];
+  const ghPts: StructurePoint[] = gh.map((p) => ({ t: Date.parse(p.at), spot: p.spot, net: p.net, peak: p.peak, callWall: p.call_wall, putWall: p.put_wall, flip: p.flip, roc: null }));
+  const div = ghPts.length >= 2 ? gexPriceDivergence(ghPts, 15) : null;
+  const ghLast = gh[gh.length - 1] ?? null;
   const atmChg = m15 && m15.atm.ce_change != null && m15.atm.pe_change != null ? (m15.atm.ce_change + m15.atm.pe_change) / 2 : null;
   const demandMap: RegimeInputs["demand"] = p && p.demand.length ? Object.fromEntries(p.demand.map((x) => [`${x.side}:${x.group}`, x.label])) : null;
   const inputs: RegimeInputs = {
     spotPct: m15?.spot_change_pct ?? null, atmIvChange: atmChg, momentum25: m15?.d25.momentum ?? null,
     skew25: sk?.cards?.skew_25d ?? null, butterfly25: sk?.cards?.butterfly_25d ?? null, ivMinusHv: iv != null && hv != null ? iv - hv : null,
-    demand: demandMap, netGex: dyn?.levels.netTotal ?? null, flip: dyn?.levels.flip ?? null, spot: dash?.snapshot?.underlying_ltp ?? sk?.spot ?? null,
-    divergence: null,
+    demand: demandMap, netGex: ghLast?.net ?? null, flip: ghLast?.flip ?? null, spot: ghLast?.spot ?? dash?.snapshot?.underlying_ltp ?? sk?.spot ?? null,
+    divergence: div?.kind ?? null, divergenceLabel: div?.label ?? null, gexNetChange: div?.netChange ?? null, gexNetPct: div?.netChangePct ?? null,
+    universe: ghLast ? "dynamic ATM ±10 (rebuilt from stored chains)" : null, nearAtmNet: ghLast?.near_net ?? null,
   };
   const r: RegimeResult = classifyRegime(inputs);
   const warn: string[] = [];
@@ -61,7 +69,8 @@ export function MarketStructureBody({ expiry }: { expiry: string | null }) {
   if (!ch) warn.push("IV, HV and RV history not loaded.");
   if (!dash || gex.length === 0) warn.push("GEX needs the option chain: open this page from the Options menu with a stored chain.");
   if ((skew.data?.age_seconds ?? 0) > 300) warn.push(`The newest stored chain is ${Math.round((skew.data?.age_seconds ?? 0) / 60)} minutes old.`);
-  warn.push("GEX-price divergence is on the Intraday GEX section and is not part of this score.");
+  if (!ghLast) warn.push(`GEX history: ${gexh.data?.status ?? "not loaded"}; the GEX and GEX-price conditions are not evaluable.`);
+  else if (!div || div.kind === "unavailable") warn.push(`GEX-price relationship: ${div?.label ?? "needs at least two rebuilt snapshots"}.`);
   const tone = r.regime.includes("Bullish") ? "text-up" : r.regime.includes("Bearish") ? "text-down" : r.regime.includes("Negative") || r.regime.includes("Uncertainty") ? "text-warn" : "text-paper";
   const example = [
     `Evaluable conditions: ${r.evidence.filter((e) => e.met !== null).length} of ${r.evidence.length}; bull met ${r.evidence.filter((e) => e.side === "bull" && e.met).length} of ${r.evidence.filter((e) => e.side === "bull" && e.met !== null).length}, bear met ${r.evidence.filter((e) => e.side === "bear" && e.met).length} of ${r.evidence.filter((e) => e.side === "bear" && e.met !== null).length}`,
@@ -79,6 +88,15 @@ export function MarketStructureBody({ expiry }: { expiry: string | null }) {
           <Card label="Upside demand score" value={r.upsideScore == null ? MISSING : r.upsideScore} sub="share of upside conditions met (index)" /><Card label="Downside demand score" value={r.downsideScore == null ? MISSING : r.downsideScore} sub="share of downside conditions met (index)" />
           <Card label="Market stability score" value={r.stabilityScore == null ? MISSING : r.stabilityScore} sub="positive GEX, calm IV, flat NIFTY (index)" />
         </div>
+        <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6" data-testid="ms-gexview">
+          <Card label="GEX universe" value={<span className="text-sm">{r.gexView.universe ?? MISSING}</span>} sub="used for every GEX figure here" />
+          <Card label="NIFTY change (15 min)" value={`${sg(r.gexView.spotPct)}%`} />
+          <Card label="Net GEX change" value={r.gexView.netChange == null ? MISSING : `${sg(r.gexView.netChange)} cr`} sub={`${sg(r.gexView.netPct, 1)}%`} />
+          <Card label="Gamma regime" value={r.gexView.gammaRegime} sub="net GEX sign, model assumption" />
+          <Card label="Flip distance" value={r.gexView.flipDistancePct == null ? MISSING : `${sg(r.gexView.flipDistancePct)}%`} sub={inputs.flip == null ? "no flip within ±8%" : `flip ${fmtInt(Math.round(inputs.flip))}`} />
+          <Card label="Near-ATM net GEX" value={fmtCrore(r.gexView.nearAtmNet)} sub="ATM ±5, ₹ crore" />
+        </div>
+        <p className="mt-1 text-xs text-muted" data-testid="ms-relationship">GEX-price relationship: {r.gexView.relationship ?? MISSING} This is a description of two series, not guaranteed dealer hedging behaviour.</p>
         <div className="mt-2 grid gap-2 text-xs md:grid-cols-3">
           <div data-testid="ms-support"><div className="font-semibold text-paper">Supporting evidence</div><ul className="list-disc pl-5 text-muted">{r.supporting.length ? r.supporting.map((t) => <li key={t}>{t}</li>) : <li>none</li>}</ul></div>
           <div data-testid="ms-contra"><div className="font-semibold text-paper">Contradicting evidence</div><ul className="list-disc pl-5 text-muted">{r.contradicting.length ? r.contradicting.map((t) => <li key={t}>{t}</li>) : <li>none</li>}</ul></div>

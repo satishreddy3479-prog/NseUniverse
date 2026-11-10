@@ -70,14 +70,27 @@ def implied_vol(side: int, mkt: float | None, f: float, k: float, t: float, r: f
     lo, hi = 1e-4, MAX_IV  # beyond 300 % the price is a stale or bad quote, not a volatility
     if price(side, f, k, t, hi, r) < mkt:
         return None
+    # safeguarded Newton: a bracket [lo, hi] is kept and narrowed every step, and a Newton step that leaves it (or a vanishing vega) is
+    # replaced by bisection, so it always converges to the same root as plain bisection (to 1e-8) in a handful of iterations
+    sigma = min(max(math.sqrt(2 * abs(math.log(f / k)) / t) if abs(math.log(f / k)) > 1e-12 else 0.2, 0.05), 1.5)
+    sqrt_t = math.sqrt(t)
     for _ in range(100):
-        mid = (lo + hi) / 2
-        if price(side, f, k, t, mid, r) < mkt:
-            lo = mid
+        p_ = price(side, f, k, t, sigma, r)
+        if p_ < mkt:
+            lo = sigma
         else:
-            hi = mid
+            hi = sigma
         if hi - lo < 1e-8:
             break
+        v = sigma * sqrt_t
+        d1 = (math.log(f / k) + 0.5 * v * v) / v
+        vega = df * f * _pdf(d1) * sqrt_t
+        nxt = sigma - (p_ - mkt) / vega if vega > 1e-12 else lo - 1
+        if not lo < nxt < hi:
+            nxt = (lo + hi) / 2
+        if abs(nxt - sigma) < 1e-10:
+            return nxt
+        sigma = nxt
     return (lo + hi) / 2
 
 
@@ -221,31 +234,47 @@ MIN_TERM_DAYS = 0.5
 FLAT_TERM_SLOPE = 0.5
 
 
-def iv_term_structure(term: Sequence[dict[str, Any]]) -> dict[str, Any]:
-    """Term structure of ATM IV across the expiries of one moment (rows with ``expiry``, ``days``, ``atm_iv``, sorted by days).
-    Term slope = (IV_far - IV_near) / (DTE_far - DTE_near) * 30 in IV points per 30 days, between the nearest and the farthest expiry
-    that has an IV and at least ``MIN_TERM_DAYS`` left; ``pairs`` gives the same slope between each neighbouring pair. Contango when
-    the slope is above ``FLAT_TERM_SLOPE``, backwardation when below minus it, otherwise flat. Mirrors the registry entry ``term_slope``."""
-    usable = [t for t in term if t.get("atm_iv") is not None and t.get("days") is not None]
+TERM_KEYS = ("atm_iv", "call_25d_iv", "put_25d_iv", "call_10d_iv", "put_10d_iv", "skew_25d", "skew_10d")
+
+
+def _term_series(term: Sequence[dict[str, Any]], key: str) -> dict[str, Any]:
+    """Slope of one series (``key``) across expiries: (far - near) / (DTE_far - DTE_near) x 30 between the nearest and the farthest
+    expiry that has that value and at least ``MIN_TERM_DAYS`` left; ``pairs`` is the same slope between neighbouring expiries."""
+    usable = [t for t in term if t.get(key) is not None and t.get("days") is not None]
     used = [t for t in usable if t["days"] >= MIN_TERM_DAYS]
     left_out = [{"expiry": t["expiry"], "reason": f"{t['days']:.2f} days left: expiry-day effects"} for t in usable if t["days"] < MIN_TERM_DAYS]
-    left_out += [{"expiry": t["expiry"], "reason": "no solved ATM IV"} for t in term if t.get("atm_iv") is None or t.get("days") is None]
+    left_out += [{"expiry": t["expiry"], "reason": "no solved ATM IV" if key == "atm_iv" else f"no {key.replace('_', ' ')}"} for t in term if t.get(key) is None or t.get("days") is None]
     pairs = [
-        {"near": a["expiry"], "far": b["expiry"], "slope": round((b["atm_iv"] - a["atm_iv"]) / (b["days"] - a["days"]) * 30, 3)}
+        {"near": a["expiry"], "far": b["expiry"], "slope": round((b[key] - a[key]) / (b["days"] - a["days"]) * 30, 3)}
         for a, b in zip(used, used[1:], strict=False) if b["days"] != a["days"]
     ]
-    out: dict[str, Any] = {"slope_per_30d": None, "shape": None, "near": None, "far": None, "pairs": pairs, "left_out": left_out}
+    out: dict[str, Any] = {"slope_per_30d": None, "shape": None, "near": None, "far": None, "difference": None, "pairs": pairs, "left_out": left_out}
     if len(used) >= 2 and used[-1]["days"] != used[0]["days"]:
         near, far = used[0], used[-1]
-        slope = round((far["atm_iv"] - near["atm_iv"]) / (far["days"] - near["days"]) * 30, 3)
+        slope = round((far[key] - near[key]) / (far["days"] - near["days"]) * 30, 3)
         out.update(
             slope_per_30d=slope,
             shape="contango" if slope > FLAT_TERM_SLOPE else "backwardation" if slope < -FLAT_TERM_SLOPE else "flat",
-            near={"expiry": near["expiry"], "days": near["days"], "atm_iv": near["atm_iv"]},
-            far={"expiry": far["expiry"], "days": far["days"], "atm_iv": far["atm_iv"]},
-            iv_difference=round(far["atm_iv"] - near["atm_iv"], 3),
+            near={"expiry": near["expiry"], "days": near["days"], "value": near[key]},
+            far={"expiry": far["expiry"], "days": far["days"], "value": far[key]},
+            difference=round(far[key] - near[key], 3),
         )
     return out
+
+
+def iv_term_structure(term: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """Term structure across the expiries of one moment (rows with ``expiry``, ``days`` and the per-expiry IV measures, sorted by days).
+    Term slope = (far - near) / (DTE_far - DTE_near) x 30, IV points per 30 days, for ATM IV (the top-level fields, kept as before) and
+    for each of ``TERM_KEYS`` under ``series`` (ATM, 25 and 10 delta call and put IV, and the 25 and 10 delta skews). Contango when a slope
+    is above ``FLAT_TERM_SLOPE``, backwardation below minus it, otherwise flat. Delta IVs are the interpolated ones of ``iv_at_delta`` at the
+    same moment for every expiry; an expiry lacking one is left out of that series only. Mirrors the registry entry ``term_slope``."""
+    series = {k: _term_series(term, k) for k in TERM_KEYS}
+    atm = series["atm_iv"]
+    shape_pts = lambda x: None if x is None else {"expiry": x["expiry"], "days": x["days"], "atm_iv": x["value"]}  # noqa: E731
+    return {
+        "slope_per_30d": atm["slope_per_30d"], "shape": atm["shape"], "near": shape_pts(atm["near"]), "far": shape_pts(atm["far"]),
+        "pairs": atm["pairs"], "left_out": atm["left_out"], "iv_difference": atm["difference"], "series": series,
+    }
 
 
 def realized_annualised(points: Sequence[tuple[datetime, float]]) -> float | None:

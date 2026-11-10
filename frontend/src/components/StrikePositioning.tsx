@@ -5,6 +5,7 @@ import { fmtInt, MISSING } from "../lib/format";
 import { METRICS } from "../lib/metricRegistry";
 import type { PositioningBasket, PositioningDemand, PositioningQuote, StrikePositioning as Pos } from "../lib/types";
 import { MethodologyPanel } from "./MethodologyPanel";
+import { PremiumBasketChart } from "./PremiumBasketChart";
 
 const WINDOWS = [["5", "5 min"], ["15", "15 min"], ["30", "30 min"], ["60", "1 hour"], ["open", "Since open"], ["prev", "Previous close"]] as const;
 const FILTERS = [["5", "ATM ±5"], ["10", "ATM ±10"], ["20", "ATM ±20"], ["all", "All"], ["d25", "25Δ band"], ["d10", "10Δ band"]] as const;
@@ -124,6 +125,7 @@ export function StrikePositioningBody({ expiry }: { expiry: string | null }) {
         <MethodologyPanel metrics={[METRICS.oi_premium_class!]} example={positioningExample(d)}
           freshness={{ updatedAt: d.at, session: d.session ?? null, expiry: d.expiry, used: rows.length, missing: d.rows.length - rows.length, timeframe: `now versus ${d.then_at ?? "(no comparison)"}; "excluded" = strikes hidden by the filter` }} />
       </div>
+      <PremiumBasketChart expiry={d.expiry} />
       <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
         <h2 className="mb-2 text-sm font-semibold text-paper">Aggregate premium: fixed and dynamic baskets, premium asymmetry</h2>
         {d.baskets.length === 0 ? <p className="text-sm text-muted" data-testid="basket-empty">No comparison snapshot, so no basket change.</p> : (

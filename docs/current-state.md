@@ -5,6 +5,9 @@ _Last updated: 2026-11-04_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Options intelligence update 2 (10 Nov 2026)
+GEX/flip history rebuilt from stored chains with five GEX backtests, smile session comparison, full 10Δ/25Δ term structure, regime with GEX-price relationship and explicit weights, aggregate premium charts (existing ones untouched), and a benchmarked, cached, job-based backtest (60 sessions cold about 56 s). Details, benchmark table and limits: [options-intelligence](options-intelligence.md) (D99). No real-history GEX backtest has run yet (one stored session locally); nothing verified on the server or visually.
+
 ## Options intelligence programme (10 Nov 2026)
 Added under Options: IV Momentum, Strike Positioning, Market Structure (regime classifier) and Signal Backtest; GEX universes, sign sensitivity, intraday dynamics and divergence on the gamma page; Calculation Methodology & Formulas panels on skew, momentum, IV/HV, positioning, GEX, regime and backtest. Details, limits and what is not built: [options-intelligence](options-intelligence.md) (D97, D98). Not verified live in market hours or visually on a phone.
 

@@ -7,6 +7,8 @@ import { marketClockMs } from "../lib/session";
 import { ivAtDelta, liveSmile, skewMeasures, skewWorkedExample, type SmileRow } from "../lib/skew";
 import { METRICS } from "../lib/metricRegistry";
 import { MethodologyPanel } from "./MethodologyPanel";
+import { SmileComparePanel, toView } from "./SmileCompare";
+import { TermStructureView } from "./TermStructureView";
 import { useLiveSpot } from "../lib/useLive";
 import { useDashOptional } from "./dashboard/DashContext";
 import { EChart, useChartColors } from "./EChart";
@@ -29,6 +31,12 @@ export function IvSkewBody({ expiry }: { expiry: string | null }) {
   const c = useChartColors();
   const [view, setView] = useState<(typeof VIEWS)[number]>("Smile");
   const q = useQuery({ queryKey: ["ivSkew", expiry], queryFn: () => api.intradayIvSkew(expiry!), enabled: !!expiry, refetchInterval: 30_000, retry: false });
+  // comparison session: the previous stored session of the same expiry unless the user picks another or none
+  const [picked, setPicked] = useState<string | null | undefined>(undefined);
+  const sessionList = q.data?.sessions ?? [];
+  const prevDefault = sessionList.length >= 2 ? sessionList[sessionList.length - 2]! : null;
+  const cmpSession = picked === undefined ? prevDefault : picked;
+  const cmpQ = useQuery({ queryKey: ["ivSkew", expiry, cmpSession], queryFn: () => api.intradayIvSkew(expiry!, cmpSession!), enabled: !!expiry && !!cmpSession && view === "Smile", staleTime: 300_000, retry: false });
   // Live: while the stream is fresh the smile and every measure are recomputed from the option chain's live prices on each tick,
   // exactly as the old skew widget did. The stored chain (a sample a minute) is the source when the stream is not live, and it
   // always supplies the term view (other expiries).
@@ -59,7 +67,8 @@ export function IvSkewBody({ expiry }: { expiry: string | null }) {
   const stale = !live && (s.age_seconds ?? 0) > 300;
   const tip = { trigger: "axis", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: number | null) => (v == null ? MISSING : `${v.toFixed(2)}%`) };
   // call and put curves on one strike axis, the spot and ATM lines, and the interpolated 25- and 10-delta points (diamonds, placed between their two strikes)
-  const strikeAxis = [...new Set(s.smile.map((p) => p.strike))].sort((x, y) => x - y);
+  const thenSmile = cmpSession && cmpQ.data?.status === "ok" ? cmpQ.data.smile : [];
+  const strikeAxis = [...new Set([...s.smile, ...thenSmile].map((p) => p.strike))].sort((x, y) => x - y);
   const smileRows: SmileRow[] = s.smile.map((p): SmileRow => ({ strike: p.strike, side: p.side, iv: p.iv, delta: p.delta ?? null, otm: true }));
   const idx = (k: number) => strikeAxis.indexOf(k);
   const nearestIdx = (v: number) => strikeAxis.reduce((best, k, i) => (Math.abs(k - v) < Math.abs(strikeAxis[best]! - v) ? i : best), 0);
@@ -79,19 +88,10 @@ export function IvSkewBody({ expiry }: { expiry: string | null }) {
         markLine: { silent: true, symbol: "none", label: { color: c.muted, fontSize: 10 }, lineStyle: { color: c.muted, type: "dashed" }, data: [{ xAxis: idx(s.atm_strike ?? NaN), label: { formatter: "ATM" } }, ...(s.spot != null ? [{ xAxis: nearestIdx(s.spot), label: { formatter: "Spot" }, lineStyle: { color: c.brass, type: "solid" } }] : [])] },
         markPoint: { symbol: "diamond", symbolSize: 11, label: { show: false }, data: deltaPoints } },
       { name: "Put IV (OTM)", type: "line", showSymbol: true, symbolSize: 5, connectNulls: false, data: strikeAxis.map((k) => s.smile.find((p) => p.strike === k && p.side === "PE")?.iv ?? null), lineStyle: { color: c.down, width: 2 }, itemStyle: { color: c.down } },
-    ],
-  };
-  const term = {
-    grid: { left: 46, right: 46, top: 36, bottom: 28 }, tooltip: { ...tip, valueFormatter: (v: number | null) => (v == null ? MISSING : v.toFixed(2)) },
-    legend: { top: 0, left: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
-    xAxis: { type: "category", data: s.term.map((t) => `${t.expiry.slice(5)} (${t.days == null ? "?" : t.days.toFixed(1)}d)`), axisLabel: { color: c.muted }, axisLine: { lineStyle: { color: c.rule } } },
-    yAxis: [
-      { type: "value", scale: true, axisLabel: { color: c.muted, formatter: "{value}%" }, splitLine: { lineStyle: { color: c.rule, opacity: 0.6 } } },
-      { type: "value", position: "right", axisLabel: { color: c.muted }, splitLine: { show: false } },
-    ],
-    series: [
-      { name: "ATM IV %", type: "line", symbolSize: 7, data: s.term.map((t) => t.atm_iv), lineStyle: { color: c.brass, width: 2 }, itemStyle: { color: c.brass } },
-      { name: "25Δ skew (pts)", type: "bar", yAxisIndex: 1, data: s.term.map((t) => t.skew_25d), itemStyle: { color: c.info }, barMaxWidth: 28 },
+      ...(thenSmile.length ? [
+        { name: `Call IV ${cmpSession}`, type: "line", showSymbol: false, connectNulls: false, data: strikeAxis.map((k) => thenSmile.find((p) => p.strike === k && p.side === "CE")?.iv ?? null), lineStyle: { color: c.up, width: 1.5, type: "dashed", opacity: 0.8 }, itemStyle: { color: c.up } },
+        { name: `Put IV ${cmpSession}`, type: "line", showSymbol: false, connectNulls: false, data: strikeAxis.map((k) => thenSmile.find((p) => p.strike === k && p.side === "PE")?.iv ?? null), lineStyle: { color: c.down, width: 1.5, type: "dashed", opacity: 0.8 }, itemStyle: { color: c.down } },
+      ] : []),
     ],
   };
   const card = (label: string, value: string, hint: string) => (
@@ -127,15 +127,14 @@ export function IvSkewBody({ expiry }: { expiry: string | null }) {
           <>
             <div style={{ height: 320 }} data-testid="ivskew-smile"><EChart option={smile} ariaLabel="Implied volatility of the out-of-the-money option at each strike" /></div>
             <p className="mt-1 text-[11px] text-muted">Each strike shows its out-of-the-money option (puts below the ATM strike, calls above, the call at the ATM strike). A gap means that price was missing or no volatility could be solved; nothing is filled in.</p>
+            <SmileComparePanel now={{ label: live ? "Live" : "Now", session: live ? null : (stored?.session ?? null), expiry: s.expiry, atmIv: s.atm_iv ?? null, at: s.at ?? null, smile: s.smile.map((p) => ({ strike: p.strike, side: p.side, iv: p.iv, delta: p.delta ?? null })) }}
+              then={cmpSession && cmpQ.data?.status === "ok" ? toView(cmpQ.data, cmpSession) : null} sessions={sessionList} value={cmpSession ?? null} onChange={(v) => setPicked(v)}
+              loading={!!cmpSession && cmpQ.isLoading} error={cmpQ.isError ? (cmpQ.error instanceof Error ? cmpQ.error.message : "error") : cmpQ.data && cmpQ.data.status !== "ok" ? cmpQ.data.status : null} />
           </>
         )}
         {view === "Term" && (s.term.length >= 2 ? (
           <>
-            <div style={{ height: 320 }} data-testid="ivskew-term"><EChart option={term} ariaLabel="ATM implied volatility and 25 delta skew by expiry" /></div>
-            <div className="mt-2 overflow-x-auto"><table className="w-full min-w-[34rem] text-xs" data-testid="ivskew-term-table">
-              <thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Expiry</th><th className="py-1 text-right font-normal">Days</th><th className="py-1 text-right font-normal">ATM IV</th><th className="py-1 text-right font-normal">25Δ call / put IV</th><th className="py-1 text-right font-normal">10Δ call / put IV</th><th className="py-1 text-right font-normal">25Δ skew</th></tr></thead>
-              <tbody>{s.term.map((t) => <tr key={t.expiry} className="border-t border-rule/50"><td className="py-1 text-paper">{t.expiry}</td><td className="num py-1 text-right text-muted">{t.days == null ? MISSING : t.days.toFixed(2)}</td><td className="num py-1 text-right text-paper">{n2(t.atm_iv)}</td><td className="num py-1 text-right text-muted">{n2(t.call_25d_iv)} / {n2(t.put_25d_iv)}</td><td className="num py-1 text-right text-muted">{n2(t.call_10d_iv)} / {n2(t.put_10d_iv)}</td><td className="num py-1 text-right text-paper">{sgn(t.skew_25d)}</td></tr>)}</tbody>
-            </table></div>
+            {stored && <TermStructureView d={stored} />}
             {stored?.term_structure && (
               <div className="mt-2 rounded-sm bg-slate-2 p-2 text-xs text-muted" data-testid="ivskew-term-structure">
                 {stored.term_structure.shape && stored.term_structure.near && stored.term_structure.far ? (
