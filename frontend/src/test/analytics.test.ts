@@ -273,3 +273,16 @@ describe("session and timeline of the price boards", () => {
     expect(sessionWindow([], null, "fit")).toMatchObject({ day: null, afterHoursOnly: false });
   });
 });
+
+describe("sessionDays on an exchange holiday", () => {
+  const at = (day: string, min: number, same = false) => ({ retrieved_at: new Date(Date.parse(`${day}T03:45:00Z`) + min * 60_000).toISOString(), same_as_previous: same }); // 09:15 IST + min
+  it("does not count a day of stale repeated samples as a session, but counts a real day and a real day that has only just started", () => {
+    const real = Array.from({ length: 30 }, (_, i) => at("2026-11-09", i));
+    const holiday = [...Array.from({ length: 3 }, (_, i) => at("2026-11-10", i)), ...Array.from({ length: 12 }, (_, i) => at("2026-11-10", 3 + i, true))];
+    expect(sessionDays([...real, ...holiday])).toEqual(["2026-11-09"]); // 3 changed + 12 unchanged: not a session
+    const justStarted = Array.from({ length: 3 }, (_, i) => at("2026-11-11", i)); // nothing unchanged: a real session beginning
+    expect(sessionDays([...real, ...justStarted])).toEqual(["2026-11-11", "2026-11-09"]);
+    const busy = Array.from({ length: 14 }, (_, i) => at("2026-11-12", i, i === 5)); // one unchanged but 13 changed: a session
+    expect(sessionDays(busy)).toEqual(["2026-11-12"]);
+  });
+});

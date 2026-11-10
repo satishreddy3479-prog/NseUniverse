@@ -313,14 +313,24 @@ export const TIMELINE_VIEWS: { id: TimelineView; label: string; title: string }[
   { id: "30m", label: "30 min", title: "The last 30 minutes of the session" },
 ];
 
-/** Trading days (IST, newest first) that have at least one in-session sample. */
-export function sessionDays<T extends { retrieved_at: string }>(obs: T[]): string[] {
-  const days = new Set<string>();
+/** An in-session day with stale samples (the chain repeated unchanged) needs this many changed samples to count as a trading day. */
+export const MIN_CHANGED_SAMPLES = 10;
+
+/**
+ * Trading days (IST, newest first) that have at least one in-session sample. On an exchange holiday the sampler still stores a
+ * handful of samples and then the same chain flagged unchanged; such a day (any unchanged sample and fewer than 10 changed
+ * ones) is not a trading day, so the boards show the last real session instead of a flat line.
+ */
+export function sessionDays<T extends { retrieved_at: string; same_as_previous?: boolean }>(obs: T[]): string[] {
+  const changed = new Map<string, number>(), stale = new Map<string, number>();
   for (const o of obs) {
     const ms = new Date(o.retrieved_at).getTime();
-    if (isSessionMs(ms)) days.add(istDay(ms));
+    if (!isSessionMs(ms)) continue;
+    const d = istDay(ms);
+    changed.set(d, (changed.get(d) ?? 0) + (o.same_as_previous ? 0 : 1));
+    stale.set(d, (stale.get(d) ?? 0) + (o.same_as_previous ? 1 : 0));
   }
-  return [...days].sort().reverse();
+  return [...changed.keys()].filter((d) => (stale.get(d) ?? 0) === 0 || (changed.get(d) ?? 0) >= MIN_CHANGED_SAMPLES).sort().reverse();
 }
 
 /**
@@ -330,7 +340,7 @@ export function sessionDays<T extends { retrieved_at: string }>(obs: T[]): strin
  * stretch of it. ``until`` is set for a past day so the query stops at its close. A day with no in-session sample gives
  * nothing to show (``afterHoursOnly`` when only overnight samples exist).
  */
-export function sessionWindow<T extends { retrieved_at: string }>(obs: T[], day: string | null, view: TimelineView): {
+export function sessionWindow<T extends { retrieved_at: string; same_as_previous?: boolean }>(obs: T[], day: string | null, view: TimelineView): {
   days: string[]; day: string | null; since?: string; until?: string; bounds: { min: number; max: number } | null; afterHoursOnly: boolean; samples: number;
 } {
   const days = sessionDays(obs);

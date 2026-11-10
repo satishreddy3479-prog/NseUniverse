@@ -103,6 +103,10 @@ DATA_STATUS = {"fresh": "LIVE", "delayed": "DELAYED", "stale": "STALE", "histori
 STRUCTURE_MAX_AGE_S = 180  # a breakout call needs a spot sample this fresh
 
 
+#: a day with fewer changed in-session samples than this is not a session (an exchange holiday leaves a handful of stale samples)
+MIN_SESSION_SAMPLES = 10
+
+
 class IntradayService:
     def __init__(
         self,
@@ -580,7 +584,8 @@ class IntradayService:
 
     def iv_sessions(self, limit: int = 30) -> list[str]:
         """IST dates with stored in-session samples, newest last."""
-        return sorted(self.obs.session_sample_counts(self.underlying))[-limit:]
+        counts = self.obs.session_sample_counts(self.underlying)
+        return sorted(d for d, n in counts.items() if n >= MIN_SESSION_SAMPLES)[-limit:]
 
     def iv_series(self, expiry: str, max_points: int = 90, session: str | None = None, tf: int = 1) -> dict[str, Any]:
         """At-the-money implied volatility through one stored session of this expiry (the latest unless ``session`` is given),
@@ -707,7 +712,7 @@ class IntradayService:
         With ``far`` the farthest stored expiry with enough days left is used (the monthly), which keeps one maturity from
         day to day instead of switching between the weekly and the monthly."""
         out: list[dict[str, Any]] = []
-        for d, _n in sorted(self.obs.session_sample_counts(self.underlying).items())[-sessions:]:
+        for d, _n in [(d, n) for d, n in sorted(self.obs.session_sample_counts(self.underlying).items()) if n >= MIN_SESSION_SAMPLES][-sessions:]:
             day = date.fromisoformat(d)
             lo, hi = datetime.combine(day, OPEN, IST), datetime.combine(day, session_close(), IST)
             counts = [(e, n) for e, n in self.obs.day_counts(self.underlying, to_ms(lo), to_ms(hi)) if n >= 10]

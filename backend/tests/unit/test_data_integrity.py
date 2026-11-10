@@ -104,3 +104,25 @@ def test_expiries_report_the_latest_stored_session_of_each_expiry(tmp_path: obje
     assert after.last_session_by_expiry("NIFTY") == {}  # no session: the expiry is absent, not dated
     few = seed(base / "c", times[:5])
     assert few.last_session_by_expiry("NIFTY") == {}  # fewer than 10 samples is not a session
+
+
+def test_an_exchange_holiday_of_stale_samples_is_not_a_session(tmp_path: object) -> None:
+    from pathlib import Path
+
+    from app.intraday.service import IntradayService
+    from app.intraday.store import IntradayStore
+    from app.prediction.flows_store import FlowsStore
+    from app.prediction.history_store import HistoryStore
+    from tests.unit.test_intraday import ist, seed
+
+    base = Path(str(tmp_path))
+    real = [ist(9, 15) + timedelta(minutes=i) for i in range(12)]  # a real session, 29 Oct
+    obs = seed(base, real)
+    holiday = ist(9, 15) + timedelta(days=12)  # 10 Nov: three samples, then the same chain flagged unchanged
+    for n in range(15):
+        obs.record_snapshot(real_chain(holiday + timedelta(minutes=n), f"h{n}"), unchanged=n >= 3)
+    counts = obs.session_sample_counts("NIFTY")
+    assert counts[holiday.date().isoformat()] == 3 and counts["2026-10-29"] == 12  # only changed samples count
+    assert holiday.date().isoformat() not in obs.last_session_by_expiry("NIFTY").get(EXP, "")
+    svc = IntradayService(obs, HistoryStore(base), FlowsStore(base), IntradayStore(base), clock=lambda: (holiday + timedelta(hours=7)).astimezone(UTC))
+    assert svc.iv_sessions() == ["2026-10-29"]  # the holiday is not offered, and gives no provisional bar for the IV charts

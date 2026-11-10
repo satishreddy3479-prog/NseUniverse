@@ -373,13 +373,15 @@ class ObservationStore:
     def session_sample_counts(self, underlying: str) -> dict[str, int]:
         """IST date -> in-session samples (09:15-15:40 IST) of the best-covered expiry that day.
 
+        Only samples whose chain changed count: on an exchange holiday the sampler still runs and stores a few
+        samples (then the same chain flagged unchanged), which must not make the holiday look like a session.
         The maximum over expiries, not the sum: two half-covered expiries must not look like one full
         session (read-only).
         """
         with self._lock:
             rows = self._db.execute(
                 "SELECT date(received_ms/1000 + 19800, 'unixepoch') AS d, expiry, COUNT(*) FROM samples"
-                " WHERE underlying=?"
+                " WHERE underlying=? AND unchanged=0"
                 " AND time(received_ms/1000 + 19800, 'unixepoch') BETWEEN '09:15:00' AND '15:40:59'"
                 " GROUP BY d, expiry",
                 (underlying,),
@@ -395,7 +397,7 @@ class ObservationStore:
         with self._lock:
             rows = self._db.execute(
                 "SELECT expiry, date(received_ms/1000 + 19800, 'unixepoch') AS d, COUNT(*) FROM samples"
-                " WHERE underlying=?"
+                " WHERE underlying=? AND unchanged=0"
                 " AND time(received_ms/1000 + 19800, 'unixepoch') BETWEEN '09:15:00' AND '15:40:59'"
                 " GROUP BY expiry, d",
                 (underlying,),
