@@ -2,7 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../lib/api";
 import { MISSING } from "../lib/format";
-import { fmtDay, HV_WINDOWS, hvLabel, ivpReading, labelEvery, rankAt, RANGES, rollingRank } from "../lib/ivChart";
+import { fmtDay, HV_WINDOWS, hvLabel, ivpReading, labelEvery, rankAt, rankExample, RANGES, rollingRank } from "../lib/ivChart";
+import { MethodologyPanel } from "./MethodologyPanel";
+import { METRICS } from "../lib/metricRegistry";
 import { EChart, useChartColors } from "./EChart";
 
 const pct = (v: number | null | undefined, d = 2) => (v == null ? MISSING : `${v.toFixed(d)}%`);
@@ -107,6 +109,9 @@ export function IvChartBody() {
         <div style={{ height: 200 }} data-testid="ivchart-bottom"><EChart option={bottom} ariaLabel="IV rank and IV percentile through time" /></div>
         <p className="mt-1 text-[11px] text-muted">IVR = (IV − lowest) ÷ (highest − lowest) × 100 over the range. IVP = share of the range&apos;s days with a lower IV than that day. HV is the standard deviation of the window&apos;s daily log returns (divided by n) × √252; RV (dashed green) is the root mean square of the same returns × √252, so it counts the average move itself as volatility too. Both use closes only. Dashed lines at 30 and 70 are our reading thresholds. The first {range} of history has no rank (the range is not full yet); nothing is filled in.</p>
         <Source text={d.iv_source} last={d.dates[Math.max(0, d.iv.reduce<number>((a, v, k) => (v != null ? k : a), -1))]!} prov={d.provisional ?? null} />
+        <MethodologyPanel metrics={[METRICS.iv_rank!, METRICS.iv_percentile!, METRICS.hv_rv!, METRICS.iv_minus_hv!]}
+          example={rankExample(d.iv[j] ?? null, now, range, d.window, hvAtIv, d.rv[j] ?? null)}
+          freshness={{ updatedAt: j >= 0 ? d.dates[j]! : null, session: j >= 0 ? d.dates[j]! : null, expiry: null, used: now.n, missing: Math.max(0, days - now.n), timeframe: `${range} (${days} trading days) rank window; HV/RV ${hvLabel(d.window)}; daily closes` }} />
       </div>
     </div>
   );

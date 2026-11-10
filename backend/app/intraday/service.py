@@ -21,7 +21,16 @@ from statistics import pstdev
 from typing import Any
 
 from app.domain.session import market_time, session_close
-from app.intraday import evaluate, labels, momentum, paper, positioning, price_structure, setups
+from app.intraday import (
+    evaluate,
+    labels,
+    momentum,
+    paper,
+    positioning,
+    price_structure,
+    setups,
+    strike_positioning,
+)
 from app.intraday import hv as hvmod
 from app.intraday import volatility as volmod
 from app.intraday.costs import CostModel
@@ -497,7 +506,7 @@ class IntradayService:
             self.market.store.record_sample("breakout", stamp, {"or": b["or_minutes"], "dir": b["direction"], "status": b["status"], "q": b["quality"]["score"], "ext": b["extension_ow"], "px": b["last_price"]})  # fmt: skip
         return st, vb
 
-    def _surface_of(self, sample: Any, expiry_d: date, at: datetime, each_side: int = 5) -> dict[str, Any]:
+    def _surface_of(self, sample: Any, expiry_d: date, at: datetime, each_side: int = 15) -> dict[str, Any]:
         prices = {k: c.ltp for k, c in self.obs.contracts(sample.values_from).items()}
         # time to expiry counts from the market time the prices belong to, not from an after-hours fetch
         return volmod.surface(prices, sample.spot, expiry_d, market_time(at, self._trading), self.risk_free_rate, each_side)
@@ -647,6 +656,57 @@ class IntradayService:
             "table": momentum.momentum_table(valid, prev), "series": momentum.series(valid),
             "excluded": len(pts) - len(valid),
             "model": "Black-76; forward from put-call parity", "rate_assumed": self.risk_free_rate,
+        }
+        self._iv_cache = {key: out}
+        return out
+
+    def strike_positioning(self, expiry: str, window: str = "15", session: str | None = None) -> dict[str, Any]:
+        """Strike-by-strike positioning of the newest stored chain of a session against the snapshot ``window`` minutes earlier
+        (5, 15, 30, 60), the session's first snapshot (``open``) or the previous session's last (``prev``). See ``strike_positioning.py``."""
+        now_t = self._clock()
+        sel = self._session_samples(expiry, session, now_t)
+        if "status" in sel:
+            return {"status": sel["status"], "expiry": expiry, "rows": []}
+        exp_d, day, todays = sel["exp_d"], sel["day"], sel["todays"]
+        latest = todays[-1]
+        if latest.spot is None:
+            return {"status": "newest stored sample has no NIFTY price", "expiry": expiry, "rows": []}
+        key = ("pos", expiry, str(latest.sample_id), window)
+        if key in self._iv_cache:
+            return self._iv_cache[key]
+        then = None
+        label = window
+        if window == "open":
+            then = todays[0] if len(todays) > 1 else None
+        elif window == "prev":
+            lo = datetime.combine(day - timedelta(days=6), OPEN, IST)
+            before = self.obs.samples(self.underlying, expiry, since=lo, until=datetime.combine(day, OPEN, IST), limit=5000)
+            closes = [x for x in before if x.received_at.astimezone(IST).time() <= session_close() and x.spot is not None]
+            then = closes[-1] if closes else None
+        elif window.isdigit():
+            target = latest.received_at - timedelta(minutes=int(window))
+            tol = timedelta(minutes=2 if int(window) <= 5 else 5)
+            cands = [x for x in todays[:-1] if x.received_at <= target and x.spot is not None]
+            then = cands[-1] if cands and target - cands[-1].received_at <= tol else None
+        else:
+            return {"status": "bad window", "expiry": expiry, "rows": []}
+        chain_now = self.obs.contracts(latest.values_from)
+        chain_then = self.obs.contracts(then.values_from) if then is not None else None
+        sf_now = self._surface_of(latest, exp_d, latest.received_at, 200)
+        sf_then = self._surface_of(then, exp_d, then.received_at, 200) if then is not None else None
+        rows = strike_positioning.strike_table(chain_now, chain_then, sf_now if sf_now.get("status") == "ok" else None, sf_then if sf_then and sf_then.get("status") == "ok" else None)
+        atm_now = sf_now.get("atm_strike") if sf_now.get("status") == "ok" else None
+        atm_then = sf_then.get("atm_strike") if sf_then and sf_then.get("status") == "ok" else None
+        spot_pct = None if then is None or not then.spot else round((latest.spot / then.spot - 1) * 100, 4)
+        out = {
+            "status": "ok", "expiry": expiry, "session": day.isoformat(), "window": label, "at": latest.received_at.isoformat(),
+            "then_at": None if then is None else then.received_at.isoformat(), "age_seconds": round((now_t - latest.received_at).total_seconds(), 1),
+            "spot": latest.spot, "spot_then": None if then is None else then.spot, "spot_change_pct": spot_pct, "atm_strike": atm_now, "atm_strike_then": atm_then,
+            "samples_in_session": len(todays), "rows": rows,
+            "baskets": strike_positioning.baskets(chain_now, chain_then, atm_now, atm_then),
+            "demand": strike_positioning.demand(rows, atm_now, spot_pct) if then is not None else [],
+            "model": "Black-76; forward from put-call parity", "rate_assumed": self.risk_free_rate,
+            "note": None if then is not None else "no stored snapshot for the chosen comparison: changes are not available",
         }
         self._iv_cache = {key: out}
         return out

@@ -712,6 +712,19 @@ async def intraday_iv_momentum(
     return await asyncio.to_thread(svc.iv_momentum, expiry.isoformat(), iso, tf)
 
 
+@router.get("/intraday/strike-positioning")
+async def intraday_strike_positioning(
+    request: Request, expiry: date, window: str = "15", session: date | None = None
+) -> dict[str, Any]:
+    """Strike-by-strike premium, OI, volume, IV and delta changes against an earlier snapshot."""
+    if window not in ("5", "15", "30", "60", "open", "prev"):
+        msg = "window must be 5, 15, 30, 60, open or prev"
+        raise HTTPException(status_code=422, detail={"code": "bad_range", "message": msg})
+    svc = request.app.state.intraday
+    iso = None if session is None else session.isoformat()
+    return await asyncio.to_thread(svc.strike_positioning, expiry.isoformat(), window, iso)
+
+
 @router.get("/intraday/iv-sessions")
 async def intraday_iv_sessions(request: Request) -> dict[str, Any]:
     """IST dates that have stored option-chain samples."""

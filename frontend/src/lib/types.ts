@@ -908,3 +908,21 @@ export interface TermStructure {
   near: { expiry: string; days: number; atm_iv: number } | null; far: { expiry: string; days: number; atm_iv: number } | null;
   pairs: { near: string; far: string; slope: number }[]; left_out: { expiry: string; reason: string }[];
 }
+
+export interface PositioningQuote {
+  premium: number | null; premium_then: number | null; premium_change: number | null; premium_pct: number | null;
+  oi: number | null; oi_then: number | null; oi_change: number | null; oi_pct: number | null; oi_session_change: number | null; oi_session_pct: number | null;
+  volume: number | null; volume_change: number | null; iv: number | null; iv_then: number | null; iv_change: number | null; delta: number | null; class: string;
+}
+export interface PositioningBasketSide { now: number | null; then: number | null; change: number | null; pct: number | null; ratio: number | null; strikes: number }
+export interface PositioningBasket { window: number | null; kind: "fixed" | "dynamic"; strikes: number; ce: PositioningBasketSide; pe: PositioningBasketSide; asymmetry: { ratio: number | null; note: string | null } }
+export interface PositioningGroupSummary { strikes: number; oi: number; oi_change: number; oi_pct: number | null; premium_pct: number | null; iv_change: number | null; volume_change: number | null; missing: number }
+export interface PositioningDemand {
+  side: "CE" | "PE"; group: "otm" | "deep"; summary: PositioningGroupSummary; label: string;
+  evidence: { label: string; met: string[]; unmet: string[]; score: number; of: number } | null;
+}
+export interface StrikePositioning {
+  status: string; expiry: string; session?: string; window?: string; at: string; then_at: string | null; age_seconds: number; spot: number; spot_then: number | null; spot_change_pct: number | null;
+  atm_strike: number | null; atm_strike_then: number | null; samples_in_session: number; note: string | null;
+  rows: { strike: number; ce: PositioningQuote; pe: PositioningQuote }[]; baskets: PositioningBasket[]; demand: PositioningDemand[];
+}

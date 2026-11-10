@@ -95,3 +95,18 @@ describe("provisional latest day", () => {
     expect(cards).toContain("−0.82 pts"); // IV − HV is taken on 4 Nov for both: 15.19 − 16.01
   });
 });
+
+describe("worked example under the IV chart", () => {
+  it("reproduces the rank and percentile by hand from the same window", async () => {
+    const { rankAt, rankExample } = await import("../lib/ivChart");
+    const vals = Array.from({ length: 63 }, (_, i) => 10 + (i % 11)); // 10..20, repeating
+    vals[62] = 15;
+    const r = rankAt(vals, 62, 63);
+    // low 10, high 20: IVR = (15 - 10) / (20 - 10) x 100 = 50
+    const ex = rankExample(15, r, "3M", 21, 12.5, 11.75);
+    expect(ex[0]).toContain("= (15.00 − 10.00) / (20.00 − 10.00) × 100 = 50.0");
+    expect(ex[1]).toContain(`out of 63 days × 100 = ${r.ivp!.toFixed(1)}`);
+    expect(ex[2]).toContain("IV − HV 1M = 15.00 − 12.50 = 2.50 points");
+    expect(ex[3]).toContain("IV − RV 1M = 15.00 − 11.75 = 3.25 points");
+  });
+});

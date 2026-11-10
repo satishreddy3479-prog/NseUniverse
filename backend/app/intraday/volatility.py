@@ -158,13 +158,8 @@ def surface(prices: Mapping[tuple[float, int], float | None], spot: float | None
     atm_iv = sum(atm_vals) / len(atm_vals) if atm_vals else None
     otm_near = [r_["iv"] for r_ in rows if r_["otm"] and r_["iv"] is not None and abs(near.index(r_["strike"]) - near.index(atm)) <= 2]
     near_iv = sum(otm_near) / len(otm_near) if otm_near else None
-    puts = [r_ for r_ in rows if r_["side"] == "PE" and r_["otm"] and r_["delta"] is not None and r_["strike"] < atm]
-    calls = [r_ for r_ in rows if r_["side"] == "CE" and r_["otm"] and r_["delta"] is not None and r_["strike"] > atm]
-    p25 = min(puts, key=lambda r_: abs(abs(r_["delta"]) - 0.25), default=None)
-    c25 = min(calls, key=lambda r_: abs(r_["delta"] - 0.25), default=None)
-    skew = None
-    if p25 and c25 and abs(abs(p25["delta"]) - 0.25) <= 0.1 and abs(c25["delta"] - 0.25) <= 0.1:
-        skew = round(p25["iv"] - c25["iv"], 3)  # put IV minus call IV at about 25 delta
+    p25, c25 = iv_at_delta(rows, "PE", 0.25), iv_at_delta(rows, "CE", 0.25)
+    skew = None if p25 is None or c25 is None else round(p25 - c25, 3)  # put IV minus call IV at 0.25 delta, the same definition as skew_metrics
     cp, pp = prices.get((atm, CALL)), prices.get((atm, PUT))
     straddle = cp + pp if cp is not None and pp is not None else None
     one_sd = None if atm_iv is None else f * (atm_iv / 100) * math.sqrt(t)
@@ -204,7 +199,9 @@ def skew_metrics(rows: Sequence[dict[str, Any]], forward: float, atm_iv: float |
         mx, my = sum(x for x, _ in pts) / len(pts), sum(y for _, y in pts) / len(pts)
         vx = sum((x - mx) ** 2 for x, _ in pts)
         slope = None if vx == 0 else sum((x - mx) * (y - my) for x, y in pts) / vx
-    r3 = lambda v: None if v is None else round(v, 3)  # noqa: E731
+    def r3(v: float | None) -> float | None:
+        return None if v is None else round(v, 3)
+
     return {
         "skew_25d": None if p25 is None or c25 is None else r3(p25 - c25),
         "skew_10d": None if p10 is None or c10 is None else r3(p10 - c10),

@@ -52,3 +52,15 @@ export function labelEvery(n: number, target = 7): (i: number) => boolean {
   const step = Math.max(1, Math.ceil(n / target));
   return (i) => (n - 1 - i) % step === 0;
 }
+
+/** The worked example under the IV chart, written from the figures on screen with the same `rankAt` result that fills the cards. */
+export function rankExample(iv: number | null, rank: Rank, range: string, window: number, hv: number | null, rv: number | null): string[] {
+  const out: string[] = [];
+  if (iv != null && rank.low != null && rank.high != null && rank.ivr != null) {
+    out.push(`IV Rank ${range} = (${iv.toFixed(2)} − ${rank.low.toFixed(2)}) / (${rank.high.toFixed(2)} − ${rank.low.toFixed(2)}) × 100 = ${rank.ivr.toFixed(1)}`);
+  }
+  if (iv != null && rank.ivp != null) out.push(`IV Percentile ${range} = ${Math.round((rank.ivp / 100) * rank.n)} days below ${iv.toFixed(2)} out of ${rank.n} days × 100 = ${rank.ivp.toFixed(1)}`);
+  if (iv != null && hv != null) out.push(`IV − HV ${hvLabel(window)} = ${iv.toFixed(2)} − ${hv.toFixed(2)} = ${(iv - hv).toFixed(2)} points`);
+  if (iv != null && rv != null) out.push(`IV − RV ${hvLabel(window)} = ${iv.toFixed(2)} − ${rv.toFixed(2)} = ${(iv - rv).toFixed(2)} points`);
+  return out;
+}
