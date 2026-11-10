@@ -40,6 +40,7 @@ function mount(report: Reply<SwingReport> = swingReport(), paper: Reply<SwingPap
     const url = String(input).split("?")[0]!;
     if (url === "/api/swing/report") return reply(report);
     if (url === "/api/swing/live") return reply(live);
+    if (url === "/api/swing/live-fills") return reply({ capital: 1_000_000, cash: 1_000_000, equity: 1_000_000, open: 0, closed: 0, realised_pnl: 0, enabled: true, reconciliation: { pending: 0, confirmed: 0, rejected: 0 }, fills: [] });
     if (url === "/api/swing/paper/run" && init?.method === "POST") { runCalls += 1; return reply(run); }
     if (url === "/api/swing/paper") {
       // after the button is pressed the server reports the scan as running

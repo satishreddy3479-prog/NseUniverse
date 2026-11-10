@@ -67,3 +67,13 @@ def test_the_report_bundled_with_the_release_is_served_when_the_data_folder_has_
     assert report["schema"] == SCHEMA and report["kpis"] and report["equity"]
     _write(tmp_path, json.dumps({"schema": SCHEMA, "meta": {"data_through": "x"}, "marker": "data folder wins"}))
     assert load_report(tmp_path / "data")["marker"] == "data folder wins"
+
+
+def test_live_fills_endpoint_serves_an_empty_ledger_with_its_state(client: TestClient) -> None:
+    r = client.get("/api/swing/live-fills")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["fills"] == [] and d["open"] == 0 and d["closed"] == 0 and d["capital"] == d["equity"] == d["cash"]
+    assert set(d["reconciliation"]) == {"pending", "confirmed", "rejected"} and d["official_book"] == "separate and unchanged"
+    assert d["enabled"] is False  # the test app runs without the live watcher
+    assert client.get("/api/swing/live").json()["live_fills_enabled"] is False

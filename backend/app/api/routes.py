@@ -642,6 +642,19 @@ async def swing_live(request: Request) -> dict[str, Any]:
     return await asyncio.to_thread(request.app.state.swing_live.view)
 
 
+@router.get("/swing/live-fills")
+async def swing_live_fills(request: Request) -> dict[str, Any]:
+    """The live paper ledger: provisional intraday fills, apart from the official paper book."""
+    ledger = getattr(request.app.state, "swing_ledger", None)
+    if ledger is None:
+        msg = "the live paper ledger is not running"
+        raise HTTPException(status_code=503, detail={"code": "ledger_unavailable", "message": msg})
+    snap = await asyncio.to_thread(ledger.snapshot)
+    live = getattr(request.app.state, "swing_live", None)
+    on = bool(live is not None and live.view().get("live_fills_enabled"))
+    return {**snap, "enabled": on, "official_book": "separate and unchanged"}
+
+
 @router.post("/swing/paper/run", dependencies=[Depends(require_local_control)])
 async def swing_paper_run(request: Request) -> dict[str, Any]:
     """Run the swing scan now: the same pass the schedule runs after 17:00 IST.

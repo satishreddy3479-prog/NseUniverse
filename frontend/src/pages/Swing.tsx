@@ -5,6 +5,7 @@ import { fmtDateTimeIST } from "../lib/format";
 import { BASIS_LABEL, isStale, reportAgeDays, type Basis } from "../lib/swing";
 import { EmptyState, ErrorNote, Panel, Skeleton } from "../components/ui";
 import { SwingOverview } from "../components/swing/SwingOverview";
+import { SwingLedgerPanel } from "../components/swing/SwingLedgerPanel";
 import { SwingLivePanel } from "../components/swing/SwingLivePanel";
 import { SwingPaper, type RunNote } from "../components/swing/SwingPaper";
 import { SwingRobustness } from "../components/swing/SwingRobustness";
@@ -101,7 +102,7 @@ export default function Swing() {
         <TabPanel id="paper">
           {paper.isPending ? <Loading what="the paper book" />
             : paper.isError ? <ErrorNote title="Could not load the paper book" message={paper.error instanceof Error ? paper.error.message : "Unknown error"} />
-              : <SwingPaper view={paper.data} liveRows={live.data?.watching} market={live.data?.market} live={<SwingLivePanel live={live.data} loading={live.isPending} error={live.error} />} runPending={run.isPending} runNote={runNote} onRun={() => { setRunNote(null); run.mutate(); }} />}
+              : <SwingPaper view={paper.data} liveRows={live.data?.watching} market={live.data?.market} live={<><SwingLivePanel live={live.data} loading={live.isPending} error={live.error} /><SwingLedgerPanel /></>} runPending={run.isPending} runNote={runNote} onRun={() => { setRunNote(null); run.mutate(); }} />}
         </TabPanel>
       )}
       {tab === "overview" && <TabPanel id="overview">{withReport((r) => <SwingOverview report={r} basis={basis} />)}</TabPanel>}

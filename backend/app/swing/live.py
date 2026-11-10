@@ -24,7 +24,8 @@ from typing import Any
 from app.logging_setup import log_event
 from app.market.sources import TokenInfo, parse_scrip_master_any_series
 from app.stream.models import FeedToken, LiveTick
-from app.swing.engine import Config, Order, Position
+from app.swing.engine import Config, Order, Position, position_size
+from app.swing.live_ledger import LiveLedger, position_of
 from app.swing.live_rules import (
     IST,
     EntryCheck,
@@ -69,6 +70,7 @@ class SwingLive:
         feed_state: Callable[[], str] = lambda: "unknown",
         clock: Callable[[], datetime] = lambda: datetime.now(UTC), enabled: bool = True,
         poll_s: float = 2.0, refresh_s: float = 60.0, prev_session: Callable[[date], date] = previous_session,
+        ledger: LiveLedger | None = None, live_fills: Callable[[], bool] = lambda: False,
     ) -> None:
         self.store, self.cfg, self._ticks, self._scrip = store, cfg, ticks, scrip_master
         self._add_tokens, self._feed_state, self._clock = add_tokens, feed_state, clock
@@ -85,12 +87,17 @@ class SwingLive:
         self._tokens: dict[str, FeedToken] = {}  # symbol -> token, for the watched stocks
         self._asked: set[str] = set()  # keys already handed to the stream
         self._task: asyncio.Task[None] | None = None
+        self.ledger, self._live_fills = ledger, live_fills
+        self._no = 0  # ordinal of the book's last session
+        self._last_exit: dict[str, int] = {}
+        self._trig: dict[str, int] = {}  # consecutive polls on which an order read "triggered"
 
     # ------------------------------------------------------------------ what is watched
     def load_watch(self) -> None:
-        book, last, _no, pending = self.store.load_state(self.cfg)
+        book, last, no, pending = self.store.load_state(self.cfg)
         with self._lock:
             self._orders, self._positions, self._last_scan = list(pending), list(book.positions.values()), last
+            self._no, self._last_exit = no, dict(book.last_exit_no)
 
     def queue_state(self, now: datetime) -> dict[str, Any]:
         """Are the queued orders the ones meant for today's session? They are when the book's last scan is the trading
@@ -197,7 +204,67 @@ class SwingLive:
                 record("target_1_8r", p.symbol, pc.level_1_8r, tick, {"note": "the stop moves to breakeven at the close"})
             if pc.reached_2_5r:
                 record("target_2_5r", p.symbol, pc.level_2_5r, tick, {"note": "the trailing stop starts at the close"})
+        if self.ledger is not None and self._live_fills():
+            try:
+                self.live_fill_pass(now, ticks, orders if queue_ok else [], positions)
+            except Exception as e:  # noqa: BLE001 - the ledger is provisional and must never disturb the live view or the feed
+                log_event(logger, logging.ERROR, "swing_live_fill_pass_failed", error=type(e).__name__)
         return new
+
+    # ------------------------------------------------------------------ the live paper ledger (provisional, separate from the official book)
+    #: an order must read "triggered" on this many consecutive polls before a live fill is made (one bad tick must not create a fill)
+    CONFIRM_POLLS = 2
+
+    def live_fill_pass(self, now: datetime, ticks: dict[str, LiveTick], orders: list[Order], positions: list[Position]) -> list[int]:
+        """Make live paper fills for orders whose entry rule holds on fresh prices, and apply live stops to the ledger's open fills.
+        Only while the market is open and the feed is streaming; never for a stale queue (``orders`` is empty then)."""
+        led = self.ledger
+        if led is None or self._feed_state() != "streaming":
+            return []
+        session = now.astimezone(IST).date().isoformat()
+        made: list[int] = []
+        official = {p.symbol: p for p in positions}
+        # 1. marks and stops of what is already open
+        for r in led.open_fills():
+            token = self._tokens.get(r["symbol"])
+            tick = self._fresh(ticks.get(token.key) if token else None, now)
+            if tick is None or tick.ltp is None:
+                continue
+            led.mark(r["id"], tick.ltp, now)
+            off = official.get(r["symbol"])
+            stop = off.tsl if off is not None and off.order_id == r["order_id"] else r["initial_sl"]
+            pc = check_position(position_of(r, stop, off.hh if off is not None else None), tick, self.cfg)
+            if pc.stop_hit and pc.stop_exit_price is not None:
+                led.close(r["id"], price=pc.stop_exit_price, now=now, reason=f"stop {stop:.2f} breached on a live price")
+        # 2. entries, best score first (the evening run's order)
+        cutoff = date.fromisoformat(session)
+        for _ in range(self.cfg.cooldown):
+            cutoff = self._prev_session(cutoff)
+        for o in sorted(orders, key=lambda x: (-x.score, x.symbol)):
+            token = self._tokens.get(o.symbol)
+            tick = self._fresh(ticks.get(token.key) if token else None, now)
+            chk = check_entry(o, tick, now) if tick is not None else None
+            if chk is None or chk.state != "triggered" or tick is None or tick.ltp is None:
+                self._trig.pop(o.symbol, None)
+                continue
+            self._trig[o.symbol] = self._trig.get(o.symbol, 0) + 1
+            if self._trig[o.symbol] < self.CONFIRM_POLLS:
+                continue
+            open_now = led.open_fills()
+            if (led.has_fill(session, o.symbol) or o.symbol in official or any(x["symbol"] == o.symbol for x in open_now)
+                    or len(open_now) >= self.cfg.slots or (self._no + 1) - self._last_exit.get(o.symbol, -99) < self.cfg.cooldown
+                    or led.exited_since(o.symbol, cutoff.isoformat())):
+                continue
+            fill = max(tick.open or 0.0, o.trigger)
+            equity = led.equity()
+            shares = position_size(equity, led.cash(), fill, o.initial_sl, self.cfg)
+            if shares < 1:
+                continue
+            fid = led.record_fill(session=session, now=now, order=o, price=fill, shares=shares, equity=equity,
+                                  evidence=f"{chk.note}; ltp {tick.ltp:.2f}, day open {tick.open}, volume {tick.volume}, trigger {o.trigger:.2f}")
+            if fid is not None:
+                made.append(fid)
+        return made
 
     # ------------------------------------------------------------------ for the page
     def view(self) -> dict[str, Any]:
@@ -264,7 +331,7 @@ class SwingLive:
                 "prices. The next evening run settles them on their own days first, then queues the orders for the next session."
             )
         return {
-            "enabled": self.enabled, "mode": "shadow", "market": session_state(now), "feed_state": self._feed_state(),
+            "enabled": self.enabled, "live_fills_enabled": bool(self.enabled and self.ledger is not None and self._live_fills()), "mode": "shadow", "market": session_state(now), "feed_state": self._feed_state(),
             "queue": queue,
             "note": note, "watching": rows, "events": events,
             "updated_at": now.astimezone(UTC).isoformat(timespec="seconds"),

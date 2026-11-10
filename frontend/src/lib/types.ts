@@ -967,3 +967,14 @@ export interface PremiumBaskets {
   status: string; expiry: string; session: string; kind: "fixed" | "dynamic"; window: number | null; snapshots: number; points: PremiumBasketPoint[];
   age_seconds: number; latest_at: string; basket: string;
 }
+
+export interface LedgerFill {
+  id: number; session: string; order_id: number; symbol: string; filled_at: string; price: number; shares: number; evidence: string;
+  status: "open" | "closed"; last_price: number | null; exit_price: number | null; exit_at: string | null; exit_reason: string | null; pnl: number | null;
+  recon: "pending" | "confirmed" | "rejected"; recon_reason: string | null; official_fill: number | null; official_shares: number | null;
+  price_gap: number | null; unrealised: number | null;
+}
+export interface SwingLedger {
+  capital: number; cash: number; equity: number; open: number; closed: number; realised_pnl: number; enabled: boolean;
+  reconciliation: { pending: number; confirmed: number; rejected: number }; fills: LedgerFill[];
+}

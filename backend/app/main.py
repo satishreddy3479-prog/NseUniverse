@@ -55,6 +55,7 @@ from app.stream.manager import StreamConfig, StreamManager
 from app.swing.engine import Config as SwingConfig
 from app.swing.fetch import HttpFetcher
 from app.swing.live import SwingLive
+from app.swing.live_ledger import LiveLedger
 from app.swing.service import SwingPaperService
 from app.swing.store import PaperStore
 
@@ -289,8 +290,13 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
                             cost_per_side=settings.swing_paper_cost_per_side))
         app.state.swing_paper = swing_paper
         swing_paper.start()
+        ledger_path = settings.data_dir / "swing_live_fills.sqlite3"
+        swing_ledger = LiveLedger(ledger_path, swing_paper.cfg)
+        swing_paper.on_session = swing_ledger.settled  # reconcile after each evening settlement
+        app.state.swing_ledger = swing_ledger
         swing_live = SwingLive(
             swing_paper.store, swing_paper.cfg, ticks=stream.book.internal_ticks,
+            ledger=swing_ledger, live_fills=lambda: settings.swing_live_fills_enabled,
             scrip_master=scrip,
             add_tokens=stream.add_internal_tokens, feed_state=lambda: stream.state.value,
             enabled=settings.swing_live_enabled,

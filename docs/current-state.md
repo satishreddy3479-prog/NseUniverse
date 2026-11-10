@@ -5,6 +5,9 @@ _Last updated: 2026-11-04_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Swing live paper ledger (10 Nov 2026)
+Orders that read triggered on two consecutive fresh live prices now get a provisional paper fill in a separate ledger (new panel under Live prices), reconciled against the evening run as confirmed or rejected-and-voided (D101, plan in swing-live-paper-fills-plan.md). The official paper book is unchanged. Not seen with real ticks yet; the first market-hours session is the check.
+
 ## Options intelligence update 2 (10 Nov 2026)
 GEX/flip history rebuilt from stored chains with five GEX backtests, smile session comparison, full 10Δ/25Δ term structure, regime with GEX-price relationship and explicit weights, aggregate premium charts (existing ones untouched), and a benchmarked, cached, job-based backtest (60 sessions cold about 56 s). Details, benchmark table and limits: [options-intelligence](options-intelligence.md) (D99). No real-history GEX backtest has run yet (one stored session locally); nothing verified on the server or visually.
 

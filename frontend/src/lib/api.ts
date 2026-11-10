@@ -198,6 +198,7 @@ export const api = {
   swingReport: () => request<SwingReport>("/api/swing/report"),
   swingPaper: () => request<SwingPaperView>("/api/swing/paper"),
   swingLive: () => request<SwingLiveView>("/api/swing/live"),
+  swingLiveFills: () => request<import("./types").SwingLedger>("/api/swing/live-fills"),
   swingRun: () => request<{ started: boolean; status: SwingPaperView["status"] }>("/api/swing/paper/run", { method: "POST" }),
   csvUrl: (id: string) => `/api/snapshots/${encodeURIComponent(id)}/csv`,
 };

@@ -189,6 +189,16 @@ def _close(book: Book, p: Position, session: str, no: int, px: float, reason: st
                  (px - p.fill) / risk if risk > 0 else None, no - p.entry_no, no)
 
 
+def position_size(equity: float, cash: float, fill: float, stop: float, cfg: Config) -> int:
+    """Shares for one entry: the smaller of the risk budget (``risk_pct`` of equity over the distance to the stop) and one slot's share of
+    equity, then limited by the cash left after costs. One implementation for the evening settlement and the live paper ledger."""
+    risk = fill - stop
+    if risk <= 0 or fill <= 0:
+        return 0
+    shares = int(min(equity * cfg.risk_pct / risk, equity / cfg.slots / fill))
+    return min(shares, int(cash / (fill * (1 + cfg.cost_per_side))))
+
+
 def settle_session(book: Book, session: str, no: int, bars: dict[str, Bar], setups: dict[str, Setup],
                    orders: list[Order], cfg: Config) -> Settlement:
     """Apply one finished session. `no` is this session's ordinal (cooldowns count sessions)."""
@@ -238,8 +248,7 @@ def settle_session(book: Book, session: str, no: int, bars: dict[str, Bar], setu
         if risk <= 0:
             decisions.append(Decision(o, "skipped", "stop is not below the fill price"))
             continue
-        shares = int(min(book.equity * cfg.risk_pct / risk, book.equity / cfg.slots / fill))
-        shares = min(shares, int(book.cash / (fill * (1 + cfg.cost_per_side))))
+        shares = position_size(book.equity, book.cash, fill, o.initial_sl, cfg)
         if shares < 1:
             decisions.append(Decision(o, "skipped", "not enough cash for one share"))
             continue

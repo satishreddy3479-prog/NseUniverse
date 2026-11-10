@@ -56,6 +56,8 @@ class SwingPaperService:
         self.enabled, self.run_after, self.until, self.retry_s = enabled, run_after, until, retry_s
         self._clock = clock or (lambda: datetime.now(UTC))
         self.done_on: date | None = None
+        #: called with (session, decisions, trades) after a session is committed (the live paper ledger reconciles here); never allowed to fail the run
+        self.on_session: Any = None
         self._nse_days: dict[str, dict[str, Any]] = {}  # session -> NSE bhavcopy bars, one download per session per pass
         self._filled: list[tuple[str, str]] = []  # (stock, session) bars taken from NSE instead of Yahoo in this pass
         self.last_attempt: datetime | None = None
@@ -292,6 +294,11 @@ class SwingPaperService:
                 session=s, no=no, ran_at=now, rule_version=RULE_VERSION, scan=scan,
                 universe=symbols if s == latest else None, orders=orders, decisions=settle.decisions,
                 trades=settle.trades, book=book, invested=settle.invested, nifty_close=nifty_close[s])
+            if self.on_session is not None:
+                try:
+                    self.on_session(s, settle.decisions, settle.trades)
+                except Exception as e:  # noqa: BLE001 - the official record is already committed; a ledger problem must not fail the run
+                    log_event(logger, logging.ERROR, "swing_live_ledger_reconcile_failed", error=type(e).__name__)
             # the next session's orders are the ones just queued (ids come from the database)
             _, _, _, pending = self.store.load_state(cfg)
         return {"state": "ok", "session": latest, "sessions": len(sessions), "candidates": len(pending),

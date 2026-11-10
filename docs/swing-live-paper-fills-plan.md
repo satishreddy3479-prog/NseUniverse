@@ -1,6 +1,6 @@
 # Plan: live intraday paper fills for the swing book (not built)
 
-Status: proposal, 10 Nov 2026. Nothing here is implemented. It changes how the permanent paper record is written, so it needs your approval of the design before any code.
+Status: BUILT 10 Nov 2026 as the separate provisional ledger described below (`backend/app/swing/live_ledger.py`, `SwingLive.live_fill_pass`, `GET /api/swing/live-fills`, the Live paper ledger panel). Choices on the open questions: the ledger sizes from its own equity; a rejected live position is closed at its last live price, marked void and stays listed; no on-screen alert. Setting `swing_live_fills_enabled` (default on; it cannot change the official book). Not yet seen with real ticks in market hours.
 
 ## What happens today
 * The evening run (after 17:00 IST) settles one finished session with `settle_session` (`engine.py`): a queued order fills at `max(open, trigger)` only if the day's open is under the no-chase limit, the high reached the trigger, and the **full-day** volume reached the minimum (1.25 x the 20-day average). It is then tested on the same day against the day-1 rules (stop, close below the pivot, rejection wick), which need the **close**.
