@@ -18,17 +18,18 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.intelligence import fusion as fz
+from app.intelligence import rolling, validation
 from app.intelligence.store import IntelligenceStore
 
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 #: seconds an input is reused before the service is asked again
-TTL = {"market": 5.0, "intraday": 15.0, "futures": 15.0, "skew": 30.0, "momentum": 30.0, "positioning": 30.0, "gex": 30.0, "vix": 300.0}
+TTL = {"market": 5.0, "intraday": 15.0, "futures": 15.0, "skew": 30.0, "momentum": 30.0, "positioning": 30.0, "gex": 30.0, "vix": 300.0, "flow": 15.0}
 ALERT_COOLDOWN_S = 600.0
 
 
 def parse_weights(raw: str | None) -> dict[str, float]:
-    """Engine weights from a JSON object (``{"futures": 30, ...}``); missing or invalid entries keep the default. Never raises."""
+    """Group weights from a JSON object (``{"positioning": 30, ...}``); unknown, missing or invalid entries keep the default. Never raises."""
     w = dict(fz.DEFAULT_WEIGHTS)
     try:
         for k, v in (json.loads(raw) if raw else {}).items():
@@ -98,9 +99,22 @@ class MarketIntelligence:
                     data = hit[1]  # keep the last good value but say it failed: its age keeps growing and the engine turns stale
         st["ms"] = round((_time.perf_counter() - t0) * 1000, 1)
         st["age_s"] = self._data_age(name, data, now) if data is not None else None
+        st["as_of"] = self._as_of(name, data) if data is not None else None
         if st["ok"] or hit is None:
             self._cache[key] = (_time.monotonic(), data, st)
         return data, st
+
+    @staticmethod
+    def _as_of(name: str, d: Any) -> str | None:
+        """The source's own timestamp (when its data was produced), not when this service read it."""
+        pick = {"market": lambda: fz.g(d, "flow", "futures", "updated") or fz.g(d, "generated_at"), "intraday": lambda: fz.g(d, "market", "last_sample_at"),
+                "futures": lambda: (fz.g(d, "times") or [None])[-1], "skew": lambda: fz.g(d, "at"), "momentum": lambda: fz.g(d, "latest_at"), "positioning": lambda: fz.g(d, "at"),
+                "gex": lambda: (fz.g(d, "points") or [{}])[-1].get("at"), "vix": lambda: (fz.g(d, "dates") or [None])[-1], "flow": lambda: (fz.g(d, "fut") or [[None]])[-1][0]}
+        try:
+            v = pick[name]()
+        except (KeyError, IndexError, TypeError, AttributeError):
+            return None
+        return None if v is None else str(v)
 
     @staticmethod
     def _data_age(name: str, d: Any, now: datetime) -> float | None:
@@ -116,6 +130,9 @@ class MarketIntelligence:
         if name == "gex":
             pts = fz.g(d, "points") or []
             return _age(pts[-1].get("at"), now) if pts else None
+        if name == "flow":
+            fut = fz.g(d, "fut") or []
+            return _age(fut[-1][0], now) if fut else None
         return 0.0
 
     def inputs(self, expiry: str | None) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
@@ -124,6 +141,9 @@ class MarketIntelligence:
         status: dict[str, dict[str, Any]] = {}
         for name in TTL:
             data[name], status[name] = self._get(name, expiry, now)
+        # rolling windows come from the per-minute flow samples the market service already stores; nothing new is collected
+        data["rolling"] = rolling.futures(fz.g(data["flow"], "fut") or []) if status["flow"]["ok"] else None
+        data["rolling_heavy"] = rolling.heavy(fz.g(data["flow"], "heavy5") or [], 15) if status["flow"]["ok"] else None
         return data, status
 
     # ------------------------------------------------------------------ summary
@@ -162,10 +182,10 @@ class MarketIntelligence:
             "engines": engines, "pulse": self._pulse(inp, by, gx, expiry), "gex": gx,
             "interpretation": fz.interpretation(fused, engines, reg, divs, gx, inp),
             "divergences": divs, "divergences_invalidated": gone, "divergences_unavailable": divs_missing,
-            "scenarios": fz.scenarios(fused, engines, gx, inp, spot), "panels": self._panels(inp, by, gx),
-            "alerts": self.store.alerts(session, 30),
+            "scenarios": fz.scenarios(fused, engines, gx, inp, spot), "panels": self._panels(inp, by, gx), "capabilities": fz.capabilities(inp, status, gx),
+            "alerts": self.store.alerts(session, 30), "overlap_audit": fz.overlap_audit(engines),
             "config": {"weights": self.weights, "min_coverage": fz.MIN_COVERAGE, "min_engines": fz.MIN_ENGINES, "classes": [[lo, n] for lo, n in fz.CLASSES],
-                       "note": "Weights and thresholds are provisional and not fitted to history."},
+                       "note": fz.PROVISIONAL, "groups": {k: fz.ENGINE_NAMES[k] for k in fz.DEFAULT_WEIGHTS}},
             "compute_ms": round((_time.perf_counter() - t0) * 1000, 1),
         }
 
@@ -208,9 +228,10 @@ class MarketIntelligence:
         return {
             "spot": num(g(ins, "price", "last")), "change_pct": num(g(ins, "price", "change_pct")), "futures": num(lat.get("future")), "basis": num(lat.get("basis")), "basis_pct": num(lat.get("basis_pct")),
             "atm_strike": atm, "expiry": expiry, "atm_ce_premium": num(px.get((atm, "CE"))), "atm_pe_premium": num(px.get((atm, "PE"))), "atm_iv": num(vol.get("atm_iv")),
-            "india_vix": {"value": vix_last, "as_of": vix_date, "note": "daily close, not a live quote"}, "pcr": num(g(ins, "options", "pcr_oi")), "net_gex": gx.get("net"), "gamma_flip": gx.get("flip"),
+            "india_vix": {"value": vix_last, "as_of": vix_date, "label": "India VIX – Last Daily Close", "intraday_signal": False,
+                          "note": "A daily close dated " + (str(vix_date) if vix_date else "(date unknown)") + ", not a live quote: it is not used as an intraday volatility signal (live ATM IV and the expiry-specific skew are)."}, "pcr": num(g(ins, "options", "pcr_oi")), "net_gex": gx.get("net"), "gamma_flip": gx.get("flip"),
             "futures_oi_change": oi_ch, "futures_cvd_pct": num(flow.get("cvd_pct")), "futures_vwap": num(g(ins, "vwap", "vwap")),
-            "heavyweight_cvd": g(by.get("heavyweight"), "metrics", "weighted_cvd_score"),
+            "heavyweight_cvd": g(by.get("orderflow"), "metrics", "weighted_cvd_score"),
         }
 
     def _panels(self, inp: Mapping[str, Any], by: Mapping[str, Any], gx: Mapping[str, Any]) -> dict[str, Any]:
@@ -236,22 +257,23 @@ class MarketIntelligence:
                         "max_ce_oi_strike": o.get("max_ce_oi_strike"), "max_pe_oi_strike": o.get("max_pe_oi_strike"), "largest_call_additions": top("ce", "oi_change"), "largest_put_additions": top("pe", "oi_change"),
                         "largest_call_unwinding": top("ce", "oi_change", reverse=False), "largest_put_unwinding": top("pe", "oi_change", reverse=False), "demand": g(pos, "demand") or [],
                         "window": g(pos, "window"), "spot_change_pct": g(pos, "spot_change_pct"), "note": "OI does not identify who bought or sold; labels are 'potential'."},
-            "gex": {**gx, "methodology": "GEX = gamma × OI × spot² × 0.01 / 10⁷ (₹ crore per 1 %), calls +, puts −: a model assumption, not observed dealer positioning."},
+            "gex": {**gx, "label": "Modelled GEX exposure (not observed dealer positioning)", "methodology": fz.GEX_METHOD},
             "vega": {"ce_avg_vega": round(sum(ce_v) / len(ce_v), 3) if ce_v else None, "pe_avg_vega": round(sum(pe_v) / len(pe_v), 3) if pe_v else None, "strikes": len(rows_v) // 2 if rows_v else 0,
                      "note": "Average vega per option (₹ per 1 IV point) over the strikes of the latest solved chain. OI-weighted vega, change and migration are on the Vega Analysis page (browser-computed)."},
             "volatility": {"atm_iv": num(vol.get("atm_iv")), "iv_change_15m": g(by.get("volatility"), "atm_iv_change_15m"), "hv": next((v for v in reversed(hv) if v is not None), None), "rv": next((v for v in reversed(rv) if v is not None), None),
-                           "india_vix": next((v for v in reversed(iv) if v is not None), None), **{f"{k}_252": v for k, v in rank_percentile(iv, 252).items() if k in ("ivr", "ivp")},
+                           "india_vix": next((v for v in reversed(iv) if v is not None), None), "india_vix_label": "India VIX – Last Daily Close", "india_vix_as_of": next((d for d, v in zip(reversed(g(inp["vix"], "dates") or []), reversed(iv), strict=False) if v is not None), None), **{f"{k}_252": v for k, v in rank_percentile(iv, 252).items() if k in ("ivr", "ivp")},
                            "skew_25d": g(inp["skew"], "cards", "skew_25d"), "skew_10d": g(inp["skew"], "cards", "skew_10d"), "risk_reversal_25d": g(inp["skew"], "cards", "call_minus_put_25d"),
                            "butterfly_25d": g(inp["skew"], "cards", "butterfly_25d"), "term_slope_30d": g(inp["skew"], "cards", "term_slope_per_30d"), "term_shape": g(inp["skew"], "term_structure", "shape"),
                            "term": [{"expiry": t.get("expiry"), "days": t.get("days"), "atm_iv": t.get("atm_iv")} for t in (g(inp["skew"], "term") or [])],
                            "expected_move_1sd_pts": num(vol.get("expected_move_iv_1sd_pts")), "straddle": num(vol.get("straddle")), "interpretation": vol.get("interpretation"),
-                           "note": "India VIX is a daily close. HV/RV are close-to-close, 252-day annualisation."},
+                           "note": "India VIX is the last DAILY close (see its date): context only, never an intraday signal. IV rank and percentile are computed from those daily closes. HV/RV are close-to-close, 252-day annualisation."},
             "futures": {"series": g(fut, "latest"), "contract": g(fut, "contract"), "oi_change": next((v for v in reversed(g(fut, "oi_change") or []) if v is not None), None), "oi_baseline": g(fut, "oi_baseline"),
-                        "volume": next((v for v in reversed(g(fut, "volume") or []) if v is not None), None), "buildup": by["futures"].get("buildup"), "flow": g(flow, "futures"), "vwap": g(ins, "vwap"),
-                        "unavailable": ["rolling 5/15/30-minute CVD (session totals only)", "rollover data"], "note": "CVD is an estimate by the quote and tick rule, not a trade-by-trade tape."},
+                        "volume": next((v for v in reversed(g(fut, "volume") or []) if v is not None), None), "buildup": by["positioning"].get("buildup"), "flow": g(flow, "futures"), "vwap": g(ins, "vwap"),
+                        "rolling": inp.get("rolling"), "unavailable": ["rollover data (needs near-month and next-month contract OI and volume history)"],
+                        "note": "CVD is an estimate by the quote and tick rule, not a trade-by-trade tape. Rolling windows are differences of the stored per-minute cumulative flow."},
             "heavyweight": {"stocks": [{"symbol": s.get("symbol"), "weight": s.get("weight"), "change_pct": s.get("change_pct"), "relative_volume": s.get("relative_volume"), "cvd_pct": g(s, "flow", "cvd_pct"), "divergence": g(s, "flow", "divergence"),
                                         "contribution": next((r.get("contribution") for r in (g(mk, "nifty50", "stocks") or []) if r.get("symbol") == s.get("symbol")), None)} for s in (g(flow, "heavy5", "stocks") or [])],
-                            "basis": g(flow, "heavy5", "basis"), "metrics": by["heavyweight"].get("metrics"), "unavailable": ["stock futures and their OI", "per-stock price versus VWAP"],
+                            "basis": g(flow, "heavy5", "basis"), "metrics": {**(by["orderflow"].get("metrics") or {}), **(by["participation"].get("metrics") or {})}, "unavailable": ["stock futures and their OI", "per-stock price versus VWAP"],
                             "note": "The five largest constituents by the current index weights (official or estimated); CVD is an estimate."},
         }
 
@@ -272,7 +294,7 @@ class MarketIntelligence:
         pl = s["pulse"]
         snap = {"spot": pl["spot"], "score": sent["score"], "confidence": sent["confidence"], "coverage": sent["coverage"], "regime": reg["name"], "vol_regime": sent["volatility_regime"],
                 "gamma_regime": gx.get("regime"), "engines": eng,
-                "metrics": {"cvd_pct": pl["futures_cvd_pct"], "fut_oi_change": pl["futures_oi_change"], "net_gex": gx.get("net"), "flip": gx.get("flip"), "flip_side": None if gx.get("flip_distance_pct") is None else (1 if gx["flip_distance_pct"] >= 0 else -1),
+                "metrics": {"arch": validation.ARCH, "cvd_pct": pl["futures_cvd_pct"], "fut_oi_change": pl["futures_oi_change"], "net_gex": gx.get("net"), "flip": gx.get("flip"), "flip_side": None if gx.get("flip_distance_pct") is None else (1 if gx["flip_distance_pct"] >= 0 else -1),
                             "atm_iv": pl["atm_iv"], "iv_change_15m": fz.g(vol_e, "atm_iv_change_15m"), "d25": next((t["score"] for t in vol_e.get("terms", []) if t["name"].startswith("Call versus put")), None),
                             "heavy_cvd": pl["heavyweight_cvd"], "vwap_side": fz.g(intraday, "vwap", "side")},
                 "divs": [{"id": d["id"], "reading": d["reading"], "direction": d["direction"], "severity": d["severity"]} for d in s["divergences"]]}
@@ -303,9 +325,9 @@ class MarketIntelligence:
             add("Gamma flip crossing", "high", "bullish" if cm["flip_side"] > 0 else "bearish", f"NIFTY crossed the gamma flip {'upwards' if cm['flip_side'] > 0 else 'downwards'}", [f"flip {cm.get('flip')}"], "holds on the new side for 5 minutes", "spot returns across the flip (model-based level)")
         if pm.get("flip") and cm.get("flip") and cur["spot"] and abs(cm["flip"] - pm["flip"]) / cur["spot"] * 100 >= 0.15:
             add("Significant GEX migration", "medium", "bullish" if cm["flip"] > pm["flip"] else "bearish", f"Gamma flip moved {cm['flip'] - pm['flip']:+.0f} points", [f"net GEX {cm.get('net_gex')}"], "the new level persists", "flip returns")
-        po, co = prev["engines"].get("options"), cur["engines"].get("options")
+        po, co = prev["engines"].get("positioning"), cur["engines"].get("positioning")
         if po is not None and co is not None and abs(po) >= 15 and abs(co) >= 15 and po * co < 0:
-            add("Smart OI shift", "medium", "bullish" if co > 0 else "bearish", f"Options positioning turned {'bullish' if co > 0 else 'bearish'} ({po:+.0f} to {co:+.0f})", [], "next strike-positioning window agrees", "options engine crosses back")
+            add("Smart OI shift", "medium", "bullish" if co > 0 else "bearish", f"Derivatives positioning turned {'bullish' if co > 0 else 'bearish'} ({po:+.0f} to {co:+.0f})", [], "next strike-positioning window agrees", "positioning group crosses back")
         if any(d["id"] == "price_cvd" for d in cur["divs"]) and not any(d["id"] == "price_cvd" for d in prev["divs"]):
             d = next(d for d in cur["divs"] if d["id"] == "price_cvd")
             add("Futures CVD divergence", "medium", d["direction"], d["reading"], [], "CVD stays opposite to price for 10 minutes", "CVD turns with price")
@@ -332,6 +354,13 @@ class MarketIntelligence:
         rows = self.store.rows(session, 500)
         return {"session": session, "sessions": self.store.sessions(), "points": rows, "recorded": len(rows),
                 "note": "Only minutes that were recorded appear here; a minute without a row was not captured and is not reconstructed."}
+
+    def validation(self, sessions: int = 30) -> dict[str, Any]:
+        """Walk-forward validation of the stored snapshots (read-only; see ``validation.py``). Uses the live weights to re-score history."""
+        rows: list[dict[str, Any]] = []
+        for sess in sorted(self.store.sessions(sessions)):
+            rows += self.store.rows(sess, 500)
+        return {"generated_at": self._clock().isoformat(timespec="seconds"), "weights": self.weights, "weights_note": fz.PROVISIONAL, **validation.report(rows, weights=self.weights)}
 
     # ------------------------------------------------------------------ lifecycle
     async def _loop(self) -> None:

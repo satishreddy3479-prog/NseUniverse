@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -29,7 +29,13 @@ def create(settings: Any, observations: Any, intraday: Any, market: Any, market_
     def futures() -> dict[str, Any]:
         return futures_series(market_store, observations, settings.underlying, rate=settings.risk_free_rate)
 
+    def flow() -> dict[str, Any]:
+        """Today's stored per-minute flow samples of the future and the heavyweights (read-only; written by the market sampler)."""
+        start = datetime.combine(datetime.now(IST).date(), time(9, 0), IST).astimezone(UTC).isoformat()
+        return {"fut": market_store.samples_since("fut", start), "heavy5": market_store.samples_since("heavy5", start)}
+
     providers = {
+        "flow": flow,
         "market": market.summary, "intraday": intraday.summary, "futures": futures,
         "skew": lambda e: intraday.iv_skew(e), "momentum": lambda e: intraday.iv_momentum(e),
         "positioning": lambda e: intraday.strike_positioning(e, "15"),

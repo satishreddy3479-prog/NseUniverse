@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.intelligence import fusion as fz
+from app.intelligence import rolling
 from app.intelligence.service import MarketIntelligence, parse_weights, rank_percentile
 from app.intelligence.store import IntelligenceStore
 
@@ -23,26 +24,27 @@ def eng(key: str, score: float | None, fresh: bool = True) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------- fusion
-def test_overall_score_is_the_weighted_average_of_the_engines_that_have_a_score() -> None:
-    es = [eng("futures", 40), eng("options", 20), eng("gex", -10), eng("heavyweight", None), eng("volatility", 0), eng("structure", 30)]
+def test_overall_score_is_the_weighted_average_of_the_groups_that_have_a_score() -> None:
+    es = [eng("positioning", 40), eng("orderflow", 20), eng("volatility", -10), eng("structure", None), eng("participation", 31)]
     f = fz.fuse(es, fz.DEFAULT_WEIGHTS)
-    # (40x25 + 20x20 - 10x15 + 0x10 + 30x15) / (25 + 20 + 15 + 10 + 15) = 1700 / 85 = 20.0 : the missing engine is left out, not scored zero
-    assert f["score"] == 20.0 and f["class"] == "Mild Bullish"
-    assert f["coverage"] == pytest.approx(0.85)
-    # agreement: futures, options, structure agree (weights 60); gex (15) and volatility (10) are within +-15 and count half: (60 + 7.5 + 5) / 85
-    assert f["agreement"] == pytest.approx(72.5 / 85, abs=1e-3)
-    assert f["freshness"] == 1.0
-    assert f["confidence"] == pytest.approx(100 * min(1, 0.85 / 0.8) * (72.5 / 85), abs=0.1)  # = 85.3
-    assert [e["contribution"] for e in es if e["key"] == "futures"] == [pytest.approx(40 * 25 / 85, abs=0.01)]
+    # (40x30 + 20x20 - 10x10 + 31x20) / (30 + 20 + 10 + 20) = 2120 / 80 = 26.5 : the missing group is left out, not scored zero
+    assert f["score"] == 26.5 and f["class"] == "Mild Bullish"
+    assert f["coverage"] == pytest.approx(0.8)
+    assert f["engine_counts"] == {"available": 4, "partial": 0, "unavailable": 1}
+    # nobody opposes anybody (volatility at -10 is inside +-15 and neutral): full agreement
+    assert f["agreement"] == 1.0 and f["freshness"] == 1.0
+    assert f["confidence"] == pytest.approx(100.0)  # coverage 0.8 is the full-coverage level: factor 1
+    assert [e["contribution"] for e in es if e["key"] == "positioning"] == [pytest.approx(40 * 30 / 80, abs=0.01)]
     assert es[3]["contribution"] is None
+    assert f["weights_note"] == "Provisional weights – not yet statistically calibrated."
 
 
 def test_too_little_data_says_so_instead_of_a_neutral_score() -> None:
-    two = fz.fuse([eng("futures", 50), eng("options", 40)], {k: v for k, v in fz.DEFAULT_WEIGHTS.items()})
+    two = fz.fuse([eng("positioning", 50), eng("orderflow", 40)], dict(fz.DEFAULT_WEIGHTS))
     assert two["score"] is None and two["class"].startswith("INSUFFICIENT DATA") and two["confidence"] is None
-    lowcov = fz.fuse([eng("heavyweight", 30), eng("volatility", 30), eng("structure", 30), eng("futures", None), eng("options", None), eng("gex", None)], fz.DEFAULT_WEIGHTS)
-    assert lowcov["score"] is None  # three engines but only 40 % of the weight: coverage below the minimum
-    assert "coverage 40%" in lowcov["reason"]
+    lowcov = fz.fuse([eng("volatility", 30), eng("structure", 30), eng("participation", 30), eng("positioning", None), eng("orderflow", None)], fz.DEFAULT_WEIGHTS)
+    assert lowcov["score"] is None  # three groups but only 50 % of the weight: coverage below the minimum
+    assert "coverage 50%" in lowcov["reason"]
 
 
 def test_classes_and_thresholds() -> None:
@@ -52,19 +54,45 @@ def test_classes_and_thresholds() -> None:
 
 
 def test_weights_are_configurable_and_invalid_entries_are_ignored() -> None:
-    w = parse_weights('{"futures": 40, "gex": -5, "options": "x", "bogus": 3}')
-    assert w["futures"] == 40 and w["gex"] == fz.DEFAULT_WEIGHTS["gex"] and w["options"] == fz.DEFAULT_WEIGHTS["options"] and "bogus" not in w
+    w = parse_weights('{"positioning": 40, "orderflow": -5, "volatility": "x", "bogus": 3, "futures": 99}')
+    assert w["positioning"] == 40 and w["orderflow"] == fz.DEFAULT_WEIGHTS["orderflow"] and w["volatility"] == fz.DEFAULT_WEIGHTS["volatility"]
+    assert "bogus" not in w and "futures" not in w  # the retired six-engine keys are ignored
     assert parse_weights("not json") == fz.DEFAULT_WEIGHTS and parse_weights("") == fz.DEFAULT_WEIGHTS
-    es = [eng("futures", 40), eng("options", 20), eng("gex", -10), eng("structure", 30)]
-    heavy = fz.fuse(es, {**fz.DEFAULT_WEIGHTS, "futures": 100})
-    assert heavy["score"] == pytest.approx((40 * 100 + 20 * 20 - 10 * 15 + 30 * 15) / (100 + 20 + 15 + 15), abs=0.1)
+    assert set(fz.DEFAULT_WEIGHTS) == {"positioning", "orderflow", "volatility", "structure", "participation"} and sum(fz.DEFAULT_WEIGHTS.values()) == 100
+    es = [eng("positioning", 40), eng("orderflow", 20), eng("structure", 30)]
+    heavy = fz.fuse(es, {**fz.DEFAULT_WEIGHTS, "positioning": 100})
+    assert heavy["score"] == pytest.approx((40 * 100 + 20 * 20 + 30 * 20) / (100 + 20 + 20), abs=0.1)
 
 
-def test_stale_engines_lower_the_confidence_but_not_the_score() -> None:
-    fresh = fz.fuse([eng("futures", 40), eng("options", 40), eng("structure", 40)], fz.DEFAULT_WEIGHTS)
-    stale = fz.fuse([eng("futures", 40, False), eng("options", 40), eng("structure", 40)], fz.DEFAULT_WEIGHTS)
+def test_stale_groups_lower_the_confidence_but_not_the_score() -> None:
+    fresh = fz.fuse([eng("positioning", 40), eng("orderflow", 40), eng("structure", 40)], fz.DEFAULT_WEIGHTS)
+    stale = fz.fuse([eng("positioning", 40, False), eng("orderflow", 40), eng("structure", 40)], fz.DEFAULT_WEIGHTS)
     assert fresh["score"] == stale["score"] == 40.0
-    assert stale["freshness"] == pytest.approx(35 / 60, abs=1e-3) and stale["confidence"] < fresh["confidence"]
+    assert stale["freshness"] == pytest.approx(40 / 70, abs=1e-3) and stale["confidence"] < fresh["confidence"]
+
+
+def test_partial_groups_count_for_only_the_share_of_their_evidence_that_is_present() -> None:
+    half = eng("positioning", 50)
+    half["fraction"] = 0.5
+    es = [half, eng("orderflow", 50), eng("structure", 50), eng("participation", 50)]
+    f = fz.fuse(es, fz.DEFAULT_WEIGHTS)
+    assert half["effective_weight"] == 15.0  # 30 x 0.5
+    assert f["coverage"] == pytest.approx((15 + 20 + 20 + 20) / 90, abs=1e-3)  # of the 90 weight of the four groups passed in
+
+
+def test_confidence_does_not_come_from_the_size_of_the_score() -> None:
+    mild = fz.fuse([eng("positioning", 20), eng("orderflow", 20), eng("structure", 20), eng("participation", 20), eng("volatility", 20)], fz.DEFAULT_WEIGHTS)
+    strong = fz.fuse([eng("positioning", 95), eng("orderflow", 95), eng("structure", 95), eng("participation", 95), eng("volatility", 95)], fz.DEFAULT_WEIGHTS)
+    assert mild["score"] == 20.0 and strong["score"] == 95.0
+    assert mild["confidence"] == strong["confidence"] == 100.0 and mild["agreement"] == strong["agreement"] == 1.0  # same coverage, agreement, freshness: same confidence
+    # the reverse: a weak score from groups that all agree is not low confidence, and a strong one that is a tug of war is
+    war = fz.fuse([eng("positioning", 100), eng("structure", 100), eng("participation", 100), eng("orderflow", -100), eng("volatility", -100)], fz.DEFAULT_WEIGHTS)
+    assert war["score"] == 40.0  # (3000 + 2000 + 2000 - 2000 - 1000) / 100: a Bullish score
+    assert war["agreement"] == pytest.approx(0.4)  # 70 % bullish weight, 30 % bearish: 1 - 2 x 0.3
+    assert war["confidence"] == pytest.approx(40.0) and war["confidence_parts"]["conflict_cap_applied"] is True
+    assert war["confidence"] < 60  # never "High"
+    even = fz.fuse([eng("positioning", 90), eng("structure", 90), eng("orderflow", -90), eng("participation", -90), eng("volatility", 0)], fz.DEFAULT_WEIGHTS)
+    assert even["score"] == 9.0 and even["agreement"] == pytest.approx(0.2) and even["confidence"] == pytest.approx(20.0)
 
 
 def test_buildup_is_the_four_way_price_and_oi_rule() -> None:
@@ -79,26 +107,61 @@ def fut_series(p0: float, p1: float, oi0: float, oi1: float) -> dict[str, Any]:
     return {"times": [t0.isoformat(), t1.isoformat()], "future": [p0, p1], "oi": [oi0, oi1], "latest": {"future": p1, "basis": 12.0, "basis_pct": 0.05}}
 
 
-ST_OK: dict[str, Any] = {k: {"ok": True, "age_s": 3.0} for k in ("futures", "market", "intraday", "skew", "momentum", "positioning", "gex", "vix")}
+ST_OK: dict[str, Any] = {k: {"ok": True, "age_s": 3.0} for k in ("futures", "market", "intraday", "skew", "momentum", "positioning", "gex", "vix", "flow")}
 
 
-def test_futures_engine_combines_buildup_estimated_cvd_vwap_and_depth() -> None:
+def gex_points(nets: list[float], spots: list[float], flip: float | None = 24000.0) -> dict[str, Any]:
+    pts = [{"at": (NOW - timedelta(minutes=5 * (len(nets) - 1 - i))).isoformat(), "spot": s, "net": n, "abs": abs(n) * 2, "ce": 10, "pe": -5, "flip": flip, "call_wall": 24200, "put_wall": 23800, "peak": 24000, "near_net": 1} for i, (n, s) in enumerate(zip(nets, spots, strict=True))]
+    return {"points": pts, "session": "2026-11-09", "universe": "dynamic"}
+
+
+def test_positioning_group_holds_options_oi_smart_oi_futures_oi_and_gex_each_input_once() -> None:
     inp = {"futures": fut_series(24000, 24048, 1_000_000, 1_050_000),  # +0.2 % on rising OI: long buildup (60)
-           "market": {"flow": {"futures": {"cvd_pct": 25.0, "classified_share": 0.9, "stale": False, "depth_imbalance": 0.0}}},
-           "intraday": {"vwap": {"distance_atr": 1.0, "distance_pct": 0.2, "side": "above", "slope_pts_per_15m": 3.0, "vwap": 24010}}}
-    e = fz.futures_engine(inp, ST_OK)
+           "intraday": {"options": {"pcr_oi": 1.1, "pcr_oi_change": 0.1, "ce_oi": 100.0, "pe_oi": 110.0, "ce_oi_chg": 5.0, "pe_oi_chg": 12.0}},
+           "gex": gex_points([50, 50, 50, 50], [24090, 24090, 24090, 24090])}
+    e = fz.positioning_engine(inp, ST_OK)
     t = {x["name"]: x for x in e["terms"]}
-    assert e["buildup"] == "long buildup" and t["Price and open interest (15 min)"]["score"] == 60.0
-    assert t["Futures CVD (estimated)"]["score"] == pytest.approx(100 * math.tanh(1.0), abs=0.1) and t["Futures CVD (estimated)"]["proxy"] is True
-    assert t["Price versus VWAP"]["score"] == pytest.approx(100 * math.tanh(1.0), abs=0.1)
-    assert t["Order-book depth imbalance"]["score"] == 0.0
-    assert e["score"] == pytest.approx((60 + 76.159 + 76.159 + 0) / 4, abs=0.2)
+    oi = 100 * math.tanh((12 - 5) / 210 / 0.05)  # puts minus calls over total OI, scale 0.05
+    assert t["OI added: puts minus calls"]["score"] == pytest.approx(oi, abs=0.1)
+    assert not any("PCR" in n.split(":")[0] for n in t)  # the PCR change is the same OI: shown inside the OI term's detail, not scored twice
+    assert t["Smart OI: strike demand labels (15 min)"]["score"] is None  # no positioning comparison: left out, not scored neutral
+    assert e["buildup"] == "long buildup" and t["Futures price and open interest (15 min)"]["score"] == 60.0
+    dist = (24090 - 24000) / 24090 * 100
+    flip = 100 * math.tanh(dist / 1.0)
+    walls = (110 - 290) / (110 + 290) * 60
+    assert t["Spot versus the gamma flip (modelled)"]["score"] == pytest.approx(flip, abs=0.1) and t["Room to the GEX walls (modelled)"]["score"] == pytest.approx(walls, abs=0.1)
+    # families: options OI weight 1, futures OI 0.5 (shares price with group D), GEX 0.5 (two terms of 0.5, shares price)
+    gex_family = (flip + walls) / 2
+    assert e["score"] == pytest.approx((oi * 1.0 + 60 * 0.5 + gex_family * 0.5) / 2.0, abs=0.2)
+    assert all(x["weight"] < 1 and x["shares"] == ["price"] for n, x in t.items() if n.startswith(("Futures price", "Spot versus", "Room to")))
+    assert e["status"] == "PARTIAL" and e["terms_available"] == 4 and e["terms_total"] == 5
+
+
+def test_two_terms_built_from_the_same_data_are_averaged_not_added() -> None:
+    """The same value in a second term of one family must not move the group score: that is what double counting would do."""
+    flow = {"market": {"flow": {"futures": {"cvd_pct": 25.0, "classified_share": 0.9, "stale": False, "depth_imbalance": 0.0}}}}
+    one = fz.orderflow_engine(flow, ST_OK)
+    two = fz.orderflow_engine({**flow, "rolling": {"windows": {"15": {"status": "ok", "cvd_pct": 25.0}}}}, ST_OK)
+    assert two["terms_available"] == one["terms_available"] + 1
+    assert two["score"] == one["score"]  # session and rolling CVD are one family
+    opposite = fz.orderflow_engine({**flow, "rolling": {"windows": {"15": {"status": "ok", "cvd_pct": -25.0}}}}, ST_OK)
+    assert opposite["score"] == pytest.approx((0.0 + 0.0) / 2, abs=0.1)  # session +76.2 and rolling -76.2 average to zero; the depth family is 0
+
+
+def test_orderflow_group_labels_every_cvd_as_a_proxy_and_scores_it_by_tanh() -> None:
+    inp = {"market": {"flow": {"futures": {"cvd_pct": 25.0, "classified_share": 0.9, "stale": False, "depth_imbalance": 0.0}}}}
+    e = fz.orderflow_engine(inp, ST_OK)
+    t = {x["name"]: x for x in e["terms"]}
+    assert t["Futures CVD (Proxy), session"]["score"] == pytest.approx(100 * math.tanh(1.0), abs=0.1) and t["Futures CVD (Proxy), session"]["proxy"] is True
+    assert t["Order-book depth imbalance (Proxy)"]["score"] == 0.0
+    assert all(x["proxy"] and "(Proxy)" in x["name"] for x in e["terms"])
+    assert "estimate" in t["Futures CVD (Proxy), session"]["detail"] and "not observed" in t["Futures CVD (Proxy), session"]["detail"]
+    assert e["score"] == pytest.approx((76.159 + 0) / 2, abs=0.2)  # two families: futures CVD, depth
 
 
 def test_a_stale_or_thin_cvd_is_left_out_not_used() -> None:
-    base = {"futures": fut_series(24000, 24048, 1_000_000, 1_050_000), "intraday": {}}
     for flow in ({"cvd_pct": 40.0, "stale": True}, {"cvd_pct": 40.0, "classified_share": 0.2, "stale": False}):
-        e = fz.futures_engine({**base, "market": {"flow": {"futures": flow}}}, ST_OK)
+        e = fz.orderflow_engine({"market": {"flow": {"futures": flow}}}, ST_OK)
         assert next(t for t in e["terms"] if t["name"].startswith("Futures CVD"))["score"] is None
 
 
@@ -108,22 +171,22 @@ def test_heavyweight_cvd_is_normalised_per_stock_and_weighted_never_a_sum_of_raw
 
     for scale in (1, 1000):  # a stock trading a thousand times the volume has a thousand times the raw CVD: the result must not change
         inp = {"market": {"flow": {"heavy5": {"stocks": [stock("A", 10, 25, 1e5 * scale), stock("B", 5, -25, -1e5)]}}, "nifty50": {"stocks": [{"symbol": "A", "contribution": 0.03}, {"symbol": "B", "contribution": -0.01}]}, "index_change_pct": 0.2}}
-        e = fz.heavyweight_engine(inp, ST_OK)
+        e = fz.orderflow_engine(inp, ST_OK)
         assert e["metrics"]["weighted_cvd_score"] == pytest.approx(100 * (10 * math.tanh(1) - 5 * math.tanh(1)) / 15, abs=0.1)
-    assert e["metrics"]["positive_cvd"] == 1 and e["metrics"]["negative_cvd"] == 1 and e["metrics"]["aggregate_points_pct"] == pytest.approx(0.02)
-    t = {x["name"]: x for x in e["terms"]}
+    assert e["metrics"]["positive_cvd"] == 1 and e["metrics"]["negative_cvd"] == 1
+    assert next(t for t in e["terms"] if t["name"] == "Heavyweight CVD (Proxy), session")["proxy"] is True
+    p = fz.participation_engine(inp, ST_OK)  # participation reads prices only: no CVD
+    assert p["metrics"]["aggregate_points_pct"] == pytest.approx(0.02)
+    t = {x["name"]: x for x in p["terms"]}
     assert t["Index points from the heavyweights"]["score"] == pytest.approx(100 * math.tanh(0.02 / 0.15), abs=0.1)
+    assert t["Heavyweights advancing versus declining (by weight)"]["score"] == 100.0  # both stocks +0.3 %: all 15 of the weight advancing
+    assert not any("CVD" in x["name"] for x in p["terms"])
 
 
 def test_heavyweight_divergence_when_the_index_rises_against_selling() -> None:
     sell = [{"symbol": "A", "weight": 10, "change_pct": 0.1, "flow": {"cvd_pct": -40.0, "classified_share": 0.9, "stale": False}}]
-    e = fz.heavyweight_engine({"market": {"flow": {"heavy5": {"stocks": sell}}, "index_change_pct": 0.3}}, ST_OK)
+    e = fz.orderflow_engine({"market": {"flow": {"heavy5": {"stocks": sell}}, "index_change_pct": 0.3}}, ST_OK)
     assert e["metrics"]["divergence"] == "index and heavyweight flow disagree"
-
-
-def gex_points(nets: list[float], spots: list[float], flip: float | None = 24000.0) -> dict[str, Any]:
-    pts = [{"at": (NOW - timedelta(minutes=5 * (len(nets) - 1 - i))).isoformat(), "spot": s, "net": n, "abs": abs(n) * 2, "ce": 10, "pe": -5, "flip": flip, "call_wall": 24200, "put_wall": 23800, "peak": 24000, "near_net": 1} for i, (n, s) in enumerate(zip(nets, spots, strict=True))]
-    return {"points": pts, "session": "2026-11-09", "universe": "dynamic"}
 
 
 def test_gex_state_reads_the_flip_distance_and_the_price_relationship() -> None:
@@ -134,20 +197,17 @@ def test_gex_state_reads_the_flip_distance_and_the_price_relationship() -> None:
     near = fz.gex_state({"gex": gex_points([10, 10, 10, 10], [24000, 24001, 24002, 24003])})
     assert near["regime"] == "near flip"  # within 0.2 % of the flip
     assert fz.gex_state({"gex": {"points": []}}) == {"available": False}
+    terms, state = fz._gex_terms({"gex": {"points": []}})
+    assert state == {"available": False} and all(t.score is None for t in terms)
 
 
-def test_gex_engine_scores_the_flip_side_and_wall_room() -> None:
-    e = fz.gex_engine({"gex": gex_points([50, 50, 50, 50], [24090, 24090, 24090, 24090])}, ST_OK)
-    t = {x["name"]: x for x in e["terms"]}
-    dist = (24090 - 24000) / 24090 * 100
-    assert t["Spot versus the gamma flip"]["score"] == pytest.approx(100 * math.tanh(dist / 1.0), abs=0.1)
-    up, dn = 24200 - 24090, 24090 - 23800
-    assert t["Room to the walls"]["score"] == pytest.approx((up - dn) / (up + dn) * 60, abs=0.1)  # little room above, lots below: bearish asymmetry
-    none = fz.gex_engine({"gex": {"points": []}}, ST_OK)
-    assert none["score"] is None
+def test_gex_methodology_is_documented_as_modelled_exposure() -> None:
+    m = fz.GEX_METHOD
+    for needle in ("gamma", "open interest in UNITS", "no lot-size", "spot^2", "call exposure counts +", "put exposure -", "ASSUMED, not observed", "ONE expiry", "bisection", "not observed dealer positioning"):
+        assert needle in m, needle
 
 
-def test_volatility_engine_does_not_read_rising_iv_in_an_advance_as_directional() -> None:
+def test_volatility_group_does_not_read_rising_iv_in_an_advance_as_directional() -> None:
     def table(ce: float, pe: float, spot: float, d25: float) -> dict[str, Any]:
         return {"momentum": {"table": {"periods": {"15": {"atm": {"ce_change": ce, "pe_change": pe}, "spot_change_pct": spot, "d25": {"momentum": d25}}}}}, "skew": {"cards": {}}}
 
@@ -159,41 +219,85 @@ def test_volatility_engine_does_not_read_rising_iv_in_an_advance_as_directional(
     assert fz.volatility_engine({"momentum": None}, ST_OK)["score"] is None  # IV rank and percentile alone never create a score
 
 
+def test_india_vix_is_context_only_and_never_moves_the_volatility_score() -> None:
+    base = {"momentum": {"table": {"periods": {"15": {"atm": {"ce_change": 0.5, "pe_change": 0.5}, "spot_change_pct": -0.3, "d25": {"momentum": 0.4}}}}}, "skew": {"cards": {}}}
+    plain = fz.volatility_engine(base, ST_OK)
+    with_vix = fz.volatility_engine({**base, "vix": {"iv": [10.0, 40.0], "dates": ["2026-11-06", "2026-11-09"], "hv": [10.0, 11.0]}}, ST_OK)
+    assert plain["score"] == with_vix["score"] and not any("VIX" in t["name"] or "rank" in t["name"].lower() for t in with_vix["terms"])
+    assert "India VIX (last daily close)" in with_vix["context_not_scored"][0]
+
+
+def test_structure_group_never_reuses_the_command_centre_score() -> None:
+    """The aggregate command-centre score is built from price, VWAP, breadth, PCR and OI: using it as evidence double counted all of them."""
+    def inp(score: float) -> dict[str, Any]:
+        return {"intraday": {"price": {"last": 24100.0, "position_in_range": 0.7}, "vwap": {"distance_atr": 1.0, "distance_pct": 0.2, "side": "above"}, "daily": {"prev_high": 24200, "prev_low": 24000}, "assessment": {"score": score, "label": "x"}}}
+
+    bull, bear = fz.structure_engine(inp(1.0), ST_OK), fz.structure_engine(inp(-1.0), ST_OK)
+    assert bull["score"] == bear["score"] and not any("command" in t["name"].lower() for t in bull["terms"])
+    t = {x["name"]: x for x in bull["terms"]}
+    assert t["Position against the previous day's range"]["score"] == pytest.approx((0.5 - 0.5) * 120 + 0.0, abs=0.1)  # 24100 is the middle of 24000 to 24200
+    assert {x["family"] for x in bull["terms"]} == {"price", "levels"}  # VWAP and day range are one family of price evidence
+    # price family = mean(tanh(1) x 100, (0.7 - 0.5) x 120) ; levels family = 0 ; equal family weights
+    assert bull["score"] == pytest.approx(((76.159 + 24.0) / 2 + 0.0) / 2, abs=0.2)
+
+
+def test_breadth_belongs_to_participation_only_and_is_one_family() -> None:
+    inp = {"market": {"nifty50": {"breadth": {"ad_balance": 0.4, "advancing": 35, "declining": 10, "covered": 50}}, "participation": {"above_vwap": {"pct_above": 70}, "opening_range": {"pct_above_high": 30, "pct_below_low": 10}}}}
+    e = fz.participation_engine(inp, ST_OK)
+    breadth = [t for t in e["terms"] if t["family"] == "breadth"]
+    assert len(breadth) == 3 and [t["score"] for t in breadth] == [40.0, 40.0, 20.0]
+    assert e["score"] == pytest.approx((40 + 40 + 20) / 3, abs=0.1)  # one family; the heavyweight family has no data and is left out
+    assert not any(t["name"] in ("Advance/decline balance", "Stocks above their day VWAP") for t in fz.structure_engine({"intraday": {}}, ST_OK)["terms"])
+
+
+def test_every_overlap_is_documented_and_every_shared_input_carries_an_adjustment() -> None:
+    inp = {"futures": fut_series(24000, 24048, 1_000_000, 1_050_000), "intraday": {"options": {}}, "market": {}, "gex": gex_points([50] * 4, [24090] * 4)}
+    es = fz.build_engines(inp, ST_OK)
+    audit = fz.overlap_audit(es)
+    assert any("command-centre score" in f["input"].lower() for f in audit["findings"]) and any("India VIX" in f["input"] for f in audit["findings"])
+    assert all(t["weight"] < 1 for t in audit["terms"] if t["shares"])
+    assert {t["group"] for t in audit["terms"]} == set(fz.DEFAULT_WEIGHTS)
+    names = [t["term"] for t in audit["terms"]]
+    assert len(names) == len(set(names))  # no term is listed in two groups
+
+
 # ---------------------------------------------------------------- regime, divergences, scenarios
 def fused(score: float | None, agree: float = 0.8, conf: float = 70) -> dict[str, Any]:
     return {"score": score, "agreement": agree, "confidence": conf, "class": fz.classify(score), "coverage": 0.9, "reason": None if score is not None else "no data"}
 
 
 def test_regime_uses_several_indicators_and_names_what_it_used() -> None:
-    by = {"futures": {"buildup": "short covering", "price_change_15m_pct": 0.3, "terms": [{"name": "Futures CVD (estimated)", "available": True, "score": 40.0}]}, "volatility": {"atm_iv_change_15m": -0.4, "terms": []}}
+    cvd = lambda v: {"terms": [{"name": "Futures CVD (Proxy), session", "available": True, "score": v}]}  # noqa: E731
+    by = {"positioning": {"buildup": "short covering", "price_change_15m_pct": 0.3, "terms": []}, "orderflow": cvd(40.0), "volatility": {"atm_iv_change_15m": -0.4, "terms": []}}
     assert fz.regime(fused(40), by, {}, {"regime": "positive"})["name"] == "Short squeeze"
-    by2 = {"futures": {"buildup": "long unwinding", "price_change_15m_pct": -0.3, "terms": [{"name": "Futures CVD (estimated)", "available": True, "score": -40.0}]}, "volatility": {"terms": []}}
+    by2 = {"positioning": {"buildup": "long unwinding", "price_change_15m_pct": -0.3, "terms": []}, "orderflow": cvd(-40.0), "volatility": {"terms": []}}
     assert fz.regime(fused(-40), by2, {}, {"regime": "positive"})["name"] == "Long liquidation"
-    plain = {"futures": {"buildup": "long buildup", "price_change_15m_pct": 0.3, "terms": []}, "volatility": {"atm_iv_change_15m": 0.1, "terms": []}}
+    plain = {"positioning": {"buildup": "long buildup", "price_change_15m_pct": 0.3, "terms": []}, "volatility": {"atm_iv_change_15m": 0.1, "terms": []}}
     assert fz.regime(fused(75, 0.8), plain, {}, {})["name"] == "Strong bullish trend"
     assert fz.regime(fused(50, 0.6), plain, {}, {})["name"] == "Bullish trend"
     assert fz.regime(fused(-20, 0.6), plain, {}, {})["name"] == "Weak bearish"
-    assert fz.regime(fused(50, 0.3), plain, {}, {})["name"] == "Uncertain / Conflicting signals"  # strong score but the engines disagree
+    assert fz.regime(fused(50, 0.3), plain, {}, {})["name"] == "Uncertain / Conflicting signals"  # strong score but the groups disagree
     assert fz.regime(fused(5), plain, {}, {"regime": "positive"})["name"] == "Sideways / Range"
-    assert fz.regime(fused(5), {"volatility": {"atm_iv_change_15m": -0.5, "terms": []}, "futures": {}}, {}, {"regime": "positive"})["name"] == "Compression"
+    assert fz.regime(fused(5), {"volatility": {"atm_iv_change_15m": -0.5, "terms": []}, "positioning": {}}, {}, {"regime": "positive"})["name"] == "Compression"
     assert fz.regime(fused(None), plain, {}, {})["name"] == "Uncertain / Conflicting signals"
 
 
 def test_divergences_are_descriptions_with_invalidation_and_the_unavailable_checks_are_listed() -> None:
-    by = {"futures": {"score": 40, "buildup": "short covering", "price_change_15m_pct": 0.3, "terms": [{"name": "Futures CVD (estimated)", "available": True, "score": -40.0, "detail": "session CVD -20.0% of classified volume"}]},
-          "options": {"score": -30}, "volatility": {"spot_change_15m_pct": 0.3, "atm_iv_change_15m": 0.0, "terms": [{"name": "Call versus put IV momentum (25Δ, 15 min)", "available": True, "score": -60.0}]}, "heavyweight": {"metrics": {}}}
+    by = {"positioning": {"score": 40, "buildup": "short covering", "price_change_15m_pct": 0.3, "terms": []},
+          "orderflow": {"score": -30, "terms": [{"name": "Futures CVD (Proxy), session", "available": True, "score": -40.0, "detail": "session CVD -20.0% of classified volume"}], "metrics": {}},
+          "volatility": {"spot_change_15m_pct": 0.3, "atm_iv_change_15m": 0.0, "terms": [{"name": "Call versus put IV momentum (25Δ, 15 min)", "available": True, "score": -60.0}]}}
     out, missing = fz.divergences({"intraday": {}}, by, {"available": False})
     ids = {d["id"] for d in out}
     assert {"price_cvd", "price_oi", "price_skew", "fut_opt"} <= ids
     assert all(d["invalidation"] and d["explanation"] and d["severity"] in ("low", "medium", "high") for d in out)
     assert next(d for d in out if d["id"] == "price_cvd")["direction"] == "bearish"  # price up on net selling pressure
-    assert len(missing) == 2 and any("OI migration" in m for m in missing)
+    assert len(missing) == 1 and "OI migration" in missing[0]
 
 
 def test_scenarios_are_heuristic_scores_summing_to_100_with_levels_and_horizon_moves() -> None:
     inp = {"intraday": {"options": {"max_ce_oi_strike": 24300, "max_pe_oi_strike": 23700}, "vwap": {"vwap": 24050}, "volatility": {"atm_iv": 15.0}, "daily": {"prev_high": 24400, "prev_low": 23600}, "market": {"phase": "live"}}, "market": {"elapsed_minutes": 60}}
     gx = {"available": True, "call_wall": 24200, "put_wall": 23800, "regime": "positive"}
-    s = fz.scenarios(fused(40, 0.8, 70), [eng("futures", 40)], gx, inp, 24100.0)
+    s = fz.scenarios(fused(40, 0.8, 70), [eng("positioning", 40)], gx, inp, 24100.0)
     assert s["bullish"]["score"] + s["bearish"]["score"] + s["sideways"]["score"] in (99, 100, 101)  # rounding
     assert "not probabilities" in s["label"]
     assert s["bullish"]["resistance"] == 24200 and s["bearish"]["support"] == 23800 and s["sideways"]["range"] == [23800, 24200]
@@ -205,11 +309,70 @@ def test_scenarios_are_heuristic_scores_summing_to_100_with_levels_and_horizon_m
 
 
 def test_interpretation_is_generated_from_the_readings() -> None:
-    es = [eng("futures", 50), eng("options", 30)]
-    es[0]["supporting"] = ["Price and open interest (15 min): long buildup"]
+    es = [eng("positioning", 50), eng("orderflow", 30)]
+    es[0]["supporting"] = ["Futures price and open interest (15 min): long buildup"]
     text = fz.interpretation(fused(40), es, {"name": "Bullish trend"}, [{"name": "Futures versus options"}], {"available": True, "flip": 24000.0, "flip_distance_pct": 0.4}, {"intraday": {"vwap": {"vwap": 24050}}})
-    assert "bullish" in text and "long buildup" in text and "0.40% above the gamma flip at 24000" in text and "futures versus options" in text and "VWAP near 24050" in text
+    assert "bullish" in text and "long buildup" in text and "0.40% above the modelled gamma flip at 24000" in text and "not observed dealer positioning" in text and "futures versus options" in text and "VWAP near 24050" in text
     assert "INSUFFICIENT" in fz.interpretation({"score": None, "class": "INSUFFICIENT DATA – SENTIMENT UNRELIABLE", "reason": "x"}, [], {}, [], {}, {})
+
+
+# ---------------------------------------------------------------- rolling CVD
+def flow_samples(n: int, *, b_step: float = 600.0, s_step: float = 400.0, restart_at: int | None = None, skip: range | None = None) -> list[tuple[str, dict[str, Any]]]:
+    out: list[tuple[str, dict[str, Any]]] = []
+    k = 0
+    for i in range(n):
+        if restart_at is not None and i == restart_at:
+            k = 0  # the backend restarted: cumulative counters begin again
+        k += 1
+        if skip is not None and i in skip:
+            continue
+        t = NOW - timedelta(minutes=n - 1 - i)
+        out.append((t.isoformat(), {"v": 1000.0 * k, "b": b_step * k, "s": s_step * k, "cvd": (b_step - s_step) * k}))
+    return out
+
+
+def test_rolling_cvd_is_the_difference_of_stored_cumulative_flow() -> None:
+    r = rolling.futures(flow_samples(40))
+    for n in ("5", "15", "30"):
+        w = r["windows"][n]
+        # per minute: buy 600, sell 400, CVD +200 of 1000 classified = +20 %
+        assert w["status"] == "ok" and w["cvd"] == 200.0 * int(n) and w["cvd_pct"] == 20.0 and w["classified"] == 1000.0 * int(n)
+    assert r["ok_windows"] == 3 and r["estimated"] is True and r["momentum_per_min"] == 0.0  # steady buying: no momentum change
+
+
+def test_rolling_cvd_momentum_is_the_recent_rate_less_the_longer_rate() -> None:
+    samples = flow_samples(40)
+    # the last 5 minutes buy harder: add 100 of CVD per minute on top
+    boosted = []
+    for i, (t, p) in enumerate(samples):
+        extra = 100.0 * max(0, i - 34)
+        boosted.append((t, {**p, "cvd": p["cvd"] + extra, "b": p["b"] + extra, "v": p["v"] + extra}))
+    r = rolling.futures(boosted)
+    assert r["windows"]["5"]["cvd"] == 200 * 5 + 100 * 5 + 100 * 4 + 100 * 3 + 100 * 2 + 100 * 1 - 100 * 0 - 0 or r["momentum_per_min"] > 0
+    assert r["momentum_per_min"] > 0
+
+
+def test_rolling_cvd_is_unavailable_with_a_reason_never_estimated() -> None:
+    few = rolling.futures(flow_samples(10))
+    assert few["windows"]["5"]["status"] == "ok" and few["windows"]["15"]["status"].startswith("unavailable: fewer than 15 minutes") and few["windows"]["15"]["cvd"] is None
+    assert few["ok_windows"] == 1
+    assert rolling.futures([])["windows"]["5"]["status"] == "unavailable: no flow samples stored today"
+    restarted = rolling.futures(flow_samples(40, restart_at=30))
+    assert restarted["windows"]["15"]["status"].startswith("unavailable: the backend restarted") and restarted["windows"]["5"]["status"] == "ok"
+    gap = rolling.futures(flow_samples(40, skip=range(14, 28)))  # no samples around 15 and 30 minutes back
+    assert gap["windows"]["15"]["status"].startswith("unavailable: no stored sample within") and gap["windows"]["15"]["cvd"] is None
+    unclassified = [(t, {"v": 1.0, "b": None, "s": None, "cvd": None}) for t, _ in flow_samples(40)]
+    assert rolling.futures(unclassified)["windows"]["5"]["status"].startswith("unavailable: the flow tracker had no classified volume")
+
+
+def test_rolling_heavyweight_cvd_is_per_stock_and_flags_restarts() -> None:
+    def rows(k: int) -> dict[str, Any]:
+        return {"rows": [["A", 200.0 * k, 600.0 * k, 400.0 * k, 1000.0 * k, 0.0], ["B", -100.0 * k, 400.0 * k, 600.0 * k, 1000.0 * k, 0.0]]}
+
+    samples = [((NOW - timedelta(minutes=29 - i)).isoformat(), rows(i + 1)) for i in range(30)]
+    h = rolling.heavy(samples, 15)
+    assert h["A"] == {"cvd_pct": 20.0, "status": "ok"} and h["B"] == {"cvd_pct": -10.0, "status": "ok"} and h["_status"]["status"] == "ok"
+    assert rolling.heavy(samples[:5], 15)["_status"]["status"].startswith("unavailable")
 
 
 # ---------------------------------------------------------------- service
@@ -239,28 +402,65 @@ class Rig:
             "momentum": p("momentum", {"age_seconds": 30, "table": {"periods": {"15": {"atm": {"ce_change": 0.1, "pe_change": 0.1}, "spot_change_pct": 0.3, "d25": {"momentum": 0.2}}}}}),
             "positioning": p("positioning", {"age_seconds": 30, "demand": [], "rows": []}),
             "gex": p("gex", lambda: gex_points([100, 90, 80, 70], [24020, 24050, 24080, 24100])), "vix": p("vix", {"iv": [14.0, 15.0], "dates": ["2026-11-06", "2026-11-09"], "hv": [10.0, 11.0], "rv": [9.0, 10.0]}),
+            "flow": p("flow", lambda: {"fut": flow_samples(40), "heavy5": []}),
         }
         self.svc = MarketIntelligence(providers=self.providers, store=self.store, default_expiry=lambda: "2026-11-10", clock=lambda: self.clock)
 
 
-def test_summary_fuses_the_engines_and_reports_each_input_status(tmp_path: Path) -> None:
+def test_summary_fuses_the_groups_and_reports_each_input_status(tmp_path: Path) -> None:
     r = Rig(tmp_path)
     s = r.svc.summary()
     assert s["sentiment"]["score"] is not None and s["sentiment"]["class"] in ("Bullish", "Mild Bullish", "Strong Bullish")
-    assert {e["key"] for e in s["engines"]} == set(fz.DEFAULT_WEIGHTS) and all(v["ok"] for v in s["status"].values())
-    assert s["pulse"]["spot"] == 24100.0 and s["pulse"]["india_vix"]["note"] == "daily close, not a live quote" and s["pulse"]["futures"] == 24048
-    assert s["sentiment"]["coverage"] < 1.0  # no heavyweight flow in this rig: its weight is left out, not scored neutral
+    assert {e["key"] for e in s["engines"]} == set(fz.DEFAULT_WEIGHTS) and set(s["status"]) == set(r.providers) and all(v["ok"] for v in s["status"].values())
+    vix = s["pulse"]["india_vix"]
+    assert vix["label"] == "India VIX – Last Daily Close" and vix["as_of"] == "2026-11-09" and vix["value"] == 15.0 and vix["intraday_signal"] is False and "not a live quote" in vix["note"]
+    assert s["pulse"]["spot"] == 24100.0 and s["pulse"]["futures"] == 24048
+    c = s["sentiment"]["engine_counts"]
+    assert c["partial"] >= 1 and c["unavailable"] == 0 and sum(c.values()) == 5  # Smart OI and heavyweight terms are missing: PARTIAL, not UNAVAILABLE
+    assert s["sentiment"]["coverage"] < 1.0  # a partial group counts for the share of its evidence that exists, not as a neutral score
     assert s["panels"]["volatility"]["hv"] == 11.0 and s["scenarios"]["available"] is True and "not probabilities" in s["scenarios"]["label"]
-    assert any("rolling 5/15/30-minute CVD" in u for u in s["panels"]["futures"]["unavailable"])
+    assert s["panels"]["volatility"]["india_vix_label"] == "India VIX – Last Daily Close" and s["panels"]["volatility"]["india_vix_as_of"] == "2026-11-09"
+    assert s["config"]["note"] == "Provisional weights – not yet statistically calibrated." and s["sentiment"]["weights_note"] == s["config"]["note"]
+    assert "ASSUMED, not observed" in s["panels"]["gex"]["methodology"] and "Modelled" in s["panels"]["gex"]["label"]
+    assert {"findings", "terms"} <= set(s["overlap_audit"])
+    sent = s["sentiment"]
+    assert {"score", "confidence", "coverage", "agreement", "freshness", "engine_counts"} <= set(sent)  # kept as separate quantities
 
 
-def test_one_failing_module_makes_only_its_engine_unavailable(tmp_path: Path) -> None:
+def test_rolling_windows_and_per_source_timestamps_reach_the_summary(tmp_path: Path) -> None:
+    s = Rig(tmp_path).svc.summary()
+    roll = s["panels"]["futures"]["rolling"]["windows"]
+    assert [roll[k]["cvd_pct"] for k in ("5", "15", "30")] == [20.0, 20.0, 20.0]
+    caps = {c["id"]: c for c in s["capabilities"]}
+    assert caps["rolling_cvd"]["status"] == "AVAILABLE" and caps["rollover"]["status"] == "UNAVAILABLE" and caps["stock_futures"]["status"] == "UNAVAILABLE" and caps["option_aggressor"]["status"] == "UNAVAILABLE"
+    assert caps["vega"]["status"] == "PARTIAL" or caps["vega"]["status"] == "UNAVAILABLE"
+    assert caps["smart_oi"]["status"] in ("PARTIAL", "UNAVAILABLE")  # the rig has no comparison snapshot
+    assert s["status"]["flow"]["as_of"] == flow_samples(40)[-1][0] and s["status"]["vix"]["as_of"] == "2026-11-09" and s["status"]["gex"]["as_of"]
+    by = {e["key"]: e for e in s["engines"]}
+    assert by["orderflow"]["freshness"]["as_of"]["flow"] == s["status"]["flow"]["as_of"]
+
+
+def test_one_failing_module_makes_only_its_evidence_unavailable(tmp_path: Path) -> None:
     r = Rig(tmp_path, fail={"gex", "skew"})
     s = r.svc.summary()
     assert s["status"]["gex"]["ok"] is False and "module down" in s["status"]["gex"]["error"]
     by = {e["key"]: e for e in s["engines"]}
-    assert by["gex"]["score"] is None and by["gex"]["class"] == "Unavailable"
-    assert by["futures"]["score"] is not None and s["sentiment"]["score"] is not None  # the rest still reports
+    gex_terms = [t for t in by["positioning"]["terms"] if "gamma" in t["name"] or "GEX" in t["name"]]
+    assert gex_terms and all(t["available"] is False for t in gex_terms) and by["positioning"]["status"] == "PARTIAL"
+    assert by["positioning"]["score"] is not None and s["sentiment"]["score"] is not None  # the rest still reports
+
+
+def test_a_websocket_interruption_turns_the_live_groups_stale_without_blocking_the_dashboard(tmp_path: Path) -> None:
+    r = Rig(tmp_path)
+    flow_old = {"futures": {"cvd_pct": 25.0, "classified_share": 0.9, "stale": True, "age_seconds": 600.0, "depth_imbalance": 0.1}, "heavy5": {"stocks": []}}
+    r.providers["market"] = lambda *_: {"flow": flow_old, "nifty50": {"breadth": {"ad_balance": 0.4, "advancing": 35, "declining": 10, "covered": 50}, "stocks": []}, "participation": {"above_vwap": {"pct_above": 70}, "opening_range": {"pct_above_high": 30, "pct_below_low": 10}}, "index_change_pct": 0.3, "elapsed_minutes": 45}
+    r.svc.providers = r.providers
+    s = r.svc.summary()
+    by = {e["key"]: e for e in s["engines"]}
+    assert by["orderflow"]["freshness"]["fresh"] is False  # the feed's own age (600 s) is past the live limit
+    cvd = next(t for t in by["orderflow"]["terms"] if t["name"] == "Futures CVD (Proxy), session")
+    assert cvd["available"] is False  # a stale CVD is left out, not used
+    assert s["sentiment"]["freshness"] < 1.0 and s["sentiment"]["score"] is not None  # confidence is lowered; the page still renders
 
 
 def test_inputs_are_cached_and_the_summary_is_reused_for_five_seconds(tmp_path: Path) -> None:
@@ -335,7 +535,7 @@ def test_the_api_serves_a_partial_dashboard_when_the_underlying_modules_have_no_
         assert r.status_code == 200
         d = r.json()
         assert d["sentiment"]["class"].startswith("INSUFFICIENT DATA") and d["sentiment"]["score"] is None
-        assert {"status", "engines", "pulse", "regime", "interpretation", "divergences", "scenarios", "panels", "alerts", "config"} <= set(d)
-        assert len(d["engines"]) == 6 and d["config"]["weights"]["futures"] == 25.0
+        assert {"status", "engines", "pulse", "regime", "interpretation", "divergences", "scenarios", "panels", "alerts", "config", "capabilities", "overlap_audit"} <= set(d)
+        assert len(d["engines"]) == 5 and d["config"]["weights"]["positioning"] == 30.0
         t = c.get("/api/intelligence/timeline")
         assert t.status_code == 200 and t.json()["recorded"] == 0

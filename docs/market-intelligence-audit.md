@@ -55,41 +55,94 @@ Phase 1 to 5 of the master brief. Everything below was read from the code in thi
 4. **Interpretation**, **Divergences**, **Scenarios**, **Timeline** (inspect any recorded minute), **Alerts**, and expandable **Options / Gamma and Vega / Volatility / Futures / Heavyweight** panels.
 Existing pages and tools remain untouched and linked.
 
-## Sentiment fusion (documented before coding)
-Each engine returns a score in [−100, +100] or `None`; unavailable engines are left out of the sum and coverage is reported.
-`Overall = Σ(score_e × weight_e) / Σ(weight_e over engines with a score)`; `coverage = Σ(weight over available) / Σ(all weights)`. Default weights (configurable in settings, validated to sum to anything positive): futures flow 25, options 20, GEX 15, heavyweight 15, volatility 10, structure and breadth 15. Minimum coverage 0.55 and at least three engines, else `INSUFFICIENT DATA – SENTIMENT UNRELIABLE`. Classes: ≥70 strong bullish, 35–69 bullish, 15–34 mild bullish, −14..14 neutral, mirrored for bearish.
-Engine rules (each uses only existing outputs, every term listed in the response as evidence):
-* **Futures flow**: price-vs-OI buildup sign, CVD % (estimate, tanh scaled at ±25 %), VWAP side and distance in ATR, depth imbalance; sub-terms averaged over those available.
-* **Options**: `pcr_oi` change, (PE OI change − CE OI change) / total OI, strike-positioning demand labels (upside speculation and put writing bullish; downside speculation and call writing bearish; INSUFFICIENT EVIDENCE contributes nothing).
-* **GEX**: spot relative to the dynamic-universe gamma flip (above bullish, below bearish, scaled by distance, 1 % = full) and call-wall versus put-wall room. A model assumption, not observed dealer positioning; it also sets the gamma regime shown beside the score.
-* **Heavyweight**: Σ(weight × clipped CVD %) / Σ(weight) over the top five that have flow, plus their index-point contribution sign; raw CVDs are never summed across stocks.
-* **Volatility**: ATM IV change against spot change (IV up with spot down bearish; IV down with spot up bullish), 25Δ skew change (puts richer bearish). Not from IV rank or percentile alone.
-* **Structure and breadth**: advance/decline balance, share above VWAP, opening-range status, position in the day's range, and the existing command-centre price score.
-**Confidence (separate)** = completeness × agreement × freshness, each shown: agreement = weighted share of engines whose sign matches the overall; freshness = share of weight whose input is fresh; completeness = coverage. Reported with its parts; no probability is shown. Scenarios are heuristic scores (labelled), never probabilities, because no calibrated model exists here.
-
+## Sentiment fusion (revised 10 Nov 2026: five evidence groups, see "Sentiment architecture v2" below)
+The first design used six engines and reused the command-centre score inside the structure engine. That double counted price and breadth evidence; it was replaced by the architecture documented in the next section. The original text is not kept here so that the page cannot be read two ways.
 
 ## Implementation status (10 Nov 2026)
 | Item | Status | Where |
 |---|---|---|
 | Aggregation service (in-process, per-input cache and guard, 5 s summary cache) | Built and tested | `backend/app/intelligence/service.py`, `wiring.py` |
-| Sentiment fusion, engines, confidence, regime, scenarios, divergences, interpretation | Built and tested on hand-calculated cases | `backend/app/intelligence/fusion.py`, `tests/unit/test_intelligence.py` (25 tests) |
+| Sentiment fusion over five evidence groups, confidence, regime, scenarios, divergences, interpretation, capabilities (AVAILABLE / PARTIAL / UNAVAILABLE) | Built and tested on hand-calculated cases | `backend/app/intelligence/fusion.py`, `tests/unit/test_intelligence.py` |
+| Rolling 5/15/30-minute CVD from stored per-minute flow | Built and tested | `backend/app/intelligence/rolling.py` |
+| Walk-forward validation of stored snapshots | Built and tested on synthetic series; no real history yet | `backend/app/intelligence/validation.py`, `tests/unit/test_intelligence_validation.py` |
 | Timeline (one compact row per recorded minute) and de-duplicated alerts | Built; never back-filled | `backend/app/intelligence/store.py` → `data/intelligence.sqlite3` |
-| API | `GET /api/intelligence/summary?expiry=`, `GET /api/intelligence/timeline?session=` | `backend/app/api/routes.py` |
+| API | `GET /api/intelligence/summary?expiry=`, `GET /api/intelligence/timeline?session=`, `GET /api/intelligence/validation?sessions=` | `backend/app/api/routes.py` |
 | Page `/market-intelligence`, new first menu item, new Home (command strip, start links, searchable tool list) | Built; 16 component tests | `frontend/src/pages/MarketIntelligence.tsx`, `pages/Home.tsx`, `components/intelligence/*` |
 | Existing pages and tools | Untouched; every card links to them | |
 | Not seen with live data, in market hours, or visually on a phone | **Not verified** | |
 
 **Storage:** the timeline is about 0.6 KB per recorded minute (a 375-minute session is about 0.2 MB, roughly 55 MB a year). It is a new SQLite file because the fused score has no earlier history to read. Proposed retention if it matters: keep 90 sessions in full and thin older ones to every fifth minute; nothing is deleted without approval.
 
-**Settings:** `intelligence_enabled` (default on) and `intelligence_weights` (JSON, e.g. `{"futures": 30}`; invalid entries keep the default). Thresholds are constants in `fusion.py` and are listed in the response `config`.
+**Settings:** `intelligence_enabled` (default on) and `intelligence_weights` (JSON, e.g. `{"positioning": 35}`; invalid entries keep the default). Thresholds are constants in `fusion.py` and are listed in the response `config`.
 
-**Divergence checks implemented:** price vs futures CVD, price vs futures OI, price vs GEX, price vs call/put IV momentum, futures vs options, NIFTY vs heavyweight CVD, VWAP vs CVD, volatility expansion without price, volatility contraction during a move. **Not implemented, said on the page:** OI migration vs price (no stored migration series), rolling-CVD divergence (no rolling CVD).
+**Divergence checks implemented:** price vs futures CVD, price vs futures OI, price vs GEX, price vs call/put IV momentum, futures vs options, NIFTY vs heavyweight CVD, VWAP vs CVD, volatility expansion without price, volatility contraction during a move. **Not implemented, said on the page:** OI migration vs price (no stored migration series).
 
 **Alert kinds:** regime transition, sentiment reversal, strong bullish/bearish confirmation, gamma flip crossing, significant GEX migration, Smart OI shift, futures CVD divergence, heavyweight buying/selling, IV expansion, skew shock, VWAP breakdown/reclaim; 10-minute cooldown per kind and direction.
 
 **Honest limits**
-* CVD (futures and heavyweights) is an estimate by the quote and tick rule, labelled "proxy" wherever it is shown; rolling 5/15/30-minute CVD, rollover data, stock futures and options aggressor data do not exist.
-* The GEX engine is a model with an assumed sign; the dashboard says so on every GEX figure.
-* India VIX is a daily close.
-* The fused weights are provisional; confidence is completeness × agreement × freshness shown as three numbers, not a probability; scenario scores are heuristic and sum to 100 without being probabilities.
-* The existing command-centre score (price, breadth, sectors, options, global, institutional) is reused inside the structure engine, so price and breadth evidence appears in both; the page states it.
+* CVD (futures and heavyweights) is an estimate by the quote and tick rule, labelled "Futures CVD (Proxy)" / "Heavyweight CVD (Proxy)" with a tooltip wherever it is shown; rollover data, stock futures and options aggressor data do not exist. Rolling 5/15/30-minute CVD is derived from the stored per-minute flow.
+* The GEX figures are modelled exposure with an assumed sign, labelled so on every GEX figure.
+* India VIX is the last daily close, labelled "India VIX – Last Daily Close" with its date, and is never an intraday signal.
+* The fused weights are provisional and not statistically calibrated ("Provisional weights – not yet statistically calibrated." is shown with the score); confidence is coverage x agreement x freshness shown as three numbers, not a probability; scenario scores are heuristic and sum to 100 without being probabilities.
+
+## Sentiment architecture v2: evidence overlap correction (10 Nov 2026)
+
+### Audit: what overlapped
+The structure engine contained the aggregate command-centre score as a term (`Term("Existing command-centre score", ...)`). That score is itself built from price, VWAP, breadth, PCR and open-interest inputs, so the same evidence entered the fusion more than once. Every overlap found:
+
+| Input | Where it appeared | Correction |
+|---|---|---|
+| Aggregate command-centre score | structure engine term | **Removed.** An aggregate is never an independent engine. |
+| Advance/decline, stocks above VWAP, opening-range share | structure engine and, again, inside the command-centre score | Owned by group E only, one family (three views of the same 50 stocks). |
+| Future's VWAP, position in the day's range | futures engine, structure engine, command-centre score | Owned by group D only, one family. |
+| PCR change and OI added (puts minus calls) | two terms of the options engine from the same OI changes | One family; the OI-added reading is scored, the PCR change is displayed but not scored. |
+| Options OI and Smart OI labels | two terms from option OI changes | One family in group A. |
+| Session CVD and rolling 15-minute CVD | two terms of one series (the window is a slice of the session) | One family in group B. |
+| Heavyweight CVD session and rolling | two terms of the same five stocks | One family in group B; heavyweight prices live in group E and never use CVD. |
+| Index price inside futures buildup, GEX spot-versus-flip, GEX walls, heavyweight points and advancing weight | each also reads price, which group D reads | Kept with an explicit weight of 0.5 each (the "overlap adjustment" shown on the term). |
+| India VIX, IV rank and percentile | daily closes beside live volatility | Context only, never scored. |
+
+The same list is returned by the API (`overlap_audit.findings`, plus every term with its family and weight) and shown on the page.
+
+### The five groups (each input has one owner)
+| Group | Evidence (families) | Default weight |
+|---|---|---|
+| A. Derivatives positioning | options OI added + Smart OI labels (one family, weight 1); futures price and OI buildup (0.5, shares price); GEX flip distance + wall room (0.5, shares price). Vega is PARTIAL and not scored. | 30 |
+| B. Order-flow proxies | futures CVD session + rolling 15 min (one family); order-book depth imbalance; heavyweight CVD session + rolling (one family). All proxies. | 20 |
+| C. Volatility | live ATM IV change against price (expiry specific); 25-delta call-versus-put IV momentum. India VIX, IV rank/percentile, IV-RV are shown as context, not scored. | 10 |
+| D. Market structure | future versus its VWAP + position in the day's range (one family); position against the previous day's range. Index price only. | 20 |
+| E. Participation | advance/decline + above-VWAP share + opening-range share (one family); heavyweights advancing versus declining by weight and their index points (0.5, shares price). No CVD, so independent of B. | 20 |
+
+Weights are configurable (`intelligence_weights`, JSON over those five keys; unknown keys such as the retired `futures`/`options` are ignored). They are **provisional and not statistically calibrated**; the page says so beside the score.
+
+### Arithmetic
+    family score   = sum(term score x term weight) / sum(term weight)               over the terms available
+    group score    = sum(family score x family weight) / sum(family weight)         (family weight = mean weight of its available terms)
+    group fraction = available term weight / listed term weight                    (PARTIAL when below 1)
+    effective weight = configured weight x fraction
+    Overall   = sum(group score x effective weight) / sum(effective weight)
+    coverage  = sum(effective weight) / sum(configured weight of the groups passed in)
+
+Minimum coverage 0.55 and three groups, else `INSUFFICIENT DATA – SENTIMENT UNRELIABLE`. Classes unchanged. Unavailable terms are left out, never scored neutral.
+
+### Five separate quantities (confidence is not |score|)
+* **Directional score**: the arithmetic above.
+* **Data coverage**: effective weight / configured weight, with the count of AVAILABLE / PARTIAL / UNAVAILABLE groups.
+* **Evidence agreement** = 1 - 2 x min(bullish weight share, bearish weight share), where a group is bullish/bearish at +-15. Neutral groups oppose nobody. It looks at the groups, not at the size of the score: five groups all at +20 and all at +95 have the same agreement; a +40 score made of 70 % bullish against 30 % bearish weight has 0.4.
+* **Data freshness**: share of effective weight whose inputs are fresh (live inputs 120 s, stored-chain inputs 420 s).
+* **Confidence** = 100 x min(1, coverage / 0.8) x agreement x freshness, **capped at 40 when 25 % or more of the weight opposes the rest**. A strong score from conflicting groups can therefore never read as high confidence. Confidence describes the reliability of the reading, not the probability of the direction.
+
+The old agreement rule returned 1.0 for every group whenever the overall score sat near zero, so a perfectly split set of groups looked unanimous; the new rule fixes that and is tested.
+
+### GEX methodology (documented as modelled exposure)
+`GEX_METHOD` in `fusion.py` is returned with the panel and shown on the page. In short: gamma (Black-76 on the stored option price, forward from put-call parity) x open interest in **units** (the chain already reports units, so no lot-size multiplier is applied) x spot^2 x 0.01 / 10^7 = Rs crore per 1 % move; **calls count +, puts count -** (an assumption that dealers are long the calls and short the puts that customers hold; the feed does not say who holds what); net/absolute use strikes that have both sides, CE and PE totals use every strike with exposure on that side; ATM +-10 strikes of **one** expiry, never aggregated across expiries; gamma flip = sign change of the aggregate re-priced at 33 spot levels within +-8 %, located by bisection, none reported when there is no sign change. Server and browser agree to about 1e-6 on one real chain (`test_gex_parity.py`, `gex-parity.test.ts`).
+
+### CVD proxy documentation
+Kotak provides no aggressor-side trade tape. Each trade is classified by the quote rule (against the prevailing best bid/ask) and, when the quote is inconclusive, the tick rule (`market/flow.py`). CVD = classified buy volume - classified sell volume. This is an estimate: buyer- and seller-initiated volume are never observed. Every CVD figure is labelled "Futures CVD (Proxy)" or "Heavyweight CVD (Proxy)" with a tooltip saying so. CVD is normalised per stock (tanh of the percentage of classified volume) before the weighted average, so raw volumes of different stocks are never added. Rolling windows are differences of the stored per-minute cumulative figures; a window is unavailable (with its reason) when a stored end is missing, the recording has a gap, or the backend restarted inside it.
+
+### India VIX freshness
+The VIX value is the last entry of the daily `iv` series of `/intraday/iv-chart`: a **daily close**. It is displayed as "India VIX – Last Daily Close" with its observation date (`as_of`), `intraday_signal: false`, and is not an input to any engine. The intraday volatility group uses live ATM IV change and the expiry-specific 25-delta momentum. IV rank and percentile are computed from those daily closes and shown as context only.
+
+### Walk-forward validation framework (`app/intelligence/validation.py`, `GET /api/intelligence/validation`)
+Chronological test of the stored `timeline` snapshots against what NIFTY did next: 15, 30 and 60 minutes later, at the end of that session, and at the close of the next recorded session. No look-ahead (outcomes are read only from later rows; features are the stored row), expanding walk-forward folds (each fold scored on one session using only earlier sessions; an optional `fit` callable sees only earlier sessions), rows of a different group layout are excluded (`metrics.arch`), a missing outcome is left unlabelled rather than interpolated, a missing group is left out and the rest renormalised (`rescore`, which also lets alternative weights be tested on stored history), flat outcomes (< 0.02 %) and neutral calls (|score| < 15) are counted separately, a hit rate is reported only from 30 decided calls and always with a Wilson 95 % interval, with the correlation of score and forward return and the mean forward return by score bucket and hit rate by confidence band. **Not run on real history yet**: the timeline began recording with this release, so there are no stored sessions to validate; the tests use synthetic series with hand-calculated expectations. It is not a claim of predictive accuracy.
+

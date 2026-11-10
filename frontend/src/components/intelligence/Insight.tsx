@@ -71,8 +71,8 @@ export function MinuteReading({ p }: { p: TimelinePoint }) {
   return (
     <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4 lg:grid-cols-6" data-testid="mi-minute">
       {([["Time", fmtTimeIST(p.at)], ["NIFTY", p.spot == null ? MISSING : fmtInt(Math.round(p.spot))], ["Score", p.score == null ? "insufficient data" : signed(p.score)], ["Confidence", p.confidence == null ? MISSING : p.confidence.toFixed(0)], ["Regime", p.regime ?? MISSING],
-        ["Gamma", p.gamma_regime ?? MISSING], ["Futures CVD %", p.metrics.cvd_pct == null ? MISSING : String(p.metrics.cvd_pct)], ["Net GEX", p.metrics.net_gex == null ? MISSING : String(p.metrics.net_gex)], ["ATM IV", p.metrics.atm_iv == null ? MISSING : String(p.metrics.atm_iv)],
-        ["Heavy CVD", p.metrics.heavy_cvd == null ? MISSING : String(p.metrics.heavy_cvd)], ["Futures OI chg", p.metrics.fut_oi_change == null ? MISSING : String(p.metrics.fut_oi_change)], ["Divergences", p.divs.length ? p.divs.map((x) => x.id).join(", ") : "none"]] as [string, string][]).map(([l, v]) => (
+        ["Gamma", p.gamma_regime ?? MISSING], ["Futures CVD % (Proxy)", p.metrics.cvd_pct == null ? MISSING : String(p.metrics.cvd_pct)], ["Net GEX", p.metrics.net_gex == null ? MISSING : String(p.metrics.net_gex)], ["ATM IV", p.metrics.atm_iv == null ? MISSING : String(p.metrics.atm_iv)],
+        ["Heavy CVD (Proxy)", p.metrics.heavy_cvd == null ? MISSING : String(p.metrics.heavy_cvd)], ["Futures OI chg", p.metrics.fut_oi_change == null ? MISSING : String(p.metrics.fut_oi_change)], ["Divergences", p.divs.length ? p.divs.map((x) => x.id).join(", ") : "none"]] as [string, string][]).map(([l, v]) => (
         <div key={l} className="rounded-sm bg-slate-2 p-2"><div className="text-[11px] text-muted">{l}</div><div className="num truncate text-paper">{v}</div></div>
       ))}
       <div className="col-span-2 rounded-sm bg-slate-2 p-2 sm:col-span-4 lg:col-span-6"><div className="text-[11px] text-muted">Engine scores at that minute</div>

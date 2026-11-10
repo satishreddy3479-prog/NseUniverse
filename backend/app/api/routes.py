@@ -662,6 +662,16 @@ async def intelligence_timeline(request: Request, session: date | None = None) -
     return await asyncio.to_thread(svc.timeline, None if session is None else session.isoformat())
 
 
+@router.get("/intelligence/validation")
+async def intelligence_validation(request: Request, sessions: int = 30) -> dict[str, Any]:
+    """Walk-forward validation of stored sentiment snapshots (read-only; not an accuracy claim)."""
+    svc = getattr(request.app.state, "intelligence", None)
+    if svc is None or not svc.enabled:
+        msg = "the market-intelligence dashboard is turned off"
+        raise HTTPException(status_code=404, detail={"code": "disabled", "message": msg})
+    return await asyncio.to_thread(svc.validation, max(1, min(sessions, 120)))
+
+
 @router.get("/swing/live-fills")
 async def swing_live_fills(request: Request) -> dict[str, Any]:
     """The live paper ledger: provisional intraday fills, apart from the official paper book."""

@@ -2,14 +2,22 @@
 
 Everything here consumes outputs the application already computes (see docs/market-intelligence-audit.md for the map): nothing is
 recalculated from raw data except small combinations of those outputs, and every term is returned as evidence. A term whose input is
-missing is *unavailable*: it is left out of its engine's average, and an engine with no available term is left out of the fusion
-(its weight is not given a neutral score). Scores are in [-100, +100]; +100 is bullish evidence.
+missing is *unavailable*: it is left out, never scored neutral. Scores are in [-100, +100]; +100 is bullish evidence.
 
-    Overall = sum(score_e x weight_e) / sum(weight_e over engines that have a score)
-    coverage = sum(weight_e over engines that have a score) / sum(all weights)
+Evidence is split into five groups, each owning its inputs so that no input is counted twice:
 
-Confidence is separate and is a product of three shown parts (coverage, agreement, freshness); it is not a probability.
-Thresholds and weights are provisional judgement calls, not fitted to history.
+    A positioning (options OI, Smart OI, futures OI, GEX)   B order-flow proxies (futures and heavyweight CVD, depth)
+    C volatility (live ATM IV, skew)                        D market structure (index price: VWAP, day range, previous-day range)
+    E participation (breadth of the 50 stocks and the heavyweights, from prices only)
+
+Where two terms inside a group are built from the same underlying data they share a *family* and are averaged into one reading. A term that
+reads an input another group also reads (price) carries a stated weight below 1. The aggregate command-centre score is never an input.
+
+    group score = sum(family score x family weight) / sum(family weight)         (family score = weighted mean of its available terms)
+    Overall     = sum(score_g x effective weight_g) / sum(effective weight_g)     coverage = sum(effective weight) / sum(all weights)
+
+Confidence is separate from the score and is the product of three shown parts (coverage, agreement among the groups, freshness); it is
+not derived from the size of the score and it is not a probability. Weights and thresholds are provisional and not statistically calibrated.
 """
 
 from __future__ import annotations
@@ -19,15 +27,16 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 #: default engine weights (percent); overridable through ``Settings.intelligence_weights``
-DEFAULT_WEIGHTS: dict[str, float] = {"futures": 25.0, "options": 20.0, "gex": 15.0, "heavyweight": 15.0, "volatility": 10.0, "structure": 15.0}
+DEFAULT_WEIGHTS: dict[str, float] = {"positioning": 30.0, "orderflow": 20.0, "volatility": 10.0, "structure": 20.0, "participation": 20.0}
 ENGINE_NAMES = {
-    "futures": "Futures positioning and order flow", "options": "Options positioning and Smart OI", "gex": "Gamma exposure (GEX)",
-    "heavyweight": "Heavyweight participation", "volatility": "Volatility intelligence", "structure": "Market structure and breadth",
+    "positioning": "A. Derivatives positioning", "orderflow": "B. Order-flow proxies", "volatility": "C. Volatility",
+    "structure": "D. Market structure", "participation": "E. Participation and breadth",
 }
 ENGINE_LINKS = {
-    "futures": "/tools/future-flow", "options": "/tools/strike-positioning", "gex": "/tools/gamma-exposure", "heavyweight": "/tools/future-flow",
-    "volatility": "/tools/volatility-skew", "structure": "/tools/market-movers",
+    "positioning": "/tools/strike-positioning", "orderflow": "/tools/future-flow", "volatility": "/tools/volatility-skew",
+    "structure": "/tools/future-dashboard", "participation": "/tools/market-movers",
 }
+PROVISIONAL = "Provisional weights – not yet statistically calibrated."
 MIN_COVERAGE = 0.55
 MIN_ENGINES = 3
 #: (lower bound, label), checked from the top
@@ -72,33 +81,50 @@ def tilt(score: float | None) -> str:
 
 
 class Term:
-    """One piece of evidence inside an engine."""
+    """One piece of evidence inside a group. ``family``: terms built from the same underlying data share one and are averaged into a single reading.
+    ``weight`` (default 1) is the term's weight inside its family and, when its family has one term, the family's weight against other families;
+    a weight below 1 is an explicit overlap adjustment for the inputs listed in ``shares`` (inputs another group also reads)."""
 
-    def __init__(self, name: str, score: float | None, detail: str, *, proxy: bool = False) -> None:
+    def __init__(self, name: str, score: float | None, detail: str, *, proxy: bool = False, family: str | None = None, weight: float = 1.0, shares: Sequence[str] = ()) -> None:
         self.name, self.score, self.detail, self.proxy = name, None if score is None else round(clip(score), 1), detail, proxy
+        self.family, self.weight, self.shares = family or name, weight, tuple(shares)
 
     def public(self) -> dict[str, Any]:
-        return {"name": self.name, "score": self.score, "detail": self.detail, "available": self.score is not None, "proxy": self.proxy}
+        return {"name": self.name, "score": self.score, "detail": self.detail, "available": self.score is not None, "proxy": self.proxy,
+                "family": self.family, "weight": self.weight, "shares": list(self.shares),
+                "overlap_adjustment": None if not self.shares else f"weight {self.weight:g}: shares {', '.join(self.shares)} with another group"}
 
 
 def engine(key: str, terms: Sequence[Term], inputs: Sequence[str], status: Mapping[str, Mapping[str, Any]], *, extra: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """An engine's score is the plain average of its available terms; the evidence lists are the terms on each side of zero."""
     avail = [t for t in terms if t.score is not None]
-    score = None if not avail else round(sum(t.score for t in avail if t.score is not None) / len(avail), 1)
+    fam_score: dict[str, float] = {}
+    fam_w: dict[str, float] = {}
+    for f in dict.fromkeys(t.family for t in terms):
+        members = [t for t in avail if t.family == f]
+        if members:
+            w = sum(t.weight for t in members)
+            fam_score[f] = sum((t.score or 0.0) * t.weight for t in members) / w
+            fam_w[f] = w / len(members)
+    score = None if not fam_w else round(sum(fam_score[f] * fam_w[f] for f in fam_w) / sum(fam_w.values()), 1)
     ages = [num(g(status, i, "age_s")) for i in inputs]
     errs = [i for i in inputs if g(status, i, "ok") is False]
-    live = key in ("futures", "heavyweight")
+    live = key in ("orderflow", "structure", "participation")
     limit = STALE_LIVE_S if live else STALE_STORED_S
     known = [a for a in ages if a is not None]
     worst = max(known) if known else None
     fresh = None if score is None else (not errs and (worst is None or worst <= limit))
+    total_w = sum(t.weight for t in terms)
+    fraction = 1.0 if not total_w else sum(t.weight for t in avail) / total_w
+    state = "UNAVAILABLE" if score is None else ("AVAILABLE" if len(avail) == len(terms) else "PARTIAL")
     return {
         "key": key, "name": ENGINE_NAMES[key], "score": score, "class": classify(score), "tilt": tilt(score), "link": ENGINE_LINKS[key],
+        "status": state, "fraction": round(fraction, 3), "terms_available": len(avail), "terms_total": len(terms), "families": len({t.family for t in terms}),
         "terms": [t.public() for t in terms],
         "supporting": [f"{t.name}: {t.detail}" for t in avail if t.score is not None and abs(t.score) >= 10 and (score or 0) * t.score > 0],
         "conflicting": [f"{t.name}: {t.detail}" for t in avail if t.score is not None and abs(t.score) >= 10 and (score or 0) * t.score < 0],
         "unavailable": [f"{t.name}: {t.detail}" for t in terms if t.score is None],
-        "freshness": {"fresh": fresh, "age_s": worst, "inputs": list(inputs), "failed": errs},
+        "freshness": {"fresh": fresh, "age_s": worst, "inputs": list(inputs), "failed": errs, "as_of": {i: g(status, i, "as_of") for i in inputs}},
         **(extra or {}),
     }
 
@@ -143,52 +169,6 @@ def _fut_window(fut: Mapping[str, Any] | None, minutes: int = 15) -> tuple[float
     return pc, oc, price[j], oi[j]
 
 
-def futures_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[str, Any]:
-    fut = inp.get("futures")
-    flow = g(inp.get("market"), "flow", "futures")
-    vwap = g(inp.get("intraday"), "vwap")
-    pc, oc, _, _ = _fut_window(fut, 15)
-    bu = buildup(pc, oc)
-    base = {"long buildup": 60.0, "short buildup": -60.0, "short covering": 30.0, "long unwinding": -30.0}.get(bu)
-    terms = [Term("Price and open interest (15 min)", base, f"{bu}: price {pc:+.2f}%, OI {oc:+,.0f}" if base is not None and pc is not None and oc is not None else "needs two futures samples 15 minutes apart")]
-    cvd, share, stale = num(g(flow, "cvd_pct")), num(g(flow, "classified_share")), g(flow, "stale")
-    ok_cvd = cvd is not None and stale is not True and (share is None or share >= 0.5)
-    terms.append(Term("Futures CVD (estimated)", squash(cvd, 25) if ok_cvd else None,
-                      f"session CVD {cvd:+.1f}% of classified volume (estimate by the quote and tick rule, not a trade tape)" if cvd is not None else "no futures flow tracked", proxy=True))
-    dist_atr, dist_pct = num(g(vwap, "distance_atr")), num(g(vwap, "distance_pct"))
-    vs = squash(dist_atr, 1.0) if dist_atr is not None else squash(dist_pct, 0.2)
-    terms.append(Term("Price versus VWAP", vs, f"future {g(vwap, 'side')} its VWAP by {dist_pct:+.3f}% (slope {g(vwap, 'slope_pts_per_15m')} pts / 15 min)" if dist_pct is not None else "no VWAP (needs the future's average traded price)"))
-    imb = num(g(flow, "depth_imbalance"))
-    terms.append(Term("Order-book depth imbalance", squash(imb, 0.3) if stale is not True else None, f"bid minus ask depth share {imb:+.2f}" if imb is not None else "no fresh depth", proxy=True))
-    return engine("futures", terms, ["futures", "market", "intraday"], status, extra={"buildup": bu, "price_change_15m_pct": pc, "oi_change_15m": oc})
-
-
-def options_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[str, Any]:
-    o = g(inp.get("intraday"), "options") or {}
-    chg = num(o.get("pcr_oi_change"))
-    ce, pe = num(o.get("ce_oi_chg")), num(o.get("pe_oi_chg"))
-    tot = (num(o.get("ce_oi")) or 0) + (num(o.get("pe_oi")) or 0)
-    terms = [Term("PCR change since the first sample", squash(chg, 0.2), f"PCR {o.get('pcr_oi')} ({chg:+.3f} since open)" if chg is not None else "no PCR change yet")]
-    terms.append(Term("OI added: puts minus calls", squash((pe - ce) / tot, 0.05) if ce is not None and pe is not None and tot else None,
-                      f"put OI {pe:+,.0f}, call OI {ce:+,.0f} (ATM ±10 strikes)" if ce is not None and pe is not None else "no OI change"))
-    dem = g(inp.get("positioning"), "demand") or []
-    bull = {("CE", "otm"): ("Upside speculation",), ("PE", "otm"): ("Put writing",)}
-    bear = {("CE", "otm"): ("Call writing",), ("PE", "otm"): ("Downside speculation",)}
-    pts, notes = 0.0, []
-    for d in dem:
-        lab, key = d.get("label"), (d.get("side"), d.get("group"))
-        if lab in bull.get(key, ()):
-            pts += 35
-            notes.append(f"{d['side']} {d['group']}: {lab}")
-        elif lab in bear.get(key, ()):
-            pts -= 35
-            notes.append(f"{d['side']} {d['group']}: {lab}")
-    has_label = any(d.get("label") not in (None, "INSUFFICIENT EVIDENCE") for d in dem)
-    terms.append(Term("Strike demand labels (15 min)", pts if has_label or pts else None,
-                      ("; ".join(notes) or "labels present, none directional") + " (OI does not identify who traded)" if dem else "no positioning comparison"))
-    return engine("options", terms, ["intraday", "positioning"], status, extra={"pcr": o.get("pcr_oi"), "max_ce_oi_strike": o.get("max_ce_oi_strike"), "max_pe_oi_strike": o.get("max_pe_oi_strike")})
-
-
 def gex_state(inp: Mapping[str, Any]) -> dict[str, Any]:
     pts = g(inp.get("gex"), "points") or []
     last = pts[-1] if pts else None
@@ -226,55 +206,113 @@ def _minutes_between(a: Any, b: Any) -> float:
         return 0.0
 
 
-def gex_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[str, Any]:
+def _gex_terms(inp: Mapping[str, Any]) -> tuple[list[Term], dict[str, Any]]:
+    """GEX evidence: a modelled exposure (calls +, puts − by assumption), never observed dealer positioning. Both terms read spot against a level, so each
+    carries half weight and is marked as sharing the price input with group D."""
     st = gex_state(inp)
     if not st["available"]:
-        return engine("gex", [Term("Spot versus the gamma flip", None, "no rebuilt GEX snapshot"), Term("Room to the walls", None, "no walls")], ["gex"], status, extra={"state": st})
+        return [Term("Spot versus the gamma flip (modelled)", None, "no rebuilt GEX snapshot", family="gex", weight=0.5, shares=("price",)),
+                Term("Room to the GEX walls (modelled)", None, "no walls", family="gex", weight=0.5, shares=("price",))], st
     dist = st["flip_distance_pct"]
     spot, cw, pw = st["spot"], st["call_wall"], st["put_wall"]
-    terms = [Term("Spot versus the gamma flip", squash(dist, 1.0), f"spot {dist:+.2f}% from the flip {st['flip']:.0f} (above = positive-gamma side, a model assumption)" if dist is not None else "no gamma flip within ±8%")]
+    terms = [Term("Spot versus the gamma flip (modelled)", squash(dist, 1.0), f"spot {dist:+.2f}% from the modelled flip {st['flip']:.0f} (above = positive-gamma side under the assumed sign convention)" if dist is not None else "no gamma flip within ±8%",
+                  family="gex", weight=0.5, shares=("price",))]
     up, dn = (cw - spot if cw and spot else None), (spot - pw if pw and spot else None)
     asym = None if up is None or dn is None or up <= 0 or dn <= 0 else (up - dn) / (up + dn)
-    terms.append(Term("Room to the walls", None if asym is None else asym * 60, f"call wall {cw:.0f} ({up:.0f} pts above), put wall {pw:.0f} ({dn:.0f} pts below)" if asym is not None else "walls not both on the expected side of spot"))
-    return engine("gex", terms, ["gex"], status, extra={"state": st})
+    terms.append(Term("Room to the GEX walls (modelled)", None if asym is None else asym * 60, f"call wall {cw:.0f} ({up:.0f} pts above), put wall {pw:.0f} ({dn:.0f} pts below)" if asym is not None else "walls not both on the expected side of spot",
+                      family="gex", weight=0.5, shares=("price",)))
+    return terms, st
 
 
-def heavyweight_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[str, Any]:
+def positioning_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[str, Any]:
+    """Group A, derivatives positioning: options OI and Smart OI, futures OI, GEX. (Vega is only PARTIAL and is not scored.)
+
+    The two options-OI terms come from the same open-interest changes (PCR change is a ratio of those very changes), so they form ONE family and are
+    averaged into one reading; the PCR change itself is shown but not scored. The futures price-and-OI term and the GEX terms read price, which group
+    D also reads: they carry half weight and say so."""
+    o = g(inp.get("intraday"), "options") or {}
+    chg = num(o.get("pcr_oi_change"))
+    ce, pe = num(o.get("ce_oi_chg")), num(o.get("pe_oi_chg"))
+    tot = (num(o.get("ce_oi")) or 0) + (num(o.get("pe_oi")) or 0)
+    terms = [Term("OI added: puts minus calls", squash((pe - ce) / tot, 0.05) if ce is not None and pe is not None and tot else None,
+                  f"put OI {pe:+,.0f}, call OI {ce:+,.0f} (ATM ±10 strikes); PCR {o.get('pcr_oi')} ({'' if chg is None else f'{chg:+.3f}'} since open, shown not scored: same OI)" if ce is not None and pe is not None else "no OI change", family="options_oi")]
+    dem = g(inp.get("positioning"), "demand") or []
+    bull = {("CE", "otm"): ("Upside speculation",), ("PE", "otm"): ("Put writing",)}
+    bear = {("CE", "otm"): ("Call writing",), ("PE", "otm"): ("Downside speculation",)}
+    pts, notes = 0.0, []
+    for d in dem:
+        lab, key = d.get("label"), (d.get("side"), d.get("group"))
+        if lab in bull.get(key, ()):
+            pts += 35
+            notes.append(f"{d['side']} {d['group']}: {lab}")
+        elif lab in bear.get(key, ()):
+            pts -= 35
+            notes.append(f"{d['side']} {d['group']}: {lab}")
+    has_label = any(d.get("label") not in (None, "INSUFFICIENT EVIDENCE") for d in dem)
+    terms.append(Term("Smart OI: strike demand labels (15 min)", pts if has_label or pts else None,
+                      ("; ".join(notes) or "labels present, none directional") + " (OI does not identify who traded)" if dem else "no positioning comparison", family="options_oi"))
+    fut = inp.get("futures")
+    pc, oc, _, _ = _fut_window(fut, 15)
+    bu = buildup(pc, oc)
+    base = {"long buildup": 60.0, "short buildup": -60.0, "short covering": 30.0, "long unwinding": -30.0}.get(bu)
+    terms.append(Term("Futures price and open interest (15 min)", base, f"{bu}: price {pc:+.2f}%, OI {oc:+,.0f}" if base is not None and pc is not None and oc is not None else "needs two futures samples 15 minutes apart",
+                      family="futures_oi", weight=0.5, shares=("price",)))
+    gterms, st = _gex_terms(inp)
+    terms += gterms
+    return engine("positioning", terms, ["intraday", "positioning", "futures", "gex"], status, extra={"buildup": bu, "price_change_15m_pct": pc, "oi_change_15m": oc, "pcr": o.get("pcr_oi"),
+                                                                                                      "max_ce_oi_strike": o.get("max_ce_oi_strike"), "max_pe_oi_strike": o.get("max_pe_oi_strike"), "state": st})
+
+
+def orderflow_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[str, Any]:
+    """Group B, order-flow PROXIES. Every CVD figure here is estimated by the quote rule then the tick rule from the quote stream: the feed carries no
+    aggressor-side trade tape, so buyer- or seller-initiated volume is never observed. Session and rolling CVD of the same instrument are one family
+    (the rolling window is a slice of the session total); the heavyweights are a separate instrument set and a separate family."""
+    flow = g(inp.get("market"), "flow", "futures")
+    cvd, share, stale = num(g(flow, "cvd_pct")), num(g(flow, "classified_share")), g(flow, "stale")
+    ok_cvd = cvd is not None and stale is not True and (share is None or share >= 0.5)
+    terms = [Term("Futures CVD (Proxy), session", squash(cvd, 25) if ok_cvd else None,
+                  f"session CVD {cvd:+.1f}% of classified volume (quote and tick-rule estimate, not observed buyer/seller volume)" if cvd is not None else "no futures flow tracked", proxy=True, family="futures_cvd")]
+    r15 = g(inp.get("rolling"), "windows", "15") or {}
+    r15v = num(r15.get("cvd_pct")) if r15.get("status") == "ok" else None
+    terms.append(Term("Futures CVD (Proxy), rolling 15 min", squash(r15v, 25), f"last 15 minutes {r15v:+.1f}% of classified volume (stored per-minute flow, estimate)" if r15v is not None else str(r15.get("status") or "no rolling flow"), proxy=True, family="futures_cvd"))
+    imb = num(g(flow, "depth_imbalance"))
+    terms.append(Term("Order-book depth imbalance (Proxy)", squash(imb, 0.3) if stale is not True else None, f"bid minus ask depth share {imb:+.2f} (resting quotes, not trades)" if imb is not None else "no fresh depth", proxy=True, family="depth"))
     stocks = g(inp.get("market"), "flow", "heavy5", "stocks") or []
-    rows = {r.get("symbol"): r for r in (g(inp.get("market"), "nifty50", "stocks") or [])}
     idx = num(g(inp.get("market"), "index_change_pct"))
-    used, num_w, den_w, pos, neg, pts, match, covered = [], 0.0, 0.0, 0, 0, 0.0, 0, 0
+    used, num_w, den_w, pos, neg = [], 0.0, 0.0, 0, 0
     for s in stocks:
         fl, w = s.get("flow") or {}, num(s.get("weight"))
-        cvd, share = num(fl.get("cvd_pct")), num(fl.get("classified_share"))
-        chg = num(s.get("change_pct"))
-        rc = rows.get(s.get("symbol"), {})
-        if num(rc.get("contribution")) is not None:
-            pts += float(rc["contribution"])
-        if chg is not None and idx is not None and chg * idx > 0:
-            match += 1
-        if chg is not None:
-            covered += 1
-        if w and cvd is not None and fl.get("stale") is not True and (share is None or share >= 0.5):
-            s_i = math.tanh(cvd / 25)  # normalised per stock first: raw CVDs of stocks with different volumes are never added
-            num_w += w * s_i
+        c, sh = num(fl.get("cvd_pct")), num(fl.get("classified_share"))
+        if w and c is not None and fl.get("stale") is not True and (sh is None or sh >= 0.5):
+            num_w += w * math.tanh(c / 25)  # normalised per stock first: raw CVDs of stocks with different volumes are never added
             den_w += w
-            pos += cvd > 0
-            neg += cvd < 0
+            pos += c > 0
+            neg += c < 0
             used.append(s.get("symbol"))
     agg = None if den_w == 0 else 100 * num_w / den_w
-    n_pts = len([1 for s in stocks if num(rows.get(s.get("symbol"), {}).get("contribution")) is not None])
-    terms = [Term("Weighted heavyweight CVD (estimated)", agg, f"{len(used)} of {len(stocks)} stocks, each normalised then weighted by index weight; {pos} positive, {neg} negative" if agg is not None else "no heavyweight flow", proxy=True),
-             Term("Index points from the heavyweights", squash(pts, 0.15) if n_pts else None, f"{pts:+.3f}% of the index from {n_pts} stocks" if n_pts else "no contributions")]
-    part = None if not covered else match / covered
+    rh = inp.get("rolling_heavy") or {}
+    rn, rd, rused = 0.0, 0.0, 0
+    for s_ in stocks:
+        w_ = num(s_.get("weight"))
+        r_ = rh.get(s_.get("symbol")) or {}
+        c_ = num(r_.get("cvd_pct")) if r_.get("status") == "ok" else None
+        if w_ and c_ is not None:
+            rn += w_ * math.tanh(c_ / 25)
+            rd += w_
+            rused += 1
+    agg15 = None if rd == 0 else 100 * rn / rd
+    terms.append(Term("Heavyweight CVD (Proxy), rolling 15 min", agg15, f"{rused} of {len(stocks)} stocks, last 15 minutes of stored flow, each normalised then weighted (estimate)" if agg15 is not None else str((rh.get("_status") or {}).get("status") or "no rolling heavyweight flow"), proxy=True, family="heavy_cvd"))
+    terms.append(Term("Heavyweight CVD (Proxy), session", agg, f"{len(used)} of {len(stocks)} stocks, each normalised then weighted by index weight; {pos} positive, {neg} negative (estimate)" if agg is not None else "no heavyweight flow", proxy=True, family="heavy_cvd"))
     div = None
     if agg is not None and idx is not None and abs(idx) >= 0.1 and abs(agg) >= 15 and agg * idx < 0:
         div = "index and heavyweight flow disagree"
-    return engine("heavyweight", terms, ["market"], status, extra={"metrics": {"weighted_cvd_score": None if agg is None else round(agg, 1), "positive_cvd": pos, "negative_cvd": neg, "stocks_used": used,
-                                                                                  "aggregate_points_pct": round(pts, 4) if n_pts else None, "participation_ratio": None if part is None else round(part, 2), "divergence": div, "symbols": [s.get("symbol") for s in stocks]}})
+    return engine("orderflow", terms, ["market", "flow"], status, extra={"metrics": {"weighted_cvd_score": None if agg is None else round(agg, 1), "positive_cvd": pos, "negative_cvd": neg, "stocks_used": used,
+                                                                                    "weighted_cvd_15m_score": None if agg15 is None else round(agg15, 1), "divergence": div, "symbols": [s.get("symbol") for s in stocks]}})
 
 
 def volatility_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[str, Any]:
+    """Group C, volatility: live ATM IV change and the 25Δ call-versus-put IV momentum (expiry-specific). India VIX and the IV rank/percentile built from
+    it are daily closes: they are shown as context, labelled with their date, and are never scored as an intraday signal."""
     row = g(inp.get("momentum"), "table", "periods", "15") or {}
     atm = row.get("atm") or {}
     ce, pe = num(atm.get("ce_change")), num(atm.get("pe_change"))
@@ -282,59 +320,114 @@ def volatility_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict
     spot = num(row.get("spot_change_pct"))
     terms: list[Term] = []
     if iv_chg is None:
-        terms.append(Term("ATM IV change against price (15 min)", None, "no snapshot 15 minutes earlier"))
+        terms.append(Term("ATM IV change against price (15 min)", None, "no snapshot 15 minutes earlier", family="atm_iv"))
     else:
         rising_with_spot = spot is not None and spot > 0.1 and iv_chg > 0
         terms.append(Term("ATM IV change against price (15 min)", 0.0 if rising_with_spot else -(squash(iv_chg, 0.5) or 0.0) * 0.6,
-                          f"ATM IV {iv_chg:+.2f} pts, NIFTY {spot:+.2f}%: " + ("IV up with an advance is not read as directional" if rising_with_spot else "IV up leans bearish, IV down leans bullish") if spot is not None else f"ATM IV {iv_chg:+.2f} pts"))
+                          f"ATM IV {iv_chg:+.2f} pts, NIFTY {spot:+.2f}%: " + ("IV up with an advance is not read as directional" if rising_with_spot else "IV up leans bearish, IV down leans bullish") if spot is not None else f"ATM IV {iv_chg:+.2f} pts", family="atm_iv"))
     d25 = num(g(row, "d25", "momentum"))
-    terms.append(Term("Call versus put IV momentum (25Δ, 15 min)", squash(d25, 0.4), f"CE IV change minus PE IV change {d25:+.2f} pts (positive: call IV strengthened relative to put IV)" if d25 is not None else "no 25Δ momentum"))
+    terms.append(Term("Call versus put IV momentum (25Δ, 15 min)", squash(d25, 0.4), f"CE IV change minus PE IV change {d25:+.2f} pts (positive: call IV strengthened relative to put IV)" if d25 is not None else "no 25Δ momentum", family="skew"))
     return engine("volatility", terms, ["momentum", "skew"], status, extra={"atm_iv_change_15m": iv_chg, "spot_change_15m_pct": spot, "skew_25d": g(inp.get("skew"), "cards", "skew_25d"),
-                                                                           "call_minus_put_25d": g(inp.get("skew"), "cards", "call_minus_put_25d"), "butterfly_25d": g(inp.get("skew"), "cards", "butterfly_25d")})
+                                                                           "call_minus_put_25d": g(inp.get("skew"), "cards", "call_minus_put_25d"), "butterfly_25d": g(inp.get("skew"), "cards", "butterfly_25d"),
+                                                                           "context_not_scored": ["India VIX (last daily close)", "IV rank and IV percentile (from daily VIX closes)", "IV minus realised volatility (daily)"]})
 
 
 def structure_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[str, Any]:
-    b = g(inp.get("market"), "nifty50", "breadth") or {}
-    adb = num(b.get("ad_balance"))
-    pa = num(g(inp.get("market"), "participation", "above_vwap", "pct_above"))
-    orb = g(inp.get("market"), "participation", "opening_range") or {}
-    orv = None if num(orb.get("pct_above_high")) is None or num(orb.get("pct_below_low")) is None else float(orb["pct_above_high"]) - float(orb["pct_below_low"])
-    pos = num(g(inp.get("intraday"), "price", "position_in_range"))
-    sc = num(g(inp.get("intraday"), "assessment", "score"))
+    """Group D, market structure of the INDEX: where price is against its VWAP, its day range and the previous day's range. The breadth of the
+    constituents is group E's; the command-centre score is never used here because it is itself built from these same inputs."""
+    ins = inp.get("intraday")
+    vwap = g(ins, "vwap")
+    dist_atr, dist_pct = num(g(vwap, "distance_atr")), num(g(vwap, "distance_pct"))
+    vs = squash(dist_atr, 1.0) if dist_atr is not None else squash(dist_pct, 0.2)
+    pos = num(g(ins, "price", "position_in_range"))
+    last, ph, pl = num(g(ins, "price", "last")), num(g(ins, "daily", "prev_high")), num(g(ins, "daily", "prev_low"))
+    lvl = None if last is None or ph is None or pl is None or ph <= pl else (last - pl) / (ph - pl)
     terms = [
-        Term("Advance/decline balance", None if adb is None else adb * 100, f"balance {adb:+.2f} ({b.get('advancing')} up, {b.get('declining')} down of {b.get('covered')} covered)" if adb is not None else "no breadth"),
-        Term("Stocks above their day VWAP", None if pa is None else (pa - 50) * 2, f"{pa:.0f}% of stocks above VWAP" if pa is not None else "no VWAP participation"),
-        Term("Opening range", orv, f"{orb.get('pct_above_high')}% above the opening-range high, {orb.get('pct_below_low')}% below the low" if orv is not None else "opening range not yet formed"),
-        Term("Position in the day's range", None if pos is None else (pos - 0.5) * 120, f"NIFTY at {pos:.0%} of the sampled day range" if pos is not None else "no range"),
-        Term("Existing command-centre score", None if sc is None else sc * 100, f"the intraday rules-based score ({g(inp.get('intraday'), 'assessment', 'label')}), reused as it is" if sc is not None else "command-centre score unavailable"),
+        Term("Future versus its VWAP", vs, f"future {g(vwap, 'side')} its VWAP by {dist_pct:+.3f}% (slope {g(vwap, 'slope_pts_per_15m')} pts / 15 min)" if dist_pct is not None else "no VWAP (needs the future's average traded price)", family="price"),
+        Term("Position in the day's range", None if pos is None else (pos - 0.5) * 120, f"NIFTY at {pos:.0%} of the sampled day range" if pos is not None else "no range", family="price"),
+        Term("Position against the previous day's range", None if lvl is None else clip((lvl - 0.5) * 120), f"NIFTY {last:.0f} against the previous day's {pl:.0f} to {ph:.0f} ({lvl:.0%} of that range; above 100% is a break higher)" if lvl is not None and last is not None and ph is not None and pl is not None else "no previous-day range", family="levels"),
     ]
-    return engine("structure", terms, ["market", "intraday"], status, extra={"breadth": {"advancing": b.get("advancing"), "declining": b.get("declining"), "covered": b.get("covered")}})
+    return engine("structure", terms, ["intraday"], status, extra={"owns": "index price only; constituent breadth is group E"})
+
+
+def participation_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[str, Any]:
+    """Group E, participation: how many NIFTY 50 stocks (and the heavyweights) are advancing, from prices only: no CVD is used, so this is independent of group B.
+    The three breadth readings come from the same 50 stocks and form one family. The heavyweight terms are price-based (their contribution to the index
+    is price change × weight), so they carry half weight and are marked as sharing price with group D."""
+    mk = inp.get("market")
+    b = g(mk, "nifty50", "breadth") or {}
+    adb = num(b.get("ad_balance"))
+    pa = num(g(mk, "participation", "above_vwap", "pct_above"))
+    orb = g(mk, "participation", "opening_range") or {}
+    orv = None if num(orb.get("pct_above_high")) is None or num(orb.get("pct_below_low")) is None else float(orb["pct_above_high"]) - float(orb["pct_below_low"])
+    terms = [
+        Term("Advance/decline balance", None if adb is None else adb * 100, f"balance {adb:+.2f} ({b.get('advancing')} up, {b.get('declining')} down of {b.get('covered')} covered)" if adb is not None else "no breadth", family="breadth"),
+        Term("Stocks above their day VWAP", None if pa is None else (pa - 50) * 2, f"{pa:.0f}% of stocks above VWAP" if pa is not None else "no VWAP participation", family="breadth"),
+        Term("Stocks against their opening range", orv, f"{orb.get('pct_above_high')}% above the opening-range high, {orb.get('pct_below_low')}% below the low" if orv is not None else "opening range not yet formed", family="breadth"),
+    ]
+    stocks = g(mk, "flow", "heavy5", "stocks") or []
+    rows = {r.get("symbol"): r for r in (g(mk, "nifty50", "stocks") or [])}
+    pts, n_pts, up_w, dn_w, n_ch = 0.0, 0, 0.0, 0.0, 0
+    for s in stocks:
+        rc = rows.get(s.get("symbol"), {})
+        if num(rc.get("contribution")) is not None:
+            pts += float(rc["contribution"])
+            n_pts += 1
+        chg, w = num(s.get("change_pct")), num(s.get("weight"))
+        if chg is not None and w:
+            n_ch += 1
+            up_w += w if chg > 0 else 0.0
+            dn_w += w if chg < 0 else 0.0
+    ad_h = None if not n_ch or (up_w + dn_w) == 0 else (up_w - dn_w) / (up_w + dn_w) * 100
+    terms.append(Term("Heavyweights advancing versus declining (by weight)", ad_h, f"{n_ch} heavyweights: weight advancing {up_w:.1f}, declining {dn_w:.1f}" if ad_h is not None else "no heavyweight prices", family="heavy_price", weight=0.5, shares=("price",)))
+    terms.append(Term("Index points from the heavyweights", squash(pts, 0.15) if n_pts else None, f"{pts:+.3f}% of the index from {n_pts} stocks" if n_pts else "no contributions", family="heavy_price", weight=0.5, shares=("price",)))
+    return engine("participation", terms, ["market"], status, extra={"breadth": {"advancing": b.get("advancing"), "declining": b.get("declining"), "covered": b.get("covered")},
+                                                                    "metrics": {"aggregate_points_pct": round(pts, 4) if n_pts else None, "heavy_up_weight": round(up_w, 2), "heavy_down_weight": round(dn_w, 2)}})
 
 
 # ------------------------------------------------------------------------------------------------ fusion
 def fuse(engines: Sequence[dict[str, Any]], weights: Mapping[str, float], min_coverage: float = MIN_COVERAGE, min_engines: int = MIN_ENGINES) -> dict[str, Any]:
+    """Weighted fusion with explicit coverage rules. A PARTIAL engine (some evidence terms missing) counts with its weight multiplied by the
+    share of its terms that are available; an UNAVAILABLE engine counts for nothing and is never given a neutral score.
+
+        effective weight_e = weight_e x (available terms / listed terms)
+        Overall  = sum(score_e x effective weight_e) / sum(effective weight_e)
+        coverage = sum(effective weight_e) / sum(all weights)
+    """
     total = sum(max(0.0, weights.get(e["key"], 0.0)) for e in engines)
     avail = [e for e in engines if e["score"] is not None and weights.get(e["key"], 0.0) > 0]
-    wa = sum(weights[e["key"]] for e in avail)
+    eff = {e["key"]: weights[e["key"]] * e.get("fraction", 1.0) for e in avail}
+    wa = sum(eff.values())
     coverage = 0.0 if total <= 0 else wa / total
+    counts = {"available": sum(1 for e in engines if e.get("status") == "AVAILABLE" or (e["score"] is not None and "status" not in e)),
+              "partial": sum(1 for e in engines if e.get("status") == "PARTIAL"), "unavailable": sum(1 for e in engines if e["score"] is None)}
     for e in engines:
         e["weight"] = weights.get(e["key"], 0.0)
-        e["contribution"] = None if e["score"] is None or wa == 0 else round(e["score"] * e["weight"] / wa, 2)
+        e["effective_weight"] = round(eff.get(e["key"], 0.0), 3)
+        e["contribution"] = None if e["score"] is None or wa == 0 else round(e["score"] * eff.get(e["key"], 0.0) / wa, 2)
+    base = {"coverage": round(coverage, 3), "engines_available": len(avail), "engine_counts": counts}
     if len(avail) < min_engines or coverage < min_coverage or wa == 0:
-        return {"score": None, "class": "INSUFFICIENT DATA – SENTIMENT UNRELIABLE", "coverage": round(coverage, 3), "engines_available": len(avail), "agreement": None, "freshness": None, "confidence": None,
+        return {"score": None, "class": "INSUFFICIENT DATA – SENTIMENT UNRELIABLE", **base, "agreement": None, "freshness": None, "confidence": None,
                 "reason": f"{len(avail)} engines available (need {min_engines}) with coverage {coverage:.0%} (need {min_coverage:.0%})"}
-    score = sum(e["score"] * weights[e["key"]] for e in avail) / wa
-    sign = 1 if score > 0 else -1 if score < 0 else 0
-    agree_w = 0.0
-    for e in avail:
-        s = e["score"]
-        agree_w += weights[e["key"]] * (0.5 if abs(s) < 15 else (1.0 if sign == 0 else (1.0 if s * sign > 0 else 0.0)))
-    agreement = agree_w / wa
-    fresh_w = sum(weights[e["key"]] for e in avail if e["freshness"]["fresh"])
+    score = sum(e["score"] * eff[e["key"]] for e in avail) / wa
+    # Agreement is about the groups, not about the size of the score: the weight share that is directional on one side against the weight share
+    # directional on the other. A group inside +-15 is neutral and opposes nobody. 1 = no group opposes another, 0 = an even split.
+    pos_w = sum(eff[e["key"]] for e in avail if e["score"] >= 15)
+    neg_w = sum(eff[e["key"]] for e in avail if e["score"] <= -15)
+    conflict = min(pos_w, neg_w) / wa
+    agreement = max(0.0, 1.0 - 2.0 * conflict)
+    fresh_w = sum(eff[e["key"]] for e in avail if e["freshness"]["fresh"])
     freshness = fresh_w / wa
-    conf = 100 * min(1.0, coverage / 0.8) * agreement * freshness
-    return {"score": round(score, 1), "class": classify(score), "coverage": round(coverage, 3), "engines_available": len(avail), "agreement": round(agreement, 3), "freshness": round(freshness, 3),
-            "confidence": round(conf, 1), "confidence_parts": {"coverage_factor": round(min(1.0, coverage / 0.8), 3), "agreement": round(agreement, 3), "freshness": round(freshness, 3)}, "reason": None}
+    cov_factor = min(1.0, coverage / 0.8)
+    conf = 100 * cov_factor * agreement * freshness
+    capped = conflict >= 0.25
+    if capped:
+        conf = min(conf, 40.0)  # a strong score from groups that disagree is never high confidence
+    return {"score": round(score, 1), "class": classify(score), **base, "agreement": round(agreement, 3), "freshness": round(freshness, 3),
+            "confidence": round(conf, 1), "confidence_parts": {"coverage_factor": round(cov_factor, 3), "agreement": round(agreement, 3), "freshness": round(freshness, 3), "conflict_cap_applied": capped},
+            "groups_bullish": round(pos_w / wa, 3), "groups_bearish": round(neg_w / wa, 3), "reason": None,
+            "weights_note": PROVISIONAL,
+            "note": "Directional evidence only. Confidence measures how complete, consistent and fresh the evidence is, not how likely the direction is; the weights are provisional, so this is not a statistical prediction."}
 
 
 # ------------------------------------------------------------------------------------------------ regime
@@ -349,11 +442,11 @@ def volatility_regime(inp: Mapping[str, Any], iv_chg: float | None) -> str:
 
 def regime(fused: Mapping[str, Any], engines: Mapping[str, Mapping[str, Any]], inp: Mapping[str, Any], gx: Mapping[str, Any]) -> dict[str, Any]:
     score, agree = fused["score"], fused["agreement"]
-    fut = engines.get("futures", {})
+    fut = engines.get("positioning", {})
     bu, pc = fut.get("buildup"), fut.get("price_change_15m_pct")
     vol = engines.get("volatility", {})
     iv_chg = vol.get("atm_iv_change_15m")
-    cvd_terms = [t for t in fut.get("terms", []) if t["name"].startswith("Futures CVD") and t["available"]]
+    cvd_terms = [t for t in engines.get("orderflow", {}).get("terms", []) if t["name"].startswith("Futures CVD") and t["available"]]
     cvd = cvd_terms[0]["score"] if cvd_terms else None
     evid: list[str] = []
     if score is None:
@@ -443,14 +536,14 @@ def divergences(inp: Mapping[str, Any], engines: Mapping[str, Mapping[str, Any]]
     """The divergence checks that can be made from stored or live outputs. Each is a description, never a reversal signal.
     The second return value lists the checks that cannot be made today and why."""
     out: list[dict[str, Any]] = []
-    fut, vol, hv, opt = engines.get("futures", {}), engines.get("volatility", {}), engines.get("heavyweight", {}), engines.get("options", {})
+    fut, vol, hv, opt = engines.get("positioning", {}), engines.get("volatility", {}), engines.get("orderflow", {}), engines.get("orderflow", {})
     spot15 = num(vol.get("spot_change_15m_pct")) if vol.get("spot_change_15m_pct") is not None else num(fut.get("price_change_15m_pct"))
     iv = num(vol.get("atm_iv_change_15m"))
 
     def add(id_: str, name: str, direction: str, sev: str, reading: str, why: str, invalid: str) -> None:
         out.append({"id": id_, "name": name, "direction": direction, "severity": sev, "reading": reading, "explanation": why, "invalidation": invalid})
 
-    cvd_t = next((t for t in fut.get("terms", []) if t["name"].startswith("Futures CVD") and t["available"]), None)
+    cvd_t = next((t for t in hv.get("terms", []) if t["name"].startswith("Futures CVD") and t["available"]), None)
     if spot15 is not None and cvd_t is not None and abs(spot15) >= 0.1 and abs(cvd_t["score"]) >= 25 and spot15 * cvd_t["score"] < 0:
         add("price_cvd", "Price versus futures CVD", "bearish" if spot15 > 0 else "bullish", "high" if abs(cvd_t["score"]) >= 50 else "medium", f"NIFTY {spot15:+.2f}% (15 min) while estimated CVD {cvd_t['detail'].split(' of')[0]}",
             "Price and estimated net aggressor volume point opposite ways: the move may lack participation. The CVD is an estimate.", "CVD turns to the same sign as price, or price reverses")
@@ -468,7 +561,7 @@ def divergences(inp: Mapping[str, Any], engines: Mapping[str, Mapping[str, Any]]
             "Option prices lean the other way from the underlying.", "momentum returns to the sign of price")
     f_s, o_s = fut.get("score"), opt.get("score")
     if f_s is not None and o_s is not None and abs(f_s) >= 25 and abs(o_s) >= 25 and f_s * o_s < 0:
-        add("fut_opt", "Futures versus options", "neutral", "medium", f"futures engine {f_s:+.0f}, options engine {o_s:+.0f}", "Two independent derivatives engines disagree.", "either engine crosses zero")
+        add("fut_opt", "Derivatives positioning versus order flow", "neutral", "medium", f"positioning group {f_s:+.0f}, order-flow proxy group {o_s:+.0f}", "Open-interest positioning and the estimated order flow point opposite ways.", "either group crosses zero")
     h_div = g(hv, "metrics", "divergence")
     if h_div:
         add("idx_heavy", "NIFTY versus heavyweight CVD", "bearish" if (hv["metrics"].get("weighted_cvd_score") or 0) < 0 else "bullish", "medium", f"weighted heavyweight CVD {hv['metrics']['weighted_cvd_score']:+.0f}, index move {g(inp.get('market'), 'index_change_pct')}%",
@@ -480,8 +573,7 @@ def divergences(inp: Mapping[str, Any], engines: Mapping[str, Mapping[str, Any]]
         add("vol_no_price", "Volatility expansion without price confirmation", "neutral", "medium", f"ATM IV {iv:+.2f} pts with NIFTY {spot15:+.2f}%", "Option prices are repricing risk while the underlying has not moved.", "IV falls back or price moves")
     if iv is not None and spot15 is not None and iv <= -0.3 and abs(spot15) >= 0.2:
         add("vol_contract", "Volatility contraction during a directional move", "neutral", "low", f"ATM IV {iv:+.2f} pts while NIFTY {spot15:+.2f}%", "A move with falling implied volatility is often an orderly one; not a reversal signal.", "IV starts rising")
-    unavailable = ["OI migration versus price: no stored OI-migration series exists on the server yet",
-                   "Rolling 5/15/30-minute CVD divergence: the flow tracker keeps session totals only"]
+    unavailable = ["OI migration versus price: no stored OI-migration series exists on the server yet"]
     return out, unavailable
 
 
@@ -491,8 +583,8 @@ def interpretation(fused: Mapping[str, Any], engines: Sequence[Mapping[str, Any]
         return f"{fused['class']}. {fused.get('reason') or ''} No market view is given until enough engines report."
     by = {e["key"]: e for e in engines}
     parts = [f"Market sentiment is {fused['class'].lower()} (score {fused['score']:+.0f}, confidence {fused['confidence']:.0f}); regime: {reg['name'].lower()}."]
-    labels = {"futures": "Futures positioning and order flow", "options": "Options positioning", "gex": "The gamma setup", "heavyweight": "Heavyweight participation", "volatility": "Volatility", "structure": "Breadth and structure"}
-    for k in ("futures", "options", "heavyweight", "gex", "volatility", "structure"):
+    labels = {"positioning": "Derivatives positioning", "orderflow": "Order-flow proxies", "volatility": "Volatility", "structure": "Index structure", "participation": "Participation and breadth"}
+    for k in ("positioning", "orderflow", "volatility", "structure", "participation"):
         e = by.get(k)
         if e and e["score"] is not None:
             top = (e["supporting"] or e["conflicting"] or [""])[0]
@@ -500,7 +592,7 @@ def interpretation(fused: Mapping[str, Any], engines: Sequence[Mapping[str, Any]
         elif e:
             parts.append(f"{labels[k]}: no reading.")
     if gx.get("available") and gx.get("flip") is not None:
-        parts.append(f"NIFTY is {abs(gx['flip_distance_pct']):.2f}% {'above' if gx['flip_distance_pct'] >= 0 else 'below'} the gamma flip at {gx['flip']:.0f} (model-based).")
+        parts.append(f"NIFTY is {abs(gx['flip_distance_pct']):.2f}% {'above' if gx['flip_distance_pct'] >= 0 else 'below'} the modelled gamma flip at {gx['flip']:.0f} (a model assumption, not observed dealer positioning).")
     if divs:
         parts.append("Watch: " + "; ".join(d["name"].lower() for d in divs[:3]) + ".")
     sc = None
@@ -515,5 +607,82 @@ def interpretation(fused: Mapping[str, Any], engines: Sequence[Mapping[str, Any]
 
 
 def build_engines(inp: Mapping[str, Any], status: Mapping[str, Any]) -> list[dict[str, Any]]:
-    fns: list[Callable[[Mapping[str, Any], Mapping[str, Any]], dict[str, Any]]] = [futures_engine, options_engine, gex_engine, heavyweight_engine, volatility_engine, structure_engine]
+    fns: list[Callable[[Mapping[str, Any], Mapping[str, Any]], dict[str, Any]]] = [positioning_engine, orderflow_engine, volatility_engine, structure_engine, participation_engine]
     return [f(inp, status) for f in fns]
+
+
+GEX_METHOD = (
+    "Per strike and side: gamma (Black-76 on the stored option price, forward from put-call parity) x open interest in UNITS (the chain already reports units, so no lot-size "
+    "multiplier is applied) x spot^2 x 0.01 / 10^7 = Rs crore of delta change per 1 % move. Sign convention ASSUMED, not observed: call exposure counts +, put exposure -, "
+    "which presumes dealers are long the calls and short the puts that customers hold; the feed does not say who holds what. Net = sum over strikes that have BOTH a "
+    "call and a put exposure; the CE and PE totals use every strike with an exposure on that side. Aggregated over the ATM +-10 strikes of ONE expiry (the selected "
+    "weekly or monthly), never across expiries. Gamma flip = the spot level where the aggregate, re-priced at 33 spot levels within +-8 % of spot, changes sign, "
+    "located by bisection; none within the range means no flip is reported. It is a model of exposure, not observed dealer positioning."
+)
+
+#: every input that more than one group could read, who owns it, and what was done about the overlap
+OVERLAP_FINDINGS: list[dict[str, str]] = [
+    {"input": "Aggregate command-centre score", "was": "a term inside the structure engine", "fix": "removed: it is itself built from price, VWAP, breadth, PCR and OI, so it double counted every one of them"},
+    {"input": "Advance/decline, stocks above VWAP, opening-range share", "was": "structure engine (breadth) and, through the command-centre score, again", "fix": "owned by group E only, as one family (three views of the same 50 stocks)"},
+    {"input": "Future's VWAP and the index's day range", "was": "futures engine, structure engine and the command-centre score", "fix": "owned by group D only, as one family"},
+    {"input": "PCR change and OI added (puts minus calls)", "was": "two terms in the options engine built from the same open-interest changes", "fix": "one family: the OI-added reading is scored, the PCR change is shown but not scored"},
+    {"input": "Options OI and Smart OI labels", "was": "two terms, both from option OI changes", "fix": "one family in group A, averaged into one reading"},
+    {"input": "Session CVD and rolling 15-minute CVD", "was": "two terms of the same series (the window is a slice of the session)", "fix": "one family in group B"},
+    {"input": "Heavyweight CVD, session and rolling", "was": "two terms of the same stocks", "fix": "one family in group B; heavyweight prices are in group E, never CVD"},
+    {"input": "Index price in futures buildup, GEX spot-versus-flip, GEX walls, heavyweight points and advancing weight", "was": "each also read price, which group D reads", "fix": "kept, with an explicit weight of 0.5 on each (the overlap adjustment shown on the term)"},
+    {"input": "India VIX and IV rank / percentile", "was": "daily closes shown beside live volatility", "fix": "context only, labelled 'Last Daily Close' with its date, never scored"},
+]
+
+
+def overlap_audit(engines: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """The audit of overlapping inputs and, per group, which family each term belongs to and any overlap adjustment applied to it."""
+    return {"findings": OVERLAP_FINDINGS,
+            "terms": [{"group": e["key"], "term": t["name"], "family": t["family"], "weight": t["weight"], "shares": t["shares"], "available": t["available"]} for e in engines for t in e["terms"]]}
+
+
+# ------------------------------------------------------------------------------------------------ capabilities
+AVAILABLE, PARTIAL, UNAVAILABLE = "AVAILABLE", "PARTIAL", "UNAVAILABLE"
+ROLLOVER_NEED = ("Rollover needs, for BOTH the near-month and the next-month NIFTY future, a stored series of open interest and traded volume by contract (minute or daily). "
+                 "Only the current-month contract is subscribed and stored today (each `fut` sample carries one contract's symbol and expiry), so no rollover percentage is shown.")
+
+
+def capabilities(inp: Mapping[str, Any], status: Mapping[str, Any], gx: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The state of every capability named in the integration audit, from the data actually present now: AVAILABLE, PARTIAL (an incomplete
+    calculation or coverage) or UNAVAILABLE (the data is not collected or stored). ``as_of`` is each source's own timestamp."""
+    ins, mk, fut, skew = inp.get("intraday"), inp.get("market"), inp.get("futures"), inp.get("skew")
+    rows: list[dict[str, Any]] = []
+
+    def add(id_: str, name: str, state: str, reason: str, src: str, link: str | None = None) -> None:
+        rows.append({"id": id_, "name": name, "status": state, "reason": reason, "source": src, "as_of": g(status, src, "as_of"), "link": link})
+
+    o = g(ins, "options") or {}
+    add("options_oi", "Options OI and change in OI", AVAILABLE if o.get("ce_oi") is not None else UNAVAILABLE, "ATM ±10 strikes of the stored chain; change is against the first sample of the session" if o.get("ce_oi") is not None else "no stored chain", "intraday", "/option-chain")
+    pos = inp.get("positioning") or {}
+    smart = AVAILABLE if pos.get("then_at") and pos.get("rows") else (PARTIAL if pos.get("rows") else UNAVAILABLE)
+    add("smart_oi", "Smart OI classifications", smart, "premium and OI rule, labels are 'potential'; no buyer/seller identity" if smart == AVAILABLE else ("no earlier snapshot to compare with: changes are missing" if smart == PARTIAL else "no positioning data"), "positioning", "/tools/strike-positioning")
+    add("pcr", "PCR", AVAILABLE if o.get("pcr_oi") is not None else UNAVAILABLE, "OI and volume PCR, ATM ±10", "intraday", "/tools/put-call-ratio")
+    add("gex", "GEX (server rebuild)", AVAILABLE if gx.get("available") else UNAVAILABLE, "same formula as the browser (parity-tested); model sign calls +, puts −" if gx.get("available") else "no rebuilt snapshot", "gex", "/tools/gamma-exposure")
+    vega_ok = bool(g(ins, "volatility", "rows"))
+    add("vega", "Vega", PARTIAL if vega_ok else UNAVAILABLE, "average vega per option only; OI-weighted exposure, change and migration exist only in the browser page" if vega_ok else "no solved chain", "intraday", "/tools/vega-analysis")
+    add("atm_iv", "ATM IV and change", AVAILABLE if g(ins, "volatility", "atm_iv") is not None else UNAVAILABLE, "Black-76 on the stored chain", "intraday", "/tools/iv-intraday")
+    hv = g(inp.get("vix"), "hv") or []
+    add("hv_rv", "HV, RV and India VIX", AVAILABLE if any(v is not None for v in hv) else UNAVAILABLE, "daily closes; VIX is a daily close, not live", "vix", "/tools/iv-hv")
+    iv = [v for v in (g(inp.get("vix"), "iv") or []) if v is not None]
+    add("ivr_ivp", "IV Rank and Percentile", AVAILABLE if len(iv) >= 252 else (PARTIAL if iv else UNAVAILABLE), "252-day window of VIX closes" if len(iv) >= 252 else f"only {len(iv)} VIX closes stored (252 needed for the full window)", "vix", "/tools/iv-chart")
+    add("skew_term", "IV skew, risk reversal, butterfly, term structure", AVAILABLE if g(skew, "cards") else UNAVAILABLE, "interpolated in delta; one expiry per request, term across stored expiries", "skew", "/tools/volatility-skew")
+    oi_series = [v for v in (g(fut, "oi") or []) if v is not None]
+    add("futures_oi", "Futures OI and change", AVAILABLE if oi_series else UNAVAILABLE, "minute samples of the current-month contract", "futures", "/tools/future-price-oi")
+    flow = g(mk, "flow", "futures") or {}
+    add("session_cvd", "Session CVD (futures)", AVAILABLE if flow.get("cvd_pct") is not None else UNAVAILABLE, "ESTIMATE by the quote and tick rule, not a trade tape" if flow.get("cvd_pct") is not None else "no futures flow tracked", "market", "/tools/future-flow")
+    ok_w = g(inp.get("rolling"), "ok_windows") or 0
+    add("rolling_cvd", "Rolling 5/15/30-minute CVD", AVAILABLE if ok_w == 3 else (PARTIAL if ok_w else UNAVAILABLE),
+        "derived from the stored per-minute cumulative flow (estimate)" if ok_w == 3 else ("; ".join(f"{w['minutes']} min: {w['status']}" for w in (g(inp.get("rolling"), "windows") or {}).values() if w["status"] != "ok") or "no stored flow"), "flow", "/tools/future-flow")
+    add("vwap", "VWAP and deviation", AVAILABLE if g(ins, "vwap", "vwap") is not None else UNAVAILABLE, "the future's own VWAP (exchange average traded price), not the index's", "intraday", "/tools/future-flow")
+    add("spot_futures", "NIFTY spot and futures", AVAILABLE if g(ins, "price", "last") is not None and g(fut, "latest", "future") is not None else (PARTIAL if g(ins, "price", "last") is not None else UNAVAILABLE), "spot from the chain sample, futures from the minute samples", "futures", "/tools/future-dashboard")
+    stocks = g(mk, "flow", "heavy5", "stocks") or []
+    add("heavyweights", "Heavyweight stock analytics", AVAILABLE if stocks else UNAVAILABLE, "the five largest constituents by current weight; stock prices and estimated CVD only" if stocks else "no heavyweight flow", "market", "/tools/future-flow")
+    add("structure", "Market structure and breadth", AVAILABLE if g(mk, "nifty50", "breadth") else UNAVAILABLE, "advance/decline, above-VWAP share, opening range, day range", "market", "/tools/market-movers")
+    add("rollover", "Rollover data", UNAVAILABLE, ROLLOVER_NEED, "futures", None)
+    add("stock_futures", "Individual stock futures", UNAVAILABLE, "stock futures are not subscribed or stored; heavyweight analysis uses cash-market prices and flow only", "market", None)
+    add("option_aggressor", "Option trade-side (aggressor) data", UNAVAILABLE, "the feed carries no aggressor side for options; buyer- or seller-initiated trades are never inferred", "positioning", None)
+    return rows
