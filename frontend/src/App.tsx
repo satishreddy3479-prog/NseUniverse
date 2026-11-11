@@ -17,6 +17,7 @@ const ToolPage = lazy(() => import("./pages/ToolPage"));
 // Pages that are not the first thing anyone opens are split off too, so the first screen loads only what it shows.
 const named = <T extends Record<string, React.ComponentType>>(load: () => Promise<T>, key: keyof T & string) => lazy(() => load().then((m) => ({ default: m[key] as React.ComponentType })));
 const MarketIntelligence = named(() => import("./pages/MarketIntelligence"), "MarketIntelligence");
+const StraddleIntelligence = named(() => import("./pages/StraddleIntelligence"), "StraddleIntelligence");
 const DataCleanup = named(() => import("./pages/DataCleanup"), "DataCleanup");
 const ServerManagement = named(() => import("./pages/ServerManagement"), "ServerManagement");
 const Portfolio = named(() => import("./pages/Portfolio"), "Portfolio");
@@ -36,6 +37,7 @@ export function AppRoutes() {
       <Route element={<AppShell />}>
         <Route index element={<Home />} />
         <Route path="market-intelligence" element={wait("market intelligence", <MarketIntelligence />)} />
+        <Route path="market-intelligence/straddle" element={wait("straddle intelligence", <StraddleIntelligence />)} />
         <Route path="overview" element={<Overview />} />
         <Route path="tools/:id" element={
           <Suspense fallback={<p className="text-muted">Loading tool…</p>}><ToolPage /></Suspense>} />

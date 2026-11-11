@@ -49,7 +49,9 @@ from app.intraday.volatility import (
 )  # fmt: skip
 
 SIDES = (("CE", CALL), ("PE", PUT))
-COMPONENTS = ("theta", "vega", "delta", "gamma", "residual")
+COMPONENTS = ("theta", "vega", "delta", "gamma", "vanna", "volga", "residual")
+KEYS = (*COMPONENTS, "actual", "vega_skew")  # vega_skew is a part of vega, not an extra term
+LOT_SIZE = 65  # NIFTY contract multiplier (units per lot)
 EFFICIENT_PCT = 75.0  # actual decay at least this share of the theta decay
 MEANINGFUL_PCT = 20.0  # below this share (and above EXPANSION_PCT) the premium has not decayed in any meaningful way
 EXPANSION_PCT = -10.0  # premium rose by more than a tenth of the theta decay
@@ -155,19 +157,33 @@ def attribute_leg(a: Point, b: Point, k: float, side: int) -> dict[str, float] |
             on = dict(zip(range(3), s, strict=True)) | {i: True}
             s2 = (on[0], on[1], on[2])
             phi[i] += _W[sum(s)] * (cache[s2] - cache[s])
-    theta, spot_eff, vega = phi
-    delta = la.g.delta * (b.f - a.f)
-    gamma = spot_eff - delta
+    theta, spot_eff, phi_v = phi
+    ds, df_ = lb.iv - la.iv, b.f - a.f
+    sig, t0 = la.iv, a.t
+    vs = sig * math.sqrt(t0)
+    d1 = (math.log(a.f / k) + 0.5 * vs * vs) / vs
+    d2 = d1 - vs
+    pdf = math.exp(-0.5 * d1 * d1) / math.sqrt(2 * math.pi)
+    dfac = math.exp(-r * t0)
+    vega_raw = dfac * a.f * pdf * math.sqrt(t0)  # dPrice / dVol (vol as 1.00 = 100 %)
+    vanna = dfac * math.sqrt(t0) * pdf * (1 - d1 / vs)  # d2Price / dF dVol
+    volga = vega_raw * d1 * d2 / sig  # d2Price / dVol2
+    vanna_term, volga_term = vanna * df_ * ds, 0.5 * volga * ds * ds
+    # the Shapley terms already contain these interaction effects (half of the F x Vol cross term sits in each); they are shown apart, so the totals do not change
+    vega = phi_v - volga_term - 0.5 * vanna_term
+    delta = la.g.delta * df_
+    gamma = spot_eff - delta - 0.5 * vanna_term
     actual = lb.price - la.price
-    return {"theta": theta, "vega": vega, "delta": delta, "gamma": gamma, "residual": actual - (theta + vega + delta + gamma), "actual": actual,
-            "dt_min": (a.t - b.t) * YEAR_DAYS * 24 * 60, "d_f": b.f - a.f, "d_iv_pts": (lb.iv - la.iv) * 100}  # fmt: skip
+    resid = actual - (theta + vega + delta + gamma + vanna_term + volga_term)
+    return {"theta": theta, "vega": vega, "delta": delta, "gamma": gamma, "vanna": vanna_term, "volga": volga_term, "residual": resid, "actual": actual,
+            "vega_raw": vega_raw, "d_sigma": ds, "dt_min": (a.t - b.t) * YEAR_DAYS * 24 * 60, "d_f": df_, "d_iv_pts": ds * 100}  # fmt: skip
 
 
 def _sum(rows: Sequence[Mapping[str, float]]) -> dict[str, float]:
-    out = dict.fromkeys((*COMPONENTS, "actual"), 0.0)
+    out = dict.fromkeys(KEYS, 0.0)
     for r in rows:
         for c in out:
-            out[c] += r[c]
+            out[c] += r.get(c, 0.0)
     return out
 
 
@@ -186,6 +202,10 @@ def attribute_steps(points: Sequence[Point | None], held: Sequence[float | None]
             steps.append(None)
             skipped += 1
             continue
+        # skew effect (first order): the part of vega due to the two legs' vols moving by different amounts, vega_i x (own change - average change)
+        avg = (ce["d_sigma"] + pe["d_sigma"]) / 2
+        for leg in (ce, pe):
+            leg["vega_skew"] = leg["vega_raw"] * (leg["d_sigma"] - avg)
         steps.append({"ce": ce, "pe": pe, "both": _sum([ce, pe]), "t": b.snap.at, "dt_min": ce["dt_min"], "d_f": ce["d_f"]})
     return steps, skipped
 
@@ -212,31 +232,39 @@ def classify(efficiency: float | None) -> str:
 
 
 def efficiency(total: Mapping[str, float] | None) -> dict[str, Any]:
-    """Actual straddle decay / expected theta decay x 100 for a summed window, and the main reason for a shortfall."""
+    """Actual straddle decay / expected theta decay x 100 for a summed window, the shortfall (points, rupees per lot, percent of the theta decay)
+    and the cause of a shortfall. Offsets are the terms that add to the premium: IV expansion (parallel vega), skew (call and put vols moving apart),
+    spot movement (delta), gamma, vanna and volga (second-order vol effects) and the unexplained residual."""
+    empty = {"status": "unavailable", "efficiency_pct": None, "actual_decay": None, "expected_decay": None, "shortfall": None, "shortfall_rupees": None, "shortfall_pct": None,
+             "reason": None, "causes": None}  # fmt: skip
     if total is None:
-        return {"status": "unavailable", "efficiency_pct": None, "actual_decay": None, "expected_decay": None, "reason": None}
+        return empty
     expected, actual = -total["theta"], -total["actual"]
     if expected <= 1e-9:
-        return {"status": "unavailable", "efficiency_pct": None, "actual_decay": rd(actual), "expected_decay": rd(expected), "reason": None}
+        return empty | {"actual_decay": rd(actual), "expected_decay": rd(expected), "reason": "Expected theta decay is not positive here (very close to expiry, or carry dominates), so a decay efficiency is not defined; nothing is forced."}
     eff = actual / expected * 100
     status = classify(eff)
-    offsets = {"IV expansion (vega)": total["vega"], "spot movement through gamma": total["gamma"], "net directional delta of the move": total["delta"]}
-    name, size = max(offsets.items(), key=lambda kv: kv[1])
+    skew = total.get("vega_skew", 0.0)
+    causes = {"IV expansion (parallel)": total["vega"] - skew, "skew change (call and put vols moving apart)": skew, "underlying price movement (net delta)": total["delta"],
+              "gamma exposure (realised convexity)": total["gamma"], "vanna and volga (second-order vol effects)": total.get("vanna", 0.0) + total.get("volga", 0.0), "remaining unexplained effects": total["residual"]}  # fmt: skip
+    name, size = max(causes.items(), key=lambda kv: kv[1])
     reason: str | None
+    short = expected - actual
     if status == "efficient":
         reason = "IV contraction added to the decay (vega negative)" if total["vega"] < -0.1 * expected else "none: decay is close to theta"
     elif size > 0.1 * expected:
         reason = f"{name} added {size:.1f} points against {expected:.1f} points of theta"
     else:
         reason = "no single offset stands out (the shortfall is small or spread across the terms)"
-    return {"status": status, "efficiency_pct": rd(eff, 1), "actual_decay": rd(actual), "expected_decay": rd(expected), "shortfall": rd(expected - actual), "reason": reason}
+    return {"status": status, "efficiency_pct": rd(eff, 1), "actual_decay": rd(actual), "expected_decay": rd(expected), "shortfall": rd(short), "shortfall_rupees": rd(short * LOT_SIZE, 0),
+            "shortfall_pct": rd(short / expected * 100, 1), "reason": reason, "causes": {k: rd(v, 2) for k, v in causes.items()}, "lot_size": LOT_SIZE}  # fmt: skip
 
 
 # ------------------------------------------------------------------ realised volatility
-def realised(times: Sequence[datetime], spots: Sequence[float | None], minutes: int | None) -> dict[str, Any]:
+def realised(times: Sequence[datetime], spots: Sequence[float | None], minutes: int | None, end: datetime | None = None) -> dict[str, Any]:
     """Annualised realised vol (percent, trading-minute basis) from log returns of consecutive stored spots over the last ``minutes`` (None = whole session).
     Returns need at least 3 and the window must be at least 80 % covered; gaps over 10 minutes are skipped and counted."""
-    pts = [(t, s) for t, s in zip(times, spots, strict=True) if s is not None and s > 0]
+    pts = [(t, s) for t, s in zip(times, spots, strict=True) if s is not None and s > 0 and (end is None or t <= end)]
     out: dict[str, Any] = {"minutes": minutes, "vol_pct": None, "sum_sq": None, "returns": 0, "gaps_skipped": 0}
     if len(pts) < 2:
         return out
@@ -272,9 +300,9 @@ def _series(points: Sequence[Point | None], fn: Any) -> list[float | None]:
 def _stat(vals: Sequence[float | None], n: int = 2) -> dict[str, Any]:
     ok = [(i, v) for i, v in enumerate(vals) if v is not None]
     if not ok:
-        return {"open": None, "current": None, "change": None, "change_pct": None, "open_index": None}
+        return {"open": None, "current": None, "change": None, "change_pct": None, "open_index": None, "high": None, "low": None}
     o, c = ok[0][1], ok[-1][1]
-    return {"open": rd(o, n), "current": rd(c, n), "change": rd(c - o, n), "change_pct": rd((c - o) / o * 100, 2) if abs(o) >= 1 else None, "open_index": ok[0][0]}
+    return {"high": rd(max(v for _, v in ok), n), "low": rd(min(v for _, v in ok), n), "open": rd(o, n), "current": rd(c, n), "change": rd(c - o, n), "change_pct": rd((c - o) / o * 100, 2) if abs(o) >= 1 else None, "open_index": ok[0][0]}
 
 
 def _iv_support(ce: float | None, pe: float | None) -> dict[str, Any]:
@@ -312,9 +340,118 @@ def _slope(xs: Sequence[float], ys: Sequence[float]) -> tuple[float | None, floa
     return cov / vx, cov / math.sqrt(vx * vy)
 
 
+
+MOVE_WINDOWS = (5, 15, 30, 60)
+
+
+def _moves(times: Sequence[datetime], vals: Sequence[float | None], n: int = 2) -> dict[str, float | None]:
+    """Change of a series over the last 5, 15, 30 and 60 minutes: latest value minus the last value at or before the cut. None if the session is shorter
+    than the window or either end is missing (nothing is filled)."""
+    last = max((i for i, v in enumerate(vals) if v is not None), default=None)
+    out: dict[str, float | None] = {str(m): None for m in MOVE_WINDOWS}
+    if last is None:
+        return out
+    for m in MOVE_WINDOWS:
+        cut = times[last].timestamp() - m * 60
+        if times[0].timestamp() > cut:
+            continue
+        j = max((i for i in range(last) if times[i].timestamp() <= cut and vals[i] is not None), default=None)
+        if j is not None:
+            out[str(m)] = rd(vals[last] - vals[j], n)  # type: ignore[operator]
+    return out
+
+
+def iv_regime(dce: float | None, dpe: float | None) -> dict[str, Any]:
+    """Names the call/put implied-vol behaviour from two changes in vol points. Says nothing about who is buying or selling: only how the two vols moved."""
+    if dce is None or dpe is None:
+        return {"tags": [], "text": "A leg's implied vol is missing, so the regime cannot be read."}
+    t = IV_MOVE_PTS
+    tags: list[str] = []
+    if dce >= t and dpe >= t:
+        tags.append("both_expanding")
+    if dce <= -t and dpe <= -t:
+        tags.append("both_contracting")
+    if dpe >= t and dpe - dce >= t:
+        tags.append("put_expanding_faster")
+    if dce >= t and dce - dpe >= t:
+        tags.append("call_expanding_faster")
+    if dpe <= -t and dce - dpe >= t:
+        tags.append("put_contracting_faster")
+    if dce <= -t and dpe - dce >= t:
+        tags.append("call_contracting_faster")
+    names = {"both_expanding": "both call and put IV expanding", "both_contracting": "both call and put IV contracting", "put_expanding_faster": "put IV expanding faster than call IV",
+             "call_expanding_faster": "call IV expanding faster than put IV", "put_contracting_faster": "put IV contracting faster than call IV", "call_contracting_faster": "call IV contracting faster than put IV"}  # fmt: skip
+    text = (", ".join(names[x] for x in tags) if tags else "no clear call/put IV pattern") + f" (call {dce:+.1f}, put {dpe:+.1f} vol points). This describes how the two vols moved, not who is buying or selling."
+    return {"tags": tags, "text": text, "ce_change_pts": rd(dce, 2), "pe_change_pts": rd(dpe, 2)}
+
+
+def retention(fixed: Mapping[str, Any], win: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Which side of the fixed straddle keeps more of its opening premium, and the largest term offsetting its theta."""
+    ce, pe = fixed["ce"], fixed["pe"]
+    if not ce["open"] or not pe["open"] or ce["current"] is None or pe["current"] is None:
+        return {"side": "unavailable", "text": "A leg's opening or current price is missing."}
+    rc, rp = ce["current"] / ce["open"] * 100, pe["current"] / pe["open"] * 100
+    side = "CE" if rc > rp + 2 else "PE" if rp > rc + 2 else "neither"
+    out: dict[str, Any] = {"side": side, "ce_retained_pct": rd(rc, 1), "pe_retained_pct": rd(rp, 1)}
+    text = (f"The {side} retains more premium: " if side != "neither" else "Both legs retain about the same share: ") + f"CE {rc:.0f}% and PE {rp:.0f}% of the opening price."
+    if win is not None and side != "neither":
+        leg = win["ce" if side == "CE" else "pe"]
+        offs = {"IV change": leg["vega"], "price movement (delta)": leg["delta"], "gamma": leg["gamma"], "vanna and volga": leg["vanna"] + leg["volga"]}
+        name, size = max(offs.items(), key=lambda kv: kv[1])
+        text += f" Against its {-leg['theta']:.1f} points of theta the largest offset is {name} ({size:+.1f} points); its actual change is {leg['actual']:+.1f}."
+    out["text"] = text
+    return out
+
+
+def vol_regime(iv_move: Mapping[str, float | None], rv: Mapping[str, Any], accel: Mapping[str, Any], eff30: float | None) -> dict[str, Any]:
+    """Volatility compression, volatility expansion or directional acceleration from the ATM IV change, the change of realised vol (last 15 minutes against
+    the 15 before) and how directional the last 30 minutes were (net move over total path). Working rules, not validated."""
+    reasons: list[str] = []
+    ivc = iv_move.get("30") if iv_move.get("30") is not None else iv_move.get("60")
+    ratio = accel.get("ratio")
+    directional = eff30 is not None and eff30 >= 0.5
+    rising = ratio is not None and ratio >= 1.2
+    if directional:
+        reasons.append(f"the last 30 minutes were directional (net move {eff30 * 100:.0f}% of the path travelled)")  # type: ignore[operator]
+    if ratio is not None:
+        reasons.append(f"realised vol over the last 15 minutes is {ratio:.2f}x the previous 15")
+    if ivc is not None:
+        reasons.append(f"ATM IV moved {ivc:+.2f} points over the recent window")
+    if directional and rising:
+        label = "directional acceleration"
+    elif (ivc is not None and ivc >= 0.5) or (ratio is not None and ratio >= 1.3):
+        label = "volatility expansion"
+    elif (ivc is not None and ivc <= -0.5) or (ratio is not None and ratio <= 0.7 and not directional):
+        label = "volatility compression"
+    elif ivc is None and ratio is None:
+        label = "undetermined"
+        reasons.append("not enough stored session for the 15-minute comparisons")
+    else:
+        label = "no clear regime"
+    return {"label": label, "reasons": reasons, "accel": accel, "path_efficiency_30m": None if eff30 is None else rd(eff30, 2),
+            "note": "Descriptive working rules; IV change is the rolling ATM implied vol, realised vol is annualised on trading minutes."}  # fmt: skip
+
+
+def gamma_config(net: float | None, flip_dist_pct: float | None, conc_share: float | None, rv_ratio: float | None, accel: float | None, spot_near_wall: bool) -> list[dict[str, str]]:
+    """What the modelled gamma set-up is associated with. GEX is modelled exposure (an assumed dealer sign convention), never an observed position."""
+    out: list[dict[str, str]] = []
+    near_flip = flip_dist_pct is not None and abs(flip_dist_pct) <= 0.3
+    if net is not None and net > 0 and not near_flip and (rv_ratio is None or rv_ratio < 1):
+        out.append({"tag": "suppressed movement", "why": "modelled net GEX is positive, spot is not near the flip, and realised movement is below the straddle's break-even"})
+    if net is not None and net < 0:
+        out.append({"tag": "increasing movement", "why": "modelled net GEX is negative: the model's dealer hedging would add to moves"})
+    if (near_flip or (net is not None and net < 0)) and accel is not None and accel >= 1.2:
+        out.append({"tag": "potential gamma-driven acceleration", "why": "spot is near or beyond the modelled flip and realised vol is rising"})
+    if conc_share is not None and conc_share >= 40 and spot_near_wall and (rv_ratio is None or rv_ratio < 1):
+        out.append({"tag": "price stabilisation around gamma concentration", "why": f"{conc_share:.0f}% of gamma x OI sits within two strikes of ATM and spot is near a wall"})
+    if not out:
+        out.append({"tag": "no clear gamma configuration", "why": "the modelled set-up does not point one way; positive GEX alone is not a low-volatility guarantee"})
+    return out
+
+
 def analyse(
     snaps: Sequence[Snap], spots_all: Sequence[tuple[datetime, float | None]], expiry_date: Any, *, rate: float = DEFAULT_RATE, now: datetime | None = None,
-    gex: Mapping[str, Any] | None = None, live: bool = True,
+    gex: Mapping[str, Any] | None = None, live: bool = True, gex_points: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:  # fmt: skip
     """Modules 1-7 for one session of one expiry from its stored samples. ``snaps`` are the (possibly thinned) samples with contracts; ``spots_all`` every stored spot."""
     reasons: dict[str, int] = {}
@@ -383,12 +520,21 @@ def analyse(
     attribution = {"fixed": windows(steps_fix), "rolling": windows(steps_roll)}
     # --- module 1: premium tracker
     s_fix, s_roll = _stat(fix["straddle"]), _stat(roll["straddle"])
-    tracker = {
+    tracker: dict[str, Any] = {
         "fixed": {"strike": fixed_k, "ce": _stat(fix["ce"]), "pe": _stat(fix["pe"]), "straddle": s_fix},
         "rolling": {"ce": _stat(roll["ce"]), "pe": _stat(roll["pe"]), "straddle": s_roll, "rolls": sum(1 for i in range(1, len(rolling_k)) if rolling_k[i] is not None and rolling_k[i - 1] is not None and rolling_k[i] != rolling_k[i - 1]),
                     "adjusted_change": rd(cumulative(steps_roll)["actual"][-1], 2)},
         "opening_at": times[open_i].isoformat(),
     }  # fmt: skip
+    last_ok = max(i for i, p in enumerate(pts) if p is not None)
+    adj_series = cumulative(steps_roll)["actual"]
+    tracker["atm_open"], tracker["atm_now"] = fixed_k, rolling_k[last_ok]
+    tracker["moves"] = {"fixed": {"straddle": _moves(times, fix["straddle"]), "ce": _moves(times, fix["ce"]), "pe": _moves(times, fix["pe"])},
+                        "rolling_adjusted": {"straddle": _moves(times, adj_series)}}  # fmt: skip
+    f_now, r_now = s_fix["current"], s_roll["current"]
+    tracker["difference"] = {"fixed_minus_rolling_now": None if f_now is None or r_now is None else rd(f_now - r_now),
+                             "fixed_change": s_fix["change"], "rolling_adjusted_change": tracker["rolling"]["adjusted_change"],
+                             "note": "The fixed series is one contract pair; the rolling line also changes contract at every roll, so its raw change includes roll jumps. The roll-adjusted change adds only same-contract changes."}  # fmt: skip
     # --- module 2: IV analysis
     surfs = [None if p is None else p.surf(expiry_date) for p in pts]
 
@@ -410,7 +556,13 @@ def analyse(
             xs.append((s1 / s0 - 1) * 100)
             ys.append(b - a)
     slope, corr = _slope(xs, ys)
+    bfly25 = [None if a is None or b is None or c is None else (a + b) / 2 - c for a, b, c in zip(pe25, ce25, roll["iv"], strict=True)]
+    bfly10 = [None if a is None or b is None or c is None else (a + b) / 2 - c for a, b, c in zip(pe10, ce10, roll["iv"], strict=True)]
+    ivm = {"fixed_ce": _moves(times, fix["ce_iv"]), "fixed_pe": _moves(times, fix["pe_iv"]), "rolling_atm": _moves(times, roll["iv"]), "skew25": _moves(times, skew25), "rr25": _moves(times, rr25)}
+    regimes = {w: iv_regime(ivm["fixed_ce"][w], ivm["fixed_pe"][w]) for w in ("30", "60")} | {"open": iv_regime(_stat(fix["ce_iv"])["change"], _stat(fix["pe_iv"])["change"])}
     iv = {
+        "levels": {"pe25": _stat(pe25), "ce25": _stat(ce25), "pe10": _stat(pe10), "ce10": _stat(ce10), "butterfly25": _stat(bfly25), "butterfly10": _stat(bfly10)},
+        "moves": ivm, "regimes": regimes,
         "fixed": {"ce": _stat(fix["ce_iv"]), "pe": _stat(fix["pe_iv"]), "combined": iv_comb}, "rolling": {"ce": _stat(roll["ce_iv"]), "pe": _stat(roll["pe_iv"]), "combined": _stat(roll["iv"])},
         "skew25": _stat(skew25), "skew10": _stat(skew10), "rr25": _stat(rr25), "rr10": _stat(rr10),
         "per_spot_pct": None if spot_move_pct is None or abs(spot_move_pct) < 0.1 or iv_comb["change"] is None else rd(iv_comb["change"] / spot_move_pct, 2),
@@ -436,6 +588,19 @@ def analyse(
         "realised_variance": {"sum_sq_returns": None if ro["sum_sq"] is None else round(ro["sum_sq"], 8), "session_move_sd_pct": None if ro["sum_sq"] is None else rd(math.sqrt(ro["sum_sq"]) * 100, 3), "returns": ro["returns"]},
         "note": "Realised vol is annualised on trading minutes (375 x 252 a year); the quoted implied vol is on calendar time, the usual way the two are compared. The gap is IV minus RV in vol points.",
     }  # fmt: skip
+    last_time = times[last_ok]
+    prev_end = last_time.fromtimestamp(last_time.timestamp() - 15 * 60, last_time.tzinfo)
+    r_now15, r_prev15 = rv["15"]["vol_pct"], realised(spots_t, spots_v, 15, prev_end)["vol_pct"]
+    accel = {"now_15m": r_now15, "previous_15m": r_prev15, "ratio": None if not r_now15 or not r_prev15 else rd(r_now15 / r_prev15, 2),
+             "label": None if not r_now15 or not r_prev15 else ("accelerating" if r_now15 / r_prev15 >= 1.3 else "decelerating" if r_now15 / r_prev15 <= 0.7 else "steady")}  # fmt: skip
+    cut30 = last_time.timestamp() - 30 * 60
+    seg = [v for t, v in zip(spots_t, spots_v, strict=True) if v is not None and t.timestamp() >= cut30]
+    path = sum(abs(b - a) for a, b in itertools.pairwise(seg))
+    eff30 = abs(seg[-1] - seg[0]) / path if len(seg) >= 10 and path > 0 and spots_t[0].timestamp() <= cut30 else None
+    rvs["acceleration"] = accel
+    rvs["move_30m_pts"] = rd(seg[-1] - seg[0]) if len(seg) >= 10 and spots_t[0].timestamp() <= cut30 else None
+    rvs["iv_state"] = "expanding" if (ivm["rolling_atm"]["30"] or 0) >= 0.5 else "contracting" if (ivm["rolling_atm"]["30"] or 0) <= -0.5 else "stable" if ivm["rolling_atm"]["30"] is not None else "unavailable"
+    regime = vol_regime(ivm["rolling_atm"], rv, accel, eff30)
     # --- module 6: gamma and structure
     now_legs = [(last_p.leg(k, CALL), last_p.leg(k, PUT)) for k in [nearest(last_p.strikes, last_p.spot)] if k is not None]
     theta_day = gamma_pt = None
@@ -448,14 +613,20 @@ def analyse(
     real_day_sd = None if sd60 is None else last_p.f * sd60 / 100 / math.sqrt(252)
     surf_now = surfs[max(i for i, p in enumerate(pts) if p is not None)]
     conc = _concentration(surf_now, last_p) if surf_now else None
-    structure = {
-        "gex": None if not gex or not gex.get("available") else {k: gex.get(k) for k in ("at", "net", "regime", "flip", "flip_distance_pts", "flip_distance_pct", "net_change_15m", "relationship", "spot_change_15m_pct")},
+    structure: dict[str, Any] = {
+        "gex": None if not gex or not gex.get("available") else {k: gex.get(k) for k in ("at", "net", "regime", "flip", "flip_distance_pts", "flip_distance_pct", "net_change_15m", "relationship", "spot_change_15m_pct", "call_wall", "put_wall", "near_net", "flip_support")},
+        "gex_session": _gex_session(gex_points),
         "concentration": conc, "straddle_theta_per_day": rd(theta_day), "straddle_gamma": None if gamma_pt is None else round(gamma_pt, 6),
         "breakeven_daily_move_pts": rd(breakeven), "realised_daily_sd_pts": rd(real_day_sd),
         "realised_vs_breakeven": None if breakeven is None or real_day_sd is None else rd(real_day_sd / breakeven, 2),
         "spot_move_pts": rd(hi_lo[-1] - hi_lo[0]),
+        "assumption": "GEX is modelled exposure under an assumed dealer sign convention (calls long, puts short gamma), not observed dealer positioning.",
         "note": "Net GEX describes dealer positioning under stated assumptions; it does not guarantee low or high volatility. Break-even move = sqrt(2 x |theta| / gamma) per day: a daily move that big makes gamma gains pay for one day of theta.",
     }  # fmt: skip
+    gx_ = structure["gex"] or {}
+    walls = [w for w in (gx_.get("call_wall"), gx_.get("put_wall")) if w is not None]
+    structure["config"] = gamma_config(gx_.get("net"), gx_.get("flip_distance_pct"), (conc or {}).get("share_pct"), structure["realised_vs_breakeven"], accel["ratio"],
+                                       any(abs(last_p.spot - w) / last_p.spot <= 0.0025 for w in walls)) if gx_ else []  # fmt: skip
     # --- quality
     last_at = max(s.at for s in snaps)
     age_min = None if now is None else (now - last_at).total_seconds() / 60
@@ -469,10 +640,21 @@ def analyse(
         "status": "ok", "times": [t.isoformat() for t in times], "spot": [rd(v) for v in spot], "forward": [rd(v) for v in fwd], "tracker": tracker,
         "series": {"rolling": {k: [rd(x, 3) for x in v] if k != "strike" else v for k, v in roll.items()}, "fixed": {k: [rd(x, 3) for x in v] if k != "strike" else v for k, v in fix.items()},
                    "skew25": [rd(x, 3) for x in skew25], "skew10": [rd(x, 3) for x in skew10], "rr25": [rd(x, 3) for x in rr25], "rr10": [rd(x, 3) for x in rr10]},
-        "iv": iv, "attribution": attribution, "cumulative": {"fixed": cumulative(steps_fix), "rolling": cumulative(steps_roll)}, "realised_vs_implied": rvs, "structure": structure, "quality": quality,
+        "iv": iv, "regime": regime, "retention": retention(tracker["fixed"], attribution["fixed"]["open"]), "attribution": attribution, "cumulative": {"fixed": cumulative(steps_fix), "rolling": cumulative(steps_roll)}, "realised_vs_implied": rvs, "structure": structure, "quality": quality,
     }  # fmt: skip
     out["interpretation"], out["climate"] = interpret(out)
     return out
+
+
+def _gex_session(points: Sequence[Mapping[str, Any]] | None) -> dict[str, Any] | None:
+    """How modelled net GEX and the flip moved through the session: first and latest net, range, and how many times spot crossed the flip."""
+    pts = [x for x in (points or []) if x.get("net") is not None]
+    if len(pts) < 2:
+        return None
+    nets = [float(x["net"]) for x in pts]
+    side = [(float(x["spot"]) - float(x["flip"])) for x in pts if x.get("spot") is not None and x.get("flip") is not None]
+    cross = sum(1 for a, b in itertools.pairwise(side) if a * b < 0)
+    return {"first_net": rd(nets[0]), "latest_net": rd(nets[-1]), "min_net": rd(min(nets)), "max_net": rd(max(nets)), "net_change": rd(nets[-1] - nets[0]), "points": len(pts), "flip_crossings": cross}
 
 
 def _concentration(s: Mapping[str, Any], p: Point) -> dict[str, Any] | None:

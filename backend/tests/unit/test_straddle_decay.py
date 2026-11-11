@@ -65,8 +65,8 @@ class TestAttribution:
         assert x["theta"] == pytest.approx(0, abs=1e-9)
         assert x["delta"] == pytest.approx(0, abs=1e-9)
         assert x["gamma"] == pytest.approx(0, abs=1e-9)
-        assert x["vega"] == pytest.approx(x["actual"], abs=1e-6)
-        assert x["vega"] > 0
+        assert x["vega"] + x["volga"] == pytest.approx(x["actual"], abs=1e-6)  # vol alone: first-order vega plus the second-order volga
+        assert x["vega"] > 0 and x["vanna"] == 0
 
     def test_forward_alone_is_delta_plus_positive_gamma(self) -> None:
         a = point(24000, 0.15, OPEN)

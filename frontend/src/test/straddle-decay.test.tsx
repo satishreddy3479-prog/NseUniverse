@@ -2,8 +2,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { StraddleDecayPanel } from "../components/intelligence/StraddleDecay";
-import type { Stat, StraddleDecay, StraddleValidation, Terms, Window } from "../lib/straddleDecay";
+import { MemoryRouter } from "react-router-dom";
+import { StraddleDecayPanel, StraddleSummaryCard } from "../components/intelligence/StraddleDecay";
+import type { Component, Environment, Stat, StraddleDecay, StraddleValidation, Terms, Window } from "../lib/straddleDecay";
 
 vi.mock("../components/EChart", () => ({
   useChartColors: () => ({ up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" }),
@@ -41,7 +42,7 @@ function mount(body: unknown, validation?: StraddleValidation, status = 200) {
     return new Response(JSON.stringify(v ?? {}), { status: status, headers: { "content-type": "application/json" } });
   }));
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={qc}><StraddleDecayPanel /></QueryClientProvider>);
+  return render(<MemoryRouter><QueryClientProvider client={qc}><StraddleDecayPanel /><StraddleSummaryCard /></QueryClientProvider></MemoryRouter>);
 }
 
 describe("straddle decay panel", () => {
@@ -51,7 +52,7 @@ describe("straddle decay panel", () => {
     expect(within(trk).getByText("Opening CE").nextSibling?.textContent).toBe("90.0");
     expect(within(trk).getByText("Opening straddle").nextSibling?.textContent).toBe("170.0");
     expect(within(trk).getByText("Change (points)").nextSibling?.textContent).toBe("−7.0");
-    expect(within(trk).getByText("Change (%)").nextSibling?.textContent).toBe("−4.12%");
+    expect(within(trk).getByText("Decay (%)").nextSibling?.textContent).toBe("−4.12%");
     const attr = screen.getByTestId("sdi-attr");
     const both = within(attr).getByText("Straddle (CE + PE)").closest("tr")!;
     expect(both.textContent).toContain("−10.00");
@@ -126,5 +127,145 @@ describe("straddle decay panel", () => {
     det.open = true;
     fireEvent(det, new Event("toggle"));
     expect((await screen.findByTestId("sdi-val-message")).textContent).toContain("Insufficient");
+  });
+});
+
+const comp = (id: string, name: string, value: number | null, contribution: number | null, proxy = false): Component => ({ id, name, weight: 10, value, contribution, text: value == null ? "unavailable: no reading" : `${name} reading`, source: "straddle attribution", proxy, status: value == null ? "UNAVAILABLE" : "AVAILABLE" });
+const envFixture: Environment = {
+  seller: { score: 76, class: "Favourable", capped_by_flags: null, coverage: 0.9, components: [comp("decay", "Theta decay efficiency", 0.8, 12.5), comp("flow", "Futures order-flow evidence", null, null, true)], flags: [{ id: "tail", text: "Asymmetric tail risk: call and put vols are moving apart" }],
+    short_straddle: { score: 71, class: "Favourable", uses: [] }, short_strangle: { score: 64, class: "Favourable", uses: [] },
+    call_side_risk: { risk: 30, label: "Low", reasons: [{ name: "x", value: 0.1, text: "evidence leans mixed (+0.10)" }] }, put_side_risk: { risk: 62, label: "Elevated", reasons: [{ name: "y", value: 0.4, text: "put-skew richness" }] }, note: "A favourable seller environment is not a guarantee of profit." },
+  buyer: { score: 24, class: "Unfavourable", coverage: 0.8, components: [comp("iv_up", "ATM IV expansion", -0.2, -3)], types: { directional: { score: 30, state: "inactive", uses: [], name: "Directional option-buying environment", direction: "mixed or balanced" }, vol_expansion: { score: 20, state: "inactive", uses: [], name: "Volatility-expansion buying environment" },
+    gamma_momentum: { score: 25, state: "inactive", uses: [], name: "Gamma-driven momentum environment" }, low_movement: { score: 71, state: "decay-favourable", uses: [], name: "Low-movement premium-decay environment" } },
+    direction: { value: 0.1, label: "mixed or balanced", parts: [{ name: "futures CVD (proxy)", value: 0.1 }] }, premium_check: { iv_rising_but_not_justified: true, text: "IV is rising but realised movement is below what the premium prices: rising IV alone does not justify paying for options." }, note: "n" },
+  positioning: { status: "AVAILABLE", supports: true, lines: ["Largest put OI 23700 below and largest call OI 24300 above spot."] }, invalidation: ["Realised volatility over 15 minutes rises above the implied vol"], proxies: ["CVD (quote and tick rule estimate, no trade tape)"], weights_note: "Provisional working weights: not a signal.",
+  sources: { seller_inputs: ["straddle attribution"], buyer_inputs: ["straddle IV"] },
+  comparison: { verdict: "favours sellers", text: "Premium-decay conditions currently favour sellers, subject to the risk flags and checks shown.", seller_score: 76, buyer_score: 24, same_sign_in_both: [], conflicting_seller: ["Skew changes"], conflicting_buyer: [],
+    top_seller: [{ name: "Theta decay efficiency", contribution: 12.5, text: "recent decay 95% of theta" }], top_buyer: [{ name: "ATM IV expansion", contribution: -3, text: "ATM IV -0.20 vol points" }] },
+};
+const rich = (): StraddleDecay => full({
+  environment: envFixture, environment_trend: { seller: { now: 76, m15: 70, m30: null }, buyer: { now: 24, m15: 30, m30: null } },
+  alerts: [{ id: 1, at: "2026-11-11T05:00:00Z", kind: "Put IV expansion", severity: "medium", direction: "bearish", text: "Put IV is up +1.30 vol points in 15 minutes", evidence: [] }],
+  sources: [{ id: "chain", name: "Option chain samples", as_of: "2026-11-11T05:15:00Z", age_s: 60, status: "AVAILABLE", reliability: "last traded" }, { id: "gex", name: "GEX history (modelled)", as_of: null, age_s: null, status: "UNAVAILABLE", reliability: "no provider" }],
+  context: { as_of: "2026-11-11T05:15:00Z", volatility: { skew_25d: 1.2, skew_10d: null, risk_reversal_25d: -1.2, butterfly_25d: 0.4, term_slope_30d: 0.5, term_shape: "contango", term: [{ expiry: "2026-11-17", days: 6, atm_iv: 15.1 }, { expiry: "2026-11-24", days: 13, atm_iv: 15.9 }], atm_iv: 15.1, expected_move_1sd_pts: 200 },
+    options: { ce_oi: 1, pe_oi: 1, ce_oi_change: 5000, pe_oi_change: -2000, pcr_oi: 0.95, pcr_vol: 1.0, max_ce_oi_strike: 24300, max_pe_oi_strike: 23700, largest_call_additions: [{ strike: 24300, change: 90000 }], largest_put_additions: [], largest_call_unwinding: [], largest_put_unwinding: [{ strike: 23900, change: -40000 }], demand: [], window: "15", note: null },
+    futures: { oi_change: 1200, buildup: "Long buildup", vwap: { distance_pct: 0.05, side: "above" }, flow: { cvd_pct: 3 }, note: null }, heavyweights: { aggregate: { "15": { score: 12 } }, participation: { class: "Broad heavyweight buying" }, method: "proxy" }, groups: {}, gex: null },
+  attribution: { fixed: { open: { ...win(eff("slower", 60, "IV expansion (parallel) added 2.2 points")), both: { ...terms(-10, 2.2, 0.1, 0.9), vanna: 0.1, volga: 0.05, vega_skew: 0.4 }, efficiency: { ...eff("slower", 60, "IV expansion (parallel) added 2.2 points against 10.0 points of theta"), shortfall: 4, shortfall_rupees: 260, shortfall_pct: 40, causes: { "IV expansion (parallel)": 1.8, "skew change (call and put vols moving apart)": 0.4 } } }, "60": null, "30": null }, rolling: { open: null, "60": null, "30": null } },
+  tracker: { ...full().tracker!, atm_open: 24000, atm_now: 24050, moves: { fixed: { straddle: { "5": -0.4, "15": -1.2, "30": -2.4, "60": null }, ce: { "5": null, "15": null, "30": null, "60": null }, pe: { "5": null, "15": null, "30": null, "60": null } }, rolling_adjusted: { straddle: { "5": null, "15": null, "30": null, "60": null } } },
+    difference: { fixed_minus_rolling_now: 3.2, fixed_change: -7, rolling_adjusted_change: -7.5, note: "The fixed series is one contract pair." } },
+  regime: { label: "volatility compression", reasons: ["ATM IV moved -0.60 points over the recent window"], accel: { ratio: 0.8, label: "steady", now_15m: 10, previous_15m: 12.5 }, path_efficiency_30m: 0.2, note: "n" },
+  retention: { side: "CE", text: "The CE retains more premium: CE 94% and PE 98% of the opening price." },
+  structure: { ...full().structure!, gex_session: { first_net: 900, latest_net: 1250, min_net: 700, max_net: 1300, net_change: 350, points: 40, flip_crossings: 2 }, config: [{ tag: "suppressed movement", why: "modelled net GEX is positive" }], assumption: "GEX is modelled exposure." },
+});
+
+describe("environments and the twelve sections", () => {
+  it("shows both scores independently with the interpretation, evidence, conflicts and invalidation", async () => {
+    mount(rich());
+    expect((await screen.findByTestId("sdi-seller-top-score")).textContent).toBe("76");
+    expect(screen.getByTestId("sdi-buyer-top-score").textContent).toBe("24");
+    expect(screen.getByTestId("sdi-verdict").textContent).toContain("favour sellers");
+    expect(screen.getByTestId("sdi-conflicts").textContent).toContain("Skew changes");
+    expect(screen.getByTestId("sdi-invalidation").textContent).toContain("Realised volatility over 15 minutes");
+    expect(screen.getByTestId("sdi-regime").textContent).toContain("volatility compression");
+  });
+
+  it("sections carry the numbers of the brief and exist in the page", async () => {
+    mount(rich());
+    await screen.findByTestId("sdi-overall");
+    const ids = ["sdi-overall", "sdi-buyer", "sdi-seller", "sdi-tracker", "sdi-iv", "sdi-attribution", "sdi-rv", "sdi-structure", "sdi-positioning", "sdi-alerts", "sdi-validation", "sdi-method"];
+    const nums = ids.map((id) => /^(\d+)\./.exec(screen.getByTestId(id).querySelector("h2,h3,summary")?.textContent ?? "")?.[1]);
+    expect(nums.slice().sort()).toEqual(["1", "10", "11", "12", "2", "3", "4", "5", "6", "7", "8", "9"]);
+    expect(nums[0]).toBe("1");
+    expect(nums[1]).toBe("2");
+    expect(nums[2]).toBe("3");
+  });
+
+  it("buyer types, premium check, seller sub-assessments and flags", async () => {
+    mount(rich());
+    const b = await screen.findByTestId("sdi-buyer");
+    expect(within(b).getByText(/Low-movement premium-decay environment/)).toBeTruthy();
+    expect(screen.getByTestId("sdi-premium-check").textContent).toContain("does not justify paying");
+    const s = screen.getByTestId("sdi-seller");
+    expect(within(s).getByText("Call-side selling risk").nextSibling?.textContent).toBe("30 · Low");
+    expect(within(s).getByText("Put-side selling risk").nextSibling?.textContent).toBe("62 · Elevated");
+    expect(screen.getByTestId("sdi-flags").textContent).toContain("Asymmetric tail risk");
+  });
+
+  it("unavailable components are dashes, flagged as such, and proxies are labelled", async () => {
+    mount(rich());
+    await screen.findByTestId("sdi-evidence");
+    const flow = screen.getByTestId("sdi-comp-flow");
+    expect(flow.textContent).toContain("—");
+    expect(flow.textContent).toContain("unavailable");
+    expect(flow.textContent).toContain("PROXY");
+  });
+
+  it("attribution includes vanna, volga, residual, rupee shortfall, causes and the skew part of vega", async () => {
+    mount(rich());
+    const a = await screen.findByTestId("sdi-attribution");
+    expect(within(a).getByText("Vanna")).toBeTruthy();
+    expect(within(a).getByText("Volga")).toBeTruthy();
+    expect(within(a).getByText("Residual")).toBeTruthy();
+    expect(screen.getByTestId("sdi-shortfall").textContent).toContain("₹260");
+    expect(screen.getByTestId("sdi-causes").textContent).toContain("skew change");
+    expect(a.textContent).toContain("skew): +0.40 points");
+  });
+
+  it("tracker shows premium moves over 5, 15, 30 and 60 minutes and the fixed-versus-rolling difference", async () => {
+    mount(rich());
+    const m = await screen.findByTestId("sdi-moves");
+    const row = within(m).getByText("Fixed straddle").closest("tr")!;
+    expect(row.textContent).toContain("−2.40");
+    expect(row.textContent).toContain("—");
+    expect(screen.getByTestId("sdi-fixed-vs-rolling").textContent).toContain("+3.2");
+  });
+
+  it("IV panel names the term structure, the retaining side and the gamma configuration", async () => {
+    mount(rich());
+    await screen.findByTestId("sdi-iv");
+    expect(screen.getByTestId("sdi-term").textContent).toContain("2026-11-24");
+    expect(screen.getByTestId("sdi-retention").textContent).toContain("CE retains more");
+    expect(screen.getByTestId("sdi-gex-session").textContent).toContain("crossed the flip 2 time(s)");
+    expect(screen.getByTestId("sdi-gamma-config").textContent).toContain("suppressed movement");
+  });
+
+  it("positioning, alerts and sources", async () => {
+    mount(rich());
+    const pos = await screen.findByTestId("sdi-positioning");
+    expect(within(pos).getByText("PCR (OI)").nextSibling?.textContent).toBe("0.95");
+    expect(screen.getByTestId("sdi-pos-read").textContent).toContain("Supports a premium-decay environment");
+    expect(screen.getByTestId("sdi-alert-list").textContent).toContain("Put IV expansion");
+    const src = screen.getByTestId("sdi-sources");
+    expect(src.textContent).toContain("UNAVAILABLE");
+    expect(src.textContent).toContain("AVAILABLE");
+  });
+
+  it("without live inputs the environment is not invented", async () => {
+    mount(full({ environment: null, environment_note: "Buyer and seller environments are computed for the live session only." }));
+    expect((await screen.findByTestId("sdi-env-none")).textContent).toContain("live session only");
+    expect(screen.queryByTestId("sdi-seller-top")).toBeNull();
+    expect(screen.getByTestId("sdi-pos-none").textContent).toContain("UNAVAILABLE");
+    expect(screen.getByTestId("sdi-alerts-none")).toBeTruthy();
+  });
+
+  it("summary card shows both scores and a link to the full page", async () => {
+    mount(rich());
+    expect((await screen.findByTestId("sdi-card-seller-score")).textContent).toBe("76");
+    const card = screen.getByTestId("sdi-card");
+    expect(within(card).getByRole("link", { name: /full analysis/ }).getAttribute("href")).toBe("/market-intelligence/straddle");
+  });
+
+  it("environment validation is shown with its assumptions and says when it is insufficient", async () => {
+    const v: StraddleValidation = { generated_at: "x", window_minutes: 30, sufficient: false, message: "Insufficient: 2 session(s).", method: "m", note: "n", sessions: [], overall: { windows: 0 }, earlier_half: { windows: 0 }, later_half: { windows: 0 },
+      environment: { sessions: 2, sufficient: false, message: "Insufficient: 2 recorded session(s) (need 20) and not enough picks per bucket (need 30).", assumptions: "Costs are an assumption: 0.5 point per leg per trade.", limits: ["Seller result is a short ATM straddle proxy"],
+        table: { seller: { "15": { "high (>=60)": { n: 4, mean_result_pts: 3.2, median_result_pts: 2.5, max_adverse_pts: 6, max_drawdown_pts: -4, win_rate_pct: 75, expiry_day: { n: 0 }, non_expiry_day: { n: 4 }, earlier_sessions: { n: 4 }, later_sessions: { n: 0 } } } }, buyer: {} } } };
+    mount(rich(), v);
+    await screen.findByTestId("sdi-tracker");
+    const det = screen.getByTestId("sdi-validation") as HTMLDetailsElement;
+    det.open = true;
+    fireEvent(det, new Event("toggle"));
+    expect((await screen.findByTestId("sdi-env-val-message")).textContent).toContain("Insufficient");
+    expect(screen.getByTestId("sdi-env-validation").textContent).toContain("Costs are an assumption");
+    expect(screen.getByTestId("sdi-env-validation").textContent).toContain("+3.20");
   });
 });

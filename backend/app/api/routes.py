@@ -696,6 +696,15 @@ async def intelligence_straddle(
     return await asyncio.to_thread(svc.summary, ex, day)
 
 
+@router.get("/intelligence/straddle/alerts")
+async def intelligence_straddle_alerts(
+    request: Request, session: date | None = None
+) -> dict[str, Any]:
+    """Alerts raised by the straddle engine for a session, with their thresholds."""
+    svc = _straddle(request)
+    return await asyncio.to_thread(svc.alerts, None if session is None else session.isoformat())
+
+
 @router.get("/intelligence/straddle/validation")
 async def intelligence_straddle_validation(request: Request, sessions: int = 20) -> dict[str, Any]:
     """Predicted theta decay vs actual premium change over stored sessions (read-only)."""

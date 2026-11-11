@@ -7,7 +7,7 @@ import { AlertsPanel, DivergencePanel, ScenarioPanel, TimelinePanel } from "../c
 import { CommandStrip, EngineMatrix, Interpretation, PulseCards } from "../components/intelligence/Overview";
 import { HeavyweightPanel } from "../components/intelligence/Heavyweight";
 import { IntradayMlPanel } from "../components/intelligence/IntradayMl";
-import { StraddleDecayPanel } from "../components/intelligence/StraddleDecay";
+import { StraddleSummaryCard } from "../components/intelligence/StraddleDecay";
 
 const LABELS: Record<string, string> = { flow: "Stored per-minute flow (rolling CVD)", market: "Market flow, breadth and heavyweights", intraday: "Command centre (stored chain)", futures: "Futures series", skew: "Volatility skew", momentum: "IV momentum", positioning: "Strike positioning", gex: "GEX (rebuilt)", vix: "India VIX, HV and RV (daily closes)", heavymeta: "Heavyweight index weights", ml: "Intraday ML research" };
 const STATE_TONE: Record<string, string> = { AVAILABLE: "text-up", PARTIAL: "text-warn", UNAVAILABLE: "text-down" };
@@ -26,7 +26,7 @@ export function MarketIntelligence() {
       <EngineMatrix d={d} />
       <HeavyweightPanel d={d} />
       <IntradayMlPanel d={d} />
-      <StraddleDecayPanel />
+      <StraddleSummaryCard />
       <Interpretation d={d} />
       {(d.observations ?? []).length > 0 && (
         <section aria-label="Conflicting and confirming readings" className="rounded-[var(--radius-panel)] border border-rule bg-slate p-4" data-testid="mi-observations">
