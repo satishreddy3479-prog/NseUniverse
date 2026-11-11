@@ -20,6 +20,7 @@ from app.api.routes import router
 from app.api.ws import router as ws_router
 from app.broker.base import MarketDataBroker
 from app.config import Settings, get_settings
+from app.intelligence.straddle_service import StraddleDecay
 from app.intelligence.wiring import create as create_intelligence
 from app.intraday.costs import CostModel
 from app.intraday.service import IntradayService
@@ -299,6 +300,11 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         intelligence = create_intelligence(settings, observations, intraday, market, market_store)
         app.state.intelligence = intelligence
         intelligence.start()
+        app.state.straddle = StraddleDecay(
+            observations=observations, underlying=settings.underlying,
+            gex=lambda e: intraday.gex_history(e, None, "dynamic"),
+            rate=settings.risk_free_rate, enabled=settings.intelligence_enabled,
+        )
         swing_paper = SwingPaperService(
             PaperStore(settings.data_dir), HttpFetcher(), enabled=settings.swing_paper_enabled,
             run_after=time(sh, sm),

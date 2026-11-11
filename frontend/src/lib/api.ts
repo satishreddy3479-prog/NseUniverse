@@ -198,6 +198,8 @@ export const api = {
   swingReport: () => request<SwingReport>("/api/swing/report"),
   swingPaper: () => request<SwingPaperView>("/api/swing/paper"),
   swingLive: () => request<SwingLiveView>("/api/swing/live"),
+  straddleDecay: () => request<import("./straddleDecay").StraddleDecay>("/api/intelligence/straddle"),
+  straddleValidation: () => request<import("./straddleDecay").StraddleValidation>("/api/intelligence/straddle/validation"),
   intelligenceSummary: (expiry?: string) => request<import("./intelligence").Intelligence>(`/api/intelligence/summary${expiry ? `?expiry=${encodeURIComponent(expiry)}` : ""}`),
   intelligenceTimeline: (session?: string) => request<import("./intelligence").Timeline>(`/api/intelligence/timeline${session ? `?session=${encodeURIComponent(session)}` : ""}`),
   swingLiveFills: () => request<import("./types").SwingLedger>("/api/swing/live-fills"),

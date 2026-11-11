@@ -678,6 +678,31 @@ async def intelligence_validation(request: Request, sessions: int = 30) -> dict[
     return await asyncio.to_thread(svc.validation, max(1, min(sessions, 120)))
 
 
+def _straddle(request: Request) -> Any:
+    svc = getattr(request.app.state, "straddle", None)
+    if svc is None or not svc.enabled:
+        msg = "straddle decay is turned off"
+        raise HTTPException(status_code=404, detail={"code": "disabled", "message": msg})
+    return svc
+
+
+@router.get("/intelligence/straddle")
+async def intelligence_straddle(
+    request: Request, expiry: date | None = None, session: date | None = None
+) -> dict[str, Any]:
+    """Straddle decay intelligence of one stored session (separate from the sentiment score)."""
+    svc = _straddle(request)
+    ex, day = (None if x is None else x.isoformat() for x in (expiry, session))
+    return await asyncio.to_thread(svc.summary, ex, day)
+
+
+@router.get("/intelligence/straddle/validation")
+async def intelligence_straddle_validation(request: Request, sessions: int = 20) -> dict[str, Any]:
+    """Predicted theta decay vs actual premium change over stored sessions (read-only)."""
+    svc = _straddle(request)
+    return await asyncio.to_thread(svc.validation, max(1, min(sessions, 60)))
+
+
 @router.get("/swing/live-fills")
 async def swing_live_fills(request: Request) -> dict[str, Any]:
     """The live paper ledger: provisional intraday fills, apart from the official paper book."""
