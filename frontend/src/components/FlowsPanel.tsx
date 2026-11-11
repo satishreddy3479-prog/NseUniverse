@@ -5,6 +5,7 @@ import { FlowsUpdateLoader } from "./FlowsUpdate";
 import { groupedBarsOption } from "../lib/chartOptions";
 import { EChart, useChartColors } from "./EChart";
 import { Panel } from "./ui";
+import { ParticipantAnalysis } from "./ParticipantAnalysis";
 
 const GROUPS = ["FII", "DII", "Pro", "Client"] as const;
 
@@ -19,7 +20,7 @@ function tone(v: number | null): string {
 export function FlowsPanel() {
   const q = useQuery({ queryKey: ["flows-latest"], queryFn: api.flowsLatest, retry: false, staleTime: 60_000 });
   const colors = useChartColors();
-  const days = q.data?.open_interest ?? [];
+  const days = (q.data?.open_interest ?? []).slice(0, 15);
   const asc = [...days].sort((a, b) => (a.session < b.session ? -1 : 1));
   const gcol = { FII: colors.info, DII: colors.brass, Pro: colors.up, Client: colors.down } as const;
   return (
@@ -30,6 +31,7 @@ export function FlowsPanel() {
         : days.length === 0 ? <p className="text-sm text-muted" data-testid="flows-empty">No NSE participant files stored yet. They download by themselves (Settings → Prediction data: NSE institutional flows).</p>
         : (
           <div className="space-y-3">
+            <ParticipantAnalysis oi={q.data?.open_interest ?? []} volume={q.data?.volume ?? []} />
             <div className="rounded-xl border border-rule bg-ink/40 p-3" data-testid="flows-chart">
               <p className="font-mono text-[11px] uppercase tracking-wider text-muted">Net index futures by participant (long − short, contracts)</p>
               <div className="h-52"><EChart ariaLabel="Net index futures by participant and session" option={groupedBarsOption(asc.map((d) => d.session),

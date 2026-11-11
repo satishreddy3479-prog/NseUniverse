@@ -8,6 +8,9 @@ _Last updated: 2026-11-04_
 ## NIFTY 50 Market Intelligence (10 Nov 2026)
 New first menu item and Home strip: fused sentiment (-100..+100) over five evidence groups (derivatives positioning, order-flow proxies, volatility, market structure, participation), with score, confidence, data coverage (available / partial / unavailable), evidence agreement and data freshness as separate quantities, regime, evidence per group, divergences, heuristic scenarios, timeline of recorded minutes, alerts, rolling 5/15/30-minute CVD (proxy), a visible Data quality and freshness section (AVAILABLE / PARTIAL / UNAVAILABLE per capability with source timestamps), and drill-down links to every existing page (D102, D103, [audit, overlap correction and methodology](market-intelligence-audit.md)). The command-centre score is no longer an input (double counting removed); weights are provisional and labelled so; walk-forward validation exists (`/api/intelligence/validation`) but has no real stored history to run on yet. Tested with fixtures and fake providers; not seen with live data in market hours or on a phone.
 
+## Participant-flow analysis (11 Nov 2026)
+FII/DII Summary page has an analysis board (readout, group cards, per-group table, comparison vs previous session / 1 week / 2 weeks, legs and option-bias charts) built on the stored participant rows (D124). Checked on the server's real 7 sessions; no backend change.
+
 ## Swing rules tab rewritten (11 Nov 2026)
 Documents every rule of the strategy (swing-v2 and the live layers) with a parameter table read from the engine (D123). Score point values and gate tolerances remain prose: update the tab when `indicators.py` changes.
 

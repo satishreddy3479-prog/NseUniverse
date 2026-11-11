@@ -183,7 +183,7 @@ export const api = {
   intradaySummary: (expiry: string) => request<IntradaySummary>(`/api/intraday/summary?expiry=${encodeURIComponent(expiry)}`),
   intradayScores: (expiry: string) =>
     request<{ session: string; expiry: string; rows: IntradayScoreRow[] }>(`/api/intraday/scores?expiry=${encodeURIComponent(expiry)}`),
-  flowsLatest: () => request<FlowsLatest>("/api/prediction/flows/latest?limit=15"),
+  flowsLatest: () => request<FlowsLatest>("/api/prediction/flows/latest?limit=30"),
   events: () => request<{ events: EventItem[] }>("/api/prediction/events?days=45"),
   newsStatus: () => request<NewsStatus>("/api/prediction/news/status"),
   flowsCash: () => request<{ rows: { session: string; category: string; buy: number; sell: number; net: number }[]; window_sessions: number }>("/api/prediction/flows/cash"),
