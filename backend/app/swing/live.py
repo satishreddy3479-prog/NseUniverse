@@ -34,6 +34,7 @@ from app.swing.live_rules import (
     session_state,
     volume_pace,
 )
+from app.swing.minute_shadow import MinuteShadow
 from app.swing.store import PaperStore
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ class SwingLive:
         feed_state: Callable[[], str] = lambda: "unknown",
         clock: Callable[[], datetime] = lambda: datetime.now(UTC), enabled: bool = True,
         poll_s: float = 2.0, refresh_s: float = 60.0, prev_session: Callable[[date], date] = previous_session,
-        ledger: LiveLedger | None = None, live_fills: Callable[[], bool] = lambda: False,
+        ledger: LiveLedger | None = None, live_fills: Callable[[], bool] = lambda: False, minute: MinuteShadow | None = None,
     ) -> None:
         self.store, self.cfg, self._ticks, self._scrip = store, cfg, ticks, scrip_master
         self._add_tokens, self._feed_state, self._clock = add_tokens, feed_state, clock
@@ -88,6 +89,7 @@ class SwingLive:
         self._asked: set[str] = set()  # keys already handed to the stream
         self._task: asyncio.Task[None] | None = None
         self.ledger, self._live_fills = ledger, live_fills
+        self.minute = minute  # the 1-minute shadow book (never places an order)
         self._no = 0  # ordinal of the book's last session
         self._last_exit: dict[str, int] = {}
         self._trig: dict[str, int] = {}  # consecutive polls on which an order read "triggered"
@@ -117,7 +119,8 @@ class SwingLive:
 
     def _symbols(self) -> list[str]:
         with self._lock:
-            return sorted({o.symbol for o in self._orders} | {p.symbol for p in self._positions})
+            held = {o.symbol for o in self._orders} | {p.symbol for p in self._positions}
+        return sorted(held | (self.minute.open_symbols() if self.minute is not None else set()))
 
     async def _ensure_master(self, now: datetime) -> None:
         today = now.astimezone(IST).date()
@@ -169,6 +172,11 @@ class SwingLive:
         """Apply the live checks once; record newly reached events (shadow). Returns how many were new."""
         now = now or self._clock()
         if session_state(now) != "open":
+            if self.minute is not None:
+                try:
+                    self.minute.on_close(now)  # complete the last candles; later polls find nothing to do
+                except Exception as e:  # noqa: BLE001 - the shadow book must never disturb the live view
+                    log_event(logger, logging.ERROR, "swing_minute_close_failed", error=type(e).__name__)
             return 0  # the feed keeps the last values after the close: never act on them
         ticks, session = self._ticks(), now.astimezone(IST).date().isoformat()
         queue_ok = bool(self.queue_state(now)["current"])
@@ -209,6 +217,12 @@ class SwingLive:
                 self.live_fill_pass(now, ticks, orders if queue_ok else [], positions)
             except Exception as e:  # noqa: BLE001 - the ledger is provisional and must never disturb the live view or the feed
                 log_event(logger, logging.ERROR, "swing_live_fill_pass_failed", error=type(e).__name__)
+        if self.minute is not None:
+            try:
+                by_sym = {s: t for s in self._symbols() if (tok := self._tokens.get(s)) is not None and (t := self._fresh(ticks.get(tok.key), now)) is not None}
+                self.minute.on_poll(now, by_sym, orders if queue_ok else [])
+            except Exception as e:  # noqa: BLE001 - the shadow book must never disturb the live view or the feed
+                log_event(logger, logging.ERROR, "swing_minute_poll_failed", error=type(e).__name__)
         return new
 
     # ------------------------------------------------------------------ the live paper ledger (provisional, separate from the official book)

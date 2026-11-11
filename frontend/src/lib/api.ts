@@ -203,6 +203,7 @@ export const api = {
   intelligenceSummary: (expiry?: string) => request<import("./intelligence").Intelligence>(`/api/intelligence/summary${expiry ? `?expiry=${encodeURIComponent(expiry)}` : ""}`),
   intelligenceTimeline: (session?: string) => request<import("./intelligence").Timeline>(`/api/intelligence/timeline${session ? `?session=${encodeURIComponent(session)}` : ""}`),
   swingLiveFills: () => request<import("./types").SwingLedger>("/api/swing/live-fills"),
+  swingMinute: () => request<import("./swingMinute").MinuteView>("/api/swing/minute"),
   swingRun: () => request<{ started: boolean; status: SwingPaperView["status"] }>("/api/swing/paper/run", { method: "POST" }),
   csvUrl: (id: string) => `/api/snapshots/${encodeURIComponent(id)}/csv`,
 };

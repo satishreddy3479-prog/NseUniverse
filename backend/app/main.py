@@ -58,8 +58,10 @@ from app.stream.hub import Hub
 from app.stream.manager import StreamConfig, StreamManager
 from app.swing.engine import Config as SwingConfig
 from app.swing.fetch import HttpFetcher
-from app.swing.live import SwingLive
+from app.swing.live import SwingLive, previous_session
 from app.swing.live_ledger import LiveLedger
+from app.swing.minute_shadow import MinuteShadow
+from app.swing.minute_store import MinuteStore
 from app.swing.service import SwingPaperService
 from app.swing.store import PaperStore
 
@@ -317,11 +319,28 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         swing_paper.start()
         ledger_path = settings.data_dir / "swing_live_fills.sqlite3"
         swing_ledger = LiveLedger(ledger_path, swing_paper.cfg)
-        swing_paper.on_session = swing_ledger.settled  # reconcile after each evening settlement
+        swing_minute = MinuteShadow(
+            MinuteStore(settings.data_dir / "swing_minute.sqlite3"), swing_paper.cfg,
+            prev_session=previous_session, enabled=settings.swing_live_enabled,
+            profile=lambda: (market.baselines(datetime.now(UTC)) or {}).get("stock_profile"),
+        )
+        app.state.swing_minute = swing_minute
+
+        def _settled(s: str, decisions: Any, trades: Any) -> Any:
+            out = swing_ledger.settled(s, decisions, trades)  # reconcile the live ledger
+            try:
+                swing_minute.settled(s, decisions, trades)  # compare the 1-minute shadow book
+            except Exception as e:  # noqa: BLE001 - must never disturb the evening run
+                err = type(e).__name__
+                log_event(logger, logging.ERROR, "swing_minute_compare_failed", error=err)
+            return out
+
+        swing_paper.on_session = _settled
         app.state.swing_ledger = swing_ledger
         swing_live = SwingLive(
             swing_paper.store, swing_paper.cfg, ticks=stream.book.internal_ticks,
             ledger=swing_ledger, live_fills=lambda: settings.swing_live_fills_enabled,
+            minute=swing_minute,
             scrip_master=scrip,
             add_tokens=stream.add_internal_tokens, feed_state=lambda: stream.state.value,
             enabled=settings.swing_live_enabled,

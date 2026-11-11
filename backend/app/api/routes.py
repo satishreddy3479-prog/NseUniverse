@@ -712,6 +712,19 @@ async def intelligence_straddle_validation(request: Request, sessions: int = 20)
     return await asyncio.to_thread(svc.validation, max(1, min(sessions, 60)))
 
 
+@router.get("/swing/minute")
+async def swing_minute(request: Request) -> dict[str, Any]:
+    """The 1-minute shadow book: live-style swing rules, beside the official book. Shadow only."""
+    svc = getattr(request.app.state, "swing_minute", None)
+    if svc is None:
+        msg = "the 1-minute shadow book is not running"
+        raise HTTPException(status_code=503, detail={"code": "minute_unavailable", "message": msg})
+    from app.swing.live_rules import session_state
+
+    now = datetime.now(UTC)
+    return await asyncio.to_thread(svc.view, now, session_state(now) == "open")
+
+
 @router.get("/swing/live-fills")
 async def swing_live_fills(request: Request) -> dict[str, Any]:
     """The live paper ledger: provisional intraday fills, apart from the official paper book."""
