@@ -115,6 +115,81 @@ def gamma_flip(cs: Sequence[Mapping[str, Any]], spot: float, q: float, t: float,
     return best
 
 
+def crossings(cs: Sequence[Mapping[str, Any]], spot: float, q: float, t: float, r: float, span: float = FLIP_SPAN, steps: int = FLIP_STEPS) -> list[float]:
+    """Every spot level inside +-span where the aggregate changes sign (bisected), nearest to spot first. ``gamma_flip`` returns the first of these."""
+    prep = _prepare(cs, q, t, r)
+    pts = [(s, _net_prepared(prep, s, q)) for s in (spot * (1 - span + 2 * span * i / steps) for i in range(steps + 1))]
+    out: list[float] = []
+    for (s0, v0), (s1, v1) in zip(pts, pts[1:], strict=False):
+        if v0 is None or v1 is None or not (v0 == 0 or (v0 < 0) != (v1 < 0)):
+            continue
+        lo, hi, vlo = s0, s1, v0
+        for _ in range(22):
+            mid = (lo + hi) / 2
+            vm = _net_prepared(prep, mid, q)
+            if vm is None:
+                break
+            if (vm < 0) == (vlo < 0):
+                lo, vlo = mid, vm
+            else:
+                hi = mid
+        out.append((lo + hi) / 2)
+    return sorted(out, key=lambda x: abs(x - spot))
+
+
+def both_sided(cs: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    """Contracts of the strikes that have a usable call AND put exposure: the set the net and absolute totals are built from."""
+    ok = {(c["strike"], c["side"]) for c in cs if c["iv"] is not None and c["oi"] is not None}
+    return [c for c in cs if (c["strike"], "CE") in ok and (c["strike"], "PE") in ok]
+
+
+def flip_diagnostics(cs: Sequence[Mapping[str, Any]], spot: float, q: float, t: float, r: float, flip: float | None) -> dict[str, float | None]:
+    """How far the gamma flip can be trusted. Numbers only (the label is made in ``flip_support``).
+
+    * ``flip_both``: the flip when only strikes with both a call and a put exposure are used (the same strikes as the net total).
+    * ``flip_lo`` / ``flip_hi``: the flip when call OI is scaled by 0.9 and put OI by 1.1, and the reverse (a 10 % disagreement in who holds what).
+    * ``crossings``: how many sign changes the profile has inside +-8 % of spot.
+    * ``slope``: net GEX change per 1 % of spot at the flip (a flat profile makes the zero poorly located).
+    * ``net_share``: |net at spot| / absolute exposure: near 0 the book is balanced and the flip is close, near 1 it is one-sided and the flip is far.
+    """
+    cb = both_sided(cs)
+    f_both = gamma_flip(cb, spot, q, t, r) if cb else None
+
+    def scaled(a: float, b: float) -> list[dict[str, Any]]:
+        return [{**c, "oi": None if c["oi"] is None else c["oi"] * (a if c["side"] == "CE" else b)} for c in cs]
+
+    f_lo, f_hi = gamma_flip(scaled(0.9, 1.1), spot, q, t, r), gamma_flip(scaled(1.1, 0.9), spot, q, t, r)
+    n = len(crossings(cs, spot, q, t, r))
+    slope = None
+    if flip is not None:
+        a, b = net_at(cs, flip * 0.995, q, t, r), net_at(cs, flip * 1.005, q, t, r)
+        slope = None if a is None or b is None else (b - a)
+    net0, tot = net_at(cb, spot, q, t, r) if cb else None, sum(abs(x) for x in [net_at([c], spot, q, t, r) or 0.0 for c in cb]) if cb else 0.0
+    return {"flip_both": f_both, "flip_lo": f_lo, "flip_hi": f_hi, "crossings": float(n), "slope": slope, "net_share": None if net0 is None or not tot else abs(net0) / tot}
+
+
+def flip_support(spot: float, flip: float | None, d: dict[str, Any]) -> dict[str, Any]:
+    """A plain verdict on the flip from its diagnostics: 'none', 'supported' or 'unstable', with the reasons. Nothing is corrected: a flip that is not
+    supported is labelled, never replaced by a better-looking number."""
+    if flip is not None and not any(v is not None for v in d.values()):
+        return {"status": "unassessed", "reasons": ["no stability diagnostics were stored with this snapshot"], "spread_pts": None}
+    if flip is None:
+        return {"status": "none", "reasons": ["no sign change of the modelled net GEX within +-8 % of spot"]}
+    reasons: list[str] = []
+    pts_alt = [v for v in (d.get("flip_both"), d.get("flip_lo"), d.get("flip_hi")) if v is not None]
+    spread = (max([flip, *pts_alt]) - min([flip, *pts_alt])) if pts_alt else 0.0
+    if spread / spot * 100 > 0.25:
+        reasons.append(f"moves {spread:.0f} points ({spread / spot * 100:.2f} % of spot) with the strike set or a 10 % OI disagreement")
+    if (d.get("crossings") or 0) > 1:
+        reasons.append(f"the profile changes sign {int(d['crossings'] or 0)} times inside +-8 % of spot")
+    dist = abs(flip - spot) / spot * 100
+    if dist > 1.0:
+        reasons.append(f"{dist:.2f} % from spot: the net exposure is one-sided near spot, so the flip is an extrapolation")
+    if "slope" in d and not d.get("slope"):
+        reasons.append("the profile is too flat at the flip to locate it")
+    return {"status": "unstable" if reasons else "supported", "reasons": reasons, "spread_pts": round(spread, 1)}
+
+
 def strike_rows(cs: Sequence[Mapping[str, Any]], spot: float, q: float, t: float, r: float) -> list[dict[str, Any]]:
     by: dict[float, dict[str, Any]] = {}
     for c in cs:
@@ -156,7 +231,8 @@ def levels(cs: Sequence[Mapping[str, Any]], spot: float, q: float, t: float, r: 
         "peak": _argmax(rows, lambda x: x["abs"]),
         "call_wall": _argmax([x for x in rows if x["strike"] >= spot], lambda x: x["ce"]),
         "put_wall": _argmax([x for x in rows if x["strike"] <= spot], lambda x: None if x["pe"] is None else -x["pe"]),
-        "flip": gamma_flip(cs, spot, q, t, r),
+        "flip": (flip := gamma_flip(cs, spot, q, t, r)),
+        **{f"fd_{k}": v for k, v in flip_diagnostics(cs, spot, q, t, r, flip).items()},
     }
 
 

@@ -182,7 +182,9 @@ class MarketService:
         age = None if wt is None else now.toordinal() - date.fromisoformat(wt[1]).toordinal()
         return {
             "basis": basis, "top": top, "updated": self._clock().isoformat(),
-            "weights": None if wt is None else {"as_of": wt[1], "source": wt[2], "approximate": wt[2].startswith("approx"), "rolled_to": wt[3], "age_days": age, "stale": bool(age is not None and age > STALE_WEIGHTS_DAYS), "previous_as_of": None if prev is None else prev[1]},
+            "weights": None if wt is None else {"as_of": wt[1], "source": wt[2], "approximate": wt[2].startswith("approx"), "rolled_to": wt[3], "age_days": age, "stale": bool(age is not None and age > STALE_WEIGHTS_DAYS), "previous_as_of": None if prev is None else prev[1],
+                        "effective_date": wt[1], "verified_at": self.store.weights_loaded_utc("nifty50", wt[1], wt[2]),
+                        "verified_note": "when the set was loaded into the store from its source file; it is not a re-check against NSE", "live": False},
             "stocks": [{"symbol": k, "name": names.get(k), "weight": None if wt is None else round(wt[0].get(k, 0.0), 4), "previous_weight": None if prev is None or k not in prev[0] else round(prev[0][k], 4)} for k in top],
         }
 

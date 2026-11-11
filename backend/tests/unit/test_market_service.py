@@ -644,3 +644,10 @@ def test_heavy_meta_gives_names_weights_previous_weights_and_staleness(tmp_path:
     before = svc.store.weights_before("nifty50", w["as_of"])
     assert before is not None and before[1] == "2026-03-31" and before[0]["AXISBANK"] == 20.0
     assert svc.store.weights_before("nifty50", "2026-01-01") is None
+
+
+def test_heavy_meta_gives_the_effective_date_verification_time_source_and_never_calls_stored_weights_live(tmp_path: Path) -> None:
+    svc = build(tmp_path, {s: 101.0 for s in SYMS})
+    w = svc.heavy_meta()["weights"]
+    assert w["effective_date"] == w["as_of"] and w["source"] and w["live"] is False
+    assert w["verified_at"] and "not a re-check against NSE" in w["verified_note"]

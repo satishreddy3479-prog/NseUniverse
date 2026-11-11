@@ -348,19 +348,35 @@ def test_rolling_cvd_is_the_difference_of_stored_cumulative_flow() -> None:
         w = r["windows"][n]
         # per minute: buy 600, sell 400, CVD +200 of 1000 classified = +20 %
         assert w["status"] == "ok" and w["cvd"] == 200.0 * int(n) and w["cvd_pct"] == 20.0 and w["classified"] == 1000.0 * int(n)
-    assert r["ok_windows"] == 3 and r["estimated"] is True and r["momentum_per_min"] == 0.0  # steady buying: no momentum change
+    assert r["ok_windows"] == 3 and r["estimated"] is True
+    a = r["acceleration"]  # steady buying: two equal consecutive windows, identical rates, no acceleration
+    assert a["status"] == "ok" and a["current_cvd"] == a["previous_cvd"] == 1000.0 and a["current_rate"] == a["previous_rate"] == 200.0 and a["rate_change"] == 0.0 and a["acceleration"] == 0.0
 
 
-def test_rolling_cvd_momentum_is_the_recent_rate_less_the_longer_rate() -> None:
+def test_cvd_acceleration_compares_two_consecutive_equal_five_minute_windows() -> None:
     samples = flow_samples(40)
-    # the last 5 minutes buy harder: add 100 of CVD per minute on top
+    # buying strengthens over the last 5 minutes only: +100 CVD per minute on top of the steady +200 for minutes 35..39
     boosted = []
     for i, (t, p) in enumerate(samples):
         extra = 100.0 * max(0, i - 34)
         boosted.append((t, {**p, "cvd": p["cvd"] + extra, "b": p["b"] + extra, "v": p["v"] + extra}))
+    a = rolling.acceleration(boosted, 5)
+    assert a["status"] == "ok"
+    assert a["current_cvd"] == 1500.0 and a["previous_cvd"] == 1000.0  # current 5 min = 5 x 200 + 5 x 100; the 5 minutes before it unchanged
+    assert a["current_rate"] == 300.0 and a["previous_rate"] == 200.0 and a["rate_change"] == 100.0
+    assert a["acceleration"] == pytest.approx(100.0 / 5)  # change in rate per minute over the 5-minute spacing
+    assert a["window_minutes"] == [5.0, 5.0]
+    # the 15 and 30 minute windows are separate context: they do not enter the acceleration
     r = rolling.futures(boosted)
-    assert r["windows"]["5"]["cvd"] == 200 * 5 + 100 * 5 + 100 * 4 + 100 * 3 + 100 * 2 + 100 * 1 - 100 * 0 - 0 or r["momentum_per_min"] > 0
-    assert r["momentum_per_min"] > 0
+    assert r["windows"]["15"]["cvd"] != a["current_cvd"] * 3 and "momentum_per_min" not in r
+
+
+def test_cvd_acceleration_needs_three_stored_points_and_continuous_flow() -> None:
+    assert rolling.acceleration(flow_samples(8), 5)["status"].startswith("unavailable: fewer than 10 minutes")
+    assert rolling.acceleration([], 5)["status"].startswith("unavailable: no flow samples")
+    assert rolling.acceleration(flow_samples(40, restart_at=33), 5)["status"].startswith("unavailable: the backend restarted")
+    gap = rolling.acceleration(flow_samples(40, skip=range(24, 33)), 5)
+    assert gap["status"].startswith("unavailable: no stored sample within") and gap["acceleration"] is None
 
 
 def test_rolling_cvd_is_unavailable_with_a_reason_never_estimated() -> None:

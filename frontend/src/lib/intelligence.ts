@@ -29,10 +29,13 @@ export interface AlertRow { id: number; at: string; kind: string; severity: stri
 export interface GexState {
   available: boolean; net?: number | null; flip?: number | null; flip_distance_pct?: number | null; regime?: string; call_wall?: number | null; put_wall?: number | null; peak?: number | null; near_net?: number | null;
   relationship?: string; net_change_pct?: number | null; net_change_15m?: number | null; spot_change_15m_pct?: number | null; ce?: number | null; pe?: number | null; abs?: number | null; at?: string; universe?: string; session?: string;
-  methodology?: string; label?: string;
+  methodology?: string; label?: string; flip_distance_pts?: number | null; flip_range?: [number, number] | null;
+  flip_support?: { status: "supported" | "unstable" | "none" | "unassessed"; reasons: string[]; spread_pts?: number | null };
 }
 export interface RollingWindow { minutes: number; cvd: number | null; cvd_pct: number | null; volume: number | null; classified: number | null; from: string | null; to: string | null; status: string }
-export interface Rolling { windows: Record<string, RollingWindow>; momentum_per_min: number | null; ok_windows: number; estimated: boolean }
+export interface CvdAcceleration { minutes: number; current_cvd: number | null; previous_cvd: number | null; current_rate: number | null; previous_rate: number | null; rate_change: number | null; acceleration: number | null; current_pct: number | null; previous_pct: number | null; status: string }
+export interface Rolling { windows: Record<string, RollingWindow>; acceleration: CvdAcceleration; ok_windows: number; estimated: boolean }
+export interface Observation { id: string; title: string; reading: string; explanation: string; reversal_signal: false }
 export interface Capability { id: string; name: string; status: EvidenceState; reason: string; source: string; as_of: string | null; link: string | null }
 export interface OverlapAudit { findings: { input: string; was: string; fix: string }[]; terms: { group: string; term: string; family: string; weight: number; shares: string[]; available: boolean }[] }
 export interface StrikeChange { strike: number; change: number }
@@ -50,7 +53,7 @@ export interface HeavyWindow { minutes: number; cvd: number | null; pct: number 
 export interface HeavyStock {
   symbol: string; name: string | null; weight: number; previous_weight: number | null; price: number | null; change_pct: number | null; vwap: number | null; price_vs_vwap_pct: number | null;
   session: { cvd: number | null; pct: number | null; norm: number | null; buy_volume: number | null; sell_volume: number | null }; windows: Record<"5" | "15" | "30", HeavyWindow>;
-  momentum: number | null; acceleration: number | null; basis_norm: number | null; bias: string; price_cvd_divergence: string | null; contribution_pct?: number | null; methodology: string; valid: boolean;
+  momentum: number | null; acceleration: number | null; prev5_norm?: number | null; basis_norm: number | null; bias: string; price_cvd_divergence: string | null; contribution_pct?: number | null; methodology: string; valid: boolean;
   freshness: { updated: string | null; age_s: number | null; feed: string; fresh: boolean; classified_share: number | null; coverage_of_day_volume: number | null; quote_rule_share: number | null; stored_samples: number };
 }
 export interface HeavyAgg { score: number | null; valid: number; of: number; weight_share: number; status: string }
@@ -58,9 +61,9 @@ export interface Heavyweights {
   available: boolean; reason?: string; method: string; limits: string[]; as_of?: string | null; stocks: HeavyStock[];
   aggregate: { session: HeavyAgg; "5": HeavyAgg; "15": HeavyAgg; "30": HeavyAgg; momentum: number | null; acceleration: number | null };
   participation: { class: string; valid: number; positive: number | null; negative: number | null; neutral: number | null; weight_share_positive: number | null; weight_share_negative: number | null; top_contributor: { symbol: string; share: number } | null; reason: string | null };
-  nifty: { change_15m_pct: number | null; day_change_pct: number | null; vwap_side: string | null }; relative_strength_pct: number | null;
+  nifty: { change_15m_pct: number | null; day_change_pct: number | null; futures_vwap_side: string | null; futures_vwap_pts: number | null; vwap_note: string }; relative_strength_pct: number | null;
   series: { t: string; session: number | null; w5: number | null; w15: number | null; spot: number | null }[];
-  quality: { valid: number; of: number; weight_share: number; aggregate_available: boolean; weights: { as_of?: string; source?: string; age_days?: number | null; stale: boolean; approximate: boolean; rolled_to?: string | null; basis?: string } };
+  quality: { valid: number; of: number; weight_share: number; aggregate_available: boolean; valid_constituents?: number; weights: { as_of?: string; source?: string; age_days?: number | null; stale: boolean; approximate: boolean; rolled_to?: string | null; basis?: string; effective_date?: string; verified_at?: string | null; verified_note?: string; live?: boolean } };
 }
 export interface MlModelScore { log_loss: number | null; brier: number | null; n: number | null; ece: number | null }
 export interface MlEvaluation {
@@ -74,14 +77,15 @@ export interface MlDigest {
 }
 export interface Pulse {
   spot: number | null; change_pct: number | null; futures: number | null; basis: number | null; basis_pct: number | null; atm_strike: number | null; expiry: string | null; atm_ce_premium: number | null; atm_pe_premium: number | null;
-  atm_iv: number | null; india_vix: { value: number | null; as_of: string | null; note: string; label?: string; intraday_signal?: boolean }; pcr: number | null; net_gex: number | null; gamma_flip: number | null; futures_oi_change: number | null; futures_cvd_pct: number | null; futures_vwap: number | null; heavyweight_cvd: number | null;
+  atm_iv: number | null; vwap?: { instrument: string; futures_price: number | null; futures_vwap: number | null; distance_pts: number | null; distance_pct: number | null; side: string | null; spot_vwap: null; spot_vwap_note: string };
+  india_vix: { value: number | null; as_of: string | null; note: string; label?: string; intraday_signal?: boolean }; pcr: number | null; net_gex: number | null; gamma_flip: number | null; futures_oi_change: number | null; futures_cvd_pct: number | null; futures_vwap: number | null; heavyweight_cvd: number | null;
 }
 export interface Intelligence {
   generated_at: string; expiry: string | null; session: string; enabled: boolean; status: Record<string, InputStatus>; sentiment: Sentiment;
   regime: { name: string; evidence: string[]; volatility: string; gamma: string; previous: string | null; changed_at: string | null };
   engines: EngineView[]; pulse: Pulse; gex: GexState; interpretation: string; divergences: Divergence[]; divergences_invalidated: { id: string; status: string }[]; divergences_unavailable: string[];
   scenarios: Scenarios; panels: Panels; alerts: AlertRow[]; config: { weights: Record<string, number>; min_coverage: number; min_engines: number; note: string; groups?: Record<string, string> }; compute_ms: number;
-  capabilities?: Capability[]; overlap_audit?: OverlapAudit; heavyweights?: Heavyweights; intraday_ml?: MlDigest | null;
+  capabilities?: Capability[]; overlap_audit?: OverlapAudit; heavyweights?: Heavyweights; observations?: Observation[]; intraday_ml?: MlDigest | null;
 }
 export interface TimelinePoint {
   session: string; at: string; spot: number | null; score: number | null; confidence: number | null; coverage: number | null; regime: string | null; vol_regime: string | null; gamma_regime: string | null;

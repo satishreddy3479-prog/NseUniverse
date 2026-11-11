@@ -27,6 +27,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from app.intelligence import heavyweights as hw
+from app.intraday.gex_history import flip_support as gx_flip_support
 
 #: default engine weights (percent); overridable through ``Settings.intelligence_weights``
 DEFAULT_WEIGHTS: dict[str, float] = {"positioning": 30.0, "orderflow": 20.0, "volatility": 10.0, "structure": 20.0, "participation": 20.0}
@@ -180,6 +181,10 @@ def gex_state(inp: Mapping[str, Any]) -> dict[str, Any]:
         return {"available": False}
     spot, net, flip = num(last.get("spot")), num(last.get("net")), num(last.get("flip"))
     dist = None if flip is None or not spot else (spot - flip) / spot * 100
+    dist_pts = None if flip is None or not spot else spot - flip
+    fd = {k[3:]: num(v) for k, v in last.items() if k.startswith("fd_")}
+    support = gx_flip_support(spot, flip, fd) if spot else {"status": "none", "reasons": []}
+    alts = [v for v in (flip, fd.get("flip_both"), fd.get("flip_lo"), fd.get("flip_hi")) if v is not None]
     regime = "unknown" if net is None else ("near flip" if dist is not None and abs(dist) <= 0.2 else "positive" if net >= 0 else "negative")
     prev = None
     for p in reversed(pts[:-1]):
@@ -196,7 +201,7 @@ def gex_state(inp: Mapping[str, Any]) -> dict[str, Any]:
         gex_dir = 0 if scale == 0 or abs(d_net) < 0.05 * scale else (1 if d_net > 0 else -1)
         kind = "none" if spot_dir == 0 or gex_dir == 0 else ("amplifying" if gex_dir < 0 else "stabilising")
     return {"available": True, "at": last.get("at"), "spot": spot, "net": net, "abs": num(last.get("abs")), "ce": num(last.get("ce")), "pe": num(last.get("pe")), "flip": flip,
-            "flip_distance_pct": dist, "call_wall": num(last.get("call_wall")), "put_wall": num(last.get("put_wall")), "peak": num(last.get("peak")), "near_net": num(last.get("near_net")),
+            "flip_distance_pct": dist, "flip_distance_pts": dist_pts, "flip_support": support, "flip_range": None if not alts else [min(alts), max(alts)], "flip_diagnostics": fd, "call_wall": num(last.get("call_wall")), "put_wall": num(last.get("put_wall")), "peak": num(last.get("peak")), "near_net": num(last.get("near_net")),
             "regime": regime, "net_change_15m": d_net, "net_change_pct": None if d_net is None or not scale else d_net / scale * 100, "spot_change_15m_pct": d_spot, "relationship": kind,
             "session": g(inp.get("gex"), "session"), "universe": g(inp.get("gex"), "universe") or "dynamic"}
 
@@ -219,8 +224,9 @@ def _gex_terms(inp: Mapping[str, Any]) -> tuple[list[Term], dict[str, Any]]:
                 Term("Room to the GEX walls (modelled)", None, "no walls", family="gex", weight=0.5, shares=("price",))], st
     dist = st["flip_distance_pct"]
     spot, cw, pw = st["spot"], st["call_wall"], st["put_wall"]
-    terms = [Term("Spot versus the gamma flip (modelled)", squash(dist, 1.0), f"spot {dist:+.2f}% from the modelled flip {st['flip']:.0f} (above = positive-gamma side under the assumed sign convention)" if dist is not None else "no gamma flip within ±8%",
-                  family="gex", weight=0.5, shares=("price",))]
+    weak = (st.get("flip_support") or {}).get("status") == "unstable"
+    terms = [Term("Spot versus the gamma flip (modelled)", squash(dist, 1.0), (f"spot {st['flip_distance_pts']:+.0f} pts ({dist:+.2f}%) from the modelled flip {st['flip']:.0f} (above = positive-gamma side under the assumed sign convention)" + ("; flip UNSTABLE: counted at a quarter of its weight (" + "; ".join(st["flip_support"]["reasons"]) + ")" if weak else "")) if dist is not None else "no gamma flip within ±8%",
+                  family="gex", weight=0.125 if weak else 0.5, shares=("price",))]
     up, dn = (cw - spot if cw and spot else None), (spot - pw if pw and spot else None)
     asym = None if up is None or dn is None or up <= 0 or dn <= 0 else (up - dn) / (up + dn)
     terms.append(Term("Room to the GEX walls (modelled)", None if asym is None else asym * 60, f"call wall {cw:.0f} ({up:.0f} pts above), put wall {pw:.0f} ({dn:.0f} pts below)" if asym is not None else "walls not both on the expected side of spot",
@@ -279,6 +285,10 @@ def orderflow_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[
     r15 = g(inp.get("rolling"), "windows", "15") or {}
     r15v = num(r15.get("cvd_pct")) if r15.get("status") == "ok" else None
     terms.append(Term("Futures CVD (Proxy), rolling 15 min", squash(r15v, 25), f"last 15 minutes {r15v:+.1f}% of classified volume (stored per-minute flow, estimate)" if r15v is not None else str(r15.get("status") or "no rolling flow"), proxy=True, family="futures_cvd"))
+    acc = g(inp.get("rolling"), "acceleration") or {}
+    cur_p, prev_p = num(acc.get("current_pct")), num(acc.get("previous_pct"))
+    terms.append(Term("Futures CVD change (Proxy), 5 min vs previous 5 min", squash(cur_p - prev_p, 25) if acc.get("status") == "ok" and cur_p is not None and prev_p is not None else None,
+                      f"current 5-minute CVD {cur_p:+.1f}% of classified volume, previous 5 minutes {prev_p:+.1f}%; rate {acc.get('current_rate')} vs {acc.get('previous_rate')} per minute" if cur_p is not None and prev_p is not None else str(acc.get("status") or "no stored flow"), proxy=True, family="futures_cvd"))
     imb = num(g(flow, "depth_imbalance"))
     terms.append(Term("Order-book depth imbalance (Proxy)", squash(imb, 0.3) if stale is not True else None, f"bid minus ask depth share {imb:+.2f} (resting quotes, not trades)" if imb is not None else "no fresh depth", proxy=True, family="depth"))
     h = inp.get("heavy") or hw.assess(inp)
@@ -291,7 +301,7 @@ def orderflow_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[
     why = (agg.get("15") or {}).get("status") or "no rolling heavyweight flow"
     terms.append(Term("Heavyweight CVD (Proxy), rolling 15 min", s15, f"weighted over {(agg.get('15') or {}).get('valid')} of {len(rows_h)} stocks, last 15 minutes of stored flow, each normalised then index-weighted (estimate)" if s15 is not None else why, proxy=True, family="heavy_cvd"))
     terms.append(Term("Heavyweight CVD (Proxy), session", ssess, f"{n_ok} of {len(rows_h)} stocks, each normalised then weighted by index weight (estimate)" if ssess is not None else str((agg.get("session") or {}).get("status") or "no heavyweight flow"), proxy=True, family="heavy_cvd"))
-    terms.append(Term("Heavyweight CVD momentum (Proxy), 5 vs 15 min", None if mom is None else clip(mom), f"5-minute aggregate less 15-minute aggregate {mom:+.0f} (positive: pressure strengthening)" if mom is not None else "needs both rolling windows", proxy=True, family="heavy_cvd"))
+    terms.append(Term("Heavyweight CVD change (Proxy), 5 min vs previous 5 min", None if mom is None else clip(mom), f"this 5-minute score less the previous, non-overlapping 5-minute score {mom:+.0f} (positive: pressure strengthening)" if mom is not None else "needs two consecutive 5-minute windows", proxy=True, family="heavy_cvd"))
     wp, wn = part.get("weight_share_positive"), part.get("weight_share_negative")
     terms.append(Term("Heavyweight CVD participation (Proxy)", None if wp is None or wn is None else (wp - wn) * 100, f"{part.get('positive')} stocks buying, {part.get('negative')} selling of {part.get('valid')} valid; weight share {wp:.0%} vs {wn:.0%}" if wp is not None and wn is not None else "fewer than 3 valid heavyweights", proxy=True, family="heavy_cvd"))
     div = "index and heavyweight flow disagree" if part.get("class") == "Heavyweight divergence" else None
@@ -332,7 +342,7 @@ def structure_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[
     last, ph, pl = num(g(ins, "price", "last")), num(g(ins, "daily", "prev_high")), num(g(ins, "daily", "prev_low"))
     lvl = None if last is None or ph is None or pl is None or ph <= pl else (last - pl) / (ph - pl)
     terms = [
-        Term("Future versus its VWAP", vs, f"future {g(vwap, 'side')} its VWAP by {dist_pct:+.3f}% (slope {g(vwap, 'slope_pts_per_15m')} pts / 15 min)" if dist_pct is not None else "no VWAP (needs the future's average traded price)", family="price"),
+        Term("Futures price versus futures VWAP", vs, f"NIFTY future {g(vwap, 'side')} the future's own VWAP by {g(vwap, 'distance_pts')} pts ({dist_pct:+.3f}%); spot is never compared with it (slope {g(vwap, 'slope_pts_per_15m')} pts / 15 min)" if dist_pct is not None else "no VWAP (needs the future's average traded price)", family="price"),
         Term("Position in the day's range", None if pos is None else (pos - 0.5) * 120, f"NIFTY at {pos:.0%} of the sampled day range" if pos is not None else "no range", family="price"),
         Term("Position against the previous day's range", None if lvl is None else clip((lvl - 0.5) * 120), f"NIFTY {last:.0f} against the previous day's {pl:.0f} to {ph:.0f} ({lvl:.0%} of that range; above 100% is a break higher)" if lvl is not None and last is not None and ph is not None and pl is not None else "no previous-day range", family="levels"),
     ]
@@ -418,7 +428,7 @@ def fuse(engines: Sequence[dict[str, Any]], weights: Mapping[str, float], min_co
             "confidence": round(conf, 1), "confidence_parts": {"coverage_factor": round(cov_factor, 3), "agreement": round(agreement, 3), "freshness": round(freshness, 3), "conflict_cap_applied": capped},
             "groups_bullish": round(pos_w / wa, 3), "groups_bearish": round(neg_w / wa, 3), "reason": None,
             "weights_note": PROVISIONAL,
-            "note": "Directional evidence only. Confidence measures how complete, consistent and fresh the evidence is, not how likely the direction is; the weights are provisional, so this is not a statistical prediction."}
+            "evidence_quality": round(conf, 1), "note": "Directional evidence only. EVIDENCE QUALITY measures how fresh, complete and in agreement the evidence is. It is not a probability that the direction is right and never a prediction; the weights are provisional."}
 
 
 # ------------------------------------------------------------------------------------------------ regime
@@ -571,7 +581,7 @@ def interpretation(fused: Mapping[str, Any], engines: Sequence[Mapping[str, Any]
     if fused["score"] is None:
         return f"{fused['class']}. {fused.get('reason') or ''} No market view is given until enough engines report."
     by = {e["key"]: e for e in engines}
-    parts = [f"Market sentiment is {fused['class'].lower()} (score {fused['score']:+.0f}, confidence {fused['confidence']:.0f}); regime: {reg['name'].lower()}."]
+    parts = [f"Market sentiment is {fused['class'].lower()} (score {fused['score']:+.0f}, evidence quality {fused['confidence']:.0f} of 100: freshness, completeness and agreement, not a probability); regime: {reg['name'].lower()}."]
     labels = {"positioning": "Derivatives positioning", "orderflow": "Order-flow proxies", "volatility": "Volatility", "structure": "Index structure", "participation": "Participation and breadth"}
     for k in ("positioning", "orderflow", "volatility", "structure", "participation"):
         e = by.get(k)
@@ -582,6 +592,8 @@ def interpretation(fused: Mapping[str, Any], engines: Sequence[Mapping[str, Any]
             parts.append(f"{labels[k]}: no reading.")
     if gx.get("available") and gx.get("flip") is not None:
         parts.append(f"NIFTY is {abs(gx['flip_distance_pct']):.2f}% {'above' if gx['flip_distance_pct'] >= 0 else 'below'} the modelled gamma flip at {gx['flip']:.0f} (a model assumption, not observed dealer positioning).")
+    for o in observations(inp, {e["key"]: e for e in engines}, gx)[:3]:
+        parts.append(o["reading"] + ".")
     if divs:
         parts.append("Watch: " + "; ".join(d["name"].lower() for d in divs[:3]) + ".")
     sc = None
@@ -593,6 +605,40 @@ def interpretation(fused: Mapping[str, Any], engines: Sequence[Mapping[str, Any]
     if sc:
         parts.append(sc)
     return " ".join(parts)
+
+
+def observations(inp: Mapping[str, Any], by: Mapping[str, Mapping[str, Any]], gx: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Plain-language observations where two readings sit side by side, each with what it does and does not mean. A conflict is described, never turned
+    into a reversal call: the readings may resolve either way and the page says so."""
+    out: list[dict[str, Any]] = []
+    pos = by.get("positioning", {})
+    spot15 = num(pos.get("price_change_15m_pct"))
+    rising = spot15 is not None and spot15 >= 0.05
+    h = inp.get("heavy") or {}
+    agg = h.get("aggregate") or {}
+    hw15 = num((agg.get("15") or {}).get("score"))
+    hw15 = hw15 if hw15 is not None else num((agg.get("session") or {}).get("score"))
+    acc = g(inp.get("rolling"), "acceleration") or {}
+    cur_p, prev_p = num(acc.get("current_pct")), num(acc.get("previous_pct"))
+
+    def add(id_: str, title: str, reading: str, means: str) -> None:
+        out.append({"id": id_, "title": title, "reading": reading, "explanation": means + " This is a description of conflicting or confirming readings, not a reversal signal.", "reversal_signal": False})
+
+    if rising and hw15 is not None and hw15 <= -15:
+        add("up_vs_heavy_cvd", "NIFTY rising with a negative heavyweight CVD proxy", f"NIFTY future {spot15:+.2f}% over 15 minutes while the weighted heavyweight CVD proxy is {hw15:+.0f}", "The advance is not matched by estimated buying in the five largest stocks; the CVD is an estimate from quotes.")
+    improving = [n for n, v in (("futures", None if cur_p is None or prev_p is None else cur_p - prev_p), ("heavyweights", num(agg.get("momentum")))) if v is not None and v > 0]
+    if rising and improving:
+        add("up_with_improving_cvd", "NIFTY rising with an improving five-minute CVD proxy", f"NIFTY future {spot15:+.2f}% over 15 minutes and the 5-minute CVD proxy is stronger than the previous 5 minutes ({' and '.join(improving)})", "Estimated pressure is strengthening alongside price; two consecutive equal windows are compared, so this is short-lived evidence.")
+    oc = num(pos.get("oi_change_15m"))
+    if rising and oc is not None and oc < 0:
+        add("up_oi_down", "Futures open interest falling while price rises", f"NIFTY future {spot15:+.2f}% while futures OI changed {oc:+,.0f} over 15 minutes", "Short covering or long exits can lift price without new positions; it often fades without fresh buying but can also precede a continuation.")
+    v = g(inp.get("intraday"), "vwap") or {}
+    if num(v.get("distance_pts")) is not None:
+        add("futures_vs_vwap", "Futures price versus futures VWAP", f"NIFTY future {v.get('side')} its own day VWAP {v.get('vwap')} by {v.get('distance_pts')} pts ({v.get('distance_pct')}%); spot is not compared with the futures VWAP because the index has no traded volume", "A location reading of one instrument against its own average traded price.")
+    if gx.get("available") and (gx.get("net") or 0) > 0 and gx.get("flip_distance_pct") is not None and abs(gx["flip_distance_pct"]) >= 0.5:
+        sup = (gx.get("flip_support") or {}).get("status")
+        add("positive_gex_far_flip", "Positive modelled GEX with a distant gamma flip", f"modelled net GEX is positive and the modelled flip {gx['flip']:.0f} is {abs(gx['flip_distance_pts']):.0f} pts ({abs(gx['flip_distance_pct']):.2f}%) {'below' if gx['flip_distance_pct'] > 0 else 'above'} spot; flip support: {sup}", "Under the assumed sign convention the modelled exposure is stabilising at spot, but the flip is far enough away that its level depends on the model; this is not observed dealer positioning.")
+    return out
 
 
 def build_engines(inp: Mapping[str, Any], status: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -685,6 +731,7 @@ def capabilities(inp: Mapping[str, Any], status: Mapping[str, Any], gx: Mapping[
     add("intraday_ml", "Intraday ML model", AVAILABLE if gate_ok else (PARTIAL if ml else UNAVAILABLE),
         ("passed its validation gate; shown as context, not scored" if gate_ok else f"research only: {st_ml.get('labelled_sessions', 0)} labelled session(s), stage '{st_ml.get('stage_name', 'unknown')}'; no probability may be shown until the gate passes, and it is not part of the score") if ml else "the intraday research service is not running",
         "ml", "/analysis")
+    add("spot_vwap", "Spot (index) VWAP", UNAVAILABLE, "the NIFTY 50 index has no traded volume, so a spot VWAP cannot be computed; only the future's own VWAP exists and spot is never compared with it", "intraday", None)
     add("rollover", "Rollover data", UNAVAILABLE, ROLLOVER_NEED, "futures", None)
     add("stock_futures", "Individual stock futures", UNAVAILABLE, "stock futures are not subscribed or stored; heavyweight analysis uses cash-market prices and flow only", "market", None)
     add("option_aggressor", "Option trade-side (aggressor) data", UNAVAILABLE, "the feed carries no aggressor side for options; buyer- or seller-initiated trades are never inferred", "positioning", None)

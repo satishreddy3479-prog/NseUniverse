@@ -911,7 +911,13 @@
    "peak": 22700.0,
    "call_wall": 23000.0,
    "put_wall": 22500.0,
-   "flip": 22637.977912
+   "flip": 22637.977912,
+   "fd_flip_both": 22637.977912,
+   "fd_flip_lo": 22778.466115,
+   "fd_flip_hi": 22500.048666,
+   "fd_crossings": 1.0,
+   "fd_slope": 5614.534366,
+   "fd_net_share": 0.043745
   },
   "dynamic": {
    "strikes": 21,
@@ -925,7 +931,13 @@
    "peak": 22700.0,
    "call_wall": 23000.0,
    "put_wall": 22500.0,
-   "flip": 22637.977912
+   "flip": 22637.977912,
+   "fd_flip_both": 22637.977912,
+   "fd_flip_lo": 22778.466115,
+   "fd_flip_hi": 22500.048666,
+   "fd_crossings": 1.0,
+   "fd_slope": 5614.534366,
+   "fd_net_share": 0.043745
   },
   "full": {
    "strikes": 81,
@@ -939,7 +951,13 @@
    "peak": 22700.0,
    "call_wall": 23000.0,
    "put_wall": 22500.0,
-   "flip": 22672.762759
+   "flip": 22672.762759,
+   "fd_flip_both": 22679.16238,
+   "fd_flip_lo": 22753.02422,
+   "fd_flip_hi": 22592.543374,
+   "fd_crossings": 1.0,
+   "fd_slope": 12694.258697,
+   "fd_net_share": 0.023789
   }
  },
  "missing": {

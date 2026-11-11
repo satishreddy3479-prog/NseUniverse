@@ -34,9 +34,9 @@ const hw: Heavyweights = {
   aggregate: { session: { score: 38, valid: 4, of: 5, weight_share: 0.89, status: "PARTIAL: 4 of 5 stocks" }, "5": { score: 52, valid: 4, of: 5, weight_share: 0.89, status: "PARTIAL: 4 of 5 stocks" }, "15": { score: 41, valid: 4, of: 5, weight_share: 0.89, status: "PARTIAL: 4 of 5 stocks" },
     "30": { score: null, valid: 0, of: 5, weight_share: 0, status: "unavailable: 0 of 5 stocks valid (need 3 and 60% of the weight)" }, momentum: 11, acceleration: 4 },
   participation: { class: "Broad heavyweight buying", valid: 4, positive: 3, negative: 1, neutral: 0, weight_share_positive: 0.76, weight_share_negative: 0.24, top_contributor: { symbol: "HDFCBANK", share: 0.45 }, reason: null },
-  nifty: { change_15m_pct: 0.12, day_change_pct: 0.3, vwap_side: "above" }, relative_strength_pct: 0.15,
+  nifty: { change_15m_pct: 0.12, day_change_pct: 0.3, futures_vwap_side: "above", futures_vwap_pts: 38.5, vwap_note: "the NIFTY future against its own VWAP; the index itself has no VWAP (no traded volume)" }, relative_strength_pct: 0.15,
   series: [{ t: "2026-11-09T04:10:00Z", session: 30, w5: 40, w15: null, spot: 24050 }, { t: "2026-11-09T04:20:00Z", session: 35, w5: 45, w15: 38, spot: 24080 }, { t: "2026-11-09T04:30:00Z", session: 38, w5: 52, w15: 41, spot: 24100 }],
-  quality: { valid: 4, of: 5, weight_share: 0.89, aggregate_available: true, weights: { as_of: "2026-06-30", source: "NSE index tracker", age_days: 132, stale: true, approximate: false, basis: "official index weights" } },
+  quality: { valid: 4, of: 5, weight_share: 0.89, aggregate_available: true, valid_constituents: 4, weights: { as_of: "2026-06-30", effective_date: "2026-06-30", verified_at: "2026-11-09T13:00:00Z", verified_note: "x", live: false, source: "NSE index tracker", age_days: 132, stale: true, approximate: false, basis: "official index weights" } },
 };
 const ml: MlDigest = {
   status: { status: "collecting", stage_name: "Collecting labelled data", labelled_sessions: 3, complete_sessions: 4, sessions_with_samples: 5, next: { name: "Experimental training", at_sessions: 5, sessions_to_go: 2 },
@@ -67,7 +67,7 @@ const base: Intelligence = {
     gex: { available: true, net: 42.5, flip: 24000, flip_distance_pct: 0.41, regime: "positive", call_wall: 24200, put_wall: 23800, near_net: 5, ce: 60, pe: -17.5, peak: 24000, relationship: "stabilising", net_change_15m: 4.5, net_change_pct: 12, universe: "dynamic", session: "2026-11-09", label: "Modelled GEX exposure (not observed dealer positioning)", methodology: "GEX = gamma × OI × spot² × 0.01 / 10⁷, calls +, puts −: a model assumption, not observed dealer positioning." },
     vega: { ce_avg_vega: 5.2, pe_avg_vega: 5.0, strikes: 11, note: "Average vega per option." },
     volatility: { atm_iv: 15.2, iv_change_15m: -0.4, hv: 11, rv: 10, india_vix: 14.1, india_vix_label: "India VIX – Last Daily Close", india_vix_as_of: "2026-11-06", ivr_252: 42, ivp_252: 55, skew_25d: 2.1, skew_10d: 4.0, risk_reversal_25d: -2.1, butterfly_25d: 0.4, term_slope_30d: 1.2, term_shape: "contango", term: [{ expiry: "2026-11-10", days: 1, atm_iv: 15.2 }], expected_move_1sd_pts: 160, straddle: 183, interpretation: null, note: "India VIX is a daily close." },
-    futures: { series: { future: 24148, basis: 48 }, contract: "NIFTY26NOVFUT", oi_change: 52000, volume: 900000, buildup: "long buildup", flow: { cvd_pct: 25, classified_share: 0.9, depth_imbalance: 0.1 }, vwap: { vwap: 24050, distance_pct: 0.2, slope_pts_per_15m: 4 }, rolling: { estimated: true, momentum_per_min: 12.5, ok_windows: 2, windows: { "5": { minutes: 5, cvd: 1000, cvd_pct: 20, volume: 5000, classified: 5000, from: "t0", to: "t1", status: "ok" }, "15": { minutes: 15, cvd: 2400, cvd_pct: 16, volume: 15000, classified: 15000, from: "t0", to: "t1", status: "ok" }, "30": { minutes: 30, cvd: null, cvd_pct: null, volume: null, classified: null, from: null, to: "t1", status: "unavailable: fewer than 30 minutes of flow samples stored today" } } }, unavailable: ["rollover data (needs near-month and next-month contract OI and volume history)"], note: "CVD is an estimate by the quote and tick rule." },
+    futures: { series: { future: 24148, basis: 48 }, contract: "NIFTY26NOVFUT", oi_change: 52000, volume: 900000, buildup: "long buildup", flow: { cvd_pct: 25, classified_share: 0.9, depth_imbalance: 0.1 }, vwap: { vwap: 24050, distance_pct: 0.2, slope_pts_per_15m: 4 }, rolling: { estimated: true, acceleration: { minutes: 5, current_cvd: 1000, previous_cvd: 600, current_rate: 200, previous_rate: 120, rate_change: 80, acceleration: 16, current_pct: 20, previous_pct: 12, status: "ok" }, ok_windows: 2, windows: { "5": { minutes: 5, cvd: 1000, cvd_pct: 20, volume: 5000, classified: 5000, from: "t0", to: "t1", status: "ok" }, "15": { minutes: 15, cvd: 2400, cvd_pct: 16, volume: 15000, classified: 15000, from: "t0", to: "t1", status: "ok" }, "30": { minutes: 30, cvd: null, cvd_pct: null, volume: null, classified: null, from: null, to: "t1", status: "unavailable: fewer than 30 minutes of flow samples stored today" } } }, unavailable: ["rollover data (needs near-month and next-month contract OI and volume history)"], note: "CVD is an estimate by the quote and tick rule." },
   },
   heavyweights: hw, intraday_ml: ml,
   alerts: [{ id: 1, at: "2026-11-09T04:15:00Z", kind: "VWAP reclaim", severity: "medium", direction: "bullish", text: "Future reclaimed its day VWAP", evidence: [], confirmation: "holds for 5 minutes", invalidation: "price crosses back" }],
@@ -96,6 +96,8 @@ describe("Market Intelligence page", () => {
     expect(within(strip).getByTestId("mi-class").textContent).toBe("Bullish");
     expect(strip.textContent).toContain("Directional score +42 / 100");
     expect(strip.textContent).toContain("68 / 100");
+    expect(strip.textContent).toContain("EVIDENCE QUALITY");
+    expect(strip.textContent).not.toMatch(/Confidence/i);
     expect(strip.textContent).toContain("coverage 100% · agreement 80% · freshness 85%");
     expect(strip.textContent).toContain("Bullish trend");
     expect(strip.textContent).toContain("was Sideways / Range");
@@ -106,7 +108,8 @@ describe("Market Intelligence page", () => {
     expect(strip.textContent).toContain("Evidence agreement");
     expect(strip.textContent).toContain("Data freshness");
     expect(within(strip).getByTestId("mi-provisional").textContent).toContain("Provisional weights – not yet statistically calibrated.");
-    expect(within(strip).getByTestId("mi-provisional").textContent).toContain("not derived from the size of the score");
+    expect(within(strip).getByTestId("mi-provisional").textContent).toContain("not a probability that the direction is right");
+    expect(within(strip).getByTestId("mi-provisional").textContent).toContain("not a prediction");
   });
   it("says when conflicting groups have capped the confidence", async () => {
     view({ ...base, sentiment: { ...base.sentiment, confidence: 40, agreement: 0.4, confidence_parts: { coverage_factor: 1, agreement: 0.4, freshness: 1, conflict_cap_applied: true } } });
@@ -209,7 +212,13 @@ describe("Market Intelligence page", () => {
     expect(r.textContent).toContain("last 5 min");
     expect(r.textContent).toContain("+20.0%");
     expect(r.textContent).toContain("unavailable: fewer than 30 minutes of flow samples stored today");
-    expect(r.textContent).toContain("+12.5 per minute");
+    const a = await screen.findByTestId("mi-accel");
+    expect(a.textContent).toContain("two consecutive, non-overlapping 5-minute windows of equal length");
+    expect(a.textContent).toContain("Current 5 min");
+    expect(a.textContent).toContain("Previous 5 min");
+    expect(a.textContent).toContain("+80.0"); // change in rate
+    expect(a.textContent).toContain("+16.00"); // acceleration
+    expect(a.textContent).toContain("never subtracted");
   });
   it("lists AVAILABLE, PARTIAL and UNAVAILABLE capabilities with source timestamps and links", async () => {
     view(base);
@@ -242,6 +251,41 @@ describe("Market Intelligence page", () => {
   it("shows an error state without breaking when the service is down", async () => {
     view({ detail: { code: "disabled", message: "the market-intelligence dashboard is turned off" } }, timeline, 404);
     expect((await screen.findByRole("alert")).textContent).toContain("could not be loaded");
+  });
+});
+
+describe("Corrections: weights, VWAP instrument, gamma flip, observations", () => {
+  it("shows the weight effective date, source, load time and valid constituents and never calls them live", async () => {
+    view(base);
+    const q = (await screen.findByTestId("hw-quality")).textContent ?? "";
+    expect(q).toContain("Index weights (not live)");
+    expect(q).toContain("effective 2026-06-30");
+    expect(q).toContain("source NSE index tracker");
+    expect(q).toContain("not a re-check against NSE");
+    expect(q).toContain("Valid constituents: 4");
+    expect(q).not.toMatch(/live weights/i);
+  });
+  it("labels the VWAP tile as the future against its own VWAP, not spot", async () => {
+    view(base);
+    const nifty = await screen.findByTestId("hw-nifty");
+    expect(nifty.textContent).toContain("Futures vs futures VWAP");
+    expect(nifty.textContent).toContain("not spot");
+    expect(nifty.textContent).not.toContain("NIFTY vs VWAP");
+  });
+  it("shows the gamma flip in points and percent with its support and the range it moves in", async () => {
+    const d = { ...base, panels: { ...base.panels, gex: { ...base.panels.gex, flip_distance_pts: 100, flip_range: [23900, 24100] as [number, number], flip_support: { status: "unstable" as const, reasons: ["moves 200 points (0.83 % of spot) with the strike set or a 10 % OI disagreement"] } } } };
+    view(d);
+    const g = await screen.findByTestId("mi-detail-gex");
+    expect(g.textContent).toContain("+100 pts (+0.41%)");
+    expect(g.textContent).toContain("UNSTABLE");
+    expect(g.textContent).toContain("23,900 to 24,100");
+    expect((await screen.findByTestId("mi-flip-reasons")).textContent).toContain("shown as calculated, not corrected");
+  });
+  it("lists the side-by-side readings and says none is a reversal signal", async () => {
+    view({ ...base, observations: [{ id: "up_oi_down", title: "Futures open interest falling while price rises", reading: "NIFTY future +0.30% while futures OI changed -20,000 over 15 minutes", explanation: "Short covering can lift price. This is a description of conflicting or confirming readings, not a reversal signal.", reversal_signal: false }] });
+    const o = await screen.findByTestId("mi-observations");
+    expect(o.textContent).toContain("never read as a reversal");
+    expect(within(o).getByTestId("mi-observation").textContent).toContain("not a reversal signal");
   });
 });
 
@@ -323,7 +367,7 @@ describe("Heavyweight Intelligence panel", () => {
   it("warns that the index weights are stale and says where they came from", async () => {
     view(base);
     expect((await screen.findByTestId("hw-stale-weights")).textContent).toContain("132 days old");
-    expect(screen.getByTestId("hw-quality").textContent).toContain("as of 2026-06-30 (NSE index tracker");
+    expect(screen.getByTestId("hw-quality").textContent).toContain("effective 2026-06-30, source NSE index tracker");
   });
   it("shows an explicit unavailable state when no heavyweight flow is tracked", async () => {
     view({ ...base, heavyweights: { ...hw, available: false, reason: "no heavyweight flow is tracked yet", stocks: [] } });

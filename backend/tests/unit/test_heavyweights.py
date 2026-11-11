@@ -92,18 +92,18 @@ def test_contribution_percentages_split_the_pressure_by_weight_times_reading() -
     assert c["HDFCBANK"] > 0 > c["INFY"] and sum(abs(v) for v in c.values()) == pytest.approx(100.0, abs=0.5)
 
 
-def test_momentum_and_acceleration_follow_the_5_and_15_minute_windows() -> None:
+def test_momentum_and_acceleration_compare_consecutive_equal_five_minute_windows() -> None:
     specs = {sym: {"b": 600.0, "s": 400.0, "w": w, "late": (35, 800.0, 200.0)} for sym, w in zip(SYMS, WEIGHTS, strict=True)}  # from minute 35 buying jumps to 60 %
     inp = {"market": live(specs), "flow": {"heavy5": stock_rows(40, specs), "fut": []}}
     h = hw.assess(inp)
-    n5 = 100 * math.tanh(60 / 25)  # last 5 minutes: 800 - 200 of 1000 = 60 %
-    p15 = (10 * 200 + 5 * 600) / 15000 * 100  # 10 minutes at +200 and 5 at +600 per 1000 classified
-    n15 = 100 * math.tanh(p15 / 25)
-    assert h["aggregate"]["momentum"] == pytest.approx(n5 - n15, abs=0.3)
+    n5 = 100 * math.tanh(60 / 25)  # the last 5 minutes: 800 - 200 of 1000 = 60 %
+    prev = 100 * math.tanh(20 / 25)  # the 5 minutes before them: 600 - 400 of 1000 = 20 %
+    assert h["aggregate"]["momentum"] == pytest.approx(n5 - prev, abs=0.3) and h["aggregate"]["prev5"] == pytest.approx(prev, abs=0.1)
+    assert h["aggregate"]["acceleration"] == pytest.approx((n5 - prev) / 5, abs=0.1)
     s = h["stocks"][0]
-    assert s["momentum"] == pytest.approx(n5 - n15, abs=0.3)
-    n5_before = 100 * math.tanh(20 / 25)  # five minutes earlier the 5-minute window was still all at 20 %
-    assert s["acceleration"] == pytest.approx(n5 - n5_before, abs=0.3) and h["aggregate"]["acceleration"] == pytest.approx(n5 - n5_before, abs=0.3)
+    assert s["momentum"] == pytest.approx(n5 - prev, abs=0.3) and s["acceleration"] == pytest.approx((n5 - prev) / 5, abs=0.1) and s["prev5_norm"] == pytest.approx(prev, abs=0.1)
+    # the 15 minute score is separate context: it is neither subtracted nor changed by this
+    assert h["aggregate"]["15"]["score"] is not None and h["aggregate"]["15"]["score"] != h["aggregate"]["momentum"]
 
 
 def test_a_window_that_cannot_be_formed_says_why_and_is_never_reconstructed() -> None:

@@ -179,7 +179,7 @@ class MarketIntelligence:
         return {
             "generated_at": now.isoformat(timespec="seconds"), "expiry": expiry, "session": session, "enabled": self.enabled,
             "status": status, "sentiment": sent, "regime": {**reg, "previous": None if prev_reg is None else prev_reg["regime"], "changed_at": since},
-            "engines": engines, "pulse": self._pulse(inp, by, gx, expiry), "gex": gx, "heavyweights": inp["heavy"], "intraday_ml": inp.get("ml"),
+            "engines": engines, "pulse": self._pulse(inp, by, gx, expiry), "gex": gx, "heavyweights": inp["heavy"], "intraday_ml": inp.get("ml"), "observations": fz.observations(inp, by, gx),
             "interpretation": fz.interpretation(fused, engines, reg, divs, gx, inp),
             "divergences": divs, "divergences_invalidated": gone, "divergences_unavailable": divs_missing,
             "scenarios": fz.scenarios(fused, engines, gx, inp, spot), "panels": self._panels(inp, by, gx), "capabilities": fz.capabilities(inp, status, gx),
@@ -228,6 +228,8 @@ class MarketIntelligence:
         return {
             "spot": num(g(ins, "price", "last")), "change_pct": num(g(ins, "price", "change_pct")), "futures": num(lat.get("future")), "basis": num(lat.get("basis")), "basis_pct": num(lat.get("basis_pct")),
             "atm_strike": atm, "expiry": expiry, "atm_ce_premium": num(px.get((atm, "CE"))), "atm_pe_premium": num(px.get((atm, "PE"))), "atm_iv": num(vol.get("atm_iv")),
+            "vwap": {"instrument": "NIFTY current-month future", "futures_price": num(g(ins, "vwap", "price")), "futures_vwap": num(g(ins, "vwap", "vwap")), "distance_pts": num(g(ins, "vwap", "distance_pts")),
+                     "distance_pct": num(g(ins, "vwap", "distance_pct")), "side": g(ins, "vwap", "side"), "spot_vwap": None, "spot_vwap_note": "not available: the NIFTY 50 index has no traded volume; spot is never compared with the futures VWAP"},
             "india_vix": {"value": vix_last, "as_of": vix_date, "label": "India VIX – Last Daily Close", "intraday_signal": False,
                           "note": "A daily close dated " + (str(vix_date) if vix_date else "(date unknown)") + ", not a live quote: it is not used as an intraday volatility signal (live ATM IV and the expiry-specific skew are)."}, "pcr": num(g(ins, "options", "pcr_oi")), "net_gex": gx.get("net"), "gamma_flip": gx.get("flip"),
             "futures_oi_change": oi_ch, "futures_cvd_pct": num(flow.get("cvd_pct")), "futures_vwap": num(g(ins, "vwap", "vwap")),

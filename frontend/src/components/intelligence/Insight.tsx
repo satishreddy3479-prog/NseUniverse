@@ -71,7 +71,7 @@ export function ScenarioPanel({ s }: { s: Scenarios }) {
 export function MinuteReading({ p }: { p: TimelinePoint }) {
   return (
     <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4 lg:grid-cols-6" data-testid="mi-minute">
-      {([["Time", fmtTimeIST(p.at)], ["NIFTY", p.spot == null ? MISSING : fmtInt(Math.round(p.spot))], ["Score", p.score == null ? "insufficient data" : signed(p.score)], ["Confidence", p.confidence == null ? MISSING : p.confidence.toFixed(0)], ["Regime", p.regime ?? MISSING],
+      {([["Time", fmtTimeIST(p.at)], ["NIFTY", p.spot == null ? MISSING : fmtInt(Math.round(p.spot))], ["Score", p.score == null ? "insufficient data" : signed(p.score)], ["Evidence quality", p.confidence == null ? MISSING : p.confidence.toFixed(0)], ["Regime", p.regime ?? MISSING],
         ["Gamma", p.gamma_regime ?? MISSING], ["Futures CVD % (Proxy)", p.metrics.cvd_pct == null ? MISSING : String(p.metrics.cvd_pct)], ["Net GEX", p.metrics.net_gex == null ? MISSING : String(p.metrics.net_gex)], ["ATM IV", p.metrics.atm_iv == null ? MISSING : String(p.metrics.atm_iv)],
         ["Heavy CVD (Proxy)", p.metrics.heavy_cvd == null ? MISSING : String(p.metrics.heavy_cvd)], ["Futures OI chg", p.metrics.fut_oi_change == null ? MISSING : String(p.metrics.fut_oi_change)], ["Divergences", p.divs.length ? p.divs.map((x) => x.id).join(", ") : "none"]] as [string, string][]).map(([l, v]) => (
         <div key={l} className="rounded-sm bg-slate-2 p-2"><div className="text-[11px] text-muted">{l}</div><div className="num truncate text-paper">{v}</div></div>
@@ -96,7 +96,7 @@ export function TimelinePanel() {
     yAxis: [{ type: "value", min: -100, max: 100, axisLabel: { color: c.muted }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } }, { type: "value", scale: true, position: "right", axisLabel: { color: c.muted }, splitLine: { show: false } }],
     series: [
       { name: "Sentiment score", type: "line", showSymbol: false, connectNulls: false, data: pts.map((p) => p.score), lineStyle: { color: c.brass, width: 2 } },
-      { name: "Confidence", type: "line", showSymbol: false, data: pts.map((p) => p.confidence), lineStyle: { color: c.info, width: 1, type: "dashed" } },
+      { name: "Evidence quality", type: "line", showSymbol: false, data: pts.map((p) => p.confidence), lineStyle: { color: c.info, width: 1, type: "dashed" } },
       { name: "NIFTY", type: "line", yAxisIndex: 1, showSymbol: false, data: pts.map((p) => p.spot), lineStyle: { color: c.muted, width: 1 } },
     ],
   }, [pts, c]);
@@ -108,7 +108,7 @@ export function TimelinePanel() {
       {q.data && pts.length === 0 && <p className="text-sm text-muted" data-testid="mi-timeline-empty">No minute has been recorded for {q.data.session} yet. The dashboard starts recording when it runs during market hours; earlier minutes are not reconstructed.</p>}
       {opt && (
         <>
-          <div style={{ height: 240 }}><EChart option={opt} ariaLabel="Sentiment score, confidence and NIFTY through the session" /></div>
+          <div style={{ height: 240 }}><EChart option={opt} ariaLabel="Sentiment score, evidence quality and NIFTY through the session" /></div>
           <label className="mt-1 flex items-center gap-2 text-xs text-muted">Inspect minute
             <input type="range" min={0} max={pts.length - 1} value={idx} onChange={(e) => setSel(Number(e.target.value))} aria-label="Inspect minute" className="w-full max-w-md" />
             <span className="num text-paper">{pts[idx] ? fmtTimeIST(pts[idx]!.at) : ""}</span>

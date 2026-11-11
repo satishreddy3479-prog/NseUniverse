@@ -26,6 +26,12 @@ export function MarketIntelligence() {
       <HeavyweightPanel d={d} />
       <IntradayMlPanel d={d} />
       <Interpretation d={d} />
+      {(d.observations ?? []).length > 0 && (
+        <section aria-label="Conflicting and confirming readings" className="rounded-[var(--radius-panel)] border border-rule bg-slate p-4" data-testid="mi-observations">
+          <h2 className="mb-1 text-sm font-semibold text-paper">Readings side by side <span className="font-normal text-muted">· described, never read as a reversal</span></h2>
+          <ul className="space-y-2 text-sm">{(d.observations ?? []).map((o) => <li key={o.id} data-testid="mi-observation"><span className="font-medium text-paper">{o.title}.</span> <span className="text-paper">{o.reading}.</span> <span className="text-muted">{o.explanation}</span></li>)}</ul>
+        </section>
+      )}
       <div className="grid gap-3 xl:grid-cols-2"><DivergencePanel d={d} /><AlertsPanel alerts={d.alerts} /></div>
       <ScenarioPanel s={d.scenarios} />
       <TimelinePanel />
@@ -52,7 +58,7 @@ export function MarketIntelligence() {
         <div className="border-t border-rule px-4 py-3 text-xs">
           <table className="w-full min-w-[28rem]"><thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Input</th><th className="py-1 font-normal">State</th><th className="py-1 text-right font-normal">Age</th><th className="py-1 text-right font-normal">Source timestamp</th><th className="py-1 text-right font-normal">Read in</th></tr></thead>
             <tbody>{Object.entries(d.status).map(([k, v]) => <tr key={k} className="border-t border-rule/50"><td className="py-1 text-paper">{LABELS[k] ?? k}</td><td className={`py-1 ${v.ok ? "text-up" : "text-down"}`}>{v.ok ? "ok" : (v.error ?? "unavailable")}</td><td className="num py-1 text-right text-muted">{v.age_s == null ? MISSING : v.age_s < 90 ? `${Math.round(v.age_s)} s` : `${Math.round(v.age_s / 60)} min`}</td><td className="num py-1 text-right text-muted">{v.as_of ?? MISSING}</td><td className="num py-1 text-right text-muted">{v.ms} ms</td></tr>)}</tbody></table>
-          <p className="mt-2 text-muted" data-testid="mi-method">Overall = Σ(group score × effective weight) ÷ Σ(effective weights), where a PARTIAL group counts for the share of its evidence that exists and an unavailable group counts for nothing; weights {Object.entries(d.config.weights).map(([k, v]) => `${k} ${v}`).join(", ")}; at least {d.config.min_engines} groups and {(d.config.min_coverage * 100).toFixed(0)}% of the weight are required, otherwise the sentiment is not shown. Confidence = coverage factor × agreement among groups × freshness, shown as three numbers, independent of the size of the score, capped when groups conflict, never a probability. {d.config.note} Futures CVD (Proxy) and Heavyweight CVD (Proxy) are estimates from the quote and tick rule, not observed buyer or seller volume. GEX is modelled exposure with an assumed sign, not observed dealer positioning. India VIX is a daily close and is never an intraday signal.</p>
+          <p className="mt-2 text-muted" data-testid="mi-method">Overall = Σ(group score × effective weight) ÷ Σ(effective weights), where a PARTIAL group counts for the share of its evidence that exists and an unavailable group counts for nothing; weights {Object.entries(d.config.weights).map(([k, v]) => `${k} ${v}`).join(", ")}; at least {d.config.min_engines} groups and {(d.config.min_coverage * 100).toFixed(0)}% of the weight are required, otherwise the sentiment is not shown. EVIDENCE QUALITY = coverage factor × agreement among groups × freshness, shown as three numbers, independent of the size of the score, capped when groups conflict; it measures freshness, completeness and agreement, never a probability or a prediction. {d.config.note} Futures CVD (Proxy) and Heavyweight CVD (Proxy) are estimates from the quote and tick rule, not observed buyer or seller volume. GEX is modelled exposure with an assumed sign, not observed dealer positioning. India VIX is a daily close and is never an intraday signal.</p>
         </div>
       </details>
     </div>

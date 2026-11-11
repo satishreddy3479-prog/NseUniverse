@@ -257,6 +257,12 @@ class MarketStore:
             ).fetchall()
         return {s: float(w) for s, w in rows}, r[0], r[1]
 
+    def weights_loaded_utc(self, index: str, as_of: str, source: str) -> str | None:
+        """When this weight set was loaded into the store (the time it was last verified by being read from its file); not a re-check against NSE."""
+        with self._lock:
+            r = self._db.execute("SELECT MAX(imported_utc) FROM weights WHERE index_name=? AND as_of=? AND source=?", (index, as_of, source)).fetchone()
+        return None if r is None else r[0]
+
     def weights_before(self, index: str, as_of: str) -> tuple[dict[str, float], str] | None:
         """The official weight set that preceded ``as_of`` (symbol -> weight %, its as_of), or None."""
         with self._lock:

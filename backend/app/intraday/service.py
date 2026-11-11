@@ -797,7 +797,7 @@ class IntradayService:
             gx = gex_history.reconstruct(sf["rows"], ch, float(x.spot), float(sf["forward"]), t_yr, self.risk_free_rate, opening)
             extra: dict[str, float | None] = {}
             for u, lv in gx["universes"].items():
-                for k_ in ("ce", "pe", "net", "abs", "flip", "near_net", "call_wall", "put_wall", "peak"):
+                for k_ in ("ce", "pe", "net", "abs", "flip", "near_net", "call_wall", "put_wall", "peak", "fd_flip_both", "fd_flip_lo", "fd_flip_hi", "fd_crossings", "fd_slope", "fd_net_share"):
                     extra[f"{u}.{k_}"] = None if lv is None else lv[k_]
                 extra[f"{u}.used"] = None if lv is None else float(lv["used"])
             feat = {

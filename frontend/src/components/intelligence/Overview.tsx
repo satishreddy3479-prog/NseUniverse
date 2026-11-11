@@ -32,14 +32,14 @@ export function CommandStrip({ d, compact = false }: { d: Intelligence; compact?
           <div className="num text-sm text-muted" data-testid="mi-score">{insufficient ? (s.reason ?? "") : `Directional score ${signed(s.score)} / 100`}</div>
           <ScoreBar score={s.score} />
         </div>
-        {cell("Confidence", s.confidence == null ? MISSING : `${s.confidence.toFixed(0)} / 100`, s.confidence_parts ? `coverage ${(s.confidence_parts.coverage_factor * 100).toFixed(0)}% · agreement ${(s.confidence_parts.agreement * 100).toFixed(0)}% · freshness ${(s.confidence_parts.freshness * 100).toFixed(0)}%${s.confidence_parts.conflict_cap_applied ? " · capped: groups conflict" : ""}` : "needs enough evidence groups")}
+        {cell("EVIDENCE QUALITY", s.confidence == null ? MISSING : `${s.confidence.toFixed(0)} / 100`, s.confidence_parts ? `coverage ${(s.confidence_parts.coverage_factor * 100).toFixed(0)}% · agreement ${(s.confidence_parts.agreement * 100).toFixed(0)}% · freshness ${(s.confidence_parts.freshness * 100).toFixed(0)}%${s.confidence_parts.conflict_cap_applied ? " · capped: groups conflict" : ""}` : "needs enough evidence groups")}
         {cell("Market regime", d.regime.name, d.regime.previous ? `was ${d.regime.previous}` : "no earlier regime recorded today")}
         {cell("Volatility regime", s.volatility_regime, `gamma ${d.regime.gamma}`)}
       </div>
       {!compact && (
         <div className="mt-3 grid grid-cols-2 gap-3 border-t border-rule pt-3 sm:grid-cols-4 lg:grid-cols-7">
           {cell("Trend strength", s.trend_strength == null ? MISSING : `${s.trend_strength}`, "efficiency ratio × 100")}
-          {cell("Signal quality", s.signal_quality ?? MISSING, "from confidence")}
+          {cell("Signal quality", s.signal_quality ?? MISSING, "from evidence quality")}
           {cell("Data coverage", `${(s.data_completeness * 100).toFixed(0)}%`, s.engine_counts ? `${s.engine_counts.available} available · ${s.engine_counts.partial} partial · ${s.engine_counts.unavailable} unavailable` : `${s.engines_available} of ${d.engines.length} groups`)}
           {cell("Evidence agreement", s.agreement == null ? MISSING : `${(s.agreement * 100).toFixed(0)}%`, "groups on opposite sides lower it")}
           {cell("Data freshness", s.freshness == null ? MISSING : `${(s.freshness * 100).toFixed(0)}%`, "weight on fresh inputs")}
@@ -47,7 +47,7 @@ export function CommandStrip({ d, compact = false }: { d: Intelligence; compact?
           {cell("Computed in", `${Math.round(d.compute_ms)} ms`, "server aggregation")}
         </div>
       )}
-      <p className="mt-2 text-[11px] text-muted" data-testid="mi-provisional">{d.config.note} Confidence describes how complete, consistent and fresh the evidence is; it is not derived from the size of the score and is not a probability.</p>
+      <p className="mt-2 text-[11px] text-muted" data-testid="mi-provisional">{d.config.note} EVIDENCE QUALITY measures how fresh, complete and in agreement the evidence is. It is not a probability that the direction is right, not a prediction, and not derived from the size of the score; even 100 would only mean complete, fresh and unanimous evidence.</p>
       {(failed.length > 0 || stale.length > 0) && (
         <p className="mt-2 text-xs text-warn" data-testid="mi-quality" role="status">
           {failed.length > 0 && <>Inputs not available: {failed.join(", ")}. </>}{stale.length > 0 && <>Stale, not shown as live: {stale.join("; ")}.</>}
@@ -78,7 +78,7 @@ export function PulseCards({ d }: { d: Intelligence }) {
       <Pulse label="Gamma flip (modelled)" tip={GEX_TIP} value={p.gamma_flip == null ? MISSING : fmtInt(Math.round(p.gamma_flip))} sub={d.gex.flip_distance_pct == null ? undefined : `spot ${sgn(d.gex.flip_distance_pct)}% from it`} />
       <Pulse label="Futures OI change" value={p.futures_oi_change == null ? MISSING : sgn(p.futures_oi_change, 0)} sub="vs baseline" tone={col(p.futures_oi_change)} />
       <Pulse label="Futures CVD (Proxy)" value={p.futures_cvd_pct == null ? MISSING : `${sgn(p.futures_cvd_pct, 1)}%`} sub="estimate (proxy)" tone={col(p.futures_cvd_pct)} tip={CVD_TIP} />
-      <Pulse label="Futures VWAP" value={n(p.futures_vwap)} sub="future's own VWAP" />
+      <Pulse label="Futures VWAP" value={n(p.futures_vwap)} sub={p.vwap?.distance_pts == null ? "the future's own VWAP" : `future ${p.vwap.side} it by ${sgn(p.vwap.distance_pts, 1)} pts (${sgn(p.vwap.distance_pct, 2)}%)`} tip="The NIFTY current-month future against its own day VWAP. The index has no traded volume, so there is no spot VWAP and spot is never compared with this one." />
       <Pulse label="Heavyweight CVD (Proxy)" value={p.heavyweight_cvd == null ? MISSING : sgn(p.heavyweight_cvd, 0)} sub="normalised, weighted (estimate)" tone={col(p.heavyweight_cvd)} tip={CVD_TIP} />
     </section>
   );

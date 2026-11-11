@@ -194,10 +194,10 @@ def signals(agg: Mapping[str, Any], part: Mapping[str, Any], nifty: Mapping[str,
                 "The decline is broad across the largest constituents (estimated).", "heavyweight selling narrows or reverses")
     if mom is not None and day is not None:
         if mom >= AGG_BAND and day <= -0.15:
-            add("hw_recovering", "Heavyweight CVD recovering while NIFTY remains weak", "bullish", "divergence", f"CVD momentum {mom:+.0f} (5-min versus 15-min aggregate) while NIFTY is {day:+.2f}% on the day",
+            add("hw_recovering", "Heavyweight CVD recovering while NIFTY remains weak", "bullish", "divergence", f"CVD momentum {mom:+.0f} (this 5-minute score less the previous 5-minute score) while NIFTY is {day:+.2f}% on the day",
                 "Estimated heavyweight pressure is improving before the index.", "momentum fades or NIFTY falls further with CVD")
         if mom <= -AGG_BAND and day >= 0.15:
-            add("hw_deteriorating", "Heavyweight CVD deteriorating while NIFTY remains strong", "bearish", "divergence", f"CVD momentum {mom:+.0f} (5-min versus 15-min aggregate) while NIFTY is {day:+.2f}% on the day",
+            add("hw_deteriorating", "Heavyweight CVD deteriorating while NIFTY remains strong", "bearish", "divergence", f"CVD momentum {mom:+.0f} (this 5-minute score less the previous 5-minute score) while NIFTY is {day:+.2f}% on the day",
                 "Estimated heavyweight pressure is weakening beneath a strong index.", "momentum recovers")
     return out
 
@@ -267,7 +267,7 @@ def assess(inp: Mapping[str, Any], now: datetime | None = None) -> dict[str, Any
         rows.append({
             "symbol": sym, "name": nm.get("name"), "weight": round(w, 3), "previous_weight": nm.get("previous_weight"), "price": ltp, "change_pct": change, "vwap": vwap, "price_vs_vwap_pct": pv,
             "session": {"cvd": fl.get("cvd"), "pct": pct, "norm": sess_norm, "buy_volume": fl.get("buy_volume"), "sell_volume": fl.get("sell_volume")}, "windows": wins,
-            "momentum": None if n5 is None or n15 is None else round(n5 - n15, 1), "acceleration": None if n5 is None or prev5 is None else round(n5 - prev5, 1),
+            "prev5_norm": prev5, "momentum": None if n5 is None or prev5 is None else round(n5 - prev5, 1), "acceleration": None if n5 is None or prev5 is None else round((n5 - prev5) / 5, 2),
             "basis_norm": basis, "bias": bias, "price_cvd_divergence": div, "bid": fl.get("bid"), "ask": fl.get("ask"), "depth_imbalance": fl.get("depth_imbalance"),
             "freshness": {"updated": fl.get("updated"), "age_s": age, "feed": feed, "fresh": fresh, "classified_share": share, "coverage_of_day_volume": _num(fl.get("coverage_of_day_volume")),
                           "quote_rule_share": _num(fl.get("quote_rule_share")), "stored_samples": len(p)},
@@ -278,7 +278,6 @@ def assess(inp: Mapping[str, Any], now: datetime | None = None) -> dict[str, Any
     for m_ in WINDOWS:
         agg[str(m_)] = aggregate([(r["weight"], r["windows"][str(m_)]["norm"]) for r in rows], total_w)
     s5, s15 = agg["5"]["score"], agg["15"]["score"]
-    agg["momentum"] = None if s5 is None or s15 is None else round(s5 - s15, 1)
     # time series of the stored aggregate (chart, acceleration)
     spot_by: dict[datetime, float | None] = {}
     for s_, r_ in flow.get("fut") or []:
@@ -310,8 +309,12 @@ def assess(inp: Mapping[str, Any], now: datetime | None = None) -> dict[str, Any
         tgt5 = t_end - timedelta(minutes=5)
         prev5s = [(t_, v_) for t_, v_ in timed if t_ is not None and t_ <= tgt5]
         if prev5s and prev5s[-1][0] is not None and (tgt5 - prev5s[-1][0]).total_seconds() <= TOLERANCE_MIN * 60:
-            acc = round(timed[-1][1] - prev5s[-1][1], 1)
-    agg["acceleration"] = acc
+            acc = prev5s[-1][1]
+    # momentum = the change between two consecutive, non-overlapping 5-minute scores (equal duration); acceleration = that change per minute.
+    # The 15 and 30 minute scores are separate context and are never subtracted from the 5-minute one.
+    agg["prev5"] = acc
+    agg["momentum"] = None if s5 is None or acc is None else round(s5 - acc, 1)
+    agg["acceleration"] = None if agg["momentum"] is None else round(agg["momentum"] / 5, 2)
     agg["as_of"] = max((r["freshness"]["updated"] for r in rows if r["freshness"]["updated"]), default=None)
     # NIFTY context
     spots = [(t, s) for t, s in ((x["t"], x["spot"]) for x in series) if isinstance(s, (int, float))]
@@ -323,7 +326,9 @@ def assess(inp: Mapping[str, Any], now: datetime | None = None) -> dict[str, Any
             old = [s for t, s in spots if (_t(t) or t_last) <= tgt]
             if old and spots[-1][1] and old[-1]:
                 idx15 = round((spots[-1][1] / old[-1] - 1) * 100, 3)
-    nifty = {"change_15m_pct": idx15, "day_change_pct": _num(mk.get("index_change_pct")), "vwap_side": (inp.get("intraday") or {}).get("vwap", {}).get("side") if isinstance((inp.get("intraday") or {}).get("vwap"), Mapping) else None}
+    nifty = {"change_15m_pct": idx15, "day_change_pct": _num(mk.get("index_change_pct")), "futures_vwap_side": (inp.get("intraday") or {}).get("vwap", {}).get("side") if isinstance((inp.get("intraday") or {}).get("vwap"), Mapping) else None,
+             "futures_vwap_pts": (inp.get("intraday") or {}).get("vwap", {}).get("distance_pts") if isinstance((inp.get("intraday") or {}).get("vwap"), Mapping) else None,
+             "vwap_note": "the NIFTY future against its own VWAP; the index itself has no VWAP (no traded volume)"}
     basis_score = s15 if s15 is not None else agg["session"]["score"]
     part = _classify(basis_score, rows, idx15)
     # percentage contribution of each stock to the pressure (weight x normalised reading, share of the absolute total)
@@ -337,6 +342,6 @@ def assess(inp: Mapping[str, Any], now: datetime | None = None) -> dict[str, Any
     w_info = meta.get("weights") or (mk.get("sources") or {}).get("weights") or {}
     age_days = _num(w_info.get("age_days"))
     quality = {"valid": agg["15"]["valid"] if agg["15"]["score"] is not None else agg["session"]["valid"], "of": len(rows), "weight_share": agg["session"]["weight_share"],
-               "aggregate_available": basis_score is not None, "weights": {**w_info, "stale": bool(age_days is not None and age_days > STALE_WEIGHTS_DAYS), "approximate": bool(w_info.get("approximate")), "basis": live.get("basis")}}
+               "aggregate_available": basis_score is not None, "valid_constituents": agg["session"]["valid"], "weights": {**w_info, "stale": bool(age_days is not None and age_days > STALE_WEIGHTS_DAYS), "approximate": bool(w_info.get("approximate")), "basis": live.get("basis")}}
     return {"available": True, "method": METHOD, "limits": LIMITS, "as_of": agg["as_of"], "stocks": rows, "aggregate": agg, "participation": part, "nifty": nifty, "relative_strength_pct": rs,
             "signals": signals(agg, part, nifty), "series": series, "quality": quality, "total_weight": round(total_w, 3)}
