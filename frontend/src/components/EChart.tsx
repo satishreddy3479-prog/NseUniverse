@@ -1,17 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import * as echarts from "echarts/core";
-import { BarChart, CandlestickChart, HeatmapChart, LineChart } from "echarts/charts";
+import { BarChart, CandlestickChart, HeatmapChart, LineChart, ScatterChart } from "echarts/charts";
 import {
-  DataZoomComponent, GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent, TitleComponent, TooltipComponent,
+  DataZoomComponent, GraphicComponent, GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent, MarkPointComponent, TitleComponent, TooltipComponent,
   VisualMapComponent,
 } from "echarts/components";
+import { LabelLayout, LegacyGridContainLabel } from "echarts/features";
 import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsCoreOption, ECharts } from "echarts/core";
 import type { ChartColors } from "../lib/chartOptions";
 
+// Everything a chart option in this app can use must be registered here: ECharts ignores a series type, component or feature that was not, without an error in
+// production (a scatter series simply never appeared; text corners, diamond markers, overlap-free end labels and containLabel grids were silently dropped).
+// src/test/echart-registration.test.ts fails when one of them goes missing.
 echarts.use([
-  BarChart, CandlestickChart, HeatmapChart, LineChart, DataZoomComponent, GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent,
-  TitleComponent, TooltipComponent, VisualMapComponent, CanvasRenderer,
+  BarChart, CandlestickChart, HeatmapChart, LineChart, ScatterChart, DataZoomComponent, GraphicComponent, GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent,
+  MarkPointComponent, TitleComponent, TooltipComponent, VisualMapComponent, LabelLayout, LegacyGridContainLabel, CanvasRenderer,
 ]);
 
 export interface PointClick {
@@ -43,7 +47,30 @@ export function fitNarrow(option: EChartsCoreOption, width: number): EChartsCore
   return o as EChartsCoreOption;
 }
 
-/** Thin ECharts wrapper: owns the instance, resizes with its container, keeps zoom across updates. */
+/**
+ * Keeps what the user clicked in a legend across updates. A builder that sets ``legend.selected`` (a line that starts hidden, or the HV lines of the IV chart)
+ * would otherwise put every series back to its default on the next live refresh, so a click on the legend lasted a few seconds. ``user`` holds the user's
+ * choices by series name; ``defaults`` the defaults last applied. When the page itself changes a default (an external checkbox) its intent wins and the
+ * user's choice for that name is dropped. Mutates ``user`` and ``defaults``; returns the option with the merged ``selected``.
+ */
+export function keepLegend(option: EChartsCoreOption, user: Record<string, boolean>, defaults: Record<string, boolean>): EChartsCoreOption {
+  const o = option as Obj;
+  const apply = (l: Obj): Obj => {
+    const sel = l.selected as Record<string, boolean> | undefined;
+    if (!sel) return l;
+    const out: Record<string, boolean> = {};
+    for (const [k, def] of Object.entries(sel)) {
+      if (k in defaults && defaults[k] !== def) delete user[k];
+      out[k] = k in user ? user[k]! : def;
+      defaults[k] = def;
+    }
+    return { ...l, selected: out };
+  };
+  if (Array.isArray(o.legend)) return { ...o, legend: o.legend.map((l) => apply(l as Obj)) } as EChartsCoreOption;
+  return o.legend ? ({ ...o, legend: apply(o.legend as Obj) } as EChartsCoreOption) : option;
+}
+
+/** Thin ECharts wrapper: owns the instance, resizes with its container, keeps zoom and the user's legend choices across updates. */
 export function EChart({ option, onClick, ariaLabel, className = "", group }: {
   option: EChartsCoreOption;
   onClick?: (p: PointClick) => void;
@@ -56,6 +83,8 @@ export function EChart({ option, onClick, ariaLabel, className = "", group }: {
   const chart = useRef<ECharts | null>(null);
   const clickRef = useRef(onClick);
   clickRef.current = onClick;
+  const userLegend = useRef<Record<string, boolean>>({});
+  const legendDefaults = useRef<Record<string, boolean>>({});
   const [width, setWidth] = useState(0);
 
   useEffect(() => {
@@ -65,6 +94,8 @@ export function EChart({ option, onClick, ariaLabel, className = "", group }: {
     chart.current = c;
     if (group) { c.group = group; echarts.connect(group); }
     c.on("click", (p) => clickRef.current?.(p as PointClick));
+    // remember what the user toggles in the legend (one series, all, or invert) so the next data refresh does not undo it
+    for (const ev of ["legendselectchanged", "legendselectall", "legendinverseselect"]) c.on(ev, (e) => { Object.assign(userLegend.current, (e as { selected?: Record<string, boolean> }).selected ?? {}); });
     const ro = new ResizeObserver(() => { c.resize(); setWidth(node.clientWidth); });
     setWidth(node.clientWidth);
     ro.observe(node);
@@ -78,7 +109,7 @@ export function EChart({ option, onClick, ariaLabel, className = "", group }: {
   useEffect(() => {
     // replaceMerge keeps the user's zoom while series appear/disappear with the CE/PE toggles.
     // No chart animates: a live chart redrawn on every tick must not keep sliding, and a still chart can be read (animation off everywhere).
-    chart.current?.setOption({ ...(fitNarrow(option, width) as Obj), animation: false, animationDuration: 0, animationDurationUpdate: 0 }, { replaceMerge: ["series"] });
+    chart.current?.setOption({ ...(keepLegend(fitNarrow(option, width), userLegend.current, legendDefaults.current) as Obj), animation: false, animationDuration: 0, animationDurationUpdate: 0 }, { replaceMerge: ["series"] });
   }, [option, width]);
 
   return <div ref={el} role="img" aria-label={ariaLabel} className={`echart-box h-full min-h-[120px] w-full ${className}`} />;
