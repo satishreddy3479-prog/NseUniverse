@@ -62,7 +62,12 @@ CREATE TRIGGER IF NOT EXISTS daily_bars_no_update BEFORE UPDATE ON daily_bars
 CREATE TRIGGER IF NOT EXISTS daily_bars_no_delete BEFORE DELETE ON daily_bars
   BEGIN SELECT RAISE(ABORT, 'stored bars are never deleted'); END;
 """
-_TOL = 1e-9
+_TOL = 2e-4  # relative: Yahoo serves prices as 32-bit floats, so the same bar differs by about 1e-6 to 1.5e-4 between downloads; real revisions are far larger
+
+
+def _close(a: float, b: float) -> bool:
+    """Two downloads of one bar agree: within 0.02 % or within half a cent (a price quoted to two decimals, like India VIX, differs by that)."""
+    return abs(a - b) <= max(_TOL * max(1.0, abs(a)), 0.0051)
 
 
 @dataclass
@@ -104,7 +109,7 @@ class HistoryStore:
             (symbol, session, source),
         ).fetchone()
         return fix is not None and all(
-            abs(a - b) <= _TOL * max(1.0, abs(a)) for a, b in zip(fix, (bar.open, bar.high, bar.low, bar.close), strict=True)
+            _close(a, b) for a, b in zip(fix, (bar.open, bar.high, bar.low, bar.close), strict=True)
         )
 
     def repair_shifted_dates(
@@ -124,7 +129,7 @@ class HistoryStore:
         stamp = (now or datetime.now(UTC)).astimezone(UTC).isoformat()
 
         def same(a: Sequence[float | None], b: Sequence[float | None]) -> bool:
-            return all(x is not None and y is not None and abs(x - y) <= _TOL * max(1.0, abs(x)) for x, y in zip(a, b, strict=True))
+            return all(x is not None and y is not None and _close(x, y) for x, y in zip(a, b, strict=True))
 
         with self._lock:
             lo = str(min(good) - timedelta(days=7))
@@ -219,7 +224,7 @@ class HistoryStore:
                     )
                     res.new += 1
                 elif all(
-                    abs(a - b) <= _TOL * max(1.0, abs(a))
+                    _close(a, b)
                     for a, b in zip(cur, (bar.open, bar.high, bar.low, bar.close), strict=True)
                 ):
                     res.unchanged += 1
@@ -237,6 +242,11 @@ class HistoryStore:
                          "stored before the session ended (partial intraday bar)"),
                     )
                     res.corrected += 1
+                elif self._db.execute(
+                    "SELECT 1 FROM bar_changes WHERE symbol=? AND session=? AND source=? AND seen=?",
+                    (symbol, str(bar.session), source, json.dumps([bar.open, bar.high, bar.low, bar.close])),
+                ).fetchone():
+                    res.unchanged += 1  # this very disagreement is already logged: it is not logged again every run
                 else:
                     self._db.execute(
                         "INSERT INTO bar_changes(symbol, session, source, stored, seen, detected_utc, run_id) VALUES (?,?,?,?,?,?,?)",

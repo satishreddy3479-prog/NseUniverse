@@ -421,6 +421,16 @@ class PredictionResearch:
         body = doc.get("key") == key and doc.get("body")
         return body if isinstance(body, dict) else None
 
+    def _read_disk_latest(self) -> dict[str, Any] | None:
+        """The newest saved report whatever data stamp it was made under (used only to keep showing today's forecast while training is paused)."""
+        if self._cache_file is None or not self._cache_file.exists():
+            return None
+        try:
+            body = json.loads(self._cache_file.read_text("utf-8")).get("body")
+        except (OSError, ValueError):
+            return None
+        return body if isinstance(body, dict) and body.get("ready") else None
+
     def _key(self, bars: list[Bar]) -> list[Any]:
         others = self._store.coverage()
         stamp: list[Any] = sorted((c["symbol"], c["last"], c["bars"]) for c in others)
@@ -447,6 +457,13 @@ class PredictionResearch:
             if body is not None:
                 self._cache = (tuple(key), body)
             elif self._pause_in_market_hours and self.market_hours(now) and trigger != "manual":
+                last = self._cache[1] if self._cache else self._read_disk_latest()
+                if last is not None:
+                    # Training is paused in market hours, but the forecast recorded this morning must stay visible: show the last report, labelled as such
+                    self._settle(bars)
+                    return {**last, "ledger": self._ledger_view(), "generated_at": now.isoformat(), "runs": self._runs, "computing": False, "paused": True, "stale_report": True,
+                            "stale_report_note": f"Training is paused during market hours (09:15-15:50 IST); this is the report computed at {last.get('computed_at', 'an earlier time')}. Forecasts recorded this morning are unchanged.",
+                            "days": self._days_view(bars), "recording": self.recording_status(now)}
                 return {"ready": False, "paused": True, "reason": "Models are trained and evaluated only after the market closes (09:15-15:50 IST is excluded); the report will be computed then."}
             elif not force and trigger == "auto" and time.monotonic() - self._seen_at < self._settle_s and (self._worker is None or not self._worker.is_alive()):
                 settling = True

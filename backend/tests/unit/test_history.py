@@ -314,3 +314,33 @@ class TestShiftedDates:
         revised = [row("2026-10-30", 10, 12, 9, 11), row("2026-11-02", 20, 22, 19, 21.5)]  # an ordinary Yahoo revision, no weekend bar
         assert st.repair_shifted_dates("BRENT", revised, source="yahoo", run_id="r2") == 0
         assert {str(b.session): b.close for b in st.bars("BRENT")}["2026-11-02"] == 21
+
+
+class TestBarDisagreements:
+    def test_float_rounding_between_downloads_is_not_a_disagreement(self, tmp_path: Path) -> None:
+        """Regression: the same FTSE bar came back as 10829.2598 and 10829.2998 (32-bit float noise) and 13 such bars were logged every ten minutes."""
+        st = HistoryStore(tmp_path)
+        st.insert_bars("FTSE", [row("2026-11-05", 10829.259765625, 10948.240234375, 10770.490234375, 10782.66015625)], source="yahoo", run_id="r1")
+        res = st.insert_bars("FTSE", [row("2026-11-05", 10829.2998046875, 10948.2001953125, 10770.5, 10782.7001953125)], source="yahoo", run_id="r2")
+        assert (res.changed, res.unchanged) == (0, 1) and st.coverage()[0]["disagreements"] == 0
+        vix = HistoryStore(tmp_path / "v")
+        vix.insert_bars("INDIAVIX", [row("2026-11-06", 15.58, 17.7725, 14.455, 17.465)], source="yahoo", run_id="r1")
+        assert vix.insert_bars("INDIAVIX", [row("2026-11-06", 15.58, 17.77, 14.46, 17.47)], source="yahoo", run_id="r2").changed == 0
+
+    def test_a_real_revision_is_logged_once_not_on_every_run(self, tmp_path: Path) -> None:
+        st = HistoryStore(tmp_path)
+        st.insert_bars("NIFTY50", [row("2026-11-05", c=100.0, h=101.0, low=99.0)], source="yahoo", run_id="r1")
+        first = st.insert_bars("NIFTY50", [row("2026-11-05", c=100.6, h=101.0, low=99.0)], source="yahoo", run_id="r2")  # a 0.6 % revision
+        again = st.insert_bars("NIFTY50", [row("2026-11-05", c=100.6, h=101.0, low=99.0)], source="yahoo", run_id="r3")
+        assert first.changed == 1 and again.changed == 0 and st.coverage()[0]["disagreements"] == 1
+        assert st.bars("NIFTY50")[0].close == 100.0  # the first-seen value is still the one used
+
+
+def test_a_provisional_bar_means_the_overnight_series_is_not_missing(tmp_path: Path) -> None:
+    from app.prediction.targets import Bar
+
+    st = HistoryStore(tmp_path)
+    svc = HistoryService(st, downloader=lambda *a: [], clock=lambda: datetime(2026, 11, 11, 3, 0, tzinfo=UTC))  # 08:30 IST Wednesday
+    assert "BRENT" in svc.overnight_missing(svc._clock())  # nothing stored at all
+    st.set_provisional("BRENT", Bar(D("2026-11-10"), 90.0, 93.0, 89.0, 91.0), "2026-11-11T02:00:00+00:00")
+    assert "BRENT" not in svc.overnight_missing(svc._clock())  # the morning forecast may use it, so the ten-minute retries stop

@@ -140,6 +140,13 @@ describe("Prediction page", () => {
     expect(r).toHaveTextContent("waiting for: SPX, VIX");
     expect(r).toHaveTextContent("Last automatic check");
   });
+  it("keeps showing the report, labelled, when training is paused in market hours", async () => {
+    const d = data();
+    if (d.ready) { d.stale_report = true; d.stale_report_note = "Training is paused during market hours (09:15-15:50 IST); this is the report computed at 08:37. Forecasts recorded this morning are unchanged."; }
+    mount(d);
+    expect(await screen.findByTestId("stale-report")).toHaveTextContent("Forecasts recorded this morning are unchanged");
+    expect(screen.getByTestId("forecast-T1")).toBeInTheDocument();
+  });
   it("explains why the T+5 probability stays near the base rate, only where no model beat it", async () => {
     mount(data());
     const note = await screen.findByTestId("flat-note");

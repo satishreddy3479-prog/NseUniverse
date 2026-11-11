@@ -125,7 +125,15 @@ class FlowsService:
         """Recent sessions that have no NSE FII/DII figures. NSE's feed only ever shows the latest session, so an old gap cannot be fetched again:
         it can be filled from a CSV of NSE's FII/DII report (Import). The newest session is still retried by the schedule."""
         have = self.store.nse_cash_sessions()
-        recent = [d for d in self.candidate_sessions() if d <= self.expected_session()][:CASH_KEEP_SESSIONS]
+        def special(d: date) -> bool:  # a Muhurat or other special session (e.g. Sunday 8 Nov 2026): NSE does not publish FII/DII cash for it, so it is not a gap
+            try:
+                if self._cal is None:
+                    self._cal = TradingCalendar.load()
+                return self._cal.is_special_session(d)
+            except (CalendarCoverageError, OSError, ValueError):
+                return False
+
+        recent = [d for d in self.candidate_sessions() if d <= self.expected_session() and not special(d)][:CASH_KEEP_SESSIONS]
         oldest_have = min(have) if have else None
         return [str(d) for d in recent if str(d) not in have and (oldest_have is None or str(d) > oldest_have)]
 

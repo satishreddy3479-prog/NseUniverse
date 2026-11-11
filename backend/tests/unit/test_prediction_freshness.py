@@ -267,3 +267,28 @@ def test_recording_status_names_each_stage_of_the_morning(tmp_path: Path) -> Non
     assert svc.recording_status(_at(last, 12, 0, days=1 if _Cal().is_session(last + timedelta(days=1)) else 0))["state"] in ("before_window", "missed", "ready", "recorded", "not_a_session_day")
     svc.summary(block=True)
     assert svc.recording_status(_at(nxt, 9, 30))["state"] == "recorded"
+
+
+def test_the_recorded_forecast_stays_visible_in_market_hours_when_the_data_stamp_has_changed(tmp_path: Path) -> None:
+    """Regression (11 Nov 2026): after a restart or a refreshed bar the saved report no longer matched, and in market hours the page showed only
+    'models are trained after the market closes': this morning's recorded forecast was invisible until 15:50."""
+    last = _walk(560, 1)[-1].session
+    nxt = _Cal().next_session(last)
+    svc, _ = _service(tmp_path, 560, _at(nxt, 8, 50))
+    first = svc.summary(block=True)
+    assert first["ready"] and first["forecasts"]["T1"]["models"]["ensemble"]["recorded"] is True
+    # later the same day: a new object (restart), the stored data changed, market hours, training paused
+    from app.prediction.ledger import ForecastLedger
+
+    store = svc._store
+    store.set_provisional("BRENT", None, "2026-01-01T00:00:00+00:00")  # any change of the stored data changes the report key
+    noon = _at(nxt, 11, 0)
+    b = PredictionResearch(store, ForecastLedger(tmp_path), calendar=_Cal(), clock=lambda: noon, initial_train=200, test_size=60, cache_dir=tmp_path, pause_in_market_hours=True)
+    b._key = lambda bars: ["changed"]  # type: ignore[method-assign]
+    s = b.summary()
+    assert s["ready"] is True and s["paused"] is True and s["stale_report"] is True and "paused during market hours" in s["stale_report_note"]
+    assert all(m["recorded"] for m in s["forecasts"]["T1"]["models"].values()) and s["recording"]["state"] == "recorded"
+    (tmp_path / "x").mkdir()
+    (tmp_path / "empty").mkdir()
+    none = PredictionResearch(store, ForecastLedger(tmp_path / "x"), calendar=_Cal(), clock=lambda: noon, initial_train=200, test_size=60, cache_dir=tmp_path / "empty", pause_in_market_hours=True)
+    assert none.summary().get("ready") is False  # with no saved report at all the old message stands

@@ -188,7 +188,13 @@ class HistoryService:
         while d.weekday() >= 5:
             d -= timedelta(days=1)
         last = {c["symbol"]: c["last"] for c in self.store.coverage()}  # usable (final) bars only
-        return [k for k in OVERNIGHT_KEYS if (last.get(k) or "") < str(d)]
+        out = []
+        for k in OVERNIGHT_KEYS:
+            prov = self.store.provisional_bar(k, None)  # a 24-hour series is provisional until New York midnight: the morning forecast may use it, so it is not "missing"
+            newest = max(last.get(k) or "", "" if prov is None else str(prov.session))
+            if newest < str(d):
+                out.append(k)
+        return out
 
     def data_gaps(self, now: datetime) -> list[str]:
         """What the stored data lacks that a forecast needs and that is already published (empty without a calendar).

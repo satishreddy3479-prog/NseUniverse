@@ -303,3 +303,11 @@ def test_a_session_with_only_an_older_nse_gap_is_listed_so_it_can_be_imported(tm
     nse = lambda d, n: {"session": d, "category": "FII/FPI *", "buy": n + 1.0, "sell": 1.0, "net": n}  # noqa: E731
     s.store.save_cash([nse(date(2026, 11, 5), 5.0), nse(date(2026, 11, 9), 7.0)])  # Friday the 6th is not there
     assert s.cash_gaps() == ["2026-11-06"]  # NSE's feed shows only the latest day, so only a CSV import can fill it
+
+
+def test_a_special_sunday_session_is_not_listed_as_a_missing_fii_dii_day(tmp_path: Path) -> None:
+    """Regression (11 Nov 2026): Sunday 8 Nov was the Diwali Muhurat session; NSE publishes no FII/DII cash for it, yet it was listed as a gap."""
+    s, _ = _live(tmp_path, Fake(set()), [date(2026, 11, 6), date(2026, 11, 8), date(2026, 11, 9)], datetime(2026, 11, 9, 14, 0, tzinfo=UTC))
+    nse = lambda d, n: {"session": d, "category": "FII/FPI *", "buy": n + 1.0, "sell": 1.0, "net": n}  # noqa: E731
+    s.store.save_cash([nse(date(2026, 11, 5), 5.0), nse(date(2026, 11, 9), 7.0)])
+    assert s.cash_gaps() == ["2026-11-06"]  # the Friday is a real gap; the Sunday Muhurat session is not

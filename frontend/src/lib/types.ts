@@ -421,6 +421,8 @@ export type PredictionSummary =
       runs?: Record<string, { last_auto?: { at: string }; last_manual?: { at: string } }>;
       days?: ForecastDay[];
       recording?: RecordingStatus;
+      stale_report?: boolean;
+      stale_report_note?: string;
       generated_at: string;
       computed_at: string;
       model_version: string;
