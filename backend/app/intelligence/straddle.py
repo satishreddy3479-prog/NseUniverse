@@ -274,12 +274,13 @@ def _stat(vals: Sequence[float | None], n: int = 2) -> dict[str, Any]:
     if not ok:
         return {"open": None, "current": None, "change": None, "change_pct": None, "open_index": None}
     o, c = ok[0][1], ok[-1][1]
-    return {"open": rd(o, n), "current": rd(c, n), "change": rd(c - o, n), "change_pct": rd((c - o) / o * 100, 2) if o else None, "open_index": ok[0][0]}
+    return {"open": rd(o, n), "current": rd(c, n), "change": rd(c - o, n), "change_pct": rd((c - o) / o * 100, 2) if abs(o) >= 1 else None, "open_index": ok[0][0]}
 
 
 def _iv_support(ce: float | None, pe: float | None) -> dict[str, Any]:
     if ce is None or pe is None:
         return {"side": "unavailable", "text": "A leg's implied volatility is missing, so the support cannot be read."}
+    ce, pe = round(ce, 1), round(pe, 1)  # judge what is shown
     up_c, up_p = ce >= IV_MOVE_PTS, pe >= IV_MOVE_PTS
     dn_c, dn_p = ce <= -IV_MOVE_PTS, pe <= -IV_MOVE_PTS
     if up_c and up_p:
