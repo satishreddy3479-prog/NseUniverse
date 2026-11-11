@@ -565,3 +565,6 @@ Not built: payoff at a date between expiries along a path (needs a NIFTY-level d
 
 ## D129 — Smart OI: switchable lower-right chart (11 Nov 2026)
 The third (lower right) Smart OI chart has three views: PCR (OI and volume PCR, default), PE & CE volume (cumulative put and call volume traded today, units, same strikes in every candle) and PE - CE (cumulative put-minus-call volume as a line, per-candle difference as bars, green when puts traded more). Built from the stored cumulative contract volumes already in the series; a missing volume stays blank. Candles now carry `ceVol`/`peVol`.
+
+## D130 — FNO Tools: the Screeners section is removed (11 Nov 2026)
+OI Crossover (planned), Intraday Booster (a link to /analysis) and Option Triggers (planned) are gone from the FNO Tools menu and the home grid, at the user's request. The /analysis page itself and its route stay; it is still linked from Market Intelligence ("Open the intraday analysis"). The planned-tool rendering code stays for future use; no tool is planned today.

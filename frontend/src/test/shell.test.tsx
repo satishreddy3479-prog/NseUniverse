@@ -76,15 +76,12 @@ describe("top menu bar", () => {
     expect(lab).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("shows planned tools as disabled items with their reason, never as links", async () => {
+  it("FNO Tools has no Screeners section (OI Crossover, Intraday Booster and Option Triggers were removed)", async () => {
     mockApi();
     renderAt("/overview");
     await screen.findByRole("heading", { name: "Overview" });
     await userEvent.click(within(bar()).getByRole("button", { name: /FNO Tools/ }));
-    expect(within(bar()).queryByRole("link", { name: /OI Crossover/ })).toBeNull();
-    const planned = within(bar()).getByText("OI Crossover").closest("[aria-disabled]") as HTMLElement;
-    expect(planned).toHaveAttribute("aria-disabled", "true");
-    expect(planned.getAttribute("title")).toBeTruthy();
+    for (const n of [/Screeners/i, /OI Crossover/, /Intraday Booster/, /Option Triggers/]) expect(within(bar()).queryByText(n)).toBeNull();
   });
 
   it("FNO Tools holds the option chain, the options tools and the futures tools together", async () => {

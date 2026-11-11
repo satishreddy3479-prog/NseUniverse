@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -37,14 +37,12 @@ describe("tool registry", () => {
 });
 
 describe("home", () => {
-  it("lists ready tools as links and planned tools as disabled cards with their reason", async () => {
+  it("lists the ready tools as links and has no Screeners section", async () => {
     mockApi();
     renderAt("/");
     expect(await screen.findByRole("heading", { name: /NIFTY 50 command centre/ })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /Smart OI/ }).length).toBeGreaterThan(0);
-    expect(screen.queryByRole("link", { name: /OI Crossover/ })).toBeNull();
-    const card = screen.getByText("OI Crossover").closest("[aria-disabled]") as HTMLElement;
-    expect(within(card).getByText(/Needs a rule for the crossover/)).toBeInTheDocument();
+    for (const n of [/Screeners/i, /OI Crossover/, /Intraday Booster/, /Option Triggers/]) expect(screen.queryByText(n)).toBeNull();
   });
 
   it("search narrows the tools", async () => {
@@ -57,12 +55,6 @@ describe("home", () => {
 });
 
 describe("tool page", () => {
-  it("a planned tool says it is not built and does not show a chart", async () => {
-    mockApi();
-    renderAt("/tools/oi-crossover");
-    expect(await screen.findByText(/Planned, not built yet/)).toBeInTheDocument();
-  });
-
   it("Open Interest also holds the two total-OI charts that moved from the Analysis page", async () => {
     mockApi();
     renderAt("/tools/open-interest");
