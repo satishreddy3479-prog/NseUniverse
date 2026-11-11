@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { StrategyTimeChart } from "../components/StrategyTimeChart";
 import { liveKey, mergeRows, type LiveMode } from "../components/ChainTable";
 import { useThrottledVersion } from "../components/dashboard/DashContext";
 import { useLiveSpot, useStreamStatus } from "../lib/useLive";
@@ -127,7 +128,7 @@ export default function StrategyBuilder() {
   const [hold, setHold] = useState<HoldRule>(work?.hold ?? DEFAULT_HOLD);
   // when the holding rule started counting (set by the server when a strategy is first sent; changed when the rule is changed)
   const [holdFrom, setHoldFrom] = useState<string | null>(work?.holdFrom ?? null);
-  const [tab, setTab] = useState<"positions" | "greeks" | "scenarios">("positions");
+  const [tab, setTab] = useState<"positions" | "chart" | "greeks" | "scenarios">("positions");
   const [bias, setBias] = useState<Bias>("Neutral");
   const [rate, setRate] = useState(6);
   const [days, setDays] = useState(0);
@@ -926,7 +927,7 @@ export default function StrategyBuilder() {
           {legs.length > 0 && (
             <section aria-label="Positions" className="rounded-[var(--radius-panel)] border border-rule bg-slate">
               <div className="flex flex-wrap items-center gap-3 border-b border-rule px-3 py-2 text-sm">
-                {(["positions", "greeks", "scenarios"] as const).map((t) => <button key={t} type="button" aria-pressed={tab === t} onClick={() => setTab(t)} className={`rounded-sm px-3 py-1 ${tab === t ? "bg-info/15 text-info" : "text-muted hover:text-paper"}`}>{t === "positions" ? "Positions" : t === "greeks" ? "Greeks" : "Scenarios"}</button>)}
+                {(["positions", "chart", "greeks", "scenarios"] as const).map((t) => <button key={t} type="button" aria-pressed={tab === t} onClick={() => setTab(t)} className={`rounded-sm px-3 py-1 ${tab === t ? "bg-info/15 text-info" : "text-muted hover:text-paper"}`}>{t === "positions" ? "Positions" : t === "chart" ? "Price chart" : t === "greeks" ? "Greeks" : "Scenarios"}</button>)}
                 <div className="ml-auto flex flex-wrap items-center gap-3 text-xs text-muted">
                   <span>Multiplier <button type="button" aria-label="Decrease multiplier" className="mx-1 rounded-sm border border-rule px-2" onClick={() => setMult((m) => Math.max(1, m - 1))}>−</button><span className="num text-paper" data-testid="mult">{mult}</span><button type="button" aria-label="Increase multiplier" className="mx-1 rounded-sm border border-rule px-2" onClick={() => setMult((m) => m + 1)}>+</button></span>
                   <span>Qty per lot <span className="num text-paper">{lotSize ?? "—"}</span></span>
@@ -1125,6 +1126,8 @@ export default function StrategyBuilder() {
                   </table>
                   </div>
                 </div>
+              ) : tab === "chart" ? (
+                <StrategyTimeChart legs={open} expiry={expiry} lotSize={lotSize} modelDelta={greeks?.delta ?? null} rules={rules} />
               ) : tab === "greeks" ? (
                 <div className="overflow-x-auto p-2" data-testid="greeks">
                   <table className="w-full text-sm" aria-label="Greeks">
