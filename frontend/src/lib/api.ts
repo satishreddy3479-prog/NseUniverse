@@ -130,6 +130,8 @@ export const api = {
   snapshot: (id: string) => request<ChainResponse>(`/api/snapshots/${encodeURIComponent(id)}`),
   sessions: () => request<SessionInfo[]>("/api/sessions"),
   optionChain: (expiry: string) => request<ChainResponse>(`/api/option-chain?expiry=${encodeURIComponent(expiry)}`),
+  /** any listed expiry, fetched live and not stored (the Strategy builder's calendar and multi-expiry strategies) */
+  optionChainOnDemand: (expiry: string) => request<ChainResponse>(`/api/option-chain/on-demand?expiry=${encodeURIComponent(expiry)}`),
   capture: (expiry?: string) =>
     request<SnapshotSummary[]>(
       `/api/snapshots/capture${expiry ? `?expiry=${encodeURIComponent(expiry)}` : ""}`,

@@ -25,7 +25,7 @@ beforeEach(() => {
     const chain = bigChain();
     chain.snapshot.underlying_ltp = 24050;
     const map: Record<string, unknown> = {
-      "/api/status": status(), "/api/expiries": { ...expiries, available: ["2026-11-03", "2026-11-10", "2026-11-17", "2026-11-24", "2026-12-29"] }, "/api/snapshots": [summary()], "/api/option-chain": chain,
+      "/api/status": status(), "/api/expiries": { ...expiries, available: ["2026-11-03", "2026-11-10", "2026-11-17", "2026-11-24", "2026-12-29"] }, "/api/snapshots": [summary()], "/api/option-chain": chain, "/api/option-chain/on-demand": { ...chain, snapshot: { ...chain.snapshot, expiry: "2026-12-29" } },
     };
     return map[url] == null ? new Response("{}", { status: 404 }) : new Response(JSON.stringify(map[url]), { status: 200 });
   }));
@@ -227,12 +227,24 @@ describe("Strategies kept on the server", () => {
 });
 
 describe("Option chain inside the builder", () => {
-  it("offers only the weekly and monthly expiries we collect, however many dates the exchange lists", async () => {
+  it("offers every listed expiry: the first four as buttons, the rest in a dropdown", async () => {
     mount();
     const w = await screen.findByRole("button", { name: /03 Nov.*weekly/ });
     expect(w).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /24 Nov.*monthly/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /10 Nov|17 Nov|29 Dec/ })).toBeNull();
+    for (const n of [/10 Nov/, /17 Nov/, /24 Nov.*monthly/]) expect(screen.getByRole("button", { name: n })).toBeInTheDocument();
+    const more = screen.getByRole("combobox", { name: "More expiries" });
+    expect(within(more).getByRole("option", { name: /29 Dec/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /29 Dec/ })).toBeNull(); // beyond the first four: in the dropdown only
+  });
+
+  it("an expiry the sampler does not collect is fetched on demand, not from the stored chains, and says so", async () => {
+    mount();
+    await loaded();
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "More expiries" }), "2026-12-29");
+    expect(await screen.findByTestId("on-demand-note")).toHaveTextContent("not stored");
+    const urls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.includes("/api/option-chain/on-demand?expiry=2026-12-29"))).toBe(true);
+    expect(urls.some((u) => u.includes("/api/option-chain?expiry=2026-12-29"))).toBe(false);
   });
 
   const row = (k: number) => screen.findByTestId(`chain-${k}`);
@@ -293,13 +305,34 @@ describe("Option chain inside the builder", () => {
     expect(screen.getAllByTestId(/^chain-/).length).toBeLessThanOrEqual(7);
   });
 
-  it("changing the expiry clears the legs and says so", async () => {
+  it("changing the expiry keeps the legs: a strategy can hold legs of several expiries", async () => {
     mount();
     await waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"));
-    await userEvent.click(await screen.findByRole("button", { name: "Buy CE 24100" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Sell CE 24100" }));
     await userEvent.click(screen.getByRole("button", { name: /24 Nov.*monthly/ }));
-    expect(await screen.findByTestId("template-msg")).toHaveTextContent("The legs were cleared because the expiry changed.");
-    expect(screen.getByTestId("gallery")).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: "Buy CE 24100" }));
+    const table = await screen.findByRole("table", { name: "Strategy legs" });
+    expect(within(table).getAllByLabelText("Strike")).toHaveLength(2); // the 3 Nov leg stayed, the 24 Nov leg was added
+    expect(screen.queryByTestId("gallery")).toBeNull();
+    expect(await screen.findByTestId("multi-expiry-tag")).toHaveTextContent("legs on 2 expiries: 03 Nov · 24 Nov");
+    // the chain shows only the legs of the expiry being shown: the 24 Nov chain holds the bought call, not the sold one
+    expect(within(await screen.findByTestId("chain-24100")).getByText("+1 lot")).toBeInTheDocument();
+  });
+
+  it("a calendar spread is built from two expiries and its payoff is read at a chosen expiry, flagged as a model estimate", async () => {
+    mount();
+    await loaded();
+    await pick("calendar_call");
+    const table = await screen.findByRole("table", { name: "Strategy legs" });
+    expect(within(table).getAllByLabelText("Strike")).toHaveLength(2);
+    expect(await screen.findByTestId("multi-expiry-tag")).toHaveTextContent("legs on 2 expiries");
+    const note = await screen.findByTestId("multi-note");
+    expect(note).toHaveTextContent("no single expiry payoff");
+    expect(note).toHaveTextContent("model estimates"); // the far leg is still alive at the first expiry
+    const at = screen.getByRole("group", { name: "Payoff at expiry" });
+    expect(within(at).getAllByRole("button")).toHaveLength(2);
+    await userEvent.click(within(at).getAllByRole("button")[1]!); // read at the far expiry: every leg has expired
+    expect(await screen.findByTestId("multi-note")).toHaveTextContent("Every leg has expired by this date");
   });
 });
 
@@ -308,7 +341,7 @@ describe("StockMojo-style layout", () => {
     mount();
     await loaded();
     expect(await screen.findByTestId("gallery")).toBeInTheDocument();
-    for (const b of ["Bullish", "Bearish", "Neutral", "Other"]) expect(screen.getByRole("tab", { name: b })).toBeInTheDocument();
+    for (const b of ["Bullish", "Bearish", "Neutral", "Calendar", "Other"]) expect(screen.getByRole("tab", { name: b })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Iron Condor/i })).toBeInTheDocument();
   });
 

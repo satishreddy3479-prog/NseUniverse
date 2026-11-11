@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import type { EChartsCoreOption } from "echarts/core";
 import { api } from "../lib/api";
 import { fmtInt } from "../lib/format";
 import type { ChartColors } from "../lib/chartOptions";
 import type { Action, OptionType, StrategyRules } from "../lib/strategy";
+import type { StrikeSeries } from "../lib/types";
 import {
-  alignFuture, bands, buildTimeline, cumMean, cumWeighted, decompose, ema, regress, sma, timelineStats, type Timeline, type TimelineLeg,
+  alignFuture, bands, buildTimeline, cumMean, cumWeighted, decompose, ema, mergedKey, mergeStrikeSeries, regress, sma, timelineStats, type Timeline, type TimelineLeg,
 } from "../lib/strategyTimeline";
 import { EChart, useChartColors } from "./EChart";
 
@@ -18,28 +19,36 @@ const tone = (v: number | null | undefined) => (v == null ? "text-muted" : v > 0
 interface ChartLeg { strike: number; type: OptionType; action: Action; lots: number; premium: number | null; expiry: string }
 
 /** The built strategy as one price through the day (and its P&L), against NIFTY spot and future, with averages, bands and a split of what moved it. */
-export function StrategyTimeChart({ legs, expiry, lotSize, modelDelta, rules }: { legs: ChartLeg[]; expiry: string | null; lotSize: number | null; modelDelta: number | null; rules: StrategyRules }) {
+export function StrategyTimeChart({ legs, historyExpiries, lotSize, modelDelta, rules }: { legs: ChartLeg[]; /** expiries the sampler collects: only these have stored prices to draw */ historyExpiries: string[]; lotSize: number | null; modelDelta: number | null; rules: StrategyRules }) {
   const colors = useChartColors();
   const [days, setDays] = useState<1 | 3>(1);
   const [mode, setMode] = useState<"premium" | "pnl">("premium");
-  const use = useMemo(() => legs.filter((l) => l.expiry === expiry), [legs, expiry]);
-  const other = legs.length - use.length;
-  const strikes = useMemo(() => [...new Set(use.map((l) => l.strike))].sort((a, b) => a - b).join(","), [use]);
-  const ss = useQuery({
-    queryKey: ["strategy-timeline", expiry, strikes, days],
-    enabled: !!expiry && use.length > 0 && !!lotSize,
-    refetchInterval: 30_000, retry: false,
-    queryFn: async () => {
-      const day = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
-      const sinceToday = new Date(`${day}T00:00:00+05:30`).toISOString();
-      const wide = new Date(Date.now() - 8 * 86_400_000).toISOString();
-      if (days === 1) {
-        const t = await api.strikeSeries(expiry!, strikes, sinceToday);
-        if (t.times.length >= 5) return t;
-      }
-      return api.strikeSeries(expiry!, strikes, wide); // weekend or before the open: the newest stored sessions
-    },
+  const exps = useMemo(() => [...new Set(legs.map((l) => l.expiry))].sort(), [legs]);
+  const noHistory = exps.filter((e) => !historyExpiries.includes(e));
+  const strikesOf = (e: string) => [...new Set(legs.filter((l) => l.expiry === e).map((l) => l.strike))].sort((a, b) => a - b).join(",");
+  const multi = exps.length > 1;
+  const queries = useQueries({
+    queries: exps.map((e) => ({
+      queryKey: ["strategy-timeline", e, strikesOf(e), days],
+      enabled: noHistory.length === 0 && !!lotSize,
+      refetchInterval: 30_000, retry: false,
+      queryFn: async () => {
+        const day = new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
+        const sinceToday = new Date(`${day}T00:00:00+05:30`).toISOString();
+        const wide = new Date(Date.now() - 8 * 86_400_000).toISOString();
+        if (days === 1) {
+          const t = await api.strikeSeries(e, strikesOf(e), sinceToday);
+          if (t.times.length >= 5) return t;
+        }
+        return api.strikeSeries(e, strikesOf(e), wide); // weekend or before the open: the newest stored sessions
+      },
+    })),
   });
+  const ssPending = queries.some((q) => q.isPending);
+  const ssError = queries.find((q) => q.error)?.error as Error | undefined;
+  const ssParts = queries.map((q, i) => (q.data ? { expiry: exps[i]!, ss: q.data } : null));
+  const ss = { isPending: noHistory.length === 0 && ssPending, error: ssError, data: ssParts.every((x) => x) && ssParts.length ? (multi ? mergeStrikeSeries(ssParts as { expiry: string; ss: StrikeSeries }[]) : ssParts[0]!.ss) : undefined };
+  const use = useMemo(() => legs.map((l) => (multi ? { ...l, key: mergedKey(l.expiry, l.strike) } : l)), [legs, multi]);
   const fut = useQuery({ queryKey: ["strategy-timeline-fut", days], queryFn: () => api.futuresSeries(new Date(Date.now() - 8 * 86_400_000).toISOString()), refetchInterval: 30_000, retry: false, enabled: use.length > 0 });
 
   const model = useMemo(() => {
@@ -60,10 +69,13 @@ export function StrategyTimeChart({ legs, expiry, lotSize, modelDelta, rules }: 
     };
   }, [ss.data, fut.data, use, lotSize, days, mode]);
 
-  if (!expiry || use.length === 0 || !lotSize) {
-    return <p className="p-3 text-sm text-muted" data-testid="stl-empty">Add at least one leg of the selected expiry to see the strategy as a price through the day.</p>;
+  if (use.length === 0 || !lotSize) {
+    return <p className="p-3 text-sm text-muted" data-testid="stl-empty">Add at least one leg to see the strategy as a price through the day.</p>;
   }
-  if (ss.isPending) return <p className="p-3 text-sm text-muted">Loading stored samples…</p>;
+  if (noHistory.length > 0) {
+    return <p className="p-3 text-sm text-muted" data-testid="stl-nohistory">The price chart is drawn from stored one-minute prices, which exist only for the expiries the sampler collects (the weekly and the monthly). {noHistory.map((e) => e).join(", ")} {noHistory.length === 1 ? "has" : "have"} no stored history, so this strategy cannot be charted through time. Its payoff and Greeks are unaffected.</p>;
+  }
+  if (ss.isPending || (!ss.data && !ss.error)) return <p className="p-3 text-sm text-muted">Loading stored samples…</p>;
   if (ss.error) return <p className="p-3 text-sm text-muted">Could not load the stored strike prices: {String((ss.error as Error).message)}</p>;
   if (!model || model.empty) return <p className="p-3 text-sm text-muted" data-testid="stl-few">Not enough stored samples for these strikes yet ({model?.tl.samples ?? 0}). The sampler stores one a minute during market hours.</p>;
 
@@ -145,7 +157,7 @@ export function StrategyTimeChart({ legs, expiry, lotSize, modelDelta, rules }: 
       </ul>
       <p className="text-[11px] leading-relaxed text-muted" data-testid="stl-note">
         Built from the stored one-minute samples of the strikes in your legs ({use.map((l) => `${l.action === "BUY" ? "+" : "−"}${l.lots}×${fmtInt(l.strike)}${l.type}`).join(" ")}), last traded prices, not bid or ask; a minute without a price is left blank, never filled.
-        {other > 0 ? ` ${other} leg(s) of another expiry are not charted.` : ""} Strategy VWAP combines each leg&apos;s own volume-weighted average price (stored traded volume of that contract, priced at the last price of each interval, restarting every day) the same way as the strategy value: what building the structure at every leg&apos;s VWAP would have cost; it starts once every leg has traded. Future VWAP is the volume-weighted price of the NIFTY current-month future.
+        {multi ? ` The legs sit on ${exps.length} expiries; each expiry's samples are matched to the nearest sample within 90 seconds, and a minute without a match is left blank.` : ""} Strategy VWAP combines each leg&apos;s own volume-weighted average price (stored traded volume of that contract, priced at the last price of each interval, restarting every day) the same way as the strategy value: what building the structure at every leg&apos;s VWAP would have cost; it starts once every leg has traded. Future VWAP is the volume-weighted price of the NIFTY current-month future.
         The spot-driven split is a regression on this range (change over 5 samples against NIFTY points), an estimate of delta, not a Greek; the rest is time decay, volatility, curvature and noise. Entry level is your entry premium{mode === "pnl" ? "; the strategy stop and target from the rules are drawn when set" : ""}. Nothing here is a forecast or an order.
         {fut.data == null && fut.isError ? " The futures series could not be loaded, so the future and VWAP lines are missing." : ""}
       </p>

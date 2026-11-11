@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime
@@ -16,6 +17,7 @@ from app.domain.models import (
     DataSource,
     ExpiryKind,
     ExpirySelection,
+    OptionChainSnapshot,
     SnapshotSummary,
 )
 from app.domain.normalize import ChainFormatError, normalize_option_chain
@@ -26,6 +28,8 @@ from app.storage.store import SnapshotStore, StorageError
 
 IST = ZoneInfo("Asia/Kolkata")
 EXPIRY_CACHE_TTL_S = 600
+ON_DEMAND_TTL_S = 10  # a chain fetched for the Strategy builder is reused this long
+ON_DEMAND_MAX_CONCURRENT = 2  # broker calls in flight for such requests
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
@@ -58,6 +62,9 @@ class SnapshotService:
         self.observations = observations
         self._expiry_cache: ExpirySelection | None = None
         self._expiry_lock = asyncio.Lock()
+        self._on_demand: dict[date, tuple[float, OptionChainSnapshot]] = {}
+        self._on_demand_locks: dict[date, asyncio.Lock] = {}
+        self._on_demand_slots = asyncio.Semaphore(ON_DEMAND_MAX_CONCURRENT)
         self._capture_lock = asyncio.Lock()
         self._last_fingerprint: dict[date, str] = {}
         self.skipped_unchanged = 0
@@ -121,6 +128,51 @@ class SnapshotService:
                 count=len(dates),
             )
             return sel
+
+    async def on_demand_chain(self, expiry: date) -> OptionChainSnapshot:
+        """The chain of any LISTED expiry, fetched now from the broker and NOT stored.
+
+        The sampler collects only the weekly and monthly expiries; the Strategy builder also
+        needs the others (calendar and diagonal strategies). Nothing here touches the snapshot
+        store or the observation history, so it cannot grow the disk. A fetched chain is reused
+        for ``ON_DEMAND_TTL_S`` seconds per expiry, one fetch at a time per expiry, and at most
+        ``ON_DEMAND_MAX_CONCURRENT`` broker calls run together.
+        """
+        sel = await self.expiries()
+        if expiry not in sel.available:
+            raise BrokerError(
+                f"expiry {expiry} is not in the broker's listed expiries", code="bad_request"
+            )
+        lock = self._on_demand_locks.setdefault(expiry, asyncio.Lock())
+        async with lock:
+            hit = self._on_demand.get(expiry)
+            if hit is not None and time.monotonic() - hit[0] < ON_DEMAND_TTL_S:
+                return hit[1]
+            exp_s = expiry.isoformat()
+            async with self._on_demand_slots:
+                raw = await self._with_relogin(
+                    lambda: self.broker.get_option_chain(self.underlying, exp_s, self.strike_count)
+                )
+            received = datetime.now(UTC)
+            kinds = [
+                k
+                for k, d in ((ExpiryKind.WEEKLY, sel.weekly), (ExpiryKind.MONTHLY, sel.monthly))
+                if d == expiry
+            ]
+            snap = normalize_option_chain(
+                raw,
+                snapshot_id=new_snapshot_id(self.underlying, expiry, received),
+                session_id=self.state.session_id,
+                underlying=self.underlying,
+                expiry=expiry,
+                expiry_kinds=kinds,
+                source=self.snapshot_source,
+                retrieved_at=received,
+                requested_strike_count=self.strike_count,
+            )
+            self._on_demand[expiry] = (time.monotonic(), snap)
+            log_event(logger, logging.INFO, "on_demand_chain", expiry=exp_s, strikes=len(snap.rows))
+            return snap
 
     async def capture(
         self, *, expiry: date | None = None, skip_unchanged: bool = False

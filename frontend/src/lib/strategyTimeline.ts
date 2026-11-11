@@ -22,7 +22,7 @@
 import type { Action, OptionType } from "./strategy";
 import type { FuturesSeries, StrikeSeries } from "./types";
 
-export interface TimelineLeg { strike: number; type: OptionType; action: Action; lots: number; premium: number | null }
+export interface TimelineLeg { strike: number; type: OptionType; action: Action; lots: number; premium: number | null; /** key of this leg in the series maps when it is not the plain strike (a merged multi-expiry series) */ key?: string }
 
 export interface Timeline {
   /** ms since epoch; a spacer between days has t = the next day's first sample and every value null */
@@ -50,8 +50,8 @@ export const istDay = (ms: number): string => new Date(ms + IST_MS).toISOString(
 const hm = (ms: number): string => new Date(ms + IST_MS).toISOString().slice(11, 16);
 const sgn = (a: Action) => (a === "BUY" ? 1 : -1);
 
-function priceAt(map: Record<string, (number | null)[]>, strike: number, i: number): number | null {
-  const arr = map[String(strike)] ?? map[strike.toFixed(1)] ?? map[Object.keys(map).find((k) => Number(k) === strike) ?? ""];
+function priceAt(map: Record<string, (number | null)[]>, strike: number, i: number, key?: string): number | null {
+  const arr = key != null ? map[key] : map[String(strike)] ?? map[strike.toFixed(1)] ?? map[Object.keys(map).find((k) => Number(k) === strike) ?? ""];
   const v = arr?.[i];
   return v == null ? null : v;
 }
@@ -82,9 +82,9 @@ export function buildTimeline(legs: TimelineLeg[], ss: StrikeSeries, lotSize: nu
     let v: number | null = 0;
     let p: number | null = allEntry ? 0 : null;
     legs.forEach((l, li) => {
-      const px = priceAt(l.type === "CE" ? ss.ce_price : ss.pe_price, l.strike, i);
+      const px = priceAt(l.type === "CE" ? ss.ce_price : ss.pe_price, l.strike, i, l.key);
       // interval volume of this leg: the rise of its cumulative volume since the previous sample of the same day (the first sample: all of it)
-      const cum = priceAt(l.type === "CE" ? ss.ce_volume ?? {} : ss.pe_volume ?? {}, l.strike, i);
+      const cum = priceAt(l.type === "CE" ? ss.ce_volume ?? {} : ss.pe_volume ?? {}, l.strike, i, l.key);
       const a: NonNullable<Acc> = acc[li] ?? { pv: 0, v: 0, prevVol: null };
       acc[li] = a;
       if (cum != null) {
@@ -106,7 +106,7 @@ export function buildTimeline(legs: TimelineLeg[], ss: StrikeSeries, lotSize: nu
       if (vwp != null && l.premium != null) vwp += sgn(l.action) * l.lots * lotSize * (lv - l.premium);
     });
     out.vwap.push(vw); out.vwapPnl.push(vwp);
-    out.thinnestLegVolume = legs.length ? Math.min(...legs.map((l) => priceAt(l.type === "CE" ? ss.ce_volume ?? {} : ss.pe_volume ?? {}, l.strike, i) ?? 0)) : null;
+    out.thinnestLegVolume = legs.length ? Math.min(...legs.map((l) => priceAt(l.type === "CE" ? ss.ce_volume ?? {} : ss.pe_volume ?? {}, l.strike, i, l.key) ?? 0)) : null;
     out.samples++;
     if (v == null) out.missing++;
     out.t.push(ms); out.day.push(d); out.spacer.push(false);
@@ -294,4 +294,35 @@ export function timelineStats(tl: Timeline): TimelineStats {
     pnlNow: pn.length ? pn[pn.length - 1]! : null, pnlHigh: pn.length ? Math.max(...pn) : null, pnlLow: pn.length ? Math.min(...pn) : null, maxDrawdown: pn.length ? dd : null,
     spotMove: sp.length > 1 ? sp[sp.length - 1]! - sp[0]! : null,
   };
+}
+
+
+/**
+ * One series for legs on several expiries. Every expiry's stored samples have their own timestamps (the sampler fetches the chains one after
+ * the other), so the others are laid on the base expiry's time axis: each base sample takes the nearest sample of the other expiry within
+ * ``tolMs``, else null (never carried, never interpolated). Keys of the merged maps are ``"<expiry>:<strike>"``; a leg of the merged series
+ * carries that key (``mergedKey``).
+ */
+export const mergedKey = (expiry: string, strike: number): string => `${expiry}:${strike}`;
+
+export function mergeStrikeSeries(parts: { expiry: string; ss: StrikeSeries }[], tolMs = 90_000): StrikeSeries {
+  const base = parts[0]!.ss;
+  const bt = base.times.map((x) => Date.parse(x));
+  const out: StrikeSeries = { ...base, strikes: [], ce_price: {}, pe_price: {}, ce_oi: {}, pe_oi: {}, ce_change: {}, pe_change: {}, ce_volume: {}, pe_volume: {}, warnings: [] };
+  for (const { expiry, ss } of parts) {
+    const t = ss.times.map((x) => Date.parse(x));
+    const idx: (number | null)[] = [];
+    let j = 0;
+    for (const ms of bt) {
+      while (j + 1 < t.length && Math.abs(t[j + 1]! - ms) <= Math.abs(t[j]! - ms)) j++;
+      idx.push(t.length > 0 && Math.abs(t[j]! - ms) <= tolMs ? j : null);
+    }
+    const take = (arr: (number | null)[] | undefined) => idx.map((k) => (k == null ? null : arr?.[k] ?? null));
+    for (const k of Object.keys(ss.ce_price)) {
+      const key = mergedKey(expiry, Number(k));
+      out.ce_price[key] = take(ss.ce_price[k]); out.pe_price[key] = take(ss.pe_price[k]);
+      out.ce_volume![key] = take(ss.ce_volume?.[k]); out.pe_volume![key] = take(ss.pe_volume?.[k]);
+    }
+  }
+  return out;
 }

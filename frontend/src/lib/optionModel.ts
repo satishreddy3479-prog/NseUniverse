@@ -76,18 +76,20 @@ export interface Valuation {
   rate: number;
   /** continuous cost of carry: forward = spot * e^(carry * t). Read from put-call parity in the stored chain when it can be; else the rate. */
   carry?: number;
+  /** the carry of each expiry read from its own chain; an expiry not listed here uses ``carry`` (then ``rate``) */
+  carryByExpiry?: Record<string, number>;
   /** added to every leg's volatility, in volatility points (0.02 = +2 vol points) */
   ivShift: number;
 }
 
 /** Volatility used for a leg: the manual override, else the one implied by its entry premium at the current spot. */
-const carryOf = (v: { rate: number; carry?: number }) => v.carry ?? v.rate;
+const carryOf = (v: { rate: number; carry?: number; carryByExpiry?: Record<string, number> }, expiry?: string) => (expiry != null ? v.carryByExpiry?.[expiry] : undefined) ?? v.carry ?? v.rate;
 
 export function legIv(l: Leg, v: Valuation): { iv: number | null; source: "manual" | "implied from entry premium" | "unavailable" } {
   if (l.iv != null && l.iv > 0) return { iv: l.iv, source: "manual" };
   if (l.premium == null) return { iv: null, source: "unavailable" };
   const t = (expiryEnd(l.expiry) - v.nowMs) / YEAR_MS;
-  const iv = impliedVol(l.type, l.premium, v.spotNow * Math.exp(carryOf(v) * t), l.strike, t, v.rate);
+  const iv = impliedVol(l.type, l.premium, v.spotNow * Math.exp(carryOf(v, l.expiry) * t), l.strike, t, v.rate);
   return iv == null ? { iv: null, source: "unavailable" } : { iv, source: "implied from entry premium" };
 }
 
@@ -97,7 +99,7 @@ export function legTheoreticalValue(l: Leg, s: number, atMs: number, v: Valuatio
   if (t <= 0) return intrinsic(l, s);
   const { iv } = legIv(l, v);
   if (iv == null) return null;
-  return black76(l.type, s * Math.exp(carryOf(v) * t), l.strike, t, Math.max(iv + v.ivShift, 1e-4), v.rate);
+  return black76(l.type, s * Math.exp(carryOf(v, l.expiry) * t), l.strike, t, Math.max(iv + v.ivShift, 1e-4), v.rate);
 }
 
 /** Estimated strategy P&L at spot s on a date before expiry (before costs). Null if any leg cannot be valued. */
@@ -150,7 +152,7 @@ export function contractGreeks(type: OptionType, price: number | null, spot: num
 export function legGreeks(l: Leg, lotSize: number, v: Valuation): { delta: number; gamma: number; thetaDay: number; vegaPt: number } | null {
   const { iv } = legIv(l, v);
   if (iv == null) return null;
-  const g = contractGreeks(l.type, null, v.spotNow, l.strike, l.expiry, v.nowMs, v.rate, carryOf(v), Math.max(iv + v.ivShift, 1e-4));
+  const g = contractGreeks(l.type, null, v.spotNow, l.strike, l.expiry, v.nowMs, v.rate, carryOf(v, l.expiry), Math.max(iv + v.ivShift, 1e-4));
   if (!g) return null;
   const q = sign(l.action) * l.lots * lotSize;
   return { delta: q * g.delta, gamma: q * g.gamma, thetaDay: q * g.thetaDay, vegaPt: q * g.vegaPt };
@@ -184,6 +186,11 @@ export function contractDelta(type: OptionType, price: number | null, spot: numb
  * volatility (zero drift beyond the interest rate). A model estimate; it is not a forecast.
  */
 export function probabilityOfProfit(legs: Leg[], lotSize: number, spot: number, sigma: number, expiry: string, nowMs: number, carry: number): number | null {
+  return probabilityOfProfitFn((s) => expiryPnl(legs, s, lotSize), spot, sigma, expiry, nowMs, carry);
+}
+
+/** The same estimate for any payoff function of the NIFTY level on ``expiry`` (a multi-expiry strategy valued on that date). Null if any level cannot be valued. */
+export function probabilityOfProfitFn(pnlAt: (s: number) => number | null, spot: number, sigma: number, expiry: string, nowMs: number, carry: number): number | null {
   const t = (expiryEnd(expiry) - nowMs) / YEAR_MS;
   if (!(t > 0) || !(sigma > 0) || !(spot > 0)) return null;
   const mu = Math.log(spot * Math.exp(carry * t)) - 0.5 * sigma * sigma * t, sd = sigma * Math.sqrt(t);
@@ -192,7 +199,7 @@ export function probabilityOfProfit(legs: Leg[], lotSize: number, spot: number, 
   let p = 0;
   for (let i = 0; i < n; i++) {
     const s = lo + (i + 0.5) * dx;
-    const pnl = expiryPnl(legs, s, lotSize);
+    const pnl = pnlAt(s);
     if (pnl == null) return null;
     if (pnl > 0) {
       const z = (Math.log(s) - mu) / sd;

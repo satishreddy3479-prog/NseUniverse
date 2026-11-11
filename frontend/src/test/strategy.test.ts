@@ -122,15 +122,16 @@ describe("incomplete or unsupported input is reported, never guessed", () => {
 
 describe("templates and validation", () => {
   const strikes = Array.from({ length: 21 }, (_, i) => 23500 + i * 50); // 23500 .. 24500
-  const ctx: TemplateContext = { strikes, atm: 24000, expiry: "2026-11-03", premium: (_e, k, t) => Math.abs(k - 24000) / 10 + (t === "CE" ? 5 : 4) };
-  it("every one of the 16 templates builds editable legs on listed strikes", () => {
+  const ctx: TemplateContext = { strikes, atm: 24000, expiry: "2026-11-03", far: "2026-11-24", farStrikes: strikes, premium: (_e, k, t) => Math.abs(k - 24000) / 10 + (t === "CE" ? 5 : 4) };
+  it("every one of the 22 templates builds editable legs on listed strikes", () => {
     for (const t of TEMPLATES) {
       const r = t.build(ctx);
       if ("error" in r) throw new Error(`${t.id}: ${r.error}`);
       expect(r.length).toBeGreaterThan(0);
       for (const l of r) expect(strikes).toContain(l.strike);
     }
-    expect(TEMPLATES.map((t) => t.id)).toEqual(expect.arrayContaining(["long_call", "long_put", "short_call", "short_put", "long_straddle", "short_straddle", "long_strangle", "short_strangle", "bull_call_spread", "bear_put_spread", "bull_put_spread", "bear_call_spread", "iron_condor", "iron_butterfly", "butterfly", "ratio_spread"]));
+    expect(TEMPLATES.map((t) => t.id)).toEqual(expect.arrayContaining(["long_call", "long_put", "short_call", "short_put", "long_straddle", "short_straddle", "long_strangle", "short_strangle", "bull_call_spread", "bear_put_spread", "bull_put_spread", "bear_call_spread", "iron_condor", "iron_butterfly", "butterfly", "ratio_spread", "calendar_call", "calendar_put", "calendar_straddle", "double_calendar", "diagonal_call", "diagonal_put"]));
+    expect(TEMPLATES).toHaveLength(22);
   });
   it("iron condor strikes are two and four listed strikes either side of the ATM", () => {
     const r = TEMPLATES.find((t) => t.id === "iron_condor")!.build(ctx) as Omit<Leg, "id">[];

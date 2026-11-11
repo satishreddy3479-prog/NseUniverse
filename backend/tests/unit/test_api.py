@@ -165,3 +165,28 @@ def test_history_observations_match_an_independent_calculation_from_the_raw_payl
 def test_history_rejects_bad_parameters(client: TestClient) -> None:
     assert client.get("/api/history/observations?expiry=nope").status_code == 422
     assert client.get("/api/history/observations?expiry=2026-11-03&strikes=0").status_code == 422
+
+
+def test_on_demand_chain_is_fetched_not_stored_and_reused_briefly(tmp_path: Path) -> None:
+    """Expiries the sampler does not collect: fetched now, never stored, reused briefly."""
+    from app.main import create_app
+    from tests.conftest import make_settings
+    from tests.replay import ReplayBroker
+
+    broker = ReplayBroker()
+    app = create_app(make_settings(tmp_path / "od"), broker=broker)
+    with TestClient(app, client=LOCAL) as c:
+        r = c.get("/api/option-chain/on-demand?expiry=2026-11-23")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["stale"] is False and body["display_source"] == "snapshot"
+        assert len(body["snapshot"]["rows"]) == 81 and body["snapshot"]["expiry"] == "2026-11-23"
+        assert body["snapshot"]["lot_size"] == 65
+        assert c.get("/api/option-chain/on-demand?expiry=2026-11-23").status_code == 200
+        assert broker.chain_calls == ["2026-11-23"]  # the second read came from the 10 s reuse
+        # nothing was stored: no snapshot, no stored chain for that expiry
+        assert c.get("/api/snapshots").json() == []
+        assert c.get("/api/option-chain?expiry=2026-11-23").status_code == 404
+        # an expiry the broker does not list is refused without a broker call
+        assert c.get("/api/option-chain/on-demand?expiry=2030-01-01").status_code == 400
+    assert broker.chain_calls == ["2026-11-23"]

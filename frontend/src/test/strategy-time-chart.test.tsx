@@ -22,14 +22,14 @@ const body = { underlying: "NIFTY", expiry: "2026-11-17", strikes: [25000], atm_
 const fut = { day: "2026-11-11", contract: "NIFTY", expiry: "2026-11-24", rate_assumed: 6, times, future: times.map((_, i) => 25050 + i), spot: [], spot_source: [], basis: [], basis_pct: [], carry_pct: [], fair_basis: [], vs_fair: [], oi: [], oi_change: [], oi_per_min: [], volume: [], volume_per_min: times.map(() => 1000), oi_baseline: null, latest: null, warnings: [], definitions: {} };
 
 type L = { strike: number; type: "CE" | "PE"; action: "BUY" | "SELL"; lots: number; premium: number | null; expiry: string };
-function mount(legs: L[] = [{ strike: 25000, type: "CE", action: "SELL", lots: 1, premium: 200, expiry: "2026-11-17" }, { strike: 25000, type: "PE", action: "SELL", lots: 1, premium: 100, expiry: "2026-11-17" }], seen: string[] = []) {
+function mount(legs: L[] = [{ strike: 25000, type: "CE", action: "SELL", lots: 1, premium: 200, expiry: "2026-11-17" }, { strike: 25000, type: "PE", action: "SELL", lots: 1, premium: 100, expiry: "2026-11-17" }], seen: string[] = [], hist: string[] = ["2026-11-17", "2026-11-24"]) {
   vi.stubGlobal("fetch", vi.fn(async (u: string) => {
     seen.push(String(u));
     const json = String(u).includes("strike-series") ? body : fut;
     return new Response(JSON.stringify(json), { status: 200, headers: { "content-type": "application/json" } });
   }));
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={qc}><StrategyTimeChart legs={legs} expiry="2026-11-17" lotSize={65} modelDelta={-3} rules={{ ...NO_RULES, sl: 5000 }} /></QueryClientProvider>);
+  return render(<QueryClientProvider client={qc}><StrategyTimeChart legs={legs} historyExpiries={hist} lotSize={65} modelDelta={-3} rules={{ ...NO_RULES, sl: 5000 }} /></QueryClientProvider>);
 }
 
 describe("StrategyTimeChart", () => {
@@ -50,8 +50,26 @@ describe("StrategyTimeChart", () => {
     await userEvent.click(screen.getByRole("button", { name: "P&L ₹" }));
     expect(await screen.findByRole("img", { name: /Strategy P&L against NIFTY spot and future/ })).toBeInTheDocument();
   });
-  it("says so with no legs of the selected expiry", () => {
-    mount([{ strike: 25000, type: "CE", action: "BUY", lots: 1, premium: 1, expiry: "2026-11-24" }]);
+  it("says so with no legs", () => {
+    mount([]);
     expect(screen.getByTestId("stl-empty")).toBeInTheDocument();
+  });
+  it("legs on an expiry the sampler does not collect have no stored history: it says so and asks for nothing", () => {
+    const seen: string[] = [];
+    mount([{ strike: 25000, type: "CE", action: "BUY", lots: 1, premium: 1, expiry: "2026-12-29" }], seen);
+    expect(screen.getByTestId("stl-nohistory")).toHaveTextContent("2026-12-29");
+    expect(seen.filter((u) => u.includes("strike-series"))).toEqual([]);
+  });
+  it("a calendar of two collected expiries is charted from both expiries' samples", async () => {
+    const seen: string[] = [];
+    mount([
+      { strike: 25000, type: "CE", action: "SELL", lots: 1, premium: 200, expiry: "2026-11-17" },
+      { strike: 25000, type: "CE", action: "BUY", lots: 1, premium: 300, expiry: "2026-11-24" },
+    ], seen);
+    await screen.findByRole("img", { name: /Strategy price against NIFTY spot and future/ });
+    const calls = seen.filter((u) => u.includes("strike-series"));
+    expect(calls.some((u) => u.includes("expiry=2026-11-17"))).toBe(true);
+    expect(calls.some((u) => u.includes("expiry=2026-11-24"))).toBe(true);
+    expect(screen.getByTestId("stl-note")).toHaveTextContent("2 expiries");
   });
 });

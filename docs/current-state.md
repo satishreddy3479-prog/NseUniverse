@@ -8,6 +8,9 @@ _Last updated: 2026-11-04_
 ## NIFTY 50 Market Intelligence (10 Nov 2026)
 New first menu item and Home strip: fused sentiment (-100..+100) over five evidence groups (derivatives positioning, order-flow proxies, volatility, market structure, participation), with score, confidence, data coverage (available / partial / unavailable), evidence agreement and data freshness as separate quantities, regime, evidence per group, divergences, heuristic scenarios, timeline of recorded minutes, alerts, rolling 5/15/30-minute CVD (proxy), a visible Data quality and freshness section (AVAILABLE / PARTIAL / UNAVAILABLE per capability with source timestamps), and drill-down links to every existing page (D102, D103, [audit, overlap correction and methodology](market-intelligence-audit.md)). The command-centre score is no longer an input (double counting removed); weights are provisional and labelled so; walk-forward validation exists (`/api/intelligence/validation`) but has no real stored history to run on yet. Tested with fixtures and fake providers; not seen with live data in market hours or on a phone.
 
+## Strategy builder: all expiries and multi-expiry strategies (11 Nov 2026)
+Every listed expiry is selectable (dropdown beyond the first four); non-collected ones are fetched on demand and not stored. Calendar/diagonal templates, a "Payoff at" selector for strategies on several expiries (exact for expired legs, Black-76 for later ones, flagged as an estimate), per-expiry forward and volatility (D128). Verified by hand-calculated tests; to be checked on the server after deploy.
+
 ## Strategy builder: Price chart tab (11 Nov 2026)
 The built strategy as a price/P&L through the day against spot, future, Future VWAP, averages, bands and a spot-driven/other split (D126). Checked on the server's real strike prices with a sample short straddle; no backend change. Strategy VWAP now built from the stored per-contract volume (D127).
 

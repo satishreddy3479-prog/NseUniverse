@@ -117,14 +117,14 @@ export function rollLeg(l: Leg, newStrike: number, oldPrice: number, newPrice: n
 }
 
 /** The strategy's P&L from its legs and live prices: what is booked plus the open legs against the market. Null total when an open leg has no price or entry. */
-export function strategyPnl(legs: Leg[], priceOf: (strike: number, type: OptionType) => number | null, lotSize: number): { booked: number; open: number | null; total: number | null; openLegs: number } {
+export function strategyPnl(legs: Leg[], priceOf: (strike: number, type: OptionType, expiry: string) => number | null, lotSize: number): { booked: number; open: number | null; total: number | null; openLegs: number } {
   let booked = 0, open: number | null = 0, openLegs = 0;
   for (const l of legs) {
     if (l.enabled === false) continue;
     booked += l.realised ?? 0;
     if (isExited(l)) continue;
     openLegs += 1;
-    const px = priceOf(l.strike, l.type);
+    const px = priceOf(l.strike, l.type, l.expiry);
     if (px == null || l.premium == null) { open = null; continue; }
     if (open != null) open += sign(l.action) * (px - l.premium) * l.lots * lotSize;
   }
@@ -191,7 +191,7 @@ export function lockFloor(r: StrategyRules, pnl: number): number | null {
  * leg is closed at its live price (reason "strategy", so no leg re-enters) and `done` records which rule it was.
  * Legs are given at their own lots; `lotsFactor` is the multiplier. Nothing happens while any open leg has no live price.
  */
-export function applyStrategyRules(legs: Leg[], rules: StrategyRules, state: RulesState, priceOf: (strike: number, type: OptionType) => number | null, lotSize: number, at: string, lotsFactor = 1): { legs: Leg[]; state: RulesState; events: string[] } {
+export function applyStrategyRules(legs: Leg[], rules: StrategyRules, state: RulesState, priceOf: (strike: number, type: OptionType, expiry: string) => number | null, lotSize: number, at: string, lotsFactor = 1): { legs: Leg[]; state: RulesState; events: string[] } {
   if (state.done || !hasRules(rules)) return { legs, state, events: [] };
   const live = legs.filter((l) => l.enabled !== false);
   if (live.length === 0) return { legs, state, events: [] };
@@ -210,7 +210,7 @@ export function applyStrategyRules(legs: Leg[], rules: StrategyRules, state: Rul
   const out = legs.map((l) => {
     if (l.enabled === false) return l;
     if (isExited(l)) return { ...l, reentry: 0 }; // a leg waiting to re-enter stays out
-    const px = priceOf(l.strike, l.type);
+    const px = priceOf(l.strike, l.type, l.expiry);
     if (px == null || !(px > 0) || l.premium == null) return l;
     const n = { ...exitLeg(l, px, "strategy", lotSize, at, lotsFactor, label), reentry: 0 };
     events.push(n.log![n.log!.length - 1]!.text);
@@ -226,11 +226,11 @@ export function applyStrategyRules(legs: Leg[], rules: StrategyRules, state: Rul
  *    its own entry premium: a sold option when the premium falls back to it or below, a bought option when it rises back.
  * Returns the new legs and the log lines of what happened. Legs without a live price are left alone.
  */
-export function applyAutomation(legs: Leg[], priceOf: (strike: number, type: OptionType) => number | null, lotSize: number, at: string, lotsFactor = 1): { legs: Leg[]; events: string[] } {
+export function applyAutomation(legs: Leg[], priceOf: (strike: number, type: OptionType, expiry: string) => number | null, lotSize: number, at: string, lotsFactor = 1): { legs: Leg[]; events: string[] } {
   const events: string[] = [];
   const out = legs.map((l) => {
     if (l.enabled === false) return l;
-    const px = priceOf(l.strike, l.type);
+    const px = priceOf(l.strike, l.type, l.expiry);
     if (px == null || !(px > 0)) return l;
     if (!isExited(l)) {
       if (l.premium == null) return l;
@@ -290,6 +290,8 @@ export interface ExpiryAnalysis {
   profitUnlimited: boolean;
   lossUnlimited: boolean;
   kinks: number[];
+  /** true when the numbers include model values (a multi-expiry curve with a leg still alive at the chosen date) */
+  estimate?: boolean;
 }
 
 /**
@@ -376,10 +378,14 @@ export interface TemplateContext {
   strikes: number[]; // listed strikes of the main expiry, any order
   atm: number; // the listed strike nearest the spot
   expiry: string;
+  /** a later expiry for calendar and diagonal templates; absent when none is available */
+  far?: string;
+  /** listed strikes of the later expiry (a calendar leg must sit on one of them) */
+  farStrikes?: number[];
   premium: (expiry: string, strike: number, type: OptionType) => number | null;
 }
 type Draft = Omit<Leg, "id">;
-export interface Template { id: string; label: string; group: "Directional" | "Neutral" | "Spreads"; view: string; build: (c: TemplateContext) => Draft[] | { error: string } }
+export interface Template { id: string; label: string; group: "Directional" | "Neutral" | "Spreads" | "Calendar"; view: string; build: (c: TemplateContext) => Draft[] | { error: string } }
 
 function strikeAt(c: TemplateContext, steps: number): number | null {
   const ks = [...c.strikes].sort((a, b) => a - b);
@@ -388,13 +394,16 @@ function strikeAt(c: TemplateContext, steps: number): number | null {
   return i < 0 || j < 0 || j >= ks.length ? null : ks[j]!;
 }
 
-function mk(c: TemplateContext, rows: [Action, OptionType, number, number?][]): Draft[] | { error: string } {
+/** Rows are [action, type, steps from ATM, lots, which]; ``which`` is "far" for the later expiry (calendar and diagonal templates). */
+function mk(c: TemplateContext, rows: [Action, OptionType, number, number?, ("near" | "far")?][]): Draft[] | { error: string } {
   const out: Draft[] = [];
-  for (const [action, type, steps, lots = 1] of rows) {
+  for (const [action, type, steps, lots = 1, which = "near"] of rows) {
     const strike = strikeAt(c, steps);
     if (strike == null) return { error: `The chain has no listed strike ${Math.abs(steps)} steps ${steps < 0 ? "below" : "above"} the ATM strike.` };
-    const expiry = c.expiry;
+    if (which === "far" && !c.far) return { error: "This strategy needs a later expiry, and none is listed after the one shown." };
+    const expiry = which === "far" ? (c.far as string) : c.expiry;
     const premium = c.premium(expiry, strike, type);
+    if (which === "far" && !(c.farStrikes ?? []).includes(strike)) return { error: `The later expiry has no listed strike ${strike}.` };
     out.push({ expiry, strike, type, action, lots, premium, premiumSource: premium == null ? null : "market" });
   }
   return out;
@@ -416,6 +425,12 @@ export const TEMPLATES: Template[] = [
   { id: "iron_condor", label: "Iron condor", group: "Neutral", view: "Range-bound, limited risk", build: (c) => mk(c, [["SELL", "PE", -2], ["BUY", "PE", -4], ["SELL", "CE", 2], ["BUY", "CE", 4]]) },
   { id: "iron_butterfly", label: "Iron butterfly", group: "Neutral", view: "Pinned near ATM, limited risk", build: (c) => mk(c, [["SELL", "CE", 0], ["SELL", "PE", 0], ["BUY", "CE", 2], ["BUY", "PE", -2]]) },
   { id: "butterfly", label: "Butterfly spread (calls)", group: "Neutral", view: "Pinned near ATM, limited risk", build: (c) => mk(c, [["BUY", "CE", -2], ["SELL", "CE", 0, 2], ["BUY", "CE", 2]]) },
+  { id: "calendar_call", label: "Calendar spread (calls)", group: "Calendar", view: "Pinned near the strike at the near expiry; sell near, buy far", build: (c) => mk(c, [["SELL", "CE", 0], ["BUY", "CE", 0, 1, "far"]]) },
+  { id: "calendar_put", label: "Calendar spread (puts)", group: "Calendar", view: "Pinned near the strike at the near expiry; sell near, buy far", build: (c) => mk(c, [["SELL", "PE", 0], ["BUY", "PE", 0, 1, "far"]]) },
+  { id: "calendar_straddle", label: "Calendar straddle", group: "Calendar", view: "Range-bound near, long volatility far; sell near, buy far", build: (c) => mk(c, [["SELL", "CE", 0], ["SELL", "PE", 0], ["BUY", "CE", 0, 1, "far"], ["BUY", "PE", 0, 1, "far"]]) },
+  { id: "double_calendar", label: "Double calendar", group: "Calendar", view: "Wider range than one calendar; sell near, buy far", build: (c) => mk(c, [["SELL", "CE", 2], ["BUY", "CE", 2, 1, "far"], ["SELL", "PE", -2], ["BUY", "PE", -2, 1, "far"]]) },
+  { id: "diagonal_call", label: "Diagonal spread (calls)", group: "Calendar", view: "Mildly bullish; buy far ATM, sell near out of the money", build: (c) => mk(c, [["BUY", "CE", 0, 1, "far"], ["SELL", "CE", 2]]) },
+  { id: "diagonal_put", label: "Diagonal spread (puts)", group: "Calendar", view: "Mildly bearish; buy far ATM, sell near out of the money", build: (c) => mk(c, [["BUY", "PE", 0, 1, "far"], ["SELL", "PE", -2]]) },
   { id: "ratio_spread", label: "Call ratio spread (1:2)", group: "Spreads", view: "Mild rise, risk above", build: (c) => mk(c, [["BUY", "CE", 0], ["SELL", "CE", 2, 2]]) },
 ];
 
@@ -423,13 +438,14 @@ let counter = 0;
 export const newLegId = () => `leg-${Date.now().toString(36)}-${(counter++).toString(36)}`;
 export const withIds = (drafts: Draft[]): Leg[] => drafts.map((d) => ({ ...d, id: newLegId() }));
 
-export type Bias = "Bullish" | "Bearish" | "Neutral" | "Other";
+export type Bias = "Bullish" | "Bearish" | "Neutral" | "Calendar" | "Other";
 /** Which tab of the ready-made gallery each template sits under. */
 export const TEMPLATE_BIAS: Record<string, Bias> = {
   long_call: "Bullish", short_put: "Bullish", bull_call_spread: "Bullish", bull_put_spread: "Bullish",
   long_put: "Bearish", short_call: "Bearish", bear_put_spread: "Bearish", bear_call_spread: "Bearish",
   short_straddle: "Neutral", short_strangle: "Neutral", iron_condor: "Neutral", iron_butterfly: "Neutral", butterfly: "Neutral",
   long_straddle: "Other", long_strangle: "Other", ratio_spread: "Other",
+  calendar_call: "Calendar", calendar_put: "Calendar", calendar_straddle: "Calendar", double_calendar: "Calendar", diagonal_call: "Calendar", diagonal_put: "Calendar",
 };
 
 
@@ -488,7 +504,7 @@ export function holdMoment(h: HoldRule, heldFromMs: number, expiry: string | nul
   return m;
 }
 
-export function applyHold(legs: Leg[], h: HoldRule, heldFrom: string | null, priceOf: (strike: number, type: OptionType) => number | null, lotSize: number, at: string, lotsFactor = 1): { legs: Leg[]; events: string[] } {
+export function applyHold(legs: Leg[], h: HoldRule, heldFrom: string | null, priceOf: (strike: number, type: OptionType, expiry: string) => number | null, lotSize: number, at: string, lotsFactor = 1): { legs: Leg[]; events: string[] } {
   const from = heldFrom ? Date.parse(heldFrom) : NaN;
   if (!Number.isFinite(from)) return { legs, events: [] };
   const label = `Auto close (${h.mode === "intraday" ? "intraday" : "expiry day"} ${h.closeAt})`;
@@ -497,7 +513,7 @@ export function applyHold(legs: Leg[], h: HoldRule, heldFrom: string | null, pri
     const m = holdMoment(h, from, l.expiry);
     if (l.enabled === false || m == null || Date.parse(at) < m) return l;
     if (isExited(l)) return (l.reentry ?? 0) ? { ...l, reentry: 0 } : l; // a stopped leg waiting to re-enter is not entered after the close
-    const px = priceOf(l.strike, l.type);
+    const px = priceOf(l.strike, l.type, l.expiry);
     if (px == null || !(px > 0) || l.premium == null) return l;
     const n = { ...exitLeg(l, px, "strategy", lotSize, at, lotsFactor, label), reentry: 0 };
     events.push(n.log![n.log!.length - 1]!.text);

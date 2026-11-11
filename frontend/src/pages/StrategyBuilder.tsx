@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StrategyTimeChart } from "../components/StrategyTimeChart";
 import { liveKey, mergeRows, type LiveMode } from "../components/ChainTable";
 import { useThrottledVersion } from "../components/dashboard/DashContext";
@@ -13,7 +13,9 @@ import { compactIN } from "../lib/analytics";
 import { fmtDateTimeIST, fmtInt, fmtPrice } from "../lib/format";
 import { useExpiries, useThrottledValue } from "../lib/hooks";
 import { marketClockMs } from "../lib/session";
-import { carryFromForward, contractGreeks, expiryEnd, impliedForward, legGreeks, sdLevel, netGreeks, probabilityOfProfit, scenarioGrid, sdBands, spotAtPremium, theoreticalPnl, type ContractGreeks, type Valuation } from "../lib/optionModel";
+import { buildBook, marketIvOf, type Book } from "../lib/strategyBook";
+import { analyzeCurve, curveOf, isEstimateAt, legExpiries, pnlAtExpiry } from "../lib/multiExpiry";
+import { expiryEnd, legGreeks, sdLevel, netGreeks, probabilityOfProfit, probabilityOfProfitFn, scenarioGrid, sdBands, spotAtPremium, theoreticalPnl, type ContractGreeks, type Valuation } from "../lib/optionModel";
 import { adoptExits,
   analyzeExpiry, applyAutomation, applyHold, DEFAULT_HOLD, holdProblem, type HoldRule, applyStrategyRules, exitLeg, expiryPnl, hitOf, isExited, newLegId, reenterLeg, rollLeg, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds, NO_RULES, hasRules, lockFloor, rulesProblem, type StrategyRules, type RulesState,
   type Action, type Bias, type Leg, type OptionType, type Template,
@@ -56,7 +58,8 @@ const GCOLS: { key: GKey; short: string; hint: string }[] = [
 ];
 const fmtG = (k: GKey, c: ContractGreeks) => (k === "delta" ? c.delta.toFixed(2) : k === "gamma" ? c.gamma.toFixed(4) : k === "theta" ? c.thetaDay.toFixed(1) : k === "vega" ? c.vegaPt.toFixed(2) : `${(c.iv * 100).toFixed(1)}`);
 const dayDiff = (iso: string, fromMs: number) => Math.round((Date.parse(`${iso}T00:00:00Z`) - Date.parse(`${new Date(fromMs + 330 * 60_000).toISOString().slice(0, 10)}T00:00:00Z`)) / 86_400_000);
-const dmy = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" });
+const dmy = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", ...(iso.slice(0, 4) === new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 4) ? {} : { year: "2-digit" }), timeZone: "UTC" });
+const EMPTY_CG: Book["cg"] = new Map();
 
 function Thumb({ legs, lotSize, spot }: { legs: Leg[]; lotSize: number; spot: number }) {
   const lo = spot * 0.94, hi = spot * 1.06, n = 80;
@@ -104,8 +107,12 @@ function Stat({ label, value, sub, cls = "text-paper", hint, big = false }: { la
 export default function StrategyBuilder() {
   const colors = useChartColors();
   const ex = useExpiries();
-  // only the two expiries this app collects (weekly and monthly), not every date the exchange lists
-  const available = useMemo(() => [...new Set([ex.data?.weekly, ex.data?.monthly].filter((e): e is string => !!e))], [ex.data]);
+  // Every expiry the exchange lists from today on. The weekly and the monthly are collected by the sampler (stored chains, streamed prices,
+  // history); the others are fetched live when chosen and never stored.
+  const collected = useMemo(() => new Set([ex.data?.weekly, ex.data?.monthly].filter((e): e is string => !!e)), [ex.data]);
+  const available = useMemo(() => [...new Set([...(ex.data?.available ?? []), ...collected])].filter((e) => e >= todayIST()).sort(), [ex.data, collected]);
+  const qc = useQueryClient();
+  const fetchChain = (e: string) => (collected.has(e) ? api.optionChain(e) : api.optionChainOnDemand(e));
   // The strategy being worked on is kept in this browser, so a refresh does not bring back an older saved copy and
   // repeat exits that already happened. Copies older than three days are ignored.
   const [work] = useState(() => {
@@ -117,6 +124,8 @@ export default function StrategyBuilder() {
   const [picked, setPicked] = useState<string | null>(work?.expiry ?? null);
   const expiry = picked ?? available[0] ?? null;
   const [legs, setLegs] = useState<Leg[]>(work?.legs ?? []);
+  /** the expiry a strategy is filed under (saved, closed, sent to the server): the LAST expiry of its legs, so it lives until its last leg expires; the shown expiry when it has no legs */
+  const strategyExpiry = legs.length ? legExpiries(legs).at(-1)! : expiry;
   const [note, setNote] = useState<string | null>(null);
   const [width, setWidth] = useState<(typeof WIDTHS)[number]>(10);
   const [sel, setSel] = useState<number | null>(null);
@@ -202,7 +211,7 @@ export default function StrategyBuilder() {
   const [opened, setOpened] = useState<Closed | null>(null);
   const [confirmAll, setConfirmAll] = useState<"saved" | "closed" | null>(null);
 
-  const chain = useQuery({ queryKey: ["chain", expiry], queryFn: () => api.optionChain(expiry!), enabled: !!expiry, retry: false, staleTime: 5_000, refetchInterval: 15_000 });
+  const chain = useQuery({ queryKey: ["chain", expiry], queryFn: () => fetchChain(expiry!), enabled: !!expiry, retry: false, staleTime: 5_000, refetchInterval: 15_000 });
   const snap = chain.data?.snapshot;
   const lotSize = snap?.lot_size ?? null;
   // Same live feed as the Option chain page: streamed prices overlay the stored snapshot while the stream is fresh.
@@ -219,40 +228,32 @@ export default function StrategyBuilder() {
   const rows = useMemo(() => (snap ? mergeRows(snap.rows, liveMode) : []), [snap, liveMode, liveVersion]);
   const strikes = useMemo(() => rows.map((r) => r.strike), [rows]);
   const atm = useMemo(() => (spot == null || strikes.length === 0 ? null : strikes.reduce((b, k) => (Math.abs(k - spot) < Math.abs(b - spot) ? k : b), strikes[0]!)), [strikes, spot]);
-  const ltp = (k: number, t: OptionType): number | null => {
-    const row = rows.find((r) => r.strike === k);
+  const r = rate / 100;
+  // the chains of the other expiries the legs sit on (calendar, diagonal, weekly + monthly): the same loader, one query per expiry
+  const otherExpiries = useMemo(() => legExpiries(legs).filter((e) => e !== expiry), [legs, expiry]);
+  const otherChains = useQueries({ queries: otherExpiries.map((e) => ({ queryKey: ["chain", e], queryFn: () => fetchChain(e), retry: false, staleTime: 5_000, refetchInterval: 15_000 })) });
+  const otherKey = otherChains.map((q) => q.data?.snapshot.snapshot_id ?? "").join("|");
+  // One book per expiry: its rows (streamed prices overlay a collected expiry), implied forward and carry, Greeks and ATM volatility.
+  const books = useMemo(() => {
+    const m = new Map<string, Book & { rows: ReturnType<typeof mergeRows> }>();
+    const add = (e: string, rs: ReturnType<typeof mergeRows>) => m.set(e, { ...buildBook(rs, e, spot, snapMs, r), rows: rs });
+    if (expiry) add(expiry, rows);
+    otherExpiries.forEach((e, i) => { const sn = otherChains[i]?.data?.snapshot; if (sn) add(e, mergeRows(sn.rows, collected.has(e) ? liveMode : "off")); });
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expiry, rows, otherExpiries, otherKey, collected, spot, snapMs, r, liveMode, liveVersion]);
+  /** Last traded price of a contract in its own expiry's chain (the shown expiry unless one is given). */
+  const ltp = (k: number, t: OptionType, e: string | null = expiry): number | null => {
+    const row = (e ? books.get(e)?.rows : undefined)?.find((x) => x.strike === k);
     const q = t === "CE" ? row?.call : row?.put;
     return q?.ltp != null && q.ltp > 0 ? q.ltp : null;
   };
-  const r = rate / 100;
-  // forward from put-call parity in the stored chain; the carry that reproduces it replaces the assumed rate in the model
-  const fwd = useMemo(() => (expiry && spot != null ? impliedForward(rows.map((x) => ({ strike: x.strike, call: x.call?.ltp ?? null, put: x.put?.ltp ?? null })), spot, expiry, snapMs, r) : null), [rows, expiry, spot, snapMs, r]);
-  const fwdCarry = fwd && expiry && spot != null ? carryFromForward(spot, fwd.forward, expiry, snapMs) : null;
-  const carry = fwdCarry ?? r;
-  // Black-76 Greeks of every listed contract from its own stored price: one calculation feeds the chain, the legs and the strategy
-  const cg = useMemo(() => {
-    const m = new Map<number, { ce: ContractGreeks | null; pe: ContractGreeks | null }>();
-    if (!expiry || spot == null) return m;
-    for (const row of rows) {
-      const px = (q: typeof row.call) => (q?.ltp != null && q.ltp > 0 ? q.ltp : null);
-      m.set(row.strike, { ce: contractGreeks("CE", px(row.call), spot, row.strike, expiry, snapMs, r, carry), pe: contractGreeks("PE", px(row.put), spot, row.strike, expiry, snapMs, r, carry) });
-    }
-    return m;
-  }, [rows, expiry, spot, snapMs, r, carry]);
-  const deltas = useMemo(() => {
-    const m = new Map<number, { ce: number | null; pe: number | null; ceIv: number | null; peIv: number | null }>();
-    for (const [k, v] of cg) m.set(k, { ce: v.ce?.delta ?? null, pe: v.pe?.delta ?? null, ceIv: v.ce?.iv ?? null, peIv: v.pe?.iv ?? null });
-    return m;
-  }, [cg]);
-  const atmK = useMemo(() => {
-    const ref = fwd?.forward ?? spot;
-    return ref == null || strikes.length === 0 ? null : strikes.reduce((b, k) => (Math.abs(k - ref) < Math.abs(b - ref) ? k : b), strikes[0]!);
-  }, [strikes, fwd, spot]);
-  const atmIv = useMemo(() => {
-    const d = atmK == null ? undefined : deltas.get(atmK);
-    const v = [d?.ceIv, d?.peIv].filter((x): x is number => x != null);
-    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
-  }, [deltas, atmK]);
+  const main = expiry ? books.get(expiry) : undefined;
+  const fwd = main?.fwd ?? null;
+  const carry = main?.carry ?? r;
+  const cg = main?.cg ?? EMPTY_CG;
+  const atmK = main?.atmK ?? null;
+  const atmIv = main?.atmIv ?? null;
   const straddle = atmK != null && ltp(atmK, "CE") != null && ltp(atmK, "PE") != null ? (ltp(atmK, "CE") as number) + (ltp(atmK, "PE") as number) : null;
   const shown = useMemo(() => {
     if (width === "all" || atm == null) return rows;
@@ -264,29 +265,47 @@ export default function StrategyBuilder() {
   // legs with the multiplier applied and the unticked ones left out
   const live = useMemo(() => legs.filter((l) => l.enabled !== false).map((l) => ({ ...l, lots: l.lots * mult })), [legs, mult]);
   const issues = useMemo(
-    () => validateStrategy(legs, { expiries: available, strikesByExpiry: expiry ? { [expiry]: strikes } : {}, today: todayIST() }),
-    [legs, available, expiry, strikes],
+    () => validateStrategy(legs, { expiries: available, strikesByExpiry: Object.fromEntries([...books].map(([e, b]) => [e, b.strikes])), today: todayIST() }),
+    [legs, available, books],
   );
   /** legs still in the market (a leg closed by its stop or target keeps only its booked P&L) */
   const open = useMemo(() => live.filter((l) => !isExited(l)), [live]);
   const errors = issues.filter((i) => i.level === "error");
   const ready = lotSize != null && live.length > 0 && errors.length === 0;
-  const a = useMemo(() => (lotSize && live.length ? analyzeExpiry(live, lotSize) : null), [live, lotSize]);
-  const dte = expiry ? Math.max(0, dayDiff(expiry, snapMs)) : 0;
+  // The expiries of the legs still in the market. With more than one (calendar, diagonal, weekly + monthly) there is no single expiry payoff:
+  // the payoff is read at the close of a chosen leg expiry (the earliest by default, where it is exact for the legs expiring then).
+  const legExps = useMemo(() => legExpiries(open.length ? open : live), [open, live]);
+  const multi = legExps.length > 1;
+  const [payPick, setPayPick] = useState<string | null>(null);
+  const payExp = payPick && legExps.includes(payPick) ? payPick : legExps[0] ?? expiry;
+  const dte = payExp ? Math.max(0, dayDiff(payExp, snapMs)) : 0;
   const targetMs = snapMs + Math.min(days, dte) * 86_400_000;
-  const val0: Valuation = { spotNow: spot ?? 0, nowMs: snapMs, rate: r, carry, ivShift: 0 };
+  const carryBy = useMemo(() => Object.fromEntries([...books].map(([e, b]) => [e, b.carry])), [books]);
+  const val0: Valuation = { spotNow: spot ?? 0, nowMs: snapMs, rate: r, carry, carryByExpiry: carryBy, ivShift: 0 };
   const val: Valuation = { ...val0, ivShift: ivPts / 100 };
-  // every model leg uses the volatility the stored market price of its own strike implies, not one backed out of the entry premium you typed
-  const marketIv = (l: Leg) => { const d = deltas.get(l.strike); return (l.type === "CE" ? d?.ceIv : d?.peIv) ?? null; };
+  // every model leg uses the volatility the stored market price of its own strike and expiry implies, not one backed out of the entry premium you typed
+  const marketIv = (l: Leg) => marketIvOf(books.get(l.expiry), l.strike, l.type);
   const mlegs = useMemo(() => open.map((l) => ({ ...l, iv: l.iv ?? marketIv(l) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [open, deltas]);
+    [open, books]);
   // the legs the estimate sums: the open ones valued by the model plus the closed ones at their booked P&L, exactly as the expiry curve counts them
   // (leaving the closed ones out put the blue curve above the green one by whatever a stopped leg had lost)
   const mAll = useMemo(() => live.map((l) => (isExited(l) ? l : { ...l, iv: l.iv ?? marketIv(l) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [live, deltas]);
-  const bands = expiry && spot && atmIv ? sdBands(spot, atmIv, expiry, snapMs) : null;
+    [live, books]);
+  const payBook = payExp ? books.get(payExp) : undefined;
+  const payIv = payBook?.atmIv ?? null;
+  const payCarry = payBook?.carry ?? carry;
+  const bands = payExp && spot && payIv ? sdBands(spot, payIv, payExp, snapMs) : null;
+  /** the strategy P&L at NIFTY level s on the close of the chosen expiry (the legs still alive then are valued by the model) */
+  const pnlFn = useMemo(() => (payExp && lotSize ? (x: number) => pnlAtExpiry(mAll, x, payExp, lotSize, val0) : () => null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mAll, payExp, lotSize, snapMs, spot, r, carry, carryBy]);
+  const a = useMemo(() => {
+    if (!lotSize || !live.length) return null;
+    if (!multi) return analyzeExpiry(live, lotSize);
+    return spot && payExp ? analyzeCurve(mAll, lotSize, spot, pnlFn, isEstimateAt(open, payExp)) : null;
+  }, [live, lotSize, multi, spot, payExp, mAll, pnlFn, open]);
   const curve = useMemo(() => {
     if (!ready || !a?.defined || !lotSize || !spot) return null;
     const ks = open.map((l) => l.strike);
@@ -295,8 +314,8 @@ export default function StrategyBuilder() {
     const m = spot * 0.012;
     const lo = Math.min(...near) - m, hi = Math.max(...near) + m;
     const step = Math.max(1, Math.round((hi - lo) / 240));
-    return payoffCurve(live, lotSize, Math.floor(lo / step) * step, hi, step);
-  }, [ready, a, lotSize, spot, live, bands]);
+    return multi ? curveOf(pnlFn, Math.floor(lo / step) * step, hi, step) : payoffCurve(live, lotSize, Math.floor(lo / step) * step, hi, step);
+  }, [ready, a, lotSize, spot, live, bands, multi, pnlFn]);
   const target = useMemo(() => (curve && lotSize ? curve.map((p) => ({ s: p.s, pnl: theoreticalPnl(mAll, p.s, targetMs, lotSize, val) })) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [curve, mAll, lotSize, targetMs, r, carry, ivPts]);
@@ -325,7 +344,7 @@ export default function StrategyBuilder() {
   // Live ticks change the spot, premiums and OI many times a second; redraw the payoff at a calm pace. A change of
   // zoom, window, strategy or the controls shows at once.
   const chart = useThrottledValue(chartNow, 2500, `${zoom}|${narrow}|${live.length}|${live.map((l) => `${l.action}${l.type}${l.strike}${l.lots}${l.premium}${l.exitPrice ?? ''}${l.stop ?? ''}${l.target ?? ''}`).join(",")}|${lines}|${oiMode}|${days}|${ivPts}|${whatPct}`);
-  const pop = ready && a?.defined && lotSize && spot && atmIv && expiry ? probabilityOfProfit(live, lotSize, spot, atmIv, expiry, snapMs, carry) : null;
+  const pop = ready && a?.defined && lotSize && spot && payIv && payExp ? (multi ? probabilityOfProfitFn(pnlFn, spot, payIv, payExp, snapMs, payCarry) : probabilityOfProfit(live, lotSize, spot, payIv, payExp, snapMs, payCarry)) : null;
   const greeks = ready && lotSize && spot ? netGreeks(mlegs, lotSize, val0) : null;
   /** P&L of one leg: what is booked, plus the open part against the market price */
   const unreal = (l: Leg, mkt: number | null) => {
@@ -334,8 +353,8 @@ export default function StrategyBuilder() {
     return mkt == null || l.premium == null ? null : sign(l.action) * (mkt - l.premium) * l.lots * mult * lotSize + (l.realised ?? 0);
   };
   const realisedTotal = live.reduce((t, l) => t + (l.realised ?? 0), 0);
-  const totalPnl = lotSize && live.length && live.every((l) => isExited(l) || (l.premium != null && ltp(l.strike, l.type) != null))
-    ? live.reduce((s, l) => s + (unreal({ ...l, lots: l.lots / mult }, ltp(l.strike, l.type)) ?? 0), 0) : null;
+  const totalPnl = lotSize && live.length && live.every((l) => isExited(l) || (l.premium != null && ltp(l.strike, l.type, l.expiry) != null))
+    ? live.reduce((s, l) => s + (unreal({ ...l, lots: l.lots / mult }, ltp(l.strike, l.type, l.expiry)) ?? 0), 0) : null;
   const [autoNote, setAutoNote] = useState<string | null>(null);
   const [exitDraft, setExitDraft] = useState<Record<string, string>>({});
   const [rollTo, setRollTo] = useState<Record<string, string>>({});
@@ -346,7 +365,7 @@ export default function StrategyBuilder() {
   const commitTrades = (next: Leg[]) => {
     setLegs(next);
     if (loaded && saved.some((x) => x.name === loaded)) {
-      persist(saved.map((x) => (x.name === loaded ? { ...x, updatedAt: new Date().toISOString(), expiry: expiry ?? x.expiry, legs: next } : x)));
+      persist(saved.map((x) => (x.name === loaded ? { ...x, updatedAt: new Date().toISOString(), expiry: strategyExpiry ?? x.expiry, legs: next } : x)));
       setBaseline(next);
     }
   };
@@ -391,13 +410,13 @@ export default function StrategyBuilder() {
   const skipPush = useRef(false);
   const seenEvents = useRef<string | null>(null);
   const keyOf = (l: Leg): string | null => {
-    const row = rows.find((r) => r.strike === l.strike);
+    const row = (collected.has(l.expiry) ? books.get(l.expiry)?.rows : undefined)?.find((x) => x.strike === l.strike);
     return liveKey(l.type === "CE" ? row?.call ?? null : row?.put ?? null) ?? l.key ?? null;
   };
-  const payloadJson = JSON.stringify({ name, loaded, expiry, lotSize, mult, auto: autoOn, rules, rearmAt, hold, holdFrom, baseline, legs: legs.map((l) => ({ ...l, key: keyOf(l) })) });
+  const payloadJson = JSON.stringify({ name, loaded, expiry: strategyExpiry, lotSize, mult, auto: autoOn, rules, rearmAt, hold, holdFrom, baseline, legs: legs.map((l) => ({ ...l, key: keyOf(l) })) });
   // what the page compares to know whether anything it has not sent is waiting: the same document without the live-feed keys, which come and
   // go with the stream and must not make an idle page look as if it had unsent edits (it would then never take the server's exits)
-  const coreJson = JSON.stringify({ name, loaded, expiry, lotSize, mult, auto: autoOn, rules, rearmAt, hold, baseline, legs });
+  const coreJson = JSON.stringify({ name, loaded, expiry: strategyExpiry, lotSize, mult, auto: autoOn, rules, rearmAt, hold, baseline, legs });
   const adoptServer = (d: RunningDoc, announce: boolean) => {
     revRef.current = d.rev ?? null;
     skipPush.current = true;
@@ -492,20 +511,20 @@ export default function StrategyBuilder() {
   const exitNow = (l: Leg) => {
     if (!lotSize) return;
     const typed = exitDraft[l.id];
-    const px = typed != null && typed !== "" ? Number(typed) : ltp(l.strike, l.type);
+    const px = typed != null && typed !== "" ? Number(typed) : ltp(l.strike, l.type, l.expiry);
     if (px == null || !(px > 0)) { setNote("No live price for that leg: type the exit price in the box."); return; }
     commitTrades(legs.map((x) => (x.id === l.id ? exitLeg(x, px, "manual", lotSize, new Date().toISOString(), mult) : x)));
     setExitDraft((d) => ({ ...d, [l.id]: "" }));
   };
   const enterAgain = (l: Leg) => {
-    const px = ltp(l.strike, l.type);
+    const px = ltp(l.strike, l.type, l.expiry);
     if (px == null) { setNote("No live price for that leg yet."); return; }
     commitTrades(legs.map((x) => (x.id === l.id ? reenterLeg(x, px, new Date().toISOString(), false) : x)));
   };
   /** Roll: close the leg at its live price (P&L booked) and open the same leg at another strike at that strike's live price. */
   const rollNow = (l: Leg) => {
     const k = Number(rollTo[l.id]);
-    const oldPx = ltp(l.strike, l.type), newPx = ltp(k, l.type);
+    const oldPx = ltp(l.strike, l.type, l.expiry), newPx = ltp(k, l.type, l.expiry);
     if (!lotSize || !Number.isFinite(k) || k === l.strike) return;
     if (oldPx == null || newPx == null) { setNote(`Cannot roll: no price for ${oldPx == null ? l.strike : k} ${l.type}.`); return; }
     commitTrades(legs.map((x) => (x.id === l.id ? rollLeg(x, k, oldPx, newPx, lotSize, new Date().toISOString(), mult) : x)));
@@ -521,18 +540,18 @@ export default function StrategyBuilder() {
   const ifTarget = exitPnl("target"), ifStop = exitPnl("stop");
   const whatSpot = spot == null ? null : spot * (1 + whatPct / 100);
   const whatEst = whatSpot != null && lotSize && ready ? theoreticalPnl(mAll, whatSpot, targetMs, lotSize, val) : null;
-  const whatExp = whatSpot != null && lotSize && ready ? expiryPnl(live, whatSpot, lotSize) : null;
+  const whatExp = whatSpot != null && lotSize && ready ? (multi ? pnlFn(whatSpot) : expiryPnl(live, whatSpot, lotSize)) : null;
   // scenario grid: spot rows at standard deviations of the model distribution, date columns from the snapshot to expiry
   const grid = useMemo(() => {
-    if (!ready || !lotSize || !expiry || !spot || !atmIv || tab !== "scenarios") return null;
+    if (!ready || !lotSize || !payExp || !spot || !payIv || tab !== "scenarios") return null;
     const ks = [-2, -1, -0.5, 0, 0.5, 1, 2];
-    const spots = ks.map((k) => sdLevel(spot, atmIv, expiry, snapMs, k)).filter((x): x is number => x != null);
+    const spots = ks.map((k) => sdLevel(spot, payIv, payExp, snapMs, k)).filter((x): x is number => x != null);
     if (spots.length !== ks.length) return null;
     const dayOffsets = [...new Set(Array.from({ length: Math.min(dte, 5) + 1 }, (_, i) => Math.round((i * dte) / Math.max(1, Math.min(dte, 5)))))];
-    const dates = dayOffsets.map((d) => (d >= dte ? expiryEnd(expiry) : snapMs + d * 86_400_000));
+    const dates = dayOffsets.map((d) => (d >= dte ? expiryEnd(payExp) : snapMs + d * 86_400_000));
     return { ks, spots, dayOffsets, cells: scenarioGrid(mAll, lotSize, spots, dates, val) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, lotSize, expiry, spot, atmIv, tab, dte, snapMs, carry, mAll, ivPts, r]);
+  }, [ready, lotSize, payExp, spot, payIv, tab, dte, snapMs, carry, carryBy, mAll, ivPts, r]);
   const rr = a?.defined && a.maxProfit != null && a.maxLoss != null && a.maxLoss < 0 ? a.maxProfit / -a.maxLoss : null;
 
   const update = (id: string, patch: Partial<Leg>) => setLegs((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -541,7 +560,7 @@ export default function StrategyBuilder() {
     setNote(null);
     setSel(strike);
     setLegs((ls) => {
-      const same = ls.find((l) => l.strike === strike && l.type === type && l.action === action);
+      const same = ls.find((l) => l.expiry === expiry && l.strike === strike && l.type === type && l.action === action);
       if (same) return ls.map((l) => (l.id === same.id ? { ...l, lots: l.lots + 1 } : l));
       const m = ltp(strike, type);
       return [...ls, { id: newLegId(), expiry, strike, type, action, lots: 1, premium: m, premiumSource: m == null ? null : "market" }];
@@ -550,7 +569,7 @@ export default function StrategyBuilder() {
   /** + / - on a held strike: one more lot in the direction already held, or one lot fewer (the leg goes when its last lot does). */
   const adjust = (strike: number, type: OptionType, dir: 1 | -1) => {
     setLegs((ls) => {
-      const mine = ls.filter((l) => l.strike === strike && l.type === type);
+      const mine = ls.filter((l) => l.expiry === expiry && l.strike === strike && l.type === type);
       const netLots = mine.reduce((t, l) => t + sign(l.action) * l.lots, 0);
       if (netLots === 0) return ls;
       const action: Action = netLots > 0 ? "BUY" : "SELL";
@@ -566,15 +585,29 @@ export default function StrategyBuilder() {
     return "error" in out ? null : withIds(out);
   };
   const loadLegs = (ls: Leg[]) => { setLegs(ls); setBaseline(ls); setRearmAt(new Date().toISOString()); setHoldFrom(null); }; // a strategy opened on purpose is a fresh start for the server
-  const apply = (t: Template) => {
+  /** the later expiry a calendar or diagonal template uses: the one picked, else the first listed after the shown one */
+  const [farPick, setFarPick] = useState<string | null>(null);
+  const farExpiry = expiry ? (farPick && farPick > expiry && available.includes(farPick) ? farPick : available.find((e) => e > expiry) ?? null) : null;
+  const apply = async (t: Template) => {
     if (!expiry || atm == null) { setNote("Load an option chain first."); return; }
-    const out = t.build({ strikes, atm, expiry, premium: (_e, k, ty) => ltp(k, ty) });
+    let far: string | undefined, farRows: ReturnType<typeof mergeRows> | undefined;
+    if (t.group === "Calendar") {
+      if (!farExpiry) { setNote("No later expiry is listed after the one shown."); return; }
+      far = farExpiry;
+      try {
+        const c = await qc.fetchQuery({ queryKey: ["chain", far], queryFn: () => fetchChain(far!), staleTime: 5_000 });
+        farRows = mergeRows(c.snapshot.rows, collected.has(far) ? liveMode : "off");
+      } catch (e) { setNote(`Could not load the chain of ${far}: ${e instanceof Error ? e.message : "unknown error"}. Nothing is made up.`); return; }
+    }
+    const farLtp = (k: number, ty: OptionType) => { const q = farRows?.find((x) => x.strike === k); const v = (ty === "CE" ? q?.call : q?.put)?.ltp; return v != null && v > 0 ? v : null; };
+    const out = t.build({ strikes, atm, expiry, far, farStrikes: farRows?.map((x) => x.strike), premium: (e, k, ty) => (e === expiry ? ltp(k, ty) : farLtp(k, ty)) });
     if ("error" in out) { setNote(out.error); return; }
     setNote(null);
     loadLegs(withIds(out));
+    if (far) setPayPick(null);
   };
   const chooseStrike = (l: Leg, strike: number) => {
-    const m = ltp(strike, l.type);
+    const m = ltp(strike, l.type, l.expiry);
     update(l.id, { strike, ...(l.premiumSource === "manual" ? {} : { premium: m, premiumSource: m == null ? null : "market" }) });
   };
   /** Target or stop-loss for one leg: a premium, or a % of the entry premium. Targets are on the profit side of the entry, stops on the loss side. */
@@ -584,7 +617,7 @@ export default function StrategyBuilder() {
     const buy = l.action === "BUY";
     const profitSide = kind === "target";
     const up = profitSide === buy; // the premium moves up for a buyer's target and a seller's stop
-    const mkt = ltp(l.strike, l.type);
+    const mkt = ltp(l.strike, l.type, l.expiry);
     const wrong = cur != null && l.premium != null && (up ? cur <= l.premium : cur >= l.premium);
     const tone2 = kind === "target" ? "border-up/60 text-up" : "border-down/60 text-down";
     // The percentage is how far the premium moves from the entry premium; typing one sets the price.
@@ -630,21 +663,21 @@ export default function StrategyBuilder() {
   const exitAll = () => {
     if (!expiry || !lotSize || !snap) return;
     const active = legs.filter((l) => l.enabled !== false);
-    const missing = active.filter((l) => !isExited(l) && (ltp(l.strike, l.type) == null || l.premium == null));
+    const missing = active.filter((l) => !isExited(l) && (ltp(l.strike, l.type, l.expiry) == null || l.premium == null));
     if (active.length === 0) return;
     if (missing.length) { setNote(`Cannot exit: no stored price or no entry premium for ${missing.map((l) => `${l.strike} ${l.type}`).join(", ")}. Untick or remove those legs, or enter the entry premium.`); return; }
-    const out: ClosedLeg[] = active.map((l) => ({ ...l, lots: l.lots * mult, exit: isExited(l) ? (l.exitPrice as number) : (ltp(l.strike, l.type) as number) }));
+    const out: ClosedLeg[] = active.map((l) => ({ ...l, lots: l.lots * mult, exit: isExited(l) ? (l.exitPrice as number) : (ltp(l.strike, l.type, l.expiry) as number) }));
     // a leg closed earlier by its stop or target keeps its booked P&L; an open one is closed now; earlier cycles stay booked
     const pnl = out.reduce((t, l) => t + (isExited(l) ? 0 : sign(l.action) * (l.exit - (l.premium as number)) * l.lots * lotSize) + (l.realised ?? 0), 0);
     const at = new Date();
     const closedName = name.trim() || loaded || opened?.name;
-    persistClosed([{ id: opened?.id ?? newLegId(), name: closedName || `Strategy ${at.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`, closedAt: at.toISOString(), snapshotAt: snap.retrieved_at, expiry, lotSize, pnl, legs: out, stale: !!chain.data?.stale }, ...closed.filter((x) => x.id !== opened?.id)]);
+    persistClosed([{ id: opened?.id ?? newLegId(), name: closedName || `Strategy ${at.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`, closedAt: at.toISOString(), snapshotAt: snap.retrieved_at, expiry: strategyExpiry ?? expiry, lotSize, pnl, legs: out, stale: !!chain.data?.stale }, ...closed.filter((x) => x.id !== opened?.id)]);
     if (loaded) persist(saved.filter((x) => x.name !== loaded)); // the strategy moves from Saved to Closed, it is not copied
     setLegs([]); setRearmAt(new Date().toISOString()); setHoldFrom(null); setNote(null); setSel(null); setMult(1); setDays(0); setName(""); setOpened(null); setLoaded(null);
   };
   const openClosed = (c: Closed) => { setPicked(c.expiry); loadLegs(c.legs.map(({ exit: _e, ...l }) => ({ ...l, id: newLegId() }))); setMult(1); setNote(null); setOpened(c); setLoaded(null); };
   const persist = (s: Saved[]) => { pushDiff("saved", saved, s, (x) => x.name); setSaved(s); try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch { /* storage unavailable: kept for this visit only */ } };
-  const net = (k: number, t: OptionType) => legs.filter((l) => l.strike === k && l.type === t).reduce((s, l) => s + sign(l.action) * l.lots, 0);
+  const net = (k: number, t: OptionType) => legs.filter((l) => l.expiry === expiry && l.strike === k && l.type === t).reduce((s, l) => s + sign(l.action) * l.lots, 0);
   const controlsChanged = mult !== 1 || days !== 0 || ivPts !== 0 || whatPct !== 0 || zoom !== 0;
   const legsChanged = JSON.stringify(legs.map(({ id: _i, ...r }) => r)) !== JSON.stringify(baseline.map(({ id: _i, ...r }) => r));
   const canReset = legsChanged || controlsChanged;
@@ -655,7 +688,7 @@ export default function StrategyBuilder() {
   const newStrategy = () => { setLegs([]); setRearmAt(new Date().toISOString()); setHoldFrom(null); setBaseline([]); setName(""); setLoaded(null); setOpened(null); setNote(null); setSel(null); setMult(1); setDays(0); setIvPts(0); setWhatPct(0); setZoom(0); };
   const savedEntry = loaded ? saved.find((x) => x.name === loaded) : undefined;
   const sig = (ls: Leg[]) => JSON.stringify(ls.map(({ id: _i, ...r }) => r));
-  const dirty = !!savedEntry && (sig(legs) !== sig(savedEntry.legs) || savedEntry.expiry !== expiry);
+  const dirty = !!savedEntry && sig(legs) !== sig(savedEntry.legs);
   const gallery = useMemo(() => TEMPLATES.filter((t) => TEMPLATE_BIAS[t.id] === bias), [bias]);
 
   return (
@@ -664,7 +697,7 @@ export default function StrategyBuilder() {
         <h1 className="mr-2 w-full text-xl font-semibold sm:w-auto">Strategy builder</h1>
         <span className="rounded-sm border border-rule bg-slate-2 px-2 py-1 text-sm text-paper">NIFTY 50</span>
         <input className={`${field} min-w-0 flex-1 sm:w-40 sm:flex-none`} aria-label="Strategy name" value={name} onChange={(e) => setName(e.target.value)} placeholder="name to save" />
-        <Button variant="primary" disabled={!name.trim() || legs.length === 0 || !expiry} onClick={() => { persist([{ name: name.trim(), savedAt: new Date().toISOString(), expiry: expiry!, legs }, ...saved.filter((s) => s.name !== name.trim())]); setLoaded(name.trim()); setBaseline(legs); setName(""); }}>Save</Button>
+        <Button variant="primary" disabled={!name.trim() || legs.length === 0 || !expiry} onClick={() => { persist([{ name: name.trim(), savedAt: new Date().toISOString(), expiry: strategyExpiry!, legs }, ...saved.filter((s) => s.name !== name.trim())]); setLoaded(name.trim()); setBaseline(legs); setName(""); }}>Save</Button>
         <span data-testid="sync-state" className={`text-[11px] ${sync === "browser" || syncProblem ? "text-warn" : "text-muted"}`}
           title={sync === "server" ? "Saved and closed strategies are stored on the server and kept in its nightly backups" : "The server could not be reached: strategies are held in this browser only and move to the server the next time it is reachable"}>
           {syncProblem ? `Not saved on server: ${syncProblem}` : sync === "server" ? "Stored on server" : sync === "browser" ? "Browser only (server unreachable)" : "Checking server…"}
@@ -738,14 +771,23 @@ export default function StrategyBuilder() {
             </details>
           </div>
           {!chainHidden && (<>
-          <div className="flex flex-wrap gap-2 border-b border-rule px-3 py-2">
-            {available.map((e) => (
-              <button key={e} type="button" aria-pressed={e === expiry} onClick={() => { if (legs.length) setNote("The legs were cleared because the expiry changed."); setLegs([]); setRearmAt(new Date().toISOString()); setHoldFrom(null); setLoaded(null); setPicked(e); }}
-                className={`min-h-8 rounded-sm border px-3 text-sm ${e === expiry ? "border-info bg-info/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{dmy(e)} ({dayDiff(e, snapMs)}d) · {e === ex.data?.weekly ? "weekly" : "monthly"}</button>
+          <div className="flex flex-wrap items-center gap-2 border-b border-rule px-3 py-2" role="group" aria-label="Expiry">
+            {available.slice(0, 4).map((e) => (
+              <button key={e} type="button" aria-pressed={e === expiry} onClick={() => setPicked(e)} title={collected.has(e) ? "Collected by the sampler: stored chain, streamed prices, history" : "Fetched live when chosen (about every 15 seconds), not stored"}
+                className={`min-h-8 rounded-sm border px-3 text-sm ${e === expiry ? "border-info bg-info/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{dmy(e)} ({dayDiff(e, snapMs)}d){e === ex.data?.weekly ? " · weekly" : e === ex.data?.monthly ? " · monthly" : ""}</button>
             ))}
+            {available.length > 4 && (
+              <select aria-label="More expiries" value={available.indexOf(expiry ?? "") >= 4 ? expiry ?? "" : ""} onChange={(e) => { if (e.target.value) setPicked(e.target.value); }}
+                className={`min-h-8 rounded-sm border px-2 text-sm ${available.indexOf(expiry ?? "") >= 4 ? "border-info bg-info/15 text-paper" : "border-rule bg-slate-2 text-muted"}`}>
+                <option value="">{available.length - 4} more expiries</option>
+                {available.slice(4).map((e) => <option key={e} value={e}>{dmy(e)} ({dayDiff(e, snapMs)}d){e === ex.data?.monthly ? " · monthly" : ""}</option>)}
+              </select>
+            )}
+            {legExps.length > 1 && <span className="text-[11px] text-info" data-testid="multi-expiry-tag">legs on {legExps.length} expiries: {legExps.map(dmy).join(" · ")}</span>}
           </div>
-          {chain.isPending && expiry && <p className="px-3 py-3 text-sm text-muted">Loading the stored option chain…</p>}
-          {chain.error && <p role="alert" className="px-3 py-3 text-sm text-warn">No stored chain for {expiry}: capture one from Live option chain first. Strikes and premiums come from it; nothing is made up.</p>}
+          {expiry && !collected.has(expiry) && <p className="px-3 pt-2 text-[11px] text-muted" data-testid="on-demand-note">This expiry is not collected by the sampler: its chain is fetched live when shown (about every 15 seconds) and is not stored, so there is no streamed price, price history chart or server-side stop and target watching for its legs.</p>}
+          {chain.isPending && expiry && <p className="px-3 py-3 text-sm text-muted">{collected.has(expiry) ? "Loading the stored option chain…" : "Fetching the option chain for this expiry…"}</p>}
+          {chain.error && <p role="alert" className="px-3 py-3 text-sm text-warn">{collected.has(expiry ?? "") ? `No stored chain for ${expiry}: capture one from Live option chain first. Strikes and premiums come from it; nothing is made up.` : `Could not fetch the chain for ${expiry}: ${(chain.error as Error).message}. Nothing is made up.`}</p>}
           {snap && lotSize == null && <p role="alert" className="px-3 py-3 text-sm text-down">The stored chain carries no lot size, so P&L in rupees cannot be computed. It is not assumed.</p>}
           {shown.length > 0 && (
             <div className={`max-h-[460px] overflow-auto sm:max-h-[640px] ${wide ? "" : "xl:max-h-[calc(100vh-15rem)]"}`}>
@@ -772,7 +814,7 @@ export default function StrategyBuilder() {
                       </span>
                     );
                     const bs = (type: OptionType) => (["BUY", "SELL"] as const).map((action) => {
-                      const mine = legs.filter((l) => l.strike === row.strike && l.type === type && l.action === action && l.enabled !== false).reduce((s, l) => s + l.lots, 0);
+                      const mine = legs.filter((l) => l.expiry === expiry && l.strike === row.strike && l.type === type && l.action === action && l.enabled !== false).reduce((s, l) => s + l.lots, 0);
                       return (
                         <button key={action} type="button" aria-label={`${action === "BUY" ? "Buy" : "Sell"} ${type} ${row.strike}`}
                           title={ltp(row.strike, type) == null ? "No stored quote: the premium must be entered by hand" : `${action === "BUY" ? "Buy" : "Sell"} one lot at ${fmtPrice(ltp(row.strike, type))}`}
@@ -815,7 +857,21 @@ export default function StrategyBuilder() {
         {/* ------------------------------------------------------------ payoff and positions */}
         <div className="flex min-w-0 flex-col gap-3">
           <section aria-label="Payoff" className="rounded-[var(--radius-panel)] border border-rule bg-slate">
-            <div className="flex border-b border-rule px-3 py-2 text-sm"><span className="rounded-sm bg-info/15 px-3 py-1 text-info">Payoff</span><span className="ml-auto text-xs text-muted">{expiry ? `expiry ${expiry} · ${dte}d` : ""}</span></div>
+            <div className="flex border-b border-rule px-3 py-2 text-sm"><span className="rounded-sm bg-info/15 px-3 py-1 text-info">Payoff</span><span className="ml-auto flex flex-wrap items-center gap-2 text-xs text-muted">
+              {multi && payExp ? (
+                <span role="group" aria-label="Payoff at expiry" className="flex flex-wrap items-center gap-1">
+                  <span>Payoff at</span>
+                  {legExps.map((e) => <button key={e} type="button" aria-pressed={e === payExp} onClick={() => setPayPick(e)} className={`min-h-7 rounded-sm border px-2 ${e === payExp ? "border-info bg-info/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{dmy(e)}{e === legExps[0] ? " (first)" : ""}</button>)}
+                </span>
+              ) : null}
+              <span>{payExp ? `expiry ${payExp} · ${dte}d` : ""}</span>
+            </span></div>
+            {multi && payExp && (
+              <p className="px-3 pt-2 text-[11px] leading-relaxed text-muted" data-testid="multi-note">
+                Legs on several expiries have no single expiry payoff, so the curve is read at the close of {dmy(payExp)}: legs expiring by then are worth their intrinsic value at the NIFTY level on the axis (earlier-expiring legs are treated as settled at that same level), and legs expiring later are valued by the Black-76 model with their own forward and market implied volatility, held constant.
+                {isEstimateAt(open, payExp) ? " Maximum profit, maximum loss, breakevens, probability of profit and the curve are therefore model estimates, exact only for the legs that have expired." : " Every leg has expired by this date, so the curve is exact under the settled-at-the-same-level assumption."}
+              </p>
+            )}
             {note && <p role="alert" className="px-3 pt-2 text-sm text-warn" data-testid="template-msg">{note}</p>}
             {opened && (
               <div className="mx-3 mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-sm border border-info/50 bg-info/10 px-3 py-2 text-xs" data-testid="opened-closed">
@@ -829,14 +885,22 @@ export default function StrategyBuilder() {
               <div className="p-3" data-testid="gallery">
                 <h2 className="mb-2 text-sm font-semibold text-paper">Ready-made strategies</h2>
                 <div role="tablist" aria-label="Strategy view" className="mb-3 flex gap-2">
-                  {(["Bullish", "Bearish", "Neutral", "Other"] as const).map((b) => <button key={b} role="tab" type="button" aria-selected={bias === b} onClick={() => setBias(b)} className={`min-h-8 rounded-sm border px-3 text-sm ${bias === b ? "border-info bg-info/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{b}</button>)}
+                  {(["Bullish", "Bearish", "Neutral", "Calendar", "Other"] as const).map((b) => <button key={b} role="tab" type="button" aria-selected={bias === b} onClick={() => setBias(b)} className={`min-h-8 rounded-sm border px-3 text-sm ${bias === b ? "border-info bg-info/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{b}</button>)}
                 </div>
+                {bias === "Calendar" && (
+                  <label className="mb-3 flex flex-wrap items-center gap-2 text-sm text-muted" data-testid="far-pick">Sell the shown expiry ({expiry ? dmy(expiry) : "—"}), buy the later one:
+                    <select aria-label="Later expiry" className={`${field} w-auto`} value={farExpiry ?? ""} onChange={(e) => setFarPick(e.target.value || null)}>
+                      {available.filter((e) => expiry != null && e > expiry).map((e) => <option key={e} value={e}>{dmy(e)} ({dayDiff(e, snapMs)}d){e === ex.data?.monthly ? " · monthly" : ""}</option>)}
+                    </select>
+                    {!farExpiry && <span className="text-warn">No later expiry is listed.</span>}
+                  </label>
+                )}
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   {gallery.map((t) => {
-                    const l = build(t);
+                    const l = t.group === "Calendar" ? null : build(t);
                     return (
                       <button key={t.id} type="button" onClick={() => apply(t)} aria-label={t.label} className="rounded-sm border border-rule bg-slate-2 p-2 text-left hover:border-info">
-                        <div className="h-16">{l && lotSize && spot ? <Thumb legs={l} lotSize={lotSize} spot={spot} /> : <div className="grid h-16 place-items-center text-xs text-muted">needs a chain</div>}</div>
+                        <div className="h-16">{t.group === "Calendar" ? <div className="grid h-16 place-items-center text-center text-xs text-muted">two expiries: sell near, buy far</div> : l && lotSize && spot ? <Thumb legs={l} lotSize={lotSize} spot={spot} /> : <div className="grid h-16 place-items-center text-xs text-muted">needs a chain</div>}</div>
                         <div className="mt-1 text-center text-sm text-paper">{t.label}</div><div className="text-center text-[11px] text-muted">{t.view}</div>
                       </button>
                     );
@@ -851,8 +915,8 @@ export default function StrategyBuilder() {
                 <div className="border-b border-rule" data-testid="risk-stats">
                   <dl className="flex flex-wrap gap-px bg-rule/60">
                   <Stat big label="P&L now (vs entry)" value={money(totalPnl)} cls={tone(totalPnl)} sub={realisedTotal !== 0 && totalPnl != null ? `booked ${money(realisedTotal)} · open ${money(totalPnl - realisedTotal)}` : undefined} hint="Booked P&L of closed legs plus the open legs at their latest price against your entry premiums" />
-                  <Stat big label="Max profit" value={a.profitUnlimited ? "Unlimited" : money(a.maxProfit)} cls="text-up" hint="Best P&L at expiry over every NIFTY level from 0 upwards" />
-                  <Stat big label="Max loss" value={a.lossUnlimited ? "Unlimited" : money(a.maxLoss)} cls="text-down" hint="Worst P&L at expiry over every NIFTY level from 0 upwards" />
+                  <Stat big label={`Max profit${a.estimate ? " (model)" : ""}`} value={a.profitUnlimited ? "Unlimited" : money(a.maxProfit)} cls="text-up" hint={a.estimate ? "Best P&L at the chosen date over a wide range of NIFTY levels; legs still alive then are model values" : "Best P&L at expiry over every NIFTY level from 0 upwards"} />
+                  <Stat big label={`Max loss${a.estimate ? " (model)" : ""}`} value={a.lossUnlimited ? "Unlimited" : money(a.maxLoss)} cls="text-down" hint={a.estimate ? "Worst P&L at the chosen date over a wide range of NIFTY levels; legs still alive then are model values" : "Worst P&L at expiry over every NIFTY level from 0 upwards"} />
                   <Stat big label="Reward : Risk" value={rr == null ? "N/A" : `${rr.toFixed(2)} : 1`} />
                   <Stat big label="POP (model estimate)" value={pop == null ? "—" : `${(pop * 100).toFixed(0)}%`} hint="Chance of ending in profit at expiry if NIFTY moves like a lognormal with the ATM implied volatility. A model, not a forecast." />
                                     </dl>
@@ -868,7 +932,7 @@ export default function StrategyBuilder() {
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-sm bg-slate-2 px-3 py-2 text-xs" data-testid="oi-strip">
                     <span className="text-muted">{oiMode === "change" ? "OI change" : "OI"} data at <span className="num text-paper">{atmK ?? "—"}</span></span>
                     {atmK != null && (() => { const row = rows.find((x) => x.strike === atmK); const f = (q: typeof row extends undefined ? never : NonNullable<typeof row>["call"]) => (oiMode === "change" ? q?.oi_change : q?.oi) ?? null; const c = row ? f(row.call) : null, pu = row ? f(row.put) : null; return <><span className="text-muted"><span className="mr-1 inline-block size-2 rounded-sm" style={{ background: colors.up }} />Call <span className="num text-paper">{c == null ? "—" : compactIN(c)}</span></span><span className="text-muted"><span className="mr-1 inline-block size-2 rounded-sm" style={{ background: colors.down }} />Put <span className="num text-paper">{pu == null ? "—" : compactIN(pu)}</span></span></>; })()}
-                    <span className="ml-auto flex items-center gap-3 text-muted"><span><span className="mr-1 inline-block h-0.5 w-4 align-middle" style={{ background: colors.up }} />On expiry</span><span><span className="mr-1 inline-block h-0.5 w-4 align-middle" style={{ background: colors.info }} />On target date (model)</span></span>
+                    <span className="ml-auto flex items-center gap-3 text-muted"><span><span className="mr-1 inline-block h-0.5 w-4 align-middle" style={{ background: colors.up }} />{multi && payExp ? `At ${dmy(payExp)} close${isEstimateAt(open, payExp) ? " (model for later legs)" : ""}` : "On expiry"}</span><span><span className="mr-1 inline-block h-0.5 w-4 align-middle" style={{ background: colors.info }} />On target date (model)</span></span>
                   </div>
                   <div className="mt-2 flex flex-wrap items-center justify-end gap-2 text-xs">
                     <select className={field} aria-label="Sigma markers" value={lines} onChange={(e) => { const v = e.target.value as typeof lines; setLines(v); try { localStorage.setItem("nse.builder.lines", v); } catch { /* this visit only */ } }}
@@ -902,7 +966,7 @@ export default function StrategyBuilder() {
                           <button type="button" aria-label="Next day" disabled={days >= dte} className="grid size-7 place-items-center rounded-sm border border-rule bg-slate-2 text-paper hover:border-info disabled:opacity-40" onClick={() => setDays((d) => Math.min(dte, Math.min(d, dte) + 1))}>›</button></span></div>
                       <button type="button" className="text-info hover:underline" onClick={() => setDays(0)}>Reset</button>
                       <input type="range" className="mt-1 w-full" min={0} max={dte} step={1} value={Math.min(days, dte)} onChange={(e) => setDays(Number(e.target.value))} aria-label="Days from snapshot" />
-                      <div className="flex justify-between"><span>{new Date(snapMs).toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "Asia/Kolkata" })}</span><span>{expiry ? dmy(expiry) : ""}</span></div>
+                      <div className="flex justify-between"><span>{new Date(snapMs).toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "Asia/Kolkata" })}</span><span>{payExp ? dmy(payExp) : ""}</span></div>
                     </div>
                     <label className="flex items-center gap-3 md:col-span-2">Implied volatility shift <span className="num text-paper">{ivPts > 0 ? "+" : ""}{ivPts} vol points</span>
                       <input type="range" className="flex-1" min={-10} max={10} step={0.5} value={ivPts} onChange={(e) => setIvPts(Number(e.target.value))} aria-label="IV shift" /><button type="button" className="text-info hover:underline" onClick={() => setIvPts(0)}>Reset</button></label>
@@ -935,7 +999,7 @@ export default function StrategyBuilder() {
                   {loaded && savedEntry && (
                     <button type="button" disabled={!dirty || legs.length === 0 || !expiry} data-testid="update-saved"
                       title={dirty ? `Overwrite the saved strategy “${loaded}” with what is shown now` : `“${loaded}” already matches what is shown`}
-                      onClick={() => { persist(saved.map((x) => (x.name === loaded ? { ...x, updatedAt: new Date().toISOString(), expiry: expiry!, legs } : x))); setBaseline(legs); }}
+                      onClick={() => { persist(saved.map((x) => (x.name === loaded ? { ...x, updatedAt: new Date().toISOString(), expiry: strategyExpiry!, legs } : x))); setBaseline(legs); }}
                       className="rounded-sm border border-brass bg-brass/15 px-3 py-1 text-paper hover:bg-brass/25 disabled:opacity-40">Update{dirty && <span className="ml-1 text-warn" aria-label="unsaved changes">●</span>}</button>
                   )}
                   <button type="button" onClick={exitAll} disabled={!lotSize || legs.every((l) => l.enabled === false)} title="Exit every ticked leg at its stored price and save the result to Closed. Nothing is sent to a broker." className="rounded-sm border border-down bg-down/15 px-3 py-1 font-semibold text-down hover:bg-down/25 disabled:opacity-40">Exit all</button>
@@ -944,7 +1008,7 @@ export default function StrategyBuilder() {
               {tab === "positions" ? (
                 <div className="p-2">
                   {(() => {
-                    const hits = open.flatMap((l) => (["stop", "target"] as const).flatMap((k) => { const m = ltp(l.strike, l.type); return m != null && hitOf(l, k, m) ? [{ l, k, m }] : []; }));
+                    const hits = open.flatMap((l) => (["stop", "target"] as const).flatMap((k) => { const m = ltp(l.strike, l.type, l.expiry); return m != null && hitOf(l, k, m) ? [{ l, k, m }] : []; }));
                     return hits.length === 0 ? null : (
                       <div role="status" className="mb-2 rounded-sm border border-warn/60 bg-warn/10 px-3 py-2 text-xs" data-testid="hit-banner">
                         {hits.map(({ l, k, m }) => <div key={l.id + k} className={k === "stop" ? "text-down" : "text-up"}>{k === "stop" ? "Stop" : "Target"} reached on {l.action} {fmtInt(l.strike)} {l.type}: price {fmtPrice(m)} against {fmtPrice((k === "stop" ? l.stop : l.target) as number)}.</div>)}
@@ -952,6 +1016,11 @@ export default function StrategyBuilder() {
                       </div>
                     );
                   })()}
+                  {open.some((l) => !collected.has(l.expiry)) && (
+                    <p role="note" className="mb-2 rounded-sm border border-warn/50 bg-warn/10 px-3 py-2 text-xs text-paper" data-testid="no-stream-note">
+                      Legs on {[...new Set(open.filter((l) => !collected.has(l.expiry)).map((l) => l.expiry))].map(dmy).join(", ")} are priced from a chain fetched about every 15 seconds, not from the live stream. Their stops and targets are checked only while this page is open and are not watched by the server.
+                    </p>
+                  )}
                   <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-sm bg-slate-2 px-3 py-2 text-xs" data-testid="auto-bar">
                     <label className="flex items-center gap-1.5 text-paper" title="When the live price of a leg reaches its stop or target, the leg is closed in this strategy at the live price, and a stopped-out leg can be entered again (see Re-entry). Paper only: nothing is sent to a broker. Needs live prices and this page open.">
                       <input type="checkbox" aria-label="Auto stop and target" checked={autoOn} onChange={(e) => { setAutoOn(e.target.checked); try { localStorage.setItem("nse.builder.auto", e.target.checked ? "1" : "0"); } catch { /* this visit only */ } }} />
@@ -1027,10 +1096,11 @@ export default function StrategyBuilder() {
                     <thead className="text-xs text-muted"><tr>{[["", ""], ["Leg", ""], ["Strike", "Strike"], ["Lots", "Lots"], ["Entry ₹", "Entry"], ["LTP", "LTP"], ["P&L", "P&L"], ["Δ · Θ/day", "Delta per day"], ["Target ₹", "Target"], ["Stop ₹", "Stop"], ["", ""]].map(([h, term], i) => <th key={i} className="px-1 py-1 text-left font-normal"><span className="inline-flex items-center gap-1">{h}{term && <Info term={term} />}</span></th>)}</tr></thead>
                     <tbody>
                       {legs.map((l) => {
-                        const mk = ltp(l.strike, l.type);
+                        const mk = ltp(l.strike, l.type, l.expiry);
                         const issue = issues.filter((i) => i.legId === l.id);
                         const pl = unreal(l, mk);
-                        const si = strikes.indexOf(l.strike);
+                        const lk = books.get(l.expiry)?.strikes ?? strikes;
+                        const si = lk.indexOf(l.strike);
                         const lg = lotSize && spot && l.enabled !== false && !isExited(l) ? legGreeks({ ...l, lots: l.lots * mult, iv: l.iv ?? marketIv(l) }, lotSize, val0) : null;
                         const buy = l.action === "BUY";
                         const step = "grid size-6 place-items-center rounded-sm border border-rule bg-slate-2 text-paper hover:border-info disabled:opacity-40";
@@ -1041,12 +1111,12 @@ export default function StrategyBuilder() {
                             <td className="px-2 py-2"><input type="checkbox" aria-label="Include leg" checked={l.enabled !== false} onChange={(e) => update(l.id, { enabled: e.target.checked })} /></td>
                             <td data-label="Leg" className="px-1 py-1.5"><div className="flex gap-1">
                               <select className={`${field} !px-1 font-semibold ${buy ? "border-up/60 text-up" : "border-down/60 text-down"}`} aria-label="Action" value={l.action} onChange={(e) => update(l.id, { action: e.target.value as Action })}><option>BUY</option><option>SELL</option></select>
-                              <select className={`${field} !px-1 font-semibold`} aria-label="Option type" value={l.type} onChange={(e) => { const t = e.target.value as OptionType; const m = ltp(l.strike, t); update(l.id, { type: t, ...(l.premiumSource === "manual" ? {} : { premium: m, premiumSource: m == null ? null : "market" }) }); }}><option>CE</option><option>PE</option></select>
+                              <select className={`${field} !px-1 font-semibold`} aria-label="Option type" value={l.type} onChange={(e) => { const t = e.target.value as OptionType; const m = ltp(l.strike, t, l.expiry); update(l.id, { type: t, ...(l.premiumSource === "manual" ? {} : { premium: m, premiumSource: m == null ? null : "market" }) }); }}><option>CE</option><option>PE</option></select>
                             </div></td>
                             <td data-label="Strike" className="px-1 py-1.5"><div className="flex items-center gap-1">
-                              <button type="button" className={step} aria-label="Previous strike" disabled={si <= 0} onClick={() => chooseStrike(l, strikes[si - 1]!)}>‹</button>
-                              <select className={`${field} w-[4.9rem] !px-1`} aria-label="Strike" value={l.strike} onChange={(e) => chooseStrike(l, Number(e.target.value))}>{si < 0 && <option value={l.strike}>{l.strike} (not listed)</option>}{strikes.map((k) => <option key={k} value={k}>{fmtInt(k)}</option>)}</select>
-                              <button type="button" className={step} aria-label="Next strike" disabled={si < 0 || si >= strikes.length - 1} onClick={() => chooseStrike(l, strikes[si + 1]!)}>›</button>
+                              <button type="button" className={step} aria-label="Previous strike" disabled={si <= 0} onClick={() => chooseStrike(l, lk[si - 1]!)}>‹</button>
+                              <select className={`${field} w-[4.9rem] !px-1`} aria-label="Strike" value={l.strike} onChange={(e) => chooseStrike(l, Number(e.target.value))}>{si < 0 && <option value={l.strike}>{l.strike} (not listed)</option>}{lk.map((k) => <option key={k} value={k}>{fmtInt(k)}</option>)}</select>
+                              <button type="button" className={step} aria-label="Next strike" disabled={si < 0 || si >= lk.length - 1} onClick={() => chooseStrike(l, lk[si + 1]!)}>›</button>
                             </div><div className="num mt-0.5 text-[10px] text-muted">{dmy(l.expiry)}{spot ? ` · ${(((l.strike / spot) - 1) * 100).toFixed(1)}% vs spot` : ""}</div></td>
                             <td data-label="Lots" className="px-1 py-1.5"><div className="flex items-center gap-1">
                               <button type="button" className={step} aria-label="Decrease lots" disabled={l.lots <= 1} onClick={() => update(l.id, { lots: Math.max(1, l.lots - 1) })}>−</button>
@@ -1127,7 +1197,7 @@ export default function StrategyBuilder() {
                   </div>
                 </div>
               ) : tab === "chart" ? (
-                <StrategyTimeChart legs={open} expiry={expiry} lotSize={lotSize} modelDelta={greeks?.delta ?? null} rules={rules} />
+                <StrategyTimeChart legs={open} historyExpiries={[...collected]} lotSize={lotSize} modelDelta={greeks?.delta ?? null} rules={rules} />
               ) : tab === "greeks" ? (
                 <div className="overflow-x-auto p-2" data-testid="greeks">
                   <table className="w-full text-sm" aria-label="Greeks">
@@ -1135,8 +1205,8 @@ export default function StrategyBuilder() {
                     <tbody>
                       {mlegs.map((l) => {
                         const g = lotSize && spot ? legGreeks(l, lotSize, val0) : null;
-                        const c = cg.get(l.strike)?.[l.type === "CE" ? "ce" : "pe"];
-                        return <tr key={l.id} className="num border-t border-rule/50"><td className="px-1 py-1">{l.action} {l.lots}× {fmtInt(l.strike)} {l.type}</td><td className="px-1 text-right">{c ? `${(c.iv * 100).toFixed(1)}%` : "—"}</td>
+                        const c = books.get(l.expiry)?.cg.get(l.strike)?.[l.type === "CE" ? "ce" : "pe"];
+                        return <tr key={l.id} className="num border-t border-rule/50"><td className="px-1 py-1">{l.action} {l.lots}× {fmtInt(l.strike)} {l.type}{multi ? <span className="ml-1 text-[11px] text-muted">{dmy(l.expiry)}</span> : null}</td><td className="px-1 text-right">{c ? `${(c.iv * 100).toFixed(1)}%` : "—"}</td>
                           {!g ? <td colSpan={5} className="px-1 text-right text-xs text-muted">unavailable: no volatility fits the premium</td> : <><td className="px-1 text-right text-muted">{c ? c.delta.toFixed(3) : "—"}</td><td className="px-1 text-right">{g.delta.toFixed(1)}</td><td className="px-1 text-right">{g.gamma.toFixed(4)}</td><td className={`px-1 text-right ${tone(g.thetaDay)}`}>{money(g.thetaDay)}</td><td className={`px-1 text-right ${tone(g.vegaPt)}`}>{money(g.vegaPt)}</td></>}</tr>;
                       })}
                       {greeks && <tr className="num border-t border-rule font-medium"><td className="px-1 py-1">Net</td><td /><td /><td className="px-1 text-right">{greeks.delta.toFixed(1)}</td><td className="px-1 text-right">{greeks.gamma.toFixed(4)}</td><td className={`px-1 text-right ${tone(greeks.thetaDay)}`}>{money(greeks.thetaDay)}</td><td className={`px-1 text-right ${tone(greeks.vegaPt)}`}>{money(greeks.vegaPt)}</td></tr>}

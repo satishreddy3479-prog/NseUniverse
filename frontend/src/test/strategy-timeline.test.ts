@@ -133,3 +133,27 @@ describe("futures alignment and stats", () => {
     expect(s.zScore).toBeCloseTo((390 - 405) / Math.sqrt((25 + 25 + 225 + 225) / 4), 10);
   });
 });
+
+describe("merging the samples of two expiries", () => {
+  it("lays the second expiry on the first one's time axis (nearest sample within 90 s, else blank) and keys prices by expiry:strike", async () => {
+    const { mergeStrikeSeries, mergedKey } = await import("../lib/strategyTimeline");
+    const t0 = ["09:15", "09:16", "09:20"].map((h) => z("2026-11-11", h));
+    const base = ss(t0, [100, 101, 102], [10, 11, 12], [25000, 25001, 25002]);
+    // the other expiry was sampled 20 s after the first two, then nothing for four minutes: its last sample is 09:16:20
+    const t1 = [new Date(Date.parse(t0[0]!) + 20_000).toISOString(), new Date(Date.parse(t0[1]!) + 20_000).toISOString()];
+    const other = ss(t1, [200, 201], [20, 21], [1, 1]);
+    const m = mergeStrikeSeries([{ expiry: "A", ss: base }, { expiry: "B", ss: other }]);
+    expect(m.ce_price[mergedKey("A", 25000)]).toEqual([100, 101, 102]);
+    expect(m.ce_price[mergedKey("B", 25000)]).toEqual([200, 201, null]); // 09:20 is 3 min 40 s from the nearest sample of B: left blank, not carried
+    expect(m.pe_price[mergedKey("B", 25000)]).toEqual([20, 21, null]);
+    expect(m.spot).toEqual([25000, 25001, 25002]);
+    // a calendar built on the merged series: sell the A call, buy the B call
+    const legs = [
+      { strike: 25000, type: "CE" as const, action: "SELL" as const, lots: 1, premium: 100, key: mergedKey("A", 25000) },
+      { strike: 25000, type: "CE" as const, action: "BUY" as const, lots: 1, premium: 200, key: mergedKey("B", 25000) },
+    ];
+    const tl = buildTimeline(legs, m, 65);
+    expect(tl.value).toEqual([100, 100, null]); // -100 + 200 = +100 at the first two samples; the third has no price for leg B
+    expect(tl.pnl).toEqual([0, 0, null]); // 65 * (-(101-100) + (201-200)) = 0
+  });
+});

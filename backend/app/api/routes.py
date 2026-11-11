@@ -33,6 +33,7 @@ from app.domain.models import (
     OptionChainSnapshot,
     SnapshotSummary,
 )
+from app.domain.normalize import ChainFormatError
 from app.intraday.features import IST
 from app.services.history import HistoryResponse, build_history
 from app.services.sampler import SamplerStatus
@@ -216,6 +217,24 @@ async def option_chain(
             {"code": "no_snapshot", "message": "no snapshot captured for expiry"},
         )
     return out
+
+
+@router.get("/option-chain/on-demand", response_model=ChainResponse)
+async def option_chain_on_demand(
+    request: Request, expiry: date, underlying: Annotated[str | None, UNDERLYING_Q] = None
+) -> ChainResponse:
+    """Chain of any listed expiry, fetched now and not stored (Strategy builder, calendars)."""
+    svc = _svc(request)
+    _check_underlying(svc, underlying)
+    try:
+        snap = await svc.on_demand_chain(expiry)
+    except BrokerError as e:
+        raise _broker_http_error(e) from None
+    except ChainFormatError as e:
+        detail = {"code": "chain_format", "message": str(e)}
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail) from None
+    out = _chain_response(request, snap, latest=False)
+    return out.model_copy(update={"display_source": DataSource.SNAPSHOT})
 
 
 def _chain_response(request: Request, snap: OptionChainSnapshot, *, latest: bool) -> ChainResponse:
