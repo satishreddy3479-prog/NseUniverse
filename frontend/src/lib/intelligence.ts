@@ -36,7 +36,7 @@ export interface RollingWindow { minutes: number; cvd: number | null; cvd_pct: n
 export interface CvdAcceleration { minutes: number; current_cvd: number | null; previous_cvd: number | null; current_rate: number | null; previous_rate: number | null; rate_change: number | null; acceleration: number | null; current_pct: number | null; previous_pct: number | null; status: string }
 export interface Rolling { windows: Record<string, RollingWindow>; acceleration: CvdAcceleration; ok_windows: number; estimated: boolean }
 export interface Observation { id: string; title: string; reading: string; explanation: string; reversal_signal: false }
-export interface Capability { id: string; name: string; status: EvidenceState; reason: string; source: string; as_of: string | null; link: string | null }
+export interface Capability { id: string; name: string; status: EvidenceState; reason: string; source: string; as_of: string | null; link: string | null; /** why it does not exist: the feed lacks it, nothing subscribes to it, or nothing is stored yet */ why?: "feed" | "not_subscribed" | "no_data_yet" | null }
 export interface OverlapAudit { findings: { input: string; was: string; fix: string }[]; terms: { group: string; term: string; family: string; weight: number; shares: string[]; available: boolean }[] }
 export interface StrikeChange { strike: number; change: number }
 export interface Panels {

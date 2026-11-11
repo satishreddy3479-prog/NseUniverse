@@ -678,14 +678,33 @@ ROLLOVER_NEED = ("Rollover needs, for BOTH the near-month and the next-month NIF
                  "Only the current-month contract is subscribed and stored today (each `fut` sample carries one contract's symbol and expiry), so no rollover percentage is shown.")
 
 
+def _stored_last(samples: Any, need: Sequence[str]) -> tuple[str, Mapping[str, Any]] | None:
+    """The newest stored per-minute sample (stamp, payload) that carries every field in ``need`` as a number, or None."""
+    for stamp, pl in reversed(list(samples or [])):
+        if isinstance(pl, Mapping) and all(isinstance(pl.get(k), (int, float)) and not isinstance(pl.get(k), bool) for k in need):
+            return str(stamp), pl
+    return None
+
+
+def _hhmm_ist(stamp: str) -> str:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    try:
+        return datetime.fromisoformat(stamp).astimezone(ZoneInfo("Asia/Kolkata")).strftime("%H:%M")
+    except (TypeError, ValueError):
+        return stamp
+
+
+# why a capability does not exist: "feed" = the broker feed has no such data at all; "not_subscribed" = it could be collected, but nothing subscribes to it yet
 def capabilities(inp: Mapping[str, Any], status: Mapping[str, Any], gx: Mapping[str, Any]) -> list[dict[str, Any]]:
     """The state of every capability named in the integration audit, from the data actually present now: AVAILABLE, PARTIAL (an incomplete
     calculation or coverage) or UNAVAILABLE (the data is not collected or stored). ``as_of`` is each source's own timestamp."""
     ins, mk, fut, skew = inp.get("intraday"), inp.get("market"), inp.get("futures"), inp.get("skew")
     rows: list[dict[str, Any]] = []
 
-    def add(id_: str, name: str, state: str, reason: str, src: str, link: str | None = None) -> None:
-        rows.append({"id": id_, "name": name, "status": state, "reason": reason, "source": src, "as_of": g(status, src, "as_of"), "link": link})
+    def add(id_: str, name: str, state: str, reason: str, src: str, link: str | None = None, *, as_of: str | None = None, why: str | None = None) -> None:
+        rows.append({"id": id_, "name": name, "status": state, "reason": reason, "source": src, "as_of": as_of or g(status, src, "as_of"), "link": link, "why": why})
 
     o = g(ins, "options") or {}
     add("options_oi", "Options OI and change in OI", AVAILABLE if o.get("ce_oi") is not None else UNAVAILABLE, "ATM ±10 strikes of the stored chain; change is against the first sample of the session" if o.get("ce_oi") is not None else "no stored chain", "intraday", "/option-chain")
@@ -705,11 +724,28 @@ def capabilities(inp: Mapping[str, Any], status: Mapping[str, Any], gx: Mapping[
     oi_series = [v for v in (g(fut, "oi") or []) if v is not None]
     add("futures_oi", "Futures OI and change", AVAILABLE if oi_series else UNAVAILABLE, "minute samples of the current-month contract", "futures", "/tools/future-price-oi")
     flow = g(mk, "flow", "futures") or {}
-    add("session_cvd", "Session CVD (futures)", AVAILABLE if flow.get("cvd_pct") is not None else UNAVAILABLE, "ESTIMATE by the quote and tick rule, not a trade tape" if flow.get("cvd_pct") is not None else "no futures flow tracked", "market", "/tools/future-flow")
+    fut_stored = _stored_last(g(inp.get("flow"), "fut"), ("b", "s"))
+    if flow.get("cvd_pct") is not None:
+        add("session_cvd", "Session CVD (futures)", AVAILABLE, "ESTIMATE by the quote and tick rule, not a trade tape", "market", "/tools/future-flow")
+    elif fut_stored is not None:
+        b_, s_ = fut_stored[1]["b"], fut_stored[1]["s"]
+        pct = None if b_ + s_ <= 0 else (b_ - s_) / (b_ + s_) * 100
+        add("session_cvd", "Session CVD (futures)", PARTIAL, f"from the last stored minute ({_hhmm_ist(fut_stored[0])} IST){'' if pct is None else f': {pct:+.1f}% of classified volume'}; the live tracker has nothing now (market closed, or the feed has not pushed since the backend restarted). ESTIMATE, not a trade tape",
+            "market", "/tools/future-flow", as_of=fut_stored[0])
+    else:
+        add("session_cvd", "Session CVD (futures)", UNAVAILABLE, "no futures flow tracked and none stored today", "market", "/tools/future-flow", why="no_data_yet")
     ok_w = g(inp.get("rolling"), "ok_windows") or 0
     add("rolling_cvd", "Rolling 5/15/30-minute CVD", AVAILABLE if ok_w == 3 else (PARTIAL if ok_w else UNAVAILABLE),
         "derived from the stored per-minute cumulative flow (estimate)" if ok_w == 3 else ("; ".join(f"{w['minutes']} min: {w['status']}" for w in (g(inp.get("rolling"), "windows") or {}).values() if w["status"] != "ok") or "no stored flow"), "flow", "/tools/future-flow")
-    add("vwap", "VWAP and deviation", AVAILABLE if g(ins, "vwap", "vwap") is not None else UNAVAILABLE, "the future's own VWAP (exchange average traded price), not the index's", "intraday", "/tools/future-flow")
+    vw_stored = _stored_last(g(inp.get("flow"), "fut"), ("atp", "ltp"))
+    if g(ins, "vwap", "vwap") is not None:
+        add("vwap", "VWAP and deviation", AVAILABLE, "the future's own VWAP (exchange average traded price), not the index's", "intraday", "/tools/future-flow")
+    elif vw_stored is not None:
+        v_ = vw_stored[1]
+        add("vwap", "VWAP and deviation", PARTIAL, f"from the last stored minute ({_hhmm_ist(vw_stored[0])} IST): the future's exchange average traded price {v_['atp']:.2f} against its last price {v_['ltp']:.2f} ({(v_['ltp'] / v_['atp'] - 1) * 100:+.2f}%); the live figure resumes when the feed pushes",
+            "intraday", "/tools/future-flow", as_of=vw_stored[0])
+    else:
+        add("vwap", "VWAP and deviation", UNAVAILABLE, "no live future price and none stored today", "intraday", "/tools/future-flow", why="no_data_yet")
     add("spot_futures", "NIFTY spot and futures", AVAILABLE if g(ins, "price", "last") is not None and g(fut, "latest", "future") is not None else (PARTIAL if g(ins, "price", "last") is not None else UNAVAILABLE), "spot from the chain sample, futures from the minute samples", "futures", "/tools/future-dashboard")
     stocks = g(mk, "flow", "heavy5", "stocks") or []
     add("heavyweights", "Heavyweight stock analytics", AVAILABLE if stocks else UNAVAILABLE, "the five largest constituents by current weight; stock prices and estimated CVD only" if stocks else "no heavyweight flow", "market", "/tools/future-flow")
@@ -719,17 +755,25 @@ def capabilities(inp: Mapping[str, Any], status: Mapping[str, Any], gx: Mapping[
     w = q.get("weights") or {}
     add("hw_weights", "Heavyweight index weights", UNAVAILABLE if not w.get("as_of") else (PARTIAL if w.get("stale") or w.get("approximate") else AVAILABLE),
         "no stored weights" if not w.get("as_of") else f"as of {w.get('as_of')} from {w.get('source')}" + (" (STALE: older than 60 days, a newer official composition has not been loaded)" if w.get("stale") else "") + (" (approximate)" if w.get("approximate") else ""), "market", "/tools/future-flow")
-    add("hw_cvd", "Heavyweight CVD (per stock, rolling 5/15/30 min, aggregate)", UNAVAILABLE if not h.get("available") else (AVAILABLE if q.get("aggregate_available") and q.get("valid") == q.get("of") else PARTIAL if q.get("aggregate_available") else UNAVAILABLE),
-        "CVD PROXY by the quote and tick rule; " + ("all stocks valid" if q.get("valid") == q.get("of") else f"{q.get('valid')} of {q.get('of')} stocks valid") if h.get("available") else "no heavyweight flow", "market", "/tools/future-flow")
-    add("hw_genuine_cvd", "Genuine aggressor-side CVD for the heavyweights", UNAVAILABLE, "the feed carries no aggressor-side trade tape or per-trade timestamps; only a labelled proxy exists", "market", None)
+    hw_stored = _stored_last([(st, {"rows_n": len(pl.get("rows") or [])}) for st, pl in (g(inp.get("flow"), "heavy5") or []) if isinstance(pl, Mapping) and pl.get("rows")], ("rows_n",))
+    hw_state = UNAVAILABLE if not h.get("available") else (AVAILABLE if q.get("aggregate_available") and q.get("valid") == q.get("of") else PARTIAL if q.get("aggregate_available") else UNAVAILABLE)
+    if h.get("available") and hw_state != UNAVAILABLE:
+        add("hw_cvd", "Heavyweight CVD (per stock, rolling 5/15/30 min, aggregate)", hw_state, "CVD PROXY by the quote and tick rule; " + ("all stocks valid" if q.get("valid") == q.get("of") else f"{q.get('valid')} of {q.get('of')} stocks valid"), "market", "/tools/future-flow")
+    elif hw_stored is not None:
+        add("hw_cvd", "Heavyweight CVD (per stock, rolling 5/15/30 min, aggregate)", PARTIAL,
+            f"stored per-minute flow of the heavyweights exists up to {_hhmm_ist(hw_stored[0])} IST, but the live figures need the feed to push and then a stretch of continuous flow (the exchange restarts its volume counters at some session phases, and a restart of the backend now continues them); {q.get('valid', 0)} of {q.get('of', 0)} stocks valid now",
+            "market", "/tools/future-flow", as_of=hw_stored[0])
+    else:
+        add("hw_cvd", "Heavyweight CVD (per stock, rolling 5/15/30 min, aggregate)", UNAVAILABLE, "no heavyweight flow tracked or stored today", "market", "/tools/future-flow", why="no_data_yet")
+    add("hw_genuine_cvd", "Genuine aggressor-side CVD for the heavyweights", UNAVAILABLE, "the feed carries no aggressor-side trade tape or per-trade timestamps; only a labelled proxy exists", "market", None, why="feed")
     ml = inp.get("ml") or {}
     st_ml, ev = ml.get("status") or {}, ml.get("last_evaluation") or {}
     gate_ok = bool((ev.get("gate") or {}).get("show_probabilities"))
     add("intraday_ml", "Intraday ML model", AVAILABLE if gate_ok else (PARTIAL if ml else UNAVAILABLE),
         ("passed its validation gate; shown as context, not scored" if gate_ok else f"research only: {st_ml.get('labelled_sessions', 0)} labelled session(s), stage '{st_ml.get('stage_name', 'unknown')}'; no probability may be shown until the gate passes, and it is not part of the score") if ml else "the intraday research service is not running",
         "ml", "/analysis")
-    add("spot_vwap", "Spot (index) VWAP", UNAVAILABLE, "the NIFTY 50 index has no traded volume, so a spot VWAP cannot be computed; only the future's own VWAP exists and spot is never compared with it", "intraday", None)
-    add("rollover", "Rollover data", UNAVAILABLE, ROLLOVER_NEED, "futures", None)
-    add("stock_futures", "Individual stock futures", UNAVAILABLE, "stock futures are not subscribed or stored; heavyweight analysis uses cash-market prices and flow only", "market", None)
-    add("option_aggressor", "Option trade-side (aggressor) data", UNAVAILABLE, "the feed carries no aggressor side for options; buyer- or seller-initiated trades are never inferred", "positioning", None)
+    add("spot_vwap", "Spot (index) VWAP", UNAVAILABLE, "the NIFTY 50 index has no traded volume, so a spot VWAP cannot be computed; only the future's own VWAP exists and spot is never compared with it", "intraday", None, why="feed")
+    add("rollover", "Rollover data", UNAVAILABLE, ROLLOVER_NEED, "futures", None, why="not_subscribed")
+    add("stock_futures", "Individual stock futures", UNAVAILABLE, "stock futures are not subscribed or stored; heavyweight analysis uses cash-market prices and flow only", "market", None, why="not_subscribed")
+    add("option_aggressor", "Option trade-side (aggressor) data", UNAVAILABLE, "the feed carries no aggressor side for options; buyer- or seller-initiated trades are never inferred", "positioning", None, why="feed")
     return rows

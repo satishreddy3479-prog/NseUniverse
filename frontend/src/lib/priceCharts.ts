@@ -67,10 +67,15 @@ export function timeLinesOption(
       axisPointer: { type: "cross", lineStyle: { color: c.muted, type: "dashed" }, label: { backgroundColor: c.paper, color: c.slate,
         formatter: (p: { axisDimension?: string; value: unknown }) => (p.axisDimension === "x" ? hhmm(Number(p.value)) : typeof p.value === "number" ? fmtInt(p.value) : String(p.value)) } },
       formatter: (params: unknown) => {
-        const ps = params as { axisValue: number; seriesName: string; value: [number, number | null]; marker: string }[];
+        const ps = params as { axisValue: number; seriesName: string; value?: [number, number | null]; marker: string; data?: { from?: number; to?: number } }[];
         const by = new Map(lines.map((l) => [l.name, l]));
-        return `<b>${dayLabel(ps[0]!.axisValue)} ${hhmm(ps[0]!.axisValue)} IST</b><br/>` +
-          ps.map((p) => `${p.marker}${p.seriesName}: ${p.value[1] == null ? "—" : by.get(p.seriesName)!.fmt(p.value[1])}`).join("<br/>");
+        // a series that is not one of the lines (the roll markers a board adds, for one) must not break the tooltip: it threw on every mouse move and froze the chart
+        const row = (p: (typeof ps)[number]): string => {
+          const l = by.get(p.seriesName);
+          if (l) return `${p.marker}${p.seriesName}: ${p.value?.[1] == null ? "—" : l.fmt(p.value[1])}`;
+          return p.data?.from != null ? `${p.marker}Roll ${fmtInt(p.data.from)} → ${fmtInt(p.data.to ?? 0)}` : "";
+        };
+        return `<b>${dayLabel(ps[0]!.axisValue)} ${hhmm(ps[0]!.axisValue)} IST</b><br/>` + ps.map(row).filter(Boolean).join("<br/>");
       },
     },
     xAxis: {

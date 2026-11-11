@@ -20,6 +20,7 @@
   --down: #ff5a64;
   --warn: #ff9f3d;
   --info: #4cc2ff;
+  --legend-off: #7385a3;    /* a legend entry the user switched off: dimmer than on, still readable */
   --shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
   --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.45);
   --r-panel: 4px;
@@ -41,13 +42,14 @@
   --slate-2: #f3f6fb;      /* inset areas: table heads, tiles */
   --rule: #d3dae7;         /* hairlines */
   --paper: #13203a;        /* text: deep navy ink */
-  --muted: #53617b;        /* secondary text, 6:1 on white */
+  --muted: #46546e;        /* secondary text, 7.6:1 on white, 7:1 on the inset panels */
   --accent: #6445ec;       /* brand violet, as lively as the dark theme's */
   --brass: #cc7f00;        /* ATM / second series */
-  --up: #079a68;           /* data colours: same hues and weight as the dark theme, a notch deeper for white */
-  --down: #e0314a;
-  --warn: #dc6d06;
-  --info: #1479d1;
+  --up: #067a54;           /* data colours: same hues as the dark theme, deep enough for text on white and on the inset panels (5:1 and better) */
+  --down: #c81e3e;
+  --warn: #a14a08;
+  --info: #165fc2;
+  --legend-off: #73809a;
   --shadow: 0 0 0 0 transparent, 0 1px 2px rgba(19, 32, 58, 0.06);
   --shadow-pop: 0 1px 2px rgba(19, 32, 58, 0.06), 0 12px 28px rgba(19, 32, 58, 0.16);
   --r-panel: 10px;
@@ -220,3 +222,7 @@ header.bg-slate { background: var(--header-bg); box-shadow: var(--shadow); }
 /* Phone layout of the Analysis widgets: each widget takes the height of its content and every chart inside keeps the
    height the widget was designed for, so wrapped buttons, long notes or a larger system font never overlap a chart. */
 .widget-stacked .echart-box:not(.echart-fixed) { min-height: var(--chart-h, 220px); }
+
+/* Light theme: faded text utilities and switched-off chart legends stay readable (the dim variants were written for the dark theme) */
+[data-theme="light"] .text-muted\/70, [data-theme="light"] .text-muted\/50 { color: var(--muted); }
+[data-theme="light"] .text-paper\/90 { color: var(--paper); }

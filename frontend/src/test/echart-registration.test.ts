@@ -2,7 +2,8 @@
 import * as echarts from "echarts/core";
 import { SVGRenderer } from "echarts/renderers";
 import { describe, expect, it } from "vitest";
-import { keepLegend } from "../components/EChart"; // importing it registers the parts under test
+import { keepLegend, safeTooltips, withInactiveLegend } from "../components/EChart";
+import { timeLinesOption } from "../lib/priceCharts"; // importing it registers the parts under test
 
 echarts.use(SVGRenderer); // server-side rendering for the test only
 
@@ -98,5 +99,43 @@ describe("legend choices with a real ECharts instance (the live-refresh scenario
     draw();
     expect(c.getOption().legend[0]!.selected).toEqual({ Straddle: false, "NIFTY 50": true });
     c.dispose();
+  });
+});
+
+describe("tooltips cannot freeze a chart", () => {
+  const C = { up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" };
+  it("an axis tooltip that meets a series that is not one of its lines (the roll markers) does not throw and names the roll", () => {
+    const o = timeLinesOption([1000, 2000], [{ name: "Straddle", color: C.up, data: [1, 2], fmt: (v) => v.toFixed(1) }], C, null) as unknown as { tooltip: { formatter: (p: unknown) => string } };
+    const html = o.tooltip.formatter([
+      { axisValue: 1000, seriesName: "Straddle", value: [1000, 1], marker: "" },
+      { axisValue: 1000, seriesName: "Rolls", value: [1000, 1], marker: "", data: { from: 25150, to: 25200 } },
+      { axisValue: 1000, seriesName: "Mystery", value: [1000, 1], marker: "" },
+    ]);
+    expect(html).toContain("Straddle: 1.0");
+    expect(html).toContain("Roll 25,150 → 25,200");
+    expect(html).not.toContain("Mystery");
+  });
+  it("safeTooltips turns a throwing formatter (chart level or series level) into an empty tooltip", () => {
+    const boom = () => { throw new Error("bad series"); };
+    const o = safeTooltips({ tooltip: { trigger: "axis", formatter: boom }, series: [{ type: "line", tooltip: { formatter: boom } }, { type: "line" }] } as never) as unknown as {
+      tooltip: { formatter: () => string }; series: { tooltip?: { formatter: () => string } }[] };
+    expect(o.tooltip.formatter()).toBe("");
+    expect(o.series[0]!.tooltip!.formatter()).toBe("");
+    expect(o.series[1]!.tooltip).toBeUndefined();
+    expect(safeTooltips({ series: [] } as never)).toEqual({ series: [] }); // an option without a tooltip passes through
+  });
+});
+
+describe("switched-off legend entries stay readable", () => {
+  it("every legend gets the theme's off colour unless it sets its own", () => {
+    const o = withInactiveLegend({ legend: { top: 0 } } as never, "#73809a") as unknown as { legend: { inactiveColor: string; inactiveBorderColor: string } };
+    expect(o.legend.inactiveColor).toBe("#73809a");
+    expect(o.legend.inactiveBorderColor).toBe("#73809a");
+    const own = withInactiveLegend({ legend: { inactiveColor: "#123456" } } as never, "#73809a") as unknown as { legend: { inactiveColor: string } };
+    expect(own.legend.inactiveColor).toBe("#123456");
+    const arr = withInactiveLegend({ legend: [{ top: 0 }, { top: 5 }] } as never, "#73809a") as unknown as { legend: { inactiveColor: string }[] };
+    expect(arr.legend.map((l) => l.inactiveColor)).toEqual(["#73809a", "#73809a"]);
+    const none = { series: [] };
+    expect(withInactiveLegend(none as never, "#73809a")).toBe(none);
   });
 });

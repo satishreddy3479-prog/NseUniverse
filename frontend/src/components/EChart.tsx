@@ -48,6 +48,40 @@ export function fitNarrow(option: EChartsCoreOption, width: number): EChartsCore
 }
 
 /**
+ * Every tooltip formatter of the option wrapped so that it cannot throw. A formatter that threw (an axis tooltip meeting a series it did not expect) ran on
+ * every mouse move and froze the chart; now such a tooltip shows nothing for that move and the error is logged once.
+ */
+let warned = false;
+const guard = (fn: unknown): unknown => {
+  if (typeof fn !== "function") return fn;
+  return (...a: unknown[]) => {
+    try { return (fn as (...x: unknown[]) => unknown)(...a); } catch (e) {
+      if (!warned) { warned = true; console.error("chart tooltip formatter failed", e); }
+      return "";
+    }
+  };
+};
+export function safeTooltips(option: EChartsCoreOption): EChartsCoreOption {
+  const o = option as Obj;
+  const fixTip = (t: unknown): unknown => (t && typeof t === "object" && !Array.isArray(t) && typeof (t as Obj).formatter === "function" ? { ...(t as Obj), formatter: guard((t as Obj).formatter) } : t);
+  const out: Obj = { ...o };
+  if (Array.isArray(o.tooltip)) out.tooltip = o.tooltip.map(fixTip); else if (o.tooltip) out.tooltip = fixTip(o.tooltip);
+  if (Array.isArray(o.series)) out.series = o.series.map((x) => { const s = x as Obj; return s.tooltip ? { ...s, tooltip: fixTip(s.tooltip) } : s; });
+  return out as EChartsCoreOption;
+}
+
+/**
+ * A legend entry the user switched off is drawn in ECharts' default pale grey (#ccc), which is nearly invisible on the light theme. Every legend gets the
+ * theme's own "off" colour unless the option sets one (``--legend-off``, readable on both themes).
+ */
+export function withInactiveLegend(option: EChartsCoreOption, off: string): EChartsCoreOption {
+  const o = option as Obj;
+  const fix = (l: Obj): Obj => ("inactiveColor" in l ? l : { ...l, inactiveColor: off, inactiveBorderColor: off });
+  if (Array.isArray(o.legend)) return { ...o, legend: o.legend.map((l) => fix(l as Obj)) } as EChartsCoreOption;
+  return o.legend ? ({ ...o, legend: fix(o.legend as Obj) } as EChartsCoreOption) : option;
+}
+
+/**
  * Keeps what the user clicked in a legend across updates. A builder that sets ``legend.selected`` (a line that starts hidden, or the HV lines of the IV chart)
  * would otherwise put every series back to its default on the next live refresh, so a click on the legend lasted a few seconds. ``user`` holds the user's
  * choices by series name; ``defaults`` the defaults last applied. When the page itself changes a default (an external checkbox) its intent wins and the
@@ -109,7 +143,7 @@ export function EChart({ option, onClick, ariaLabel, className = "", group }: {
   useEffect(() => {
     // replaceMerge keeps the user's zoom while series appear/disappear with the CE/PE toggles.
     // No chart animates: a live chart redrawn on every tick must not keep sliding, and a still chart can be read (animation off everywhere).
-    chart.current?.setOption({ ...(keepLegend(fitNarrow(option, width), userLegend.current, legendDefaults.current) as Obj), animation: false, animationDuration: 0, animationDurationUpdate: 0 }, { replaceMerge: ["series"] });
+    chart.current?.setOption({ ...(withInactiveLegend(keepLegend(fitNarrow(safeTooltips(option), width), userLegend.current, legendDefaults.current), getComputedStyle(document.documentElement).getPropertyValue("--legend-off").trim() || "#8a96ab") as Obj), animation: false, animationDuration: 0, animationDurationUpdate: 0 }, { replaceMerge: ["series"] });
   }, [option, width]);
 
   return <div ref={el} role="img" aria-label={ariaLabel} className={`echart-box h-full min-h-[120px] w-full ${className}`} />;

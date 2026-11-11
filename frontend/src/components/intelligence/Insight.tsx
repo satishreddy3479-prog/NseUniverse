@@ -122,11 +122,22 @@ export function TimelinePanel() {
 }
 
 export function AlertsPanel({ alerts }: { alerts: AlertRow[] }) {
+  const [sev, setSev] = useState<"all" | "high" | "medium">("all");
+  const shown = sev === "all" ? alerts : alerts.filter((a) => a.severity === sev);
+  const count = (s: string) => alerts.filter((a) => a.severity === s).length;
   return (
     <section aria-label="Alert centre" className="rounded-[var(--radius-panel)] border border-rule bg-slate p-4" data-testid="mi-alerts">
-      <h2 className="mb-1 text-sm font-semibold text-paper">Alert centre <span className="font-normal text-muted">· raised from changes between recorded minutes; the same alert is not repeated inside 10 minutes</span></h2>
-      {alerts.length === 0 ? <p className="text-sm text-muted" data-testid="mi-no-alerts">No alert has been raised today.</p> : (
-        <ul className="space-y-2">{alerts.map((a) => (
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-paper">Alert centre <span className="num ml-1 rounded-full bg-slate-2 px-2 py-0.5 text-[11px] font-normal text-muted" data-testid="mi-alert-count">{alerts.length} today</span></h2>
+        {alerts.length > 0 && (
+          <div role="group" aria-label="Filter alerts by severity" className="flex gap-1 text-[11px]">
+            {([["all", `All ${alerts.length}`], ["high", `High ${count("high")}`], ["medium", `Medium ${count("medium")}`]] as const).map(([k, label]) => (
+              <button key={k} type="button" aria-pressed={sev === k} onClick={() => setSev(k)} className={`rounded-full border px-2 py-0.5 ${sev === k ? "border-accent bg-accent/15 text-paper" : "border-rule text-muted hover:text-paper"}`}>{label}</button>))}
+          </div>)}
+      </div>
+      <p className="mb-2 text-[11px] text-muted">Raised from changes between recorded minutes; the same alert is not repeated inside 10 minutes. Newest first.</p>
+      {alerts.length === 0 ? <p className="text-sm text-muted" data-testid="mi-no-alerts">No alert has been raised today.</p> : shown.length === 0 ? <p className="text-sm text-muted" data-testid="mi-no-alerts-filtered">No {sev} alert today.</p> : (
+        <ul className="max-h-[440px] space-y-2 overflow-y-auto pr-1" data-testid="mi-alerts-list" aria-label="Alerts, scrollable" tabIndex={0}>{shown.map((a) => (
           <li key={a.id} className="rounded-sm border border-rule bg-slate-2/50 p-2 text-xs" data-testid="mi-alert">
             <div className="flex flex-wrap items-center gap-2"><span className="text-muted">{fmtTimeIST(a.at)}</span><span className="font-medium text-paper">{a.kind}</span><span className={`rounded-sm border px-1.5 text-[11px] ${SEV[a.severity] ?? ""}`}>{a.severity}</span><span className={`text-[11px] ${toneOf(a.direction === "bullish" ? 50 : a.direction === "bearish" ? -50 : 0)}`}>{a.direction}</span></div>
             <p className="text-paper">{a.text}</p>

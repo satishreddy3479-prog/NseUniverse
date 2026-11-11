@@ -224,7 +224,7 @@ describe("Market Intelligence page", () => {
     view(base);
     const c = await screen.findByTestId("mi-capabilities");
     expect(within(c).getByTestId("mi-cap-session_cvd").textContent).toContain("AVAILABLE");
-    expect(within(c).getByTestId("mi-cap-session_cvd").textContent).toContain("2026-11-09T04:29:58+00:00");
+    expect(within(c).getByTestId("mi-cap-session_cvd").textContent).toContain("09:59:58 IST"); // 04:29:58 UTC, shown in IST
     expect(within(c).getByTestId("mi-cap-vega").textContent).toContain("PARTIAL");
     expect(within(c).getByTestId("mi-cap-rollover").textContent).toContain("UNAVAILABLE");
     expect(within(c).getByTestId("mi-cap-rollover").textContent).toContain("no percentage is shown");
