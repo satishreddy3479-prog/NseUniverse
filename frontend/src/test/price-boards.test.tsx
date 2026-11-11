@@ -34,11 +34,11 @@ const series = (strikes: number[]): StrikeSeries => {
   };
 };
 
-function mockApi(hist: HistoryResponse) {
+function mockApi(hist: HistoryResponse, seriesFn: (strikes: number[]) => StrikeSeries = series) {
   const routes: Record<string, unknown> = {
     "/api/status": status(), "/api/expiries": expiries, "/api/snapshots": [], "/api/sessions": [], "/api/option-chain": bigChain(),
     "/api/history/observations": hist,
-    "/api/history/strike-series": (u: string) => series(new URL(u, "http://x").searchParams.get("strikes")!.split(",").map((x) => (x === "atm" ? 24050 : Number(x)))),
+    "/api/history/strike-series": (u: string) => seriesFn(new URL(u, "http://x").searchParams.get("strikes")!.split(",").map((x) => (x === "atm" ? 24050 : Number(x)))),
   };
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -93,6 +93,56 @@ describe("MultiStrike and Multi-Straddle", () => {
     renderAt("/tools/multi-straddle");
     const chart = await screen.findByRole("img", { name: "Straddle price of the chosen strikes" });
     expect(chart.getAttribute("data-series")?.split("|").every((n) => n.endsWith("Straddle"))).toBe(true);
+  });
+});
+
+describe("ATM Rolling Straddle", () => {
+  // spot 24,010 -> 24,030 -> 24,060 across the 24,000 / 24,050 mid-point; each strike's straddle is CE + PE of the stored prices
+  const TIMES = ["2026-11-04T03:50:00Z", "2026-11-04T03:51:00Z", "2026-11-04T03:52:00Z"];
+  const px: Record<number, [number[], number[]]> = { 24000: [[60, 63, 70], [40, 41, 41]], 24050: [[35, 38, 44], [55, 58, 58]] }; // [CE, PE] per sample
+  const rolling = (strikes: number[]): StrikeSeries => {
+    const per = <T,>(f: (k: number) => T) => Object.fromEntries(strikes.map((k) => [String(k), f(k)]));
+    const zeros = [0, 0, 0];
+    return { underlying: "NIFTY", expiry: "2026-11-03", strikes, atm_strike: 24050, times: TIMES, spot: [24010, 24030, 24060],
+      ce_price: per((k) => px[k]?.[0] ?? [50, 50, 50]), pe_price: per((k) => px[k]?.[1] ?? [50, 50, 50]), ce_oi: per(() => [1, 1, 1]), pe_oi: per(() => [1, 1, 1]), ce_change: per(() => zeros), pe_change: per(() => zeros), stride: 1, warnings: [], definitions: {} };
+  };
+  it("draws rolling, fixed and roll-adjusted premium with the rolls marked, and states the numbers from the stored samples", async () => {
+    mockApi(history(TIMES), rolling);
+    renderAt("/tools/rolling-straddle");
+    const board = await screen.findByTestId("rolling-straddle-board");
+    const prem = await within(board).findByRole("img", { name: /Rolling ATM straddle, fixed opening-strike straddle/ });
+    expect(prem.getAttribute("data-series")).toBe("Rolling ATM straddle|Fixed 24,000 straddle|Roll-adjusted premium|NIFTY 50|Rolls");
+    // rolling: 24000@0 = 100, 24050@1 = 96, 24050@2 = 102; fixed 24000: 100, 104, 111; adjusted: 100, +4 (24000 held) = 104, +6 (24050) = 110
+    const stats = within(board).getByTestId("rs-stats").textContent ?? "";
+    expect(stats).toContain("102.0"); // rolling now
+    expect(stats).toContain("+2.0"); // change from open (includes the roll)
+    expect(stats).toContain("+10.0"); // roll-adjusted change 110 - 100
+    expect(stats).toContain("100.0"); // opening premium
+    expect(stats).toContain("+50 pts since the first sample");
+    const reading = within(board).getByTestId("rs-reading").textContent ?? "";
+    expect(reading).toContain("opened at 100.0 and is 102.0 now (+2.0 points)");
+    expect(reading).toContain("not a forecast");
+    const rolls = within(board).getByTestId("rs-rolls");
+    expect(rolls.textContent).toContain("24,000 → 24,050");
+    expect(rolls.textContent).toContain("−8.0"); // credit: 96 - 104 at the roll
+    expect(rolls.textContent).toContain("1 under");
+  });
+  it("a roll rule that rolls later changes the path, and the rule is stated", async () => {
+    mockApi(history(TIMES), rolling);
+    renderAt("/tools/rolling-straddle");
+    const board = await screen.findByTestId("rolling-straddle-board");
+    await userEvent.click(within(board).getByRole("button", { name: "Roll at 1 strike" }));
+    expect(board.textContent).toContain("Stay with a strike until spot is a full strike-gap away");
+    expect(within(board).getByRole("button", { name: "Roll at 1 strike" })).toHaveAttribute("aria-pressed", "true");
+    expect(await within(board).findByText(/under “Roll at 1 strike”/)).toBeInTheDocument();
+  });
+  it("is listed in the FNO price tools and says it is descriptive", async () => {
+    mockApi(history(TIMES), rolling);
+    renderAt("/tools/rolling-straddle");
+    const nav = await screen.findByRole("navigation", { name: "Price tools" });
+    expect(within(nav).getByRole("link", { name: /ATM Rolling Straddle/ })).toHaveAttribute("aria-current", "page");
+    expect(within(nav).getByRole("link", { name: /ATM Straddle Chart/ })).toBeInTheDocument();
+    expect(await screen.findByText(/not a trade signal/)).toBeInTheDocument();
   });
 });
 

@@ -4,6 +4,7 @@ import { Info } from "../components/Info";
 import { DashProvider, type Range } from "../components/dashboard/DashContext";
 import { WIDGETS } from "../components/dashboard/widgets";
 import { MultiStrikeBoard, PriceOiBoard } from "../components/dashboard/PriceBoards";
+import { RollingStraddleBoard } from "../components/dashboard/RollingStraddle";
 import { VegaAnalysisBoard } from "../components/dashboard/VegaAnalysis";
 import { GammaAnalysisBoard } from "../components/dashboard/GammaAnalysis";
 import { StreamButtons } from "../components/LiveActivity";
@@ -128,6 +129,7 @@ export default function ToolPage() {
         {tool.board === "priceOi" && <PriceOiBoard />}
         {tool.board === "multiStrike" && <MultiStrikeBoard straddle={false} />}
         {tool.board === "multiStraddle" && <MultiStrikeBoard straddle />}
+        {tool.board === "rollingStraddle" && <RollingStraddleBoard />}
         {tool.page === "flows" && <FlowsPanel />}
         {tool.page === "cash" && <CashPanel />}
         {tool.page === "futflow" && <FuturesFlowBody expiry={expiry} part="flow" />}

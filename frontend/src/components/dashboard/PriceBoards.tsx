@@ -10,7 +10,7 @@ import { strikeBoard, strikesAround, type StrikeBoard } from "../../lib/optionTo
 import { ratio, rupee, signedUnits, STRIKE_COLORS, timeLinesOption, units, type Line } from "../../lib/priceCharts";
 import type { StrikeSeries } from "../../lib/types";
 
-const GROUP = "price-tools";
+export const GROUP = "price-tools";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -45,7 +45,7 @@ export function useSessionWindow() {
   return { since: s.since, until: s.until, bounds: s.bounds, afterHoursOnly: s.afterHoursOnly, loaded: !!all, day: s.day, controls };
 }
 
-function useStrikeSeries(strikes: string) {
+export function useStrikeSeries(strikes: string) {
   const d = useDash();
   const w = useSessionWindow();
   const q = useQuery({
@@ -56,7 +56,7 @@ function useStrikeSeries(strikes: string) {
   return { q, w };
 }
 
-function Panel({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {
+export function Panel({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {
   return (
     <section aria-label={title} className="flex min-h-[300px] flex-col overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate">
       <header className="flex min-h-9 items-center justify-between gap-2 border-b border-rule px-3">
@@ -67,10 +67,10 @@ function Panel({ title, right, children }: { title: string; right?: ReactNode; c
   );
 }
 
-const pill = (on: boolean) => `widget-nodrag min-h-7 rounded-sm border px-2 text-xs ${on ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`;
+export const pill = (on: boolean) => `widget-nodrag min-h-7 rounded-sm border px-2 text-xs ${on ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`;
 
 /** Shared states and footer for the three boards. */
-function Frame({ q, w, res, children, footer }: {
+export function Frame({ q, w, res, children, footer }: {
   q: { isPending: boolean; error: unknown }; w: ReturnType<typeof useSessionWindow>; res: StrikeSeries | undefined;
   children: ReactNode; footer: ReactNode;
 }) {
