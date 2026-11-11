@@ -26,6 +26,8 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
+from app.intelligence import voleval
+
 ARCH = 2  # the five-group layout (positioning, orderflow, volatility, structure, participation)
 HORIZONS: dict[str, int | None] = {"15m": 15, "30m": 30, "60m": 60, "end_of_session": None, "next_session": None}
 NEUTRAL_BAND = 15.0         # |score| below this is "no call"
@@ -219,6 +221,40 @@ def walk_forward(rows: Sequence[Mapping[str, Any]], horizon: str, *, min_train_s
             "enough_history": len(order) > min_train_sessions}
 
 
+def vol_group_score(row: Mapping[str, Any], cfg: voleval.VolConfig) -> float | None:
+    """The volatility group score of a stored row under ``cfg``, recomputed from the three inputs the timeline stores (ATM IV change, price change,
+    25-delta risk-reversal change). None when the row has none of them. Used to compare scoring modes on the same history."""
+    v = (row.get("metrics") or {}).get("vol") or {}
+    atm, spot, rr = (voleval._num(v.get(k)) for k in ("atm", "spot", "rr"))  # noqa: SLF001
+    parts = [x for x in (voleval.atm_score(atm, spot, cfg)[0], voleval.rr_score(rr, cfg)) if x is not None]
+    return None if not parts else sum(parts) / len(parts)
+
+
+MIN_SESSIONS_VOL_COMPARE = 20
+
+
+def compare_vol_modes(rows: Sequence[Mapping[str, Any]], horizons: Sequence[str] = ("15m", "30m", "60m", "end_of_session")) -> dict[str, Any]:
+    """Legacy against context scoring of the volatility group on the SAME stored sessions, chronologically (outcomes only from later rows), with the same
+    neutral band, flat band, minimum-sample rule and Wilson intervals as the main validation. It describes; it never changes the default mode: a
+    mode is only worth switching to if it is better on enough sessions with intervals that clearly separate, which is for a person to decide."""
+    have = [r for r in rows if (r.get("metrics") or {}).get("arch") == ARCH and any(v is not None for v in ((r.get("metrics") or {}).get("vol") or {}).values())]
+    sessions = sorted({str(r.get("session")) for r in have})
+    out: dict[str, Any] = {"sessions_with_inputs": len(sessions), "snapshots_with_inputs": len(have), "needed_sessions": MIN_SESSIONS_VOL_COMPARE, "horizons": {}}
+    if len(sessions) < MIN_SESSIONS_VOL_COMPARE:
+        return out | {"status": f"insufficient: {len(sessions)} session(s) with stored volatility inputs, {MIN_SESSIONS_VOL_COMPARE} needed before the two modes are compared", "verdict": None}
+    legacy, context = voleval.VolConfig(mode="legacy"), voleval.VolConfig(mode="context")
+    for h in horizons:
+        a = evaluate(have, h, scorer=lambda r: vol_group_score(r, legacy))
+        b = evaluate(have, h, scorer=lambda r: vol_group_score(r, context))
+        ha, hb = a.get("hit_rate"), b.get("hit_rate")
+        ca, cb = a.get("hit_rate_ci95"), b.get("hit_rate_ci95")
+        separated = None if None in (ca, cb) else (ca[0] > cb[1] or cb[0] > ca[1])  # type: ignore[index]
+        out["horizons"][h] = {"legacy": a, "context": b, "hit_rate_difference": None if ha is None or hb is None else round(hb - ha, 4), "intervals_separate": separated}
+    out["status"] = "descriptive: compare hit rates with their intervals; do not switch the default on a difference whose intervals overlap"
+    out["verdict"] = None
+    return out
+
+
 def report(rows: Sequence[Mapping[str, Any]], *, weights: Mapping[str, float] | None = None, min_train_sessions: int = 3) -> dict[str, Any]:
     """The full validation report across all horizons for the stored history, with the live weights re-applied when given (rescore)."""
     scorer = None if weights is None else (lambda r: rescore(r, weights))
@@ -227,6 +263,7 @@ def report(rows: Sequence[Mapping[str, Any]], *, weights: Mapping[str, float] | 
         "sessions": sessions, "snapshots": len(rows), "architecture": ARCH,
         "by_horizon": {h: evaluate(rows, h, scorer=scorer) for h in HORIZONS},
         "walk_forward": {h: walk_forward(rows, h, min_train_sessions=min_train_sessions) for h in HORIZONS},
+        "volatility_modes": compare_vol_modes(rows),
         "rules": ["chronological, no look-ahead: outcomes come only from later rows", "rows of another group layout are excluded, not mixed", "outcomes are never interpolated: a missing one leaves the snapshot unlabelled",
                   "fewer than 30 decided calls: no hit rate", "this describes how the provisional weights behaved on stored sessions; it is not a claim of predictive accuracy"],
     }

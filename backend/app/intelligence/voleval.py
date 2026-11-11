@@ -38,6 +38,8 @@ class VolConfig:
     move_pts: float = 0.3      # ATM IV change at or beyond this is expansion / contraction
     rr_move: float = 0.2       # RR change at or beyond this is a movement
     spot_flat: float = 0.1     # a spot move smaller than this (%) has no direction
+    atm_material: float = 0.2  # an ATM IV change smaller than this (points) is noise: it is not counted as evidence and does not set the verdict
+    noise_pts: float = 0.0     # DEAD ZONE for the score itself: a change smaller than this scores 0. Off (0) by default: switching it on changes scores, so it waits for validation
 
 
 DEFAULT = VolConfig()
@@ -80,6 +82,8 @@ def atm_score(iv_chg: float | None, spot_pct: float | None, c: VolConfig) -> tup
     """(score, rule applied) of the ATM IV term."""
     if iv_chg is None:
         return None, "no snapshot 15 minutes earlier"
+    if abs(iv_chg) < c.noise_pts:
+        return 0.0, f"inside the {c.noise_pts:g}-point dead zone: not scored"
     raw = -100.0 * math.tanh(iv_chg / c.atm_scale) * c.atm_factor
     if c.mode == "legacy":
         if spot_pct is not None and spot_pct > c.spot_flat and iv_chg > 0:
@@ -95,11 +99,19 @@ def atm_score(iv_chg: float | None, spot_pct: float | None, c: VolConfig) -> tup
 
 
 def rr_score(rr_change: float | None, c: VolConfig) -> float | None:
-    return None if rr_change is None else _clip(100.0 * math.tanh(rr_change / c.skew_scale))
+    if rr_change is None:
+        return None
+    return 0.0 if abs(rr_change) < c.noise_pts else _clip(100.0 * math.tanh(rr_change / c.skew_scale))
 
 
 def movement(chg: float | None, c: VolConfig) -> str | None:
-    return None if chg is None else "expansion" if chg >= c.move_pts else "contraction" if chg <= -c.move_pts else "little changed"
+    if chg is None:
+        return None
+    if abs(chg) >= c.move_pts:
+        return "expansion" if chg > 0 else "contraction"
+    if abs(chg) >= c.atm_material:
+        return "modest expansion" if chg > 0 else "modest contraction"
+    return "little changed"
 
 
 def mechanism(ce: float | None, pe: float | None, c: VolConfig) -> str | None:
@@ -163,18 +175,25 @@ def analyse(row: Mapping[str, Any], prev: Mapping[str, Any] | None, c: VolConfig
         ("ATM IV change against price", "atm", a_score, None if chg is None else f"ATM IV {chg:+.2f} pts (CE {_f(atm['ce_change'])}, PE {_f(atm['pe_change'])}) while spot {'is unavailable' if spot is None else f'{spot:+.2f}%'}; {a_rule}"),
         ("Call versus put IV momentum (25Δ)", "rr", r_score, None if r_chg is None else f"25Δ CE IV {_f(d25['ce_change'])} less PE IV {_f(d25['pe_change'])} = risk-reversal change {r_chg:+.2f} pts ({d25['mechanism'] or 'one leg missing'})"),
     ):
-        comps.append({"key": key, "name": name, "reading": reading, "score": None if score is None else round(score, 1), "contribution": None if score is None or not n else round(score / n, 1)})
-    bull = [x["name"] for x in comps if x["score"] is not None and x["score"] >= 15]
-    bear = [x["name"] for x in comps if x["score"] is not None and x["score"] <= -15]
+        # the size of the input behind the score: a strong-looking score from an insignificant change must not count as directional evidence
+        size = chg if key == "atm" else r_chg
+        threshold = c.atm_material if key == "atm" else c.rr_move
+        comps.append({"key": key, "name": name, "reading": reading, "score": None if score is None else round(score, 1), "contribution": None if score is None or not n else round(score / n, 1),
+                      "scored": True, "change": size, "material": size is not None and abs(size) >= threshold, "materiality_threshold": threshold})
+    bull = [x["name"] for x in comps if x["score"] is not None and x["score"] >= 15 and x["material"]]
+    bear = [x["name"] for x in comps if x["score"] is not None and x["score"] <= -15 and x["material"]]
     verdict = "CONFLICTING" if bull and bear else "BULLISH" if bull else "BEARISH" if bear else "NEUTRAL" if n else "UNAVAILABLE"
     total = None if not n else round(sum(avail) / n, 1)
     evidence: dict[str, list[str]] = {"bullish": [], "bearish": [], "conflicting": []}
     for x in comps:
         if x["score"] is None or abs(x["score"]) < 15:
             continue
+        if not x["material"]:
+            continue  # a strong-looking score from an insignificant change is not evidence (said in the explanation)
         evidence["bullish" if x["score"] > 0 else "bearish"].append(f"{x['name']} {x['score']:+.0f}: {x['reading']}")
     if verdict == "CONFLICTING":
         evidence["conflicting"] = [f"the components disagree: {', '.join(bull)} against {', '.join(bear)}"]
+    immaterial = [x for x in comps if x["score"] is not None and abs(x["score"]) >= 15 and not x["material"]]
     # information that is shown but not scored
     info = []
     if d25["rr_change_since_previous_session"] is not None and abs(d25["rr_change_since_previous_session"]) >= c.rr_move:
@@ -222,10 +241,30 @@ def analyse(row: Mapping[str, Any], prev: Mapping[str, Any] | None, c: VolConfig
         + "; ".join(f"{x['name']} {x['score']:+.0f} ({x['reading']})" for x in parts)
         + ("" if not parts else f". Each component contributes its score divided by {n}: " + ", ".join(f"{x['contribution']:+.1f}" for x in parts))
         + (". The components disagree, so the net score understates the conflict." if verdict == "CONFLICTING" else ".")
+        + "".join(f" {x['name']} scores {x['score']:+.0f} from a change of only {x['change']:+.2f} pts, below the {x['materiality_threshold']:g}-point materiality threshold, so it is not counted as evidence." for x in immaterial)
     ) if parts else "Volatility evidence is UNAVAILABLE: no two comparable snapshots."
+    # Components that are shown but add NOTHING to the score, with the reason: each is the same smile movement, or the same inputs, as a scored one.
+    unscored = [
+        {"key": "d10", "name": "10Δ risk-reversal change", "reading": None if d10["rr_change"] is None else f"{d10['rr_change']:+.2f} pts ({d10['mechanism'] or 'one leg missing'})", "score": None, "contribution": 0.0, "scored": False,
+         "why": "the 10Δ and 25Δ risk reversals are two points on the same smile tilt; scoring both would count one signal twice"},
+        {"key": "skew", "name": "25Δ skew (PE IV − CE IV)", "reading": None if d25["skew"] is None else f"{d25['skew']:+.2f}", "score": None, "contribution": 0.0, "scored": False,
+         "why": "the skew is the risk reversal with its sign reversed: the same number, not a second signal"},
+        {"key": "rr_prev", "name": "Risk reversal against the previous close", "reading": None if d25["rr_change_since_previous_session"] is None else f"{d25['rr_change_since_previous_session']:+.2f} pts", "score": None, "contribution": 0.0, "scored": False,
+         "why": "the level of the same risk reversal over a longer window; its 15-minute change is already scored"},
+        {"key": "divergence", "name": "Volatility versus price divergence", "reading": div, "score": None, "contribution": 0.0, "scored": False,
+         "why": "built from the same ATM IV and risk-reversal changes plus price: interpretation only, never added to the score"},
+    ]
+    correlated = [
+        "25Δ risk reversal and 10Δ risk reversal: two points on one smile tilt, highly correlated; only the 25Δ change is scored.",
+        "Skew and risk reversal: the same number with opposite signs; only one representation is scored.",
+        "ATM IV change and risk-reversal change: the risk-reversal change is CE IV change − PE IV change at the same delta, so a parallel shift of the smile cancels in it and is carried by the ATM term alone; the two are not mathematically the same signal, but both rise in a sell-off, so they are correlated in practice.",
+        "ATM IV change and price: in context mode the ATM term depends on the price direction, and price is also read by the structure group; legacy mode uses price only to switch the term off when IV and a rising price move together.",
+        "Previous-close risk reversal and the 15-minute risk-reversal change: one smile at two horizons; only the 15-minute change is scored.",
+    ]
     return {
+        "unscored_components": unscored, "correlated_inputs": correlated,
         "window": window_label, "spot_change_pct": spot, "atm": {**atm, "avg_change": chg, "movement": mv}, "d25": d25, "d10": d10, "components": comps, "total": total, "verdict": verdict,
-        "evidence": evidence, "not_scored": info, "interpretation": interp, "explanation": explanation, "scoring": {"mode": c.mode, "atm_scale": c.atm_scale, "atm_factor": c.atm_factor, "skew_scale": c.skew_scale},
+        "evidence": evidence, "not_scored": info, "interpretation": interp, "explanation": explanation, "scoring": {"mode": c.mode, "atm_scale": c.atm_scale, "atm_factor": c.atm_factor, "skew_scale": c.skew_scale, "atm_material": c.atm_material, "rr_material": c.rr_move, "noise_pts": c.noise_pts},
         "sign_convention": "risk reversal = CE IV − PE IV; skew = PE IV − CE IV = −risk reversal; change in risk reversal = CE IV change − PE IV change (the call-versus-put IV momentum); positive = calls strengthening relative to puts = bullish evidence",
         "sign_consistent": all(x["sign_consistent"] is not False for x in (atm, d25, d10)),
     }

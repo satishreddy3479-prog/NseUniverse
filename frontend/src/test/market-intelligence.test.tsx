@@ -296,6 +296,8 @@ const vol: VolDetail = {
   components: [{ key: "atm", name: "ATM IV change against price", reading: "ATM IV -0.27 pts", score: 29.6, contribution: 14.8 }, { key: "rr", name: "Call versus put IV momentum (25Δ)", reading: "risk-reversal change -0.71 pts", score: -94.4, contribution: -47.2 }],
   evidence: { bullish: ["ATM IV change against price +30: ATM IV -0.27 pts"], bearish: ["Call versus put IV momentum (25Δ) -94: risk-reversal change -0.71 pts"], conflicting: ["the components disagree"] }, not_scored: [],
   interpretation: [{ id: "atm", title: "ATM volatility", reading: "little changed: ATM IV -0.27 pts over 15 min" }, { id: "put_side", title: "Put-side IV (25Δ)", reading: "strengthening: +0.51 pts, now 16.90" }, { id: "confirmation", title: "Overall volatility confirmation", reading: "mixed: the volatility components disagree, so volatility does not confirm the price move" }],
+  unscored_components: [{ key: "d10", name: "10Δ risk-reversal change", reading: "-1.30 pts", score: null, contribution: 0, scored: false, why: "the 10Δ and 25Δ risk reversals are two points on the same smile tilt; scoring both would count one signal twice" }, { key: "skew", name: "25Δ skew (PE IV − CE IV)", reading: "+2.80", score: null, contribution: 0, scored: false, why: "the skew is the risk reversal with its sign reversed: the same number, not a second signal" }],
+  correlated_inputs: ["25Δ risk reversal and 10Δ risk reversal: two points on one smile tilt, highly correlated; only the 25Δ change is scored."],
   explanation: "Volatility evidence is CONFLICTING (group score -32): ATM IV change against price +30; Call versus put IV momentum (25Δ) -94. The components disagree, so the net score understates the conflict.", scoring: { mode: "legacy", atm_scale: 0.5, atm_factor: 0.6, skew_scale: 0.4 },
   sign_convention: "risk reversal = CE IV − PE IV; skew = PE IV − CE IV = −risk reversal", sign_consistent: true,
 };
@@ -322,6 +324,12 @@ describe("Volatility evidence", () => {
     expect(within(v).getByTestId("vol-interpretation").textContent).toContain("strengthening: +0.51 pts, now 16.90");
     expect(within(v).getByTestId("vol-sign").textContent).toContain("not about direction");
     expect(v.textContent).toContain("ATM little changed");
+    const un = within(v).getByTestId("vol-unscored-d10");
+    expect(un.textContent).toContain("not scored");
+    expect(un.textContent).toContain("one signal twice");
+    expect(within(v).getByTestId("vol-unscored-skew").textContent).toContain("the same number");
+    expect(within(v).getByTestId("vol-correlated").textContent).toContain("only the 25Δ change is scored");
+    expect(within(v).getByTestId("vol-correlated").textContent).toContain("is noise and is not counted as evidence");
   });
 });
 

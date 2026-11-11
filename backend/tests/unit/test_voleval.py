@@ -52,7 +52,7 @@ def test_each_component_contribution_is_its_score_over_the_number_of_components_
 def test_ce_and_pe_changes_current_ivs_risk_reversals_and_skews_are_all_shown_separately() -> None:
     d = ve.analyse(*REPORTED)
     a, d25, d10 = d["atm"], d["d25"], d["d10"]
-    assert (a["ce_change"], a["pe_change"]) == (-0.30, -0.24) and a["movement"] == "little changed"  # -0.27 is inside the 0.3-point band
+    assert (a["ce_change"], a["pe_change"]) == (-0.30, -0.24) and a["movement"] == "modest contraction"  # -0.27 is above the 0.2-point materiality threshold and below the 0.3-point expansion/contraction band
     assert (d25["ce_iv"], d25["pe_iv"]) == (14.1, 16.9) and (d25["ce_change"], d25["pe_change"]) == (-0.20, 0.51)
     assert d25["risk_reversal"] == pytest.approx(-2.8) and d25["skew"] == pytest.approx(2.8)  # skew = PE - CE = -RR
     assert d25["rr_previous_session"] == pytest.approx(-1.7) and d25["rr_change_since_previous_session"] == pytest.approx(-1.1)

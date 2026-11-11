@@ -78,8 +78,9 @@ export interface MlDigest {
 export interface VolBucket { ce_iv: number | null; pe_iv: number | null; ce_change: number | null; pe_change: number | null; risk_reversal: number | null; skew: number | null; rr_change: number | null; rr_previous_session: number | null; rr_change_since_previous_session: number | null; mechanism: string | null; movement?: string | null; avg_change?: number | null }
 export interface VolDetail {
   window: string; spot_change_pct: number | null; atm: VolBucket; d25: VolBucket; d10: VolBucket; total: number | null; verdict: "BULLISH" | "BEARISH" | "CONFLICTING" | "NEUTRAL" | "UNAVAILABLE";
-  components: { key: string; name: string; reading: string | null; score: number | null; contribution: number | null }[]; evidence: { bullish: string[]; bearish: string[]; conflicting: string[] }; not_scored: string[];
-  interpretation: { id: string; title: string; reading: string }[]; explanation: string; scoring: { mode: string; atm_scale: number; atm_factor: number; skew_scale: number }; sign_convention: string; sign_consistent: boolean;
+  components: { key: string; name: string; reading: string | null; score: number | null; contribution: number | null; scored?: boolean; change?: number | null; material?: boolean; materiality_threshold?: number }[];
+  unscored_components?: { key: string; name: string; reading: string | null; score: null; contribution: number; scored: false; why: string }[]; correlated_inputs?: string[]; evidence: { bullish: string[]; bearish: string[]; conflicting: string[] }; not_scored: string[];
+  interpretation: { id: string; title: string; reading: string }[]; explanation: string; scoring: { mode: string; atm_scale: number; atm_factor: number; skew_scale: number; atm_material?: number; rr_material?: number; noise_pts?: number }; sign_convention: string; sign_consistent: boolean;
 }
 export interface Pulse {
   spot: number | null; change_pct: number | null; futures: number | null; basis: number | null; basis_pct: number | null; atm_strike: number | null; expiry: string | null; atm_ce_premium: number | null; atm_pe_premium: number | null;
