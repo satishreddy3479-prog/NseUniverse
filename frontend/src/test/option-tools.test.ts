@@ -339,3 +339,38 @@ describe("smartOiCandles with one-minute index bars (real highs and lows, no gap
     expect(r.candles.every((c) => !c.spotFromBars)).toBe(true);
   });
 });
+
+describe("smartOiCandles: a stalled NIFTY feed (captured 11 Nov 2026, 15:12-15:30 IST)", () => {
+  // Real stored samples: spot 25106.85, 25117.2, 25128.8, then exactly 25130.0 for 14 samples (15:15-15:28), then 25255.05 at the 15:30 close.
+  // Real one-minute bars: 15:15-15:17 had one read each (n = 1) at 25130, 15:18-15:19 none, 15:20 resumed at 25528.2.
+  const z = (min: number) => new Date(Date.UTC(2026, 10, 11, 9, 30 + min)).toISOString(); // 15:00 IST + min
+  const mins = [12, 13, 14, ...Array.from({ length: 14 }, (_, i) => 15 + i), 30];
+  const spot = [25106.85, 25117.2, 25128.8, ...Array.from({ length: 14 }, () => 25130.0), 25255.05];
+  const series = { times: mins.map(z), spot, ce_oi: mins.map((_, i) => 1000 + i), pe_oi: mins.map((_, i) => 2000 + i) };
+  const bars = [
+    { at: z(12), o: 25107, h: 25108, l: 25105, c: 25106.85, n: 60 }, { at: z(13), o: 25107, h: 25118, l: 25107, c: 25117.2, n: 60 }, { at: z(14), o: 25117, h: 25129, l: 25117, c: 25128.8, n: 59 },
+    { at: z(15), o: 25130, h: 25130, l: 25130, c: 25130, n: 1 }, { at: z(16), o: 25130, h: 25130, l: 25130, c: 25130, n: 1 }, { at: z(17), o: 25130, h: 25130, l: 25130, c: 25130, n: 1 },
+    { at: z(20), o: 25528.2, h: 25656.6, l: 25528.2, c: 25614.9, n: 55 },
+  ];
+  const r = smartOiCandles(series, 3, { day: "2026-11-11", openMin: 9 * 60 + 15, closeMin: 15 * 60 + 40, bars });
+  it("finds the frozen quote and reports the stall, not the closing constant", () => {
+    expect(r.stalls).toEqual([{ from: "15:15", to: "15:28", value: 25130, samples: 14 }]); // the 25255.05 after the 15:30 close is one sample and not a stall
+    expect(r.thinBars).toBe(3); // the three one-read minutes
+  });
+  it("draws no NIFTY candle for the stalled minutes but keeps their OI", () => {
+    const by = Object.fromEntries(r.candles.map((c) => [c.label, c]));
+    expect(by["15:15"]!.spot).toBeNull(); // only stale samples and thin bars
+    expect(by["15:15"]!.ceOi).toBeGreaterThan(0);
+    expect(by["15:12"]!.spot?.close).toBeCloseTo(25128.8, 5);
+  });
+  it("flags the jump when real bars reappear 1.6% away, with the numbers", () => {
+    expect(r.jumps[0]!.at).toBe("15:18"); // the first jump (this excerpt stops before the real bars that slid back to the close)
+    expect(r.jumps[0]!.from).toBeCloseTo(25128.8, 5);
+    expect(r.jumps[0]!.to).toBeCloseTo(25528.2, 5);
+    expect(r.jumps[0]!.pct).toBeCloseTo((25528.2 / 25128.8 - 1) * 100, 6); // +1.59%
+  });
+  it("a normal day has no stall, thin bar or jump", () => {
+    const ok = smartOiCandles({ times: [z(0), z(3), z(6)], spot: [25100, 25110, 25105], ce_oi: [1, 2, 3], pe_oi: [1, 2, 3] }, 3, { day: "2026-11-11" });
+    expect([ok.stalls.length, ok.thinBars, ok.jumps.length]).toEqual([0, 0, 0]);
+  });
+});

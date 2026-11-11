@@ -8,6 +8,9 @@ _Last updated: 2026-11-04_
 ## NIFTY 50 Market Intelligence (10 Nov 2026)
 New first menu item and Home strip: fused sentiment (-100..+100) over five evidence groups (derivatives positioning, order-flow proxies, volatility, market structure, participation), with score, confidence, data coverage (available / partial / unavailable), evidence agreement and data freshness as separate quantities, regime, evidence per group, divergences, heuristic scenarios, timeline of recorded minutes, alerts, rolling 5/15/30-minute CVD (proxy), a visible Data quality and freshness section (AVAILABLE / PARTIAL / UNAVAILABLE per capability with source timestamps), and drill-down links to every existing page (D102, D103, [audit, overlap correction and methodology](market-intelligence-audit.md)). The command-centre score is no longer an input (double counting removed); weights are provisional and labelled so; walk-forward validation exists (`/api/intelligence/validation`) but has no real stored history to run on yet. Tested with fixtures and fake providers; not seen with live data in market hours or on a phone.
 
+## Smart OI chart: index-feed stall flagged (11 Nov 2026)
+The NIFTY index quote froze at 25,130.00 for 15:15-15:29 on 11 Nov and the live bars resumed 1.6% away; the chart now omits stalled/silent minutes and shows a banner (D125). Root cause is upstream and not fixed; open question: what the index really did 15:15-15:30.
+
 ## Participant-flow analysis (11 Nov 2026)
 FII/DII Summary page has an analysis board (readout, group cards, per-group table, comparison vs previous session / 1 week / 2 weeks, legs and option-bias charts) built on the stored participant rows (D124). Checked on the server's real 7 sessions; no backend change.
 
