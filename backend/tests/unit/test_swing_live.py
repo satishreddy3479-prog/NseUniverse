@@ -311,7 +311,7 @@ def test_volume_is_not_judged_in_the_opening_rush() -> None:
     ok = check_entry(o, tick(ltp=100.5, volume=1_000_000 * 30 / 375 * 1.2, received=at(9, 45)), at(9, 45))
     assert ok.state == "triggered" and ok.pace == pytest.approx(1.2)
     short = check_entry(o, tick(ltp=100.5, volume=1_000_000 * 30 / 375 * 0.5, received=at(9, 45)), at(9, 45))
-    assert short.state == "volume_short" and "50% of the pace needed" in short.note and "1.25 x its 20-day average" in short.note
+    assert short.state == "volume_short" and "50% of the pace needed" in short.note and "2 x its 20-day average" in short.note
 
 
 def test_orders_from_an_old_scan_are_not_checked_against_todays_prices(tmp_path: Path) -> None:

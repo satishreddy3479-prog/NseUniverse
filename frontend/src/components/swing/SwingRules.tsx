@@ -31,7 +31,7 @@ export function SwingRules({ report }: { report: SwingReport }) {
           <section aria-label="Entry">
             <h3 className="mb-1 font-medium text-paper">3 · Entry on the next session</h3>
             <ul className="list-disc space-y-1 pl-5 text-muted">
-              <li className={li}>Trigger: price trades through pivot × 1.003, with volume at least 1.25 × the 20-day average.</li>
+              <li className={li}>Trigger: price trades through pivot × 1.003, with volume at least 2 × the 20-day average (the spec says 1.25 ×; raised to 2 × from rule version swing-v2, 11 Nov 2026).</li>
               <li className={li}>Skip if the open is above pivot × 1.025 (no chasing). Fill at the higher of the open and the trigger.</li>
               <li className={li}>Initial stop: higher of pivot − 1.5 × ATR14 and 94.5% of the signal-day close.</li>
               <li className={li}>Day-1 cuts: exit at the stop if hit; exit at the close if it is below the pivot or in the bottom 35% of the day&apos;s range.</li>

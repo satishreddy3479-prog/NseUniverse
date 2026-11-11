@@ -11,7 +11,8 @@ from dataclasses import dataclass, field, replace
 
 from app.swing.indicators import Setup
 
-RULE_VERSION = "swing-v1"
+# swing-v2 (11 Nov 2026): the volume requirement is 2.0 x the 20-day average instead of the spec's 1.25 (D122). Every committed session carries its version.
+RULE_VERSION = "swing-v2"
 MIN_DIST, MAX_DIST = -4.0, 0.8
 
 
@@ -22,7 +23,7 @@ class Config:
     risk_pct: float = 0.02
     min_score: float = 65.0
     trigger_buf: float = 1.003
-    vol_mult: float = 1.25
+    vol_mult: float = 2.0  # the spec's 1.25 until 11 Nov 2026
     max_open_gap: float = 1.025
     atr_sl_mult: float = 1.5
     max_risk_frac: float = 0.945

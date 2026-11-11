@@ -74,7 +74,7 @@ def check_entry(order: Order, tick: LiveTick | None, now: datetime) -> EntryChec
         return EntryCheck(
             "volume_short",
             f"price is through the trigger, but volume is only {pace:.0%} of the pace needed "
-            "(the rule needs the day's volume to reach 1.25 x its 20-day average)",
+            f"(the rule needs the day's volume to reach {Config().vol_mult:g} x its 20-day average)",
             pace,
         )
     return EntryCheck("waiting", f"{(order.trigger / tick.ltp - 1) * 100:.2f}% below the trigger", pace)

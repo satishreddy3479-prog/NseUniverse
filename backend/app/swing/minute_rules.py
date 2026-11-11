@@ -7,7 +7,7 @@ decided on. Agreed rules (11 Nov 2026):
 ENTRY, on a candle that closed between 09:30 and 15:00 IST, for an order queued at the previous close:
   * the day's open is at or below the order's no-chase limit (pivot x 1.025);
   * the candle CLOSE is at or above the trigger (pivot x 1.003) and no more than 1 % above it (no chasing);
-  * the day's volume so far is at least the minimum volume (1.25 x the 20-day average) scaled by the share of a normal day's volume that
+  * the day's volume so far is at least the minimum volume (2 x the 20-day average, swing-v2) scaled by the share of a normal day's volume that
     should have traded by now (the stock volume profile recorded by the app; a straight line when no profile exists yet, and not judged before
     09:45 in that case);
   * a free slot, no open position or fill in the stock, and the 3-session cooldown after its last exit.

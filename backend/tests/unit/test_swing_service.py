@@ -25,7 +25,7 @@ from tests.unit.test_swing_indicators import series  # noqa: E402
 
 IST_OFFSET = "+05:30"
 NAMES = sorted(f"S{n:02d}" for n in range(30))
-CFG = Config(min_score=55.0, cost_per_side=0.0015)
+CFG = Config(min_score=55.0, cost_per_side=0.0015, vol_mult=1.25)  # the scenario's synthetic volumes are built for 1.25; the property is incremental == bulk, whatever the multiple
 FIRST, LAST = 300, 372  # bootstrap bar index and final bar index of the replayed range
 
 

@@ -134,11 +134,11 @@ def test_paper_engine_reproduces_the_research_backtest_trade_for_trade() -> None
         elig[s] = pd.Series(True, index=df.index)
     first = 240
     cal = pd.to_datetime(data[names[0]].dates)[first:]
-    ref_trades, _ = rb.run(frames, elig, {s: "X" for s in names}, cal, rb.Params(min_score=55.0, cost_per_side=0.0015))
+    ref_trades, _ = rb.run(frames, elig, {s: "X" for s in names}, cal, rb.Params(min_score=55.0, cost_per_side=0.0015, vol_mult=1.25))  # both engines at the spec's 1.25: the synthetic volumes are built for it; the property is equality of logic
     ref = [t for t in ref_trades if t.reason != "OPEN_AT_END"]
     assert len(ref) >= 20, "the scenario must produce enough trades to mean something"
 
-    cfg = Config(min_score=55.0, cost_per_side=0.0015)
+    cfg = Config(min_score=55.0, cost_per_side=0.0015, vol_mult=1.25)
     bk = Book(cfg.capital, cfg.capital)
     pending: list[Order] = []
     got = []
@@ -155,3 +155,19 @@ def test_paper_engine_reproduces_the_research_backtest_trade_for_trade() -> None
                   for t in got)
     assert have == want
     assert sum(t.pnl for t in got) == pytest.approx(sum(t.pnl for t in ref), rel=1e-9)
+
+
+def test_the_volume_requirement_is_two_times_the_average_from_rule_version_v2() -> None:
+    """swing-v2 (11 Nov 2026): the minimum volume of an order is 2.0 x the 20-day average (the spec's 1.25 before). Locked in so a change is deliberate."""
+    from app.swing.engine import RULE_VERSION
+    from app.swing.indicators import Setup
+
+    assert Config().vol_mult == 2.0 and RULE_VERSION == "swing-v2"
+    s = Setup("d0", 99.5, 70.0, (20, 20, 15, 15), 100.0, -0.5, 2.0, 10.0, 1000.0, "BLUE_SKY", 1.0)
+    orders, _ = make_orders("d0", {"X": s}, {"X": "CNXIT"}, {"X": True}, Config())
+    assert orders[0].min_volume == pytest.approx(2000.0)  # 2.0 x vol_sma20 of 1000
+    # 1,500 shares traded is above the old 1.25 x (1,250) and below the new minimum (2,000): skipped now
+    b = book()
+    d = settle(b, {"X": bar(100.5, 102, 100.4, 101.9, v=1500)}, orders).decisions[0]
+    assert d.outcome == "skipped" and "volume" in d.reason
+    assert settle(book(), {"X": bar(100.5, 102, 100.4, 101.9, v=2100)}, orders).decisions[0].outcome == "filled"
