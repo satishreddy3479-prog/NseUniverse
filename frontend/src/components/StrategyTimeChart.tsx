@@ -12,6 +12,7 @@ import { EChart, useChartColors } from "./EChart";
 
 const money = (v: number | null | undefined, signed = true) => (v == null ? "—" : `${v < 0 ? "−" : v > 0 && signed ? "+" : ""}₹${fmtInt(Math.round(Math.abs(v)))}`);
 const pts = (v: number | null | undefined, d = 1) => (v == null ? "—" : `${v < 0 ? "−" : ""}${Math.abs(v).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d })}`);
+const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
 const tone = (v: number | null | undefined) => (v == null ? "text-muted" : v > 0 ? "text-up" : v < 0 ? "text-down" : "");
 
 interface ChartLeg { strike: number; type: OptionType; action: Action; lots: number; premium: number | null; expiry: string }
@@ -88,10 +89,10 @@ export function StrategyTimeChart({ legs, expiry, lotSize, modelDelta, rules }: 
     const nowV = i == null ? null : (mode === "pnl" ? tl.pnl : tl.display)[i] ?? null;
     if (vw != null && nowV != null) lines.push(mode === "pnl"
       ? `P&L ${money(nowV)} against ${money(vw)} had every leg been traded at its VWAP: ${nowV >= vw ? "ahead of" : "behind"} the volume-weighted entry level by ${money(Math.abs(nowV - vw), false)}.`
-      : `${tl.isCredit ? "Cost to close" : "Position value"} ${pts(nowV)} is ${pts(Math.abs(nowV - vw))} ${nowV >= vw ? "above" : "below"} the strategy VWAP ${pts(vw)}${tl.isCredit ? (nowV >= vw ? ": a seller from the VWAP level is behind" : ": a seller from the VWAP level is ahead") : ""}.`);
+      : `${tl.isCredit ? "Cost to close" : "Position value"} ${pts(nowV)} is ${pts(Math.abs(nowV - vw))} ${nowV >= vw ? "above" : "below"} the strategy VWAP ${pts(vw)}${tl.isCredit ? (nowV >= vw ? ": a seller who sold at the VWAP level is losing" : ": a seller who sold at the VWAP level is in profit") : ""}.`);
     else if (i != null) lines.push("Strategy VWAP is not available: at least one leg has no stored traded volume yet.");
   }
-  if (stats.zScore != null) lines.push(`Now ${Math.abs(stats.zScore).toFixed(1)} standard deviations ${stats.zScore >= 0 ? "above" : "below"} its average for the day, at the ${Math.round(stats.percentile ?? 0)}th percentile of the day's values.`);
+  if (stats.zScore != null) lines.push(`Now ${Math.abs(stats.zScore).toFixed(1)} standard deviations ${stats.zScore >= 0 ? "above" : "below"} its average for the day, at the ${ordinal(Math.round(stats.percentile ?? 0))} percentile of the day's values.`);
   if (reg) {
     lines.push(`Empirical delta ${money(reg.beta)} per NIFTY point (R² ${reg.r2.toFixed(2)}, ${reg.n} ${reg.lag}-sample changes)${modelDelta != null ? ` against the model's ${money(modelDelta)} per point` : ""}.`);
   }
