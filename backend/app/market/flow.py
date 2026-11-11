@@ -29,6 +29,7 @@ class FlowTracker:
     unclassified: int = 0
     by_quote: int = 0  # classified volume that used the bid/ask
     by_tick: int = 0  # classified volume that used the tick rule
+    carried: int = 0  # classified volume restored from the stored minutes of the same day after a restart (its quote/tick split is not stored)
     since: datetime | None = None
     last_volume: int | None = None
     last_ltp: float | None = None
@@ -51,7 +52,7 @@ class FlowTracker:
     )  # minute -> (cvd, ltp, volume)
 
     def reset(self) -> None:
-        self.buy = self.sell = self.unclassified = self.by_quote = self.by_tick = 0
+        self.buy = self.sell = self.unclassified = self.by_quote = self.by_tick = self.carried = 0
         self.since = self.last_volume = self.last_ltp = None
         self.last_side = 0
         self.last_oi = None
@@ -122,6 +123,16 @@ class FlowTracker:
         self.last_volume, self.last_ltp = volume, ltp
         self._mark(minute, ltp, volume)
 
+    def restore(self, buy: int, sell: int) -> None:
+        """Continue today's cumulative buy and sell volume after a restart of the backend, from the last stored minute of the same day.
+
+        Only valid on a tracker that has not seen a push yet. The first live push stays a baseline: the volume that traded while the backend was down is
+        NOT classified (it is missing, never guessed), so the cumulative counters keep growing and a rolling window across the restart is the sum of what
+        was really observed. Without this every restart began the session figures again and made the rolling windows unavailable for their whole length."""
+        if self.last_volume is not None or self.buy or self.sell:
+            return
+        self.buy, self.sell, self.carried = int(buy), int(sell), int(buy) + int(sell)
+
     def imbalance_at(self, now: datetime) -> float | None:
         """The latest book imbalance, or None when its depth push is older than DEPTH_STALE_AFTER_S."""
         if self.last_imbalance is None or self.last_depth_at is None:
@@ -186,7 +197,8 @@ class FlowTracker:
             "coverage_of_day_volume": None
             if not self.last_volume
             else round(min(1.0, total / self.last_volume), 3),
-            "quote_rule_share": None if classified == 0 else round(self.by_quote / classified, 3),
+            "quote_rule_share": None if classified - self.carried <= 0 else round(self.by_quote / (classified - self.carried), 3),  # of the volume seen since this run began
+            "restored_volume": self.carried,
             "volume": self.last_volume,
             "last_price": self.last_ltp,
             "vwap": self.last_atp,  # the exchange average traded price of the day (day VWAP)
@@ -237,4 +249,19 @@ def profile_fraction(profile: dict[int, float] | None, elapsed_minutes: float) -
     for k in range(t, max(-1, t - 6), -1):  # nearest recorded minute at or before t
         if k in profile:
             return profile[k] if profile[k] > 0 else None
+    return None
+
+
+def last_cumulative(samples: list[tuple[str, dict[str, Any]]], name: str) -> tuple[int, int] | None:
+    """The newest stored cumulative (buy, sell) volume of a tracker from per-minute samples (oldest first): the ``fut`` samples carry ``b`` and ``s`` for the
+    future, the ``heavy5`` samples rows of ``[symbol, cvd, buy, sell, volume, ...]``. None when no sample has both figures."""
+    for _, pl in reversed(samples):
+        if name == "NIFTYFUT":
+            b, s_ = pl.get("b"), pl.get("s")
+            if isinstance(b, (int, float)) and isinstance(s_, (int, float)):
+                return int(b), int(s_)
+            continue
+        for r in pl.get("rows") or []:
+            if isinstance(r, list) and len(r) >= 4 and r[0] == name and isinstance(r[2], (int, float)) and isinstance(r[3], (int, float)):
+                return int(r[2]), int(r[3])
     return None

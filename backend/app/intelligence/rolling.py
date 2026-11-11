@@ -13,6 +13,7 @@ unavailable with its reason, never estimated. Like the session CVD this is an es
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 from typing import Any
@@ -44,6 +45,13 @@ def _pair(samples: Sequence[tuple[str, dict[str, Any]]], minutes: int) -> tuple[
     return first, last, None
 
 
+def reset_inside(samples: Sequence[tuple[str, dict[str, Any]]], t0: datetime, t1: datetime) -> bool:
+    """True if the cumulative counters fell between any two stored samples inside [t0, t1]: the backend restarted and the counters began again, so a
+    difference of the two ends would mix two counter runs. Comparing only the two ends cannot see a restart in the middle of a window."""
+    pts = sorted(((t, p) for s, p in samples if (t := _t(s)) is not None and t0 <= t <= t1 and all(isinstance(p.get(k), (int, float)) for k in ("b", "s", "v"))), key=lambda x: x[0])
+    return any(q["b"] + q["s"] < p["b"] + p["s"] or q["v"] < p["v"] for (_, p), (_, q) in itertools.pairwise(pts))
+
+
 def window(samples: Sequence[tuple[str, dict[str, Any]]], minutes: int) -> dict[str, Any]:
     """One rolling window of the future's flow. ``status`` is ``ok`` or ``unavailable: <reason>``."""
     a, b, why = _pair(samples, minutes)
@@ -55,7 +63,7 @@ def window(samples: Sequence[tuple[str, dict[str, Any]]], minutes: int) -> dict[
     if any(not isinstance(pa.get(k), (int, float)) or not isinstance(pb.get(k), (int, float)) for k in keys):
         return base | {"from": a[0].isoformat(), "status": "unavailable: the flow tracker had no classified volume at one end"}
     ca, cb = pa["b"] + pa["s"], pb["b"] + pb["s"]
-    if cb < ca or pb["v"] < pa["v"]:
+    if cb < ca or pb["v"] < pa["v"] or reset_inside(samples, a[0], b[0]):
         return base | {"from": a[0].isoformat(), "status": "unavailable: the backend restarted inside the window (the cumulative counters began again)"}
     d_cvd, classified = pb["cvd"] - pa["cvd"], cb - ca
     return base | {"cvd": d_cvd, "classified": classified, "volume": pb["v"] - pa["v"], "cvd_pct": None if classified <= 0 else round(d_cvd / classified * 100, 2),
@@ -90,7 +98,7 @@ def acceleration(samples: Sequence[tuple[str, dict[str, Any]]], minutes: int = 5
     if any(not isinstance(m[1].get(k), (int, float)) for m in marks for k in keys):
         return out | {"status": "unavailable: the flow tracker had no classified volume at one of the three points"}
     cls = [m[1]["b"] + m[1]["s"] for m in marks]
-    if cls[0] < cls[1] or cls[1] < cls[2]:
+    if cls[0] < cls[1] or cls[1] < cls[2] or reset_inside(samples, marks[2][0], marks[0][0]):
         return out | {"status": "unavailable: the backend restarted inside the windows (the cumulative counters began again)"}
     cur, prev = marks[0][1]["cvd"] - marks[1][1]["cvd"], marks[1][1]["cvd"] - marks[2][1]["cvd"]
     # the actual minutes between the stored points, so a sample a little off the target does not distort the rate

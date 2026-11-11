@@ -31,7 +31,7 @@ from app.market import participation as part
 from app.market import technical as tech
 from app.market import vwap as vwapmod
 from app.market import weights as wmod
-from app.market.flow import FlowTracker, profile_fraction, volume_profile
+from app.market.flow import FlowTracker, last_cumulative, profile_fraction, volume_profile
 from app.market.index_bars import IndexBarBuilder
 from app.market.sources import (
     BHAV_URL,
@@ -277,6 +277,7 @@ class MarketService:
         tr = self.trackers.get(name)
         if tr is None:
             tr = self.trackers[name] = FlowTracker(name)
+            self._restore_flow(tr, name, tick.received_at)
         tr.update(
             tick.received_at,
             t.strftime("%H:%M"),
@@ -290,6 +291,18 @@ class MarketService:
             tick.avg_price,
             tick.oi,
         )
+
+    def _restore_flow(self, tr: FlowTracker, name: str, now: datetime) -> None:
+        """After a restart, continue today's cumulative flow from the last stored minute (see ``FlowTracker.restore``). Never fatal."""
+        try:
+            day_start = now.astimezone(IST).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC).isoformat()
+            kind = "fut" if name == "NIFTYFUT" else "heavy5"
+            got = last_cumulative(self.store.samples_since(kind, day_start), name)
+            if got is not None:
+                tr.restore(*got)
+                logger.info("flow_restored", extra={"fields": {"tracker": name, "buy": got[0], "sell": got[1]}})
+        except Exception as e:  # noqa: BLE001 - a failed restore only means the figures begin at this push, as before
+            logger.warning("flow_restore_failed", extra={"fields": {"tracker": name, "error": str(e)[:120]}})
 
     def baselines(self, now: datetime) -> dict[str, Any]:
         """Typical intraday volume curve and daily futures volume, from our own minute recordings of earlier sessions."""
