@@ -50,9 +50,9 @@ def _years(expiry: date, at: datetime) -> float:
 
 def futures_series(
     market: MarketStore, obs: ObservationStore, underlying: str, *, rate: float, day: date | None = None,
-    since: datetime | None = None,
+    since: datetime | None = None, now: datetime | None = None,
 ) -> dict[str, Any]:
-    horizon = (datetime.now(UTC) - timedelta(days=12)).isoformat()
+    horizon = ((now or datetime.now(UTC)) - timedelta(days=12)).isoformat()  # ``now`` is only for tests that use fixed dates
     rows = [(datetime.fromisoformat(a), p) for a, p in market.samples_since("fut", horizon)]
     by_day: dict[date, list[tuple[datetime, dict[str, Any]]]] = {}
     for t, p in rows:
