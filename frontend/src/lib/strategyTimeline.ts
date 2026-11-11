@@ -8,10 +8,12 @@
  * Prices are last traded prices of stored samples, not bid/ask. A sample where a leg has no price gives null; nothing is carried forward or
  * interpolated. Averages, moving averages and bands restart at each IST day; a one-sample spacer separates days so no line crosses a night.
  *
- * Two overlays are weighted by activity, and are named for what they are:
- *   Future VWAP        true VWAP of the NIFTY current-month future: Σ price × volume-per-minute / Σ volume-per-minute since the day's first sample.
- *   Activity-weighted  the strategy value averaged with the same futures volume-per-minute as weights. Option volume of the legs is not stored per
- *                      strike, so this is NOT the volume-weighted average of the strategy's own trades.
+ * Strategy VWAP: each leg's own volume-weighted average price since the day's first sample, Σ price × interval volume / Σ interval volume, where the
+ * interval volume is the rise of the contract's stored cumulative traded volume between two samples (the first sample of a day carries the volume
+ * traded since the open). The strategy VWAP is the same signed, lot-weighted sum of the legs' VWAPs as the strategy value: what building the structure
+ * at every leg's volume-weighted average would have cost. It needs a volume for every leg; until each leg has traded, it is null. Interval volume
+ * is priced at the last traded price of the sample that closes the interval (samples are about a minute apart).
+ * Future VWAP: the same calculation on the NIFTY current-month future with its volume per minute.
  *
  * The spot-driven / other split is a regression estimate over the shown range, not a model Greek: ΔP&L over a few samples against Δ spot gives an
  * empirical delta (rupees per index point). Spot-driven = that delta × (spot − first spot); the rest (time decay, volatility, strike and
@@ -32,6 +34,11 @@ export interface Timeline {
   value: (number | null)[];
   display: (number | null)[];
   pnl: (number | null)[];
+  /** strategy VWAP in the same units as ``display`` / ``pnl`` (null until every leg has traded that day) */
+  vwap: (number | null)[];
+  vwapPnl: (number | null)[];
+  /** the lowest, over the legs, of the contracts traded today in the newest sample: how thin the least-traded leg is */
+  thinnestLegVolume: number | null;
   isCredit: boolean;
   /** samples (excluding spacers) where at least one leg had no stored price */
   missing: number;
@@ -55,8 +62,10 @@ export function buildTimeline(legs: TimelineLeg[], ss: StrikeSeries, lotSize: nu
     const days = [...new Set(times.filter((x) => !Number.isNaN(x)).map(istDay))].sort();
     return days.slice(-(opts.days ?? 1))[0] ?? "";
   })();
-  const out: Timeline = { t: [], day: [], label: [], spacer: [], spot: [], value: [], display: [], pnl: [], isCredit: false, missing: 0, samples: 0 };
+  const out: Timeline = { t: [], day: [], label: [], spacer: [], spot: [], value: [], display: [], pnl: [], vwap: [], vwapPnl: [], thinnestLegVolume: null, isCredit: false, missing: 0, samples: 0 };
   const allEntry = legs.length > 0 && legs.every((l) => l.premium != null);
+  type Acc = { pv: number; v: number; prevVol: number | null } | null;
+  const acc: Acc[] = legs.map(() => null);
   let prevDay: string | null = null;
   const multi = (opts.days ?? 1) > 1;
   for (let i = 0; i < times.length; i++) {
@@ -66,17 +75,38 @@ export function buildTimeline(legs: TimelineLeg[], ss: StrikeSeries, lotSize: nu
     if (d < keepFrom) continue;
     if (prevDay != null && d !== prevDay) {
       out.t.push(ms); out.day.push(d); out.label.push(""); out.spacer.push(true);
-      out.spot.push(null); out.value.push(null); out.display.push(null); out.pnl.push(null);
+      out.spot.push(null); out.value.push(null); out.display.push(null); out.pnl.push(null); out.vwap.push(null); out.vwapPnl.push(null);
+      acc.fill(null);
     }
     prevDay = d;
     let v: number | null = 0;
     let p: number | null = allEntry ? 0 : null;
-    for (const l of legs) {
+    legs.forEach((l, li) => {
       const px = priceAt(l.type === "CE" ? ss.ce_price : ss.pe_price, l.strike, i);
-      if (px == null) { v = null; p = null; break; }
+      // interval volume of this leg: the rise of its cumulative volume since the previous sample of the same day (the first sample: all of it)
+      const cum = priceAt(l.type === "CE" ? ss.ce_volume ?? {} : ss.pe_volume ?? {}, l.strike, i);
+      const a: NonNullable<Acc> = acc[li] ?? { pv: 0, v: 0, prevVol: null };
+      acc[li] = a;
+      if (cum != null) {
+        const dv = a.prevVol == null ? cum : cum - a.prevVol;
+        if (dv > 0 && px != null) { a.pv += px * dv; a.v += dv; }
+        a.prevVol = cum;
+      }
+      if (px == null || v == null) { v = null; p = null; return; }
       v += sgn(l.action) * l.lots * px;
       if (p != null && l.premium != null) p += sgn(l.action) * l.lots * lotSize * (px - l.premium);
-    }
+    });
+    // strategy VWAP: the legs' own VWAPs combined exactly like the strategy value; needs every leg to have traded
+    let vw: number | null = 0, vwp: number | null = allEntry ? 0 : null;
+    legs.forEach((l, li) => {
+      const a = acc[li];
+      if (!a || a.v <= 0) { vw = null; vwp = null; return; }
+      const lv = a.pv / a.v;
+      if (vw != null) vw += sgn(l.action) * l.lots * lv;
+      if (vwp != null && l.premium != null) vwp += sgn(l.action) * l.lots * lotSize * (lv - l.premium);
+    });
+    out.vwap.push(vw); out.vwapPnl.push(vwp);
+    out.thinnestLegVolume = legs.length ? Math.min(...legs.map((l) => priceAt(l.type === "CE" ? ss.ce_volume ?? {} : ss.pe_volume ?? {}, l.strike, i) ?? 0)) : null;
     out.samples++;
     if (v == null) out.missing++;
     out.t.push(ms); out.day.push(d); out.spacer.push(false);
@@ -87,7 +117,7 @@ export function buildTimeline(legs: TimelineLeg[], ss: StrikeSeries, lotSize: nu
   }
   const first = out.value.find((x) => x != null);
   out.isCredit = first != null && first < 0;
-  if (out.isCredit) for (let i = 0; i < out.display.length; i++) out.display[i] = out.value[i] == null ? null : -(out.value[i] as number);
+  if (out.isCredit) for (let i = 0; i < out.display.length; i++) { out.display[i] = out.value[i] == null ? null : -(out.value[i] as number); out.vwap[i] = out.vwap[i] == null ? null : -(out.vwap[i] as number); }
   return out;
 }
 

@@ -52,7 +52,7 @@ export function StrategyTimeChart({ legs, expiry, lotSize, modelDelta, rules }: 
     return {
       tl, empty: false as const, main, future, reg, dec,
       futVwap: cumWeighted(future, volume, tl),
-      actAvg: cumWeighted(main, volume, tl),
+      stratVwap: mode === "pnl" ? tl.vwapPnl : tl.vwap,
       twap: cumMean(main, tl),
       sma14: sma(main, 14, tl), ema50: ema(main, 50, tl), bb: bands(main, 20, 2, tl),
       stats: timelineStats(tl),
@@ -81,6 +81,15 @@ export function StrategyTimeChart({ legs, expiry, lotSize, modelDelta, rules }: 
     lines.push(mode === "pnl"
       ? `P&L now ${money(stats.now)}, ${stats.now - stats.open >= 0 ? "up" : "down"} ${money(Math.abs(stats.now - stats.open), false)} since the first sample; range ${money(stats.low)} to ${money(stats.high)}.`
       : `${tl.isCredit ? "Cost to close" : "Position value"} ${pts(stats.now)} points, ${pts(stats.change)} (${stats.changePct == null ? "—" : `${stats.changePct >= 0 ? "+" : "−"}${Math.abs(stats.changePct).toFixed(1)}%`}) from the first sample; range ${pts(stats.low)} to ${pts(stats.high)}.`);
+  }
+  {
+    const i = tl.display.map((v, k) => (v != null && !tl.spacer[k] ? k : -1)).filter((k) => k >= 0).pop();
+    const vw = i == null ? null : (mode === "pnl" ? tl.vwapPnl : tl.vwap)[i] ?? null;
+    const nowV = i == null ? null : (mode === "pnl" ? tl.pnl : tl.display)[i] ?? null;
+    if (vw != null && nowV != null) lines.push(mode === "pnl"
+      ? `P&L ${money(nowV)} against ${money(vw)} had every leg been traded at its VWAP: ${nowV >= vw ? "ahead of" : "behind"} the volume-weighted entry level by ${money(Math.abs(nowV - vw), false)}.`
+      : `${tl.isCredit ? "Cost to close" : "Position value"} ${pts(nowV)} is ${pts(Math.abs(nowV - vw))} ${nowV >= vw ? "above" : "below"} the strategy VWAP ${pts(vw)}${tl.isCredit ? (nowV >= vw ? ": a seller from the VWAP level is behind" : ": a seller from the VWAP level is ahead") : ""}.`);
+    else if (i != null) lines.push("Strategy VWAP is not available: at least one leg has no stored traded volume yet.");
   }
   if (stats.zScore != null) lines.push(`Now ${Math.abs(stats.zScore).toFixed(1)} standard deviations ${stats.zScore >= 0 ? "above" : "below"} its average for the day, at the ${Math.round(stats.percentile ?? 0)}th percentile of the day's values.`);
   if (reg) {
@@ -135,7 +144,7 @@ export function StrategyTimeChart({ legs, expiry, lotSize, modelDelta, rules }: 
       </ul>
       <p className="text-[11px] leading-relaxed text-muted" data-testid="stl-note">
         Built from the stored one-minute samples of the strikes in your legs ({use.map((l) => `${l.action === "BUY" ? "+" : "−"}${l.lots}×${fmtInt(l.strike)}${l.type}`).join(" ")}), last traded prices, not bid or ask; a minute without a price is left blank, never filled.
-        {other > 0 ? ` ${other} leg(s) of another expiry are not charted.` : ""} Future VWAP is the true volume-weighted price of the NIFTY current-month future. The activity-weighted average weights the strategy by the future&apos;s volume per minute, because option volume per strike is not stored: it is not the average price of the strategy&apos;s own trades.
+        {other > 0 ? ` ${other} leg(s) of another expiry are not charted.` : ""} Strategy VWAP combines each leg&apos;s own volume-weighted average price (stored traded volume of that contract, priced at the last price of each interval, restarting every day) the same way as the strategy value: what building the structure at every leg&apos;s VWAP would have cost; it starts once every leg has traded. Future VWAP is the volume-weighted price of the NIFTY current-month future.
         The spot-driven split is a regression on this range (change over 5 samples against NIFTY points), an estimate of delta, not a Greek; the rest is time decay, volatility, curvature and noise. Entry level is your entry premium{mode === "pnl" ? "; the strategy stop and target from the rules are drawn when set" : ""}. Nothing here is a forecast or an order.
         {fut.data == null && fut.isError ? " The futures series could not be loaded, so the future and VWAP lines are missing." : ""}
       </p>
@@ -144,7 +153,7 @@ export function StrategyTimeChart({ legs, expiry, lotSize, modelDelta, rules }: 
 }
 
 interface Model {
-  main: (number | null)[]; future: (number | null)[]; futVwap: (number | null)[]; actAvg: (number | null)[]; twap: (number | null)[];
+  main: (number | null)[]; future: (number | null)[]; futVwap: (number | null)[]; stratVwap: (number | null)[]; twap: (number | null)[];
   sma14: (number | null)[]; ema50: (number | null)[]; bb: { mid: (number | null)[]; up: (number | null)[]; low: (number | null)[] };
 }
 
@@ -159,7 +168,7 @@ function buildOption(tl: Timeline, m: Model, mode: "premium" | "pnl", entry: num
   const off = { sma14: false, ema50: false, bands: false, twap: false } as const;
   return {
     animation: false, grid: { left: 62, right: 62, top: 62, bottom: 28 },
-    legend: { top: 0, left: 8, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 16, itemHeight: 8, selected: { "NIFTY spot": true, "NIFTY future": false, "Future VWAP": true, "Activity-weighted avg": true, "Time average": off.twap, "SMA 14": off.sma14, "EMA 50": off.ema50, "Bollinger 20, 2σ": off.bands } },
+    legend: { top: 0, left: 8, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 16, itemHeight: 8, selected: { "NIFTY spot": true, "NIFTY future": false, "Future VWAP": true, "Strategy VWAP": true, "Time average": off.twap, "SMA 14": off.sma14, "EMA 50": off.ema50, "Bollinger 20, 2σ": off.bands } },
     tooltip: { trigger: "axis", confine: true, axisPointer: { type: "cross" }, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: unknown) => (v == null || Number.isNaN(Number(v)) ? "—" : Number(v).toLocaleString("en-IN", { maximumFractionDigits: 2 })) },
     xAxis: { type: "category", data: tl.label, boundaryGap: false, axisLabel: { ...ax, hideOverlap: true }, axisLine: { lineStyle: { color: c.rule } }, axisTick: { show: false } },
     yAxis: [
@@ -172,7 +181,7 @@ function buildOption(tl: Timeline, m: Model, mode: "premium" | "pnl", entry: num
       line("NIFTY spot", tl.spot, c.muted, { lineStyle: { width: 1.2, color: c.muted, type: "dotted" } }, 1),
       line("NIFTY future", m.future, c.brass, { lineStyle: { width: 1.2, color: c.brass, type: "dotted" } }, 1),
       line("Future VWAP", m.futVwap, c.brass, { lineStyle: { width: 1.4, color: c.brass, type: "dashed" } }, 1),
-      line("Activity-weighted avg", m.actAvg, c.up, { lineStyle: { width: 1.4, color: c.up, type: "dashed" } }),
+      line("Strategy VWAP", m.stratVwap, c.up, { lineStyle: { width: 1.8, color: c.up, type: "dashed" } }),
       line("Time average", m.twap, c.up, { lineStyle: { width: 1.2, color: c.up, type: "dotted" } }),
       line("SMA 14", m.sma14, c.paper, { lineStyle: { width: 1.2, color: c.paper } }),
       line("EMA 50", m.ema50, c.down, { lineStyle: { width: 1.2, color: c.down } }),

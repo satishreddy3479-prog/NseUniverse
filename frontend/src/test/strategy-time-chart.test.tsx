@@ -18,7 +18,7 @@ afterEach(() => vi.unstubAllGlobals());
 const times = Array.from({ length: 30 }, (_, i) => new Date(Date.UTC(2026, 10, 11, 3, 45 + i)).toISOString());
 const ce = times.map((_, i) => 200 + (i % 5));
 const pe = times.map((_, i) => 100 - (i % 3));
-const body = { underlying: "NIFTY", expiry: "2026-11-17", strikes: [25000], atm_strike: 25000, times, spot: times.map((_, i) => 25000 + i), ce_price: { "25000": ce }, pe_price: { "25000": pe }, ce_oi: {}, pe_oi: {}, ce_change: {}, pe_change: {}, stride: 1, warnings: [], definitions: {} };
+const body = { underlying: "NIFTY", expiry: "2026-11-17", strikes: [25000], atm_strike: 25000, times, spot: times.map((_, i) => 25000 + i), ce_price: { "25000": ce }, pe_price: { "25000": pe }, ce_oi: {}, pe_oi: {}, ce_change: {}, pe_change: {}, ce_volume: { "25000": times.map((_, i) => 100 * (i + 1)) }, pe_volume: { "25000": times.map((_, i) => 50 * (i + 1)) }, stride: 1, warnings: [], definitions: {} };
 const fut = { day: "2026-11-11", contract: "NIFTY", expiry: "2026-11-24", rate_assumed: 6, times, future: times.map((_, i) => 25050 + i), spot: [], spot_source: [], basis: [], basis_pct: [], carry_pct: [], fair_basis: [], vs_fair: [], oi: [], oi_change: [], oi_per_min: [], volume: [], volume_per_min: times.map(() => 1000), oi_baseline: null, latest: null, warnings: [], definitions: {} };
 
 type L = { strike: number; type: "CE" | "PE"; action: "BUY" | "SELL"; lots: number; premium: number | null; expiry: string };
@@ -37,12 +37,12 @@ describe("StrategyTimeChart", () => {
     const seen: string[] = [];
     mount(undefined, seen);
     const main = await screen.findByRole("img", { name: /Strategy price against NIFTY spot and future/ });
-    expect(main.getAttribute("data-series")).toContain("Cost to close|NIFTY spot|NIFTY future|Future VWAP|Activity-weighted avg");
+    expect(main.getAttribute("data-series")).toContain("Cost to close|NIFTY spot|NIFTY future|Future VWAP|Strategy VWAP");
     expect(seen.some((u) => u.includes("strike-series") && u.includes("strikes=25000"))).toBe(true);
     const sum = screen.getByLabelText("Strategy summary");
     expect(within(sum).getByText("Now")).toBeInTheDocument();
     expect(screen.getByTestId("stl-note")).toHaveTextContent("−1×25,000CE");
-    expect(screen.getByTestId("stl-note")).toHaveTextContent("not the average price of the strategy");
+    expect(screen.getByTestId("stl-note")).toHaveTextContent("Strategy VWAP combines each leg");
   });
   it("switches to P&L", async () => {
     mount();

@@ -503,6 +503,8 @@ class TestStrikeSeries:
         assert r.pe_price["100"][0] == 2.5 and r.pe_change["100"][0] == 0
         # strike 120 call price 3.5 at B, OI 25 (prev 30 -> -5): a fall in OI is negative, not clipped
         assert r.ce_price["120"][0] == 3.5 and r.ce_change["120"][0] == -5
+        # the traded volume of each contract is carried through (the fixture gives every contract volume 10): the strategy VWAP is built from it
+        assert r.ce_volume["100"] == [10, 10, 10] and r.pe_volume["120"] == [10, 10, 10]
 
     def test_unlisted_strike_is_reported_and_missing_stays_missing(self, tmp_path: Path) -> None:
         o = ObservationStore(tmp_path)

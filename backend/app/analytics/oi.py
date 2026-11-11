@@ -643,9 +643,13 @@ class StrikeSeries(BaseModel):
     stride: int
     warnings: list[str] = []
     definitions: dict[str, str] = {}
+    #: the contract's cumulative traded volume today (units) in each stored sample; None where not stored. Per-minute volume is the difference.
+    ce_volume: dict[str, list[int | None]] = {}
+    pe_volume: dict[str, list[int | None]] = {}
 
 
 STRIKE_SERIES_DEFINITIONS = {
+    "volume": "The contract's cumulative volume traded today (units) in each stored sample; the volume of one interval is the difference of two samples.",
     "price": "The contract's last traded price (rupees) in each stored sample; a missing or non-positive price is left as a gap.",
     "oi": "The contract's open interest (units) in each stored sample.",
     "change": "OI now minus the broker's previous-day OI for that contract (computed here), left as a gap when either is missing.",
@@ -697,13 +701,14 @@ def strike_series(
         cols.append(shown[-1])
     keys = [f"{k:g}" for k in chosen]
     out: dict[str, dict[str, list[float | int | None]]] = {
-        n: {key: [] for key in keys} for n in ("cp", "pp", "co", "po", "cc", "pc")
+        n: {key: [] for key in keys} for n in ("cp", "pp", "co", "po", "cc", "pc", "cv", "pv")
     }
     for s in cols:
         cur = contracts_of(s)
         for k, key in zip(chosen, keys, strict=True):
-            for side, p, o, c in ((CALL, "cp", "co", "cc"), (PUT, "pp", "po", "pc")):
+            for side, p, o, c, v in ((CALL, "cp", "co", "cc", "cv"), (PUT, "pp", "po", "pc", "pv")):
                 q = cur.get((k, side))
+                out[v][key].append(q.volume if q is not None else None)
                 out[p][key].append(q.ltp if q is not None and q.ltp is not None and q.ltp > 0 else None)
                 out[o][key].append(q.oi if q is not None else None)
                 out[c][key].append(q.oi - q.oi_prev if q is not None and q.oi is not None and q.oi_prev is not None else None)
@@ -713,6 +718,7 @@ def strike_series(
         underlying=underlying, expiry=expiry, strikes=chosen, atm_strike=atm, times=[s.received_at for s in cols],
         spot=[s.spot for s in cols], ce_price=out["cp"], pe_price=out["pp"], ce_oi=out["co"], pe_oi=out["po"],  # type: ignore[arg-type]
         ce_change=out["cc"], pe_change=out["pc"], stride=stride, warnings=warnings, definitions=STRIKE_SERIES_DEFINITIONS,  # type: ignore[arg-type]
+        ce_volume=out["cv"], pe_volume=out["pv"],  # type: ignore[arg-type]
     )  # fmt: skip
 
 

@@ -45,6 +45,36 @@ describe("buildTimeline", () => {
   });
 });
 
+describe("strategy VWAP from each leg's own traded volume", () => {
+  const withVol = (ce: number[], pe: number[]) => ({ ...ss(T.slice(0, 3), [200, 210, 220], [100, 100, 90], [1, 2, 3]), ce_volume: { "25000": ce }, pe_volume: { "25000": pe } });
+  it("is the legs' VWAPs combined like the strategy value (hand-calculated)", () => {
+    // CE: 100 @200, then 200 @210 -> 200, 206.667, 206.667.  PE: 50 @100, none, then 100 @90 -> 100, 100, 93.333.
+    const tl = buildTimeline(short, withVol([100, 300, 300], [50, 50, 150]), 65);
+    expect(tl.vwap[0]).toBeCloseTo(200 + 2 * 100, 9); // credit: shown as the cost to close
+    // (200*100 + 210*200) / 300 = 206.667 for the call
+    expect(tl.vwap[1]).toBeCloseTo(206.6666667 + 200, 6);
+    expect(tl.vwap[2]).toBeCloseTo(206.6666667 + 2 * 93.3333333, 6);
+    // rupees: 65 * (-(vwapCE - 200) - 2*(vwapPE - 100)) at t2 = 65 * (-6.6667 + 13.3333) = 433.33
+    expect(tl.vwapPnl[2]).toBeCloseTo(65 * (-(206.6666667 - 200) - 2 * (93.3333333 - 100)), 4);
+  });
+  it("is null until every leg has traded, and null with no stored volume", () => {
+    const part = buildTimeline(short, withVol([100, 300, 300], [0, 0, 150]), 65);
+    expect(part.vwap).toEqual([null, null, expect.any(Number)]); // the put has not traded before the third sample
+    const none = buildTimeline(short, ss(T.slice(0, 3), [200, 210, 220], [100, 100, 90], [1, 2, 3]), 65);
+    expect(none.vwap).toEqual([null, null, null]);
+  });
+  it("a volume that falls (a new day's counter) adds nothing and the sums restart on each day", () => {
+    const times = [z("2026-11-10", "15:29"), z("2026-11-11", "09:15"), z("2026-11-11", "09:16")];
+    const d = { ...ss(times, [100, 50, 60], [1, 1, 1], [1, 2, 3]), ce_volume: { "25000": [1000, 10, 30] } };
+    const tl = buildTimeline([short[0]!], d, 65, { days: 3 });
+    // yesterday: 1000 @100 -> 100. Today restarts: 10 @50, then 20 @60 -> (500+1200)/30 = 56.667
+    const got = tl.vwap.filter((v): v is number => v != null);
+    expect(got[0]).toBeCloseTo(100, 9);
+    expect(got[1]).toBeCloseTo(50, 9);
+    expect(got[2]).toBeCloseTo(56.6666667, 5);
+  });
+});
+
 describe("indicators", () => {
   const tl = { day: ["d", "d", "d", "d", "d"], spacer: [false, false, false, false, false] };
   it("sma needs n valid values and skips gaps without filling them", () => {

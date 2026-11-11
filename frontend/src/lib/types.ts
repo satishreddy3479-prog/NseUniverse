@@ -720,6 +720,9 @@ export interface StrikeSeries {
   pe_oi: Record<string, (number | null)[]>;
   ce_change: Record<string, (number | null)[]>;
   pe_change: Record<string, (number | null)[]>;
+  /** cumulative volume traded today per contract (units); the volume of one interval is the difference of two samples */
+  ce_volume?: Record<string, (number | null)[]>;
+  pe_volume?: Record<string, (number | null)[]>;
   stride: number;
   warnings: string[];
   definitions: Record<string, string>;
