@@ -225,3 +225,17 @@ def test_nothing_tracked_is_reported_as_unavailable() -> None:
     h = hw.assess({"market": {}, "flow": {"heavy5": [], "fut": []}})
     assert h["available"] is False and h["aggregate"] == {} and h["participation"]["class"] == "Unavailable" and h["signals"] == []
     assert any("not observed" in x for x in hw.LIMITS) and any("timestamps" in x for x in hw.LIMITS)
+
+
+def test_a_tracker_that_saw_only_a_sliver_of_the_days_volume_has_no_session_reading() -> None:
+    """After the counters began again (a restart, or the exchange's own counter restart at a session phase) the tracker's CVD covers a few percent of
+    the day. Scoring it as the session gave +99.9 from 16 units of volume; below half of the day's volume it is unavailable and says why."""
+    inp = build([(60, 40), (50, 50), (55, 45), (45, 55), (50, 50)])
+    stocks = inp["market"]["flow"]["heavy5"]["stocks"]
+    stocks[0]["flow"]["coverage_of_day_volume"] = 0.006
+    stocks[1]["flow"]["coverage_of_day_volume"] = 0.92
+    rows = {r["symbol"]: r for r in hw.assess(inp, NOW)["stocks"]}
+    assert rows["HDFCBANK"]["valid"] is False and rows["HDFCBANK"]["session"]["norm"] is None
+    assert "only 1% of today" in rows["HDFCBANK"]["session"]["status"]  # 0.006 shown as a whole percent
+    assert rows["RELIANCE"]["valid"] is True and rows["RELIANCE"]["session"]["status"] is None
+    assert rows["INFY"]["valid"] is True  # coverage not reported (older samples): not blocked, as for the classified share

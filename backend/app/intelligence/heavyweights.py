@@ -34,6 +34,7 @@ SCALE = 25.0                # CVD % that counts as strong evidence (normalised a
 MIN_VALID = 3
 MIN_WEIGHT_SHARE = 0.6
 MIN_WINDOW_SHARE = 0.5      # classified share of a window's volume
+MIN_SESSION_COVERAGE = 0.5  # share of the day's traded volume the tracker has seen at all: below it the "session" CVD is a sliver of the day, not the session
 NEUTRAL_BAND = 10.0         # a normalised stock reading inside this is neither buying nor selling
 AGG_BAND = 15.0
 STORED_STALE_S = 180.0      # the newest stored sample older than this is not used for rolling windows
@@ -232,7 +233,10 @@ def assess(inp: Mapping[str, Any], now: datetime | None = None) -> dict[str, Any
         pct = _num(fl.get("cvd_pct"))
         feed = "no data" if not fl else ("STALE" if stale else "live")
         fresh = bool(fl) and stale is not True
-        ok_session = fresh and pct is not None and (share is None or share >= MIN_WINDOW_SHARE)
+        cov = _num(fl.get("coverage_of_day_volume"))
+        ok_cov = cov is None or cov >= MIN_SESSION_COVERAGE
+        ok_session = fresh and pct is not None and (share is None or share >= MIN_WINDOW_SHARE) and ok_cov
+        session_note = None if ok_cov else f"unavailable: the tracker has seen only {cov:.0%} of today's volume (its counters began again), so its session CVD is not the session's"
         wins: dict[str, dict[str, Any]] = {}
         for m_ in WINDOWS:
             if not p:
@@ -266,7 +270,7 @@ def assess(inp: Mapping[str, Any], now: datetime | None = None) -> dict[str, Any
         nm = names.get(sym) or {}
         rows.append({
             "symbol": sym, "name": nm.get("name"), "weight": round(w, 3), "previous_weight": nm.get("previous_weight"), "price": ltp, "change_pct": change, "vwap": vwap, "price_vs_vwap_pct": pv,
-            "session": {"cvd": fl.get("cvd"), "pct": pct, "norm": sess_norm, "buy_volume": fl.get("buy_volume"), "sell_volume": fl.get("sell_volume")}, "windows": wins,
+            "session": {"cvd": fl.get("cvd"), "pct": pct, "norm": sess_norm, "buy_volume": fl.get("buy_volume"), "sell_volume": fl.get("sell_volume"), "status": session_note}, "windows": wins,
             "prev5_norm": prev5, "momentum": None if n5 is None or prev5 is None else round(n5 - prev5, 1), "acceleration": None if n5 is None or prev5 is None else round((n5 - prev5) / 5, 2),
             "basis_norm": basis, "bias": bias, "price_cvd_divergence": div, "bid": fl.get("bid"), "ask": fl.get("ask"), "depth_imbalance": fl.get("depth_imbalance"),
             "freshness": {"updated": fl.get("updated"), "age_s": age, "feed": feed, "fresh": fresh, "classified_share": share, "coverage_of_day_volume": _num(fl.get("coverage_of_day_volume")),

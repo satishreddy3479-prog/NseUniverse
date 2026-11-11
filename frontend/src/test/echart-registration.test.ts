@@ -64,3 +64,39 @@ describe("legend choices survive a refresh", () => {
     expect(arr.legend[1]!.selected).toBeUndefined();
   });
 });
+
+describe("legend choices with a real ECharts instance (the live-refresh scenario)", () => {
+  type Chart = { setOption(o: unknown, opts?: unknown): void; dispatchAction(a: unknown): void; on(e: string, f: (p: { selected: Record<string, boolean> }) => void): void; getOption(): { legend: { selected: Record<string, boolean> }[] }; dispose(): void };
+  const make = (): Chart => echarts.init(null as unknown as HTMLElement, undefined, { renderer: "svg", ssr: true, width: 400, height: 300 }) as unknown as Chart;
+  const option = (niftyDefault: boolean) => ({
+    animation: false, xAxis: { type: "time" }, yAxis: {}, legend: { selected: { Straddle: true, "NIFTY 50": niftyDefault } },
+    series: [{ type: "line", name: "Straddle", data: [[1000, 1], [2000, 2]] }, { type: "line", name: "NIFTY 50", data: [[1000, 10], [2000, 20]] }],
+  });
+
+  it("without the memory a live refresh undoes the click (the reported bug)", () => {
+    const c = make();
+    c.setOption(option(false), { replaceMerge: ["series"] });
+    c.dispatchAction({ type: "legendSelect", name: "NIFTY 50" });
+    expect(c.getOption().legend[0]!.selected["NIFTY 50"]).toBe(true); // the click worked
+    c.setOption(option(false), { replaceMerge: ["series"] }); // the next data refresh sends the default again
+    expect(c.getOption().legend[0]!.selected["NIFTY 50"]).toBe(false); // ... and the click is gone
+    c.dispose();
+  });
+
+  it("with the memory the click survives refreshes, and unselecting survives too", () => {
+    const c = make();
+    const user: Record<string, boolean> = {};
+    const defs: Record<string, boolean> = {};
+    c.on("legendselectchanged", (e) => Object.assign(user, e.selected));
+    const draw = () => c.setOption(keepLegend(option(false) as never, user, defs), { replaceMerge: ["series"] });
+    draw();
+    c.dispatchAction({ type: "legendToggleSelect", name: "NIFTY 50" });
+    draw();
+    draw();
+    expect(c.getOption().legend[0]!.selected["NIFTY 50"]).toBe(true);
+    c.dispatchAction({ type: "legendToggleSelect", name: "Straddle" });
+    draw();
+    expect(c.getOption().legend[0]!.selected).toEqual({ Straddle: false, "NIFTY 50": true });
+    c.dispose();
+  });
+});
