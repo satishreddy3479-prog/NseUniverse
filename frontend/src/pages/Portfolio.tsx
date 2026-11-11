@@ -9,6 +9,7 @@ import { Panel } from "../components/ui";
 import { api } from "../lib/api";
 import { fmtDateTimeIST, fmtInt } from "../lib/format";
 import { portfolioStats, type PortfolioStats } from "../lib/portfolioStats";
+import { EQUITY_HEIGHT, portfolioEquityOption } from "../lib/portfolioCharts";
 import { isExited, strategyPnl, type Leg, type OptionType } from "../lib/strategy";
 import { useStreamStatus } from "../lib/useLive";
 import { CLOSED_KEY, SAVE_KEY, WORKING_KEY, type Closed, type Saved } from "./StrategyBuilder";
@@ -163,25 +164,7 @@ function Tile({ label, value, sub, cls = "text-paper" }: { label: string; value:
 function PerformancePanel({ stats, capital, runningTotal }: { stats: PortfolioStats; capital: number | null; runningTotal: number | null }) {
   const colors = useChartColors();
   const pctOf = (v: number | null) => (v == null ? "—" : `${v.toFixed(1)}%`);
-  const opt = useMemo(() => {
-    const ts = stats.curve.map((p) => p.t);
-    const tip = { trigger: "axis", confine: true, backgroundColor: colors.slate, borderColor: colors.rule, textStyle: { color: colors.paper, fontSize: 12 } };
-    const axisX = { type: "time", axisLabel: { color: colors.muted, hideOverlap: true }, axisLine: { lineStyle: { color: colors.rule } } };
-    return {
-      animation: false, tooltip: tip, axisPointer: { link: [{ xAxisIndex: "all" }] },
-      grid: [{ left: 64, right: 16, top: 24, height: "52%" }, { left: 64, right: 16, top: "72%", height: "18%" }],
-      xAxis: [{ ...axisX, gridIndex: 0, axisLabel: { show: false } }, { ...axisX, gridIndex: 1 }],
-      yAxis: [
-        { type: "value", gridIndex: 0, scale: true, name: "Cumulative P&L ₹", nameTextStyle: { color: colors.muted, fontSize: 10, align: "left" }, axisLabel: { color: colors.muted, formatter: (v: number) => fmtInt(v) }, splitLine: { lineStyle: { color: colors.rule, opacity: 0.5 } } },
-        { type: "value", gridIndex: 1, name: "Drawdown ₹", nameTextStyle: { color: colors.muted, fontSize: 10, align: "left" }, axisLabel: { color: colors.muted, formatter: (v: number) => fmtInt(v) }, splitLine: { lineStyle: { color: colors.rule, opacity: 0.4 } } },
-      ],
-      series: [
-        { name: "Cumulative P&L (closed)", type: "line", step: "end", xAxisIndex: 0, yAxisIndex: 0, showSymbol: true, symbolSize: 6, data: stats.curve.map((p) => [p.t, p.cum]), lineStyle: { color: colors.info, width: 2 }, itemStyle: { color: colors.info },
-          markLine: { silent: true, symbol: "none", label: { show: false }, lineStyle: { color: colors.muted, type: "dashed", opacity: 0.6 }, data: [{ yAxis: 0 }] } },
-        { name: "Drawdown", type: "line", xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, step: "end", data: ts.map((t, i) => [t, -stats.curve[i]!.dd]), lineStyle: { color: colors.down, width: 1.5 }, areaStyle: { color: colors.down, opacity: 0.18 }, itemStyle: { color: colors.down } },
-      ],
-    };
-  }, [stats, colors]);
+  const opt = useMemo(() => portfolioEquityOption(stats, colors), [stats, colors]);
   const item = (label: string, value: string, sub?: string, cls = "text-paper") => (
     <div key={label} className="rounded-sm border border-rule bg-slate-2/60 px-3 py-2"><div className="text-[11px] uppercase tracking-wide text-muted">{label}</div>
       <div className={`num text-base font-semibold ${cls}`}>{value}</div>{sub && <div className="text-[11px] text-muted">{sub}</div>}</div>
@@ -203,9 +186,9 @@ function PerformancePanel({ stats, capital, runningTotal }: { stats: PortfolioSt
         {item("Current drawdown", money(-s.currentDrawdown, false), s.currentDrawdown === 0 ? "at a new high" : `${s.drawdownTrades} closes under the peak`, s.currentDrawdown > 0 ? "text-down" : "text-up")}
         {item("Recovery factor", s.recoveryFactor == null ? "—" : s.recoveryFactor.toFixed(2), s.recoveryFactor == null ? "needs a drawdown" : "net P&L / max drawdown")}
       </div>
-      <div className="h-[300px]" data-testid="portfolio-equity"><EChart option={opt} ariaLabel="Cumulative closed P&L and drawdown" /></div>
+      <div className="w-full" style={{ height: EQUITY_HEIGHT }} data-testid="portfolio-equity"><EChart option={opt} ariaLabel="Cumulative closed P&L, the result of each closed strategy, and drawdown" /></div>
       <p className="text-[11px] text-muted">
-        Computed only from the {s.count} closed strateg{s.count === 1 ? "y" : "ies"} (booked P&L, in order of closing); the curve starts at zero and steps at each close.
+        Computed only from the {s.count} closed strateg{s.count === 1 ? "y" : "ies"} (booked P&L, in order of closing); the curve starts at zero and has one point per close, evenly spaced (not to time scale).
         Drawdown is the fall from the highest cumulative P&L reached. Expectancy = win rate × average win + loss rate × average loss = net P&L ÷ closed strategies.
         {s.bestDay && s.worstDay ? ` Best day ${money(s.bestDay.pnl)} (${s.bestDay.day}), worst day ${money(s.worstDay.pnl)} (${s.worstDay.day}).` : ""}
         {runningTotal != null ? ` Running strategies add ${money(runningTotal)} live and provisional (not in these figures).` : ""}
