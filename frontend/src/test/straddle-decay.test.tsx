@@ -175,9 +175,10 @@ describe("environments and the twelve sections", () => {
     const ids = ["sdi-overall", "sdi-buyer", "sdi-seller", "sdi-tracker", "sdi-iv", "sdi-attribution", "sdi-rv", "sdi-structure", "sdi-positioning", "sdi-alerts", "sdi-validation", "sdi-method"];
     const nums = ids.map((id) => /^(\d+)\./.exec(screen.getByTestId(id).querySelector("h2,h3,summary")?.textContent ?? "")?.[1]);
     expect(nums.slice().sort()).toEqual(["1", "10", "11", "12", "2", "3", "4", "5", "6", "7", "8", "9"]);
-    expect(nums[0]).toBe("1");
-    expect(nums[1]).toBe("2");
-    expect(nums[2]).toBe("3");
+    // the DOM (reading) order is the order of the brief: 1, 2, 3, ... 12
+    const els = ids.map((id) => screen.getByTestId(id));
+    for (let i = 1; i < els.length; i++) expect(els[i - 1]!.compareDocumentPosition(els[i]!) & Node.DOCUMENT_POSITION_FOLLOWING, `${ids[i - 1]} before ${ids[i]}`).toBeTruthy();
+    expect(nums).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]);
   });
 
   it("buyer types, premium check, seller sub-assessments and flags", async () => {
@@ -209,6 +210,17 @@ describe("environments and the twelve sections", () => {
     expect(screen.getByTestId("sdi-shortfall").textContent).toContain("₹260");
     expect(screen.getByTestId("sdi-causes").textContent).toContain("skew change");
     expect(a.textContent).toContain("skew): +0.40 points");
+  });
+
+  it("decay faster than theta is not shown as a negative shortfall", async () => {
+    const r = rich();
+    const w0 = r.attribution!.fixed.open!;
+    r.attribution!.fixed.open = { ...w0, efficiency: { ...w0.efficiency, status: "efficient", efficiency_pct: 113, shortfall: -1.2, shortfall_rupees: -77, shortfall_pct: -13 } };
+    mount(r);
+    const t = (await screen.findByTestId("sdi-shortfall")).textContent ?? "";
+    expect(t).toContain("No shortfall");
+    expect(t).toContain("₹77");
+    expect(t).not.toContain("-77");
   });
 
   it("tracker shows premium moves over 5, 15, 30 and 60 minutes and the fixed-versus-rolling difference", async () => {
