@@ -146,7 +146,7 @@ def seller_components(ev: Mapping[str, Any]) -> list[dict[str, Any]]:
     if spot and ce_k and pe_k:
         inside = pe_k < spot < ce_k
         pv = (0.5 if inside else -0.5) + (0.0 if pcr is None else (0.2 if 0.7 <= pcr <= 1.3 else -0.2))
-    c.append(comp("positioning", "Options positioning", 6, pv, f"largest put OI {pe_k}, largest call OI {ce_k}, PCR {pcr}; spot {'between' if pv is not None and pv > 0 else 'outside'} them (OI does not say who is long or short)" if pv is not None else "no positioning", "Market Intelligence positioning"))
+    c.append(comp("positioning", "Options positioning", 6, pv, f"largest put OI {pe_k:g}, largest call OI {ce_k:g}, PCR {pcr:.2f}; spot {'between' if pv is not None and pv > 0 else 'outside'} them (OI does not say who is long or short)" if pv is not None else "no positioning", "Market Intelligence positioning"))
     of = ev["orderflow"]
     c.append(comp("flow", "Futures order-flow evidence", 8, None if of is None else 0.5 - abs(of) / 100, f"order-flow group score {of:+.0f}: one-sided flow is a risk to sellers, balanced flow is not" if of is not None else "no flow group", "Market Intelligence order-flow engine", proxy=True))
     h = ev["heavy15"]

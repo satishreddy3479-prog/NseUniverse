@@ -342,6 +342,7 @@ def _slope(xs: Sequence[float], ys: Sequence[float]) -> tuple[float | None, floa
 
 
 MOVE_WINDOWS = (5, 15, 30, 60)
+SMILE_EVERY = 3
 
 
 def _moves(times: Sequence[datetime], vals: Sequence[float | None], n: int = 2) -> dict[str, float | None]:
@@ -536,7 +537,9 @@ def analyse(
                              "fixed_change": s_fix["change"], "rolling_adjusted_change": tracker["rolling"]["adjusted_change"],
                              "note": "The fixed series is one contract pair; the rolling line also changes contract at every roll, so its raw change includes roll jumps. The roll-adjusted change adds only same-contract changes."}  # fmt: skip
     # --- module 2: IV analysis
-    surfs = [None if p is None else p.surf(expiry_date) for p in pts]
+    # the smile (10/25-delta, butterflies, concentration) is solved on every third sample and the latest one: it is the costly part and moves slowly
+    last_i = max(i for i, p in enumerate(pts) if p is not None)
+    surfs = [None if p is None or not (i % SMILE_EVERY == 0 or i == last_i) else p.surf(expiry_date) for i, p in enumerate(pts)]
 
     def at_delta(side: str, d: float) -> list[float | None]:
         return [None if s is None or s.get("status") != "ok" else iv_at_delta(s["rows"], side, d) for s in surfs]

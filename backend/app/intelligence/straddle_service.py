@@ -170,6 +170,7 @@ class StraddleDecay:
             now = self._clock()
             t0 = _time.perf_counter()
             snaps, spots = self._read(expiry, day)
+            t_read = _time.perf_counter()
             live = day == now.astimezone(IST).date()
             gex: dict[str, Any] | None = None
             points: list[Any] = []
@@ -181,6 +182,7 @@ class StraddleDecay:
                     gex = None
             out = straddle.analyse(snaps, spots, date.fromisoformat(expiry), rate=self.rate, now=now, gex=gex, live=live, gex_points=points)
             out |= {"session": day.isoformat(), "expiry": expiry, "generated_at": now.isoformat(timespec="seconds"), "expiry_day": expiry == day.isoformat()}
+            t_an = _time.perf_counter()
             if out["status"] == "ok":
                 self._last[key] = snaps[-1] if snaps else None  # used by record() for the premium ladder
                 mi: Mapping[str, Any] = {}
@@ -196,7 +198,9 @@ class StraddleDecay:
                     out["environment"], out["context"] = None, None
                     out["environment_note"] = "Buyer and seller environments are computed for the live session only (they read live flow and positioning). The recorded history below is what was stored."
                 out |= self._history(day.isoformat())
-            out["compute_ms"] = round((_time.perf_counter() - t0) * 1000, 1)
+            t_end = _time.perf_counter()
+            out["compute_ms"] = round((t_end - t0) * 1000, 1)
+            out["timing_ms"] = {"read_samples": round((t_read - t0) * 1000), "gex_and_analysis": round((t_an - t_read) * 1000), "environment_and_inputs": round((t_end - t_an) * 1000)}
             self._cache[key] = (_time.monotonic(), out)
             return out
 
