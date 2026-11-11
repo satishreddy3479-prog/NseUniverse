@@ -137,6 +137,9 @@ export interface SmartOiCandle {
   pcr: number | null;
   /** Cumulative put volume ÷ cumulative call volume today; null when not stored or call volume is 0. */
   volPcr: number | null;
+  /** Cumulative option volume traded today (units) at this candle; null when not stored. */
+  ceVol: number | null;
+  peVol: number | null;
   /** Option volume traded inside this candle (change in the cumulative total); null when unknown. */
   ceVolDelta: number | null;
   peVolDelta: number | null;
@@ -281,6 +284,7 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
       diffDay: hasChg ? chPe - chCe : baseline ? pe - baseline.peOi - (ce - baseline.ceOi) : 0,
       pcr: ce > 0 ? pe / ce : null,
       volPcr: cev != null && pev != null && cev > 0 ? pev / cev : null,
+      ceVol: cev, peVol: pev,
       // the 09:15 candle's volume is everything traded since the open; later candles take the change in the cumulative total
       ceVolDelta: prev ? dv(cev, cumPrev?.ce ?? null) : k === 0 ? cev : null, peVolDelta: prev ? dv(pev, cumPrev?.pe ?? null) : k === 0 ? pev : null,
       fromPrevClose, strikesChanged,

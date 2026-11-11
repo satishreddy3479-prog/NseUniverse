@@ -10,7 +10,7 @@ import { FullChart } from "./FullChart";
 import { sessionCloseMin, sessionOpenMin } from "../../lib/session";
 import { atmStraddle, compactIN, computeTotals, maxPain, OI_MODES, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, TS_RANGES, windowEndIso, windowStartIso, type OiMode } from "../../lib/analytics";
 import {
-  smartOiDayOption, smartOiOption, smartOiRatioOption, decayOption, oiChangeBarOption, oiSeriesOption, type OiSeriesKind, oiHeatmapOption, premiumOption, spotOption, straddleOption, strikeBarOption,
+  smartOiDayOption, smartOiDiffOption, smartOiOption, smartOiRatioOption, smartOiVolumeOption, decayOption, oiChangeBarOption, oiSeriesOption, type OiSeriesKind, oiHeatmapOption, premiumOption, spotOption, straddleOption, strikeBarOption,
   oiExplorerOption, futuresOption, sessionize, totalsBarOption, type FuturesKind, type StrikeMetric } from "../../lib/chartOptions";
 import { ageSeconds, fmtDateTimeIST, fmtExpiry, fmtTimeIST, fmtInt, fmtPct, fmtPrice, fmtSigned } from "../../lib/format";
 import { smartOiCandles } from "../../lib/optionTools";
@@ -339,7 +339,8 @@ function SmartOiChartWidget() {
   const res = useMemo(() => (q.data ? smartOiCandles(q.data, tf, { openMin: sessionOpenMin(), closeMin: sessionCloseMin(), bars: bars.data?.bars }) : null), [q.data, tf, bars.data]);
   const main = useMemo(() => (res ? smartOiOption(res, colors) : null), [res, colors]);
   const dayOpt = useMemo(() => (res ? smartOiDayOption(res, colors) : null), [res, colors]);
-  const ratioOpt = useMemo(() => (res ? smartOiRatioOption(res, colors) : null), [res, colors]);
+  const [lower, setLower] = useState<"pcr" | "volume" | "diff">("pcr");
+  const ratioOpt = useMemo(() => (res ? (lower === "volume" ? smartOiVolumeOption(res, colors) : lower === "diff" ? smartOiDiffOption(res, colors) : smartOiRatioOption(res, colors)) : null), [res, colors, lower]);
   const last = res?.candles[res.candles.length - 1];
   return (
     <ChainGuard>
@@ -397,7 +398,14 @@ function SmartOiChartWidget() {
               <div><EChart className="echart-fixed !h-[440px]" group="smart-oi" option={main} ariaLabel="NIFTY candles, Smart OI candles and option volume" /></div>
               <div className="grid min-h-0 grid-rows-2 gap-2">
                 <div><EChart className="echart-fixed !h-[210px]" group="smart-oi" option={dayOpt} ariaLabel="Put, call and put minus call OI change since the first candle" /></div>
-                <div><EChart className="echart-fixed !h-[210px]" group="smart-oi" option={ratioOpt} ariaLabel="OI put-call ratio and volume put-call ratio" /></div>
+                <div>
+                  <div role="group" aria-label="Lower right chart" className="mb-1 flex flex-wrap justify-end gap-0.5">
+                    {([["pcr", "PCR"], ["volume", "PE & CE volume"], ["diff", "PE − CE"]] as const).map(([k, l]) => (
+                      <button key={k} type="button" aria-pressed={lower === k} onClick={() => setLower(k)} className={`widget-nodrag min-h-6 rounded-sm border px-2 text-xs ${lower === k ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{l}</button>
+                    ))}
+                  </div>
+                  <EChart className="echart-fixed !h-[184px]" group="smart-oi" option={ratioOpt} ariaLabel={lower === "volume" ? "Cumulative put and call volume today" : lower === "diff" ? "Put minus call volume" : "OI put-call ratio and volume put-call ratio"} />
+                </div>
               </div>
             </div>
           )}

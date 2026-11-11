@@ -374,3 +374,26 @@ describe("smartOiCandles: a stalled NIFTY feed (captured 11 Nov 2026, 15:12-15:3
     expect([ok.stalls.length, ok.thinBars, ok.jumps.length]).toEqual([0, 0, 0]);
   });
 });
+
+describe("Smart OI lower chart: put and call volume, and their difference", () => {
+  const t = (hm: string) => `2026-11-04T${hm}:00Z`;
+  const series = { times: [t("03:45"), t("03:48"), t("03:51")], spot: [1, 2, 3], pe_oi: [10, 11, 12], ce_oi: [10, 11, 12], pe_volume: [100, 160, 250], ce_volume: [100, 140, 200] };
+  it("keeps the cumulative volume of each candle and the per-candle change", () => {
+    const c = smartOiCandles(series, 3).candles;
+    expect(c.map((k) => k.peVol)).toEqual([100, 160, 250]);
+    expect(c.map((k) => k.ceVol)).toEqual([100, 140, 200]);
+    expect(c.map((k) => k.peVolDelta)).toEqual([100, 60, 90]); // the first candle is everything traded since the open
+  });
+  it("the option builders plot cumulative put and call volume, and put minus call (hand-calculated)", async () => {
+    const { smartOiDiffOption, smartOiVolumeOption } = await import("../lib/chartOptions");
+    const colors = { up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" };
+    const r = smartOiCandles(series, 3);
+    const vol = smartOiVolumeOption(r, colors) as { series: { name: string; data: number[] }[] };
+    expect(vol.series.map((s) => s.name)).toEqual(["Put volume (day)", "Call volume (day)"]);
+    expect(vol.series[0]!.data).toEqual([100, 160, 250]);
+    expect(vol.series[1]!.data).toEqual([100, 140, 200]);
+    const diff = smartOiDiffOption(r, colors) as { series: { name: string; data: unknown[] }[] };
+    expect(diff.series[1]!.data).toEqual([0, 20, 50]); // 100-100, 160-140, 250-200
+    expect((diff.series[0]!.data as { value: number }[]).map((d) => d.value)).toEqual([0, 20, 30]); // per candle: 100-100, (160-100)-(140-100), (250-160)-(200-140)
+  });
+});
