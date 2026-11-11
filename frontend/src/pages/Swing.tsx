@@ -109,7 +109,7 @@ export default function Swing() {
       {tab === "overview" && <TabPanel id="overview">{withReport((r) => <SwingOverview report={r} basis={basis} />)}</TabPanel>}
       {tab === "trades" && <TabPanel id="trades">{withReport((r) => <SwingTrades report={r} />)}</TabPanel>}
       {tab === "robustness" && <TabPanel id="robustness">{withReport((r) => <SwingRobustness report={r} />)}</TabPanel>}
-      {tab === "rules" && <TabPanel id="rules">{withReport((r) => <SwingRules report={r} />)}</TabPanel>}
+      {tab === "rules" && <TabPanel id="rules">{withReport((r) => <SwingRules report={r} config={paper.data?.config} />)}</TabPanel>}
     </div>
   );
 }

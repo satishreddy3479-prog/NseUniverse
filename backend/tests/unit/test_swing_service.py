@@ -265,6 +265,10 @@ def test_view_and_api_expose_the_book(tmp_path: Path) -> None:
     assert b["equity"] == pytest.approx(b["cash"] + b["invested"])
     assert b["return_pct"] == pytest.approx((b["equity"] / b["capital"] - 1) * 100)
     assert body["config"]["risk_pct"] == pytest.approx(2.0) and body["config"]["cost_per_side_pct"] == pytest.approx(0.15)
+    # the Rules tab renders these: every engine parameter, straight from the engine
+    prm = body["config"]["params"]
+    assert prm["vol_mult"] == CFG.vol_mult and prm["trigger_buf"] == 1.003 and prm["be_r"] == 1.8 and prm["dist_min"] == -4.0 and prm["dist_max"] == 0.8 and prm["min_fetch_ratio"] == 0.9
+    assert body["config"]["live"]["day1_check_min"] == 15 * 60 + 20 and body["config"]["live"]["chase_cap"] == 1.01
     for p in body["positions"]:
         assert p["stop_stage"] in ("initial stop", "breakeven", "trailing")
         assert p["unrealized_pnl"] == pytest.approx(p["shares"] * (p["last_close"] - p["fill"]))

@@ -841,7 +841,19 @@ export interface SwingPaperView {
   trade_totals: { closed: number; wins: number; net_pnl: number; costs: number };
   equity: { session: string; session_no: number; equity: number; cash: number; invested: number; open_positions: number; nifty_close: number | null }[];
   recent_runs: { session: string; ran_at: string; universe_size: number; fetched_ok: number; candidates: number; blocked_by_gate: number; note: string }[];
-  config: { capital: number; slots: number; risk_pct: number; min_score: number; cost_per_side_pct: number; cooldown: number; rule_version: string };
+  config: {
+    capital: number; slots: number; risk_pct: number; min_score: number; cost_per_side_pct: number; cooldown: number; rule_version: string;
+    /** every engine parameter (fractions as the engine holds them): the Rules tab renders these, so it cannot drift from the rules */
+    params?: SwingParams;
+    live?: SwingLiveParams;
+  };
+}
+export interface SwingParams {
+  capital: number; slots: number; risk_pct: number; min_score: number; trigger_buf: number; vol_mult: number; max_open_gap: number; atr_sl_mult: number; max_risk_frac: number;
+  be_r: number; trail_r: number; be_buf: number; chand_mult: number; cooldown: number; cost_per_side: number; dist_min: number; dist_max: number; min_fetch_ratio: number;
+}
+export interface SwingLiveParams {
+  entry_from_min: number; entry_until_min: number; day1_check_min: number; chase_cap: number; wick_fraction: number; straight_line_judge_min: number; poll_seconds: number; stale_after_seconds: number;
 }
 
 // ---- Swing live view (/api/swing/live): prices from the Kotak feed for the stocks the paper book watches

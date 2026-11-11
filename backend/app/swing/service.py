@@ -16,6 +16,7 @@ import contextlib
 import json
 import logging
 import threading
+from dataclasses import asdict
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from time import monotonic
@@ -23,7 +24,16 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.logging_setup import log_event
-from app.swing.engine import RULE_VERSION, Bar, Config, make_orders, settle_session
+from app.swing import minute_rules as mr
+from app.swing.engine import (
+    MAX_DIST,
+    MIN_DIST,
+    RULE_VERSION,
+    Bar,
+    Config,
+    make_orders,
+    settle_session,
+)
 from app.swing.fetch import Fetcher, FetchError
 from app.swing.indicators import Bars, Setup, analyse, stage2_ok
 from app.swing.store import PaperStore
@@ -334,7 +344,11 @@ class SwingPaperService:
             "decisions": snap["decisions"], "trades": snap["trades"], "trade_totals": totals, "equity": snap["equity"],
             "recent_runs": snap["recent_runs"],
             "config": {"capital": cfg.capital, "slots": cfg.slots, "risk_pct": cfg.risk_pct * 100, "min_score": cfg.min_score,
-                       "cost_per_side_pct": cfg.cost_per_side * 100, "cooldown": cfg.cooldown, "rule_version": RULE_VERSION},
+                       "cost_per_side_pct": cfg.cost_per_side * 100, "cooldown": cfg.cooldown, "rule_version": RULE_VERSION,
+                       # every number the Rules tab quotes, from the engine itself so the page cannot drift from the rules
+                       "params": {**asdict(cfg), "dist_min": MIN_DIST, "dist_max": MAX_DIST, "min_fetch_ratio": MIN_FETCH_RATIO},
+                       "live": {"entry_from_min": mr.ENTRY_FROM_MIN, "entry_until_min": mr.ENTRY_UNTIL_MIN, "day1_check_min": mr.D1_CHECK_MIN, "chase_cap": mr.CHASE_CAP,
+                                "wick_fraction": mr.WICK_FRACTION, "straight_line_judge_min": mr.STRAIGHT_LINE_JUDGE_MIN, "poll_seconds": 2, "stale_after_seconds": 120}},
         }
 
     # ---- status and lifecycle
