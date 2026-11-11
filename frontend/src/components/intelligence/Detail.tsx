@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { fmtInt, MISSING } from "../../lib/format";
 import { fmtCrore } from "../../lib/gammaAnalysis";
 import { CVD_TIP, GEX_TIP, VIX_LABEL, type Intelligence } from "../../lib/intelligence";
+import { VolatilityEvidence } from "./VolatilityEvidence";
 
 const n = (v: number | null | undefined, d = 2) => (v == null ? MISSING : v.toLocaleString("en-IN", { maximumFractionDigits: d, minimumFractionDigits: d }));
 const sg = (v: number | null | undefined, d = 2) => (v == null ? MISSING : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}`);
@@ -56,6 +57,7 @@ export function DetailPanels({ d }: { d: Intelligence }) {
           <Kv k="25Δ skew (put − call)" v={sg(p.volatility.skew_25d)} /><Kv k="10Δ skew" v={sg(p.volatility.skew_10d)} /><Kv k="Risk reversal 25Δ (call − put)" v={sg(p.volatility.risk_reversal_25d)} /><Kv k="25Δ butterfly" v={sg(p.volatility.butterfly_25d)} />
           <Kv k="Term slope /30d" v={`${sg(p.volatility.term_slope_30d)} (${p.volatility.term_shape ?? MISSING})`} /><Kv k="Expected move (1σ to expiry)" v={p.volatility.expected_move_1sd_pts == null ? MISSING : `±${p.volatility.expected_move_1sd_pts.toFixed(0)} pts`} />
         </div>
+        <VolatilityEvidence det={d.engines.find((e) => e.key === "volatility")?.detail} />
         {p.volatility.term.length > 0 && <p className="mt-2 text-muted">Term: {p.volatility.term.map((t) => `${t.expiry.slice(5)} ${t.days == null ? "?" : t.days.toFixed(1)}d ${n(t.atm_iv)}%`).join(" · ")}</p>}
         {p.volatility.interpretation && <p className="mt-1 text-paper">{Array.isArray(p.volatility.interpretation) ? p.volatility.interpretation.join(" ") : p.volatility.interpretation}</p>}
         <Note>{p.volatility.note} IV rank and percentile describe the level of VIX and are never used on their own for direction.</Note>

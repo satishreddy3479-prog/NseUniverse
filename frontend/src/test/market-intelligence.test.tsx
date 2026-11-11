@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MarketIntelligence } from "../pages/MarketIntelligence";
 import { Home } from "../pages/Home";
-import type { EngineView, HeavyStock, Heavyweights, Intelligence, MlDigest, Timeline } from "../lib/intelligence";
+import type { EngineView, HeavyStock, Heavyweights, Intelligence, MlDigest, Timeline, VolDetail } from "../lib/intelligence";
 
 vi.mock("../components/EChart", () => ({
   useChartColors: () => ({ up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" }),
@@ -286,6 +286,42 @@ describe("Corrections: weights, VWAP instrument, gamma flip, observations", () =
     const o = await screen.findByTestId("mi-observations");
     expect(o.textContent).toContain("never read as a reversal");
     expect(within(o).getByTestId("mi-observation").textContent).toContain("not a reversal signal");
+  });
+});
+
+const vb = (ce: number, pe: number, cc: number, pc: number, prev: number | null) => ({ ce_iv: ce, pe_iv: pe, ce_change: cc, pe_change: pc, risk_reversal: +(ce - pe).toFixed(2), skew: +(pe - ce).toFixed(2), rr_change: +(cc - pc).toFixed(2), rr_previous_session: prev, rr_change_since_previous_session: prev == null ? null : +(ce - pe - prev).toFixed(2), mechanism: "put IV expansion (+0.51) together with call IV contraction (-0.20)" });
+const vol: VolDetail = {
+  window: "15 min", spot_change_pct: 0.05, atm: { ...vb(15, 15.4, -0.3, -0.24, -0.3), movement: "little changed", avg_change: -0.27 }, d25: vb(14.1, 16.9, -0.2, 0.51, -1.7), d10: vb(13.2, 19, -0.4, 0.9, -4.5),
+  total: -32.4, verdict: "CONFLICTING",
+  components: [{ key: "atm", name: "ATM IV change against price", reading: "ATM IV -0.27 pts", score: 29.6, contribution: 14.8 }, { key: "rr", name: "Call versus put IV momentum (25Δ)", reading: "risk-reversal change -0.71 pts", score: -94.4, contribution: -47.2 }],
+  evidence: { bullish: ["ATM IV change against price +30: ATM IV -0.27 pts"], bearish: ["Call versus put IV momentum (25Δ) -94: risk-reversal change -0.71 pts"], conflicting: ["the components disagree"] }, not_scored: [],
+  interpretation: [{ id: "atm", title: "ATM volatility", reading: "little changed: ATM IV -0.27 pts over 15 min" }, { id: "put_side", title: "Put-side IV (25Δ)", reading: "strengthening: +0.51 pts, now 16.90" }, { id: "confirmation", title: "Overall volatility confirmation", reading: "mixed: the volatility components disagree, so volatility does not confirm the price move" }],
+  explanation: "Volatility evidence is CONFLICTING (group score -32): ATM IV change against price +30; Call versus put IV momentum (25Δ) -94. The components disagree, so the net score understates the conflict.", scoring: { mode: "legacy", atm_scale: 0.5, atm_factor: 0.6, skew_scale: 0.4 },
+  sign_convention: "risk reversal = CE IV − PE IV; skew = PE IV − CE IV = −risk reversal", sign_consistent: true,
+};
+
+describe("Volatility evidence", () => {
+  it("shows separate CE and PE readings, risk reversals now and at the previous close, ATM apart from skew, each contribution and why the verdict is conflicting", async () => {
+    view({ ...base, engines: base.engines.map((e) => (e.key === "volatility" ? { ...e, detail: vol } : e)) });
+    const v = await screen.findByTestId("vol-evidence");
+    expect(within(v).getByTestId("vol-verdict").textContent).toBe("CONFLICTING");
+    const row = within(v).getByTestId("vol-row-25Δ");
+    expect(row.textContent).toContain("14.10");
+    expect(row.textContent).toContain("16.90");
+    expect(row.textContent).toContain("−2.80"); // risk reversal now
+    expect(row.textContent).toContain("−1.70"); // previous close
+    expect(row.textContent).toContain("+2.80"); // skew = PE − CE
+    expect(within(v).getByTestId("vol-row-10Δ").textContent).toContain("−5.80"); // 10Δ kept apart from 25Δ
+    expect(within(v).getByTestId("vol-row-ATM").textContent).toContain("−0.30");
+    const c = within(v).getByTestId("vol-components").textContent ?? "";
+    expect(c).toContain("+30");
+    expect(c).toContain("−94");
+    expect(c).toContain("−47.2");
+    expect(within(v).getByTestId("vol-explanation").textContent).toContain("The components disagree");
+    expect(within(v).getByTestId("vol-evidence-lists").textContent).toContain("Conflicting");
+    expect(within(v).getByTestId("vol-interpretation").textContent).toContain("strengthening: +0.51 pts, now 16.90");
+    expect(within(v).getByTestId("vol-sign").textContent).toContain("not about direction");
+    expect(v.textContent).toContain("ATM little changed");
   });
 });
 

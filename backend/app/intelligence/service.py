@@ -18,7 +18,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.intelligence import fusion as fz
-from app.intelligence import heavyweights, rolling, validation
+from app.intelligence import heavyweights, rolling, validation, voleval
 from app.intelligence.store import IntelligenceStore
 
 logger = logging.getLogger(__name__)
@@ -64,11 +64,12 @@ def rank_percentile(values: list[float | None], window: int) -> dict[str, float 
 class MarketIntelligence:
     def __init__(
         self, *, providers: Mapping[str, Callable[..., Any]], store: IntelligenceStore, default_expiry: Callable[[], str | None],
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC), weights: Mapping[str, float] | None = None, enabled: bool = True,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC), weights: Mapping[str, float] | None = None, enabled: bool = True, vol_config: Any = None,
         live_only: bool = True,
     ) -> None:
         self.providers, self.store, self._default_expiry, self._clock = dict(providers), store, default_expiry, clock
         self.weights = dict(weights or fz.DEFAULT_WEIGHTS)
+        self.vol_config = vol_config or voleval.DEFAULT
         self.enabled, self.live_only = enabled, live_only
         self._cache: dict[tuple[str, str], tuple[float, Any, dict[str, Any]]] = {}
         self._summary_cache: tuple[float, str, dict[str, Any]] | None = None
@@ -144,6 +145,7 @@ class MarketIntelligence:
         # rolling windows come from the per-minute flow samples the market service already stores; nothing new is collected
         data["rolling"] = rolling.futures(fz.g(data["flow"], "fut") or []) if status["flow"]["ok"] else None
         data["heavy"] = heavyweights.assess(data, now)
+        data["vol_config"] = self.vol_config
         return data, status
 
     # ------------------------------------------------------------------ summary

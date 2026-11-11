@@ -27,6 +27,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from app.intelligence import heavyweights as hw
+from app.intelligence import voleval
 from app.intraday.gex_history import flip_support as gx_flip_support
 
 #: default engine weights (percent); overridable through ``Settings.intelligence_weights``
@@ -310,23 +311,19 @@ def orderflow_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[
 
 
 def volatility_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[str, Any]:
-    """Group C, volatility: live ATM IV change and the 25Δ call-versus-put IV momentum (expiry-specific). India VIX and the IV rank/percentile built from
-    it are daily closes: they are shown as context, labelled with their date, and are never scored as an intraday signal."""
-    row = g(inp.get("momentum"), "table", "periods", "15") or {}
-    atm = row.get("atm") or {}
-    ce, pe = num(atm.get("ce_change")), num(atm.get("pe_change"))
-    iv_chg = None if ce is None or pe is None else (ce + pe) / 2
-    spot = num(row.get("spot_change_pct"))
-    terms: list[Term] = []
-    if iv_chg is None:
-        terms.append(Term("ATM IV change against price (15 min)", None, "no snapshot 15 minutes earlier", family="atm_iv"))
-    else:
-        rising_with_spot = spot is not None and spot > 0.1 and iv_chg > 0
-        terms.append(Term("ATM IV change against price (15 min)", 0.0 if rising_with_spot else -(squash(iv_chg, 0.5) or 0.0) * 0.6,
-                          f"ATM IV {iv_chg:+.2f} pts, NIFTY {spot:+.2f}%: " + ("IV up with an advance is not read as directional" if rising_with_spot else "IV up leans bearish, IV down leans bullish") if spot is not None else f"ATM IV {iv_chg:+.2f} pts", family="atm_iv"))
-    d25 = num(g(row, "d25", "momentum"))
-    terms.append(Term("Call versus put IV momentum (25Δ, 15 min)", squash(d25, 0.4), f"CE IV change minus PE IV change {d25:+.2f} pts (positive: call IV strengthened relative to put IV)" if d25 is not None else "no 25Δ momentum", family="skew"))
-    return engine("volatility", terms, ["momentum", "skew"], status, extra={"atm_iv_change_15m": iv_chg, "spot_change_15m_pct": spot, "skew_25d": g(inp.get("skew"), "cards", "skew_25d"),
+    """Group C, volatility: live ATM IV change and the 25Δ call-versus-put IV momentum (= the change in the 25Δ risk reversal), expiry-specific. The
+    scoring rules are in ``voleval`` and configurable; India VIX, IV rank/percentile and IV-RV are daily context and never scored."""
+    cfg = inp.get("vol_config") or voleval.DEFAULT
+    table = g(inp.get("momentum"), "table") or {}
+    row = g(table, "periods", "15") or {}
+    det = voleval.analyse(row, table.get("previous_close"), cfg)
+    by = {c["key"]: c for c in det["components"]}
+    atm = by["atm"]
+    terms: list[Term] = [Term("ATM IV change against price (15 min)", atm["score"], atm["reading"] or "no snapshot 15 minutes earlier", family="atm_iv")]
+    rr = by["rr"]
+    terms.append(Term("Call versus put IV momentum (25Δ, 15 min)", rr["score"], rr["reading"] or "no 25Δ momentum", family="skew"))
+    iv_chg, spot = det["atm"]["avg_change"], det["spot_change_pct"]
+    return engine("volatility", terms, ["momentum", "skew"], status, extra={"atm_iv_change_15m": iv_chg, "spot_change_15m_pct": spot, "skew_25d": g(inp.get("skew"), "cards", "skew_25d"), "detail": det,
                                                                            "call_minus_put_25d": g(inp.get("skew"), "cards", "call_minus_put_25d"), "butterfly_25d": g(inp.get("skew"), "cards", "butterfly_25d"),
                                                                            "context_not_scored": ["India VIX (last daily close)", "IV rank and IV percentile (from daily VIX closes)", "IV minus realised volatility (daily)"]})
 

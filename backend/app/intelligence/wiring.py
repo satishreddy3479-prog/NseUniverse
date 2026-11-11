@@ -6,6 +6,7 @@ from datetime import UTC, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from app.intelligence import voleval
 from app.intelligence.service import MarketIntelligence, parse_weights
 from app.intelligence.store import IntelligenceStore
 from app.market.futures_series import futures_series
@@ -46,5 +47,5 @@ def create(settings: Any, observations: Any, intraday: Any, market: Any, market_
     }
     return MarketIntelligence(
         providers=providers, store=IntelligenceStore(settings.data_dir), default_expiry=expiry,
-        weights=parse_weights(settings.intelligence_weights), enabled=settings.intelligence_enabled,
+        weights=parse_weights(settings.intelligence_weights), enabled=settings.intelligence_enabled, vol_config=voleval.parse_config(settings.intelligence_volatility),
     )

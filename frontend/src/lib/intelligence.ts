@@ -8,7 +8,7 @@ export interface EngineView {
   terms: EngineTerm[]; supporting: string[]; conflicting: string[]; unavailable: string[];
   freshness: { fresh: boolean | null; age_s: number | null; inputs: string[]; failed: string[]; as_of?: Record<string, string | null> };
   metrics?: { weighted_cvd_score?: number | null; positive_cvd?: number; negative_cvd?: number; stocks_used?: string[]; aggregate_points_pct?: number | null; heavy_up_weight?: number; heavy_down_weight?: number; participation_ratio?: number | null; divergence?: string | null; symbols?: string[] };
-  buildup?: string; state?: Record<string, unknown>;
+  buildup?: string; state?: Record<string, unknown>; detail?: VolDetail;
 }
 export interface Sentiment {
   score: number | null; class: string; coverage: number; engines_available: number; agreement: number | null; freshness: number | null; confidence: number | null; reason: string | null;
@@ -74,6 +74,12 @@ export interface MlEvaluation {
 export interface MlDigest {
   status: { status: string; stage_name: string; labelled_sessions: number; complete_sessions: number; sessions_with_samples: number; stages: { id: string; name: string; from_sessions: number; what: string }[]; next: { name: string; at_sessions: number; sessions_to_go: number } | null };
   last_evaluation: MlEvaluation | null; computing: boolean; next_run: string;
+}
+export interface VolBucket { ce_iv: number | null; pe_iv: number | null; ce_change: number | null; pe_change: number | null; risk_reversal: number | null; skew: number | null; rr_change: number | null; rr_previous_session: number | null; rr_change_since_previous_session: number | null; mechanism: string | null; movement?: string | null; avg_change?: number | null }
+export interface VolDetail {
+  window: string; spot_change_pct: number | null; atm: VolBucket; d25: VolBucket; d10: VolBucket; total: number | null; verdict: "BULLISH" | "BEARISH" | "CONFLICTING" | "NEUTRAL" | "UNAVAILABLE";
+  components: { key: string; name: string; reading: string | null; score: number | null; contribution: number | null }[]; evidence: { bullish: string[]; bearish: string[]; conflicting: string[] }; not_scored: string[];
+  interpretation: { id: string; title: string; reading: string }[]; explanation: string; scoring: { mode: string; atm_scale: number; atm_factor: number; skew_scale: number }; sign_convention: string; sign_consistent: boolean;
 }
 export interface Pulse {
   spot: number | null; change_pct: number | null; futures: number | null; basis: number | null; basis_pct: number | null; atm_strike: number | null; expiry: string | null; atm_ce_premium: number | null; atm_pe_premium: number | null;
