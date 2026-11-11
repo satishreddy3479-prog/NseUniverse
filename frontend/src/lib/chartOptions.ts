@@ -822,37 +822,29 @@ export function smartOiRatioOption(r: SmartOiResult, c: ChartColors): EChartsCor
 
 const volTxt = (v: unknown) => (typeof v === "number" ? `${v < 0 ? "−" : ""}${compactIN(Math.abs(v))}` : "—");
 
-/** Cumulative put and call volume traded today, one line each (units, the same strikes in every candle). */
+/**
+ * Put and call volume together: cumulative put and call volume traded today on the left axis (one line each) and the difference put minus call
+ * on the right axis (a line for the cumulative difference, per-candle bars hidden until chosen in the legend; green bars = puts traded more).
+ */
 export function smartOiVolumeOption(r: SmartOiResult, c: ChartColors): EChartsCoreOption {
-  const cs = r.candles;
-  const line = (name: string, color: string, data: (number | null)[]) => ({ name, type: "line", data, showSymbol: false, lineStyle: { width: 1.8, color }, itemStyle: { color } });
-  return {
-    animation: false, grid: { left: 58, right: 14, top: 30, bottom: 24 },
-    legend: { top: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
-    tooltip: { trigger: "axis", confine: true, axisPointer: { type: "line", lineStyle: { color: c.muted, type: "dashed" }, label: { show: true, backgroundColor: c.paper, color: c.slate } }, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: volTxt },
-    xAxis: { type: "category", data: cs.map((k) => k.label), axisLabel: { ...axisText(c), hideOverlap: true, showMaxLabel: true }, axisLine: { lineStyle: { color: c.rule } }, axisTick: { show: false } },
-    yAxis: { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => compactIN(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
-    series: [line("Put volume (day)", c.up, cs.map((k) => k.peVol)), line("Call volume (day)", c.down, cs.map((k) => k.ceVol))],
-  };
-}
-
-/** Put minus call: cumulative volume today (line) and the change in each candle (bars; green = puts traded more). */
-export function smartOiDiffOption(r: SmartOiResult, c: ChartColors): EChartsCoreOption {
   const cs = r.candles;
   const cum = cs.map((k) => (k.peVol != null && k.ceVol != null ? k.peVol - k.ceVol : null));
   const per = cs.map((k) => (k.peVolDelta != null && k.ceVolDelta != null ? k.peVolDelta - k.ceVolDelta : null));
+  const line = (name: string, color: string, data: (number | null)[], y: number, extra: object = {}) => ({ name, type: "line", yAxisIndex: y, data, showSymbol: false, lineStyle: { width: 1.8, color }, itemStyle: { color }, ...extra });
   return {
-    animation: false, grid: { left: 58, right: 58, top: 30, bottom: 24 },
-    legend: { top: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
+    animation: false, grid: { left: 58, right: 58, top: 44, bottom: 24 },
+    legend: { top: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8, selected: { "PE − CE per candle (right)": false } },
     tooltip: { trigger: "axis", confine: true, axisPointer: { type: "line", lineStyle: { color: c.muted, type: "dashed" }, label: { show: true, backgroundColor: c.paper, color: c.slate } }, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: volTxt },
     xAxis: { type: "category", data: cs.map((k) => k.label), axisLabel: { ...axisText(c), hideOverlap: true, showMaxLabel: true }, axisLine: { lineStyle: { color: c.rule } }, axisTick: { show: false } },
     yAxis: [
-      { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => volTxt(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
-      { type: "value", scale: true, position: "right", axisLabel: { ...axisText(c), formatter: (v: number) => volTxt(v) }, splitLine: { show: false } },
+      { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => compactIN(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
+      { type: "value", scale: true, position: "right", axisLabel: { ...axisText(c), color: c.info, formatter: (v: number) => volTxt(v) }, splitLine: { show: false } },
     ],
     series: [
-      { name: "PE − CE per candle", type: "bar", yAxisIndex: 1, data: per.map((v) => (v == null ? null : { value: v, itemStyle: { color: v >= 0 ? c.up : c.down, opacity: 0.55 } })) },
-      { name: "PE − CE volume (day)", type: "line", data: cum, showSymbol: false, lineStyle: { width: 1.8, color: c.info }, itemStyle: { color: c.info }, markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: c.muted, width: 1 }, data: [{ yAxis: 0 }] } },
+      line("Put volume (day)", c.up, cs.map((k) => k.peVol), 0),
+      line("Call volume (day)", c.down, cs.map((k) => k.ceVol), 0),
+      line("PE − CE volume (day, right)", c.info, cum, 1, { lineStyle: { width: 1.8, color: c.info, type: "dashed" }, markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: c.muted, width: 1 }, data: [{ yAxis: 0 }] } }),
+      { name: "PE − CE per candle (right)", type: "bar", yAxisIndex: 1, data: per.map((v) => (v == null ? null : { value: v, itemStyle: { color: v >= 0 ? c.up : c.down, opacity: 0.55 } })) },
     ],
   };
 }
