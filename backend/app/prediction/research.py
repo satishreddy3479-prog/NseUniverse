@@ -336,6 +336,7 @@ class PredictionResearch:
         self._error: str | None = None
         self._task: asyncio.Task[None] | None = None
         self._morning_done: date | None = None
+        self._last_check: dict[str, Any] | None = None  # what the morning loop saw the last time it looked
         self._cache_file = None if cache_dir is None else cache_dir / "prediction_report.json"
         self._runs_file = None if cache_dir is None else cache_dir / "prediction_runs.json"
         self._runs: dict[str, dict[str, Any]] = self._load_runs()
@@ -462,7 +463,7 @@ class PredictionResearch:
             if old is None:
                 return {"ready": False, "computing": True, "reason": "Waiting for the data refresh to finish before training the models."}
             self._settle(bars)
-            return {**old, "ledger": self._ledger_view(), "generated_at": now.isoformat(), "runs": self._runs, "computing": False, "waiting_for_data": True, "days": self._days_view(bars)}
+            return {**old, "ledger": self._ledger_view(), "generated_at": now.isoformat(), "runs": self._runs, "computing": False, "waiting_for_data": True, "days": self._days_view(bars), "recording": self.recording_status(now)}
         if body is None:
             if block and worker is not None:
                 worker.join()
@@ -475,7 +476,7 @@ class PredictionResearch:
                 raise RuntimeError(self._error)
             return {"ready": False, "computing": True, "computing_since": self._run_started.isoformat() if self._run_started else None, "reason": "Training and evaluating models on the stored data. This takes a few minutes the first time and is then cached."}
         self._settle(bars)
-        return {**body, "ledger": self._ledger_view(), "generated_at": now.isoformat(), "runs": self._runs, "computing": worker is not None and worker.is_alive(), "computing_since": self._run_started.isoformat() if self._run_started and worker is not None and worker.is_alive() else None, "computing_scope": self._run_scope if worker is not None and worker.is_alive() else None, "days": self._days_view(bars)}
+        return {**body, "ledger": self._ledger_view(), "generated_at": now.isoformat(), "runs": self._runs, "computing": worker is not None and worker.is_alive(), "computing_since": self._run_started.isoformat() if self._run_started and worker is not None and worker.is_alive() else None, "computing_scope": self._run_scope if worker is not None and worker.is_alive() else None, "days": self._days_view(bars), "recording": self.recording_status(now)}
 
     def _run(self, bars: list[Bar], key: list[Any], now: datetime, trigger: str = "auto", only: str | None = None, base: dict[str, Any] | None = None) -> None:
         t0 = time.monotonic()
@@ -601,6 +602,10 @@ class PredictionResearch:
         except Exception as e:  # noqa: BLE001 - e.g. calendar coverage; reported, not hidden
             return {**out, "recorded": False, "reason": f"target session unknown: {e}"}
         out.update(first_target_session=str(first), target_session=str(target))
+        locked = self._ledger.get(h, f"{h}-{model}-{MODEL_VERSION}-{ref.session}-{forecast_cutoff(first, 8, 30).astimezone(UTC):%Y%m%dT%H%M%SZ}")  # type: ignore[arg-type]
+        if locked is not None:
+            # Recorded earlier (this morning's window): any later view, retrain or manual compute shows the locked forecast, never a "preview"
+            return {**out, "recorded": True, "forecast_id": locked["forecast"]["forecast_id"], "payload": locked["forecast"]["payload"], "already_recorded": True}
         ref_close = datetime(ref.session.year, ref.session.month, ref.session.day, 15, 40, tzinfo=IST)
         end_day = first if h == "T1" else target
         window_end = datetime(end_day.year, end_day.month, end_day.day, 15, 40, tzinfo=IST)
@@ -784,6 +789,35 @@ class PredictionResearch:
             out.append({**d, "actual": actual, "counts_in_forward_test": d["status"] == "recorded"})
         return out
 
+    def recording_status(self, now: datetime) -> dict[str, Any]:
+        """Why a forecast is, or is not, locked for today, in words, from the ledger and the clock: the answer to "why is it still a preview?"."""
+        ist = now.astimezone(IST)
+        base: dict[str, Any] = {"now_ist": ist.isoformat(timespec="seconds"), "window": "08:35 to 09:10 IST on the target day", "last_check": self._last_check}
+        try:
+            cal = self._cal()
+            if not cal.is_session(ist.date()):
+                nxt = cal.next_session(ist.date(), 1)
+                return base | {"state": "not_a_session_day", "target_session": str(nxt), "reason": f"today is not an NSE session; the next forecast is recorded on {nxt} between 08:35 and 09:10 IST"}
+            ref = cal.prev_session(ist.date())
+            t1, t5 = cal.next_session(ref, 1), cal.next_session(ref, 5)
+        except Exception as e:  # noqa: BLE001
+            return base | {"state": "unknown", "reason": f"the trading calendar could not be read ({type(e).__name__})"}
+        n1, n5 = len(self._recorded_for("T1", t1)), len(self._recorded_for("T5", t5))
+        base |= {"target_session": str(t1), "recorded": {"T1": n1, "T5": n5}}
+        if n1 and n5:
+            return base | {"state": "recorded", "reason": f"locked in the ledger for {t1} (T+1, {n1} models) and {t5} (T+5, {n5} models); the numbers shown are the locked ones"}
+        hm = (ist.hour, ist.minute)
+        if hm < WINDOW[0]:
+            return base | {"state": "before_window", "reason": f"forecasts for {t1} are locked between 08:35 and 09:10 IST; until then the page shows a preview, which is not recorded"}
+        bars = self._complete_bars(now)
+        fresh, stale = self._fresh(self._others(), bars[-1].session, now) if bars else (False, ["no NIFTY bars"])
+        if hm < WINDOW[1]:
+            if not fresh:
+                return base | {"state": "waiting_for_data", "stale_series": stale, "reason": f"in the recording window but waiting for: {', '.join(stale)}; checked every 4 minutes until 09:10"}
+            return base | {"state": "ready", "reason": "in the window with all overnight data present; the next check (within 4 minutes) records it"}
+        why = "the overnight data was still missing at the end of the window: " + ", ".join(stale) if not fresh else "the data was ready but the morning run did not complete a recording (see the last check and the server log)"
+        return base | {"state": "missed", "stale_series": stale, "reason": f"the window closed at 09:10 IST with nothing locked for {t1}: {why}. A missed day is logged with its reason and never recorded later"}
+
     def morning_ready(self, now: datetime) -> bool:
         """Inside the 08:35-09:10 window, not yet recorded today, and every overnight series has its final bar."""
         if not self._window_due(now) or self._morning_done == now.astimezone(IST).date() or self._recorded_today(now):
@@ -798,6 +832,8 @@ class PredictionResearch:
                 now = self._clock()
                 # Train and record only when the overnight data is complete. If a series is late, look again in
                 # four minutes until the window closes instead of giving the day up (a stale run is only a preview).
+                st = self.recording_status(now)
+                self._last_check = {"at": now.isoformat(timespec="seconds"), "state": st.get("state"), "reason": st.get("reason")}
                 if self.morning_ready(now):
                     await asyncio.to_thread(self.summary, True, True)  # force: new overnight data must be used
                     # done only once the forecasts are really in the ledger; a run that came out as a preview (or failed) is tried again

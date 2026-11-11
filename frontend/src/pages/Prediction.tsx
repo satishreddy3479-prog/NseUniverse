@@ -523,6 +523,11 @@ export default function Prediction() {
               <span className="rounded-md border border-info/40 px-2 py-1 text-info">For {t1?.target_session ?? "—"} · data up to {q.data.data.last}</span>
               <span className="rounded-md border border-info/40 px-2 py-1 text-info">Spot ₹{fmtPrice(q.data.data.reference_close)}</span>
               <span className={`rounded-md border px-2 py-1 ${locked ? "border-up/50 bg-up/10 text-up" : "border-warn/50 bg-warn/10 text-warn"}`}>{locked ? "Forecast locked in ledger" : "Preview · not recorded"}</span>
+              {q.data.recording && (
+                <p className="w-full whitespace-normal font-sans text-xs normal-case tracking-normal text-muted" data-testid="recording-status">
+                  <span className={q.data.recording.state === "recorded" ? "text-up" : q.data.recording.state === "missed" ? "text-down" : "text-warn"}>Recording status: {q.data.recording.state.replace(/_/g, " ")}.</span> {q.data.recording.reason}.{q.data.recording.last_check ? ` Last automatic check ${new Date(q.data.recording.last_check.at).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST: ${q.data.recording.last_check.state ?? "no result"}.` : " The morning check has not run since the program started."}
+                </p>
+              )}
             </div>
           );
         })()}

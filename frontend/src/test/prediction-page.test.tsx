@@ -131,6 +131,15 @@ describe("Prediction page", () => {
     expect(inputs).toHaveTextContent("4 of 8");
     expect(screen.getByTestId("postmortem-empty")).toBeInTheDocument();
   });
+  it("says why a forecast is still a preview: the recording status, the reason and the last automatic check", async () => {
+    const d = data();
+    if (d.ready) d.recording = { state: "waiting_for_data", reason: "in the recording window but waiting for: SPX, VIX; checked every 4 minutes until 09:10", now_ist: "2026-11-11T08:50:00+05:30", window: "08:35 to 09:10 IST on the target day", stale_series: ["SPX", "VIX"], last_check: { at: "2026-11-11T03:16:00Z", state: "waiting_for_data", reason: "x" } };
+    mount(d);
+    const r = await screen.findByTestId("recording-status");
+    expect(r).toHaveTextContent("Recording status: waiting for data.");
+    expect(r).toHaveTextContent("waiting for: SPX, VIX");
+    expect(r).toHaveTextContent("Last automatic check");
+  });
   it("explains why the T+5 probability stays near the base rate, only where no model beat it", async () => {
     mount(data());
     const note = await screen.findByTestId("flat-note");

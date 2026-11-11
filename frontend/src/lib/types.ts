@@ -420,6 +420,7 @@ export type PredictionSummary =
       waiting_for_data?: boolean;
       runs?: Record<string, { last_auto?: { at: string }; last_manual?: { at: string } }>;
       days?: ForecastDay[];
+      recording?: RecordingStatus;
       generated_at: string;
       computed_at: string;
       model_version: string;
@@ -448,6 +449,7 @@ export interface FlowsDay { session: string; participants: Record<string, Record
 export interface FlowsLatest { open_interest: FlowsDay[]; volume: FlowsDay[] }
 
 export interface EventItem { id: string; name: string; kind: string; impact: string; start_ist: string; all_day: boolean; time_verified: boolean; tentative: boolean; source: string }
+export interface RecordingStatus { state: "recorded" | "before_window" | "waiting_for_data" | "ready" | "missed" | "not_a_session_day" | "unknown"; reason: string; target_session?: string; now_ist: string; window: string; stale_series?: string[]; recorded?: { T1: number; T5: number }; last_check: { at: string; state: string | null; reason: string | null } | null }
 export interface SeriesFreshness {
   required_session: string; cutoff_date: string; reference_session: string; checked_at: string;
   series: Record<string, { last_final: string | null; provisional: string | null; newest: string | null; ok: boolean }>;

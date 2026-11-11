@@ -225,3 +225,45 @@ def test_without_a_calendar_only_the_clock_schedule_runs(tmp_path: Path) -> None
     svc = _gap_service(tmp_path, None, ist(2026, 11, 11, 8, 0))
     assert svc.data_gaps(ist(2026, 11, 11, 8, 0)) == []
     assert "data_gaps" in svc.status()
+
+
+# ---------------------------------------------------------------- "why is it still a preview?"
+def test_a_forecast_locked_in_the_morning_window_is_shown_as_locked_at_any_later_time(tmp_path: Path) -> None:
+    last = _walk(560, 1)[-1].session
+    nxt = _Cal().next_session(last)
+    svc, _ = _service(tmp_path, 560, _at(nxt, 8, 50))
+    first = svc.summary(block=True)
+    assert all(m["recorded"] for m in first["forecasts"]["T1"]["models"].values())
+    # three hours later the models are retrained (a data refresh, a restart, a manual compute): the window is closed, but the card must still say locked
+    svc._clock = lambda: _at(nxt, 12, 0)
+    later = svc.summary(force=True, block=True, trigger="manual")
+    for h in ("T1", "T5"):
+        for name, m in later["forecasts"][h]["models"].items():
+            assert m["recorded"] is True and m.get("preview") is None and m["already_recorded"] is True and m["forecast_id"], (h, name)
+    assert later["ledger"]["counts"]["T1"]["forecasts"] == 4  # nothing was recorded twice
+    assert later["recording"]["state"] == "recorded" and "locked in the ledger" in later["recording"]["reason"]
+
+
+def test_a_view_outside_the_window_without_a_locked_forecast_is_a_preview_and_says_why(tmp_path: Path) -> None:
+    last = _walk(560, 1)[-1].session
+    nxt = _Cal().next_session(last)
+    svc, _ = _service(tmp_path, 560, _at(nxt, 12, 0))
+    s = svc.summary(block=True)
+    m = s["forecasts"]["T1"]["models"]["ensemble"]
+    assert m["recorded"] is False and m["preview"] is True and "08:35 and 09:10" in m["reason"]
+    assert s["recording"]["state"] == "missed" and "window closed at 09:10" in s["recording"]["reason"] and "never recorded later" in s["recording"]["reason"]
+
+
+def test_recording_status_names_each_stage_of_the_morning(tmp_path: Path) -> None:
+    last = _walk(560, 1)[-1].session
+    nxt = _Cal().next_session(last)
+    svc, _ = _service(tmp_path, 560, _at(nxt, 8, 50))
+    assert svc.recording_status(_at(nxt, 7, 0))["state"] == "before_window" and svc.recording_status(_at(nxt, 8, 50))["state"] == "ready"
+    late, _ = _service(tmp_path / "late", 560, _at(nxt, 8, 50), series_end_offset=1)  # an overnight series has not arrived
+    w = late.recording_status(_at(nxt, 8, 50))
+    assert w["state"] == "waiting_for_data" and "SPX" in w["stale_series"] and "checked every 4 minutes" in w["reason"]
+    missed = late.recording_status(_at(nxt, 9, 30))
+    assert missed["state"] == "missed" and "SPX" in missed["reason"]
+    assert svc.recording_status(_at(last, 12, 0, days=1 if _Cal().is_session(last + timedelta(days=1)) else 0))["state"] in ("before_window", "missed", "ready", "recorded", "not_a_session_day")
+    svc.summary(block=True)
+    assert svc.recording_status(_at(nxt, 9, 30))["state"] == "recorded"
