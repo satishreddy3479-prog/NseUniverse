@@ -266,7 +266,7 @@ function SummaryStrip({ d }: { d: PredictionSummaryReady }) {
     { label: "T+1 holdout hit rate", value: a ? pct(a.hit) : "—", sub: t1.calls?.hit != null ? `confident calls ${pct(t1.calls.hit)} on ${pct(t1.calls.coverage, 0)} of days` : undefined, tone: a && a.hit > 0.55 ? "up" : undefined, hit: a?.hit, base: t1.base?.up_rate_holdout },
     { label: "T+5 holdout hit rate", value: b ? pct(b.hit) : "—", sub: "always-up baseline " + (t5.base ? pct(t5.base.up_rate_holdout) : "—"), hit: b?.hit, base: t5.base?.up_rate_holdout },
     { label: "T+1 Brier skill vs base", value: a ? pct(a.skill, 2) : "—", sub: a ? `95% ${num(a.gain_ci95[0], 4)} to ${num(a.gain_ci95[1], 4)}` : undefined, tone: a && a.skill > 0 ? "up" : "warn" },
-    { label: "Forward results so far", value: String(Object.values(d.ledger.scoreboard.T1).reduce((s, x) => s + x.n, 0)), sub: "resolved T+1 forecasts (all models)" },
+    { label: "Forward results so far", value: String(Math.max(0, ...Object.values(d.ledger.scoreboard.T1).map((x) => x.n))), sub: "resolved T+1 forecast days (the four models share each day)" },
   ];
   return (
     <div className="grid grid-cols-2 gap-2 lg:grid-cols-4" data-testid="summary-strip">

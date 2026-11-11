@@ -292,3 +292,32 @@ def test_the_recorded_forecast_stays_visible_in_market_hours_when_the_data_stamp
     (tmp_path / "empty").mkdir()
     none = PredictionResearch(store, ForecastLedger(tmp_path / "x"), calendar=_Cal(), clock=lambda: noon, initial_train=200, test_size=60, cache_dir=tmp_path / "empty", pause_in_market_hours=True)
     assert none.summary().get("ready") is False  # with no saved report at all the old message stands
+
+
+def test_the_ensemble_row_shows_the_inputs_that_pushed_it_borrowed_from_the_logit_model(tmp_path: Path) -> None:
+    """Regression: only logit-all stores its drivers, so the post-mortem (which shows the ensemble) listed no inputs at all."""
+    last = _walk(560, 1)[-1].session
+    nxt = _Cal().next_session(last)
+    svc, _ = _service(tmp_path, 560, _at(nxt, 8, 50))
+    s = svc.summary(block=True)
+    rows = s["ledger"]["recent"]["T1"]
+    by = {r["model"]: r for r in rows}
+    assert by["logit-all"]["drivers"] and by["ensemble"]["drivers"] == by["logit-all"]["drivers"] and by["boost-all"]["drivers"]
+    assert s["ledger"]["recent"]["T5"][0]["drivers"]
+
+
+def test_a_missing_nifty_close_blocks_the_morning_run_and_is_named_instead_of_a_misleading_window_message(tmp_path: Path) -> None:
+    last = _walk(560, 1)[-1].session
+    nxt = _Cal().next_session(last)
+    svc, _ = _service(tmp_path, 560, _at(nxt, 8, 50))
+    day_after = _Cal().next_session(nxt)
+    now = _at(day_after, 8, 50)  # a morning on which the NIFTY close of `nxt` was never stored: the newest bar is still `last`
+    svc._clock = lambda: now
+    current, expected = svc.reference_is_current(now)
+    assert current is False and expected == nxt
+    assert svc.morning_ready(now) is False  # it does not train and "record" from an older close
+    st = svc.recording_status(now)
+    assert st["state"] == "waiting_for_data" and any(x.startswith(f"NIFTY50 close of {nxt}") for x in st["stale_series"])
+    s = svc.summary(block=True)
+    m = s["forecasts"]["T1"]["models"]["ensemble"]
+    assert m["recorded"] is False and "NIFTY 50 close of the latest session is not stored yet" in m["reason"]

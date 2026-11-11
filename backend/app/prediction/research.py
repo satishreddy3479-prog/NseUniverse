@@ -636,6 +636,8 @@ class PredictionResearch:
         in_window = ist.date() == first and WINDOW[0] <= (ist.hour, ist.minute) < WINDOW[1]
         if not fresh:
             return {**out, "recorded": False, "preview": True, "reason": f"preview: overnight bars not yet in for {', '.join(stale)}"}
+        if ist.date() != first and ist.date() > first:
+            return {**out, "recorded": False, "preview": True, "reason": f"preview: this report is built from the {ref.session} close, whose next session ({first}) is already past: the NIFTY 50 close of the latest session is not stored yet, so nothing can be recorded from it"}
         if not in_window:
             return {**out, "recorded": False, "preview": True, "reason": "preview: forecasts are recorded between 08:35 and 09:10 IST on the target day"}
         f = Forecast(
@@ -659,19 +661,24 @@ class PredictionResearch:
             return {**out, "recorded": False, "reason": str(e)}
 
     def _ledger_view(self) -> dict[str, Any]:
-        def brief(r: dict[str, Any]) -> dict[str, Any]:
+        def own_drivers(rows: list[dict[str, Any]]) -> dict[tuple[str, str], list[Any]]:
+            """Only the logistic model stores 'inputs that pushed it'; the other rows of the same forecast day borrow them (labelled in the page)."""
+            return {(r["forecast"]["reference_session"], r["forecast"]["target_session"]): r["forecast"]["payload"].get("top_drivers") or []
+                    for r in rows if r["forecast"]["model_name"] == "logit-all" and r["forecast"]["payload"].get("top_drivers")}
+
+        def brief(r: dict[str, Any], shared: dict[tuple[str, str], list[Any]]) -> dict[str, Any]:
             f = r["forecast"]
             return {
                 "forecast_id": f["forecast_id"], "model": f["model_name"], "model_version": f["model_version"],
                 "reference_session": f["reference_session"], "target_session": f["target_session"],
                 "generated_at": f["generated_at"], "p_up_model": f["payload"].get("p_up_model"),
                 "p_up_climatology": f["payload"].get("p_up_climatology"), "intact": r["intact"], "outcome": r["outcome"],
-                "drivers": f["payload"].get("top_drivers") or [], "call": f["payload"].get("call"),
+                "drivers": f["payload"].get("top_drivers") or shared.get((f["reference_session"], f["target_session"]), []), "call": f["payload"].get("call"),
             }  # fmt: skip
 
         return {
             "counts": self._ledger.counts(),
-            "recent": {h: [brief(r) for r in self._ledger.list(h, 60)] for h in ("T1", "T5")},
+            "recent": {h: [brief(r, own_drivers(rows)) for r in rows] for h in ("T1", "T5") for rows in [self._ledger.list(h, 60)]},
             "scoreboard": {h: self._scoreboard(h) for h in ("T1", "T5")},
         }
 
@@ -828,6 +835,9 @@ class PredictionResearch:
             return base | {"state": "before_window", "reason": f"forecasts for {t1} are locked between 08:35 and 09:10 IST; until then the page shows a preview, which is not recorded"}
         bars = self._complete_bars(now)
         fresh, stale = self._fresh(self._others(), bars[-1].session, now) if bars else (False, ["no NIFTY bars"])
+        current, expected = self.reference_is_current(now)
+        if not current and expected is not None:
+            fresh, stale = False, [f"NIFTY50 close of {expected} (newest stored: {bars[-1].session if bars else 'none'})", *stale]
         if hm < WINDOW[1]:
             if not fresh:
                 return base | {"state": "waiting_for_data", "stale_series": stale, "reason": f"in the recording window but waiting for: {', '.join(stale)}; checked every 4 minutes until 09:10"}
@@ -835,12 +845,21 @@ class PredictionResearch:
         why = "the overnight data was still missing at the end of the window: " + ", ".join(stale) if not fresh else "the data was ready but the morning run did not complete a recording (see the last check and the server log)"
         return base | {"state": "missed", "stale_series": stale, "reason": f"the window closed at 09:10 IST with nothing locked for {t1}: {why}. A missed day is logged with its reason and never recorded later"}
 
+    def reference_is_current(self, now: datetime) -> tuple[bool, date | None]:
+        """Whether the newest stored NIFTY close is the one of the session before today (what the morning forecast must be built from)."""
+        bars = self._complete_bars(now)
+        try:
+            expected = self._cal().prev_session(now.astimezone(IST).date())
+        except Exception:  # noqa: BLE001 - no verified calendar: do not block
+            return True, None
+        return bool(bars) and bars[-1].session >= expected, expected
+
     def morning_ready(self, now: datetime) -> bool:
         """Inside the 08:35-09:10 window, not yet recorded today, and every overnight series has its final bar."""
         if not self._window_due(now) or self._morning_done == now.astimezone(IST).date() or self._recorded_today(now):
             return False
         bars = self._complete_bars(now)
-        return bool(bars) and self._fresh(self._others(), bars[-1].session, now)[0]
+        return bool(bars) and self.reference_is_current(now)[0] and self._fresh(self._others(), bars[-1].session, now)[0]
 
     async def _loop(self) -> None:
         await asyncio.sleep(30)
