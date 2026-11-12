@@ -116,16 +116,28 @@ def direction(ev: Mapping[str, Any]) -> dict[str, Any]:
 
 
 # ------------------------------------------------------------------ seller
+def _conf(eff: Mapping[str, Any]) -> float:
+    """How far a decay efficiency can be trusted (0-1): small expected decay is dominated by price ticks, so its reading is weighed down toward neutral."""
+    c = eff.get("confidence")
+    return 1.0 if c is None else max(0.0, min(1.0, float(c)))
+
+
+def _conf_note(eff: Mapping[str, Any]) -> str:
+    c = _conf(eff)
+    return "" if c >= 1.0 else f" [weighed at {c:.0%}: only {eff.get('expected_decay')} points of decay expected in this window]"
+
+
 def seller_components(ev: Mapping[str, Any]) -> list[dict[str, Any]]:
     eff = ev["eff"] or {}
     e = eff.get("efficiency_pct")
     c: list[dict[str, Any]] = []
-    c.append(comp("decay", "Theta decay efficiency", 20, None if e is None else (e - 50) / 50, f"recent decay {e:.0f}% of theta ({eff.get('status')}); {eff.get('reason')}" if e is not None else "no computable efficiency", "straddle attribution"))
+    conf = _conf(eff)
+    c.append(comp("decay", "Theta decay efficiency", 20, None if e is None else (e - 50) / 50 * conf, f"recent decay {e:.0f}% of theta ({eff.get('status')}); {eff.get('reason')}{_conf_note(eff)}" if e is not None else (eff.get("reason") or "no computable efficiency"), "straddle attribution"))
     i30 = ev["iv_atm_30"]
     c.append(comp("iv_trend", "ATM IV trend", 12, None if i30 is None else -i30 / 1.0, f"ATM IV {i30:+.2f} vol points over the recent window (falling helps a seller)" if i30 is not None else "no IV change window", "straddle IV"))
     tags = ev["reg30"]
     v = -1.0 if "both_expanding" in tags else 0.7 if "both_contracting" in tags else -0.5 if any(t in tags for t in ("put_expanding_faster", "call_expanding_faster")) else 0.0
-    c.append(comp("iv_sides", "Call/put IV behaviour", 6, v if ev["dce30"] is not None else None, ("; ".join(tags) or "no clear call/put IV pattern") + " (30 min)", "straddle IV"))
+    c.append(comp("iv_sides", "Call/put IV behaviour", 6, v if ev["dce30"] is not None else None, (("; ".join(tags) or "no clear call/put IV pattern") + " (30 min)") if ev["dce30"] is not None else "needs a 30-minute window of call and put IV (not enough samples yet)", "straddle IV"))
     gp = ev["rv_gap"]
     c.append(comp("rv_gap", "Realised versus implied vol", 12, None if gp is None else gp / 6, f"implied minus realised {gp:+.1f} vol points (positive: the premium is rich against actual movement)" if gp is not None else "no realised window", "straddle realised vs implied"))
     r = ev["ratio"]
@@ -226,7 +238,7 @@ def buyer_components(ev: Mapping[str, Any], dirn: Mapping[str, Any]) -> list[dic
     c.append(comp("iv_up", "ATM IV expansion", 10, None if i30 is None else i30 / 1.0, f"ATM IV {i30:+.2f} vol points over the recent window" if i30 is not None else "no IV change window", "straddle IV"))
     tags = ev["reg30"]
     v = 1.0 if "both_expanding" in tags else 0.4 if any(t in tags for t in ("put_expanding_faster", "call_expanding_faster")) else -1.0 if "both_contracting" in tags else 0.0
-    c.append(comp("iv_mom", "Call/put IV momentum", 6, v if ev["dce30"] is not None else None, ("; ".join(tags) or "no clear call/put IV pattern") + " (30 min)", "straddle IV"))
+    c.append(comp("iv_mom", "Call/put IV momentum", 6, v if ev["dce30"] is not None else None, (("; ".join(tags) or "no clear call/put IV pattern") + " (30 min)") if ev["dce30"] is not None else "needs a 30-minute window of call and put IV (not enough samples yet)", "straddle IV"))
     a = ev["accel"]
     c.append(comp("rv_accel", "Realised-vol acceleration", 12, None if a is None else (a - 1) / 0.6, f"last 15 minutes {a:.2f}x the previous 15" if a is not None else "needs 30 minutes of stored spots", "straddle realised vs implied"))
     e30 = ev["eff30"]
@@ -247,8 +259,9 @@ def buyer_components(ev: Mapping[str, Any], dirn: Mapping[str, Any]) -> list[dic
     c.append(comp("smart_oi", "Smart OI / positioning", 5, None if pos is None else abs(pos) / 60 - 0.2, f"positioning group score {pos:+.0f} (OI does not say who is long or short)" if pos is not None else "no positioning", "Market Intelligence positioning engine", proxy=True))
     sk = ev["skew_change"]
     c.append(comp("skew", "Skew movement", 4, None if sk is None else abs(sk) / 2 - 0.2, f"25-delta skew changed {sk:+.2f} vol points" if sk is not None else "no skew history", "straddle IV"))
-    eff = (ev["eff"] or {}).get("efficiency_pct")
-    c.append(comp("prem_exp", "Premium expansion", 8, None if eff is None else (50 - eff) / 50, f"recent decay efficiency {eff:.0f}% (low or negative means premium is holding or expanding)" if eff is not None else "no efficiency", "straddle attribution"))
+    ed = ev["eff"] or {}
+    eff = ed.get("efficiency_pct")
+    c.append(comp("prem_exp", "Premium expansion", 8, None if eff is None else (50 - eff) / 50 * _conf(ed), f"recent decay efficiency {eff:.0f}% (low or negative means premium is holding or expanding){_conf_note(ed)}" if eff is not None else (ed.get("reason") or "no efficiency"), "straddle attribution"))
     gp = ev["rv_gap"]
     c.append(comp("justified", "Movement justifies the premium paid", 12, None if gp is None else -gp / 6, f"realised minus implied {-gp:+.1f} vol points (a buyer needs actual movement to exceed what the premium already prices)" if gp is not None else "no realised window", "straddle realised vs implied"))
     return c

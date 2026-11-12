@@ -8,7 +8,7 @@ import type { Component, Environment, Stat, StraddleDecay, StraddleValidation, T
 
 vi.mock("../components/EChart", () => ({
   useChartColors: () => ({ up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" }),
-  EChart: ({ ariaLabel }: { ariaLabel: string }) => <div role="img" aria-label={ariaLabel} />,
+  EChart: ({ ariaLabel, option }: { ariaLabel: string; option?: { series?: { data?: unknown[] }[] } }) => <div role="img" aria-label={ariaLabel} data-last={JSON.stringify((option?.series ?? []).map((x) => (x.data ?? []).at(-1)))} />,
 }));
 afterEach(() => vi.unstubAllGlobals());
 
@@ -279,5 +279,50 @@ describe("environments and the twelve sections", () => {
     expect((await screen.findByTestId("sdi-env-val-message")).textContent).toContain("Insufficient");
     expect(screen.getByTestId("sdi-env-validation").textContent).toContain("Costs are an assumption");
     expect(screen.getByTestId("sdi-env-validation").textContent).toContain("+3.20");
+  });
+});
+
+
+describe("audit fixes (12 Nov 2026)", () => {
+  it("says what the Fixed position is: the strike that was ATM at the open, not today's ATM", async () => {
+    mount(full({ spot: Array.from({ length: 90 }, (_, i) => 25175 + i), tracker: { ...full().tracker!, atm_open: 25200, atm_now: 25350, opening_at: "2026-11-11T03:45:04Z", fixed: { ...full().tracker!.fixed, strike: 25200 } } }));
+    const btn = await screen.findByRole("button", { name: /Fixed 25200/ });
+    expect(btn).toHaveTextContent("ATM at open");
+    expect(btn.getAttribute("title")).toContain("not the current ATM strike");
+    const note = screen.getByTestId("sdi-position-note");
+    expect(note).toHaveTextContent("the strike nearest NIFTY at the first usable sample");
+    expect(note).toHaveTextContent("NIFTY 25,175");
+    expect(note).toHaveTextContent("at-the-money strike is 25350");
+    fireEvent.click(screen.getByRole("button", { name: /Rolling ATM/ }));
+    expect(screen.getByTestId("sdi-position-note")).toHaveTextContent("Rolling position");
+  });
+
+  it("a window whose expected decay is tiny reads Too early to judge, not a percentage", async () => {
+    const e = { status: "low_signal" as const, efficiency_pct: null, actual_decay: 3.7, expected_decay: 0.7, reason: "Too early to judge: time alone is expected to take only 0.7 points", confidence: 0 };
+    const f = full();
+    mount(full({ attribution: { ...f.attribution!, fixed: { ...f.attribution!.fixed, open: { ...f.attribution!.fixed.open!, efficiency: e } } } }));
+    const att = await screen.findByTestId("sdi-attribution");
+    expect(within(att).getAllByText("Too early to judge").length).toBeGreaterThan(0);
+    expect(att).toHaveTextContent("expected decay only 0.7 pts: too small to judge");
+    expect(screen.getByTestId("sdi-reason").textContent).toContain("Too early to judge");
+  });
+
+  it("the score history ends with the current reading, so the chart and the cards show the same numbers", async () => {
+    const d = rich();
+    mount({ ...d, generated_at: "2026-11-11T04:10:30Z", history: { times: ["2026-11-11T04:08:00Z", "2026-11-11T04:09:00Z"], seller: [60.2, 48.7], buyer: [48, 53.7], regime: [null, null], eff30: [null, null], spot: [1, 2] } });
+    expect((await screen.findByTestId("sdi-seller-top-score")).textContent).toBe("76");
+    const chart = await screen.findByRole("img", { name: "Seller and buyer environment score history" });
+    const last = JSON.parse(chart.getAttribute("data-last") ?? "[]") as [number, number][];
+    expect(last.map((x) => x[1])).toEqual([76, 24]); // the cards' seller and buyer scores
+    expect(last[0]![0]).toBe(Date.parse("2026-11-11T04:10:30Z"));
+    expect(screen.getByTestId("sdi-hist-note")).toHaveTextContent("last point is the current reading");
+  });
+
+  it("when the newest recorded minute is as new as the reading, nothing is appended", async () => {
+    const d = rich();
+    mount({ ...d, generated_at: "2026-11-11T04:09:00Z", history: { times: ["2026-11-11T04:08:00Z", "2026-11-11T04:09:00Z"], seller: [60.2, 48.7], buyer: [48, 53.7], regime: [null, null], eff30: [null, null], spot: [1, 2] } });
+    const chart = await screen.findByRole("img", { name: "Seller and buyer environment score history" });
+    const last = JSON.parse(chart.getAttribute("data-last") ?? "[]") as [number, number][];
+    expect(last.map((x) => x[1])).toEqual([48.7, 53.7]);
   });
 });

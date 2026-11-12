@@ -72,6 +72,36 @@ class TestSecondOrder:
         assert e["status"] == "unavailable" and e["efficiency_pct"] is None and "not positive" in e["reason"]
 
 
+    def test_a_tiny_expected_decay_is_not_turned_into_a_ratio(self) -> None:
+        """12 Nov 2026: theta of -0.03...-0.74 points since the open gave efficiencies of +8625 % ... -1032 % from single ticks and swung the scores 30 <-> 77."""
+        zero = {"vega": 0, "delta": 0, "gamma": 0, "vanna": 0, "volga": 0, "residual": 0}
+        for theta, actual in ((-0.029, -2.5), (-0.313, 0.85), (-0.368, 3.8), (-0.744, 3.7)):  # real stored minutes
+            e = sd.efficiency({**zero, "theta": theta, "actual": actual})
+            assert e["status"] == "low_signal" and e["efficiency_pct"] is None and e["confidence"] == 0.0
+            assert "Too early to judge" in e["reason"] and "3-point floor" in e["reason"]
+        ok = sd.efficiency({**zero, "theta": -3.0, "actual": -3.0})  # exactly at the floor: computed, but with zero confidence
+        assert ok["efficiency_pct"] == 100.0 and ok["confidence"] == 0.0
+        full = sd.efficiency({**zero, "theta": -8.0, "actual": -4.0})
+        assert full["efficiency_pct"] == 50.0 and full["confidence"] == 1.0
+        mid = sd.efficiency({**zero, "theta": -5.5, "actual": -5.5})  # halfway between 3 and 8 points
+        assert mid["confidence"] == 0.5
+
+    def test_the_scores_weigh_a_low_confidence_efficiency_down_toward_neutral(self) -> None:
+        EV = env.evidence({}, {})  # every input missing: only the efficiency under test is set
+        ev_base: dict[str, Any] = {"eff": {"efficiency_pct": 250.0, "status": "efficient", "reason": "none", "confidence": 1.0, "expected_decay": 9.0}}
+        full = next(c for c in env.seller_components({**EV, **ev_base}) if c["id"] == "decay")
+        assert full["value"] == 1.0  # (250 - 50) / 50 = 4, clipped to +1
+        half = next(c for c in env.seller_components({**EV, "eff": {**ev_base["eff"], "confidence": 0.1, "expected_decay": 3.5}}) if c["id"] == "decay")
+        assert half["value"] == pytest.approx(0.4, abs=1e-9)  # 4 x 0.1
+        assert "weighed at 10%" in half["text"]
+        gone = next(c for c in env.seller_components({**EV, "eff": {"efficiency_pct": None, "status": "low_signal", "reason": "Too early to judge: x", "confidence": 0.0}}) if c["id"] == "decay")
+        assert gone["value"] is None and gone["text"].startswith("unavailable: Too early to judge")
+        buyer = next(c for c in env.buyer_components({**EV, "eff": {**ev_base["eff"], "confidence": 0.5}}, {"value": 0.0, "label": "mixed", "parts": []}) if c["id"] == "prem_exp")
+        assert buyer["value"] == -1.0  # (50 - 250) / 50 = -4, x 0.5 = -2, clipped to -1
+        low = next(c for c in env.buyer_components({**EV, "eff": {**ev_base["eff"], "confidence": 0.1}}, {"value": 0.0, "label": "mixed", "parts": []}) if c["id"] == "prem_exp")
+        assert low["value"] == pytest.approx(-0.4)  # -4 x 0.1
+
+
 class TestIvRegimes:
     def test_six_patterns_by_hand(self) -> None:
         tags = lambda c, p: sd.iv_regime(c, p)["tags"]  # noqa: E731

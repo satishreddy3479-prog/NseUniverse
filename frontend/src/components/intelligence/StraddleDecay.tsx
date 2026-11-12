@@ -12,7 +12,7 @@ const sg = (v: number | null | undefined, d = 1) => (v == null ? MISSING : `${v 
 const n1 = (v: number | null | undefined, d = 1) => (v == null ? MISSING : v.toFixed(d));
 const STATUS: Record<string, { text: string; tone: string }> = {
   efficient: { text: "Efficient decay", tone: "text-up" }, slower: { text: "Slower than expected", tone: "text-warn" },
-  none: { text: "No meaningful decay", tone: "text-warn" }, expansion: { text: "Premium expansion", tone: "text-down" }, unavailable: { text: "Not computable", tone: "text-muted" },
+  none: { text: "No meaningful decay", tone: "text-warn" }, low_signal: { text: "Too early to judge", tone: "text-muted" }, expansion: { text: "Premium expansion", tone: "text-down" }, unavailable: { text: "Not computable", tone: "text-muted" },
 };
 const CLIMATE: Record<string, string> = { favourable: "text-up", mixed: "text-warn", unfavourable: "text-down", unknown: "text-muted" };
 const WINDOW_LABEL: Record<string, string> = { open: "Since open", "60": "Last 60 min", "30": "Last 30 min" };
@@ -110,7 +110,12 @@ export function StraddleDecayPanel() {
     const iv: Line[] = [{ name: "Call IV", color: c.up, data: sr.ce_iv, fmt: pc }, { name: "Put IV", color: c.down, data: sr.pe_iv, fmt: pc }, { name: "Combined", color: c.brass, data: sr.iv, fmt: pc, dotted: true }];
     const h = d.history;
     const ht = (h?.times ?? []).map((t) => new Date(t).getTime());
-    const hist: Line[] = h ? [{ name: "Seller", color: c.up, data: h.seller, fmt: (v: number) => v.toFixed(0) }, { name: "Buyer", color: c.brass, data: h.buyer, fmt: (v: number) => v.toFixed(0) }] : [];
+    const hs = [...(h?.seller ?? [])], hb = [...(h?.buyer ?? [])];
+    // The history holds one recorded reading per minute; the cards above show the current one. Add the current reading as the last point (when it is newer than the last
+    // recorded minute) so the chart and the cards agree instead of differing by up to a minute of movement.
+    const live = d.environment, nowMs = d.generated_at ? new Date(d.generated_at).getTime() : NaN;
+    if (h && live && Number.isFinite(nowMs) && ht.length > 0 && nowMs > (ht[ht.length - 1] as number)) { ht.push(nowMs); hs.push(live.seller.score); hb.push(live.buyer.score); }
+    const hist: Line[] = h ? [{ name: "Seller", color: c.up, data: hs, fmt: (v: number) => v.toFixed(0) }, { name: "Buyer", color: c.brass, data: hb, fmt: (v: number) => v.toFixed(0) }] : [];
     return {
       prem: timeLinesOption(times, prem, c, null, { leftFmt: rupee }), att: timeLinesOption(times, att, c, null, { leftFmt: f, zeroLine: true }), iv: timeLinesOption(times, iv, c, null, { leftFmt: (v) => `${v.toFixed(1)}%` }),
       hist: h && ht.length > 1 ? timeLinesOption(ht, hist, c, null, { leftFmt: (v) => v.toFixed(0) }) : null,
@@ -140,13 +145,18 @@ export function StraddleDecayPanel() {
       {head}
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
         <span className="text-muted">Position</span>
-        <button type="button" aria-pressed={mode === "fixed"} onClick={() => setMode("fixed")} className={pill(mode === "fixed")} title="The strike that was ATM at the first usable sample, held all session">Fixed {tr.fixed.strike}</button>
+        <button type="button" aria-pressed={mode === "fixed"} onClick={() => setMode("fixed")} className={pill(mode === "fixed")} title={`The strike that was ATM at the first usable sample (${fmtTimeIST(tr.opening_at)}), held all session. It is not the current ATM strike.`}>Fixed {tr.fixed.strike} · ATM at open</button>
         <button type="button" aria-pressed={mode === "rolling"} onClick={() => setMode("rolling")} className={pill(mode === "rolling")} title="The ATM strike at each step; only same-contract changes are added, so a roll makes no jump">Rolling ATM ({tr.rolling.rolls} rolls)</button>
         <span className="ml-2 text-muted">Window</span>
         {(["open", "60", "30"] as const).map((k) => <button key={k} type="button" aria-pressed={win === k} onClick={() => setWin(k)} className={pill(win === k)}>{WINDOW_LABEL[k]}</button>)}
         {ql.stale && <span className="ml-2 rounded-sm bg-warn/15 px-1.5 py-0.5 text-warn" data-testid="sdi-stale">Stale: last sample {n1(ql.age_minutes, 0)} min ago</span>}
         {!ql.live && <span className="ml-2 text-muted">Stored session (not live)</span>}
       </div>
+      <p className="mt-1 text-[11px] text-muted" data-testid="sdi-position-note">
+        {mode === "fixed"
+          ? `Fixed position: the ${tr.fixed.strike} straddle, the strike nearest NIFTY at the first usable sample (${fmtTimeIST(tr.opening_at)}${d.spot?.[0] != null ? `, NIFTY ${d.spot[0].toLocaleString("en-IN")}` : ""}), held all session. NIFTY is now ${d.spot?.length ? (d.spot[d.spot.length - 1] as number).toLocaleString("en-IN") : MISSING} and the at-the-money strike is ${tr.atm_now ?? MISSING}; the rolling position follows that strike.`
+          : `Rolling position: the strike nearest NIFTY at each sample (now ${tr.atm_now ?? MISSING}), with only same-contract changes added so a roll makes no jump.`}
+      </p>
 
       {/* 1. Overall */}
       <div className="mt-3 rounded-sm border border-rule p-3" data-testid="sdi-overall">
@@ -167,6 +177,7 @@ export function StraddleDecayPanel() {
             )}
             <div className="mt-2"><div className="text-[11px] text-muted">What could invalidate it</div><ul className="list-disc pl-5 text-xs text-paper" data-testid="sdi-invalidation">{env.invalidation.map((x) => <li key={x}>{x}</li>)}</ul></div>
             {charts?.hist && <div className="mt-2 h-[180px]"><EChart group="sdi" option={charts.hist} ariaLabel="Seller and buyer environment score history" /></div>}
+            {charts?.hist && <p className="text-[11px] text-muted" data-testid="sdi-hist-note">One recorded reading per minute; the last point is the current reading shown in the cards above.</p>}
             <p className="mt-1 text-[11px] text-muted">{env.weights_note}</p>
           </>
         ) : <p className="text-sm text-muted" data-testid="sdi-env-none">{d.environment_note ?? "No environment is available."}</p>}
@@ -254,7 +265,7 @@ export function StraddleDecayPanel() {
           {w && eff ? (
             <>
               <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <Tile label="Decay efficiency" value={eff.efficiency_pct == null ? MISSING : `${eff.efficiency_pct.toFixed(0)}%`} sub="actual decay ÷ theta decay" tone={es.tone} />
+                <Tile label="Decay efficiency" value={eff.efficiency_pct == null ? MISSING : `${eff.efficiency_pct.toFixed(0)}%`} sub={eff.status === "low_signal" ? `expected decay only ${n1(eff.expected_decay)} pts: too small to judge` : eff.confidence != null && eff.confidence < 1 ? `actual ÷ theta decay · weighed at ${Math.round(eff.confidence * 100)}% in the scores` : "actual decay ÷ theta decay"} tone={es.tone} />
                 <Tile label="Class" value={es.text} tone={es.tone} />
                 <Tile label="Actual decay" value={n1(eff.actual_decay)} sub="points" />
                 <Tile label="Theta decay" value={n1(eff.expected_decay)} sub="points expected from time" />

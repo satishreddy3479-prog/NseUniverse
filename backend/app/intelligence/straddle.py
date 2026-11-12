@@ -57,6 +57,12 @@ MEANINGFUL_PCT = 20.0  # below this share (and above EXPANSION_PCT) the premium 
 EXPANSION_PCT = -10.0  # premium rose by more than a tenth of the theta decay
 IV_MOVE_PTS = 0.3  # a vol change smaller than this is "flat"
 MAX_RETURN_GAP_MIN = 10.0
+# A decay efficiency is a RATIO (actual decay / theta decay). Early in a session, or on a far expiry, the theta of a window is a fraction of a point
+# while last-traded prices move by a point or more on a tick, so the ratio read -1000 % or +8000 % from one tick and swung the environment scores
+# between 30 and 77 in a minute (12 Nov 2026). Below MIN_EXPECTED_PTS of expected decay the ratio is not computed; between that and FULL_CONFIDENCE_PTS
+# it is computed but the scores weigh it down in proportion (``confidence``).
+MIN_EXPECTED_PTS = 3.0
+FULL_CONFIDENCE_PTS = 8.0
 WINDOWS = (5, 15, 30, 60)
 PROXIES = "Last traded prices (not bid/ask); implied vols and Greeks are Black-76 model values with an assumed rate; forward from put-call parity."
 
@@ -231,6 +237,10 @@ def classify(efficiency: float | None) -> str:
     return "expansion"
 
 
+def clip01(x: float) -> float:
+    return max(0.0, min(1.0, x))
+
+
 def efficiency(total: Mapping[str, float] | None) -> dict[str, Any]:
     """Actual straddle decay / expected theta decay x 100 for a summed window, the shortfall (points, rupees per lot, percent of the theta decay)
     and the cause of a shortfall. Offsets are the terms that add to the premium: IV expansion (parallel vega), skew (call and put vols moving apart),
@@ -242,7 +252,11 @@ def efficiency(total: Mapping[str, float] | None) -> dict[str, Any]:
     expected, actual = -total["theta"], -total["actual"]
     if expected <= 1e-9:
         return empty | {"actual_decay": rd(actual), "expected_decay": rd(expected), "reason": "Expected theta decay is not positive here (very close to expiry, or carry dominates), so a decay efficiency is not defined; nothing is forced."}
+    if expected < MIN_EXPECTED_PTS:
+        return empty | {"status": "low_signal", "actual_decay": rd(actual), "expected_decay": rd(expected), "confidence": 0.0,
+                        "reason": f"Too early to judge: time alone is expected to take only {expected:.1f} points off this window, less than the {MIN_EXPECTED_PTS:g}-point floor below which a last-traded-price tick is bigger than the signal, so a ratio would be noise ({actual:+.1f} points actual)."}  # fmt: skip
     eff = actual / expected * 100
+    confidence = clip01((expected - MIN_EXPECTED_PTS) / (FULL_CONFIDENCE_PTS - MIN_EXPECTED_PTS))
     status = classify(eff)
     skew = total.get("vega_skew", 0.0)
     causes = {"IV expansion (parallel)": total["vega"] - skew, "skew change (call and put vols moving apart)": skew, "underlying price movement (net delta)": total["delta"],
@@ -257,7 +271,7 @@ def efficiency(total: Mapping[str, float] | None) -> dict[str, Any]:
     else:
         reason = "no single offset stands out (the shortfall is small or spread across the terms)"
     return {"status": status, "efficiency_pct": rd(eff, 1), "actual_decay": rd(actual), "expected_decay": rd(expected), "shortfall": rd(short), "shortfall_rupees": rd(short * LOT_SIZE, 0),
-            "shortfall_pct": rd(short / expected * 100, 1), "reason": reason, "causes": {k: rd(v, 2) for k, v in causes.items()}, "lot_size": LOT_SIZE}  # fmt: skip
+            "shortfall_pct": rd(short / expected * 100, 1), "reason": reason, "causes": {k: rd(v, 2) for k, v in causes.items()}, "lot_size": LOT_SIZE, "confidence": round(confidence, 2)}  # fmt: skip
 
 
 # ------------------------------------------------------------------ realised volatility
@@ -694,6 +708,8 @@ def interpret(a: Mapping[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any
     names = {"efficient": "efficiently", "slower": "slower than theta alone would give", "none": "with no meaningful decay", "expansion": "not at all: the premium has expanded", "unavailable": "(not computable)"}
     if eff_m and eff_m["efficiency_pct"] is not None:
         out.append({"q": "Is the straddle decaying normally?", "a": f"Since the open the {tr['fixed']['strike']:g} straddle has decayed {names[eff_m['status']]}: {eff_m['actual_decay']:.1f} points actual against {eff_m['expected_decay']:.1f} expected from time alone ({eff_m['efficiency_pct']:.0f}%). {eff_m['reason'] or ''}".strip()})
+    elif eff_m and eff_m["status"] == "low_signal":
+        out.append({"q": "Is the straddle decaying normally?", "a": f"Too early to say. {eff_m['reason']}"})
     else:
         out.append({"q": "Is the straddle decaying normally?", "a": "Not computable yet: the model needs at least two samples with both prices and solvable vols."})
     if main is not None:
@@ -755,7 +771,7 @@ DEFINITIONS = {
     "delta": "Delta at the start of the step x the change in the forward.",
     "gamma": "Shapley effect of the forward move minus the delta term: convexity.",
     "residual": "Market change minus the four terms: model and solver error only.",
-    "efficiency": f"Actual straddle decay / theta decay x 100. Efficient >= {EFFICIENT_PCT:.0f}, slower {MEANINGFUL_PCT:.0f}-{EFFICIENT_PCT:.0f}, none {EXPANSION_PCT:.0f}-{MEANINGFUL_PCT:.0f}, expansion below {EXPANSION_PCT:.0f}. Working thresholds, not validated.",
+    "efficiency": f"Actual straddle decay / theta decay x 100 (not computed while the window's expected decay is under {MIN_EXPECTED_PTS:g} points; weighed in the scores in proportion up to {FULL_CONFIDENCE_PTS:g} points). Efficient >= {EFFICIENT_PCT:.0f}, slower {MEANINGFUL_PCT:.0f}-{EFFICIENT_PCT:.0f}, none {EXPANSION_PCT:.0f}-{MEANINGFUL_PCT:.0f}, expansion below {EXPANSION_PCT:.0f}. Working thresholds, not validated.",
     "skew": "Skew = put IV minus call IV at the delta; risk reversal = call IV minus put IV (its negative).",
 }
 

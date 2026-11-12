@@ -3,9 +3,11 @@
 export interface Stat { open: number | null; current: number | null; change: number | null; change_pct: number | null; high?: number | null; low?: number | null }
 export interface Terms { theta: number; vega: number; delta: number; gamma: number; vanna?: number; volga?: number; residual: number; actual: number; vega_skew?: number }
 export interface Efficiency {
-  status: "efficient" | "slower" | "none" | "expansion" | "unavailable";
+  status: "efficient" | "slower" | "none" | "expansion" | "unavailable" | "low_signal";
   efficiency_pct: number | null; actual_decay: number | null; expected_decay: number | null; shortfall?: number | null; shortfall_rupees?: number | null; shortfall_pct?: number | null;
   reason: string | null; causes?: Record<string, number | null> | null; lot_size?: number;
+  /** 0-1: how far the ratio can be trusted (small expected decay is dominated by price ticks); the scores weigh it by this */
+  confidence?: number;
 }
 export interface Window { ce: Terms; pe: Terms; both: Terms; steps: number; efficiency: Efficiency }
 export type Windows = Record<"open" | "60" | "30", Window | null>;
