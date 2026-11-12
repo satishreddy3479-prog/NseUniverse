@@ -37,20 +37,20 @@
    every colour from these tokens, so lines, grids, labels and tooltips are tuned together. Rules for this theme that are more than a colour
    live at the bottom of this file. */
 [data-theme="light"] {
-  --ink: #f1f4f9;          /* page */
+  --ink: #e7ecf4;          /* page: a cool grey that lets white cards stand clear of it */
   --slate: #ffffff;        /* cards and panels */
-  --slate-2: #f5f7fb;      /* inset areas: table heads, tiles */
-  --rule: #dce3ed;         /* hairlines */
-  --paper: #0e1a33;        /* text: deep ink */
-  --muted: #4f5e78;        /* secondary text: 6.7:1 on white, 6:1 on the inset panels */
+  --slate-2: #edf1f8;      /* inset areas: table heads, tiles */
+  --rule: #cfd8e6;         /* hairlines */
+  --paper: #0a1530;        /* text: deep ink */
+  --muted: #42516c;        /* secondary text: 8:1 on white, 7:1 on the inset panels */
   --accent: #5a3de8;       /* brand violet: primary actions, focus, selection */
   --brass: #a86200;        /* ATM / second series */
-  --up: #087a55;           /* data colours: deep enough for text on white and on the inset panels (5:1 and better) */
-  --down: #cb2140;
+  --up: #057650;           /* data colours: deep enough for text on white and on the inset panels (5:1 and better) */
+  --down: #c4193a;
   --warn: #9a4505;
   --info: #1760c4;
   --legend-off: #73809a;
-  --shadow: 0 1px 2px rgba(14, 26, 51, 0.05), 0 2px 10px rgba(14, 26, 51, 0.05);
+  --shadow: 0 1px 2px rgba(10, 21, 48, 0.08), 0 4px 14px rgba(10, 21, 48, 0.07);
   --shadow-pop: 0 2px 4px rgba(14, 26, 51, 0.06), 0 16px 36px rgba(14, 26, 51, 0.18);
   --r-panel: 12px;
   --r-ctl: 8px;
@@ -181,7 +181,7 @@ header.bg-slate { background: var(--header-bg); box-shadow: var(--shadow); }
 
 /* ---- Day details ---- */
 [data-theme="light"] header.bg-slate { border-bottom: 1px solid var(--rule); box-shadow: 0 1px 3px rgba(14, 26, 51, 0.06); }
-[data-theme="light"] .bg-slate { border-color: var(--rule); }
+[data-theme="light"] .bg-slate { border-color: #c3cddf; }
 /* Controls: white with a visible edge and a small lift, so a button looks like a button; hover and press are felt, not just coloured. */
 [data-theme="light"] button.bg-slate-2, [data-theme="light"] summary.bg-slate-2, [data-theme="light"] a.bg-slate-2,
 [data-theme="light"] select.bg-slate-2, [data-theme="light"] label.bg-slate-2 {
@@ -262,3 +262,35 @@ header.bg-slate { background: var(--header-bg); box-shadow: var(--shadow); }
   .stack-rows td { padding: 2px 0 !important; text-align: left !important; white-space: normal !important; }
   .stack-rows td[data-label]::before { content: attr(data-label); display: block; font-size: 10px; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); }
 }
+
+/* ---- Day polish (D150): depth, size and weight. The night theme gets its structure from light-on-dark; the day theme has to build it. ---- */
+/* Small text carries the meaning in most widgets (labels, notes, table cells) and dark-on-light small type reads thinner than the reverse, so it is a step larger. */
+[data-theme="light"] .text-\[10px\] { font-size: 11px; }
+[data-theme="light"] .text-\[11px\] { font-size: 12px; }
+[data-theme="light"] .text-xs { font-size: 12.75px; }
+[data-theme="light"] body { font-size: 14.5px; }
+/* Inset tiles and panels get a visible edge (an inset ring, so nothing shifts) and a touch of tint, instead of a pale grey patch on white. */
+[data-theme="light"] div.bg-slate-2, [data-theme="light"] section.bg-slate-2, [data-theme="light"] li.bg-slate-2, [data-theme="light"] article.bg-slate-2 { box-shadow: inset 0 0 0 1px #d2dae7; }
+[data-theme="light"] div.bg-slate-2\/60, [data-theme="light"] div.bg-slate-2\/50, [data-theme="light"] div.bg-slate-2\/40 { box-shadow: inset 0 0 0 1px #d8e0ec; }
+/* Headings and the strong figures: heavier, so the page has a clear top level. */
+[data-theme="light"] h1 { font-weight: 700; letter-spacing: -0.01em; }
+[data-theme="light"] h2, [data-theme="light"] h3 { font-weight: 650; }
+[data-theme="light"] .font-semibold, [data-theme="light"] .font-medium { font-weight: 650; }
+[data-theme="light"] .text-muted { font-weight: 450; }
+/* Coloured notices (green, blue, amber, red boxes): a firm 4 px edge in the notice's own colour and a stronger tint, so a notice is seen before it is read. */
+[data-theme="light"] [class*="border-up"][class*="bg-up"] { border-left-width: 4px; border-color: var(--up); background-color: color-mix(in srgb, var(--up) 10%, white); }
+[data-theme="light"] [class*="border-down"][class*="bg-down"] { border-left-width: 4px; border-color: var(--down); background-color: color-mix(in srgb, var(--down) 9%, white); }
+[data-theme="light"] [class*="border-info"][class*="bg-info"] { border-left-width: 4px; border-color: var(--info); background-color: color-mix(in srgb, var(--info) 10%, white); }
+[data-theme="light"] [class*="border-warn"][class*="bg-warn"] { border-left-width: 4px; border-color: var(--warn); background-color: color-mix(in srgb, var(--warn) 11%, white); }
+[data-theme="light"] [class*="border-brass"][class*="bg-brass"]:not(button):not(a):not(summary) { border-left-width: 4px; }
+/* Bars, gauges and tracks: a visible groove instead of a hairline. */
+[data-theme="light"] .bg-rule { background-color: #c5cfe0; }
+[data-theme="light"] .bg-rule\/60, [data-theme="light"] .bg-rule\/50, [data-theme="light"] .bg-rule\/40 { background-color: #d3dbe8; }
+/* Tabs and the section strips: the active one is unmistakable. */
+[data-theme="light"] [role="tab"][aria-selected="true"], [data-theme="light"] a[aria-current="page"] { font-weight: 650; }
+/* Table rows: a little more air and a faint band on alternate rows so long tables can be followed across. */
+[data-theme="light"] tbody tr:nth-child(even) { background-color: rgba(10, 21, 48, 0.022); }
+[data-theme="light"] td, [data-theme="light"] th { padding-top: 0.28rem; padding-bottom: 0.28rem; }
+/* The verdict card on Market Intelligence: its tone shows as a thick edge and a faint wash. */
+[data-theme="light"] [data-testid="mi-verdict"][class*="border-up"] { border-left-width: 6px; border-color: var(--up); background-image: linear-gradient(100deg, color-mix(in srgb, var(--up) 7%, white), white 55%); }
+[data-theme="light"] [data-testid="mi-verdict"][class*="border-down"] { border-left-width: 6px; border-color: var(--down); background-image: linear-gradient(100deg, color-mix(in srgb, var(--down) 7%, white), white 55%); }

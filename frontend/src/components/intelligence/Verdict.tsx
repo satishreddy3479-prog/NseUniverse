@@ -31,8 +31,9 @@ export function VerdictCard({ d }: { d: Intelligence }) {
       <div className="text-[11px] uppercase tracking-wide text-muted">NIFTY 50 right now</div>
       <h2 className={`mt-0.5 text-3xl font-semibold ${t.text}`} data-testid="mi-verdict-label">{v.label}</h2>
       <div className="mt-2 max-w-[34rem]" aria-hidden>
-        <div className="relative h-2 rounded-full bg-slate-2">
-          <div className="absolute inset-y-0 left-1/2 w-px bg-rule" />
+        <div className="relative h-2.5 rounded-full bg-slate-2" style={{ backgroundImage: "linear-gradient(90deg, color-mix(in srgb, var(--down) 28%, transparent), transparent 50%, color-mix(in srgb, var(--up) 28%, transparent))" }}>
+          <div className={`absolute inset-y-0 rounded-full opacity-60 ${t.bar}`} style={{ left: `${Math.min(pos, 50)}%`, width: `${Math.abs(pos - 50)}%` }} />
+          <div className="absolute -inset-y-[3px] left-1/2 w-0.5 bg-muted/60" />
           <div className={`absolute top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-slate ${t.bar}`} style={{ left: `${pos}%` }} />
         </div>
         <div className="mt-0.5 flex justify-between text-[10px] text-muted"><span>bearish −100</span><span>0</span><span>+100 bullish</span></div>

@@ -96,8 +96,8 @@ function Stat({ label, value, sub, cls = "text-paper" }: { label: string; value:
   return (
     <div className="min-w-0 rounded-sm bg-slate-2/50 px-2.5 py-1.5">
       <div className="text-[11px] uppercase tracking-wide text-muted">{label}</div>
-      <div className={`num truncate text-sm font-semibold ${cls}`}>{value}</div>
-      {sub && <div className="truncate text-[11px] text-muted">{sub}</div>}
+      <div className={`num break-words text-sm font-semibold ${cls}`}>{value}</div>
+      {sub && <div className="break-words text-[11px] leading-snug text-muted">{sub}</div>}
     </div>
   );
 }
