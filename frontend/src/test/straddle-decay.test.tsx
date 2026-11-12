@@ -45,8 +45,12 @@ function mount(body: unknown, validation?: StraddleValidation, status = 200) {
   return render(<MemoryRouter><QueryClientProvider client={qc}><StraddleDecayPanel /><StraddleSummaryCard /></QueryClientProvider></MemoryRouter>);
 }
 
+// The page is five tabs; a test opens the tab that holds what it checks (the address hash picks the first one) and, when it checks two places, clicks to the other.
+const itIn = (tab: string, name: string, fn: () => Promise<void> | void) => it(name, async () => { window.location.hash = `#${tab}`; try { await fn(); } finally { window.location.hash = ""; } });
+const openTab = async (name: RegExp) => fireEvent.click(await screen.findByRole("tab", { name }));
+
 describe("straddle decay panel", () => {
-  it("shows the opening and current premiums, the attribution table and the efficiency class", async () => {
+  itIn("today", "shows the opening and current premiums, the attribution table and the efficiency class", async () => {
     mount(full());
     const trk = await screen.findByTestId("sdi-tracker");
     expect(within(trk).getByText("Opening CE").nextSibling?.textContent).toBe("90.0");
@@ -61,7 +65,7 @@ describe("straddle decay panel", () => {
     expect(screen.getByTestId("sdi-reason").textContent).toContain("IV expansion");
   });
 
-  it("answers the reading questions and labels the climate as a tally, not a forecast", async () => {
+  itIn("why", "answers the reading questions and labels the climate as a tally, not a forecast", async () => {
     mount(full());
     const r = await screen.findByTestId("sdi-reading");
     expect(r.textContent).toContain("decaying normally");
@@ -70,7 +74,7 @@ describe("straddle decay panel", () => {
     expect(r.textContent).toContain("not a forecast");
   });
 
-  it("switches between fixed and rolling without mixing them", async () => {
+  itIn("today", "switches between fixed and rolling without mixing them", async () => {
     mount(full());
     await screen.findByTestId("sdi-tracker");
     fireEvent.click(screen.getByRole("button", { name: /^Rolling ATM \(\d+ rolls?\)$/ }));
@@ -80,14 +84,14 @@ describe("straddle decay panel", () => {
     expect(within(screen.getByTestId("sdi-attribution")).getByText("Premium expansion")).toBeTruthy();
   });
 
-  it("says a window is not available instead of filling it", async () => {
+  itIn("today", "says a window is not available instead of filling it", async () => {
     mount(full());
     await screen.findByTestId("sdi-tracker");
     fireEvent.click(screen.getByRole("button", { name: "Last 60 min" }));
     expect(screen.getByTestId("sdi-nowindow").textContent).toContain("nothing is filled in");
   });
 
-  it("shows missing IV, skew and realised-vol values as dashes and names the IV support", async () => {
+  itIn("why", "shows missing IV, skew and realised-vol values as dashes and names the IV support", async () => {
     mount(full());
     const ivbox = await screen.findByTestId("sdi-iv");
     expect(within(ivbox).getByText("10Δ skew (put − call)").closest("tr")!.textContent).toContain("—");
@@ -96,7 +100,7 @@ describe("straddle decay panel", () => {
     expect(ivbox.textContent).toContain("not defined (spot has moved less than 0.1% since the open)");
   });
 
-  it("structure panel states that GEX does not guarantee low volatility", async () => {
+  itIn("why", "structure panel states that GEX does not guarantee low volatility", async () => {
     mount(full());
     const s = await screen.findByTestId("sdi-structure");
     expect(s.textContent).toContain("does not guarantee low volatility");
@@ -117,10 +121,10 @@ describe("straddle decay panel", () => {
     expect(await screen.findByTestId("sdi-error")).toBeTruthy();
   });
 
-  it("validation is computed only when opened and says when the history is insufficient", async () => {
+  itIn("alerts", "validation is computed only when opened and says when the history is insufficient", async () => {
     const v: StraddleValidation = { generated_at: "x", window_minutes: 30, sufficient: false, message: "Insufficient: 2 session(s) and 10 window(s) (need 20 and 100).", method: "m", note: "n", sessions: [], overall: { windows: 10, ratio_actual_to_predicted: 0.8, mae: 0.4 }, earlier_half: { windows: 5, ratio_actual_to_predicted: 0.7 }, later_half: { windows: 5, ratio_actual_to_predicted: 0.9 } };
     mount(full(), v);
-    await screen.findByTestId("sdi-tracker");
+    await screen.findByTestId("sdi-validation");
     const fetchMock = vi.mocked(fetch);
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/validation"))).toBe(false);
     const det = screen.getByTestId("sdi-validation") as HTMLDetailsElement;
@@ -159,7 +163,7 @@ const rich = (): StraddleDecay => full({
 });
 
 describe("environments and the twelve sections", () => {
-  it("shows both scores independently with the interpretation, evidence, conflicts and invalidation", async () => {
+  itIn("why", "shows both scores independently with the interpretation, evidence, conflicts and invalidation", async () => {
     mount(rich());
     expect((await screen.findByTestId("sdi-seller-top-score")).textContent).toBe("76");
     expect(screen.getByTestId("sdi-buyer-top-score").textContent).toBe("24");
@@ -169,19 +173,26 @@ describe("environments and the twelve sections", () => {
     expect(screen.getByTestId("sdi-regime").textContent).toContain("volatility compression");
   });
 
-  it("sections carry the numbers of the brief and exist in the page", async () => {
+  it("each tab holds its own sections, and the page opens on the reading", async () => {
     mount(rich());
-    await screen.findByTestId("sdi-overall");
-    const ids = ["sdi-overall", "sdi-buyer", "sdi-seller", "sdi-tracker", "sdi-iv", "sdi-attribution", "sdi-rv", "sdi-structure", "sdi-positioning", "sdi-alerts", "sdi-validation", "sdi-method"];
-    const nums = ids.map((id) => /^(\d+)\./.exec(screen.getByTestId(id).querySelector("h2,h3,summary")?.textContent ?? "")?.[1]);
-    expect(nums.slice().sort()).toEqual(["1", "10", "11", "12", "2", "3", "4", "5", "6", "7", "8", "9"]);
-    // the DOM (reading) order is the order of the brief: 1, 2, 3, ... 12
-    const els = ids.map((id) => screen.getByTestId(id));
-    for (let i = 1; i < els.length; i++) expect(els[i - 1]!.compareDocumentPosition(els[i]!) & Node.DOCUMENT_POSITION_FOLLOWING, `${ids[i - 1]} before ${ids[i]}`).toBeTruthy();
-    expect(nums).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]);
+    expect(await screen.findByTestId("sdi-reading-card")).toBeInTheDocument();
+    expect(screen.getAllByRole("tab").map((x) => x.textContent)).toEqual(["Overview", "Today's premium", "Why these scores", "Alerts & checks", "Method"]);
+    const ids: Record<string, string[]> = {
+      "Today's premium": ["sdi-tracker", "sdi-attribution"],
+      "Why these scores": ["sdi-overall", "sdi-buyer", "sdi-seller", "sdi-iv", "sdi-rv", "sdi-structure", "sdi-positioning"],
+      "Alerts & checks": ["sdi-alerts", "sdi-validation"],
+      Method: ["sdi-method"],
+    };
+    for (const [tab, list] of Object.entries(ids)) {
+      await openTab(new RegExp(tab.replace("'", "'")));
+      for (const id of list) expect(await screen.findByTestId(id), `${tab}: ${id}`).toBeInTheDocument();
+      expect(screen.queryByTestId("sdi-reading-card")).toBeNull(); // the reading lives on the Overview only
+    }
+    expect(window.location.hash).toBe("#method"); // a reload or a link opens the same tab
+    window.location.hash = "";
   });
 
-  it("buyer types, premium check, seller sub-assessments and flags", async () => {
+  itIn("why", "buyer types, premium check, seller sub-assessments and flags", async () => {
     mount(rich());
     const b = await screen.findByTestId("sdi-buyer");
     expect(within(b).getByText(/Low-movement premium-decay environment/)).toBeTruthy();
@@ -192,7 +203,7 @@ describe("environments and the twelve sections", () => {
     expect(screen.getByTestId("sdi-flags").textContent).toContain("Asymmetric tail risk");
   });
 
-  it("unavailable components are dashes, flagged as such, and proxies are labelled", async () => {
+  itIn("why", "unavailable components are dashes, flagged as such, and proxies are labelled", async () => {
     mount(rich());
     await screen.findByTestId("sdi-evidence");
     const flow = screen.getByTestId("sdi-comp-flow");
@@ -201,7 +212,7 @@ describe("environments and the twelve sections", () => {
     expect(flow.textContent).toContain("PROXY");
   });
 
-  it("attribution includes vanna, volga, residual, rupee shortfall, causes and the skew part of vega", async () => {
+  itIn("today", "attribution includes vanna, volga, residual, rupee shortfall, causes and the skew part of vega", async () => {
     mount(rich());
     const a = await screen.findByTestId("sdi-attribution");
     expect(within(a).getByText("Vanna")).toBeTruthy();
@@ -212,7 +223,7 @@ describe("environments and the twelve sections", () => {
     expect(a.textContent).toContain("skew): +0.40 points");
   });
 
-  it("decay faster than theta is not shown as a negative shortfall", async () => {
+  itIn("today", "decay faster than theta is not shown as a negative shortfall", async () => {
     const r = rich();
     const w0 = r.attribution!.fixed.open!;
     r.attribution!.fixed.open = { ...w0, efficiency: { ...w0.efficiency, status: "efficient", efficiency_pct: 113, shortfall: -1.2, shortfall_rupees: -77, shortfall_pct: -13 } };
@@ -223,7 +234,7 @@ describe("environments and the twelve sections", () => {
     expect(t).not.toContain("-77");
   });
 
-  it("tracker shows premium moves over 5, 15, 30 and 60 minutes and the fixed-versus-rolling difference", async () => {
+  itIn("today", "tracker shows premium moves over 5, 15, 30 and 60 minutes and the fixed-versus-rolling difference", async () => {
     mount(rich());
     const m = await screen.findByTestId("sdi-moves");
     const row = within(m).getByText("Fixed straddle").closest("tr")!;
@@ -232,7 +243,7 @@ describe("environments and the twelve sections", () => {
     expect(screen.getByTestId("sdi-fixed-vs-rolling").textContent).toContain("+3.2");
   });
 
-  it("IV panel names the term structure, the retaining side and the gamma configuration", async () => {
+  itIn("why", "IV panel names the term structure, the retaining side and the gamma configuration", async () => {
     mount(rich());
     await screen.findByTestId("sdi-iv");
     expect(screen.getByTestId("sdi-term").textContent).toContain("2026-11-24");
@@ -241,23 +252,24 @@ describe("environments and the twelve sections", () => {
     expect(screen.getByTestId("sdi-gamma-config").textContent).toContain("suppressed movement");
   });
 
-  it("positioning, alerts and sources", async () => {
+  itIn("alerts", "alerts and sources", async () => {
     mount(rich());
-    const pos = await screen.findByTestId("sdi-positioning");
-    expect(within(pos).getByText("PCR (OI)").nextSibling?.textContent).toBe("0.95");
-    expect(screen.getByTestId("sdi-pos-read").textContent).toContain("Supports a premium-decay environment");
+    const alertsPane = await screen.findByTestId("sdi-alerts");
+    expect(alertsPane).toBeInTheDocument();
     expect(screen.getByTestId("sdi-alert-list").textContent).toContain("Put IV expansion");
-    const src = screen.getByTestId("sdi-sources");
+    await openTab(/Method/);
+    const src = await screen.findByTestId("sdi-sources");
     expect(src.textContent).toContain("UNAVAILABLE");
     expect(src.textContent).toContain("AVAILABLE");
   });
 
-  it("without live inputs the environment is not invented", async () => {
+  itIn("why", "without live inputs the environment is not invented", async () => {
     mount(full({ environment: null, environment_note: "Buyer and seller environments are computed for the live session only." }));
     expect((await screen.findByTestId("sdi-env-none")).textContent).toContain("live session only");
     expect(screen.queryByTestId("sdi-seller-top")).toBeNull();
     expect(screen.getByTestId("sdi-pos-none").textContent).toContain("UNAVAILABLE");
-    expect(screen.getByTestId("sdi-alerts-none")).toBeTruthy();
+    await openTab(/Alerts & checks/);
+    expect(await screen.findByTestId("sdi-alerts-none")).toBeTruthy();
   });
 
   it("summary card shows both scores and a link to the full page", async () => {
@@ -267,12 +279,12 @@ describe("environments and the twelve sections", () => {
     expect(within(card).getByRole("link", { name: /full analysis/ }).getAttribute("href")).toBe("/market-intelligence/straddle");
   });
 
-  it("environment validation is shown with its assumptions and says when it is insufficient", async () => {
+  itIn("alerts", "environment validation is shown with its assumptions and says when it is insufficient", async () => {
     const v: StraddleValidation = { generated_at: "x", window_minutes: 30, sufficient: false, message: "Insufficient: 2 session(s).", method: "m", note: "n", sessions: [], overall: { windows: 0 }, earlier_half: { windows: 0 }, later_half: { windows: 0 },
       environment: { sessions: 2, sufficient: false, message: "Insufficient: 2 recorded session(s) (need 20) and not enough picks per bucket (need 30).", assumptions: "Costs are an assumption: 0.5 point per leg per trade.", limits: ["Seller result is a short ATM straddle proxy"],
         table: { seller: { "15": { "high (>=60)": { n: 4, mean_result_pts: 3.2, median_result_pts: 2.5, max_adverse_pts: 6, max_drawdown_pts: -4, win_rate_pct: 75, expiry_day: { n: 0 }, non_expiry_day: { n: 4 }, earlier_sessions: { n: 4 }, later_sessions: { n: 0 } } } }, buyer: {} } } };
     mount(rich(), v);
-    await screen.findByTestId("sdi-tracker");
+    await screen.findByTestId("sdi-validation");
     const det = screen.getByTestId("sdi-validation") as HTMLDetailsElement;
     det.open = true;
     fireEvent(det, new Event("toggle"));
@@ -284,7 +296,7 @@ describe("environments and the twelve sections", () => {
 
 
 describe("audit fixes (12 Nov 2026)", () => {
-  it("says what the Fixed position is: the strike that was ATM at the open, not today's ATM", async () => {
+  itIn("today", "says what the Fixed position is: the strike that was ATM at the open, not today's ATM", async () => {
     mount(full({ spot: Array.from({ length: 90 }, (_, i) => 25175 + i), tracker: { ...full().tracker!, atm_open: 25200, atm_now: 25350, opening_at: "2026-11-11T03:45:04Z", fixed: { ...full().tracker!.fixed, strike: 25200 } } }));
     const btn = await screen.findByRole("button", { name: /^Fixed 25200 · ATM at open$/ });
     expect(btn).toHaveTextContent("ATM at open");
@@ -297,7 +309,7 @@ describe("audit fixes (12 Nov 2026)", () => {
     expect(screen.getByTestId("sdi-position-note")).toHaveTextContent("Rolling position");
   });
 
-  it("a window whose expected decay is tiny reads Too early to judge, not a percentage", async () => {
+  itIn("today", "a window whose expected decay is tiny reads Too early to judge, not a percentage", async () => {
     const e = { status: "low_signal" as const, efficiency_pct: null, actual_decay: 3.7, expected_decay: 0.7, reason: "Too early to judge: time alone is expected to take only 0.7 points", confidence: 0 };
     const f = full();
     mount(full({ attribution: { ...f.attribution!, fixed: { ...f.attribution!.fixed, open: { ...f.attribution!.fixed.open!, efficiency: e } } } }));
@@ -307,10 +319,10 @@ describe("audit fixes (12 Nov 2026)", () => {
     expect(screen.getByTestId("sdi-reason").textContent).toContain("Too early to judge");
   });
 
-  it("the score history ends with the current reading, so the chart and the cards show the same numbers", async () => {
+  itIn("overview", "the score history ends with the current reading, so the chart and the cards show the same numbers", async () => {
     const d = rich();
     mount({ ...d, generated_at: "2026-11-11T04:10:30Z", history: { times: ["2026-11-11T04:08:00Z", "2026-11-11T04:09:00Z"], seller: [60.2, 48.7], buyer: [48, 53.7], regime: [null, null], eff30: [null, null], spot: [1, 2] } });
-    expect((await screen.findByTestId("sdi-seller-top-score")).textContent).toBe("76");
+    expect((await screen.findByTestId("sdi-gauge-seller-score")).textContent).toBe("76");
     const chart = await screen.findByRole("img", { name: "Seller and buyer environment score history" });
     const last = JSON.parse(chart.getAttribute("data-last") ?? "[]") as [number, number][];
     expect(last.map((x) => x[1])).toEqual([76, 24]); // the cards' seller and buyer scores
@@ -318,7 +330,7 @@ describe("audit fixes (12 Nov 2026)", () => {
     expect(screen.getByTestId("sdi-hist-note")).toHaveTextContent("last point is the current reading");
   });
 
-  it("when the newest recorded minute is as new as the reading, nothing is appended", async () => {
+  itIn("overview", "when the newest recorded minute is as new as the reading, nothing is appended", async () => {
     const d = rich();
     mount({ ...d, generated_at: "2026-11-11T04:09:00Z", history: { times: ["2026-11-11T04:08:00Z", "2026-11-11T04:09:00Z"], seller: [60.2, 48.7], buyer: [48, 53.7], regime: [null, null], eff30: [null, null], spot: [1, 2] } });
     const chart = await screen.findByRole("img", { name: "Seller and buyer environment score history" });
@@ -328,19 +340,21 @@ describe("audit fixes (12 Nov 2026)", () => {
 });
 
 describe("the glance (12 Nov 2026)", () => {
-  it("shows both scores as gauges, a plain-words reading and the reasons behind each score", async () => {
+  itIn("overview", "shows both scores as gauges, a plain-words reading and the reasons behind each score", async () => {
     mount(rich());
     expect((await screen.findByTestId("sdi-gauge-seller-score")).textContent).toBe("76");
     expect(screen.getByTestId("sdi-gauge-buyer-score").textContent).toBe("24");
     expect(screen.getByTestId("sdi-glance-verdict")).toHaveTextContent("In plain words");
-    expect(screen.getByRole("img", { name: "What moves the seller score" })).toBeInTheDocument();
+    await openTab(/Why these scores/);
+    expect(await screen.findByRole("img", { name: "What moves the seller score" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "What moves the buyer score" })).toBeInTheDocument();
-    expect(screen.getByTestId("sdi-words")).toHaveTextContent("Decay efficiency");
+    await openTab(/Method/);
+    expect(await screen.findByTestId("sdi-words")).toHaveTextContent("Decay efficiency");
     // a seller score whose label is held down by a risk flag says so next to the gauge
     expect(screen.queryByTestId("sdi-gauge-seller-cap")).toBeNull();
   });
 
-  it("compares the fixed and the rolling position side by side, with the seller's rupee result, and always shows both", async () => {
+  itIn("today", "compares the fixed and the rolling position side by side, with the seller's rupee result, and always shows both", async () => {
     const f = full();
     mount(full({ spot: Array.from({ length: 90 }, (_, i) => 24000 + i), tracker: { ...f.tracker!, atm_now: 24050, fixed: { ...f.tracker!.fixed, straddle: stat(170, 163) }, rolling: { ...f.tracker!.rolling, adjusted_change: -5.5, straddle: stat(170, 160), rolls: 3 } },
       attribution: { ...f.attribution!, fixed: { ...f.attribution!.fixed, open: { ...f.attribution!.fixed.open!, efficiency: { ...f.attribution!.fixed.open!.efficiency, lot_size: 65 } } } } }));
@@ -357,10 +371,11 @@ describe("the glance (12 Nov 2026)", () => {
     expect(rl).toHaveTextContent("shown in the sections below");
     expect(screen.getByTestId("sdi-position-note")).toHaveTextContent("Rolling position");
     expect(screen.getByTestId("sdi-following-note")).toHaveTextContent("You are following Rolling ATM (now 24050)");
-    expect(screen.getByTestId("sdi-plotted")).toHaveTextContent("only the change of the same contract");
     expect(screen.getByRole("img", { name: /Change in straddle premium since the open/ })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /Causes of the premium change/ })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /Call and put premium at the open and now/ })).toBeInTheDocument();
+    await openTab(/Method/);
+    expect(await screen.findByTestId("sdi-plotted")).toHaveTextContent("only the change of the same contract");
   });
 });
 
@@ -375,7 +390,7 @@ describe("the glance: a label held down by a risk flag", () => {
 
 
 describe("choosing a position changes the glance charts", () => {
-  it("the followed line is bold and the other faded, in both directions", async () => {
+  itIn("today", "the followed line is bold and the other faded, in both directions", async () => {
     mount(full({ spot: Array.from({ length: 90 }, (_, i) => 24000 + i) }));
     const chart = () => screen.getByRole("img", { name: /Change in straddle premium since the open/ });
     const widths = () => JSON.parse(chart().getAttribute("data-widths") ?? "[]") as (number | null)[]; // [fixed, rolling, NIFTY]
@@ -387,5 +402,22 @@ describe("choosing a position changes the glance charts", () => {
     expect(screen.getByRole("img", { name: /Call and put premium at the open and now/ })).toBeInTheDocument();
     fireEvent.click(within(screen.getByTestId("sdi-follow")).getByRole("button", { name: /^Fixed/ }));
     expect(widths()[0]!).toBeGreaterThan(widths()[1]!);
+  });
+});
+
+
+describe("the redesigned page: a reading first, five tabs", () => {
+  it("opens on the reading: plain words, both gauges, where the straddle is, what holds the scores back and what would change them", async () => {
+    mount(rich());
+    const card = await screen.findByTestId("sdi-reading-card");
+    expect(within(card).getByTestId("sdi-glance-verdict")).toHaveTextContent("In plain words");
+    expect(within(card).getByTestId("sdi-gauge-seller-score")).toHaveTextContent("76");
+    expect(within(card).getByTestId("sdi-gauge-buyer-score")).toHaveTextContent("24");
+    const pos = within(card).getByTestId("sdi-reading-positions");
+    expect(pos).toHaveTextContent("Fixed 24000");
+    expect(pos).toHaveTextContent("Rolling ATM");
+    expect(within(card).getByTestId("sdi-reading-invalidation")).toBeInTheDocument();
+    expect(card).toHaveTextContent("not a trading signal");
+    expect(screen.queryByTestId("sdi-tracker")).toBeNull(); // the numbers live in the other tabs
   });
 });

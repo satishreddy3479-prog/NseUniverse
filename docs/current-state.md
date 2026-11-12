@@ -505,3 +505,4 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 - Swing: two separate paper books (D143). The Live tab is one portfolio page (analytics, equity curve recorded from 12 Nov 2026 close, stops and targets, dated trades and events); the live price watch and live ledger panels were removed from the page (ledger still records on the server).
 - Swing: the evening scan hands the same candidate list to both books; the live book keeps its own copy and reads nothing of the official book (D144).
 - Market Intelligence redesigned (D145): a plain-language reading and evidence bars on the Overview, five tabs (Overview, Evidence, Signals and alerts, Timeline, Data and method); no calculation changed.
+- Straddle Intelligence page redesigned (D146): a plain reading first, five tabs (Overview, Today's premium, Why these scores, Alerts and checks, Method); no calculation changed.

@@ -12,11 +12,11 @@ const sg = (v: number | null | undefined, d = 1) => (v == null ? MISSING : `${v 
 const inr = (v: number) => `${v < 0 ? "−" : "+"}₹${Math.abs(Math.round(v)).toLocaleString("en-IN")}`;
 
 /** Score bands (lower bound, label) as the backend classifies them: worst first so the bar reads bad → good. */
-const SELLER_ZONES: [number, string][] = [[0, "High risk"], [25, "Unfavourable"], [40, "Neutral"], [60, "Favourable"], [80, "Highly favourable"]];
-const BUYER_ZONES: [number, string][] = [[0, "Unfavourable"], [30, "Neutral"], [45, "Selective"], [60, "Favourable"], [75, "Strong"]];
+export const SELLER_ZONES: [number, string][] = [[0, "High risk"], [25, "Unfavourable"], [40, "Neutral"], [60, "Favourable"], [80, "Highly favourable"]];
+export const BUYER_ZONES: [number, string][] = [[0, "Unfavourable"], [30, "Neutral"], [45, "Selective"], [60, "Favourable"], [75, "Strong"]];
 const ZONE_BG = ["bg-down/60", "bg-down/35", "bg-warn/45", "bg-up/40", "bg-up/65"];
 
-function Gauge({ title, subtitle, score, cls, zones, trend, coverage, testid, capped }: {
+export function Gauge({ title, subtitle, score, cls, zones, trend, coverage, testid, capped }: {
   title: string; subtitle: string; score: number | null; cls: string; zones: [number, string][]; capped?: string | null;
   trend: { now: number | null; m15: number | null; m30: number | null } | null | undefined; coverage: number; testid: string;
 }) {
@@ -37,7 +37,7 @@ function Gauge({ title, subtitle, score, cls, zones, trend, coverage, testid, ca
         {score != null && <span className="absolute -top-1.5 grid h-6 w-6 -translate-x-1/2 place-items-center rounded-full border-2 border-paper bg-ink text-[9px] font-bold text-paper" style={{ left: pos(score) }}>●</span>}
         <div className="mt-1 flex justify-between text-[10px] text-muted">{zones.map(([lo, name]) => <span key={name} className="text-center" style={{ width: 0, flex: "1 1 0" }}>{name.replace(" environment", "")}<br /><span className="num opacity-70">{lo}+</span></span>)}</div>
       </div>
-      {capped && <p className="mt-2 rounded-md bg-warn/10 px-2 py-1 text-xs leading-snug text-paper" data-testid={`${testid}-cap`}>The score sits in a higher zone, but the label is held at <b>{capped}</b> because a risk flag is active (see the flags in section 3 below).</p>}
+      {capped && <p className="mt-2 rounded-md bg-warn/10 px-2 py-1 text-xs leading-snug text-paper" data-testid={`${testid}-cap`}>The score sits in a higher zone, but the label is held at <b>{capped}</b> because a risk flag is active (see the flags under Why these scores).</p>}
       <p className="mt-2 text-[11px] text-muted">Built from {Math.round(coverage * 100)}% of the evidence inputs. 15 minutes ago: {trend?.m15 == null ? "not recorded" : trend.m15.toFixed(0)}{trend?.m30 != null ? ` · 30 minutes ago: ${trend.m30.toFixed(0)}` : ""}.</p>
     </div>
   );
@@ -63,7 +63,10 @@ const TERM_LABEL: [keyof Terms | "other", string][] = [["theta", "Time passing (
 const termValue = (t: Terms, k: keyof Terms | "other") => (k === "other" ? (t.vanna ?? 0) + (t.volga ?? 0) + t.residual : (t[k] as number));
 
 /** The glance: scores with zones, why, fixed against rolling, where the premium change came from, what each side kept, and the score history. */
-export function StraddleGlance({ d, mode, setMode }: { d: StraddleDecay; mode: Mode; setMode: (m: Mode) => void }) {
+/** Which part of the glance a tab shows: the score history (Overview), what the premium did today (Today), why the scores are what they are (Why), how the charts are drawn and the words (Method). */
+export type GlancePart = "history" | "today" | "why" | "method";
+
+export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; mode: Mode; setMode: (m: Mode) => void; part: GlancePart }) {
   const c = useChartColors();
   const tr = d.tracker, env = d.environment;
   const times = useMemo(() => (d.times ?? []).map((t) => new Date(t).getTime()), [d.times]);
@@ -152,6 +155,7 @@ export function StraddleGlance({ d, mode, setMode }: { d: StraddleDecay; mode: M
 
   return (
     <div className="mt-3 space-y-3" data-testid="sdi-glance">
+      {part === "today" && (
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-base font-semibold text-paper">Today at a glance</h3>
         <div role="group" aria-label="Position to follow" className="flex flex-wrap items-center gap-1.5 text-sm" data-testid="sdi-follow">
@@ -160,22 +164,10 @@ export function StraddleGlance({ d, mode, setMode }: { d: StraddleDecay; mode: M
             <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)} className={`min-h-9 rounded-full border px-3 ${mode === m ? "border-brass bg-brass/15 font-semibold text-paper" : "border-rule text-muted hover:text-paper"}`}>{l}</button>
           ))}
         </div>
-        <nav aria-label="Jump to a section" className="flex flex-wrap gap-1 text-xs">
-          {[["sdi-glance-compare", "Fixed vs rolling"], ["sdi-glance-why", "Why these scores"], ["sdi-glance-sources", "What moved the premium"], ["sdi-tracker", "Details"]].map(([id, label]) => (
-            <a key={id} href={`#${id}`} className="rounded-full border border-rule px-2.5 py-1 text-muted hover:text-paper">{label}</a>
-          ))}
-        </nav>
       </div>
+      )}
 
-      {env ? (
-        <div className="grid gap-3 md:grid-cols-2">
-          <Gauge testid="sdi-gauge-seller" title="Seller environment" subtitle="Is it a good time to SELL option premium (straddles, strangles)?" score={env.seller.score} cls={env.seller.class} zones={SELLER_ZONES} capped={env.seller.capped_by_flags} trend={d.environment_trend?.seller} coverage={env.seller.coverage} />
-          <Gauge testid="sdi-gauge-buyer" title="Buyer environment" subtitle="Is it a good time to BUY options (calls, puts, long straddles)?" score={env.buyer.score} cls={env.buyer.class} zones={BUYER_ZONES} trend={d.environment_trend?.buyer} coverage={env.buyer.coverage} />
-        </div>
-      ) : <p className="rounded-xl border border-rule bg-ink/40 p-3 text-sm text-muted">{d.environment_note ?? "No environment is available."}</p>}
-      {env && <p className="rounded-xl border border-rule bg-ink/40 p-3 text-sm leading-relaxed text-paper" data-testid="sdi-glance-verdict"><span className="font-semibold">In plain words: </span>{env.comparison.text}</p>}
-
-      {tr && (
+      {part === "today" && tr && (
         <section id="sdi-glance-compare" aria-label="Fixed against rolling" className="scroll-mt-16 rounded-xl border border-rule bg-ink/40 p-3" data-testid="sdi-compare">
           <h4 className="text-sm font-semibold text-paper">Fixed against rolling: two ways to follow a straddle</h4>
           <p className="mt-1 text-xs leading-relaxed text-muted" data-testid="sdi-following-note">You are following <b className="text-paper">{posName}</b>. Its line is bold in the charts below and the detailed sections further down use it; the other is shown faded for comparison. The two cards always show both.</p>
@@ -202,7 +194,7 @@ export function StraddleGlance({ d, mode, setMode }: { d: StraddleDecay; mode: M
         </section>
       )}
 
-      {env && (
+      {part === "why" && env && (
         <section id="sdi-glance-why" aria-label="Why these scores" className="scroll-mt-16 rounded-xl border border-rule bg-ink/40 p-3" data-testid="sdi-why">
           <h4 className="text-sm font-semibold text-paper">Why these scores</h4>
           <p className="mt-1 text-xs leading-relaxed text-muted">Each bar is one piece of evidence, in points above or below a neutral 50. Green pushes the score up, red pulls it down. Touch a bar for the reason.</p>
@@ -213,7 +205,7 @@ export function StraddleGlance({ d, mode, setMode }: { d: StraddleDecay; mode: M
         </section>
       )}
 
-      {sources && (
+      {part === "today" && sources && (
         <section id="sdi-glance-sources" aria-label="What moved the premium" className="scroll-mt-16 rounded-xl border border-rule bg-ink/40 p-3" data-testid="sdi-sources-chart">
           <h4 className="text-sm font-semibold text-paper">What moved the premium since the open</h4>
           <p className="mt-1 text-xs leading-relaxed text-muted">Points of premium added (+) or taken away (−) by each cause, for both ways of following the straddle. Time passing should take premium away; NIFTY moving and volatility rising add it back.</p>
@@ -221,7 +213,7 @@ export function StraddleGlance({ d, mode, setMode }: { d: StraddleDecay; mode: M
         </section>
       )}
 
-      {hist && (
+      {part === "history" && hist && (
         <section aria-label="Score history" className="rounded-xl border border-rule bg-ink/40 p-3">
           <h4 className="text-sm font-semibold text-paper">How the scores moved today</h4>
           <div className="mt-1 h-[190px]"><EChart group="sdi" option={hist} ariaLabel="Seller and buyer environment score history" /></div>
@@ -229,6 +221,7 @@ export function StraddleGlance({ d, mode, setMode }: { d: StraddleDecay; mode: M
         </section>
       )}
 
+      {part === "method" && <>
       <details className="rounded-xl border border-rule bg-ink/40 p-3" data-testid="sdi-plotted">
         <summary className="cursor-pointer text-sm font-semibold text-paper">How are these charts drawn?</summary>
         <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-muted">
@@ -255,6 +248,7 @@ export function StraddleGlance({ d, mode, setMode }: { d: StraddleDecay; mode: M
           ].map(([t, x]) => <div key={t}><dt className="font-semibold text-paper">{t}</dt><dd className="text-muted">{x}</dd></div>)}
         </dl>
       </details>
+      </>}
     </div>
   );
 }
