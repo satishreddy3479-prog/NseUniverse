@@ -130,7 +130,7 @@ function Tile({ label, value, sub }: { label: string; value: string; sub?: strin
     <div className="min-w-0 rounded-sm border border-rule bg-slate-2/60 px-3 py-2">
       <div className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted">{label}<Info term={label} /></div>
       <div className="num text-base font-semibold text-paper">{value}</div>
-      {sub && <div className="truncate text-[11px] text-muted" title={sub}>{sub}</div>}
+      {sub && <div className="break-words text-[11px] leading-snug text-muted" title={sub}>{sub}</div>}
     </div>
   );
 }

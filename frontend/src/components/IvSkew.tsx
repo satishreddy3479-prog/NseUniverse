@@ -78,6 +78,12 @@ export function IvSkewBody({ expiry }: { expiry: string | null }) {
     const frac = d.hi.delta === d.lo.delta ? 0 : (t - d.lo.delta) / (d.hi.delta - d.lo.delta);
     return [{ name, coord: [idx(d.lo.strike) + frac * (idx(d.hi.strike) - idx(d.lo.strike)), d.iv], value: d.iv.toFixed(2), itemStyle: { color: side === "CE" ? c.up : c.down } }];
   });
+  // The ATM strike and the spot are usually a strike or two apart; two labels at the same height would print over each other, so close marks share one label.
+  const atmAt = idx(s.atm_strike ?? NaN);
+  const spotAt = s.spot != null ? nearestIdx(s.spot) : -1;
+  const strikeMarks = spotAt >= 0 && atmAt >= 0 && Math.abs(spotAt - atmAt) <= 3
+    ? [{ xAxis: spotAt, label: { formatter: "ATM · Spot", color: c.brass }, lineStyle: { color: c.brass, type: "solid" } }]
+    : [{ xAxis: atmAt, label: { formatter: "ATM" } }, ...(spotAt >= 0 ? [{ xAxis: spotAt, label: { formatter: "Spot", color: c.brass }, lineStyle: { color: c.brass, type: "solid" } }] : [])];
   const smile = {
     grid: { left: 46, right: 14, top: 36, bottom: 28 }, tooltip: tip,
     legend: { top: 0, left: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
@@ -85,7 +91,7 @@ export function IvSkewBody({ expiry }: { expiry: string | null }) {
     yAxis: { type: "value", scale: true, axisLabel: { color: c.muted, formatter: "{value}%" }, splitLine: { lineStyle: { color: c.rule, opacity: 0.6 } } },
     series: [
       { name: "Call IV (OTM)", type: "line", showSymbol: true, symbolSize: 5, connectNulls: false, data: strikeAxis.map((k) => s.smile.find((p) => p.strike === k && p.side === "CE")?.iv ?? null), lineStyle: { color: c.up, width: 2 }, itemStyle: { color: c.up },
-        markLine: { silent: true, symbol: "none", label: { color: c.muted, fontSize: 10 }, lineStyle: { color: c.muted, type: "dashed" }, data: [{ xAxis: idx(s.atm_strike ?? NaN), label: { formatter: "ATM" } }, ...(s.spot != null ? [{ xAxis: nearestIdx(s.spot), label: { formatter: "Spot" }, lineStyle: { color: c.brass, type: "solid" } }] : [])] },
+        markLine: { silent: true, symbol: "none", label: { color: c.muted, fontSize: 10, position: "end" }, lineStyle: { color: c.muted, type: "dashed" }, data: strikeMarks },
         markPoint: { symbol: "diamond", symbolSize: 11, label: { show: false }, data: deltaPoints } },
       { name: "Put IV (OTM)", type: "line", showSymbol: true, symbolSize: 5, connectNulls: false, data: strikeAxis.map((k) => s.smile.find((p) => p.strike === k && p.side === "PE")?.iv ?? null), lineStyle: { color: c.down, width: 2 }, itemStyle: { color: c.down } },
       ...(thenSmile.length ? [

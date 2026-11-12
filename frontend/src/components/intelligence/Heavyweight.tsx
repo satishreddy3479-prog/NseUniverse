@@ -9,7 +9,7 @@ const n2 = (v: number | null | undefined, d = 2) => (v == null ? MISSING : v.toL
 const CLASS_TONE: Record<string, string> = { "Broad heavyweight buying": "text-up", "Broad heavyweight selling": "text-down", "Narrow heavyweight buying": "text-up", "Narrow heavyweight selling": "text-down", "Heavyweight divergence": "text-warn" };
 
 function Tile({ label, value, sub, tone, tip }: { label: string; value: string; sub?: string; tone?: string; tip?: string }) {
-  return <div className="min-w-0 rounded-sm bg-slate-2 px-2.5 py-2" title={tip}><div className="truncate text-[11px] text-muted">{label}</div><div className={`num truncate text-[15px] font-semibold ${tone ?? "text-paper"}`}>{value}</div>{sub && <div className="truncate text-[10px] text-muted">{sub}</div>}</div>;
+  return <div className="min-w-0 rounded-sm bg-slate-2 px-2.5 py-2" title={tip}><div className="break-words text-[11px] leading-snug text-muted">{label}</div><div className={`num truncate text-[15px] font-semibold ${tone ?? "text-paper"}`}>{value}</div>{sub && <div className="break-words text-[10px] leading-snug text-muted">{sub}</div>}</div>;
 }
 
 function Row({ s }: { s: HeavyStock }) {

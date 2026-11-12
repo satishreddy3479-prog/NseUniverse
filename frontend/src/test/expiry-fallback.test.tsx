@@ -48,7 +48,7 @@ describe("chart fitting", () => {
   const opt = { grid: { left: 58, right: 132, top: 34 }, yAxis: [{ position: "left" }, { position: "right", axisLabel: { margin: 70 } }], series: [{ endLabel: { show: true, fontSize: 11, offset: [4, 0] } }] };
   it("caps the margins, hides far-pushed right-axis numbers and shrinks the tags on a narrow container", () => {
     const o = fitNarrow(opt as never, 375) as typeof opt & { yAxis: { axisLabel?: { show?: boolean } }[]; series: { endLabel: { fontSize: number } }[] };
-    expect(o.grid).toMatchObject({ left: 46, right: 66, top: 34 });
+    expect(o.grid).toMatchObject({ left: 46, right: 54, top: 34 }); // a chart whose right margin only holds latest-value tags needs the tag width, not the desktop margin
     expect(o.yAxis[1]!.axisLabel!.show).toBe(false);
     expect(o.series[0]!.endLabel.fontSize).toBe(10);
   });

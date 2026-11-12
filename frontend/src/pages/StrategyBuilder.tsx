@@ -721,7 +721,7 @@ export default function StrategyBuilder() {
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="mr-2 w-full text-xl font-semibold sm:w-auto">Strategy builder</h1>
         <span className="rounded-sm border border-rule bg-slate-2 px-2 py-1 text-sm text-paper">NIFTY 50</span>
-        <input className={`${field} min-w-0 flex-1 sm:w-40 sm:flex-none`} aria-label="Strategy name" value={name} onChange={(e) => setName(e.target.value)} placeholder="name to save" />
+        <input className={`${field} min-w-[10rem] flex-1 sm:w-40 sm:flex-none`} aria-label="Strategy name" value={name} onChange={(e) => setName(e.target.value)} placeholder="name to save" />
         <Button variant="primary" disabled={!name.trim() || legs.length === 0 || !expiry} onClick={() => { persist([{ name: name.trim(), savedAt: new Date().toISOString(), expiry: strategyExpiry!, legs }, ...saved.filter((s) => s.name !== name.trim())]); setLoaded(name.trim()); setBaseline(legs); setName(""); }}>Save</Button>
         <span data-testid="sync-state" className={`text-[11px] ${sync === "browser" || syncProblem ? "text-warn" : "text-muted"}`}
           title={sync === "server" ? "Saved and closed strategies are stored on the server and kept in its nightly backups" : "The server could not be reached: strategies are held in this browser only and move to the server the next time it is reachable"}>
@@ -819,11 +819,11 @@ export default function StrategyBuilder() {
               <table className="w-full text-sm" aria-label="Option chain">
                 <thead className="sticky top-0 z-[1] bg-slate text-xs text-muted">
                   <tr>
-                    {GCOLS.filter((g) => gcols.includes(g.key)).map((g) => <th key={`c${g.key}`} className="px-1.5 py-1 text-left font-normal" title={g.hint}>{g.short}</th>)}
-                    <th className="px-2 py-1 text-left font-normal">LTP</th><th className="px-2 py-1 text-right font-normal">Call OI <Info term="Call OI" /></th>
+                    {GCOLS.filter((g) => gcols.includes(g.key)).map((g) => <th key={`c${g.key}`} className="px-1.5 py-1 text-left font-normal max-sm:hidden" title={g.hint}>{g.short}</th>)}
+                    <th className="px-2 py-1 text-left font-normal">LTP</th><th className="whitespace-nowrap px-2 py-1 text-right font-normal">Call OI <Info term="Call OI" /></th>
                     <th className="px-2 py-1 text-center font-medium text-paper">Strike</th>
-                    <th className="px-2 py-1 text-left font-normal">Put OI <Info term="Put OI" /></th><th className="px-2 py-1 text-right font-normal">LTP</th>
-                    {[...GCOLS].reverse().filter((g) => gcols.includes(g.key)).map((g) => <th key={`p${g.key}`} className="px-1.5 py-1 text-right font-normal" title={g.hint}>{g.short}</th>)}
+                    <th className="whitespace-nowrap px-2 py-1 text-left font-normal">Put OI <Info term="Put OI" /></th><th className="px-2 py-1 text-right font-normal">LTP</th>
+                    {[...GCOLS].reverse().filter((g) => gcols.includes(g.key)).map((g) => <th key={`p${g.key}`} className="px-1.5 py-1 text-right font-normal max-sm:hidden" title={g.hint}>{g.short}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -854,7 +854,7 @@ export default function StrategyBuilder() {
                       <div className={`flex h-4 ${align === "right" ? "justify-end" : ""}`}><div className="h-4 rounded-sm" style={{ width: `${v == null ? 0 : Math.max(2, (v / maxOi) * 100)}%`, background: color, opacity: 0.35 }} title={v == null ? "no OI" : `OI ${compactIN(v)}`} /></div>
                     );
                     const cell = (c: ContractGreeks | null | undefined, key: GKey, right: boolean) => (
-                      <td key={`${right ? "p" : "c"}${key}`} className={`px-1.5 py-1 text-xs text-muted ${right ? "text-right" : "text-left"}`}>{c == null ? "—" : fmtG(key, c)}</td>
+                      <td key={`${right ? "p" : "c"}${key}`} className={`px-1.5 py-1 text-xs text-muted max-sm:hidden ${right ? "text-right" : "text-left"}`}>{c == null ? "—" : fmtG(key, c)}</td>
                     );
                     return (
                       <tr key={row.strike} onClick={() => setSel(row.strike)} data-testid={`chain-${row.strike}`} data-held={held ? "true" : undefined}

@@ -18,7 +18,7 @@ const sg = (v: number | null | undefined, d = 1) => (v == null ? MISSING : `${v 
 const n1 = (v: number | null | undefined, d = 1) => (v == null ? MISSING : v.toFixed(d));
 
 function Tile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
-  return <div className="min-w-0 rounded-sm bg-slate-2 px-2.5 py-2" data-testid="rs-tile"><div className="truncate text-[11px] text-muted">{label}</div><div className={`num truncate text-[15px] font-semibold ${tone ?? "text-paper"}`}>{value}</div>{sub && <div className="truncate text-[10px] text-muted">{sub}</div>}</div>;
+  return <div className="min-w-0 rounded-sm bg-slate-2 px-2.5 py-2" data-testid="rs-tile"><div className="break-words text-[11px] leading-snug text-muted">{label}</div><div className={`num truncate text-[15px] font-semibold ${tone ?? "text-paper"}`}>{value}</div>{sub && <div className="break-words text-[10px] leading-snug text-muted">{sub}</div>}</div>;
 }
 
 /** ATM rolling straddle: the premium of the strike held under a roll rule, the fixed opening strike for comparison, the roll-adjusted premium (rolls add no jump),

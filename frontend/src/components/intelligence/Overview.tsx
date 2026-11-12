@@ -21,7 +21,7 @@ export function CommandStrip({ d, compact = false }: { d: Intelligence; compact?
   const failed = Object.entries(d.status).filter(([, v]) => !v.ok).map(([k]) => k);
   const stale = d.engines.filter((e) => e.freshness.fresh === false).map((e) => e.name);
   const cell = (label: string, value: string, sub?: string, cls = "text-paper") => (
-    <div className="min-w-0"><div className="text-[11px] uppercase tracking-wide text-muted">{label}</div><div className={`num truncate text-lg font-semibold ${cls}`}>{value}</div>{sub && <div className="truncate text-[11px] text-muted">{sub}</div>}</div>
+    <div className="min-w-0"><div className="text-[11px] uppercase tracking-wide text-muted">{label}</div><div className={`num truncate text-lg font-semibold ${cls}`}>{value}</div>{sub && <div className="break-words text-[11px] leading-snug text-muted">{sub}</div>}</div>
   );
   return (
     <section aria-label="Market sentiment" className="rounded-[var(--radius-panel)] border border-rule bg-slate p-4" data-testid="mi-command">
@@ -58,7 +58,7 @@ export function CommandStrip({ d, compact = false }: { d: Intelligence; compact?
 }
 
 function Pulse({ label, value, sub, tone, tip }: { label: string; value: string; sub?: string; tone?: string; tip?: string }) {
-  return <div className="rounded-sm bg-slate-2 px-2.5 py-2" data-testid="mi-pulse" title={tip}><div className="truncate text-[11px] text-muted">{label}</div><div className={`num truncate text-[15px] font-semibold ${tone ?? "text-paper"}`}>{value}</div>{sub && <div className="truncate text-[10px] text-muted">{sub}</div>}</div>;
+  return <div className="rounded-sm bg-slate-2 px-2.5 py-2" data-testid="mi-pulse" title={tip}><div className="break-words text-[11px] leading-snug text-muted">{label}</div><div className={`num truncate text-[15px] font-semibold ${tone ?? "text-paper"}`}>{value}</div>{sub && <div className="break-words text-[10px] leading-snug text-muted">{sub}</div>}</div>;
 }
 
 export function PulseCards({ d }: { d: Intelligence }) {

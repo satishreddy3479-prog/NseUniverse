@@ -35,6 +35,10 @@ export function portfolioEquityOption(stats: PortfolioStats, c: ChartColors): EC
   const dd = [0, ...cv.map((p) => -p.dd)];
   const pnl: (number | null)[] = [null, ...cv.map((p) => p.pnl)];
   const last = cum[cum.length - 1] ?? 0;
+  // a marker label beside the point when the point is near the right end, so it does not lie on the line or under the latest-value tag
+  const peakAt = cum.indexOf(Math.max(...cum));
+  const worstAt = dd.indexOf(Math.min(...dd));
+  const side = (i: number, fallback: "top" | "bottom") => (i >= cum.length - 3 ? "left" : fallback);
   const axisText = { color: c.muted, fontSize: 11 };
   const title = (text: string, top: number) => ({ text, left: G.left, top, textStyle: { color: c.paper, fontSize: 12, fontWeight: 600 } });
   const xAxis = (gridIndex: number, show: boolean) => ({
@@ -70,7 +74,7 @@ export function portfolioEquityOption(stats: PortfolioStats, c: ChartColors): EC
         data: cum.map((v) => ({ value: v, itemStyle: { color: v > 0 ? c.up : v < 0 ? c.down : c.muted } })),
         areaStyle: { color: c.info, opacity: 0.06 },
         markLine: { silent: true, symbol: "none", label: { show: false }, lineStyle: { color: c.muted, type: "dashed", opacity: 0.7 }, data: [{ yAxis: 0 }] },
-        markPoint: { silent: true, symbol: "circle", symbolSize: 1, data: [{ type: "max", name: "Peak" }], label: { show: true, position: "top", color: c.muted, fontSize: 10, formatter: (p: { value?: number }) => `Peak ${money(p.value ?? 0)}` } },
+        markPoint: { silent: true, symbol: "circle", symbolSize: 1, data: [{ type: "max", name: "Peak" }], label: { show: true, position: side(peakAt, "top"), distance: 8, color: c.muted, fontSize: 10, formatter: (p: { value?: number }) => `Peak ${money(p.value ?? 0)}` } },
         endLabel: { show: true, formatter: () => money(last), backgroundColor: last >= 0 ? c.up : c.down, color: "#fff", padding: [2, 6], borderRadius: 3, fontSize: 11, offset: [6, 0] }, labelLayout: { moveOverlap: "shiftY" },
       },
       {
@@ -80,7 +84,7 @@ export function portfolioEquityOption(stats: PortfolioStats, c: ChartColors): EC
       {
         name: "Drawdown", type: "line", xAxisIndex: 2, yAxisIndex: 2, data: dd, symbol: "none", lineStyle: { color: c.down, width: 1.6 }, itemStyle: { color: c.down }, areaStyle: { color: c.down, opacity: 0.2 },
         markPoint: { silent: true, symbol: "circle", symbolSize: 6, itemStyle: { color: c.down, borderColor: c.slate, borderWidth: 1 }, data: stats.maxDrawdown > 0 ? [{ type: "min", name: "Worst" }] : [],
-          label: { show: true, position: "bottom", color: c.down, fontSize: 10, formatter: (p: { value?: number }) => `Worst ${money(p.value ?? 0)}` } },
+          label: { show: true, position: worstAt >= cum.length - 3 ? "left" : worstAt <= 2 ? "right" : "top", distance: 6, color: c.down, fontSize: 10, formatter: (p: { value?: number }) => `Worst ${money(p.value ?? 0)}` } },
       },
     ],
   };

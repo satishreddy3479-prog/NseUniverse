@@ -26,7 +26,7 @@ const tone = (v: number | null | undefined) => (v == null ? "" : v >= 0 ? "text-
 const MOVE_KEYS = ["5", "15", "30", "60"] as const;
 
 function Tile({ label, value, sub, tone: t }: { label: string; value: string; sub?: string; tone?: string }) {
-  return <div className="min-w-0 rounded-sm bg-slate-2 px-2.5 py-2" data-testid="sdi-tile"><div className="truncate text-[11px] text-muted">{label}</div><div className={`num truncate text-[15px] font-semibold ${t ?? "text-paper"}`}>{value}</div>{sub && <div className="truncate text-[10px] text-muted">{sub}</div>}</div>;
+  return <div className="min-w-0 rounded-sm bg-slate-2 px-2.5 py-2" data-testid="sdi-tile"><div className="break-words text-[11px] leading-snug text-muted">{label}</div><div className={`num truncate text-[15px] font-semibold ${t ?? "text-paper"}`}>{value}</div>{sub && <div className="break-words text-[10px] leading-snug text-muted">{sub}</div>}</div>;
 }
 function Box({ title, note, children, id, foot, plain }: { title: string; note?: string; children: React.ReactNode; id: string; foot?: string; plain?: string }) {
   return <section aria-label={title} className="min-w-0 scroll-mt-16 rounded-[var(--radius-panel)] border border-rule bg-slate p-3" data-testid={id}><h3 className="text-sm font-semibold text-paper">{title}{note && <span className="font-normal text-muted"> · {note}</span>}</h3>{plain ? <p className="mb-2 mt-0.5 text-[13px] leading-snug text-muted">{plain}</p> : <div className="mb-2" />}{children}{foot && <p className="mt-2 text-[10px] text-muted" data-testid={`${id}-source`}>{foot}</p>}</section>;

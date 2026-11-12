@@ -85,7 +85,7 @@ export function Tile({ label, value, sub, accent = "border-rule", valueCls = "te
     <div title={title} className={`min-w-0 rounded-sm border border-rule border-l-2 bg-slate-2/60 px-3 py-2 ${accent}`}>
       <div className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted">{label}<Info term={label} /></div>
       <div className={`num truncate text-base font-semibold ${valueCls}`}>{value}</div>
-      {sub && <div className="truncate text-[11px] text-muted">{sub}</div>}
+      {sub && <div className="break-words text-[11px] leading-snug text-muted">{sub}</div>}
       {children}
     </div>
   );
