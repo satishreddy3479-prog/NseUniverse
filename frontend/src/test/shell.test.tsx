@@ -94,6 +94,37 @@ describe("top menu bar", () => {
     expect(within(bar()).getByRole("link", { name: /Future Dashboard/ })).toBeInTheDocument(); // a futures tool
   });
 
+  it("FNO Tools is one A to Z list without group headings", async () => {
+    mockApi();
+    renderAt("/overview");
+    await screen.findByRole("heading", { name: "Overview" });
+    await userEvent.click(within(bar()).getByRole("button", { name: /FNO Tools/ }));
+    const menu = within(screen.getByTestId("toolmenu-fno"));
+    for (const g of ["Live chain", "OI tools", "Popular tools", "Price tools", "IV tools", "Futures price", "Futures OI", "Positioning"]) expect(menu.queryByText(new RegExp(`^${g}$`, "i"))).toBeNull();
+    expect(menu.getByText(/All tools · A to Z/)).toBeInTheDocument();
+    expect(menu.queryByTestId("recent-tools")).toBeNull(); // nothing used yet on this device
+    const names = menu.getAllByRole("link").map((a) => a.textContent ?? "");
+    expect(names.length).toBeGreaterThan(25);
+    expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base", numeric: true })));
+  });
+
+  it("the three most recently opened tools lead the menu, newest first", async () => {
+    localStorage.setItem("nse-universe.recent-tools", JSON.stringify(["max-pain", "smart-oi", "option-chain", "straddle"]));
+    mockApi();
+    renderAt("/overview");
+    await screen.findByRole("heading", { name: "Overview" });
+    await userEvent.click(within(bar()).getByRole("button", { name: /FNO Tools/ }));
+    const recent = within(screen.getByTestId("recent-tools"));
+    expect(recent.getAllByRole("link").map((a) => a.textContent)).toEqual(["Max Pain", "Smart OI", "Option Chain"]); // only three
+  });
+
+  it("opening a tool page records it as the newest recent tool", async () => {
+    mockApi();
+    renderAt("/option-chain");
+    await screen.findByRole("heading", { name: /option chain/i });
+    expect(JSON.parse(localStorage.getItem("nse-universe.recent-tools") ?? "[]")[0]).toBe("option-chain");
+  });
+
   it("Swing trading is a main section of its own, not inside Strategy Builder", async () => {
     mockApi();
     renderAt("/overview");
@@ -199,12 +230,24 @@ describe("phone menu", () => {
     await userEvent.click(m.getByRole("button", { name: "FNO Tools" }));
     expect(m.getByRole("button", { name: "FNO Tools" })).toHaveAttribute("aria-expanded", "true");
     expect(m.queryByRole("link", { name: "Strategy portfolio" })).toBeNull();
-    expect(m.getByRole("button", { name: /Live chain/ })).toBeInTheDocument(); // its tool groups, collapsed
-    await userEvent.click(m.getByRole("button", { name: /Live chain/ }));
+    expect(m.queryByRole("button", { name: /Live chain|Futures price/ })).toBeNull(); // no groups: one list
     expect(m.getByRole("link", { name: "Option Chain" })).toHaveAttribute("href", "/option-chain");
-    await userEvent.click(m.getByRole("button", { name: /Futures price/ }));
     expect(m.getByRole("link", { name: /Future Dashboard/ })).toBeInTheDocument();
-    expect(m.queryByRole("link", { name: "Option Chain" })).toBeNull(); // one group at a time
+  });
+
+  it("FNO Tools on the phone is one A to Z list with a filter", async () => {
+    const m = await open();
+    await userEvent.click(m.getByRole("button", { name: "FNO Tools" }));
+    const names = m.getAllByRole("link").map((a) => a.textContent ?? "").filter((x) => !/^(Home|Market Intelligence|Swing trading)/.test(x));
+    expect(names.length).toBeGreaterThan(25);
+    expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base", numeric: true })));
+    await userEvent.type(m.getByRole("searchbox", { name: "Find a tool" }), "straddle");
+    const found = m.getAllByRole("link").map((a) => a.textContent ?? "");
+    expect(found.some((x) => /Rolling Straddle/.test(x))).toBe(true);
+    expect(found.some((x) => x === "Option Chain")).toBe(false);
+    await userEvent.clear(m.getByRole("searchbox", { name: "Find a tool" }));
+    await userEvent.type(m.getByRole("searchbox", { name: "Find a tool" }), "zzzz");
+    expect(m.getByText(/No tool matches/)).toBeInTheDocument();
   });
 
   it("choosing a tool closes the menu", async () => {
