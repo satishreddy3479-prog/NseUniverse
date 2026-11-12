@@ -76,13 +76,15 @@ export function StraddleGlance({ d, mode, setMode }: { d: StraddleDecay; mode: M
     const base = fx.find((v) => v != null);
     if (base == null) return null;
     const lines: Line[] = [
-      { name: "Fixed straddle (sold at the open)", color: c.brass, data: fx.map((v) => (v == null ? null : Math.round((v - base) * 100) / 100)), fmt: (v) => sg(v) },
-      { name: "Rolling ATM (roll-adjusted)", color: c.info, data: d.cumulative.rolling.actual, fmt: (v) => sg(v) },
+      { name: "Fixed", color: c.brass, data: fx.map((v) => (v == null ? null : Math.round((v - base) * 100) / 100)), fmt: (v) => sg(v) },
+      { name: "Rolling ATM", color: c.info, data: d.cumulative.rolling.actual, fmt: (v) => sg(v) },
     ];
-    if (d.spot) lines.push({ name: "NIFTY (right axis)", color: c.muted, data: d.spot, axis: 1, dotted: true, fmt: (v) => v.toLocaleString("en-IN") });
-    const o = timeLinesOption(times, lines, c, null, { leftFmt: (v) => sg(v, 0), rightFmt: (v) => v.toLocaleString("en-IN"), zeroLine: true }) as unknown as { series: { name: string; lineStyle?: Record<string, unknown>; z?: number }[] };
+    if (d.spot) lines.push({ name: "NIFTY (right)", color: c.muted, data: d.spot, axis: 1, dotted: true, fmt: (v) => v.toLocaleString("en-IN") });
+    const o = timeLinesOption(times, lines, c, null, { leftFmt: (v) => sg(v, 0), rightFmt: (v) => v.toLocaleString("en-IN"), zeroLine: true }) as unknown as { grid: Record<string, unknown>; legend: Record<string, unknown>; series: { name: string; lineStyle?: Record<string, unknown>; z?: number }[] };
+    o.grid = { ...o.grid, top: 40 };
+    o.legend = { ...o.legend, top: 4, left: "center", itemGap: 14 };
     // the position being followed is drawn bold, the other one thin and faded, so choosing a position visibly changes the chart
-    const on = mode === "fixed" ? "Fixed straddle (sold at the open)" : "Rolling ATM (roll-adjusted)";
+    const on = mode === "fixed" ? "Fixed" : "Rolling ATM";
     for (const sr of o.series) {
       if (sr.name.startsWith("NIFTY")) continue;
       const sel = sr.name === on;
@@ -115,14 +117,14 @@ export function StraddleGlance({ d, mode, setMode }: { d: StraddleDecay; mode: M
     if (ce?.open == null || pe?.open == null || ce.current == null || pe.current == null) return null;
     const r1 = (x: number) => Math.round(x * 10) / 10;
     return {
-      animation: false, grid: { left: 8, right: 44, top: 26, bottom: 8, containLabel: true },
-      legend: { top: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
+      animation: false, grid: { left: 8, right: 52, top: 34, bottom: 8, containLabel: true },
+      legend: { top: 4, left: "center", textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
       tooltip: { show: false },
       xAxis: { type: "value", axisLabel: { color: c.muted, fontSize: 11 }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
       yAxis: { type: "category", inverse: true, data: ["Call (CE)", "Put (PE)"], axisLabel: { color: c.paper, fontSize: 12 }, axisTick: { show: false } },
       series: [
-        { name: "At the open", type: "bar", barMaxWidth: 16, itemStyle: { color: c.muted, borderRadius: 3 }, data: [r1(ce.open), r1(pe.open)], label: { show: true, position: "right", color: c.paper, fontSize: 11 } },
-        { name: "Now", type: "bar", barMaxWidth: 16, itemStyle: { color: mode === "fixed" ? c.brass : c.info, borderRadius: 3 }, data: [r1(ce.current), r1(pe.current)], label: { show: true, position: "right", color: c.paper, fontSize: 11 } },
+        { name: "At the open", type: "bar", barMaxWidth: 20, barGap: "15%", barCategoryGap: "30%", itemStyle: { color: c.muted, borderRadius: 3 }, data: [r1(ce.open), r1(pe.open)], label: { show: true, position: "right", color: c.paper, fontSize: 12 } },
+        { name: "Now", type: "bar", barMaxWidth: 20, itemStyle: { color: mode === "fixed" ? c.brass : c.info, borderRadius: 3 }, data: [r1(ce.current), r1(pe.current)], label: { show: true, position: "right", color: c.paper, fontSize: 11 } },
       ],
     } as EChartsCoreOption;
   }, [tr, c, mode]);
@@ -195,8 +197,8 @@ export function StraddleGlance({ d, mode, setMode }: { d: StraddleDecay; mode: M
               </button>
             ))}
           </div>
-          {change && <div className="mt-3"><div className="mb-1 text-xs text-muted">Change in premium since the open, in points (below zero = premium has decayed; NIFTY on the right axis)</div><div className="h-[220px]"><EChart group="sdi" option={change} ariaLabel="Change in straddle premium since the open: fixed against rolling" /></div></div>}
-          {kept && <div className="mt-3"><div className="mb-1 text-xs text-muted">{mode === "fixed" ? `Call and put price of the fixed ${tr.fixed.strike} straddle: at the open and now (points)` : `Call and put price of the at-the-money strike: at the first sample (${tr.fixed.strike}) and now (${tr.atm_now ?? MISSING}). They are different strikes, so compare the level, not the decay`}</div><div className="h-[130px]"><EChart option={kept} ariaLabel="Call and put premium at the open and now for the followed position" /></div></div>}
+          {change && <div className="mt-3"><div className="mb-1 text-xs text-muted">Change in premium since the open, in points (below zero = premium has decayed; NIFTY on the right axis)</div><div className="h-[250px]"><EChart group="sdi" option={change} ariaLabel="Change in straddle premium since the open: fixed against rolling" /></div></div>}
+          {kept && <div className="mt-3"><div className="mb-1 text-xs text-muted">{mode === "fixed" ? `Call and put price of the fixed ${tr.fixed.strike} straddle: at the open and now (points)` : `Call and put price of the at-the-money strike: at the first sample (${tr.fixed.strike}) and now (${tr.atm_now ?? MISSING}). They are different strikes, so compare the level, not the decay`}</div><div className="h-[170px]"><EChart option={kept} ariaLabel="Call and put premium at the open and now for the followed position" /></div></div>}
         </section>
       )}
 
