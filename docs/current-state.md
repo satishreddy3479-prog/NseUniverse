@@ -504,3 +504,4 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 - Swing page reorganised (D142): an overview of the five tests (official book, live price watch, live paper ledger, 1-minute shadow book, backtest) and four sections (Official paper book, Live tests, Backtest, Rules); no rule changed.
 - Swing: two separate paper books (D143). The Live tab is one portfolio page (analytics, equity curve recorded from 12 Nov 2026 close, stops and targets, dated trades and events); the live price watch and live ledger panels were removed from the page (ledger still records on the server).
 - Swing: the evening scan hands the same candidate list to both books; the live book keeps its own copy and reads nothing of the official book (D144).
+- Market Intelligence redesigned (D145): a plain-language reading and evidence bars on the Overview, five tabs (Overview, Evidence, Signals and alerts, Timeline, Data and method); no calculation changed.

@@ -4,7 +4,6 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { Capabilities, asOf } from "../components/intelligence/Capabilities";
 import { AlertsPanel } from "../components/intelligence/Insight";
-import { SectionNav } from "../components/intelligence/SectionNav";
 import type { AlertRow, Capability } from "../lib/intelligence";
 
 const alert = (id: number, severity: string): AlertRow => ({ id, at: "2026-11-11T05:00:00Z", kind: `Kind ${id}`, severity, direction: "neutral", text: `text ${id}`, evidence: [], confirmation: "holds", invalidation: "reverses" } as unknown as AlertRow);
@@ -35,23 +34,6 @@ describe("alert centre", () => {
     render(<AlertsPanel alerts={[alert(1, "high")]} />);
     fireEvent.click(screen.getByRole("button", { name: "Medium 0" }));
     expect(screen.getByTestId("mi-no-alerts-filtered").textContent).toContain("No medium alert");
-  });
-});
-
-describe("section navigator", () => {
-  it("lists every section as a link and scrolls to the target", () => {
-    const scrolled: string[] = [];
-    document.body.innerHTML = "";
-    const target = document.createElement("div");
-    target.id = "mi-b";
-    target.scrollIntoView = () => { scrolled.push("mi-b"); };
-    document.body.appendChild(target);
-    render(<SectionNav items={[{ id: "mi-a", label: "Alpha" }, { id: "mi-b", label: "Beta" }]} />);
-    const links = screen.getAllByRole("link");
-    expect(links.map((l) => l.textContent)).toEqual(["Alpha", "Beta"]);
-    fireEvent.click(screen.getByRole("link", { name: "Beta" }));
-    expect(scrolled).toEqual(["mi-b"]);
-    expect(screen.getByRole("navigation", { name: /Sections/ }).className).toContain("sticky");
   });
 });
 

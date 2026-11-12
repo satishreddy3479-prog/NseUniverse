@@ -1,6 +1,7 @@
 // NIFTY 50 Market Intelligence page: renders what the aggregation service returned, and says plainly what is missing. Numbers are fixtures.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MarketIntelligence } from "../pages/MarketIntelligence";
@@ -89,8 +90,12 @@ function view(summary: unknown, tl: unknown = timeline, status = 200) {
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter><MarketIntelligence /></MemoryRouter></QueryClientProvider>);
 }
 
+// The page is five tabs; a test opens the tab that holds what it checks (the address hash picks the first one) and, when it checks two places, clicks to the other.
+const itIn = (tab: string, name: string, fn: () => Promise<void> | void) => it(name, async () => { window.location.hash = `#${tab}`; try { await fn(); } finally { window.location.hash = ""; } });
+const openTab = async (name: RegExp) => userEvent.click(await screen.findByRole("tab", { name }));
+
 describe("Market Intelligence page", () => {
-  it("shows direction, score, confidence with its parts, regime and volatility regime in the first block", async () => {
+  itIn("method", "shows direction, score, confidence with its parts, regime and volatility regime in the first block", async () => {
     view(base);
     const strip = await screen.findByTestId("mi-command");
     expect(within(strip).getByTestId("mi-class").textContent).toBe("Bullish");
@@ -111,13 +116,14 @@ describe("Market Intelligence page", () => {
     expect(within(strip).getByTestId("mi-provisional").textContent).toContain("not a probability that the direction is right");
     expect(within(strip).getByTestId("mi-provisional").textContent).toContain("not a prediction");
   });
-  it("says when conflicting groups have capped the confidence", async () => {
+  itIn("method", "says when conflicting groups have capped the confidence", async () => {
     view({ ...base, sentiment: { ...base.sentiment, confidence: 40, agreement: 0.4, confidence_parts: { coverage_factor: 1, agreement: 0.4, freshness: 1, conflict_cap_applied: true } } });
     expect((await screen.findByTestId("mi-command")).textContent).toContain("capped: groups conflict");
   });
-  it("reports a failed input and an engine with no data instead of scoring it neutral", async () => {
+  itIn("method", "reports a failed input and an engine with no data instead of scoring it neutral", async () => {
     view(base);
     expect((await screen.findByTestId("mi-quality")).textContent).toContain("Inputs not available: gex");
+    await openTab(/Evidence/);
     const vol = screen.getByTestId("mi-engine-volatility");
     expect(vol.textContent).toContain("Unavailable");
     expect(vol.textContent).toContain("no data");
@@ -130,11 +136,12 @@ describe("Market Intelligence page", () => {
     expect(flow.textContent).toContain("Conflicting: Price versus VWAP");
     expect(flow.textContent).toContain("overlap adjustment: weight 0.5: shares price with another group");
   });
-  it("shows INSUFFICIENT DATA instead of a score when coverage is too low, and no scenarios", async () => {
+  itIn("method", "shows INSUFFICIENT DATA instead of a score when coverage is too low, and no scenarios", async () => {
     view({ ...base, sentiment: { ...base.sentiment, score: null, class: "INSUFFICIENT DATA – SENTIMENT UNRELIABLE", confidence: null, reason: "2 engines available (need 3) with coverage 45% (need 55%)", agreement: null }, scenarios: { available: false, label: "x", reason: "no data" } });
     expect((await screen.findByTestId("mi-class")).textContent).toBe("INSUFFICIENT DATA – SENTIMENT UNRELIABLE");
     expect(screen.getByTestId("mi-score").textContent).toContain("2 engines available (need 3)");
-    expect(screen.getByTestId("mi-scenarios").textContent).toContain("Scenarios need a fused sentiment");
+    await openTab(/Signals/);
+    expect((await screen.findByTestId("mi-scenarios")).textContent).toContain("Scenarios need a fused sentiment");
   });
   it("lists the pulse values from the service, including the VIX close label", async () => {
     view(base);
@@ -152,12 +159,12 @@ describe("Market Intelligence page", () => {
     expect(tips).toContain("not used as an intraday volatility signal");
     expect(tips).toContain("Dealer positioning is not observed");
   });
-  it("generates the interpretation from the readings and states what would weaken the view", async () => {
+  itIn("signals", "generates the interpretation from the readings and states what would weaken the view", async () => {
     view(base);
     expect((await screen.findByTestId("mi-interpretation")).textContent).toContain("Market sentiment is bullish (score +42");
     expect(screen.getByTestId("mi-invalidation").textContent).toContain("a hold below 24050 (VWAP)");
   });
-  it("shows divergences with status, previous reading and invalidation, and the checks that cannot be made", async () => {
+  itIn("signals", "shows divergences with status, previous reading and invalidation, and the checks that cannot be made", async () => {
     view(base);
     const d = await screen.findByTestId("mi-div");
     expect(d.textContent).toContain("Price versus futures CVD");
@@ -167,7 +174,7 @@ describe("Market Intelligence page", () => {
     expect(screen.getByTestId("mi-divergences").textContent).toContain("never a reversal signal");
     expect(screen.getByTestId("mi-divergences").textContent).toContain("OI migration versus price");
   });
-  it("labels the scenarios as heuristic scores and shows the horizon ranges as estimates", async () => {
+  itIn("signals", "labels the scenarios as heuristic scores and shows the horizon ranges as estimates", async () => {
     view(base);
     const sc = await screen.findByTestId("mi-scenarios");
     expect(sc.textContent).toContain("not probabilities");
@@ -176,7 +183,7 @@ describe("Market Intelligence page", () => {
     expect(within(sc).getByTestId("mi-horizons").textContent).toContain("±45");
     expect(sc.textContent).toContain("no predictive accuracy is claimed");
   });
-  it("the timeline shows only recorded minutes and lets you inspect one", async () => {
+  itIn("timeline", "the timeline shows only recorded minutes and lets you inspect one", async () => {
     view(base);
     expect((await screen.findByTestId("mi-minute")).textContent).toContain("Bullish trend");
     fireEvent.change(screen.getByLabelText("Inspect minute"), { target: { value: "0" } });
@@ -184,17 +191,17 @@ describe("Market Intelligence page", () => {
     expect(screen.getByTestId("mi-minute").textContent).toContain("24,050");
     expect(screen.getByTestId("mi-timeline").textContent).toContain("not reconstructed");
   });
-  it("an empty timeline says nothing was recorded rather than inventing history", async () => {
+  itIn("timeline", "an empty timeline says nothing was recorded rather than inventing history", async () => {
     view(base, { ...timeline, points: [], recorded: 0 });
     expect((await screen.findByTestId("mi-timeline-empty")).textContent).toContain("not reconstructed");
   });
-  it("shows the alerts with evidence, confirmation and invalidation", async () => {
+  itIn("signals", "shows the alerts with evidence, confirmation and invalidation", async () => {
     view(base);
     const a = await screen.findByTestId("mi-alert");
     expect(a.textContent).toContain("VWAP reclaim");
     expect(a.textContent).toContain("Confirmed by: holds for 5 minutes. Invalidated if: price crosses back.");
   });
-  it("the detail panels link to the existing analysis pages and keep their notes", async () => {
+  itIn("method", "the detail panels link to the existing analysis pages and keep their notes", async () => {
     view(base);
     const d = await screen.findByTestId("mi-details");
     expect(within(d).getAllByRole("link", { name: /Open the full analysis/ }).map((l) => l.getAttribute("href"))).toEqual(["/tools/strike-positioning", "/tools/gamma-exposure", "/tools/volatility-skew", "/tools/future-flow"]);
@@ -205,7 +212,7 @@ describe("Market Intelligence page", () => {
     expect(d.textContent).toContain("India VIX – Last Daily Close");
     expect(d.textContent).toContain("14.10 (2026-11-06)");
   });
-  it("shows the rolling CVD windows and says why a window cannot be formed", async () => {
+  itIn("method", "shows the rolling CVD windows and says why a window cannot be formed", async () => {
     view(base);
     const r = await screen.findByTestId("mi-rolling");
     expect(r.textContent).toContain("Rolling futures CVD (Proxy)");
@@ -220,7 +227,7 @@ describe("Market Intelligence page", () => {
     expect(a.textContent).toContain("+16.00"); // acceleration
     expect(a.textContent).toContain("never subtracted");
   });
-  it("lists AVAILABLE, PARTIAL and UNAVAILABLE capabilities with source timestamps and links", async () => {
+  itIn("method", "lists AVAILABLE, PARTIAL and UNAVAILABLE capabilities with source timestamps and links", async () => {
     view(base);
     const c = await screen.findByTestId("mi-capabilities");
     expect(within(c).getByTestId("mi-cap-session_cvd").textContent).toContain("AVAILABLE");
@@ -231,16 +238,17 @@ describe("Market Intelligence page", () => {
     expect(within(c).getByTestId("mi-cap-stock_futures").textContent).toContain("not subscribed or stored");
     expect(within(c).getByRole("link", { name: "Session CVD (futures)" }).getAttribute("href")).toBe("/tools/future-flow");
   });
-  it("documents the evidence-overlap corrections", async () => {
+  itIn("method", "documents the evidence-overlap corrections", async () => {
     view(base);
     expect((await screen.findByTestId("mi-overlap")).textContent).toContain("Aggregate command-centre score");
   });
-  it("marks a group stale when its feed has stopped, without hiding the dashboard", async () => {
+  itIn("evidence", "marks a group stale when its feed has stopped, without hiding the dashboard", async () => {
     view({ ...base, engines: base.engines.map((e) => (e.key === "orderflow" ? { ...e, freshness: { ...e.freshness, fresh: false, age_s: 600 } } : e)) });
     expect((await screen.findByTestId("mi-engine-orderflow")).textContent).toContain("STALE · 10 min old");
+    await openTab(/Data & method/);
     expect((await screen.findByTestId("mi-quality")).textContent).toContain("Stale, not shown as live: B. Order-flow proxies");
   });
-  it("documents the method and each input's freshness", async () => {
+  itIn("method", "documents the method and each input's freshness", async () => {
     view(base);
     expect((await screen.findByTestId("mi-method")).textContent).toContain("Σ(group score × effective weight)");
     expect(screen.getByTestId("mi-method").textContent).toContain("never a probability");
@@ -255,7 +263,7 @@ describe("Market Intelligence page", () => {
 });
 
 describe("Corrections: weights, VWAP instrument, gamma flip, observations", () => {
-  it("shows the weight effective date, source, load time and valid constituents and never calls them live", async () => {
+  itIn("evidence", "shows the weight effective date, source, load time and valid constituents and never calls them live", async () => {
     view(base);
     const q = (await screen.findByTestId("hw-quality")).textContent ?? "";
     expect(q).toContain("Index weights (not live)");
@@ -265,14 +273,14 @@ describe("Corrections: weights, VWAP instrument, gamma flip, observations", () =
     expect(q).toContain("Valid constituents: 4");
     expect(q).not.toMatch(/live weights/i);
   });
-  it("labels the VWAP tile as the future against its own VWAP, not spot", async () => {
+  itIn("evidence", "labels the VWAP tile as the future against its own VWAP, not spot", async () => {
     view(base);
     const nifty = await screen.findByTestId("hw-nifty");
     expect(nifty.textContent).toContain("Futures vs futures VWAP");
     expect(nifty.textContent).toContain("not spot");
     expect(nifty.textContent).not.toContain("NIFTY vs VWAP");
   });
-  it("shows the gamma flip in points and percent with its support and the range it moves in", async () => {
+  itIn("method", "shows the gamma flip in points and percent with its support and the range it moves in", async () => {
     const d = { ...base, panels: { ...base.panels, gex: { ...base.panels.gex, flip_distance_pts: 100, flip_range: [23900, 24100] as [number, number], flip_support: { status: "unstable" as const, reasons: ["moves 200 points (0.83 % of spot) with the strike set or a 10 % OI disagreement"] } } } };
     view(d);
     const g = await screen.findByTestId("mi-detail-gex");
@@ -281,7 +289,7 @@ describe("Corrections: weights, VWAP instrument, gamma flip, observations", () =
     expect(g.textContent).toContain("23,900 to 24,100");
     expect((await screen.findByTestId("mi-flip-reasons")).textContent).toContain("shown as calculated, not corrected");
   });
-  it("lists the side-by-side readings and says none is a reversal signal", async () => {
+  itIn("signals", "lists the side-by-side readings and says none is a reversal signal", async () => {
     view({ ...base, observations: [{ id: "up_oi_down", title: "Futures open interest falling while price rises", reading: "NIFTY future +0.30% while futures OI changed -20,000 over 15 minutes", explanation: "Short covering can lift price. This is a description of conflicting or confirming readings, not a reversal signal.", reversal_signal: false }] });
     const o = await screen.findByTestId("mi-observations");
     expect(o.textContent).toContain("never read as a reversal");
@@ -303,7 +311,7 @@ const vol: VolDetail = {
 };
 
 describe("Volatility evidence", () => {
-  it("shows separate CE and PE readings, risk reversals now and at the previous close, ATM apart from skew, each contribution and why the verdict is conflicting", async () => {
+  itIn("method", "shows separate CE and PE readings, risk reversals now and at the previous close, ATM apart from skew, each contribution and why the verdict is conflicting", async () => {
     view({ ...base, engines: base.engines.map((e) => (e.key === "volatility" ? { ...e, detail: vol } : e)) });
     const v = await screen.findByTestId("vol-evidence");
     expect(within(v).getByTestId("vol-verdict").textContent).toBe("CONFLICTING");
@@ -334,7 +342,7 @@ describe("Volatility evidence", () => {
 });
 
 describe("Intraday ML panel", () => {
-  it("says what the model does, where it stands, how it scored against the baselines and why it is not trusted yet", async () => {
+  itIn("evidence", "says what the model does, where it stands, how it scored against the baselines and why it is not trusted yet", async () => {
     view(base);
     const p = await screen.findByTestId("ml-panel");
     expect(within(p).getByTestId("ml-what").textContent).toContain("tested against simple baselines on later sessions only");
@@ -352,19 +360,19 @@ describe("Intraday ML panel", () => {
     expect(p.textContent).toContain("research only, not part of the sentiment score");
     expect(within(p).getByRole("link", { name: /intraday analysis/ }).getAttribute("href")).toBe("/analysis");
   });
-  it("says plainly when no evaluation has been stored yet, and when the service did not answer", async () => {
+  itIn("evidence", "says plainly when no evaluation has been stored yet, and when the service did not answer", async () => {
     view({ ...base, intraday_ml: { ...ml, last_evaluation: null } });
     expect((await screen.findByTestId("ml-none")).textContent).toContain("No evaluation has been stored yet");
     expect(screen.getByTestId("ml-verdict").textContent).toBe("Not evaluated yet");
   });
-  it("shows an explicit state when the research service is not answering", async () => {
+  itIn("evidence", "shows an explicit state when the research service is not answering", async () => {
     view({ ...base, intraday_ml: null });
     expect((await screen.findByTestId("ml-panel")).textContent).toContain("did not answer");
   });
 });
 
 describe("Heavyweight Intelligence panel", () => {
-  it("shows each stock with weight, price change, CVD proxy, momentum, VWAP, bias and feed freshness", async () => {
+  itIn("evidence", "shows each stock with weight, price change, CVD proxy, momentum, VWAP, bias and feed freshness", async () => {
     view(base);
     const panel = await screen.findByTestId("hw-panel");
     expect(within(panel).getByTestId("hw-proxy").textContent).toBe("CVD PROXY");
@@ -382,7 +390,7 @@ describe("Heavyweight Intelligence panel", () => {
     expect(row.textContent).toContain("CVD PROXY");
     expect(within(panel).getByTestId("hw-row-ICICIBANK").textContent).toContain("Selling · below VWAP (confirmed)");
   });
-  it("marks an unavailable stock instead of substituting another, and never presents a partial aggregate as five stocks", async () => {
+  itIn("evidence", "marks an unavailable stock instead of substituting another, and never presents a partial aggregate as five stocks", async () => {
     view(base);
     const panel = await screen.findByTestId("hw-panel");
     const tcs = within(panel).getByTestId("hw-row-TCS");
@@ -392,7 +400,7 @@ describe("Heavyweight Intelligence panel", () => {
     expect(panel.textContent).toContain("4 of 5 stocks (PARTIAL)");
     expect(panel.textContent).toContain("unavailable: 0 of 5 stocks valid (need 3 and 60% of the weight)"); // the 30-minute aggregate
   });
-  it("says in words why the whole-day aggregate is not shown, and lists the stocks as cards for a phone", async () => {
+  itIn("evidence", "says in words why the whole-day aggregate is not shown, and lists the stocks as cards for a phone", async () => {
     const part = hw.stocks.map((x, i) => (i < 2 ? { ...x, session: { ...x.session, norm: null } } : x));
     view({ ...base, heavyweights: { ...hw, stocks: part, aggregate: { ...hw.aggregate, session: { score: null, valid: 3, of: 5, weight_share: 0.573, status: "unavailable: 3 of 5 stocks valid (need 3 and 60% of the weight)" } } } });
     const panel = await screen.findByTestId("hw-panel");
@@ -403,7 +411,7 @@ describe("Heavyweight Intelligence panel", () => {
     expect(within(panel).getByTestId("hw-cards").querySelectorAll("li")).toHaveLength(5);
     expect(within(panel).getByTestId("hw-cards")).toHaveTextContent("part-day only");
   });
-  it("shows the aggregate windows, momentum, acceleration, participation breadth and NIFTY context", async () => {
+  itIn("evidence", "shows the aggregate windows, momentum, acceleration, participation breadth and NIFTY context", async () => {
     view(base);
     const panel = await screen.findByTestId("hw-panel");
     expect(panel.textContent).toContain("Aggregate session");
@@ -419,16 +427,16 @@ describe("Heavyweight Intelligence panel", () => {
     expect(within(panel).getByTestId("hw-nifty").textContent).toContain("above");
     expect(panel.querySelectorAll('[role="img"]').length).toBe(2); // the aggregate-versus-NIFTY chart and the five-stock contribution chart
   });
-  it("warns that the index weights are stale and says where they came from", async () => {
+  itIn("evidence", "warns that the index weights are stale and says where they came from", async () => {
     view(base);
     expect((await screen.findByTestId("hw-stale-weights")).textContent).toContain("132 days old");
     expect(screen.getByTestId("hw-quality").textContent).toContain("effective 2026-06-30, source NSE index tracker");
   });
-  it("shows an explicit unavailable state when no heavyweight flow is tracked", async () => {
+  itIn("evidence", "shows an explicit unavailable state when no heavyweight flow is tracked", async () => {
     view({ ...base, heavyweights: { ...hw, available: false, reason: "no heavyweight flow is tracked yet", stocks: [] } });
     expect((await screen.findByTestId("hw-panel")).textContent).toContain("Nothing is estimated in its place");
   });
-  it("lists the divergence signals with their evidence and timestamp in the divergence panel", async () => {
+  itIn("signals", "lists the divergence signals with their evidence and timestamp in the divergence panel", async () => {
     const sig = { id: "hw_up_cvd_down", name: "NIFTY rising while heavyweight CVD falls", direction: "bearish", severity: "medium" as const, kind: "divergence" as const, reading: "NIFTY +0.30% while aggregate heavyweight CVD proxy is -40", explanation: "The index is rising against estimated selling pressure in its five largest stocks.", invalidation: "aggregate CVD turns positive or NIFTY stops rising",
       evidence: ["aggregate 15-min -40", "NIFTY +0.30% (15 min)", "participation: Heavyweight divergence"], at: "2026-11-09T04:29:58Z", status: "early warning" as const, since: null, previous: null };
     view({ ...base, divergences: [sig] });
@@ -464,7 +472,7 @@ describe("stock futures, rollover and the index VWAP estimate", () => {
     covered: 3, of: 50, buildup_counts: { "Long buildup": 1, "Long unwinding": 1, "Short buildup": 1 }, rollover_pct: 7.4, rollover_stocks: 2, note: "Open interest change is against the first reading of the session.",
     nifty: { available: true, rollover_pct: 7.5, rollover_pct_at_open: 5.0, roll_cost_pts: 80, roll_cost_pct: 0.316, cur_oi: 900000, next_oi: 72000 }, tokens_note: "stock futures subscribed: 50 of 50 current-month contracts", baseline_at: "2026-11-12T07:31:00+00:00",
   };
-  it("shows the NIFTY rollover, the buildup counts, a chart and every stock as a table row and a phone card", async () => {
+  itIn("evidence", "shows the NIFTY rollover, the buildup counts, a chart and every stock as a table row and a phone card", async () => {
     view({ ...base, stock_futures: sf });
     const p = await screen.findByTestId("sf-panel");
     const tiles = within(p).getByTestId("sf-tiles");
@@ -484,7 +492,7 @@ describe("stock futures, rollover and the index VWAP estimate", () => {
     expect(within(p).getByTestId("sf-note")).toHaveTextContent("against the first reading of the session");
     expect(within(p).getByTestId("sf-note")).toHaveTextContent("not who is long or short");
   });
-  it("says plainly when no stock future has a quote", async () => {
+  itIn("evidence", "says plainly when no stock future has a quote", async () => {
     view({ ...base, stock_futures: { ...sf, rows: [], covered: 0, nifty: { available: false, reason: "needs a fresh quote of both" }, tokens_note: "stock futures subscribed: 0 of 50" } });
     expect(await screen.findByTestId("sf-none")).toHaveTextContent("Nothing is estimated in its place");
     expect(screen.getByTestId("sf-none")).toHaveTextContent("0 of 50");
@@ -539,5 +547,58 @@ describe("turn watch", () => {
   it("no sustained change: a calm sentence, not a blank", async () => {
     view({ ...base, turn_watch: { ...tw, lean: "none", signals: [] } });
     expect((await screen.findByTestId("tw-signals")).textContent).toContain("No sustained change right now");
+  });
+});
+
+describe("the redesigned page: a reading first, five tabs", () => {
+  it("opens on the Overview with the reading, the evidence bars and the key numbers, and not the detail panels", async () => {
+    view(base);
+    const v = await screen.findByTestId("mi-verdict");
+    expect(within(v).getByTestId("mi-verdict-label")).toHaveTextContent("Bullish");
+    expect(within(v).getByTestId("mi-verdict-headline")).toHaveTextContent("score +42 out of 100");
+    expect(v).toHaveTextContent("How far can I trust it?");
+    expect(v).toHaveTextContent("What changed in 20 minutes?");
+    expect(v).toHaveTextContent("What kind of market is it?");
+    expect(within(v).getByTestId("mi-reasons")).toHaveTextContent("Derivatives positioning"); // the strongest group on the bullish side, by name
+    expect(within(v).getByTestId("mi-watch")).toHaveTextContent("The bullish view weakens if"); // what would change the view, from the scenarios
+    expect(within(v).getByTestId("mi-verdict-foot")).toHaveTextContent("not a forecast");
+    const bars = screen.getByTestId("mi-bars");
+    expect(within(bars).getAllByTestId("mi-bar")).toHaveLength(base.engines.length); // one bar per evidence group
+    expect(within(bars).getByRole("img", { name: /Derivatives positioning: \+55/ })).toBeInTheDocument();
+    expect(within(bars).getByRole("img", { name: /Volatility: no reading/ })).toBeInTheDocument(); // a group with no reading is not drawn as zero
+    expect(screen.getByTestId("mi-pulses")).toBeInTheDocument();
+    expect(screen.getByTestId("tw-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("hw-nifty")).toBeNull(); // the evidence panels live in the Evidence tab
+    expect(screen.queryByTestId("mi-sources")).toBeNull();
+  });
+
+  it("has five tabs, shows the alert count on Signals, and moves between them", async () => {
+    view(base);
+    await screen.findByTestId("mi-verdict");
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Overview", "Evidence", `Signals & alerts (${base.alerts.length})`, "Timeline", "Data & method"]);
+    await openTab(/Evidence/);
+    expect(await screen.findByTestId("mi-engines")).toBeInTheDocument();
+    expect(screen.queryByTestId("mi-verdict")).toBeNull();
+    expect(window.location.hash).toBe("#evidence"); // a reload or a shared link opens the same tab
+    await openTab(/Signals/);
+    expect(await screen.findByTestId("mi-alerts")).toBeInTheDocument();
+    await openTab(/Data & method/);
+    expect(await screen.findByTestId("mi-sources")).toBeInTheDocument();
+    window.location.hash = "";
+  });
+
+  it("the evidence bars link on to the Evidence tab", async () => {
+    view(base);
+    await userEvent.click(await screen.findByRole("button", { name: /See the evidence behind each/ }));
+    expect(await screen.findByTestId("mi-engines")).toBeInTheDocument();
+    window.location.hash = "";
+  });
+
+  it("says there is no reading, instead of inventing a direction, when coverage is too low", async () => {
+    view({ ...base, sentiment: { ...base.sentiment, score: null, class: "INSUFFICIENT DATA – SENTIMENT UNRELIABLE", confidence: null, signal_quality: null, reason: "2 engines available (need 3)" } });
+    const v = await screen.findByTestId("mi-verdict");
+    expect(within(v).getByTestId("mi-verdict-label")).toHaveTextContent("No reading");
+    expect(within(v).getByTestId("mi-verdict-headline")).toHaveTextContent("too little data to read a direction");
+    expect(v).toHaveTextContent("2 engines available (need 3)");
   });
 });
