@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -61,7 +61,15 @@ function mount(report: Reply<SwingReport> = swingReport(), paper: Reply<SwingPap
 }
 afterEach(() => vi.unstubAllGlobals());
 
-const openTab = async (name: string) => userEvent.click(await screen.findByRole("tab", { name }));
+// The page has four sections (Official paper book, Live tests, Backtest, Rules); the backtest and the live tests have their own sub-tabs.
+const click = async (name: string) => userEvent.click(await screen.findByRole("tab", { name }));
+const openTab = async (name: string) => {
+  if (name === "Backtest") return click("Backtest (history)");
+  if (name === "Backtest trades") { await click("Backtest (history)"); return click("Trades"); }
+  if (name === "Robustness") { await click("Backtest (history)"); return click("Robustness"); }
+  if (name === "Live") return click("Live tests (shadow)");
+  return click(name);
+};
 
 describe("Swing trading page: paper trading", () => {
   it("opens on the paper book, which is in the menu, with the simulated-only warning and the book figures", async () => {
@@ -70,7 +78,7 @@ describe("Swing trading page: paper trading", () => {
     expect(await screen.findByRole("heading", { name: "Swing trading", level: 1 }, { timeout: 10_000 })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Strategy Builder/ })); // the menu entry lives in this drop-down
     expect(await screen.findByRole("link", { name: /Swing trading/ })).toHaveAttribute("href", "/swing");
-    expect(await screen.findByRole("tab", { name: "Paper trading", selected: true })).toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: "Official paper book", selected: true })).toBeInTheDocument();
     expect(await screen.findByText("Paper trading: simulated, no real orders")).toBeInTheDocument();
     const figures = screen.getByRole("region", { name: "Paper book figures" });
     expect(within(figures).getByText("+2.45%")).toBeInTheDocument();
@@ -150,10 +158,10 @@ describe("Swing trading page: paper trading", () => {
 
   it("tabs follow the arrow keys", async () => {
     mount();
-    const first = await screen.findByRole("tab", { name: "Paper trading" });
+    const first = await screen.findByRole("tab", { name: "Official paper book" });
     first.focus();
     await userEvent.keyboard("{ArrowRight}");
-    expect(screen.getByRole("tab", { name: "Backtest", selected: true })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Live tests (shadow)", selected: true })).toBeInTheDocument();
   });
 });
 
@@ -247,6 +255,7 @@ describe("Swing trading page: Run scan now", () => {
 describe("Swing trading page: live prices", () => {
   it("shows live prices, volume pace, distance to trigger, stop and targets, and says it is shadow mode", async () => {
     mount();
+    await openTab("Live");
     expect(await screen.findByText(/Shadow mode: shown and logged/)).toBeInTheDocument();
     const table = await screen.findByRole("table", { name: "Live prices for watched stocks" });
     const rows = within(table).getAllByRole("row");
@@ -269,6 +278,7 @@ describe("Swing trading page: live prices", () => {
     mount(swingReport(), paperView(), { started: true }, liveView({
       market: "closed", feed_state: "waiting for data", note: "Kotak instrument file not loaded (OSError); it retries every 10 minutes", events: [],
     }));
+    await openTab("Live");
     expect(await screen.findByTestId("live-status")).toHaveTextContent("closed (09:15-15:30 IST)");
     expect(screen.getByTestId("live-status")).toHaveTextContent("decisions run only during the session");
     expect(screen.getByText(/Kotak instrument file not loaded/)).toBeInTheDocument();
@@ -280,6 +290,7 @@ describe("Swing trading page: live prices", () => {
     v.watching[0] = { ...v.watching[0]!, stale: true, state: "stale", has_token: false };
     v.watching[1] = { ...v.watching[1]!, state: "stop_hit" };
     mount(swingReport(), paperView(), { started: true }, v);
+    await openTab("Live");
     const table = await screen.findByRole("table", { name: "Live prices for watched stocks" });
     const rows = within(table).getAllByRole("row");
     expect(rows[1]).toHaveTextContent("(stale 1 s)"); // the feed tick age is shown with the stale mark
@@ -289,9 +300,47 @@ describe("Swing trading page: live prices", () => {
 
   it("tells you when there is nothing to watch, and when the live view cannot be read", async () => {
     mount(swingReport(), paperView(), { started: true }, liveView({ watching: [], events: [] }));
+    await openTab("Live");
     expect(await screen.findByText(/Nothing to watch/)).toBeInTheDocument();
+    cleanup();
     mount(swingReport(), paperView(), { started: true }, null);
+    await openTab("Live");
     expect((await screen.findAllByRole("alert")).some((a) => /Could not read the live view/.test(a.textContent ?? ""))).toBe(true);
   });
 });
 
+
+describe("Swing trading page: what is being tested", () => {
+  it("lists every way the rules are run, with what each one does to the official book", async () => {
+    mount();
+    const box = await screen.findByTestId("swing-modes", undefined, { timeout: 10_000 });
+    expect(within(box).getByTestId("swing-modes-summary")).toHaveTextContent("5 ways the rules are run: 1 official book, 3 live shadow tests that change nothing, and 1 backtest of the past.");
+    for (const id of ["official", "watch", "ledger", "minute", "backtest"]) expect(within(box).getByTestId(`swing-mode-${id}`)).toBeInTheDocument();
+    const minute = within(box).getByTestId("swing-mode-minute");
+    expect(minute).toHaveTextContent("Completed 1-minute candles");
+    expect(minute).toHaveTextContent("The next candle's open");
+    expect(minute).toHaveTextContent("Shadow: a test, changes nothing");
+    expect(within(box).getByTestId("swing-mode-official")).toHaveTextContent("It is the book");
+    expect(within(box).getByTestId("swing-mode-backtest")).toHaveTextContent("History: not live");
+  });
+
+  it("keeps the official book free of the live tests, and each section says what kind of result it is", async () => {
+    mount();
+    expect(await screen.findByTestId("role-official")).toHaveTextContent("nothing on the Live tests tab changes it");
+    expect(screen.queryByText("Live prices from your Kotak feed")).toBeNull();
+    expect(screen.queryByTestId("ledger-note")).toBeNull();
+    await openTab("Live");
+    expect(await screen.findByTestId("role-shadow")).toHaveTextContent("None of them places an order");
+    expect(await screen.findByText("Live prices from your Kotak feed")).toBeInTheDocument();
+    await openTab("Backtest");
+    expect(await screen.findByTestId("role-history")).toHaveTextContent("not live and not a forecast");
+  });
+
+  it("a mode card opens its own section and sub-tab", async () => {
+    mount();
+    const card = await screen.findByTestId("swing-mode-minute", undefined, { timeout: 10_000 });
+    await userEvent.click(within(card).getByRole("button", { name: /Open 1-minute candle shadow book/ }));
+    expect(await screen.findByRole("tab", { name: "Live tests (shadow)", selected: true })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "D · 1-minute candles", selected: true })).toBeInTheDocument();
+  });
+});

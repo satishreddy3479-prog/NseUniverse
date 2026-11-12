@@ -11,16 +11,28 @@ import { SwingLivePanel } from "../components/swing/SwingLivePanel";
 import { SwingPaper, type RunNote } from "../components/swing/SwingPaper";
 import { SwingRobustness } from "../components/swing/SwingRobustness";
 import { SwingRules } from "../components/swing/SwingRules";
+import { RoleBanner, SwingModes } from "../components/swing/SwingModes";
+import type { BacktestSub, LiveSub, SwingMode, TopTab } from "../lib/swingModes";
 import { SwingTrades } from "../components/swing/SwingTrades";
 import { TabPanel, Tabs, type TabDef } from "../components/swing/shared";
 import type { SwingReport } from "../lib/types";
 
+// Four sections, one question each: the official book (A), the live shadow tests (B, C, D), the backtest (E), and the rules behind all of them.
 const TABS: TabDef[] = [
-  { id: "paper", label: "Paper trading" },
-  { id: "overview", label: "Backtest" },
-  { id: "trades", label: "Backtest trades" },
-  { id: "robustness", label: "Robustness" },
+  { id: "paper", label: "Official paper book" },
+  { id: "live", label: "Live tests (shadow)" },
+  { id: "backtest", label: "Backtest (history)" },
   { id: "rules", label: "Rules & limits" },
+];
+const LIVE_TABS: TabDef[] = [
+  { id: "watch", label: "B · Live price watch" },
+  { id: "ledger", label: "C · Live paper ledger" },
+  { id: "minute", label: "D · 1-minute candles" },
+];
+const BACKTEST_TABS: TabDef[] = [
+  { id: "results", label: "Results" },
+  { id: "trades", label: "Trades" },
+  { id: "robustness", label: "Robustness" },
 ];
 
 function Loading({ what }: { what: string }) {
@@ -41,7 +53,10 @@ const MISSING_REPORT = (
 );
 
 export default function Swing() {
-  const [tab, setTab] = useState("paper");
+  const [tab, setTab] = useState<TopTab>("paper");
+  const [liveSub, setLiveSub] = useState<LiveSub>("watch");
+  const [btSub, setBtSub] = useState<BacktestSub>("results");
+  const openMode = (m: SwingMode) => { setTab(m.tab); if (m.tab === "live" && m.sub) setLiveSub(m.sub as LiveSub); if (m.tab === "backtest" && m.sub) setBtSub(m.sub as BacktestSub); };
   const [basis, setBasis] = useState<Basis>("net");
   const qc = useQueryClient();
   // while a scan runs, follow its progress every 3 seconds; otherwise every 5 minutes
@@ -50,7 +65,7 @@ export default function Swing() {
     refetchInterval: (q) => (q.state.data?.status.running ? 3_000 : 5 * 60_000),
   });
   const [runNote, setRunNote] = useState<RunNote | null>(null);
-  const live = useQuery({ queryKey: ["swing-live"], queryFn: api.swingLive, refetchInterval: 5_000, retry: false, enabled: tab === "paper" });
+  const live = useQuery({ queryKey: ["swing-live"], queryFn: api.swingLive, refetchInterval: 5_000, retry: false, enabled: tab === "paper" || tab === "live" });
   const run = useMutation({
     mutationFn: api.swingRun,
     onSuccess: (r) => {
@@ -59,7 +74,7 @@ export default function Swing() {
     },
     onError: (e) => setRunNote({ kind: "error", text: `Could not start the scan: ${e instanceof Error ? e.message : "unknown error"}` }),
   });
-  const report = useQuery({ queryKey: ["swing-report"], queryFn: api.swingReport, staleTime: 60_000, retry: false, enabled: tab !== "paper" });
+  const report = useQuery({ queryKey: ["swing-report"], queryFn: api.swingReport, staleTime: 60_000, retry: false, enabled: tab === "backtest" || tab === "rules" });
   const withReport = (render: (r: SwingReport) => ReactNode) =>
     report.isPending ? <Loading what="the backtest report" />
       : report.isError ? <Failed error={report.error} missing={MISSING_REPORT} />
@@ -85,30 +100,52 @@ export default function Swing() {
         )}
       </header>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Tabs tabs={TABS} value={tab} onChange={setTab} label="Swing trading sections" />
-        {tab === "overview" && report.data && (
-          <div role="group" aria-label="Show results" className="flex overflow-hidden rounded-sm border border-rule text-sm">
-            {(["net", "gross"] as Basis[]).map((b) => (
-              <button key={b} type="button" aria-pressed={basis === b} onClick={() => setBasis(b)}
-                className={`min-h-9 px-3 ${basis === b ? "bg-brass/20 font-medium text-paper" : "bg-slate-2 text-muted hover:text-paper"}`}>
-                {BASIS_LABEL[b]}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      <SwingModes onOpen={openMode} current={tab === "paper" ? "official" : tab === "live" ? liveSub : tab === "backtest" ? "backtest" : null} />
+
+      <Tabs tabs={TABS} value={tab} onChange={(t) => setTab(t as TopTab)} label="Swing trading sections" />
 
       {tab === "paper" && (
         <TabPanel id="paper">
+          <RoleBanner role="official">The positions, trades and equity below are the paper book. It is judged once a day on the daily bar, in the evening run; nothing on the Live tests tab changes it.</RoleBanner>
           {paper.isPending ? <Loading what="the paper book" />
             : paper.isError ? <ErrorNote title="Could not load the paper book" message={paper.error instanceof Error ? paper.error.message : "Unknown error"} />
-              : <SwingPaper view={paper.data} liveRows={live.data?.watching} market={live.data?.market} live={<><SwingLivePanel live={live.data} loading={live.isPending} error={live.error} /><SwingLedgerPanel /><SwingMinutePanel /></>} runPending={run.isPending} runNote={runNote} onRun={() => { setRunNote(null); run.mutate(); }} />}
+              : <SwingPaper view={paper.data} liveRows={live.data?.watching} market={live.data?.market} runPending={run.isPending} runNote={runNote} onRun={() => run.mutate()} />}
         </TabPanel>
       )}
-      {tab === "overview" && <TabPanel id="overview">{withReport((r) => <SwingOverview report={r} basis={basis} />)}</TabPanel>}
-      {tab === "trades" && <TabPanel id="trades">{withReport((r) => <SwingTrades report={r} />)}</TabPanel>}
-      {tab === "robustness" && <TabPanel id="robustness">{withReport((r) => <SwingRobustness report={r} />)}</TabPanel>}
+      {tab === "live" && (
+        <TabPanel id="live">
+          <RoleBanner role="shadow">Three live tests of the same rules on live prices. None of them places an order or changes the official book; each is compared with the official decisions every evening. Pick one below.</RoleBanner>
+          <div className="flex flex-col gap-3">
+            <Tabs tabs={LIVE_TABS} value={liveSub} onChange={(t) => setLiveSub(t as LiveSub)} label="Live tests" />
+            {liveSub === "watch" && <TabPanel id="watch"><SwingLivePanel live={live.data} loading={live.isPending} error={live.error} /></TabPanel>}
+            {liveSub === "ledger" && <TabPanel id="ledger"><SwingLedgerPanel /></TabPanel>}
+            {liveSub === "minute" && <TabPanel id="minute"><SwingMinutePanel /></TabPanel>}
+          </div>
+        </TabPanel>
+      )}
+      {tab === "backtest" && (
+        <TabPanel id="backtest">
+          <RoleBanner role="history">The daily rules replayed over past data, built on the research PC. It shows what the rules would have done, with and without costs; it is not live and not a forecast.</RoleBanner>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Tabs tabs={BACKTEST_TABS} value={btSub} onChange={(t) => setBtSub(t as BacktestSub)} label="Backtest views" />
+              {btSub === "results" && report.data && (
+                <div role="group" aria-label="Show results" className="flex overflow-hidden rounded-sm border border-rule text-sm">
+                  {(["net", "gross"] as Basis[]).map((b) => (
+                    <button key={b} type="button" aria-pressed={basis === b} onClick={() => setBasis(b)}
+                      className={`min-h-9 px-3 ${basis === b ? "bg-brass/20 font-medium text-paper" : "bg-slate-2 text-muted hover:text-paper"}`}>
+                      {BASIS_LABEL[b]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {btSub === "results" && <TabPanel id="results">{withReport((r) => <SwingOverview report={r} basis={basis} />)}</TabPanel>}
+            {btSub === "trades" && <TabPanel id="trades">{withReport((r) => <SwingTrades report={r} />)}</TabPanel>}
+            {btSub === "robustness" && <TabPanel id="robustness">{withReport((r) => <SwingRobustness report={r} />)}</TabPanel>}
+          </div>
+        </TabPanel>
+      )}
       {tab === "rules" && <TabPanel id="rules">{withReport((r) => <SwingRules report={r} config={paper.data?.config} />)}</TabPanel>}
     </div>
   );
