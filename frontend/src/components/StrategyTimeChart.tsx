@@ -93,7 +93,7 @@ export function StrategyTimeChart({ legs, historyExpiries, lotSize, modelDelta, 
   if (stats.now != null && stats.open != null) {
     lines.push(mode === "pnl"
       ? `P&L now ${money(stats.now)}, ${stats.now - stats.open >= 0 ? "up" : "down"} ${money(Math.abs(stats.now - stats.open), false)} since the first sample; range ${money(stats.low)} to ${money(stats.high)}.`
-      : `${tl.isCredit ? "Cost to close" : "Position value"} ${pts(stats.now)} points, ${pts(stats.change)} (${stats.changePct == null ? "—" : `${stats.changePct >= 0 ? "+" : "−"}${Math.abs(stats.changePct).toFixed(1)}%`}) from the first sample; range ${pts(stats.low)} to ${pts(stats.high)}.`);
+      : `${tl.isCredit ? "Price to buy back" : "Position value"} ${pts(stats.now)} points, ${pts(stats.change)} (${stats.changePct == null ? "—" : `${stats.changePct >= 0 ? "+" : "−"}${Math.abs(stats.changePct).toFixed(1)}%`}) from the first sample; range ${pts(stats.low)} to ${pts(stats.high)}.`);
   }
   {
     const i = tl.display.map((v, k) => (v != null && !tl.spacer[k] ? k : -1)).filter((k) => k >= 0).pop();
@@ -101,7 +101,7 @@ export function StrategyTimeChart({ legs, historyExpiries, lotSize, modelDelta, 
     const nowV = i == null ? null : (mode === "pnl" ? tl.pnl : tl.display)[i] ?? null;
     if (vw != null && nowV != null) lines.push(mode === "pnl"
       ? `P&L ${money(nowV)} against ${money(vw)} had every leg been traded at its VWAP: ${nowV >= vw ? "ahead of" : "behind"} the volume-weighted entry level by ${money(Math.abs(nowV - vw), false)}.`
-      : `${tl.isCredit ? "Cost to close" : "Position value"} ${pts(nowV)} is ${pts(Math.abs(nowV - vw))} ${nowV >= vw ? "above" : "below"} the strategy VWAP ${pts(vw)}${tl.isCredit ? (nowV >= vw ? ": a seller who sold at the VWAP level is losing" : ": a seller who sold at the VWAP level is in profit") : ""}.`);
+      : `${tl.isCredit ? "Price to buy back" : "Position value"} ${pts(nowV)} is ${pts(Math.abs(nowV - vw))} ${nowV >= vw ? "above" : "below"} the strategy VWAP ${pts(vw)}${tl.isCredit ? (nowV >= vw ? ": a seller who sold at the VWAP level is losing" : ": a seller who sold at the VWAP level is in profit") : ""}.`);
     else if (i != null) lines.push("Strategy VWAP is not available: at least one leg has no stored traded volume yet.");
   }
   if (stats.zScore != null) lines.push(`Now ${Math.abs(stats.zScore).toFixed(1)} standard deviations ${stats.zScore >= 0 ? "above" : "below"} its average for the day, at the ${ordinal(Math.round(stats.percentile ?? 0))} percentile of the day's values.`);
@@ -118,7 +118,7 @@ export function StrategyTimeChart({ legs, historyExpiries, lotSize, modelDelta, 
     <div className="space-y-3 p-2" data-testid="strategy-time-chart">
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <div role="group" aria-label="Show" className="flex gap-0.5">
-          {([["premium", tl.isCredit ? "Cost to close" : "Position value"], ["pnl", "P&L ₹"]] as const).map(([k, l]) => (
+          {([["premium", tl.isCredit ? "Price to buy back" : "Position value"], ["pnl", "P&L ₹"]] as const).map(([k, l]) => (
             <button key={k} type="button" aria-pressed={mode === k} onClick={() => setMode(k)} className={`min-h-8 rounded-sm border px-2.5 ${mode === k ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{l}</button>
           ))}
         </div>
@@ -130,6 +130,13 @@ export function StrategyTimeChart({ legs, historyExpiries, lotSize, modelDelta, 
         <span className="text-muted">{tl.samples} samples · {tl.missing > 0 ? `${tl.missing} without every leg price (left blank) · ` : ""}{unit}. Click a legend name to show or hide a line.</span>
       </div>
 
+      {mode === "premium" && (
+        <p className="text-xs leading-relaxed text-muted" data-testid="stl-explain">
+          {tl.isCredit
+            ? "Price to buy back: what it would cost right now to buy back everything you sold, added together. Below the Entry line you are in profit; above it, in loss. Lower is better for you."
+            : "Position value: what the options you bought are worth right now, added together. Above the Entry line you are in profit."}
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8" aria-label="Strategy summary">
         {([
           ["Now", mode === "pnl" ? money(stats.pnlNow) : pts(stats.now), mode === "pnl" ? tone(stats.pnlNow) : "text-paper"],
@@ -172,7 +179,7 @@ interface Model {
 }
 
 function buildOption(tl: Timeline, m: Model, mode: "premium" | "pnl", entry: number | null, rules: StrategyRules, c: ChartColors): EChartsCoreOption {
-  const name = mode === "pnl" ? "Strategy P&L" : tl.isCredit ? "Cost to close" : "Position value";
+  const name = mode === "pnl" ? "Strategy P&L" : tl.isCredit ? "Price to buy back" : "Position value";
   const ax = { color: c.muted, fontSize: 11 };
   const line = (n: string, data: (number | null)[], color: string, extra: object = {}, y = 0) => ({ name: n, type: "line", yAxisIndex: y, data, showSymbol: false, connectNulls: false, lineStyle: { width: 1.5, color }, itemStyle: { color }, ...extra });
   const marks: { yAxis: number; name: string; lineStyle: object; label: object }[] = [];

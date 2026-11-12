@@ -17,7 +17,7 @@ describe("buildTimeline", () => {
     // value = -1*CE - 2*PE: -(200+200)=-400, -(210+190)=-400, null (CE missing), -(190+210)=-400
     expect(tl.value).toEqual([-400, -400, null, -400]);
     expect(tl.isCredit).toBe(true);
-    expect(tl.display).toEqual([400, 400, null, 400]); // credit shown as the cost to close
+    expect(tl.display).toEqual([400, 400, null, 400]); // credit shown as the price to buy back
     // P&L = 65 * (-1*(CE-200) - 2*(PE-100)): t0 0; t1 65*(-10 +10)=0; t3 65*(10 -10)=0
     expect(tl.pnl).toEqual([0, 0, null, 0]);
     expect(tl.missing).toBe(1);
@@ -60,7 +60,7 @@ describe("strategy VWAP from each leg's own traded volume", () => {
   it("is the legs' VWAPs combined like the strategy value (hand-calculated)", () => {
     // CE: 100 @200, then 200 @210 -> 200, 206.667, 206.667.  PE: 50 @100, none, then 100 @90 -> 100, 100, 93.333.
     const tl = buildTimeline(short, withVol([100, 300, 300], [50, 50, 150]), 65);
-    expect(tl.vwap[0]).toBeCloseTo(200 + 2 * 100, 9); // credit: shown as the cost to close
+    expect(tl.vwap[0]).toBeCloseTo(200 + 2 * 100, 9); // credit: shown as the price to buy back
     // (200*100 + 210*200) / 300 = 206.667 for the call
     expect(tl.vwap[1]).toBeCloseTo(206.6666667 + 200, 6);
     expect(tl.vwap[2]).toBeCloseTo(206.6666667 + 2 * 93.3333333, 6);

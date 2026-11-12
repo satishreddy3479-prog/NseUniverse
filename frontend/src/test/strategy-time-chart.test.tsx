@@ -37,7 +37,7 @@ describe("StrategyTimeChart", () => {
     const seen: string[] = [];
     mount(undefined, seen);
     const main = await screen.findByRole("img", { name: /Strategy price against NIFTY spot and future/ });
-    expect(main.getAttribute("data-series")).toContain("Cost to close|NIFTY spot|NIFTY future|Future VWAP|Strategy VWAP");
+    expect(main.getAttribute("data-series")).toContain("Price to buy back|NIFTY spot|NIFTY future|Future VWAP|Strategy VWAP");
     expect(seen.some((u) => u.includes("strike-series") && u.includes("strikes=25000"))).toBe(true);
     const sum = screen.getByLabelText("Strategy summary");
     expect(within(sum).getByText("Now")).toBeInTheDocument();
@@ -48,9 +48,17 @@ describe("StrategyTimeChart", () => {
     mount([{ strike: 25000, type: "CE", action: "SELL", lots: 1, premium: 200, expiry: "2026-11-17", key: "nse_fo|53219" }, { strike: 25000, type: "PE", action: "SELL", lots: 1, premium: 100, expiry: "2026-11-17", key: "nse_fo|53220" }]);
     const main = await screen.findByRole("img", { name: /Strategy price against NIFTY spot and future/ });
     const first = JSON.parse(main.getAttribute("data-first") ?? "[]") as (number | null)[];
-    expect(first[0]).toBe(200 + 100); // cost to close = CE 200 + PE 100 at the first sample (the fixture's prices are 200 + i % 5 and 100 - i % 3)
+    expect(first[0]).toBe(200 + 100); // price to buy back = CE 200 + PE 100 at the first sample (the fixture's prices are 200 + i % 5 and 100 - i % 3)
     expect(first.every((v) => v != null)).toBe(true);
     expect(within(screen.getByLabelText("Strategy summary")).queryByText("—")).toBeNull();
+  });
+  it("names the sold-options line plainly and explains it", async () => {
+    mount();
+    await screen.findByTestId("stl-main");
+    expect(screen.getByTestId("stl-explain")).toHaveTextContent("Price to buy back: what it would cost right now to buy back everything you sold");
+    expect(screen.getByRole("button", { name: "Price to buy back" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "P&L ₹" }));
+    expect(screen.queryByTestId("stl-explain")).toBeNull();
   });
   it("switches to P&L", async () => {
     mount();
