@@ -73,7 +73,7 @@ describe("straddle decay panel", () => {
   it("switches between fixed and rolling without mixing them", async () => {
     mount(full());
     await screen.findByTestId("sdi-tracker");
-    fireEvent.click(screen.getByRole("button", { name: /Rolling ATM/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Rolling ATM \(\d+ rolls?\)$/ }));
     const trk = screen.getByTestId("sdi-tracker");
     expect(within(trk).getByText("Straddle now").nextSibling?.textContent).toBe("160.0");
     expect(trk.textContent).toContain("roll-adjusted −7.5");
@@ -286,14 +286,14 @@ describe("environments and the twelve sections", () => {
 describe("audit fixes (12 Nov 2026)", () => {
   it("says what the Fixed position is: the strike that was ATM at the open, not today's ATM", async () => {
     mount(full({ spot: Array.from({ length: 90 }, (_, i) => 25175 + i), tracker: { ...full().tracker!, atm_open: 25200, atm_now: 25350, opening_at: "2026-11-11T03:45:04Z", fixed: { ...full().tracker!.fixed, strike: 25200 } } }));
-    const btn = await screen.findByRole("button", { name: /Fixed 25200/ });
+    const btn = await screen.findByRole("button", { name: /^Fixed 25200 · ATM at open$/ });
     expect(btn).toHaveTextContent("ATM at open");
     expect(btn.getAttribute("title")).toContain("not the current ATM strike");
     const note = screen.getByTestId("sdi-position-note");
     expect(note).toHaveTextContent("the strike nearest NIFTY at the first usable sample");
     expect(note).toHaveTextContent("NIFTY 25,175");
     expect(note).toHaveTextContent("at-the-money strike is 25350");
-    fireEvent.click(screen.getByRole("button", { name: /Rolling ATM/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Rolling ATM \(\d+ rolls?\)$/ }));
     expect(screen.getByTestId("sdi-position-note")).toHaveTextContent("Rolling position");
   });
 
@@ -324,5 +324,50 @@ describe("audit fixes (12 Nov 2026)", () => {
     const chart = await screen.findByRole("img", { name: "Seller and buyer environment score history" });
     const last = JSON.parse(chart.getAttribute("data-last") ?? "[]") as [number, number][];
     expect(last.map((x) => x[1])).toEqual([48.7, 53.7]);
+  });
+});
+
+describe("the glance (12 Nov 2026)", () => {
+  it("shows both scores as gauges, a plain-words reading and the reasons behind each score", async () => {
+    mount(rich());
+    expect((await screen.findByTestId("sdi-gauge-seller-score")).textContent).toBe("76");
+    expect(screen.getByTestId("sdi-gauge-buyer-score").textContent).toBe("24");
+    expect(screen.getByTestId("sdi-glance-verdict")).toHaveTextContent("In plain words");
+    expect(screen.getByRole("img", { name: "What moves the seller score" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "What moves the buyer score" })).toBeInTheDocument();
+    expect(screen.getByTestId("sdi-words")).toHaveTextContent("Decay efficiency");
+    // a seller score whose label is held down by a risk flag says so next to the gauge
+    expect(screen.queryByTestId("sdi-gauge-seller-cap")).toBeNull();
+  });
+
+  it("compares the fixed and the rolling position side by side, with the seller's rupee result, and always shows both", async () => {
+    const f = full();
+    mount(full({ spot: Array.from({ length: 90 }, (_, i) => 24000 + i), tracker: { ...f.tracker!, atm_now: 24050, fixed: { ...f.tracker!.fixed, straddle: stat(170, 163) }, rolling: { ...f.tracker!.rolling, adjusted_change: -5.5, straddle: stat(170, 160), rolls: 3 } },
+      attribution: { ...f.attribution!, fixed: { ...f.attribution!.fixed, open: { ...f.attribution!.fixed.open!, efficiency: { ...f.attribution!.fixed.open!.efficiency, lot_size: 65 } } } } }));
+    const fx = await screen.findByTestId("sdi-compare-fixed");
+    const rl = screen.getByTestId("sdi-compare-rolling");
+    expect(fx).toHaveTextContent("Fixed 24000");
+    expect(fx).toHaveTextContent("−7.0"); // 163 - 170
+    expect(fx).toHaveTextContent("₹455 per lot"); // 7 x 65, a seller who sold at the open
+    expect(rl).toHaveTextContent("Rolling ATM (now 24050)");
+    expect(rl).toHaveTextContent("−5.5");
+    expect(rl).toHaveTextContent("₹358 per lot"); // 5.5 x 65 = 357.5
+    expect(fx).toHaveTextContent("shown in the sections below"); // fixed is the selected one
+    fireEvent.click(rl);
+    expect(rl).toHaveTextContent("shown in the sections below");
+    expect(screen.getByTestId("sdi-position-note")).toHaveTextContent("Rolling position");
+    expect(screen.getByText(/This comparison always shows both/)).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /Change in straddle premium since the open/ })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /Causes of the premium change/ })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /Share of the opening price kept/ })).toBeInTheDocument();
+  });
+});
+
+describe("the glance: a label held down by a risk flag", () => {
+  it("explains why the marker sits in a higher zone than the label", async () => {
+    const d = rich();
+    mount({ ...d, environment: { ...d.environment!, seller: { ...d.environment!.seller, capped_by_flags: "Neutral", class: "Neutral", score: 75 } } });
+    const note = await screen.findByTestId("sdi-gauge-seller-cap");
+    expect(note).toHaveTextContent("held at Neutral because a risk flag is active");
   });
 });

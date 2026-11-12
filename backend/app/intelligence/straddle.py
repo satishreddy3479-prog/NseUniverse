@@ -253,7 +253,7 @@ def efficiency(total: Mapping[str, float] | None) -> dict[str, Any]:
     if expected <= 1e-9:
         return empty | {"actual_decay": rd(actual), "expected_decay": rd(expected), "reason": "Expected theta decay is not positive here (very close to expiry, or carry dominates), so a decay efficiency is not defined; nothing is forced."}
     if expected < MIN_EXPECTED_PTS:
-        return empty | {"status": "low_signal", "actual_decay": rd(actual), "expected_decay": rd(expected), "confidence": 0.0,
+        return empty | {"status": "low_signal", "actual_decay": rd(actual), "expected_decay": rd(expected), "confidence": 0.0, "lot_size": LOT_SIZE,
                         "reason": f"Too early to judge: time alone is expected to take only {expected:.1f} points off this window, less than the {MIN_EXPECTED_PTS:g}-point floor below which a last-traded-price tick is bigger than the signal, so a ratio would be noise ({actual:+.1f} points actual)."}  # fmt: skip
     eff = actual / expected * 100
     confidence = clip01((expected - MIN_EXPECTED_PTS) / (FULL_CONFIDENCE_PTS - MIN_EXPECTED_PTS))

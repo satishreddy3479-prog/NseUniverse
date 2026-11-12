@@ -7,6 +7,7 @@ import { rupee, timeLinesOption, type Line } from "../../lib/priceCharts";
 import type { AlertRow, Component, EnvBucket, Moves, Stat, StraddleDecay, Terms, Window, Windows } from "../../lib/straddleDecay";
 import { EChart, useChartColors } from "../EChart";
 import { pill } from "../dashboard/PriceBoards";
+import { StraddleGlance } from "./StraddleGlance";
 
 const sg = (v: number | null | undefined, d = 1) => (v == null ? MISSING : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}`);
 const n1 = (v: number | null | undefined, d = 1) => (v == null ? MISSING : v.toFixed(d));
@@ -25,8 +26,8 @@ const MOVE_KEYS = ["5", "15", "30", "60"] as const;
 function Tile({ label, value, sub, tone: t }: { label: string; value: string; sub?: string; tone?: string }) {
   return <div className="min-w-0 rounded-sm bg-slate-2 px-2.5 py-2" data-testid="sdi-tile"><div className="truncate text-[11px] text-muted">{label}</div><div className={`num truncate text-[15px] font-semibold ${t ?? "text-paper"}`}>{value}</div>{sub && <div className="truncate text-[10px] text-muted">{sub}</div>}</div>;
 }
-function Box({ title, note, children, id, foot }: { title: string; note?: string; children: React.ReactNode; id: string; foot?: string }) {
-  return <section aria-label={title} className="min-w-0 rounded-[var(--radius-panel)] border border-rule bg-slate p-3" data-testid={id}><h3 className="mb-2 text-sm font-semibold text-paper">{title}{note && <span className="font-normal text-muted"> · {note}</span>}</h3>{children}{foot && <p className="mt-2 text-[10px] text-muted" data-testid={`${id}-source`}>{foot}</p>}</section>;
+function Box({ title, note, children, id, foot, plain }: { title: string; note?: string; children: React.ReactNode; id: string; foot?: string; plain?: string }) {
+  return <section aria-label={title} className="min-w-0 scroll-mt-16 rounded-[var(--radius-panel)] border border-rule bg-slate p-3" data-testid={id}><h3 className="text-sm font-semibold text-paper">{title}{note && <span className="font-normal text-muted"> · {note}</span>}</h3>{plain ? <p className="mb-2 mt-0.5 text-[13px] leading-snug text-muted">{plain}</p> : <div className="mb-2" />}{children}{foot && <p className="mt-2 text-[10px] text-muted" data-testid={`${id}-source`}>{foot}</p>}</section>;
 }
 function MoveRow({ label, m, d = 2 }: { label: string; m: Moves | undefined; d?: number }) {
   return <tr className="border-t border-rule/50"><td className="py-1 text-paper">{label}</td>{MOVE_KEYS.map((k) => <td key={k} className={`num py-1 text-right ${tone(m?.[k])}`}>{sg(m?.[k], d)}</td>)}</tr>;
@@ -108,17 +109,8 @@ export function StraddleDecayPanel() {
       { name: "Gamma", color: c.down, data: cm.gamma, fmt: f, dotted: true }, { name: "Delta", color: c.muted, data: cm.delta, fmt: f, dotted: true },
     ];
     const iv: Line[] = [{ name: "Call IV", color: c.up, data: sr.ce_iv, fmt: pc }, { name: "Put IV", color: c.down, data: sr.pe_iv, fmt: pc }, { name: "Combined", color: c.brass, data: sr.iv, fmt: pc, dotted: true }];
-    const h = d.history;
-    const ht = (h?.times ?? []).map((t) => new Date(t).getTime());
-    const hs = [...(h?.seller ?? [])], hb = [...(h?.buyer ?? [])];
-    // The history holds one recorded reading per minute; the cards above show the current one. Add the current reading as the last point (when it is newer than the last
-    // recorded minute) so the chart and the cards agree instead of differing by up to a minute of movement.
-    const live = d.environment, nowMs = d.generated_at ? new Date(d.generated_at).getTime() : NaN;
-    if (h && live && Number.isFinite(nowMs) && ht.length > 0 && nowMs > (ht[ht.length - 1] as number)) { ht.push(nowMs); hs.push(live.seller.score); hb.push(live.buyer.score); }
-    const hist: Line[] = h ? [{ name: "Seller", color: c.up, data: hs, fmt: (v: number) => v.toFixed(0) }, { name: "Buyer", color: c.brass, data: hb, fmt: (v: number) => v.toFixed(0) }] : [];
     return {
       prem: timeLinesOption(times, prem, c, null, { leftFmt: rupee }), att: timeLinesOption(times, att, c, null, { leftFmt: f, zeroLine: true }), iv: timeLinesOption(times, iv, c, null, { leftFmt: (v) => `${v.toFixed(1)}%` }),
-      hist: h && ht.length > 1 ? timeLinesOption(ht, hist, c, null, { leftFmt: (v) => v.toFixed(0) }) : null,
     };
   }, [d, mode, times, c]);
 
@@ -141,7 +133,7 @@ export function StraddleDecayPanel() {
   const ivv = iv[mode];
   const src = fmtSrc(d);
   return (
-    <section aria-label="Straddle decay intelligence" className="rounded-[var(--radius-panel)] border border-rule bg-slate p-4" data-testid="sdi-panel">
+    <section aria-label="Straddle decay intelligence" className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3 sm:p-4 [&_.text-xs]:!text-[13px] [&_.text-\[11px\]]:!text-xs" data-testid="sdi-panel">
       {head}
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
         <span className="text-muted">Position</span>
@@ -157,6 +149,8 @@ export function StraddleDecayPanel() {
           ? `Fixed position: the ${tr.fixed.strike} straddle, the strike nearest NIFTY at the first usable sample (${fmtTimeIST(tr.opening_at)}${d.spot?.[0] != null ? `, NIFTY ${d.spot[0].toLocaleString("en-IN")}` : ""}), held all session. NIFTY is now ${d.spot?.length ? (d.spot[d.spot.length - 1] as number).toLocaleString("en-IN") : MISSING} and the at-the-money strike is ${tr.atm_now ?? MISSING}; the rolling position follows that strike.`
           : `Rolling position: the strike nearest NIFTY at each sample (now ${tr.atm_now ?? MISSING}), with only same-contract changes added so a roll makes no jump.`}
       </p>
+
+      <StraddleGlance d={d} mode={mode} setMode={setMode} />
 
       {/* 1. Overall */}
       <div className="mt-3 rounded-sm border border-rule p-3" data-testid="sdi-overall">
@@ -176,8 +170,6 @@ export function StraddleDecayPanel() {
               <p className="mt-2 text-xs text-muted" data-testid="sdi-conflicts">Conflicting evidence: {env.comparison.conflicting_seller.length > 0 && <>against sellers: {env.comparison.conflicting_seller.join(", ")}. </>}{env.comparison.conflicting_buyer.length > 0 && <>against buyers: {env.comparison.conflicting_buyer.join(", ")}. </>}{env.comparison.same_sign_in_both.length > 0 && <>Supporting both: {env.comparison.same_sign_in_both.join(", ")}.</>}</p>
             )}
             <div className="mt-2"><div className="text-[11px] text-muted">What could invalidate it</div><ul className="list-disc pl-5 text-xs text-paper" data-testid="sdi-invalidation">{env.invalidation.map((x) => <li key={x}>{x}</li>)}</ul></div>
-            {charts?.hist && <div className="mt-2 h-[180px]"><EChart group="sdi" option={charts.hist} ariaLabel="Seller and buyer environment score history" /></div>}
-            {charts?.hist && <p className="text-[11px] text-muted" data-testid="sdi-hist-note">One recorded reading per minute; the last point is the current reading shown in the cards above.</p>}
             <p className="mt-1 text-[11px] text-muted">{env.weights_note}</p>
           </>
         ) : <p className="text-sm text-muted" data-testid="sdi-env-none">{d.environment_note ?? "No environment is available."}</p>}
@@ -194,7 +186,7 @@ export function StraddleDecayPanel() {
 
       {/* 2 and 3. Buyer and seller */}
       <div className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-2">
-        <Box title="2. Buyer environment" note={env ? `${env.buyer.class}, coverage ${(env.buyer.coverage * 100).toFixed(0)}%` : "live session only"} id="sdi-buyer" foot={env ? `Inputs: ${env.sources.buyer_inputs.join("; ")}. Weights are provisional.` : undefined}>
+        <Box title="2. Buyer environment" plain="In one line: are conditions good for someone BUYING options? Higher is better for buyers." note={env ? `${env.buyer.class}, coverage ${(env.buyer.coverage * 100).toFixed(0)}%` : "live session only"} id="sdi-buyer" foot={env ? `Inputs: ${env.sources.buyer_inputs.join("; ")}. Weights are provisional.` : undefined}>
           {env ? (
             <>
               <div className="overflow-x-auto"><table className="w-full min-w-[22rem] text-xs" data-testid="sdi-buyer-types"><thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Type</th><th className="py-1 text-right font-normal">Score</th><th className="py-1 pl-3 font-normal">State</th></tr></thead>
@@ -204,7 +196,7 @@ export function StraddleDecayPanel() {
             </>
           ) : <p className="text-sm text-muted">{d.environment_note}</p>}
         </Box>
-        <Box title="3. Seller environment" note={env ? `${env.seller.class}${env.seller.capped_by_flags ? `, capped by ${env.seller.flags.length} risk flag(s)` : ""}` : "live session only"} id="sdi-seller" foot={env ? `Inputs: ${env.sources.seller_inputs.join("; ")}. A favourable environment is not a guarantee of profit.` : undefined}>
+        <Box title="3. Seller environment" plain="In one line: are conditions good for someone SELLING options? Higher is better for sellers; the flags below can cap it." note={env ? `${env.seller.class}${env.seller.capped_by_flags ? `, capped by ${env.seller.flags.length} risk flag(s)` : ""}` : "live session only"} id="sdi-seller" foot={env ? `Inputs: ${env.sources.seller_inputs.join("; ")}. A favourable environment is not a guarantee of profit.` : undefined}>
           {env ? (
             <>
               {env.seller.flags.length > 0 && <ul className="mb-2 list-disc pl-5 text-xs text-down" data-testid="sdi-flags">{env.seller.flags.map((f) => <li key={f.id}>{f.text}</li>)}</ul>}
@@ -226,7 +218,7 @@ export function StraddleDecayPanel() {
 
       <div className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-2">
         {/* 4. Tracker */}
-        <Box title="4. Straddle premium tracker" note={mode === "fixed" ? `fixed ${tr.fixed.strike}` : "rolling ATM, roll-adjusted"} id="sdi-tracker" foot={`${src} · opening = first stored sample (${fmtTimeIST(tr.opening_at)})`}>
+        <Box title="4. Straddle premium tracker" plain="The price of the straddle now against where it started, and how it moved over the last 5, 15, 30 and 60 minutes." note={mode === "fixed" ? `fixed ${tr.fixed.strike}` : "rolling ATM, roll-adjusted"} id="sdi-tracker" foot={`${src} · opening = first stored sample (${fmtTimeIST(tr.opening_at)})`}>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <Tile label="Opening CE" value={n1(pos.ce.open)} sub={`now ${n1(pos.ce.current)} (${sg(pos.ce.change)})`} />
             <Tile label="Opening PE" value={n1(pos.pe.open)} sub={`now ${n1(pos.pe.current)} (${sg(pos.pe.change)})`} />
@@ -242,7 +234,7 @@ export function StraddleDecayPanel() {
         </Box>
 
         {/* 5. IV and skew */}
-        <Box title="5. IV and skew analysis" note={mode === "fixed" ? `fixed ${tr.fixed.strike} legs` : "rolling ATM legs"} id="sdi-iv" foot={`Model implied vols (Black-76, forward from put-call parity, assumed rate ${((d.rate_assumed ?? 0) * 100).toFixed(1)}%). ${ctx ? `Term structure and skew cards: Market Intelligence, as of ${fmtTimeIST(ctx.as_of)}.` : ""}`}>
+        <Box title="5. IV and skew analysis" plain="IV is how much movement the market is pricing in. Falling IV helps sellers; rising IV helps buyers." note={mode === "fixed" ? `fixed ${tr.fixed.strike} legs` : "rolling ATM legs"} id="sdi-iv" foot={`Model implied vols (Black-76, forward from put-call parity, assumed rate ${((d.rate_assumed ?? 0) * 100).toFixed(1)}%). ${ctx ? `Term structure and skew cards: Market Intelligence, as of ${fmtTimeIST(ctx.as_of)}.` : ""}`}>
           <div className="overflow-x-auto"><table className="w-full min-w-[26rem] text-xs"><thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Implied vol (%)</th><th className="py-1 text-right font-normal">Open</th><th className="py-1 text-right font-normal">Now</th><th className="py-1 text-right font-normal">Change (pts)</th><th className="py-1 text-right font-normal">Change (%)</th></tr></thead>
             <tbody><StatRow label="Call IV" s={ivv.ce} /><StatRow label="Put IV" s={ivv.pe} /><StatRow label="Combined ATM IV" s={ivv.combined} />
               <StatRow label="25Δ put IV" s={iv.levels?.pe25} /><StatRow label="25Δ call IV" s={iv.levels?.ce25} /><StatRow label="10Δ put IV" s={iv.levels?.pe10} /><StatRow label="10Δ call IV" s={iv.levels?.ce10} />
@@ -261,7 +253,7 @@ export function StraddleDecayPanel() {
         </Box>
 
         {/* 6. Attribution */}
-        <Box title="6. Theta, vega and gamma attribution and decay efficiency" note={WINDOW_LABEL[win]} id="sdi-attribution" foot="Black-76 repricing, Shapley over time, forward and implied vol, summed over one-sample steps; vanna and volga are carved out of the vol-forward cross terms; the residual is solver error, never labelled IV impact.">
+        <Box title="6. Theta, vega and gamma attribution and decay efficiency" plain="Splits the premium change into causes: time passing, volatility, NIFTY moving. Decay efficiency says how much of the expected time decay really showed up." note={WINDOW_LABEL[win]} id="sdi-attribution" foot="Black-76 repricing, Shapley over time, forward and implied vol, summed over one-sample steps; vanna and volga are carved out of the vol-forward cross terms; the residual is solver error, never labelled IV impact.">
           {w && eff ? (
             <>
               <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -282,7 +274,7 @@ export function StraddleDecayPanel() {
 
         {/* 7 and 8 */}
         <div className="flex min-w-0 flex-col gap-3">
-          <Box title="7. Implied vs realised volatility" id="sdi-rv" foot="Realised: log returns of stored spot, annualised on trading minutes (375 × 252). Implied: quoted ATM IV on calendar time. Gaps over 10 minutes are skipped, windows under 80% covered are unavailable.">
+          <Box title="7. Implied vs realised volatility" plain="Implied is what options price in; realised is what NIFTY actually did. Sellers gain when implied is higher than realised." id="sdi-rv" foot="Realised: log returns of stored spot, annualised on trading minutes (375 × 252). Implied: quoted ATM IV on calendar time. Gaps over 10 minutes are skipped, windows under 80% covered are unavailable.">
             <div className="overflow-x-auto"><table className="w-full min-w-[22rem] text-xs"><thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Window</th><th className="py-1 text-right font-normal">Realised vol</th><th className="py-1 text-right font-normal">Implied (now)</th><th className="py-1 text-right font-normal">IV − RV</th></tr></thead>
               <tbody>{["5", "15", "30", "60", "open"].map((k) => { const r = rv.windows[k]; return <tr key={k} className="border-t border-rule/50"><td className="py-1 text-paper">{k === "open" ? "Since open" : `${k} min`}</td><td className="num py-1 text-right" title={r?.note}>{r?.vol_pct == null ? MISSING : `${r.vol_pct.toFixed(1)}%`}</td><td className="num py-1 text-right">{n1(rv.iv_now)}%</td><td className={`num py-1 text-right ${tone(rv.gap[k])}`}>{sg(rv.gap[k])}</td></tr>; })}</tbody></table></div>
             <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -294,7 +286,7 @@ export function StraddleDecayPanel() {
               <Tile label="Movement" value={rv.acceleration?.label ?? MISSING} sub={rv.acceleration?.ratio == null ? "needs 30 min" : `last 15 min = ${rv.acceleration.ratio}× the 15 before`} />
             </div>
           </Box>
-          <Box title="8. GEX and gamma regime" id="sdi-structure" foot={`${st.assumption ?? ""} GEX as of ${st.gex ? fmtTimeIST(st.gex.at) : MISSING}.`}>
+          <Box title="8. GEX and gamma regime" plain="Dealer hedging can calm or amplify NIFTY moves. This is a model of that, not a guarantee." id="sdi-structure" foot={`${st.assumption ?? ""} GEX as of ${st.gex ? fmtTimeIST(st.gex.at) : MISSING}.`}>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               <Tile label="Net GEX" value={st.gex?.net == null ? MISSING : st.gex.net.toFixed(2)} sub={st.gex ? `${st.gex.regime}${st.gex.relationship && st.gex.relationship !== "none" && st.gex.relationship !== "unavailable" ? `, ${st.gex.relationship}` : ""}` : "live session only"} />
               <Tile label="Gamma flip" value={st.gex?.flip == null ? MISSING : String(Math.round(st.gex.flip))} sub={st.gex?.flip_distance_pts == null ? undefined : `${sg(st.gex.flip_distance_pts, 0)} pts from spot`} />
@@ -311,7 +303,7 @@ export function StraddleDecayPanel() {
       </div>
 
       {/* 9. Positioning */}
-      <Box title="9. Options positioning" note="from Market Intelligence" id="sdi-positioning" foot={`Source: stored strike positioning, futures flow and heavyweight flow · as of ${ctx ? fmtTimeIST(ctx.as_of) : MISSING}. CVD is an estimate; OI does not identify who bought or sold.`}>
+      <Box title="9. Options positioning" plain="Where option open interest is concentrated: the strikes NIFTY may be drawn to or pushed from." note="from Market Intelligence" id="sdi-positioning" foot={`Source: stored strike positioning, futures flow and heavyweight flow · as of ${ctx ? fmtTimeIST(ctx.as_of) : MISSING}. CVD is an estimate; OI does not identify who bought or sold.`}>
         {ctx && env ? (
           <>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
@@ -332,7 +324,7 @@ export function StraddleDecayPanel() {
       </Box>
 
       {/* 10. Alerts */}
-      <Box title="10. Live alerts" note="persistence checks and a 10 minute cooldown per kind" id="sdi-alerts" foot="Alerts describe a change in readings; none is a trade signal. Thresholds are configurable on the server.">
+      <Box title="10. Live alerts" plain="Changes worth a look, raised with a cooldown so they do not repeat. None is a trade signal." note="persistence checks and a 10 minute cooldown per kind" id="sdi-alerts" foot="Alerts describe a change in readings; none is a trade signal. Thresholds are configurable on the server.">
         {(d.alerts ?? []).length === 0 ? <p className="text-sm text-muted" data-testid="sdi-alerts-none">No alert has been raised in this session.</p> : (
           <ul className="space-y-1 text-xs" data-testid="sdi-alert-list">{(d.alerts as AlertRow[]).map((a) => <li key={a.id} className="flex flex-wrap gap-2 border-b border-rule/40 py-1"><span className="num text-muted">{fmtTimeIST(a.at)}</span><span className={`font-semibold ${a.severity === "high" ? "text-down" : "text-warn"}`}>{a.kind}</span><span className="text-paper">{a.text}</span></li>)}</ul>
         )}
