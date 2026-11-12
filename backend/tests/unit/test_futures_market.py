@@ -240,5 +240,17 @@ async def test_the_token_refresh_finds_the_stock_futures_of_both_months_and_the_
     assert {"55002", "60000", "61000", "60006"} <= toks
 
 
+def test_the_token_refresh_is_due_again_while_today_has_no_stock_futures(tmp_path: Path) -> None:
+    svc = build(tmp_path, {s: 101.0 for s in SYMS})  # today's tokens exist (cash stocks only)
+    late = NOW.replace(hour=11)  # after the daily token time: only the missing futures make it due
+    svc._last_try.clear()
+    assert svc.due("tokens", NOW) is True  # no stock future among today's tokens
+    fo_tokens(svc)
+    assert svc.due("tokens", NOW) is False  # they are there: nothing more today
+    svc._last_try["tokens"] = NOW
+    assert svc.due("tokens", NOW + timedelta(minutes=5)) is False  # a retry waits for RETRY
+    assert late > NOW
+
+
 def test_unused_imports_are_used() -> None:
     assert MarketStore and parse_index_list and LIST_TEXT and WEIGHTS and NOW

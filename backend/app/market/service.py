@@ -1078,8 +1078,10 @@ class MarketService:
             )
         if kind == "tokens":
             tok = self.store.latest_tokens()
+            # also when today's tokens have no stock future yet (first run after they were added, or the scrip master lacked them): retried every RETRY
+            no_futures = tok is not None and not any(k.startswith(STK_PREFIX) for k in tok[0])
             return self.store.current_list("nifty500") is not None and (
-                tok is None or (t.time() >= TOKENS_AT and tok[1] < t.date().isoformat())
+                tok is None or no_futures or (t.time() >= TOKENS_AT and tok[1] < t.date().isoformat())
             )
         if kind == "bhav":
             if (
