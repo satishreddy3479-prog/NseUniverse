@@ -297,7 +297,8 @@ class MarketIntelligence:
                 "gamma_regime": gx.get("regime"), "engines": eng,
                 "metrics": {"arch": validation.ARCH, "cvd_pct": pl["futures_cvd_pct"], "fut_oi_change": pl["futures_oi_change"], "net_gex": gx.get("net"), "flip": gx.get("flip"), "flip_side": None if gx.get("flip_distance_pct") is None else (1 if gx["flip_distance_pct"] >= 0 else -1),
                             "atm_iv": pl["atm_iv"], "iv_change_15m": fz.g(vol_e, "atm_iv_change_15m"), "d25": next((t["score"] for t in vol_e.get("terms", []) if t["name"].startswith("Call versus put")), None),
-                            "heavy_cvd": pl["heavyweight_cvd"], "hw15": fz.g(s["heavyweights"], "aggregate", "15", "score"), "vol": {"atm": fz.g(vol_e, "detail", "atm", "avg_change"), "spot": fz.g(vol_e, "detail", "spot_change_pct"), "rr": fz.g(vol_e, "detail", "d25", "rr_change")}, "hw_valid": fz.g(s["heavyweights"], "quality", "valid"), "hw_class": fz.g(s["heavyweights"], "participation", "class"), "vwap_side": fz.g(intraday, "vwap", "side")},
+                            "heavy_cvd": pl["heavyweight_cvd"], "hw15": fz.g(s["heavyweights"], "aggregate", "15", "score"), "vol": {"atm": fz.g(vol_e, "detail", "atm", "avg_change"), "spot": fz.g(vol_e, "detail", "spot_change_pct"), "rr": fz.g(vol_e, "detail", "d25", "rr_change")}, "hw_valid": fz.g(s["heavyweights"], "quality", "valid"), "hw_class": fz.g(s["heavyweights"], "participation", "class"), "vwap_side": fz.g(intraday, "vwap", "side"),
+                            "ce_oi_chg": fz.g(s["panels"], "options", "ce_oi_change"), "pe_oi_chg": fz.g(s["panels"], "options", "pe_oi_change")},
                 "divs": [{"id": d["id"], "reading": d["reading"], "direction": d["direction"], "severity": d["severity"]} for d in s["divergences"]]}
         prev = self.store.rows(s["session"], 1, newest_first=True)
         if not self.store.record(s["session"], now, s["expiry"] or "", snap):

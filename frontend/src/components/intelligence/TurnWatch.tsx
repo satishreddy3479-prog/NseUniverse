@@ -17,6 +17,7 @@ export function TurnWatchPanel({ d }: { d: Intelligence }) {
   const lean = LEAN[t.lean ?? "none"]!;
   const ch = (k: string) => (t.changes[k] as TurnChange | undefined) ?? null;
   const spot = ch("spot");
+  const gap = ch("oi_gap");
   return (
     <section aria-label="Turn watch" className="rounded-[var(--radius-panel)] border border-rule bg-slate p-4" data-testid="tw-panel">
       <div className="flex flex-wrap items-center gap-2">
@@ -40,6 +41,7 @@ export function TurnWatchPanel({ d }: { d: Intelligence }) {
             <thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Reading</th><th className="py-1 text-right font-normal">Now</th><th className="py-1 text-right font-normal">Change in 20 min</th></tr></thead>
             <tbody>{ROWS.map(([k, label]) => { const r = ch(k); return (
               <tr key={k} className="border-t border-rule/60"><td className="py-1 text-paper">{label}</td><td className="num py-1 text-right">{sgn(r?.now)}</td><td className={`num py-1 text-right font-medium ${tone(r?.change)}`}>{sgn(r?.change)}</td></tr>); })}
+              {gap?.now != null && <tr className="border-t border-rule/60" data-testid="tw-gap"><td className="py-1 text-paper">Put − call OI day change <span className="text-muted">(Cr units)</span></td><td className="num py-1 text-right">{sgn(gap.now / 1e7, 2)}</td><td className={`num py-1 text-right font-medium ${tone(gap.change == null ? null : gap.change / 1e5)}`}>{sgn(gap.change == null ? null : gap.change / 1e7, 2)}</td></tr>}
               <tr className="border-t border-rule/60"><td className="py-1 text-paper">NIFTY</td><td className="num py-1 text-right">{spot?.now == null ? MISSING : spot.now.toFixed(0)}</td><td className="num py-1 text-right text-muted">{spot?.change_pct == null ? MISSING : `${sgn(spot.change_pct, 2)}%`}</td></tr>
             </tbody>
           </table>

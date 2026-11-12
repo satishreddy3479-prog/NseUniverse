@@ -21,6 +21,8 @@ SCORE_DROP = 20.0  # points: smoothed change of the fused score that counts as a
 BREADTH_DROP = 8.0  # points: smoothed change an engine needs to count as deteriorating (or improving)
 BREADTH_MIN = 3  # engines that must agree
 MIN_ROWS = LOOKBACK + SMOOTH + 1
+OI_GAP_MIN_ROWS = 60  # minutes of recorded OI day-change totals before the gap signal can compare against 'typical'
+OI_GAP_MULT = 2.0  # a 20-minute gap move this many times the day's median counts (provisional, untested)
 PERSIST_WINDOW = 6  # a signal counts as active only when it was present in at least PERSIST_MIN of the last PERSIST_WINDOW minutes (no flicker)
 PERSIST_MIN = 4
 # breadth is context only: it flickers on both stored sessions, so it never sets the lean or the alert, it only supports the other signals
@@ -97,12 +99,25 @@ def _raw_at(rows: Sequence[Mapping[str, Any]], end: int | None = None) -> dict[s
         sigs.append(_sig("breadth_down", "bearish", f"{len(down)} of {len(ENGINES)} engines deteriorating together", [", ".join(f"{k} {chg[k]:+.0f}" for k in down) + price_txt], "fewer than three engines keep falling"))
     elif len(up) >= BREADTH_MIN:
         sigs.append(_sig("breadth_up", "bullish", f"{len(up)} of {len(ENGINES)} engines improving together", [", ".join(f"{k} {chg[k]:+.0f}" for k in up) + price_txt], "fewer than three engines keep rising"))
+    gap = _series(rows, lambda r: r["metrics"]["pe_oi_chg"] - r["metrics"]["ce_oi_chg"])
+    g_now, g_chg = smoothed_change(gap, i)
+    if g_chg is not None and g_now is not None and sum(v is not None for v in gap[: i + 1]) >= OI_GAP_MIN_ROWS:
+        past = [c for j in range(MIN_ROWS - 1, i + 1) if (c := smoothed_change(gap, j)[1]) is not None]
+        typical = sorted(abs(c) for c in past)[len(past) // 2] if past else 0.0
+        changes["oi_gap"] = {"now": g_now, "change": g_chg}
+        if typical > 0 and abs(g_chg) >= OI_GAP_MULT * typical:
+            dn = g_chg < 0
+            sigs.append(_sig("breadth_oi_gap_" + ("down" if dn else "up"), "bearish" if dn else "bullish",
+                             f"Put minus call open-interest change {'falling' if dn else 'rising'} faster than usual today",
+                             [f"Gap (put OI day change minus call OI day change) {g_chg:+,.0f} contracts in {LOOKBACK} min, {abs(g_chg) / typical:.1f}x today's typical 20-minute move" + price_txt,
+                              "uncalibrated: no stored history yet to test it, so it supports the other signals and never sets the lean or an alert"],
+                             "the gap's 20-minute change falls back inside its typical range"))
     # the same signals while price has barely moved are the early ones: say so
     early = sp_pct is not None and abs(sp_pct) < 0.15
     for s in sigs:
         s["early"] = bool(early)
     bear, bull = (sum(s["direction"] == d and not s["id"].startswith("breadth") for s in sigs) for d in ("bearish", "bullish"))
-    lean = "bearish" if bear > bull else "bullish" if bull > bear else ("mixed" if sigs else "none")
+    lean = "bearish" if bear > bull else "bullish" if bull > bear else ("mixed" if bear else "none")
     return {"available": True, "signals": sigs, "lean": lean, "strength": max(bear, bull), "changes": changes}
 
 
@@ -119,7 +134,7 @@ def assess_at(rows: Sequence[Mapping[str, Any]], end: int | None = None) -> dict
     latest = {s["id"]: s for s in now["signals"]}
     sigs = [latest[k] for k in latest if seen.get(k, 0) >= PERSIST_MIN]
     bear, bull = (sum(s["direction"] == d and not s["id"].startswith("breadth") for s in sigs) for d in ("bearish", "bullish"))
-    lean = "bearish" if bear > bull else "bullish" if bull > bear else ("mixed" if sigs else "none")
+    lean = "bearish" if bear > bull else "bullish" if bull > bear else ("mixed" if bear else "none")
     return {**now, "signals": sigs, "lean": lean, "strength": max(bear, bull), "persistence": f"present in at least {PERSIST_MIN} of the last {PERSIST_WINDOW} minutes",
             "note": "Compares the last 5 minutes with the same 5-minute average 20 minutes earlier. Evidence of change, not a forecast; thresholds are provisional."}
 

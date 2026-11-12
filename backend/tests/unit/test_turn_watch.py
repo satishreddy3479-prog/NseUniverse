@@ -77,3 +77,30 @@ def test_replay_keeps_false_alarms_visible() -> None:
     fired = [r for r in turn.replay(rows) if any(s["id"] == "flow_turn_down" for s in r["signals"])]
     assert any(_ist(r["at"]).startswith("10:") for r in fired)
     assert len({_ist(r["at"])[:2] for r in fired}) <= 5  # a handful of episodes in a day, not a constant stream
+
+
+def _gap_rows(n_flat: int, n_fall: int) -> list[dict[str, Any]]:
+    rows = []
+    for i in range(n_flat + n_fall):
+        r = _row(i)
+        # put minus call OI day change: wobbles by up to 1500 then falls 6000 per minute (hand-built, units are contracts)
+        gap = 3_000_000.0 + ((i * 37) % 11 - 5) * 300.0 - (6000.0 * max(0, i - n_flat))
+        r["metrics"] = {"pe_oi_chg": gap + 1_000_000.0, "ce_oi_chg": 1_000_000.0}
+        rows.append(r)
+    return rows
+
+
+def test_oi_gap_signal_needs_history_and_never_sets_the_lean() -> None:
+    assert not any("oi_gap" in s["id"] for s in turn.assess_at(_gap_rows(40, 12))["signals"])  # fewer than 60 recorded minutes: no 'typical' to compare with
+    out = turn.assess_at(_gap_rows(90, 12))
+    sig = next(s for s in out["signals"] if s["id"] == "breadth_oi_gap_down")
+    assert sig["direction"] == "bearish" and "uncalibrated" in sig["evidence"][1]
+    assert out["lean"] == "none" and out["strength"] == 0  # context only
+    assert out["changes"]["oi_gap"]["change"] < 0
+
+
+def test_oi_gap_missing_totals_are_skipped() -> None:
+    rows = _gap_rows(90, 12)
+    for r in rows:
+        r["metrics"] = {"pe_oi_chg": None, "ce_oi_chg": None}
+    assert "oi_gap" not in turn.assess_at(rows)["changes"]

@@ -524,6 +524,13 @@ describe("turn watch", () => {
     expect(rows.find((r) => r.textContent?.includes("Structure"))).toHaveTextContent("−18");
     expect(rows.find((r) => r.textContent?.includes("Volatility"))).toHaveTextContent("—");
     expect(p).toHaveTextContent("tuned on the two stored sessions");
+    expect(within(p).queryByTestId("tw-gap")).toBeNull(); // no OI day-change history recorded yet: no row rather than a zero
+  });
+  it("shows the put-minus-call OI day-change gap in crore units once it is recorded", async () => {
+    view({ ...base, turn_watch: { ...tw, changes: { ...tw.changes, oi_gap: { now: 33_000_000, change: -12_500_000 } } } });
+    const row = await screen.findByTestId("tw-gap");
+    expect(row).toHaveTextContent("+3.30");
+    expect(row).toHaveTextContent("−1.25");
   });
   it("says why it is unavailable early in the session, and says plainly when there is no signal", async () => {
     view({ ...base, turn_watch: { available: false, reason: "needs 26 stored minutes of this session; 9 so far", signals: [], changes: {} } });
