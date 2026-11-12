@@ -5,6 +5,7 @@ import { DetailPanels } from "../components/intelligence/Detail";
 import { AlertsPanel, DivergencePanel, ScenarioPanel, TimelinePanel } from "../components/intelligence/Insight";
 import { CommandStrip, EngineMatrix, Interpretation, PulseCards } from "../components/intelligence/Overview";
 import { HeavyweightPanel } from "../components/intelligence/Heavyweight";
+import { StockFuturesPanel } from "../components/intelligence/StockFutures";
 import { IntradayMlPanel } from "../components/intelligence/IntradayMl";
 import { StraddleSummaryCard } from "../components/intelligence/StraddleDecay";
 import { Capabilities } from "../components/intelligence/Capabilities";
@@ -12,7 +13,7 @@ import { SectionNav } from "../components/intelligence/SectionNav";
 
 const LABELS: Record<string, string> = { flow: "Stored per-minute flow (rolling CVD)", market: "Market flow, breadth and heavyweights", intraday: "Command centre (stored chain)", futures: "Futures series", skew: "Volatility skew", momentum: "IV momentum", positioning: "Strike positioning", gex: "GEX (rebuilt)", vix: "India VIX, HV and RV (daily closes)", heavymeta: "Heavyweight index weights", ml: "Intraday ML research" };
 const NAV = [
-  { id: "mi-sentiment", label: "Sentiment" }, { id: "mi-evidence", label: "Evidence" }, { id: "mi-heavyweights", label: "Heavyweights" }, { id: "mi-straddle", label: "Straddle" },
+  { id: "mi-sentiment", label: "Sentiment" }, { id: "mi-evidence", label: "Evidence" }, { id: "mi-heavyweights", label: "Heavyweights" }, { id: "mi-stockfut", label: "Stock futures" }, { id: "mi-straddle", label: "Straddle" },
   { id: "mi-ml", label: "Intraday ML" }, { id: "mi-interpretation", label: "Interpretation" }, { id: "mi-divergences", label: "Divergences & alerts" }, { id: "mi-scenarios", label: "Scenarios" },
   { id: "mi-timeline", label: "Timeline" }, { id: "mi-details", label: "Details" }, { id: "mi-quality", label: "Data quality" },
 ];
@@ -30,6 +31,7 @@ export function MarketIntelligence() {
       <div id="mi-sentiment" className="flex scroll-mt-14 flex-col gap-3"><CommandStrip d={d} /><PulseCards d={d} /></div>
       <div id="mi-evidence" className="scroll-mt-14"><EngineMatrix d={d} /></div>
       <div id="mi-heavyweights" className="scroll-mt-14"><HeavyweightPanel d={d} /></div>
+      <div id="mi-stockfut" className="scroll-mt-14"><StockFuturesPanel d={d} /></div>
       <div id="mi-straddle" className="scroll-mt-14"><StraddleSummaryCard /></div>
       <div id="mi-ml" className="scroll-mt-14"><IntradayMlPanel d={d} /></div>
       <div id="mi-interpretation" className="grid scroll-mt-14 items-start gap-3 xl:grid-cols-2">

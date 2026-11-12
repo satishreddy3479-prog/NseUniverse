@@ -84,15 +84,32 @@ export interface VolDetail {
 }
 export interface Pulse {
   spot: number | null; change_pct: number | null; futures: number | null; basis: number | null; basis_pct: number | null; atm_strike: number | null; expiry: string | null; atm_ce_premium: number | null; atm_pe_premium: number | null;
-  atm_iv: number | null; vwap?: { instrument: string; futures_price: number | null; futures_vwap: number | null; distance_pts: number | null; distance_pct: number | null; side: string | null; spot_vwap: null; spot_vwap_note: string };
+  atm_iv: number | null; vwap?: { instrument: string; futures_price: number | null; futures_vwap: number | null; distance_pts: number | null; distance_pct: number | null; side: string | null; spot_vwap: number | null; spot_vwap_estimate?: IndexVwapEstimate; spot_vwap_note: string };
   india_vix: { value: number | null; as_of: string | null; note: string; label?: string; intraday_signal?: boolean }; pcr: number | null; net_gex: number | null; gamma_flip: number | null; futures_oi_change: number | null; futures_cvd_pct: number | null; futures_vwap: number | null; heavyweight_cvd: number | null;
 }
+export interface StockFuturesRow {
+  symbol: string; ltp: number | null; price_change_pct: number | null; oi: number | null; oi_change: number | null; oi_change_pct: number | null; buildup: string | null; volume: number | null;
+  basis_pct: number | null; next_ltp: number | null; next_oi: number | null; rollover_pct: number | null; roll_cost_pct: number | null;
+}
+export interface NiftyRollover {
+  available: boolean; reason?: string; cur_oi?: number; next_oi?: number; rollover_pct?: number | null; cur_ltp?: number; next_ltp?: number; roll_cost_pts?: number; roll_cost_pct?: number;
+  rollover_pct_at_open?: number; cur_oi_change?: number; next_oi_change?: number;
+}
+export interface StockFutures {
+  rows: StockFuturesRow[]; covered: number; of: number; buildup_counts: Record<string, number>; rollover_pct: number | null; rollover_stocks: number; note: string;
+  nifty: NiftyRollover; tokens_note?: string;
+}
+export interface IndexVwapEstimate {
+  value: number | null; stocks?: number; weight_share?: number; estimate?: boolean; note: string; method?: string; reason?: string;
+  spot?: number; distance_pts?: number; distance_pct?: number; side?: string;
+}
+
 export interface Intelligence {
   generated_at: string; expiry: string | null; session: string; enabled: boolean; status: Record<string, InputStatus>; sentiment: Sentiment;
   regime: { name: string; evidence: string[]; volatility: string; gamma: string; previous: string | null; changed_at: string | null };
   engines: EngineView[]; pulse: Pulse; gex: GexState; interpretation: string; divergences: Divergence[]; divergences_invalidated: { id: string; status: string }[]; divergences_unavailable: string[];
   scenarios: Scenarios; panels: Panels; alerts: AlertRow[]; config: { weights: Record<string, number>; min_coverage: number; min_engines: number; note: string; groups?: Record<string, string> }; compute_ms: number;
-  capabilities?: Capability[]; overlap_audit?: OverlapAudit; heavyweights?: Heavyweights; observations?: Observation[]; intraday_ml?: MlDigest | null;
+  capabilities?: Capability[]; overlap_audit?: OverlapAudit; heavyweights?: Heavyweights; stock_futures?: StockFutures | null; observations?: Observation[]; intraday_ml?: MlDigest | null;
 }
 export interface TimelinePoint {
   session: string; at: string; spot: number | null; score: number | null; confidence: number | null; coverage: number | null; regime: string | null; vol_regime: string | null; gamma_regime: string | null;

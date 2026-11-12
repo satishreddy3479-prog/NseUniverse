@@ -26,12 +26,14 @@ from zoneinfo import ZoneInfo
 
 from app.domain.session import SESSION_OPEN, session_close
 from app.logging_setup import log_event
+from app.market import futures as futmod
 from app.market import metrics as m
 from app.market import participation as part
 from app.market import technical as tech
 from app.market import vwap as vwapmod
 from app.market import weights as wmod
 from app.market.flow import FlowTracker, last_cumulative, profile_fraction, volume_profile
+from app.market.futures import FoQuote
 from app.market.index_bars import IndexBarBuilder
 from app.market.sources import (
     BHAV_URL,
@@ -39,10 +41,12 @@ from app.market.sources import (
     SourceError,
     TokenInfo,
     fetch_text,
+    next_month,
     parse_bhavcopy,
     parse_index_list,
     parse_nifty_future,
     parse_scrip_master,
+    parse_stock_futures,
 )
 from app.market.store import MarketStore
 from app.stream.models import FeedToken, LiveTick
@@ -51,6 +55,9 @@ IST = ZoneInfo("Asia/Kolkata")
 logger = logging.getLogger(__name__)
 INDEX_KEY = "nse_cm|Nifty 50"
 FUT_SYMBOL = "FUT:NIFTY"
+FUT_NEXT_SYMBOL = "FUT:NIFTY:NEXT"
+STK_PREFIX = "FUTSTK:"
+FO_SAMPLE_EVERY_MIN = 5  # stock futures are stored every fifth minute: about 0.3 MB a session
 LISTS_AT, TOKENS_AT, BHAV_AT = time(7, 45), time(8, 5), time(19, 30)
 RETRY = timedelta(minutes=30)
 OR_MINUTES = 15  # opening range used for stock participation
@@ -107,6 +114,14 @@ class MarketService:
         self._base_cache: tuple[str, dict[str, Any]] | None = None
         self.future_note = "not looked up yet"
         self._part_cache: tuple[str, dict[str, Any]] | None = None
+        # stock futures (current and next month) and the NIFTY next-month future, from the same feed
+        self.fo_cur: dict[str, FoQuote] = {}
+        self.fo_next: dict[str, FoQuote] = {}
+        self.fo_nifty_next = FoQuote()
+        self._fo_roles_cache: tuple[float, dict[str, tuple[str, str]]] | None = None
+        self._fo_first: dict[tuple[str, str], tuple[str, int]] = {}  # (symbol or NIFTY, cur|next) -> (day, first open interest this app saw today)
+        self._fo_base_cache: tuple[str, dict[str, dict[str, int | None]]] | None = None
+        self.fo_note = "not looked up yet"
 
     # ----------------------------------------------------------------------------- universe
     def universe(self, index: str) -> list[m.Stock]:
@@ -137,13 +152,16 @@ class MarketService:
             for s in sorted(syms)
             if s in tm
         ]
-        fut = tm.get(FUT_SYMBOL)
-        if fut is not None:
+        nfut = tm.get(FUT_SYMBOL)
+        if nfut is not None:
             out.append(
                 FeedToken(
-                    exchange_segment="nse_fo", instrument_token=fut.token, kind="scrip", depth=True
+                    exchange_segment="nse_fo", instrument_token=nfut.token, kind="scrip", depth=True
                 )
             )
+        for k in sorted(tm):  # the stock futures and the NIFTY next-month future: touch line only (no depth), about 100 tokens against a limit of 3000
+            if k.startswith(STK_PREFIX) or k == FUT_NEXT_SYMBOL:
+                out.append(FeedToken(exchange_segment="nse_fo", instrument_token=tm[k].token, kind="scrip", depth=False))
         return out
 
     def weights_now(self) -> tuple[dict[str, float], str, str, str | None] | None:
@@ -247,6 +265,95 @@ class MarketService:
         self._roles = (now, roles)
         return roles
 
+    def _fo_roles(self) -> dict[str, tuple[str, str]]:
+        """Stream key -> (symbol, 'cur' | 'next') of every stock future and the NIFTY next-month future, rebuilt at most once a minute."""
+        now = time_mod.monotonic()
+        if self._fo_roles_cache and now - self._fo_roles_cache[0] < 60:
+            return self._fo_roles_cache[1]
+        roles: dict[str, tuple[str, str]] = {}
+        for k, t in self.token_map().items():
+            key = f"nse_fo|{t.token}"
+            if k == FUT_NEXT_SYMBOL:
+                roles[key] = ("NIFTY", "next")
+            elif k.startswith(STK_PREFIX):
+                rest = k[len(STK_PREFIX):]
+                roles[key] = (rest[:-5], "next") if rest.endswith(":NEXT") else (rest, "cur")
+        self._fo_roles_cache = (now, roles)
+        return roles
+
+    def _on_fo_tick(self, role: tuple[str, str], tick: LiveTick) -> None:
+        sym, which = role
+        t = tick.received_at.astimezone(IST)
+        if not SESSION_OPEN <= t.time() <= session_close():
+            return
+        q = self.fo_nifty_next if sym == "NIFTY" else (self.fo_next if which == "next" else self.fo_cur).setdefault(sym, FoQuote())
+        q.ltp = tick.ltp if tick.ltp is not None else q.ltp
+        q.prev_close = tick.prev_close if tick.prev_close else q.prev_close
+        q.volume = tick.volume if tick.volume is not None else q.volume
+        q.atp = tick.avg_price if tick.avg_price else q.atp
+        if tick.oi:  # 0 or missing is never stored as an open interest
+            q.oi = tick.oi
+            day = t.date().isoformat()
+            first = self._fo_first.get((sym, which))
+            if first is None or first[0] != day:
+                self._fo_first[(sym, which)] = (day, int(tick.oi))
+        q.at = tick.received_at
+
+    def _fo_base(self, now: datetime) -> dict[str, dict[str, int | None]]:
+        """The first open interest reading of today of each future: from today's first stored sample when there is one (it survives a restart), else the first
+        reading this process saw."""
+        day = now.astimezone(IST).date().isoformat()
+        if self._fo_base_cache and self._fo_base_cache[0] == day and self._fo_base_cache[1].get("cur"):
+            return self._fo_base_cache[1]
+        out: dict[str, dict[str, int | None]] = {"cur": {}, "next": {}, "nifty": {}}
+        day_start = datetime.combine(now.astimezone(IST).date(), SESSION_OPEN, IST).astimezone(UTC).isoformat()
+        first = next(iter(self.store.samples_since("stkfut", day_start)), None)
+        if first is not None:
+            for r in first[1].get("rows") or []:
+                if isinstance(r, list) and len(r) >= 7:
+                    out["cur"][r[0]] = r[2] if isinstance(r[2], int) else None
+                    out["next"][r[0]] = r[6] if isinstance(r[6], int) else None
+            nf = first[1].get("nf")
+            if isinstance(nf, list) and len(nf) >= 3:
+                out["nifty"] = {"cur": nf[2] if isinstance(nf[2], int) else None, "next": nf[1] if isinstance(nf[1], int) else None}
+        for (sym, which), (d, oi) in self._fo_first.items():
+            if d == day:
+                if sym == "NIFTY":
+                    out["nifty"].setdefault("next" if which == "next" else "cur", oi)
+                else:
+                    out[which].setdefault(sym, oi)
+        self._fo_base_cache = (day, out)
+        return out
+
+    def _nifty_cur_quote(self) -> FoQuote:
+        d = self.diag["future"]
+        at = datetime.fromisoformat(d["last_at"]) if d.get("last_at") else None
+        return FoQuote(ltp=d.get("ltp"), volume=d.get("volume"), oi=d.get("oi") or None, atp=d.get("atp"), at=at)
+
+    def index_vwap(self, now: datetime) -> dict[str, Any]:
+        """Estimated index VWAP from the constituents' day VWAPs (see ``app.market.futures``)."""
+        by_token = {t.token: s for s, t in self.token_map().items()}
+        u50 = {s.symbol: s.weight for s in self.universe("nifty50")}
+        stocks: dict[str, tuple[float | None, float | None, float | None]] = {}
+        for lt in self._ticks().values():
+            if lt.exchange_segment != "nse_cm" or lt.kind != "scrip":
+                continue
+            sym = by_token.get(lt.instrument_token)
+            if sym in u50 and (now - lt.received_at).total_seconds() <= futmod.FRESH_S:
+                stocks[sym] = (u50[sym], lt.avg_price, lt.prev_close)
+        idx = self._index()
+        return futmod.index_vwap(stocks, None if idx is None else idx.prev_close, self._spot_now(now))
+
+    def stock_futures_summary(self, now: datetime) -> dict[str, Any]:
+        syms = [s.symbol for s in self.universe("nifty50")]
+        cash = {s: getattr(t, "ltp", None) for s, t in self.stock_ticks().items()}
+        base = self._fo_base(now)
+        out = futmod.stock_futures(syms, self.fo_cur, self.fo_next, cash, base["cur"], now)
+        nb = base.get("nifty") or {}
+        out["nifty"] = futmod.nifty_rollover(self._nifty_cur_quote(), self.fo_nifty_next, now, nb.get("cur"), nb.get("next"))
+        out["tokens_note"] = self.fo_note
+        return out
+
     def _fut_key(self) -> str | None:
         """Stream key of the NIFTY future, looked up at most once a minute (this runs for every tick)."""
         now = time_mod.monotonic()
@@ -260,6 +367,10 @@ class MarketService:
     def on_tick(self, tick: LiveTick) -> None:
         """Called for every breadth/depth tick; only the futures and the five heavyweights are tracked."""
         self.diag["ticks"] += 1
+        role = self._fo_roles().get(tick.key)
+        if role is not None:
+            self._on_fo_tick(role, tick)
+            return
         name = self._flow_roles().get(tick.key)
         if tick.key == self._fut_key():
             d = self.diag["future"]
@@ -642,6 +753,8 @@ class MarketService:
                 },
             },
             "nifty500": {"breadth": b500.public()},
+            "index_vwap": self.index_vwap(now),
+            "stock_futures": self.stock_futures_summary(now),
             "flow": self.flow_summary(now, elapsed, ticks, table),
             "participation": self.participation(now, u50, chg50, b50, idx),
             "sectors": {
@@ -748,6 +861,7 @@ class MarketService:
             return f"failed: {type(e).__name__}"
         want = {s.symbol for idx in ("nifty500", "nifty50") for s in self.universe(idx)}
         keep = {k: v for k, v in tokens.items() if not want or k in want}
+        n_stocks = len(keep)
         exp = self._monthly_expiry()
         if exp is None:
             self.future_note = "NIFTY futures not subscribed: the monthly expiry is not known yet"
@@ -764,11 +878,33 @@ class MarketService:
                 )
             if fut:
                 keep[FUT_SYMBOL] = fut
+            await self._refresh_futures_tokens(keep, exp)
         self.store.save_tokens(keep, self._clock().astimezone(IST).date())
         self.store.attempt(
-            "tokens", bool(keep), f"{len(keep)} of {len(want)} stocks have a token", self._clock()
+            "tokens", bool(keep), f"{n_stocks} of {len(want)} stocks have a token", self._clock()
         )
         return f"{len(keep)} tokens"
+
+    async def _refresh_futures_tokens(self, keep: dict[str, TokenInfo], exp: date) -> None:
+        """The current- and next-month stock futures of the NIFTY 50 stocks and the NIFTY next-month future, from the F&O scrip master. Never fatal."""
+        try:
+            rows = await self._scrip_master("nse_fo") if self._scrip_master else []
+        except Exception as e:  # noqa: BLE001
+            self.fo_note = f"stock futures lookup failed: {type(e).__name__}"
+            return
+        syms = [s.symbol for s in self.universe("nifty50")]
+        ny, nm = next_month(exp.year, exp.month)
+        cur = parse_stock_futures(rows, exp.year, exp.month, syms)
+        nxt = parse_stock_futures(rows, ny, nm, syms)
+        for s, t in cur.items():
+            keep[f"{STK_PREFIX}{s}"] = t
+        for s, t in nxt.items():
+            keep[f"{STK_PREFIX}{s}:NEXT"] = TokenInfo(f"{STK_PREFIX}{s}:NEXT", t.token, t.trading_symbol)
+        nf = parse_nifty_future(rows, ny, nm)
+        if nf:
+            keep[FUT_NEXT_SYMBOL] = TokenInfo(FUT_NEXT_SYMBOL, nf.token, nf.trading_symbol)
+        self.fo_note = f"stock futures subscribed: {len(cur)} of {len(syms)} current-month and {len(nxt)} next-month contracts; NIFTY next-month future {'found' if nf else 'not found'}"
+        self._fo_roles_cache = None
 
     def import_weights(self, csv_text: str, as_of: date, source: str) -> dict[str, Any]:
         """Official weights supplied by the owner: columns symbol,weight (percent of the index). Must sum to ~100."""
@@ -905,6 +1041,12 @@ class MarketService:
                     "sym": (self.token_map().get(FUT_SYMBOL) or TokenInfo("", "", "")).trading_symbol or None,
                 },
             )
+        if now.astimezone(IST).minute % FO_SAMPLE_EVERY_MIN == 0:
+            fo_rows = [[sym, q.ltp, q.oi, q.volume, q.atp, (self.fo_next.get(sym) or FoQuote()).ltp, (self.fo_next.get(sym) or FoQuote()).oi] for sym, q in sorted(self.fo_cur.items()) if q.fresh(now)]
+            nc, nn = self._nifty_cur_quote(), self.fo_nifty_next
+            if fo_rows:
+                # [symbol, ltp, oi, volume, atp, next ltp, next oi]; nf = [next ltp, next oi, current oi]
+                self.store.record_sample("stkfut", stamp, {"rows": fo_rows, "nf": [nn.ltp, nn.oi, nc.oi]})
         wt_now = self.weights_now()
         chg = {r["symbol"]: r.get("change_pct") for r in s["nifty50"]["stocks"]}
         rows = [

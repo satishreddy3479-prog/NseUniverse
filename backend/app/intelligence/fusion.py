@@ -772,8 +772,24 @@ def capabilities(inp: Mapping[str, Any], status: Mapping[str, Any], gx: Mapping[
     add("intraday_ml", "Intraday ML model", AVAILABLE if gate_ok else (PARTIAL if ml else UNAVAILABLE),
         ("passed its validation gate; shown as context, not scored" if gate_ok else f"research only: {st_ml.get('labelled_sessions', 0)} labelled session(s), stage '{st_ml.get('stage_name', 'unknown')}'; no probability may be shown until the gate passes, and it is not part of the score") if ml else "the intraday research service is not running",
         "ml", "/analysis")
-    add("spot_vwap", "Spot (index) VWAP", UNAVAILABLE, "the NIFTY 50 index has no traded volume, so a spot VWAP cannot be computed; only the future's own VWAP exists and spot is never compared with it", "intraday", None, why="feed")
-    add("rollover", "Rollover data", UNAVAILABLE, ROLLOVER_NEED, "futures", None, why="not_subscribed")
-    add("stock_futures", "Individual stock futures", UNAVAILABLE, "stock futures are not subscribed or stored; heavyweight analysis uses cash-market prices and flow only", "market", None, why="not_subscribed")
+    iv_ = g(mk, "index_vwap") or {}
+    if iv_.get("value") is not None:
+        add("spot_vwap", "Spot (index) VWAP", AVAILABLE if (iv_.get("weight_share") or 0) >= 0.95 else PARTIAL,
+            f"ESTIMATE from the day VWAPs of {iv_.get('stocks')} constituents ({(iv_.get('weight_share') or 0) * 100:.0f}% of the index weight): the index itself has no traded volume, so this is not a true spot VWAP and is never mixed with the futures VWAP", "market", "/market-intelligence")
+    else:
+        add("spot_vwap", "Spot (index) VWAP", UNAVAILABLE, "the index has no traded volume, so a true spot VWAP does not exist; the constituent-based estimate is not available now" + (f": {iv_.get('reason')}" if iv_.get("reason") else ""), "market", None, why="no_data_yet" if iv_ else "feed")
+    sf = g(mk, "stock_futures") or {}
+    nr = sf.get("nifty") or {}
+    if nr.get("available"):
+        add("rollover", "Rollover data", AVAILABLE, f"NIFTY next-month share of open interest {nr.get('rollover_pct')}%, roll cost {nr.get('roll_cost_pts')} points; stock futures rollover by value over {sf.get('rollover_stocks', 0)} stocks (a stored history, and so a comparison with earlier sessions, builds from today)", "market", "/market-intelligence")
+    else:
+        add("rollover", "Rollover data", UNAVAILABLE, nr.get("reason") or ROLLOVER_NEED, "market", None, why="no_data_yet" if sf else "not_subscribed")
+    cov, of = sf.get("covered") or 0, sf.get("of") or 0
+    if of and cov >= 0.8 * of:
+        add("stock_futures", "Individual stock futures", AVAILABLE, f"{cov} of {of} NIFTY 50 stock futures streaming: price, open interest, buildup against the first reading of the session, basis and rollover", "market", "/market-intelligence")
+    elif cov:
+        add("stock_futures", "Individual stock futures", PARTIAL, f"{cov} of {of} NIFTY 50 stock futures have a fresh quote", "market", "/market-intelligence")
+    else:
+        add("stock_futures", "Individual stock futures", UNAVAILABLE, (sf.get("tokens_note") or "no stock-future contract is subscribed") + "; nothing is estimated in its place", "market", None, why="no_data_yet" if sf else "not_subscribed")
     add("option_aggressor", "Option trade-side (aggressor) data", UNAVAILABLE, "the feed carries no aggressor side for options; buyer- or seller-initiated trades are never inferred", "positioning", None, why="feed")
     return rows

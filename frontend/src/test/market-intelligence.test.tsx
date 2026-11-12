@@ -456,3 +456,50 @@ describe("Home", () => {
     expect(screen.getByRole("searchbox", { name: "Search tools" })).toBeTruthy();
   });
 });
+
+describe("stock futures, rollover and the index VWAP estimate", () => {
+  const sfRow = (symbol: string, over: Record<string, unknown> = {}) => ({ symbol, ltp: 1000, price_change_pct: 1.2, oi: 500000, oi_change: 25000, oi_change_pct: 5.3, buildup: "Long buildup", volume: 10, basis_pct: 0.42, next_ltp: 1006, next_oi: 40000, rollover_pct: 7.4, roll_cost_pct: 0.6, ...over });
+  const sf = {
+    rows: [sfRow("RELIANCE"), sfRow("TCS", { price_change_pct: -0.8, oi_change: -9000, oi_change_pct: -2.1, buildup: "Long unwinding", rollover_pct: null, roll_cost_pct: null }), sfRow("INFY", { oi_change_pct: 11.2, oi_change: 80000, buildup: "Short buildup", price_change_pct: -0.3 })],
+    covered: 3, of: 50, buildup_counts: { "Long buildup": 1, "Long unwinding": 1, "Short buildup": 1 }, rollover_pct: 7.4, rollover_stocks: 2, note: "Open interest change is against the first reading of the session.",
+    nifty: { available: true, rollover_pct: 7.5, rollover_pct_at_open: 5.0, roll_cost_pts: 80, roll_cost_pct: 0.316, cur_oi: 900000, next_oi: 72000 }, tokens_note: "stock futures subscribed: 50 of 50 current-month contracts",
+  };
+  it("shows the NIFTY rollover, the buildup counts, a chart and every stock as a table row and a phone card", async () => {
+    view({ ...base, stock_futures: sf });
+    const p = await screen.findByTestId("sf-panel");
+    const tiles = within(p).getByTestId("sf-tiles");
+    expect(tiles).toHaveTextContent("NIFTY rollover7.5%");
+    expect(tiles).toHaveTextContent("5.0% at the open");
+    expect(tiles).toHaveTextContent("+80.0 pts");
+    expect(tiles).toHaveTextContent("3 of 50");
+    expect(within(p).getByTestId("sf-counts")).toHaveTextContent("Long buildup 1");
+    expect(within(p).getByRole("img", { name: /Open interest change of stock futures/ })).toBeInTheDocument();
+    const row = within(p).getByTestId("sf-row-INFY");
+    expect(row).toHaveTextContent("Short buildup");
+    expect(row).toHaveTextContent("+80,000");
+    expect(within(p).getByTestId("sf-row-TCS")).toHaveTextContent("Long unwinding");
+    expect(within(p).getByTestId("sf-row-TCS")).toHaveTextContent("—"); // no next-month price: no rollover, never a zero
+    expect(within(p).getByTestId("sf-cards").querySelectorAll("li")).toHaveLength(3);
+    expect(within(p).getByTestId("sf-note")).toHaveTextContent("against the first reading of the session");
+    expect(within(p).getByTestId("sf-note")).toHaveTextContent("not who is long or short");
+  });
+  it("says plainly when no stock future has a quote", async () => {
+    view({ ...base, stock_futures: { ...sf, rows: [], covered: 0, nifty: { available: false, reason: "needs a fresh quote of both" }, tokens_note: "stock futures subscribed: 0 of 50" } });
+    expect(await screen.findByTestId("sf-none")).toHaveTextContent("Nothing is estimated in its place");
+    expect(screen.getByTestId("sf-none")).toHaveTextContent("0 of 50");
+  });
+  it("shows the index VWAP as an estimate with its distance, and the reason when it is not available", async () => {
+    view({ ...base, pulse: { ...base.pulse, vwap: { instrument: "NIFTY current-month future", futures_price: 24148, futures_vwap: 24050, distance_pts: 98, distance_pct: 0.41, side: "above", spot_vwap: 24020.5, spot_vwap_note: "n",
+      spot_vwap_estimate: { value: 24020.5, stocks: 49, weight_share: 0.99, estimate: true, note: "Estimated from the constituents' own day VWAPs", spot: 24100, distance_pts: 79.5, distance_pct: 0.331, side: "above" } } } });
+    const card = (await screen.findAllByTestId("mi-pulse")).find((e) => e.textContent?.includes("Index VWAP (estimate)"))!;
+    expect(card).toHaveTextContent("24,020.50");
+    expect(card).toHaveTextContent("NIFTY above it by +79.5 pts");
+    expect(card.getAttribute("title")).toContain("Estimated from the constituents");
+  });
+  it("the index VWAP card says why it is missing instead of showing a number", async () => {
+    view({ ...base, pulse: { ...base.pulse, vwap: { instrument: "x", futures_price: null, futures_vwap: null, distance_pts: null, distance_pct: null, side: null, spot_vwap: null, spot_vwap_note: "n", spot_vwap_estimate: { value: null, reason: "needs at least 30 stocks", note: "n" } } } });
+    const card = (await screen.findAllByTestId("mi-pulse")).find((e) => e.textContent?.includes("Index VWAP (estimate)"))!;
+    expect(card).toHaveTextContent("—");
+    expect(card).toHaveTextContent("needs at least 30 stocks");
+  });
+});

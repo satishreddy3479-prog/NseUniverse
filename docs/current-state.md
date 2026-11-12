@@ -8,6 +8,9 @@ _Last updated: 2026-11-04_
 ## NIFTY 50 Market Intelligence (10 Nov 2026)
 New first menu item and Home strip: fused sentiment (-100..+100) over five evidence groups (derivatives positioning, order-flow proxies, volatility, market structure, participation), with score, confidence, data coverage (available / partial / unavailable), evidence agreement and data freshness as separate quantities, regime, evidence per group, divergences, heuristic scenarios, timeline of recorded minutes, alerts, rolling 5/15/30-minute CVD (proxy), a visible Data quality and freshness section (AVAILABLE / PARTIAL / UNAVAILABLE per capability with source timestamps), and drill-down links to every existing page (D102, D103, [audit, overlap correction and methodology](market-intelligence-audit.md)). The command-centre score is no longer an input (double counting removed); weights are provisional and labelled so; walk-forward validation exists (`/api/intelligence/validation`) but has no real stored history to run on yet. Tested with fixtures and fake providers; not seen with live data in market hours or on a phone.
 
+## Index VWAP estimate and stock futures (12 Nov 2026)
+Built (D136): an index VWAP estimate from the constituents' day VWAPs, and stock futures and rollover for the NIFTY 50 (about 100 new feed tokens). To verify on the live server after deploy: how many of the 50 stock futures and next-month contracts the scrip master lookup finds, and that the day VWAPs are present for the constituents.
+
 ## Straddle decay intelligence audit (12 Nov 2026)
 Decay efficiency now has a 3-point noise floor and a confidence ramp to 8 points (the scores had swung 30-77 on single ticks); the Fixed position is labelled as the ATM at open; the score chart ends with the current reading (D131). Verify on the next live minutes: scores should move smoothly until the window's expected decay passes 3 points.
 

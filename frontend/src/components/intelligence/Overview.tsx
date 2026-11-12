@@ -79,6 +79,7 @@ export function PulseCards({ d }: { d: Intelligence }) {
       <Pulse label="Futures OI change" value={p.futures_oi_change == null ? MISSING : sgn(p.futures_oi_change, 0)} sub="vs baseline" tone={col(p.futures_oi_change)} />
       <Pulse label="Futures CVD (Proxy)" value={p.futures_cvd_pct == null ? MISSING : `${sgn(p.futures_cvd_pct, 1)}%`} sub="estimate (proxy)" tone={col(p.futures_cvd_pct)} tip={CVD_TIP} />
       <Pulse label="Futures VWAP" value={n(p.futures_vwap)} sub={p.vwap?.distance_pts == null ? "the future's own VWAP" : `future ${p.vwap.side} it by ${sgn(p.vwap.distance_pts, 1)} pts (${sgn(p.vwap.distance_pct, 2)}%)`} tip="The NIFTY current-month future against its own day VWAP. The index has no traded volume, so there is no spot VWAP and spot is never compared with this one." />
+      <Pulse label="Index VWAP (estimate)" value={n(p.vwap?.spot_vwap)} sub={p.vwap?.spot_vwap == null ? (p.vwap?.spot_vwap_estimate?.reason ?? "not available now") : `NIFTY ${p.vwap.spot_vwap_estimate?.side ?? ""} it by ${sgn(p.vwap.spot_vwap_estimate?.distance_pts, 1)} pts (${sgn(p.vwap.spot_vwap_estimate?.distance_pct, 2)}%)`} tip={p.vwap?.spot_vwap_estimate?.note ?? p.vwap?.spot_vwap_note} />
       <Pulse label="Heavyweight CVD (Proxy)" value={p.heavyweight_cvd == null ? MISSING : sgn(p.heavyweight_cvd, 0)} sub="normalised, weighted (estimate)" tone={col(p.heavyweight_cvd)} tip={CVD_TIP} />
     </section>
   );

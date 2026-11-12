@@ -205,6 +205,31 @@ def parse_nifty_future(
     return None
 
 
+def next_month(year: int, month: int) -> tuple[int, int]:
+    return (year + 1, 1) if month == 12 else (year, month + 1)
+
+
+def parse_stock_futures(
+    rows: Iterable[Mapping[str, Any]], year: int, month: int, symbols: Iterable[str]
+) -> dict[str, TokenInfo]:
+    """The stock-future contracts of calendar month ``year``/``month`` for ``symbols`` from the F&O scrip master
+    (trading symbol like RELIANCE26NOVFUT, M&M26NOVFUT). Symbols whose contract is not in the file are simply absent."""
+    suffix = f"{year % 100:02d}{_MONTHS[month - 1]}FUT"
+    want = {f"{s}{suffix}".upper(): s for s in symbols}
+    out: dict[str, TokenInfo] = {}
+    for r in rows:
+        low = {str(k).strip().lower(): v for k, v in r.items()}
+        trd = str(low.get("ptrdsymbol", "") or "").strip().upper()
+        sym = want.get(trd)
+        if sym is None:
+            continue
+        tok = str(low.get("psymbol", "") or "").strip()
+        seg = str(low.get("pexchseg", "nse_fo") or "nse_fo").strip().lower()
+        if tok and seg == "nse_fo":
+            out[sym] = TokenInfo(f"FUTSTK:{sym}", tok, trd)
+    return out
+
+
 def fetch_text(url: str) -> tuple[Fetched, str | None]:
     res = fetch(url, timeout=30.0)
     if res.status != 200 or res.body is None:
