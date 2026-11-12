@@ -20,6 +20,8 @@ MIN_DIVERGENCE_PRICE_PCT = 0.05  # a price move smaller than this is noise
 STALE_AFTER_S = 120.0  # no push for this long during the session: the figures are shown as stale
 DEPTH_STALE_AFTER_S = 60.0  # a book imbalance older than this is not shown (missing stays missing)
 
+COUNTER_GLITCH_FLOOR = 0.98  # a cumulative volume at least this share of the last one is a late or out-of-order figure, not a restart
+
 
 @dataclass
 class FlowTracker:
@@ -46,6 +48,7 @@ class FlowTracker:
     last_atp: float | None = (
         None  # the exchange's own day VWAP of the contract (average traded price)
     )
+    restarts: int = 0  # times the cumulative volume counter fell by a lot and was taken as a new baseline (the flow already classified is kept)
     last_oi: int | None = None  # open interest as streamed; 0 or missing is never stored as a value
     minutes: dict[str, tuple[int, float, int]] = field(
         default_factory=dict
@@ -54,6 +57,7 @@ class FlowTracker:
     def reset(self) -> None:
         self.buy = self.sell = self.unclassified = self.by_quote = self.by_tick = self.carried = 0
         self.since = self.last_volume = self.last_ltp = None
+        self.restarts = 0
         self.last_side = 0
         self.last_oi = None
         self.depth_sum, self.depth_n, self.last_imbalance, self.last_depth_at = 0.0, 0, None, None
@@ -91,11 +95,18 @@ class FlowTracker:
             self.depth_n += 1
         if volume is None or ltp is None:
             return
-        if self.last_volume is None or volume < self.last_volume:
-            # first push of the day (or the counter restarted): volume so far is not classified
-            if self.last_volume is not None:
-                self.reset()
-                self.day = day
+        if self.last_volume is not None and volume < self.last_volume:
+            if volume >= self.last_volume * COUNTER_GLITCH_FLOOR:
+                return  # a slightly older cumulative volume arriving late (or a quote from another source): not a restart, and not a basis for a delta
+            # The cumulative counter fell by a lot: the feed restarted it. What was classified before is real, observed flow and is KEPT (12 Nov 2026: a
+            # fall used to wipe the whole session's buy and sell volume, which left HDFCBANK and BHARTIARTL with 0.5% of the day after a restart); the
+            # volume that traded while the counter was off is not classified, so the new baseline is simply the current figure.
+            self.last_volume, self.last_ltp = volume, ltp
+            self.restarts += 1
+            self._mark(minute, ltp, volume)
+            return
+        if self.last_volume is None:
+            # first push of the day (or after a restart of the backend): volume so far is not classified
             self.last_volume, self.last_ltp, self.since = volume, ltp, at
             self._mark(minute, ltp, volume)
             return
@@ -253,15 +264,29 @@ def profile_fraction(profile: dict[int, float] | None, elapsed_minutes: float) -
 
 
 def last_cumulative(samples: list[tuple[str, dict[str, Any]]], name: str) -> tuple[int, int] | None:
-    """The newest stored cumulative (buy, sell) volume of a tracker from per-minute samples (oldest first): the ``fut`` samples carry ``b`` and ``s`` for the
-    future, the ``heavy5`` samples rows of ``[symbol, cvd, buy, sell, volume, ...]``. None when no sample has both figures."""
-    for _, pl in reversed(samples):
+    """The cumulative (buy, sell) volume a tracker has OBSERVED today, from its per-minute samples (oldest first): the ``fut`` samples carry ``b`` and
+    ``s`` for the future, the ``heavy5`` samples rows of ``[symbol, cvd, buy, sell, volume, ...]``. None when no sample has both figures.
+
+    Normally this is the newest sample. If a stored figure FELL from one minute to the next, the tracker's counters were wiped in between (before 12 Nov
+    2026 a restart could do that to a single stock): what it had observed before the fall is still real, so the observed total is the sum of the
+    increases, and a fall counts the new, smaller figure as a fresh start. That repairs a session whose counters were wiped; nothing is estimated."""
+    tot_b = tot_s = 0
+    prev_b = prev_s = 0
+    seen = False
+    for _, pl in samples:
         if name == "NIFTYFUT":
             b, s_ = pl.get("b"), pl.get("s")
-            if isinstance(b, (int, float)) and isinstance(s_, (int, float)):
-                return int(b), int(s_)
+        else:
+            b = s_ = None
+            for r in pl.get("rows") or []:
+                if isinstance(r, list) and len(r) >= 4 and r[0] == name:
+                    b, s_ = r[2], r[3]
+                    break
+        if not (isinstance(b, (int, float)) and isinstance(s_, (int, float))):
             continue
-        for r in pl.get("rows") or []:
-            if isinstance(r, list) and len(r) >= 4 and r[0] == name and isinstance(r[2], (int, float)) and isinstance(r[3], (int, float)):
-                return int(r[2]), int(r[3])
-    return None
+        b, s_ = int(b), int(s_)
+        tot_b += b - prev_b if b >= prev_b else b
+        tot_s += s_ - prev_s if s_ >= prev_s else s_
+        prev_b, prev_s = b, s_
+        seen = True
+    return (tot_b, tot_s) if seen else None
