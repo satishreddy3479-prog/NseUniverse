@@ -17,7 +17,7 @@ import { buildBook, marketIvOf, type Book } from "../lib/strategyBook";
 import { analyzeCurve, curveOf, isEstimateAt, legExpiries, pnlAtExpiry } from "../lib/multiExpiry";
 import { expiryEnd, legGreeks, sdLevel, netGreeks, probabilityOfProfit, probabilityOfProfitFn, scenarioGrid, sdBands, spotAtPremium, theoreticalPnl, type ContractGreeks, type Valuation } from "../lib/optionModel";
 import { adoptExits,
-  analyzeExpiry, applyAutomation, applyHold, DEFAULT_HOLD, holdProblem, type HoldRule, applyStrategyRules, exitLeg, expiryPnl, hitOf, isExited, newLegId, reenterLeg, rollLeg, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds, NO_RULES, hasRules, lockFloor, rulesProblem, type StrategyRules, type RulesState,
+  analyzeExpiry, applyAutomation, applyHold, DEFAULT_HOLD, holdProblem, type HoldRule, applyStrategyRules, exitLeg, expiryPnl, hitOf, isExited, isFinished, newLegId, reenterLeg, rollLeg, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds, NO_RULES, hasRules, lockFloor, rulesProblem, type StrategyRules, type RulesState,
   type Action, type Bias, type Leg, type OptionType, type Template,
 } from "../lib/strategy";
 
@@ -675,6 +675,29 @@ export default function StrategyBuilder() {
     if (loaded) persist(saved.filter((x) => x.name !== loaded)); // the strategy moves from Saved to Closed, it is not copied
     setLegs([]); setRearmAt(new Date().toISOString()); setHoldFrom(null); setNote(null); setSel(null); setMult(1); setDays(0); setName(""); setOpened(null); setLoaded(null);
   };
+  // A strategy the clock close or a profit rule has taken out of the market entirely moves from Saved to Closed by itself: the open one, and any saved one
+  // (closed on the server while no page was open) the next time the list loads. Each is filed once; the exit prices are the ones the legs booked.
+  const filed = useRef(new Set<string>());
+  useEffect(() => {
+    if (!hydrated || !lotSize || sync !== "server") return;
+    if (opened == null && legs.length > 0 && isFinished(legs) && snap && !filed.current.has(`open:${loaded ?? ""}`)) {
+      filed.current.add(`open:${loaded ?? ""}`);
+      exitAll();
+      setNote("All legs were closed by the strategy's own close rule, so it moved to Closed.");
+      return;
+    }
+    const done = saved.filter((s) => s.name !== loaded && isFinished(s.legs) && !filed.current.has(s.name));
+    if (done.length === 0) return;
+    done.forEach((s) => filed.current.add(s.name));
+    const recs: Closed[] = done.map((s) => {
+      const on = s.legs.filter((l) => l.enabled !== false);
+      const at = on.map((l) => l.exitedAt ?? "").sort().at(-1) || s.updatedAt || s.savedAt;
+      return { id: `auto-${s.name}-${at.slice(0, 10)}`, name: s.name, closedAt: at, snapshotAt: at, expiry: s.expiry, lotSize, pnl: on.reduce((t, l) => t + (l.realised ?? 0), 0), legs: on.map((l) => ({ ...l, exit: l.exitPrice as number })) };
+    });
+    persistClosed([...recs, ...closed.filter((c) => !recs.some((r) => r.id === c.id))]);
+    persist(saved.filter((s) => !done.some((d) => d.name === s.name)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, lotSize, sync, saved, legs, loaded, opened, snap]);
   const openClosed = (c: Closed) => { setPicked(c.expiry); loadLegs(c.legs.map(({ exit: _e, ...l }) => ({ ...l, id: newLegId() }))); setMult(1); setNote(null); setOpened(c); setLoaded(null); };
   const persist = (s: Saved[]) => { pushDiff("saved", saved, s, (x) => x.name); setSaved(s); try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch { /* storage unavailable: kept for this visit only */ } };
   const net = (k: number, t: OptionType) => legs.filter((l) => l.expiry === expiry && l.strike === k && l.type === t).reduce((s, l) => s + sign(l.action) * l.lots, 0);

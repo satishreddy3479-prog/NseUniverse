@@ -128,3 +128,46 @@ describe("Strategy portfolio", () => {
     expect(screen.getByTestId("update-saved")).toBeInTheDocument(); // it is the saved strategy "run me"
   });
 });
+
+describe("a strategy closed by its own close rule moves to Closed", () => {
+  const leg = (over: Record<string, unknown>) => ({ id: `l${Math.random()}`, action: "SELL", type: "CE", strike: 24050, expiry: "2026-11-03", lots: 1, premium: 100, ...over });
+  const saved = (name: string, legs: Record<string, unknown>[]) => ({ name, savedAt: "2026-11-02T04:00:00Z", expiry: "2026-11-03", legs });
+  const out = (price: number, reason: string, realised: number) => ({ exitPrice: price, exitReason: reason, exitedAt: "2026-11-02T09:50:00Z", realised });
+
+  it("files a saved strategy whose every leg the 15:20 close took out, with the booked P&L and the exit prices", async () => {
+    store.saved = [saved("straddle", [leg(out(80, "strategy", 1300)), leg({ type: "PE", ...out(60, "strategy", 2600) })])];
+    mount();
+    await waitFor(() => expect(screen.getByTestId("closed-menu")).toHaveTextContent("Closed (1)"), { timeout: 15000 });
+    expect(screen.getByTestId("saved-menu")).toHaveTextContent("Saved (0)");
+    expect(store.saved).toHaveLength(0);
+    const c = store.closed[0] as { name: string; pnl: number; legs: { exit: number }[] };
+    expect(c.name).toBe("straddle");
+    expect(c.pnl).toBe(3900); // the sum of what the legs booked, not recomputed from a price
+    expect(c.legs.map((l) => l.exit)).toEqual([80, 60]);
+  });
+
+  it("leaves a strategy in Saved while a leg is still open, or a stopped leg may still re-enter", async () => {
+    store.saved = [
+      saved("one leg open", [leg(out(80, "strategy", 1300)), leg({ type: "PE" })]),
+      saved("may re-enter", [leg({ ...out(130, "stop", -1950), reentry: 1, reentryLevel: 100 }), leg({ type: "PE", ...out(60, "strategy", 2600) })]),
+      saved("stopped only", [leg(out(130, "stop", -1950))]),
+    ];
+    mount();
+    await waitFor(() => expect(screen.getByTestId("saved-menu")).toHaveTextContent("Saved (3)"), { timeout: 15000 });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByTestId("closed-menu")).toHaveTextContent("Closed (0)");
+    expect(store.closed).toHaveLength(0);
+  });
+
+  it("files the strategy that is open in the builder the moment its legs are all out", async () => {
+    const legs = [leg(out(80, "strategy", 1300)), leg({ type: "PE", ...out(60, "strategy", 2600) })];
+    store.saved = [saved("open one", legs)];
+    localStorage.setItem("nse.builder.working.v1", JSON.stringify({ legs, expiry: null, name: "open one", loaded: "open one", baseline: legs, at: Date.now() }));
+    mount();
+    await waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"), { timeout: 15000 }); // the stored chain (lot size) has loaded
+    await waitFor(() => expect(screen.getByTestId("closed-menu")).toHaveTextContent("Closed (1)"), { timeout: 15000 });
+    expect(store.saved).toHaveLength(0);
+    expect((store.closed[0] as { name: string; pnl: number }).pnl).toBe(3900);
+    expect(await screen.findByText(/moved to Closed/)).toBeTruthy();
+  });
+});

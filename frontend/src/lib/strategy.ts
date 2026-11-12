@@ -54,6 +54,15 @@ export interface Leg {
 
 export const sign = (a: Action) => (a === "BUY" ? 1 : -1);
 export const isExited = (l: Pick<Leg, "exitPrice">): boolean => l.exitPrice != null;
+/** A strategy whose whole position was closed by the strategy itself (the clock close or a profit rule): every ticked leg is out, one of them by reason "strategy",
+ *  and no stopped leg is still waiting to be entered again. Such a strategy is finished and belongs under Closed; one with a leg still open, or closed only by a
+ *  stop or target that may re-enter, does not. */
+export function isFinished(legs: readonly Leg[]): boolean {
+  const on = legs.filter((l) => l.enabled !== false);
+  if (on.length === 0 || !on.every(isExited)) return false;
+  if (on.some((l) => l.exitReason === "stop" && (l.reentry ?? 0) > 0 && l.reentryLevel != null)) return false;
+  return on.some((l) => l.exitReason === "strategy");
+}
 
 /** Has the market price reached this leg's target or stop? A bought option's target is above its entry and its stop below; for a sold one it is the other way round. */
 export function hitOf(l: { action: Action; premium?: number | null; target?: number | null; stop?: number | null; stopTrailed?: boolean }, kind: "target" | "stop", price: number): boolean {
