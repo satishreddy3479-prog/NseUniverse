@@ -117,7 +117,7 @@ export default function StrategyBuilder() {
   // repeat exits that already happened. Copies older than three days are ignored.
   const [work] = useState(() => {
     try {
-      const w = JSON.parse(localStorage.getItem(WORKING_KEY) ?? "null") as { legs?: Leg[]; expiry?: string | null; name?: string; loaded?: string | null; baseline?: Leg[]; at?: number; rules?: StrategyRules; rstate?: RulesState | null; rearmAt?: string | null; hold?: HoldRule; holdFrom?: string | null } | null;
+      const w = JSON.parse(localStorage.getItem(WORKING_KEY) ?? "null") as { legs?: Leg[]; expiry?: string | null; name?: string; loaded?: string | null; baseline?: Leg[]; at?: number; rules?: StrategyRules; rstate?: RulesState | null; rearmAt?: string | null; hold?: HoldRule; holdFrom?: string | null; moveToCost?: boolean } | null;
       return w && Array.isArray(w.legs) && w.at && Date.now() - w.at < 3 * 86_400_000 ? w : null;
     } catch { return null; }
   });
@@ -135,6 +135,8 @@ export default function StrategyBuilder() {
   const [rstate, setRstate] = useState<RulesState | null>(work?.rstate ?? null);
   const [rearmAt, setRearmAt] = useState<string | null>(work?.rearmAt ?? null);
   const [hold, setHold] = useState<HoldRule>(work?.hold ?? DEFAULT_HOLD);
+  /** "Move SL to cost": when a leg is stopped out, the stops of the other open legs on the same side move to their entry premium */
+  const [moveToCost, setMoveToCost] = useState<boolean>(work?.moveToCost ?? false);
   // when the holding rule started counting (set by the server when a strategy is first sent; changed when the rule is changed)
   const [holdFrom, setHoldFrom] = useState<string | null>(work?.holdFrom ?? null);
   const [tab, setTab] = useState<"positions" | "chart" | "greeks" | "scenarios">("positions");
@@ -385,7 +387,7 @@ export default function StrategyBuilder() {
     const wait = 1500 - (performance.now() - lastExitEdit.current);
     if (wait > 0) { const t = setTimeout(() => setSettle((n) => n + 1), wait + 20); return () => clearTimeout(t); }
     const at = new Date().toISOString();
-    const r = applyAutomation(legs, ltp, lotSize, at, mult);
+    const r = applyAutomation(legs, ltp, lotSize, at, mult, moveToCost);
     const cur: RulesState = rstate ?? { floor: null, done: null };
     const q = applyStrategyRules(r.legs, rules, cur, ltp, lotSize, at, mult);
     if (q.state !== cur) setRstate(q.state);
@@ -397,10 +399,10 @@ export default function StrategyBuilder() {
       setAutoNote(events.join(" · "));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, legs, autoActive, mult, lotSize, settle, rules, hold, holdFrom]);
+  }, [rows, legs, autoActive, mult, lotSize, settle, rules, hold, holdFrom, moveToCost]);
   useEffect(() => {
-    try { localStorage.setItem(WORKING_KEY, JSON.stringify({ legs, expiry, name, loaded, baseline, rules, rstate, rearmAt, hold, holdFrom, at: Date.now() })); } catch { /* this visit only */ }
-  }, [legs, expiry, name, loaded, baseline, rules, rstate, rearmAt, hold, holdFrom]);
+    try { localStorage.setItem(WORKING_KEY, JSON.stringify({ legs, expiry, name, loaded, baseline, rules, rstate, rearmAt, hold, holdFrom, moveToCost, at: Date.now() })); } catch { /* this visit only */ }
+  }, [legs, expiry, name, loaded, baseline, rules, rstate, rearmAt, hold, holdFrom, moveToCost]);
 
   // ---- the server keeps this strategy and checks its stops and targets every second, with or without a page open.
   // The browser sends every change (after a short pause) and takes back what the server did; if the server cannot be
@@ -413,15 +415,15 @@ export default function StrategyBuilder() {
     const row = (collected.has(l.expiry) ? books.get(l.expiry)?.rows : undefined)?.find((x) => x.strike === l.strike);
     return liveKey(l.type === "CE" ? row?.call ?? null : row?.put ?? null) ?? l.key ?? null;
   };
-  const payloadJson = JSON.stringify({ name, loaded, expiry: strategyExpiry, lotSize, mult, auto: autoOn, rules, rearmAt, hold, holdFrom, baseline, legs: legs.map((l) => ({ ...l, key: keyOf(l) })) });
+  const payloadJson = JSON.stringify({ name, loaded, expiry: strategyExpiry, lotSize, mult, auto: autoOn, moveToCost, rules, rearmAt, hold, holdFrom, baseline, legs: legs.map((l) => ({ ...l, key: keyOf(l) })) });
   // what the page compares to know whether anything it has not sent is waiting: the same document without the live-feed keys, which come and
   // go with the stream and must not make an idle page look as if it had unsent edits (it would then never take the server's exits)
-  const coreJson = JSON.stringify({ name, loaded, expiry: strategyExpiry, lotSize, mult, auto: autoOn, rules, rearmAt, hold, baseline, legs });
+  const coreJson = JSON.stringify({ name, loaded, expiry: strategyExpiry, lotSize, mult, auto: autoOn, moveToCost, rules, rearmAt, hold, baseline, legs });
   const adoptServer = (d: RunningDoc, announce: boolean) => {
     revRef.current = d.rev ?? null;
     skipPush.current = true;
     setLegs(d.legs ?? []); setBaseline(d.baseline ?? d.legs ?? []); setName(d.name ?? ""); setLoaded(d.loaded ?? null); setMult(d.mult ?? 1);
-    setRules(d.rules ?? NO_RULES); setRstate(d.rstate ?? null); setRearmAt(d.rearmAt ?? null); setHold(d.hold ?? DEFAULT_HOLD); setHoldFrom(d.holdFrom ?? null);
+    setRules(d.rules ?? NO_RULES); setRstate(d.rstate ?? null); setRearmAt(d.rearmAt ?? null); setHold(d.hold ?? DEFAULT_HOLD); setHoldFrom(d.holdFrom ?? null); setMoveToCost(d.moveToCost ?? false);
     if (d.expiry) setPicked(d.expiry);
     const last = d.serverEvents?.[d.serverEvents.length - 1];
     if (last && last.at !== seenEvents.current) {
@@ -611,14 +613,14 @@ export default function StrategyBuilder() {
     update(l.id, { strike, ...(l.premiumSource === "manual" ? {} : { premium: m, premiumSource: m == null ? null : "market" }) });
   };
   /** Target or stop-loss for one leg: a premium, or a % of the entry premium. Targets are on the profit side of the entry, stops on the loss side. */
-  const setExit = (l: Leg, kind: "target" | "stop", px: number | null) => { lastExitEdit.current = performance.now(); update(l.id, kind === "target" ? { target: px } : { stop: px, stopBase: null, stopTrailed: false }); };
+  const setExit = (l: Leg, kind: "target" | "stop", px: number | null) => { lastExitEdit.current = performance.now(); update(l.id, kind === "target" ? { target: px } : { stop: px, stopBase: null, stopTrailed: false, costMoved: false }); };
   const exitCell = (l: Leg, kind: "target" | "stop") => {
     const cur = kind === "target" ? l.target ?? null : l.stop ?? null;
     const buy = l.action === "BUY";
     const profitSide = kind === "target";
     const up = profitSide === buy; // the premium moves up for a buyer's target and a seller's stop
     const mkt = ltp(l.strike, l.type, l.expiry);
-    const wrong = cur != null && l.premium != null && (up ? cur <= l.premium : cur >= l.premium);
+    const wrong = cur != null && l.premium != null && !(kind === "stop" && l.stopTrailed) && (up ? cur <= l.premium : cur >= l.premium); // a trailed stop (or one moved to cost) may sit at or beyond the entry
     const tone2 = kind === "target" ? "border-up/60 text-up" : "border-down/60 text-down";
     // The percentage is how far the premium moves from the entry premium; typing one sets the price.
     const curPct = cur != null && l.premium ? Math.round((up ? cur / l.premium - 1 : 1 - cur / l.premium) * 1000) / 10 : null;
@@ -1052,6 +1054,12 @@ export default function StrategyBuilder() {
                     <span data-testid="auto-state" className={autoActive || (serverAuto && autoOn && liveMode === "fresh") ? "text-up" : "text-muted"}>
                       {!autoOn ? "off: levels are only shown" : serverAuto ? (liveMode === "fresh" ? "checked on the server every second, even when this page is closed" : "on the server: waiting for live prices (market closed or stream not live)") : autoActive ? "watching live prices (server unreachable: only while this page is open)" : "paused: no live prices (market closed or stream not live)"}
                     </span>
+                    <label className="flex items-center gap-1.5 text-paper" data-testid="cost-toggle"
+                      title="When a leg is stopped out, the stop of each other open leg on the same side (buy or sell) moves to that leg's own entry premium, if the leg is in profit at that moment. A stop is only ever tightened, never loosened. It applies to stops hit from now on, and needs Auto stop &amp; target to be on.">
+                      <input type="checkbox" aria-label="Move other legs' stop to cost" checked={moveToCost} onChange={(e) => setMoveToCost(e.target.checked)} />
+                      Move other leg&apos;s SL to cost
+                    </label>
+                    {moveToCost && !autoOn && <span className="text-warn" data-testid="cost-needs-auto">needs Auto stop &amp; target on</span>}
                     {autoNote && <button type="button" onClick={() => setAutoNote(null)} className="ml-auto max-w-full truncate text-left text-warn" title="Click to dismiss" data-testid="auto-note">{autoNote} ✕</button>}
                   </div>
                   {(() => {
@@ -1202,7 +1210,8 @@ export default function StrategyBuilder() {
                                   {(l.trailEvery != null || l.trailBy != null) && (l.trailEvery == null || l.trailBy == null || l.trailBy > l.trailEvery || l.stop == null) && (
                                     <span className="text-down">{l.stop == null ? "set a stop first" : l.trailEvery == null || l.trailBy == null ? "needs both boxes" : "move by no more than the step"}</span>
                                   )}
-                                  {l.stopTrailed && l.stopBase != null && <span className="text-info" data-testid="stop-trailed">stop trailed from {fmtPrice(l.stopBase)} to {fmtPrice(l.stop as number)}</span>}
+                                  {l.costMoved && <span className="text-info" data-testid="stop-at-cost">stop moved to cost ({fmtPrice(l.stop as number)}){l.stopBase != null ? `, was ${fmtPrice(l.stopBase)}` : ""}</span>}
+                                  {l.stopTrailed && !l.costMoved && l.stopBase != null && <span className="text-info" data-testid="stop-trailed">stop trailed from {fmtPrice(l.stopBase)} to {fmtPrice(l.stop as number)}</span>}
                                 </span>
                                 {exited && l.exitReason === "stop" && (l.reentry ?? 0) > 0 && l.reentryLevel != null && (
                                   <span className="text-info" data-testid="reentry-armed">re-entry armed: enters again when the premium is {buy ? "back at or above" : "back at or below"} {fmtPrice(l.reentryLevel)} ({l.reentry} left)</span>

@@ -506,3 +506,4 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 - Swing: the evening scan hands the same candidate list to both books; the live book keeps its own copy and reads nothing of the official book (D144).
 - Market Intelligence redesigned (D145): a plain-language reading and evidence bars on the Overview, five tabs (Overview, Evidence, Signals and alerts, Timeline, Data and method); no calculation changed.
 - Straddle Intelligence page redesigned (D146): a plain reading first, five tabs (Overview, Today's premium, Why these scores, Alerts and checks, Method); no calculation changed.
+- Strategy builder: "Move other leg's SL to cost" switch (D147), applied in the browser and by the server with the same rule; off by default.

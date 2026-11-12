@@ -21,7 +21,7 @@ from app.strategy.automation import apply_automation, apply_strategy_rules, is_e
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "strategy_parity.json"
 AT = datetime(2026, 11, 6, 5, 0, tzinfo=UTC)
 LOT = 65
-FIELDS = ("premium", "stop", "stopBase", "stopTrailed", "target", "exitPrice", "exitReason", "realised", "reentry", "reentryLevel", "cycles", "stopPct", "targetPct")
+FIELDS = ("premium", "stop", "stopBase", "stopTrailed", "target", "exitPrice", "exitReason", "realised", "reentry", "reentryLevel", "cycles", "stopPct", "targetPct", "costMoved")
 
 
 def tick(v: float) -> float:
@@ -59,13 +59,13 @@ def make_cases() -> list[dict[str, Any]]:
             if rnd.random() < 0.5:
                 rules.update(trailEvery=rnd.choice([1000, 2000]), trailBy=rnd.choice([250, 500]))
         state = {"floor": rnd.choice([None, None, 600.0]), "done": None}
-        cases.append({"legs": legs, "prices": prices, "rules": rules, "state": state, "mult": rnd.choice([1, 1, 2])})
+        cases.append({"legs": legs, "prices": prices, "rules": rules, "state": state, "mult": rnd.choice([1, 1, 2]), "moveToCost": i % 2 == 0})  # half the cases run with "Move SL to cost" on
     return cases
 
 
 def run(case: dict[str, Any]) -> dict[str, Any]:
     price = lambda lg: case["prices"].get(f"{lg['strike']}{lg['type']}")  # noqa: E731
-    legs1, ev1 = apply_automation(case["legs"], price, LOT, AT, case["mult"])
+    legs1, ev1 = apply_automation(case["legs"], price, LOT, AT, case["mult"], case["moveToCost"])
     legs2, state2, ev2 = apply_strategy_rules(legs1, case["rules"], case["state"], price, LOT, AT, case["mult"])
     pick = lambda legs: [{k: lg.get(k) for k in FIELDS} for lg in legs]  # noqa: E731
     return {"legs": pick(legs2), "events": len(ev1) + len(ev2), "state": {"floor": state2.get("floor"), "done": state2.get("done")}}
@@ -89,9 +89,9 @@ def test_a_second_pass_over_the_same_prices_changes_nothing_except_a_permitted_r
     fired = 0
     for c in make_cases():
         price = lambda lg, c=c: c["prices"].get(f"{lg['strike']}{lg['type']}")  # noqa: E731
-        legs1, _ = apply_automation(c["legs"], price, LOT, AT, c["mult"])
+        legs1, _ = apply_automation(c["legs"], price, LOT, AT, c["mult"], c["moveToCost"])
         legs2, st, _ = apply_strategy_rules(legs1, c["rules"], c["state"], price, LOT, AT, c["mult"])
-        legs3, _ = apply_automation(legs2, price, LOT, AT, c["mult"])
+        legs3, _ = apply_automation(legs2, price, LOT, AT, c["mult"], c["moveToCost"])
         for before, after in zip(legs2, legs3, strict=True):
             if before != after:  # the only thing a repeat may do: enter a stopped leg again, once, while re-entries are left
                 assert is_exited(before) and not is_exited(after)

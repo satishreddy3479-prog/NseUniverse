@@ -60,9 +60,11 @@ def _money(v: float) -> str:
 
 
 def _stop_ref(leg: Leg) -> float | None:
-    """The stop as the user set it (before any trailing)."""
+    """The stop as the user set it (before any trailing). A stop the app moved to cost on a leg that had none is not one the user set: nothing."""
     base = leg.get("stopBase")
-    return base if base is not None else leg.get("stop")
+    if base is not None:
+        return float(base)
+    return None if leg.get("stopTrailed") else leg.get("stop")
 
 
 def exit_leg(leg: Leg, price: float, reason: str, lot_size: int, at: datetime, mult: float = 1, label: str | None = None) -> Leg:
@@ -70,7 +72,7 @@ def exit_leg(leg: Leg, price: float, reason: str, lot_size: int, at: datetime, m
     if prem is None or is_exited(leg):
         return leg
     pnl = _sign(leg) * (price - prem) * leg["lots"] * mult * lot_size
-    stop_name = "Trailing stop" if leg.get("stopTrailed") else "Stop"
+    stop_name = "Stop at cost" if leg.get("costMoved") else "Trailing stop" if leg.get("stopTrailed") else "Stop"
     what = label or {"stop": stop_name, "target": "Target"}.get(reason, "Manual exit")
     text = (
         f"{what}: {leg['action']} {leg['strike']} {leg['type']} closed at {price:.2f} "
@@ -96,7 +98,7 @@ def reenter_leg(leg: Leg, price: float, at: datetime) -> Leg:
     out = dict(leg)
     out.update(
         premium=price, premiumSource="market", exitPrice=None, exitReason=None, exitedAt=None, reentryLevel=None,
-        stop=lvl(leg.get("stopPct"), False), target=lvl(leg.get("targetPct"), True), stopBase=None, stopTrailed=False,
+        stop=lvl(leg.get("stopPct"), False), target=lvl(leg.get("targetPct"), True), stopBase=None, stopTrailed=False, costMoved=False,
         reentry=max(0, (leg.get("reentry") or 0) - 1), cycles=(leg.get("cycles") or 0) + 1,
         log=[*(leg.get("log") or []),
              {"at": at.isoformat(), "text": f"{_stamp(at)} Re-entry: {leg['action']} {leg['strike']} {leg['type']} at {price:.2f} [server]"}][-20:],
@@ -285,12 +287,66 @@ def apply_hold(
     return out, events
 
 
+def move_stops_to_cost(
+    legs: list[Leg], stopped: list[Leg], price_of: Callable[[Leg], float | None], at: datetime
+) -> tuple[list[Leg], list[str]]:
+    """"Move SL to cost". When a leg is stopped out, the stop of every OTHER open leg on the same side (buy or sell) moves to that leg's
+    own entry premium. Only a leg that is in profit at that moment is moved (a stop at the entry of a leg already in loss would exit it at
+    once); a leg without a live price, or not in profit, is left as it is and the event says so. The stop only ever tightens. The moved stop
+    is a trailed one (it may sit at the entry) and the stop the user typed is remembered. Mirrors ``moveStopsToCost`` in
+    frontend/src/lib/strategy.ts; paper only."""
+    events: list[str] = []
+    if not stopped:
+        return legs, events
+    sides = {x.get("action") for x in stopped}
+    first = stopped[0]
+    out: list[Leg] = []
+    for lg in legs:
+        prem = lg.get("premium")
+        if lg.get("enabled") is False or is_exited(lg) or prem is None or lg.get("action") not in sides:
+            out.append(lg)
+            continue
+        buy = lg.get("action") == "BUY"
+        who = f"{lg['action']} {lg['strike']} {lg['type']}"
+        px = price_of(lg)
+        if px is None or not px > 0:
+            events.append(f"{_stamp(at)} Stop to cost skipped for {who}: no live price [server]")
+            out.append(lg)
+            continue
+        if not (px > prem if buy else px < prem):
+            events.append(f"{_stamp(at)} Stop to cost skipped for {who}: it is not in profit (price {px:.2f} against entry {prem:.2f}) [server]")
+            out.append(lg)
+            continue
+        stop = lg.get("stop")
+        if stop is not None and (stop >= prem if buy else stop <= prem):
+            out.append(lg)  # already at the entry or tighter: never loosened
+            continue
+        text = (
+            f"{_stamp(at)} Stop moved to cost: {who} stop {'none' if stop is None else f'{stop:.2f}'} → {prem:.2f} "
+            f"because {first['action']} {first['strike']} {first['type']} was stopped out [server]"
+        )
+        events.append(text)
+        base = lg.get("stopBase")
+        moved = {
+            **lg, "stopBase": base if base is not None else stop, "stop": prem, "stopTrailed": True, "costMoved": True,
+            "log": [*(lg.get("log") or []), {"at": at.isoformat(), "text": text}][-20:],
+        }
+        # a leg that had no stop could not trail before; now that it has one the trail is applied in the same pass, so a repeat pass changes nothing
+        trailed = trail_leg(moved, px)
+        if trailed is not moved:
+            events.append(f"{_stamp(at)} Trailing stop {who}: stop {moved['stop']:.2f} → {trailed['stop']:.2f} (price {px:.2f}) [server]")
+        out.append(trailed)
+    return out, events
+
+
 def apply_automation(
-    legs: list[Leg], price_of: Callable[[Leg], float | None], lot_size: int, at: datetime, mult: float = 1
+    legs: list[Leg], price_of: Callable[[Leg], float | None], lot_size: int, at: datetime, mult: float = 1,
+    move_to_cost: bool = False,
 ) -> tuple[list[Leg], list[str]]:
     """One pass of every rule against live prices. Legs without a live price are left alone."""
     events: list[str] = []
     out: list[Leg] = []
+    stopped_now: list[Leg] = []  # legs this pass closed by their stop
     for leg in legs:
         px = price_of(leg) if leg.get("enabled") is not False else None
         if px is None or not px > 0:
@@ -313,6 +369,8 @@ def apply_automation(
                 continue
             n = exit_leg(leg, px, kind, lot_size, at, mult)
             events.append(n["log"][-1]["text"])
+            if kind == "stop":
+                stopped_now.append(n)
             out.append(n)
             continue
         if leg.get("exitReason") == "stop" and (leg.get("reentry") or 0) > 0 and leg.get("reentryLevel") is not None:
@@ -323,6 +381,9 @@ def apply_automation(
                 out.append(n)
                 continue
         out.append(leg)
+    if move_to_cost and stopped_now:
+        out, extra = move_stops_to_cost(out, stopped_now, price_of, at)
+        events.extend(extra)
     return out, events
 
 
@@ -446,7 +507,7 @@ class StrategyAutomation:
                 return []
             price = lambda lg: self.price_of_key(lg["key"]) if lg.get("key") else None  # noqa: E731
             mult = float(doc.get("mult") or 1)
-            legs, events = apply_automation(doc["legs"], price, int(lot), at, mult)
+            legs, events = apply_automation(doc["legs"], price, int(lot), at, mult, bool(doc.get("moveToCost")))
             rstate = doc.get("rstate") or {}
             legs, new_state, rule_events = apply_strategy_rules(legs, doc.get("rules") or {}, rstate, price, int(lot), at, mult)
             events = [*events, *rule_events]

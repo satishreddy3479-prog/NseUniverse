@@ -4,16 +4,16 @@ import { describe, expect, it } from "vitest";
 import fixture from "../../../backend/tests/fixtures/strategy_parity.json";
 import { applyAutomation, applyStrategyRules, type Leg, type RulesState, type StrategyRules } from "../lib/strategy";
 
-const FIELDS = ["premium", "stop", "stopBase", "stopTrailed", "target", "exitPrice", "exitReason", "realised", "reentry", "reentryLevel", "cycles", "stopPct", "targetPct"] as const;
+const FIELDS = ["premium", "stop", "stopBase", "stopTrailed", "target", "exitPrice", "exitReason", "realised", "reentry", "reentryLevel", "cycles", "stopPct", "targetPct", "costMoved"] as const;
 const AT = "2026-11-06T05:00:00.000Z";
 const norm = (v: unknown) => (v === undefined ? null : typeof v === "number" ? Math.round(v * 1e6) / 1e6 : v);
 
 describe("browser rules equal the server's", () => {
   it("agree on 300 generated strategies", () => {
     const diffs: string[] = [];
-    (fixture as unknown as { legs: Leg[]; prices: Record<string, number | null>; rules: StrategyRules; state: RulesState; mult: number; expected: { legs: Record<string, unknown>[]; events: number; state: { floor: number | null; done: string | null } } }[]).forEach((c, i) => {
+    (fixture as unknown as { moveToCost: boolean; legs: Leg[]; prices: Record<string, number | null>; rules: StrategyRules; state: RulesState; mult: number; expected: { legs: Record<string, unknown>[]; events: number; state: { floor: number | null; done: string | null } } }[]).forEach((c, i) => {
       const price = (strike: number, type: string) => c.prices[`${strike}${type}`] ?? null;
-      const r1 = applyAutomation(c.legs, price, 65, AT, c.mult);
+      const r1 = applyAutomation(c.legs, price, 65, AT, c.mult, c.moveToCost);
       const r2 = applyStrategyRules(r1.legs, { ...c.rules } as StrategyRules, c.state, price, 65, AT, c.mult);
       const got = r2.legs.map((l) => Object.fromEntries(FIELDS.map((f) => [f, norm((l as unknown as Record<string, unknown>)[f])])));
       const want = c.expected.legs.map((l) => Object.fromEntries(FIELDS.map((f) => [f, norm(l[f])])));

@@ -67,6 +67,19 @@ describe("Strategy builder with the server keeping the stops and targets", () =>
     expect(put.doc.auto).toBe(true);
   });
 
+  it("takes the Move SL to cost switch from the server's copy and sends a change of it back, so the server applies it with no page open", async () => {
+    running = { doc: { rev: 4, auto: true, moveToCost: true, lotSize: 75, mult: 1, expiry: "2026-11-10", legs: [leg()] } };
+    mount();
+    const toggle = await screen.findByRole("checkbox", { name: "Move other legs' stop to cost" });
+    await waitFor(() => expect(toggle).toBeChecked()); // the server's copy says it is on
+    const { fireEvent } = await import("@testing-library/react");
+    fireEvent.click(toggle);
+    await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url === "/api/strategies/running")).toBe(true), { timeout: 3000 });
+    const put = calls.find((c) => c.method === "PUT" && c.url === "/api/strategies/running")!.body as { doc: { moveToCost: boolean } };
+    expect(put.doc.moveToCost).toBe(false); // switched off here and sent up
+    expect(JSON.parse(localStorage.getItem(WORKING_KEY) ?? "{}").moveToCost).toBe(false); // and kept across a refresh
+  });
+
   it("moves a working strategy of an expired expiry to the latest weekly expiry instead of staying on it", async () => {
     localStorage.setItem(WORKING_KEY, JSON.stringify({ legs: [leg({ expiry: "2026-11-03" })], expiry: "2026-11-03", name: "old", loaded: null, baseline: [], at: Date.now() }));
     mount();

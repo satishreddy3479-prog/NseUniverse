@@ -50,7 +50,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 /** The strategy the builder is managing, as the server holds it; the server checks its stops and targets every second. */
 export interface RunningDoc {
   rev?: number; auto?: boolean; lotSize?: number | null; mult?: number; expiry?: string | null; name?: string; loaded?: string | null;
-  legs?: import("./strategy").Leg[]; rules?: import("./strategy").StrategyRules; rstate?: import("./strategy").RulesState | null; rearmAt?: string | null; hold?: import("./strategy").HoldRule; holdFrom?: string | null; baseline?: import("./strategy").Leg[]; serverEvents?: { at: string; text: string }[];
+  legs?: import("./strategy").Leg[]; rules?: import("./strategy").StrategyRules; rstate?: import("./strategy").RulesState | null; rearmAt?: string | null; hold?: import("./strategy").HoldRule; moveToCost?: boolean; holdFrom?: string | null; baseline?: import("./strategy").Leg[]; serverEvents?: { at: string; text: string }[];
 }
 export interface RunningResponse { doc: RunningDoc | null; checking: { live: boolean; last_check_at: string | null; error: string | null } }
 

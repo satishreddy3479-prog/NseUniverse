@@ -32,6 +32,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -47,7 +48,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -90,6 +92,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -105,7 +108,8 @@
 "reentryLevel": 219.9,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -150,6 +154,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -165,12 +170,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19995821145006276,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
 "state": {
-"floor": 1500,
+"floor": 1500.0,
 "done": "target"
 }
 }
@@ -223,6 +229,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -238,7 +245,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2000756429652042,
-"targetPct": 0.5000000000000002
+"targetPct": 0.5000000000000002,
+"costMoved": null
 },
 {
 "premium": 225.15,
@@ -253,12 +261,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
 "state": {
-"floor": 3000,
+"floor": 3000.0,
 "done": "target"
 }
 }
@@ -296,6 +305,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -311,7 +321,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -388,6 +399,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -403,7 +415,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30000000000000004,
-"targetPct": 0.29999999999999993
+"targetPct": 0.29999999999999993,
+"costMoved": null
 },
 {
 "premium": 236.1,
@@ -418,7 +431,8 @@
 "reentryLevel": 236.1,
 "cycles": null,
 "stopPct": 0.3000847098686996,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 231.8,
@@ -433,7 +447,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -525,6 +540,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -540,7 +556,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30002167786689793,
-"targetPct": 0.5001083893344895
+"targetPct": 0.5001083893344895,
+"costMoved": null
 },
 {
 "premium": 72.7,
@@ -555,7 +572,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2001375515818432,
-"targetPct": 0.2998624484181567
+"targetPct": 0.2998624484181567,
+"costMoved": null
 },
 {
 "premium": 121.85,
@@ -570,7 +588,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5002051702913418,
-"targetPct": 0.4997948297086583
+"targetPct": 0.4997948297086583,
+"costMoved": null
 },
 {
 "premium": 217.6,
@@ -585,7 +604,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 6,
@@ -643,6 +663,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -658,7 +679,8 @@
 "reentryLevel": 95.1,
 "cycles": null,
 "stopPct": 0.5000000000000002,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 55.55,
@@ -673,7 +695,8 @@
 "reentryLevel": 55.55,
 "cycles": null,
 "stopPct": 0.4995499549954996,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -752,6 +775,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -767,7 +791,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 225.4,
@@ -782,7 +807,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 259.0,
@@ -797,7 +823,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -893,6 +920,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -908,7 +936,8 @@
 "reentryLevel": 27.65,
 "cycles": null,
 "stopPct": 0.5009041591320071,
-"targetPct": 0.49909584086799286
+"targetPct": 0.49909584086799286,
+"costMoved": null
 },
 {
 "premium": 102.05,
@@ -923,7 +952,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 153.65,
@@ -938,7 +968,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 28.15,
@@ -953,7 +984,8 @@
 "reentryLevel": 28.15,
 "cycles": null,
 "stopPct": 0.4991119005328599,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -1028,6 +1060,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -1043,7 +1076,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.29985443959243085
+"targetPct": 0.29985443959243085,
+"costMoved": null
 },
 {
 "premium": 85.85,
@@ -1058,7 +1092,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5002912055911473,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 127.75,
@@ -1073,7 +1108,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -1146,6 +1182,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -1161,7 +1198,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 272.45,
@@ -1176,7 +1214,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 167.3,
@@ -1191,7 +1230,8 @@
 "reentryLevel": 167.3,
 "cycles": null,
 "stopPct": 0.30005977286312024,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -1289,6 +1329,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -1304,7 +1345,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 210.15,
@@ -1319,7 +1361,8 @@
 "reentryLevel": 210.15,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 234.45,
@@ -1334,7 +1377,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 47.05,
@@ -1349,7 +1393,8 @@
 "reentryLevel": 47.05,
 "cycles": null,
 "stopPct": 0.29968119022316686,
-"targetPct": 0.5005313496280552
+"targetPct": 0.5005313496280552,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -1409,6 +1454,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -1424,7 +1470,8 @@
 "reentryLevel": 170.3,
 "cycles": null,
 "stopPct": 0.19994128009395173,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 176.3,
@@ -1439,7 +1486,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.30005672149744744
+"targetPct": 0.30005672149744744,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -1482,6 +1530,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -1497,7 +1546,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.30017452006980805
+"targetPct": 0.30017452006980805,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -1572,6 +1622,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -1587,7 +1638,8 @@
 "reentryLevel": 66.6,
 "cycles": null,
 "stopPct": 0.1996996996996998,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 84.6,
@@ -1602,7 +1654,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 80.25,
@@ -1617,7 +1670,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5003115264797507,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -1660,6 +1714,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -1675,7 +1730,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -1767,6 +1823,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -1782,7 +1839,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 123.3,
@@ -1797,7 +1855,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 22.55,
@@ -1812,7 +1871,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 77.4,
@@ -1827,7 +1887,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -1919,6 +1980,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -1934,7 +1996,8 @@
 "reentryLevel": 288.95,
 "cycles": null,
 "stopPct": 0.2000346080636788,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 161.55,
@@ -1949,7 +2012,8 @@
 "reentryLevel": 161.55,
 "cycles": null,
 "stopPct": 0.2999071494893222,
-"targetPct": 0.2999071494893223
+"targetPct": 0.2999071494893223,
+"costMoved": null
 },
 {
 "premium": 252.0,
@@ -1964,7 +2028,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.20000000000000007,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 260.1,
@@ -1979,7 +2044,8 @@
 "reentryLevel": 260.1,
 "cycles": null,
 "stopPct": 0.4999999999999998,
-"targetPct": 0.3000768935024991
+"targetPct": 0.3000768935024991,
+"costMoved": null
 }
 ],
 "events": 5,
@@ -2074,6 +2140,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -2089,7 +2156,8 @@
 "reentryLevel": 129.6,
 "cycles": null,
 "stopPct": 0.19984567901234573,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 70.55,
@@ -2104,7 +2172,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 180.5,
@@ -2119,7 +2188,8 @@
 "reentryLevel": 180.5,
 "cycles": null,
 "stopPct": 0.30000000000000004,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 201.85,
@@ -2134,7 +2204,8 @@
 "reentryLevel": 201.85,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -2181,6 +2252,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -2196,7 +2268,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -2277,6 +2350,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -2292,7 +2366,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19987699876998766,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 41.5,
@@ -2307,7 +2382,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 46.4,
@@ -2322,7 +2398,8 @@
 "reentryLevel": 46.4,
 "cycles": null,
 "stopPct": 0.2995689655172413,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -2399,6 +2476,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -2414,7 +2492,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.300589390962672,
-"targetPct": 0.5009823182711198
+"targetPct": 0.5009823182711198,
+"costMoved": null
 },
 {
 "premium": 84.15,
@@ -2429,7 +2508,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.3000594177064766,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 244.85,
@@ -2444,12 +2524,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2999795793342862,
-"targetPct": 0.5001021033285686
+"targetPct": 0.5001021033285686,
+"costMoved": null
 }
 ],
 "events": 5,
 "state": {
-"floor": 1000,
+"floor": 1000.0,
 "done": "target"
 }
 }
@@ -2504,6 +2585,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -2519,7 +2601,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 144.45,
@@ -2534,7 +2617,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5001730702665284,
-"targetPct": 0.3001038421599169
+"targetPct": 0.3001038421599169,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -2596,6 +2680,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -2611,7 +2696,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30005120327700974,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 112.8,
@@ -2626,7 +2712,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19991134751773054,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -2669,6 +2756,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -2684,7 +2772,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -2757,13 +2846,14 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
 "premium": 31.45,
-"stop": 47.2,
-"stopBase": null,
-"stopTrailed": null,
+"stop": 31.45,
+"stopBase": 47.2,
+"stopTrailed": true,
 "target": null,
 "exitPrice": null,
 "exitReason": null,
@@ -2772,7 +2862,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": true
 },
 {
 "premium": 59.15,
@@ -2787,7 +2878,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 148.15,
@@ -2802,10 +2894,11 @@
 "reentryLevel": 148.15,
 "cycles": null,
 "stopPct": 0.3000337495781302,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
-"events": 1,
+"events": 2,
 "state": {
 "floor": null,
 "done": null
@@ -2890,6 +2983,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -2905,7 +2999,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 294.75,
@@ -2920,7 +3015,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 220.55,
@@ -2935,7 +3031,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 271.2,
@@ -2950,7 +3047,8 @@
 "reentryLevel": 271.2,
 "cycles": null,
 "stopPct": 0.20003687315634222,
-"targetPct": 0.299963126843658
+"targetPct": 0.299963126843658,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -2993,6 +3091,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -3008,7 +3107,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.20000000000000007,
-"targetPct": 0.2995983935742972
+"targetPct": 0.2995983935742972,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -3072,6 +3172,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -3087,7 +3188,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 146.15,
@@ -3102,7 +3204,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -3166,6 +3269,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -3181,7 +3285,8 @@
 "reentryLevel": 84.0,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 288.15,
@@ -3196,7 +3301,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2000694082942911,
-"targetPct": 0.30001735207357294
+"targetPct": 0.30001735207357294,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -3256,6 +3362,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -3271,7 +3378,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 213.05,
@@ -3286,7 +3394,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19995306266134716,
-"targetPct": 0.29992959399202057
+"targetPct": 0.29992959399202057,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -3331,6 +3440,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -3346,7 +3456,8 @@
 "reentryLevel": 222.95,
 "cycles": null,
 "stopPct": 0.49988786723480594,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -3433,6 +3544,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -3448,7 +3560,8 @@
 "reentryLevel": 187.6,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 124.2,
@@ -3463,7 +3576,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 284.0,
@@ -3478,7 +3592,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -3570,6 +3685,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -3585,7 +3701,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 83.4,
@@ -3600,7 +3717,8 @@
 "reentryLevel": 83.4,
 "cycles": null,
 "stopPct": 0.2997601918465228,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 136.75,
@@ -3615,13 +3733,14 @@
 "reentryLevel": 136.75,
 "cycles": null,
 "stopPct": 0.49981718464351,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 191.75,
-"stop": 153.4,
-"stopBase": null,
-"stopTrailed": null,
+"stop": 191.75,
+"stopBase": 153.4,
+"stopTrailed": true,
 "target": null,
 "exitPrice": 241.25,
 "exitReason": "strategy",
@@ -3630,10 +3749,11 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": null
+"targetPct": null,
+"costMoved": true
 }
 ],
-"events": 3,
+"events": 4,
 "state": {
 "floor": 600.0,
 "done": "lock"
@@ -3673,6 +3793,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -3688,7 +3809,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -3746,6 +3868,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -3761,7 +3884,8 @@
 "reentryLevel": 139.5,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 218.9,
@@ -3776,10 +3900,11 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
-"events": 1,
+"events": 2,
 "state": {
 "floor": null,
 "done": null
@@ -3866,6 +3991,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -3881,7 +4007,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.29999999999999993
+"targetPct": 0.29999999999999993,
+"costMoved": null
 },
 {
 "premium": 201.9,
@@ -3896,7 +4023,8 @@
 "reentryLevel": 201.9,
 "cycles": null,
 "stopPct": 0.2999009410599305,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 86.5,
@@ -3911,7 +4039,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.30000000000000004
+"targetPct": 0.30000000000000004,
+"costMoved": null
 },
 {
 "premium": 227.6,
@@ -3926,7 +4055,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19991212653778556,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 4,
@@ -4015,6 +4145,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -4030,7 +4161,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.29996264475158774,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 126.6,
@@ -4045,7 +4177,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 293.7,
@@ -4060,7 +4193,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2999659516513449,
-"targetPct": 0.2999659516513451
+"targetPct": 0.2999659516513451,
+"costMoved": null
 },
 {
 "premium": 288.9,
@@ -4075,10 +4209,11 @@
 "reentryLevel": 288.9,
 "cycles": null,
 "stopPct": 0.20006922810661143,
-"targetPct": 0.2999307718933887
+"targetPct": 0.2999307718933887,
+"costMoved": null
 }
 ],
-"events": 5,
+"events": 6,
 "state": {
 "floor": null,
 "done": "sl"
@@ -4173,6 +4308,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -4188,7 +4324,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.30008453085376163
+"targetPct": 0.30008453085376163,
+"costMoved": null
 },
 {
 "premium": 143.3,
@@ -4203,7 +4340,8 @@
 "reentryLevel": 143.3,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 48.55,
@@ -4218,7 +4356,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 },
 {
 "premium": 265.9,
@@ -4233,12 +4372,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 4,
 "state": {
-"floor": 1500,
+"floor": 1500.0,
 "done": "target"
 }
 }
@@ -4291,6 +4431,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -4306,7 +4447,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 131.45,
@@ -4321,7 +4463,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2000760745530621,
-"targetPct": 0.500190186382655
+"targetPct": 0.500190186382655,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -4381,6 +4524,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -4396,7 +4540,8 @@
 "reentryLevel": 72.5,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 137.05,
@@ -4411,7 +4556,8 @@
 "reentryLevel": 137.05,
 "cycles": null,
 "stopPct": 0.5001824151769425,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -4470,6 +4616,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -4485,7 +4632,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.20000000000000007,
-"targetPct": 0.30000000000000004
+"targetPct": 0.30000000000000004,
+"costMoved": null
 },
 {
 "premium": 292.95,
@@ -4500,7 +4648,8 @@
 "reentryLevel": 292.95,
 "cycles": null,
 "stopPct": 0.30005120327700996,
-"targetPct": 0.3000512032770096
+"targetPct": 0.3000512032770096,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -4545,6 +4694,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -4560,12 +4710,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2999758861827828,
-"targetPct": 0.4998794309139136
+"targetPct": 0.4998794309139136,
+"costMoved": null
 }
 ],
 "events": 1,
 "state": {
-"floor": 1000,
+"floor": 1000.0,
 "done": "target"
 }
 }
@@ -4618,6 +4769,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -4633,7 +4785,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2995951417004048,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 187.5,
@@ -4648,7 +4801,8 @@
 "reentryLevel": 187.5,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.30000000000000004
+"targetPct": 0.30000000000000004,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -4727,6 +4881,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -4742,7 +4897,8 @@
 "reentryLevel": 297.6,
 "cycles": null,
 "stopPct": 0.30006720430107503,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 76.05,
@@ -4757,7 +4913,8 @@
 "reentryLevel": 76.05,
 "cycles": null,
 "stopPct": 0.29980276134122286,
-"targetPct": 0.29980276134122286
+"targetPct": 0.29980276134122286,
+"costMoved": null
 },
 {
 "premium": 42.05,
@@ -4772,7 +4929,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -4849,6 +5007,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -4864,13 +5023,14 @@
 "reentryLevel": 179.35,
 "cycles": null,
 "stopPct": 0.29997212155004194,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 89.5,
-"stop": 107.4,
-"stopBase": null,
-"stopTrailed": null,
+"stop": 89.5,
+"stopBase": 107.4,
+"stopTrailed": true,
 "target": 62.65,
 "exitPrice": null,
 "exitReason": null,
@@ -4879,7 +5039,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": true
 },
 {
 "premium": 289.65,
@@ -4894,10 +5055,11 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
-"events": 1,
+"events": 3,
 "state": {
 "floor": null,
 "done": null
@@ -4939,6 +5101,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -4954,7 +5117,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2999196464443552,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -5050,6 +5214,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -5065,7 +5230,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 35.1,
@@ -5080,7 +5246,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 254.4,
@@ -5095,7 +5262,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.29992138364779874,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 57.4,
@@ -5110,7 +5278,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.29965156794425085,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -5174,6 +5343,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -5189,7 +5359,8 @@
 "reentryLevel": 186.95,
 "cycles": null,
 "stopPct": 0.30008023535704753,
-"targetPct": 0.49986627440492104
+"targetPct": 0.49986627440492104,
+"costMoved": null
 },
 {
 "premium": 236.0,
@@ -5204,7 +5375,8 @@
 "reentryLevel": 236.0,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -5300,6 +5472,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -5315,7 +5488,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 178.4,
@@ -5330,7 +5504,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 200.1,
@@ -5345,7 +5520,8 @@
 "reentryLevel": 200.1,
 "cycles": null,
 "stopPct": 0.19990004997501254,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 255.9,
@@ -5360,7 +5536,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -5452,6 +5629,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -5467,7 +5645,8 @@
 "reentryLevel": 32.15,
 "cycles": null,
 "stopPct": 0.3001555209953344,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 67.9,
@@ -5482,7 +5661,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2997054491899851,
-"targetPct": 0.2997054491899853
+"targetPct": 0.2997054491899853,
+"costMoved": null
 },
 {
 "premium": 73.65,
@@ -5497,7 +5677,8 @@
 "reentryLevel": 73.65,
 "cycles": null,
 "stopPct": 0.30006788866259315,
-"targetPct": 0.3000678886625935
+"targetPct": 0.3000678886625935,
+"costMoved": null
 },
 {
 "premium": 116.55,
@@ -5512,7 +5693,8 @@
 "reentryLevel": 116.55,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -5587,6 +5769,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -5602,7 +5785,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 99.85,
@@ -5617,7 +5801,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 139.15,
@@ -5632,7 +5817,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -5690,6 +5876,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -5705,7 +5892,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.3003731343283582
+"targetPct": 0.3003731343283582,
+"costMoved": null
 },
 {
 "premium": 181.65,
@@ -5720,7 +5908,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.3000275254610515,
-"targetPct": 0.3000275254610514
+"targetPct": 0.3000275254610514,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -5820,6 +6009,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -5835,7 +6025,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 120.6,
@@ -5850,7 +6041,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.1998341625207296,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 32.3,
@@ -5865,7 +6057,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 },
 {
 "premium": 234.4,
@@ -5880,7 +6073,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.20008532423208192,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 4,
@@ -5953,6 +6147,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -5968,7 +6163,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 231.1,
@@ -5983,7 +6179,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 265.8,
@@ -5998,7 +6195,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19996237772761472,
-"targetPct": 0.3000376222723853
+"targetPct": 0.3000376222723853,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -6085,6 +6283,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -6100,13 +6299,14 @@
 "reentryLevel": 65.5,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.29999999999999993
+"targetPct": 0.29999999999999993,
+"costMoved": null
 },
 {
 "premium": 204.45,
-"stop": 306.65,
-"stopBase": null,
-"stopTrailed": null,
+"stop": 204.45,
+"stopBase": 306.65,
+"stopTrailed": true,
 "target": null,
 "exitPrice": 196.0,
 "exitReason": "strategy",
@@ -6115,7 +6315,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.49987772071411096,
-"targetPct": null
+"targetPct": null,
+"costMoved": true
 },
 {
 "premium": 59.5,
@@ -6130,7 +6331,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 52.3,
@@ -6145,10 +6347,11 @@
 "reentryLevel": 52.3,
 "cycles": null,
 "stopPct": 0.19980879541108987,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
-"events": 4,
+"events": 5,
 "state": {
 "floor": null,
 "done": "sl"
@@ -6242,6 +6445,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -6257,7 +6461,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 140.4,
@@ -6272,7 +6477,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 297.0,
@@ -6287,7 +6493,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 26.1,
@@ -6302,7 +6509,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -6390,6 +6598,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -6405,7 +6614,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30006186842647975,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 192.65,
@@ -6420,7 +6630,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.20010381520892817,
-"targetPct": 0.30002595380223185
+"targetPct": 0.30002595380223185,
+"costMoved": null
 },
 {
 "premium": 260.35,
@@ -6435,7 +6646,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.49990397541770704,
-"targetPct": 0.29998079508354114
+"targetPct": 0.29998079508354114,
+"costMoved": null
 },
 {
 "premium": 87.9,
@@ -6450,7 +6662,8 @@
 "reentryLevel": 87.9,
 "cycles": null,
 "stopPct": 0.29977246871444807,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 4,
@@ -6493,6 +6706,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -6508,7 +6722,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -6581,6 +6796,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -6596,7 +6812,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30019367333763713,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 224.05,
@@ -6611,7 +6828,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19995536710555684,
-"targetPct": 0.2999330506583351
+"targetPct": 0.2999330506583351,
+"costMoved": null
 },
 {
 "premium": 25.25,
@@ -6626,7 +6844,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -6707,6 +6926,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -6722,7 +6942,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 94.35,
@@ -6737,7 +6958,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.4997350291467939,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 227.45,
@@ -6752,7 +6974,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -6816,6 +7039,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -6831,7 +7055,8 @@
 "reentryLevel": 186.15,
 "cycles": null,
 "stopPct": 0.30002686005909207,
-"targetPct": 0.30002686005909207
+"targetPct": 0.30002686005909207,
+"costMoved": null
 },
 {
 "premium": 161.1,
@@ -6846,7 +7071,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -6891,6 +7117,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -6906,12 +7133,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.3001135718341851,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
 "state": {
-"floor": 5000,
+"floor": 5000.0,
 "done": "target"
 }
 }
@@ -6949,6 +7177,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -6964,7 +7193,8 @@
 "reentryLevel": 202.75,
 "cycles": null,
 "stopPct": 0.20000000000000007,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -7039,6 +7269,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -7054,7 +7285,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 127.85,
@@ -7069,7 +7301,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 151.5,
@@ -7084,7 +7317,8 @@
 "reentryLevel": 151.5,
 "cycles": null,
 "stopPct": 0.2999999999999998,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -7127,6 +7361,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -7142,7 +7377,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -7203,6 +7439,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -7218,7 +7455,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 131.2,
@@ -7233,7 +7471,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -7327,6 +7566,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -7342,7 +7582,8 @@
 "reentryLevel": 163.25,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 181.6,
@@ -7357,13 +7598,14 @@
 "reentryLevel": 181.6,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 223.35,
-"stop": null,
+"stop": 223.35,
 "stopBase": null,
-"stopTrailed": null,
+"stopTrailed": true,
 "target": 156.35,
 "exitPrice": null,
 "exitReason": null,
@@ -7372,7 +7614,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": true
 },
 {
 "premium": 146.45,
@@ -7387,10 +7630,11 @@
 "reentryLevel": 146.45,
 "cycles": null,
 "stopPct": 0.3001024240355069,
-"targetPct": 0.30010242403550724
+"targetPct": 0.30010242403550724,
+"costMoved": null
 }
 ],
-"events": 2,
+"events": 3,
 "state": {
 "floor": 600.0,
 "done": null
@@ -7430,6 +7674,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -7445,7 +7690,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.4998511461744567,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -7539,6 +7785,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -7554,7 +7801,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2001233425840272,
-"targetPct": 0.30003083564600685
+"targetPct": 0.30003083564600685,
+"costMoved": null
 },
 {
 "premium": 147.4,
@@ -7569,7 +7817,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 154.65,
@@ -7584,7 +7833,8 @@
 "reentryLevel": 154.65,
 "cycles": null,
 "stopPct": 0.20012932428063368,
-"targetPct": 0.5001616553507922
+"targetPct": 0.5001616553507922,
+"costMoved": null
 },
 {
 "premium": 177.15,
@@ -7599,7 +7849,8 @@
 "reentryLevel": 177.15,
 "cycles": null,
 "stopPct": 0.3000282246683601,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -7659,6 +7910,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -7674,7 +7926,8 @@
 "reentryLevel": 133.95,
 "cycles": null,
 "stopPct": 0.20007465472191122,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 218.3,
@@ -7689,7 +7942,8 @@
 "reentryLevel": 218.3,
 "cycles": null,
 "stopPct": 0.30004580852038476,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -7734,6 +7988,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -7749,7 +8004,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -7811,6 +8067,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -7826,7 +8083,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 },
 {
 "premium": 226.15,
@@ -7841,7 +8099,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.20008843687817823,
-"targetPct": 0.30002210921954453
+"targetPct": 0.30002210921954453,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -7920,13 +8179,14 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
 "premium": 43.4,
-"stop": null,
-"stopBase": null,
-"stopTrailed": null,
+"stop": 41.25,
+"stopBase": 43.4,
+"stopTrailed": true,
 "target": null,
 "exitPrice": null,
 "exitReason": null,
@@ -7935,7 +8195,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": true
 },
 {
 "premium": 57.45,
@@ -7950,7 +8211,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 242.6,
@@ -7965,10 +8227,11 @@
 "reentryLevel": 242.6,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
-"events": 1,
+"events": 3,
 "state": {
 "floor": null,
 "done": null
@@ -8042,6 +8305,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -8057,7 +8321,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 58.1,
@@ -8072,7 +8337,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 214.9,
@@ -8087,7 +8353,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -8147,6 +8414,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -8162,7 +8430,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 169.75,
@@ -8177,7 +8446,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": 0.3001472754050074
+"targetPct": 0.3001472754050074,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -8224,6 +8494,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -8239,7 +8510,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -8297,6 +8569,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -8312,7 +8585,8 @@
 "reentryLevel": 43.75,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": 0.3005714285714285
+"targetPct": 0.3005714285714285,
+"costMoved": null
 },
 {
 "premium": 62.3,
@@ -8327,7 +8601,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.1998394863563402,
-"targetPct": 0.3001605136436598
+"targetPct": 0.3001605136436598,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -8406,6 +8681,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -8421,7 +8697,8 @@
 "reentryLevel": 298.75,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 38.55,
@@ -8436,7 +8713,8 @@
 "reentryLevel": 38.55,
 "cycles": null,
 "stopPct": 0.2996108949416343,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 40.4,
@@ -8451,7 +8729,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -8538,6 +8817,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -8553,13 +8833,14 @@
 "reentryLevel": 31.95,
 "cycles": null,
 "stopPct": 0.300469483568075,
-"targetPct": 0.300469483568075
+"targetPct": 0.300469483568075,
+"costMoved": null
 },
 {
 "premium": 81.15,
-"stop": 105.5,
-"stopBase": null,
-"stopTrailed": null,
+"stop": 81.15,
+"stopBase": 105.5,
+"stopTrailed": true,
 "target": null,
 "exitPrice": 27.15,
 "exitReason": "strategy",
@@ -8568,7 +8849,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.3000616142945163,
-"targetPct": null
+"targetPct": null,
+"costMoved": true
 },
 {
 "premium": 106.35,
@@ -8583,7 +8865,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 225.9,
@@ -8598,12 +8881,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2999114652501105,
-"targetPct": 0.2999114652501107
+"targetPct": 0.2999114652501107,
+"costMoved": null
 }
 ],
-"events": 4,
+"events": 5,
 "state": {
-"floor": 500,
+"floor": 500.0,
 "done": "target"
 }
 }
@@ -8675,6 +8959,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -8690,7 +8975,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19992947813822293,
-"targetPct": 0.30007052186177696
+"targetPct": 0.30007052186177696,
+"costMoved": null
 },
 {
 "premium": 213.75,
@@ -8705,7 +8991,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 },
 {
 "premium": 110.4,
@@ -8720,7 +9007,8 @@
 "reentryLevel": 110.4,
 "cycles": null,
 "stopPct": 0.2001811594202899,
-"targetPct": 0.29981884057971
+"targetPct": 0.29981884057971,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -8784,6 +9072,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -8799,7 +9088,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 258.6,
@@ -8814,7 +9104,8 @@
 "reentryLevel": 258.6,
 "cycles": null,
 "stopPct": 0.30007733952049476,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -8905,6 +9196,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -8920,7 +9212,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 },
 {
 "premium": 183.35,
@@ -8935,7 +9228,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.49986364875920386,
-"targetPct": 0.29997272975184075
+"targetPct": 0.29997272975184075,
+"costMoved": null
 },
 {
 "premium": 90.7,
@@ -8950,7 +9244,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.2998897464167586
+"targetPct": 0.2998897464167586,
+"costMoved": null
 },
 {
 "premium": 157.8,
@@ -8965,7 +9260,8 @@
 "reentryLevel": 157.8,
 "cycles": null,
 "stopPct": 0.4999999999999998,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 5,
@@ -9059,6 +9355,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -9074,7 +9371,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2999561787905345,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 197.25,
@@ -9089,7 +9387,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.299873257287706,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 272.4,
@@ -9104,7 +9403,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.29992657856093974,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 268.35,
@@ -9119,7 +9419,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19992547046767273,
-"targetPct": 0.49990683808459113
+"targetPct": 0.49990683808459113,
+"costMoved": null
 }
 ],
 "events": 7,
@@ -9181,6 +9482,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -9196,7 +9498,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 187.15,
@@ -9211,7 +9514,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30002671653753676,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -9286,6 +9590,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -9301,13 +9606,14 @@
 "reentryLevel": 136.15,
 "cycles": null,
 "stopPct": 0.5001836210062431,
-"targetPct": 0.49981637899375697
+"targetPct": 0.49981637899375697,
+"costMoved": null
 },
 {
 "premium": 115.4,
-"stop": 173.1,
-"stopBase": null,
-"stopTrailed": null,
+"stop": 115.4,
+"stopBase": 173.1,
+"stopTrailed": true,
 "target": null,
 "exitPrice": 102.35,
 "exitReason": "strategy",
@@ -9316,7 +9622,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.4999999999999998,
-"targetPct": null
+"targetPct": null,
+"costMoved": true
 },
 {
 "premium": 80.8,
@@ -9331,10 +9638,11 @@
 "reentryLevel": 80.8,
 "cycles": null,
 "stopPct": 0.19987623762376228,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
-"events": 3,
+"events": 4,
 "state": {
 "floor": null,
 "done": "sl"
@@ -9374,6 +9682,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -9389,7 +9698,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30010834236186357,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -9432,6 +9742,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -9447,7 +9758,8 @@
 "reentryLevel": 123.4,
 "cycles": null,
 "stopPct": 0.4999999999999998,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -9490,6 +9802,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -9505,7 +9818,8 @@
 "reentryLevel": 104.15,
 "cycles": null,
 "stopPct": 0.49975996159385505,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -9567,6 +9881,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -9582,7 +9897,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2997779422649889,
-"targetPct": 0.2997779422649889
+"targetPct": 0.2997779422649889,
+"costMoved": null
 },
 {
 "premium": 55.05,
@@ -9597,7 +9913,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -9646,6 +9963,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -9661,7 +9979,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -9734,6 +10053,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -9749,7 +10069,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 140.9,
@@ -9764,7 +10085,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 43.4,
@@ -9779,7 +10101,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -9826,6 +10149,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -9841,7 +10165,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -9884,6 +10209,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -9899,7 +10225,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.1999241993556946,
-"targetPct": 0.2999810498389235
+"targetPct": 0.2999810498389235,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -9957,6 +10284,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -9972,7 +10300,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.29996271439224453,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 242.1,
@@ -9987,7 +10316,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.1999173895084676,
-"targetPct": 0.3000826104915324
+"targetPct": 0.3000826104915324,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -10036,6 +10366,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -10051,7 +10382,8 @@
 "reentryLevel": 173.95,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -10094,6 +10426,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -10109,7 +10442,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2999512670565302,
-"targetPct": 0.5000000000000002
+"targetPct": 0.5000000000000002,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -10171,6 +10505,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -10186,7 +10521,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.30000000000000004
+"targetPct": 0.30000000000000004,
+"costMoved": null
 },
 {
 "premium": 167.5,
@@ -10201,7 +10537,8 @@
 "reentryLevel": 167.5,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -10282,6 +10619,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -10297,7 +10635,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 247.75,
@@ -10312,7 +10651,8 @@
 "reentryLevel": 247.75,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 83.2,
@@ -10327,7 +10667,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2998798076923077,
-"targetPct": 0.2998798076923077
+"targetPct": 0.2998798076923077,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -10370,6 +10711,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -10385,7 +10727,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.3000539665407448,
-"targetPct": 0.5002698327037236
+"targetPct": 0.5002698327037236,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -10428,6 +10771,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -10443,7 +10787,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.1996512641673932,
-"targetPct": 0.2999128160418483
+"targetPct": 0.2999128160418483,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -10541,6 +10886,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -10556,7 +10902,8 @@
 "reentryLevel": 65.1,
 "cycles": null,
 "stopPct": 0.3003072196620583,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 84.85,
@@ -10571,7 +10918,8 @@
 "reentryLevel": 84.85,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 93.9,
@@ -10586,7 +10934,8 @@
 "reentryLevel": 93.9,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 151.4,
@@ -10601,7 +10950,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.29986789960369875
+"targetPct": 0.29986789960369875,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -10646,6 +10996,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -10661,7 +11012,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30000000000000004,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -10719,6 +11071,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -10734,7 +11087,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 33.35,
@@ -10749,12 +11103,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.2998500749625187
+"targetPct": 0.2998500749625187,
+"costMoved": null
 }
 ],
 "events": 2,
 "state": {
-"floor": 1000,
+"floor": 1000.0,
 "done": "target"
 }
 }
@@ -10813,6 +11168,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -10828,7 +11184,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 75.9,
@@ -10843,7 +11200,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -10907,6 +11265,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -10922,7 +11281,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 127.6,
@@ -10937,12 +11297,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30015673981191227,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
 "state": {
-"floor": 1500,
+"floor": 1500.0,
 "done": "target"
 }
 }
@@ -11029,6 +11390,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -11044,7 +11406,8 @@
 "reentryLevel": 30.55,
 "cycles": null,
 "stopPct": 0.4991816693944353,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 243.95,
@@ -11059,7 +11422,8 @@
 "reentryLevel": 243.95,
 "cycles": null,
 "stopPct": 0.20004099200655867,
-"targetPct": 0.4998975199836032
+"targetPct": 0.4998975199836032,
+"costMoved": null
 },
 {
 "premium": 155.1,
@@ -11074,7 +11438,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19987105093488078,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 233.15,
@@ -11089,7 +11454,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.4998927728929874,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 5,
@@ -11151,6 +11517,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -11166,7 +11533,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 248.55,
@@ -11181,7 +11549,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.29993964996982503,
-"targetPct": 0.29993964996982503
+"targetPct": 0.29993964996982503,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -11273,6 +11642,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -11288,7 +11658,8 @@
 "reentryLevel": 205.1,
 "cycles": null,
 "stopPct": 0.30009751340809354,
-"targetPct": 0.30009751340809343
+"targetPct": 0.30009751340809343,
+"costMoved": null
 },
 {
 "premium": 34.75,
@@ -11303,7 +11674,8 @@
 "reentryLevel": 34.75,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 200.65,
@@ -11318,7 +11690,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5001245950660353,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 28.55,
@@ -11333,7 +11706,8 @@
 "reentryLevel": 28.55,
 "cycles": null,
 "stopPct": 0.29947460595446584,
-"targetPct": 0.49912434325744304
+"targetPct": 0.49912434325744304,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -11425,6 +11799,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -11440,7 +11815,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.3000310269934844,
-"targetPct": 0.3000310269934843
+"targetPct": 0.3000310269934843,
+"costMoved": null
 },
 {
 "premium": 56.7,
@@ -11455,7 +11831,8 @@
 "reentryLevel": 56.7,
 "cycles": null,
 "stopPct": 0.20017636684303353,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 70.65,
@@ -11470,7 +11847,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 },
 {
 "premium": 76.1,
@@ -11485,10 +11863,11 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
-"events": 5,
+"events": 7,
 "state": {
 "floor": null,
 "done": "target"
@@ -11547,6 +11926,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -11562,7 +11942,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 },
 {
 "premium": 43.65,
@@ -11577,7 +11958,8 @@
 "reentryLevel": 43.65,
 "cycles": null,
 "stopPct": 0.20045819014891175,
-"targetPct": 0.5005727376861397
+"targetPct": 0.5005727376861397,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -11645,6 +12027,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -11660,7 +12043,8 @@
 "reentryLevel": 28.9,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 169.0,
@@ -11675,7 +12059,8 @@
 "reentryLevel": 169.0,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -11718,6 +12103,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -11733,12 +12119,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
 "state": {
-"floor": 1000,
+"floor": 1000.0,
 "done": null
 }
 }
@@ -11778,6 +12165,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -11793,7 +12181,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.29985895627644576,
-"targetPct": 0.5001410437235543
+"targetPct": 0.5001410437235543,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -11857,6 +12246,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -11872,7 +12262,8 @@
 "reentryLevel": 159.75,
 "cycles": null,
 "stopPct": 0.49984350547730827,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 123.8,
@@ -11887,7 +12278,8 @@
 "reentryLevel": 123.8,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -11930,6 +12322,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -11945,7 +12338,8 @@
 "reentryLevel": 131.05,
 "cycles": null,
 "stopPct": 0.19992369324685244,
-"targetPct": 0.5001907668828689
+"targetPct": 0.5001907668828689,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -11988,6 +12382,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -12003,7 +12398,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -12103,6 +12499,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -12118,7 +12515,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2003454231433507,
-"targetPct": 0.2996545768566494
+"targetPct": 0.2996545768566494,
+"costMoved": null
 },
 {
 "premium": 263.15,
@@ -12133,7 +12531,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 96.15,
@@ -12148,7 +12547,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.500260010400416,
-"targetPct": 0.3000520020800833
+"targetPct": 0.3000520020800833,
+"costMoved": null
 },
 {
 "premium": 462.0,
@@ -12163,7 +12563,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 }
 ],
 "events": 5,
@@ -12210,6 +12611,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -12225,7 +12627,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 }
 ],
 "events": 1,
@@ -12302,6 +12705,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -12317,7 +12721,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.4997713763145861,
-"targetPct": 0.2999542752629174
+"targetPct": 0.2999542752629174,
+"costMoved": null
 },
 {
 "premium": 122.5,
@@ -12332,7 +12737,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.30000000000000004
+"targetPct": 0.30000000000000004,
+"costMoved": null
 },
 {
 "premium": 93.1,
@@ -12347,12 +12753,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 3,
 "state": {
-"floor": 1000,
+"floor": 1000.0,
 "done": null
 }
 }
@@ -12411,6 +12818,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -12426,7 +12834,8 @@
 "reentryLevel": 248.55,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 183.05,
@@ -12441,7 +12850,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.2999180551761813
+"targetPct": 0.2999180551761813,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -12490,6 +12900,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -12505,7 +12916,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -12596,6 +13008,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -12611,7 +13024,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.29999999999999993
+"targetPct": 0.29999999999999993,
+"costMoved": null
 },
 {
 "premium": 141.15,
@@ -12626,7 +13040,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30003542330853705,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 149.15,
@@ -12641,7 +13056,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.49983238350653714,
-"targetPct": 0.3000335232986926
+"targetPct": 0.3000335232986926,
+"costMoved": null
 },
 {
 "premium": 67.3,
@@ -12656,12 +13072,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 5,
 "state": {
-"floor": 38000,
+"floor": 38000.0,
 "done": "target"
 }
 }
@@ -12716,6 +13133,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -12731,7 +13149,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 277.0,
@@ -12746,7 +13165,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -12810,6 +13230,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -12825,7 +13246,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 219.85,
@@ -12840,12 +13262,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.29997725722083235,
-"targetPct": 0.5001137138958383
+"targetPct": 0.5001137138958383,
+"costMoved": null
 }
 ],
 "events": 1,
 "state": {
-"floor": 500,
+"floor": 500.0,
 "done": "target"
 }
 }
@@ -12883,6 +13306,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -12898,7 +13322,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.30012187690432657
+"targetPct": 0.30012187690432657,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -12977,6 +13402,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -12992,7 +13418,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 63.95,
@@ -13007,7 +13434,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.5003909304143863
+"targetPct": 0.5003909304143863,
+"costMoved": null
 },
 {
 "premium": 161.0,
@@ -13022,7 +13450,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": 0.29999999999999993
+"targetPct": 0.29999999999999993,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -13080,13 +13509,14 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
 "premium": 51.4,
-"stop": null,
+"stop": 51.4,
 "stopBase": null,
-"stopTrailed": null,
+"stopTrailed": true,
 "target": null,
 "exitPrice": 85.75,
 "exitReason": "strategy",
@@ -13095,7 +13525,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": true
 },
 {
 "premium": 298.0,
@@ -13110,10 +13541,11 @@
 "reentryLevel": 298.0,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
-"events": 2,
+"events": 3,
 "state": {
 "floor": 600.0,
 "done": "sl"
@@ -13187,6 +13619,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -13202,7 +13635,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.29984135378106813,
-"targetPct": 0.4997355896351139
+"targetPct": 0.4997355896351139,
+"costMoved": null
 },
 {
 "premium": 251.15,
@@ -13217,7 +13651,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.20007963368504877,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 99.9,
@@ -13232,7 +13667,8 @@
 "reentryLevel": 99.9,
 "cycles": null,
 "stopPct": 0.20020020020020024,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -13324,6 +13760,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -13339,7 +13776,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.300578034682081
+"targetPct": 0.300578034682081,
+"costMoved": null
 },
 {
 "premium": 178.05,
@@ -13354,7 +13792,8 @@
 "reentryLevel": 178.05,
 "cycles": null,
 "stopPct": 0.2999157540016849,
-"targetPct": 0.2999157540016848
+"targetPct": 0.2999157540016848,
+"costMoved": null
 },
 {
 "premium": 157.35,
@@ -13369,7 +13808,8 @@
 "reentryLevel": 157.35,
 "cycles": null,
 "stopPct": 0.49984111852558,
-"targetPct": 0.2999682237051159
+"targetPct": 0.2999682237051159,
+"costMoved": null
 },
 {
 "premium": 113.95,
@@ -13384,7 +13824,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -13427,6 +13868,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -13442,7 +13884,8 @@
 "reentryLevel": 193.5,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -13487,6 +13930,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -13502,7 +13946,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -13560,6 +14005,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -13575,7 +14021,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.5001702417432756
+"targetPct": 0.5001702417432756,
+"costMoved": null
 },
 {
 "premium": 139.95,
@@ -13590,7 +14037,8 @@
 "reentryLevel": 139.95,
 "cycles": null,
 "stopPct": 0.30010718113612,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -13667,6 +14115,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -13682,7 +14131,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.3001004520341539
+"targetPct": 0.3001004520341539,
+"costMoved": null
 },
 {
 "premium": 208.05,
@@ -13697,7 +14147,8 @@
 "reentryLevel": 208.05,
 "cycles": null,
 "stopPct": 0.19995193463109828,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 46.35,
@@ -13712,10 +14163,11 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 }
 ],
-"events": 4,
+"events": 5,
 "state": {
 "floor": null,
 "done": "sl"
@@ -13802,6 +14254,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -13817,7 +14270,8 @@
 "reentryLevel": 102.95,
 "cycles": null,
 "stopPct": 0.20009713453132583,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 200.05,
@@ -13832,7 +14286,8 @@
 "reentryLevel": 200.05,
 "cycles": null,
 "stopPct": 0.5001249687578107,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 126.65,
@@ -13847,7 +14302,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5001973943939992,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 277.0,
@@ -13862,7 +14318,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 5,
@@ -13922,6 +14379,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -13937,7 +14395,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 255.9,
@@ -13952,10 +14411,11 @@
 "reentryLevel": 255.9,
 "cycles": null,
 "stopPct": 0.2999218444704961,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
-"events": 2,
+"events": 3,
 "state": {
 "floor": null,
 "done": "sl"
@@ -14031,6 +14491,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -14046,7 +14507,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.3000215377988369,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 63.05,
@@ -14061,7 +14523,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 170.0,
@@ -14076,7 +14539,8 @@
 "reentryLevel": 170.0,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": 0.30000000000000004
+"targetPct": 0.30000000000000004,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -14119,6 +14583,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -14134,7 +14599,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2999382843036411,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -14196,6 +14662,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -14211,7 +14678,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 243.65,
@@ -14226,7 +14694,8 @@
 "reentryLevel": 243.65,
 "cycles": null,
 "stopPct": 0.30002052123948286,
-"targetPct": 0.30002052123948286
+"targetPct": 0.30002052123948286,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -14273,6 +14742,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -14288,7 +14758,8 @@
 "reentryLevel": 102.25,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -14348,6 +14819,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -14363,7 +14835,8 @@
 "reentryLevel": 234.35,
 "cycles": null,
 "stopPct": 0.19991465756347337,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 94.9,
@@ -14378,7 +14851,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -14457,6 +14931,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -14472,7 +14947,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 286.15,
@@ -14487,7 +14963,8 @@
 "reentryLevel": 286.15,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 71.45,
@@ -14502,7 +14979,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.3002099370188943
+"targetPct": 0.3002099370188943,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -14566,6 +15044,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -14581,7 +15060,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5008849557522124,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 273.0,
@@ -14596,7 +15076,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -14654,6 +15135,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -14669,7 +15151,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 185.4,
@@ -14684,7 +15167,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -14733,6 +15217,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -14748,7 +15233,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 }
 ],
 "events": 1,
@@ -14791,6 +15277,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -14806,7 +15293,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -14881,6 +15369,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -14896,7 +15385,8 @@
 "reentryLevel": 91.4,
 "cycles": null,
 "stopPct": 0.29978118161925593,
-"targetPct": 0.29978118161925604
+"targetPct": 0.29978118161925604,
+"costMoved": null
 },
 {
 "premium": 238.2,
@@ -14911,7 +15401,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 195.3,
@@ -14926,7 +15417,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -14969,6 +15461,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -14984,7 +15477,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -15059,6 +15553,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -15074,7 +15569,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 265.95,
@@ -15089,7 +15585,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.3000564015792442,
-"targetPct": 0.3000564015792442
+"targetPct": 0.3000564015792442,
+"costMoved": null
 },
 {
 "premium": 114.9,
@@ -15104,7 +15601,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.20017406440382945,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 4,
@@ -15147,6 +15645,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -15162,7 +15661,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -15250,6 +15750,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -15265,7 +15766,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2996555683122848,
-"targetPct": 0.4994259471871412
+"targetPct": 0.4994259471871412,
+"costMoved": null
 },
 {
 "premium": 269.4,
@@ -15280,7 +15782,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 228.55,
@@ -15295,7 +15798,8 @@
 "reentryLevel": 228.55,
 "cycles": null,
 "stopPct": 0.29993436884707947,
-"targetPct": 0.29993436884707947
+"targetPct": 0.29993436884707947,
+"costMoved": null
 },
 {
 "premium": 50.3,
@@ -15310,7 +15814,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.3001988071570576,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 4,
@@ -15374,6 +15879,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -15389,7 +15895,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 238.55,
@@ -15404,12 +15911,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19995808006707194,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
 "state": {
-"floor": 55500,
+"floor": 55500.0,
 "done": "target"
 }
 }
@@ -15449,6 +15957,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -15464,7 +15973,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.4998477002741396,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -15556,6 +16066,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -15571,13 +16082,14 @@
 "reentryLevel": 163.2,
 "cycles": null,
 "stopPct": 0.5000000000000002,
-"targetPct": 0.29993872549019607
+"targetPct": 0.29993872549019607,
+"costMoved": null
 },
 {
 "premium": 81.05,
-"stop": null,
+"stop": 81.05,
 "stopBase": null,
-"stopTrailed": null,
+"stopTrailed": true,
 "target": null,
 "exitPrice": 54.1,
 "exitReason": "strategy",
@@ -15586,7 +16098,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": true
 },
 {
 "premium": 220.3,
@@ -15601,7 +16114,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 122.75,
@@ -15616,10 +16130,11 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
-"events": 3,
+"events": 4,
 "state": {
 "floor": null,
 "done": "target"
@@ -15659,6 +16174,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -15674,7 +16190,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.49982608695652175,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -15732,6 +16249,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -15747,7 +16265,8 @@
 "reentryLevel": 281.35,
 "cycles": null,
 "stopPct": 0.19992891416385294,
-"targetPct": 0.29998222854096335
+"targetPct": 0.29998222854096335,
+"costMoved": null
 },
 {
 "premium": 179.75,
@@ -15762,7 +16281,8 @@
 "reentryLevel": 179.75,
 "cycles": null,
 "stopPct": 0.4998609179415856,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -15841,6 +16361,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -15856,7 +16377,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 214.3,
@@ -15871,7 +16393,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 182.05,
@@ -15886,7 +16409,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -15952,6 +16476,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -15967,7 +16492,8 @@
 "reentryLevel": 60.95,
 "cycles": null,
 "stopPct": 0.2001640689089419,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 234.2,
@@ -15982,7 +16508,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -16072,6 +16599,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -16087,7 +16615,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.20011467889908263,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 212.05,
@@ -16102,7 +16631,8 @@
 "reentryLevel": 212.05,
 "cycles": null,
 "stopPct": 0.19995284131101143,
-"targetPct": 0.5001178967224711
+"targetPct": 0.5001178967224711,
+"costMoved": null
 },
 {
 "premium": 294.2,
@@ -16117,7 +16647,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 254.8,
@@ -16132,7 +16663,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.3000392464678179,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 5,
@@ -16193,6 +16725,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -16208,7 +16741,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 194.2,
@@ -16223,7 +16757,8 @@
 "reentryLevel": 194.2,
 "cycles": null,
 "stopPct": 0.20005149330587035,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -16268,6 +16803,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -16283,7 +16819,8 @@
 "reentryLevel": 241.5,
 "cycles": null,
 "stopPct": 0.30000000000000004,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -16356,6 +16893,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -16371,7 +16909,8 @@
 "reentryLevel": 207.9,
 "cycles": null,
 "stopPct": 0.2999037999037999,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 259.3,
@@ -16386,7 +16925,8 @@
 "reentryLevel": 259.3,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 203.25,
@@ -16401,7 +16941,8 @@
 "reentryLevel": 203.25,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": 0.30012300123001234
+"targetPct": 0.30012300123001234,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -16459,6 +17000,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -16474,7 +17016,8 @@
 "reentryLevel": 284.95,
 "cycles": null,
 "stopPct": 0.20003509387611862,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 21.25,
@@ -16489,7 +17032,8 @@
 "reentryLevel": 21.25,
 "cycles": null,
 "stopPct": 0.5011764705882353,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -16566,6 +17110,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -16581,7 +17126,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.49983238350653714,
-"targetPct": 0.3000335232986926
+"targetPct": 0.3000335232986926,
+"costMoved": null
 },
 {
 "premium": 116.55,
@@ -16596,7 +17142,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.1999141999141999,
-"targetPct": 0.2998712998713
+"targetPct": 0.2998712998713,
+"costMoved": null
 },
 {
 "premium": 53.7,
@@ -16611,7 +17158,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -16690,6 +17238,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -16705,7 +17254,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.5000886367665307
+"targetPct": 0.5000886367665307,
+"costMoved": null
 },
 {
 "premium": 277.35,
@@ -16720,7 +17270,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 229.8,
@@ -16735,7 +17286,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.30004351610095736
+"targetPct": 0.30004351610095736,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -16808,6 +17360,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -16823,7 +17376,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.29993429697766105,
-"targetPct": 0.29993429697766094
+"targetPct": 0.29993429697766094,
+"costMoved": null
 },
 {
 "premium": 290.35,
@@ -16838,7 +17392,8 @@
 "reentryLevel": 290.35,
 "cycles": null,
 "stopPct": 0.4999138970208368,
-"targetPct": 0.2999827794041674
+"targetPct": 0.2999827794041674,
+"costMoved": null
 },
 {
 "premium": 239.8,
@@ -16853,7 +17408,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.4999999999999998,
-"targetPct": 0.30004170141784825
+"targetPct": 0.30004170141784825,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -16928,6 +17484,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -16943,7 +17500,8 @@
 "reentryLevel": 118.65,
 "cycles": null,
 "stopPct": 0.5002107037505268,
-"targetPct": 0.5002107037505268
+"targetPct": 0.5002107037505268,
+"costMoved": null
 },
 {
 "premium": 260.25,
@@ -16958,7 +17516,8 @@
 "reentryLevel": 260.25,
 "cycles": null,
 "stopPct": 0.5000960614793466,
-"targetPct": 0.5000960614793468
+"targetPct": 0.5000960614793468,
+"costMoved": null
 },
 {
 "premium": 127.35,
@@ -16973,7 +17532,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.4998036906164116,
-"targetPct": 0.29996073812328217
+"targetPct": 0.29996073812328217,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -17031,6 +17591,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -17046,7 +17607,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 93.65,
@@ -17061,7 +17623,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.20021356113187394,
-"targetPct": 0.3000533902829685
+"targetPct": 0.3000533902829685,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -17135,6 +17698,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -17150,7 +17714,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 156.0,
@@ -17165,7 +17730,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30000000000000004,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 201.55,
@@ -17180,7 +17746,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -17272,6 +17839,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -17287,7 +17855,8 @@
 "reentryLevel": 61.1,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 183.85,
@@ -17302,7 +17871,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5001359804188197,
-"targetPct": 0.29997280391623615
+"targetPct": 0.29997280391623615,
+"costMoved": null
 },
 {
 "premium": 237.25,
@@ -17317,7 +17887,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": 0.5001053740779768
+"targetPct": 0.5001053740779768,
+"costMoved": null
 },
 {
 "premium": 46.8,
@@ -17332,7 +17903,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30021367521367515,
-"targetPct": 0.30021367521367526
+"targetPct": 0.30021367521367526,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -17375,6 +17947,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -17390,12 +17963,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.3002159827213823,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
 "state": {
-"floor": 500,
+"floor": 500.0,
 "done": "target"
 }
 }
@@ -17452,6 +18026,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -17467,7 +18042,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 188.0,
@@ -17482,7 +18058,8 @@
 "reentryLevel": 188.0,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -17527,6 +18104,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -17542,7 +18120,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -17604,6 +18183,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -17619,7 +18199,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 184.6,
@@ -17634,7 +18215,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.30010834236186357
+"targetPct": 0.30010834236186357,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -17692,6 +18274,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -17707,7 +18290,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5002704164413196,
-"targetPct": 0.3001622498647918
+"targetPct": 0.3001622498647918,
+"costMoved": null
 },
 {
 "premium": 39.7,
@@ -17722,12 +18306,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2997481108312341,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 2,
 "state": {
-"floor": 1000,
+"floor": 1000.0,
 "done": "target"
 }
 }
@@ -17816,6 +18401,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -17831,7 +18417,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.20004562043795615,
-"targetPct": 0.5000000000000002
+"targetPct": 0.5000000000000002,
+"costMoved": null
 },
 {
 "premium": 86.1,
@@ -17846,7 +18433,8 @@
 "reentryLevel": 86.1,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 204.45,
@@ -17861,7 +18449,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 210.4,
@@ -17876,7 +18465,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.2999049429657794
+"targetPct": 0.2999049429657794,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -17936,6 +18526,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -17951,7 +18542,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 263.0,
@@ -17966,7 +18558,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": 0.2999999999999998
+"targetPct": 0.2999999999999998,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -18045,6 +18638,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -18060,7 +18654,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.30000000000000004
+"targetPct": 0.30000000000000004,
+"costMoved": null
 },
 {
 "premium": 100.6,
@@ -18075,7 +18670,8 @@
 "reentryLevel": 100.6,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 72.5,
@@ -18090,7 +18686,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -18180,6 +18777,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -18195,7 +18793,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 185.55,
@@ -18210,7 +18809,8 @@
 "reentryLevel": 185.55,
 "cycles": null,
 "stopPct": 0.1999461061708434,
-"targetPct": 0.49986526542710863
+"targetPct": 0.49986526542710863,
+"costMoved": null
 },
 {
 "premium": 158.0,
@@ -18225,7 +18825,8 @@
 "reentryLevel": 158.0,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 95.3,
@@ -18240,7 +18841,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -18283,6 +18885,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -18298,7 +18901,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.4999999999999998
+"targetPct": 0.4999999999999998,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -18373,6 +18977,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -18388,7 +18993,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5000904322662325,
-"targetPct": 0.5000904322662326
+"targetPct": 0.5000904322662326,
+"costMoved": null
 },
 {
 "premium": 56.1,
@@ -18403,7 +19009,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19964349376114088,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 259.4,
@@ -18418,7 +19025,8 @@
 "reentryLevel": 259.4,
 "cycles": null,
 "stopPct": 0.299922898997687,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 4,
@@ -18484,6 +19092,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -18499,7 +19108,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 71.4,
@@ -18514,7 +19124,8 @@
 "reentryLevel": 71.4,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -18574,6 +19185,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -18589,7 +19201,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 112.2,
@@ -18604,7 +19217,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -18651,6 +19265,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -18666,7 +19281,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -18726,6 +19342,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -18741,7 +19358,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 294.5,
@@ -18756,7 +19374,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -18833,6 +19452,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -18848,7 +19468,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19938176197836177,
-"targetPct": 0.2998454404945903
+"targetPct": 0.2998454404945903,
+"costMoved": null
 },
 {
 "premium": 190.8,
@@ -18863,7 +19484,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 242.4,
@@ -18878,7 +19500,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.20008250825082508,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 5,
@@ -18974,6 +19597,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -18989,7 +19613,8 @@
 "reentryLevel": 269.45,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 86.6,
@@ -19004,7 +19629,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 216.7,
@@ -19019,7 +19645,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 40.9,
@@ -19034,7 +19661,8 @@
 "reentryLevel": 40.9,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -19077,6 +19705,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -19092,7 +19721,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -19135,6 +19765,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -19150,12 +19781,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
 "state": {
-"floor": 1000,
+"floor": 1000.0,
 "done": null
 }
 }
@@ -19248,6 +19880,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -19263,13 +19896,14 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 262.1,
-"stop": 393.15,
-"stopBase": null,
-"stopTrailed": null,
+"stop": 262.1,
+"stopBase": 393.15,
+"stopTrailed": true,
 "target": 131.05,
 "exitPrice": 134.35,
 "exitReason": "strategy",
@@ -19278,7 +19912,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.4999999999999998,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": true
 },
 {
 "premium": 178.5,
@@ -19293,7 +19928,8 @@
 "reentryLevel": 178.5,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 258.1,
@@ -19308,10 +19944,11 @@
 "reentryLevel": 258.1,
 "cycles": null,
 "stopPct": 0.19992251065478484,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
-"events": 3,
+"events": 4,
 "state": {
 "floor": null,
 "done": "sl"
@@ -19399,6 +20036,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -19414,7 +20052,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 145.15,
@@ -19429,7 +20068,8 @@
 "reentryLevel": 145.15,
 "cycles": null,
 "stopPct": 0.2001377884946608,
-"targetPct": 0.499827764381674
+"targetPct": 0.499827764381674,
+"costMoved": null
 },
 {
 "premium": 136.9,
@@ -19444,7 +20084,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 246.6,
@@ -19459,7 +20100,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.30008110300081126
+"targetPct": 0.30008110300081126,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -19502,6 +20144,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -19517,7 +20160,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -19596,6 +20240,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -19611,7 +20256,8 @@
 "reentryLevel": 22.2,
 "cycles": null,
 "stopPct": 0.2995495495495497,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 200.65,
@@ -19626,7 +20272,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 33.4,
@@ -19641,7 +20288,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 }
 ],
 "events": 4,
@@ -19735,6 +20383,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -19750,7 +20399,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 247.95,
@@ -19765,7 +20415,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 65.0,
@@ -19780,7 +20431,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 167.35,
@@ -19795,7 +20447,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.4998506124887959,
-"targetPct": 0.49985061248879603
+"targetPct": 0.49985061248879603,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -19890,6 +20543,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -19905,7 +20559,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.3000445831475702,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 164.05,
@@ -19920,7 +20575,8 @@
 "reentryLevel": 164.05,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 102.75,
@@ -19935,7 +20591,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.4997566909975669,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 155.55,
@@ -19950,12 +20607,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.29990356798457085,
-"targetPct": 0.29990356798457074
+"targetPct": 0.29990356798457074,
+"costMoved": null
 }
 ],
 "events": 4,
 "state": {
-"floor": 5000,
+"floor": 5000.0,
 "done": "target"
 }
 }
@@ -20042,6 +20700,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -20057,7 +20716,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2998500749625188,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 243.3,
@@ -20072,7 +20732,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.4999999999999998,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 363.2,
@@ -20087,7 +20748,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 },
 {
 "premium": 264.95,
@@ -20102,7 +20764,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30005661445555765,
-"targetPct": 0.30005661445555765
+"targetPct": 0.30005661445555765,
+"costMoved": null
 }
 ],
 "events": 5,
@@ -20147,6 +20810,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -20162,7 +20826,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -20205,6 +20870,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -20220,7 +20886,8 @@
 "reentryLevel": 189.9,
 "cycles": null,
 "stopPct": 0.20010531858873093,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -20263,6 +20930,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -20278,12 +20946,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5001525785779676,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
 "state": {
-"floor": 1000,
+"floor": 1000.0,
 "done": "target"
 }
 }
@@ -20375,6 +21044,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -20390,7 +21060,8 @@
 "reentryLevel": 21.6,
 "cycles": null,
 "stopPct": 0.30092592592592604,
-"targetPct": 0.3009259259259258
+"targetPct": 0.3009259259259258,
+"costMoved": null
 },
 {
 "premium": 77.05,
@@ -20405,7 +21076,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.5003244646333549
+"targetPct": 0.5003244646333549,
+"costMoved": null
 },
 {
 "premium": 96.05,
@@ -20420,7 +21092,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 75.55,
@@ -20435,7 +21108,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -20478,6 +21152,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -20493,7 +21168,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -20553,6 +21229,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -20568,7 +21245,8 @@
 "reentryLevel": 182.25,
 "cycles": null,
 "stopPct": 0.2998628257887517,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 68.55,
@@ -20583,7 +21261,8 @@
 "reentryLevel": 68.55,
 "cycles": null,
 "stopPct": 0.49963530269876,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -20643,6 +21322,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -20658,7 +21338,8 @@
 "reentryLevel": 298.45,
 "cycles": null,
 "stopPct": 0.30005025967498744,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 218.6,
@@ -20673,7 +21354,8 @@
 "reentryLevel": 218.6,
 "cycles": null,
 "stopPct": 0.1999085086916743,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -20737,6 +21419,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -20752,7 +21435,8 @@
 "reentryLevel": 197.55,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 85.4,
@@ -20767,7 +21451,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.29976580796252916
+"targetPct": 0.29976580796252916,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -20831,6 +21516,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -20846,7 +21532,8 @@
 "reentryLevel": 34.3,
 "cycles": null,
 "stopPct": 0.3002915451895045,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 49.65,
@@ -20861,7 +21548,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 }
 ],
 "events": 2,
@@ -20904,6 +21592,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -20919,7 +21608,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -20977,6 +21667,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -20992,7 +21683,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 299.75,
@@ -21007,7 +21699,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -21094,6 +21787,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -21109,7 +21803,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 136.85,
@@ -21124,7 +21819,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 },
 {
 "premium": 20.1,
@@ -21139,7 +21835,8 @@
 "reentryLevel": 20.1,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -21201,6 +21898,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -21216,7 +21914,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 },
 {
 "premium": 275.45,
@@ -21231,7 +21930,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -21310,6 +22010,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -21325,7 +22026,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 202.8,
@@ -21340,7 +22042,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19995069033530577,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 213.45,
@@ -21355,7 +22058,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -21398,6 +22102,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -21413,7 +22118,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19937205651491374,
-"targetPct": 0.29984301412872827
+"targetPct": 0.29984301412872827,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -21490,6 +22196,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -21505,7 +22212,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 232.05,
@@ -21520,7 +22228,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 159.45,
@@ -21535,7 +22244,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -21627,6 +22337,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -21642,7 +22353,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30017452006980805,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 169.6,
@@ -21657,7 +22369,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 222.8,
@@ -21672,7 +22385,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30004488330341117,
-"targetPct": 0.4999999999999998
+"targetPct": 0.4999999999999998,
+"costMoved": null
 },
 {
 "premium": 258.65,
@@ -21687,7 +22401,8 @@
 "reentryLevel": 258.65,
 "cycles": null,
 "stopPct": 0.20007732456988203,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 5,
@@ -21736,6 +22451,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -21751,7 +22467,8 @@
 "reentryLevel": 262.95,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -21847,6 +22564,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -21862,7 +22580,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 78.5,
@@ -21877,7 +22596,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 254.25,
@@ -21892,7 +22612,8 @@
 "reentryLevel": 254.25,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": 0.30009832841691253
+"targetPct": 0.30009832841691253,
+"costMoved": null
 },
 {
 "premium": 267.05,
@@ -21907,7 +22628,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -21952,6 +22674,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -21967,7 +22690,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -22014,6 +22738,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -22029,7 +22754,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -22072,6 +22798,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -22087,7 +22814,8 @@
 "reentryLevel": 270.25,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": 0.5000925069380204
+"targetPct": 0.5000925069380204,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -22178,6 +22906,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -22193,7 +22922,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.29979743416610394,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 164.1,
@@ -22208,7 +22938,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 244.25,
@@ -22223,7 +22954,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 61.35,
@@ -22238,7 +22970,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.2999185004074979
+"targetPct": 0.2999185004074979,
+"costMoved": null
 }
 ],
 "events": 5,
@@ -22281,6 +23014,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -22296,7 +23030,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -22339,6 +23074,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -22354,7 +23090,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5001657275439177,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -22444,13 +23181,14 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
 "premium": 234.35,
-"stop": null,
-"stopBase": null,
-"stopTrailed": null,
+"stop": 351.55,
+"stopBase": 234.35,
+"stopTrailed": true,
 "target": null,
 "exitPrice": 472.25,
 "exitReason": "strategy",
@@ -22458,8 +23196,9 @@
 "reentry": 0,
 "reentryLevel": null,
 "cycles": null,
-"stopPct": null,
-"targetPct": null
+"stopPct": 0.0,
+"targetPct": null,
+"costMoved": true
 },
 {
 "premium": 183.65,
@@ -22474,7 +23213,8 @@
 "reentryLevel": 183.65,
 "cycles": null,
 "stopPct": 0.2001089028042472,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 113.55,
@@ -22489,7 +23229,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 167.75,
@@ -22504,10 +23245,11 @@
 "reentryLevel": 167.75,
 "cycles": null,
 "stopPct": 0.20000000000000007,
-"targetPct": 0.3001490312965722
+"targetPct": 0.3001490312965722,
+"costMoved": null
 }
 ],
-"events": 4,
+"events": 6,
 "state": {
 "floor": 600.0,
 "done": "target"
@@ -22566,6 +23308,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -22581,7 +23324,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.5000000000000002
+"targetPct": 0.5000000000000002,
+"costMoved": null
 },
 {
 "premium": 91.15,
@@ -22596,7 +23340,8 @@
 "reentryLevel": 91.15,
 "cycles": null,
 "stopPct": 0.20021941854086678,
-"targetPct": 0.30005485463521675
+"targetPct": 0.30005485463521675,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -22669,6 +23414,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -22684,7 +23430,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.500246913580247,
-"targetPct": 0.29975308641975307
+"targetPct": 0.29975308641975307,
+"costMoved": null
 },
 {
 "premium": 164.95,
@@ -22699,7 +23446,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.49984843892088504,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 176.1,
@@ -22714,7 +23462,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -22806,6 +23555,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -22821,7 +23571,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2998592210229939,
-"targetPct": 0.299859221022994
+"targetPct": 0.299859221022994,
+"costMoved": null
 },
 {
 "premium": 199.25,
@@ -22836,7 +23587,8 @@
 "reentryLevel": 199.25,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 155.6,
@@ -22851,7 +23603,8 @@
 "reentryLevel": 155.6,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.30012853470437006
+"targetPct": 0.30012853470437006,
+"costMoved": null
 },
 {
 "premium": 232.9,
@@ -22866,7 +23619,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 4,
@@ -22951,6 +23705,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -22966,7 +23721,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 },
 {
 "premium": 202.7,
@@ -22981,7 +23737,8 @@
 "reentryLevel": 202.7,
 "cycles": null,
 "stopPct": 0.20004933399112002,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 185.4,
@@ -22996,10 +23753,11 @@
 "reentryLevel": 185.4,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
-"events": 3,
+"events": 4,
 "state": {
 "floor": null,
 "done": "sl"
@@ -23069,6 +23827,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -23084,7 +23843,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 28.2,
@@ -23099,7 +23859,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 116.25,
@@ -23114,7 +23875,8 @@
 "reentryLevel": 116.25,
 "cycles": null,
 "stopPct": 0.29978494623655916,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -23180,6 +23942,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -23195,7 +23958,8 @@
 "reentryLevel": 186.35,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 113.05,
@@ -23210,7 +23974,8 @@
 "reentryLevel": 113.05,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -23302,6 +24067,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -23317,7 +24083,8 @@
 "reentryLevel": 241.15,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 34.55,
@@ -23332,7 +24099,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19971056439942114,
-"targetPct": 0.29956584659913177
+"targetPct": 0.29956584659913177,
+"costMoved": null
 },
 {
 "premium": 164.7,
@@ -23347,7 +24115,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 158.05,
@@ -23362,7 +24131,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.299905093324897,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -23422,6 +24192,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -23437,7 +24208,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 212.6,
@@ -23452,12 +24224,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19990592662276574,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
 "state": {
-"floor": 2500,
+"floor": 2500.0,
 "done": "target"
 }
 }
@@ -23544,6 +24317,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -23559,7 +24333,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2995169082125604,
-"targetPct": 0.2995169082125604
+"targetPct": 0.2995169082125604,
+"costMoved": null
 },
 {
 "premium": 291.25,
@@ -23574,7 +24349,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5000858369098713,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 26.05,
@@ -23589,7 +24365,8 @@
 "reentryLevel": 26.05,
 "cycles": null,
 "stopPct": 0.19961612284069097,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 120.1,
@@ -23604,7 +24381,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30016652789342224,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 5,
@@ -23647,6 +24425,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -23662,7 +24441,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -23722,6 +24502,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -23737,7 +24518,8 @@
 "reentryLevel": 222.5,
 "cycles": null,
 "stopPct": 0.30000000000000004,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 292.9,
@@ -23752,7 +24534,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -23795,6 +24578,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -23810,7 +24594,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -23855,6 +24640,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -23870,7 +24656,8 @@
 "reentryLevel": 37.15,
 "cycles": null,
 "stopPct": 0.49932705248990583,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -23947,6 +24734,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -23962,7 +24750,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 233.55,
@@ -23977,7 +24766,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 51.65,
@@ -23992,7 +24782,8 @@
 "reentryLevel": 51.65,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -24068,6 +24859,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -24083,7 +24875,8 @@
 "reentryLevel": 107.8,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 198.05,
@@ -24098,7 +24891,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 87.4,
@@ -24113,7 +24907,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -24173,6 +24968,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -24188,7 +24984,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 139.85,
@@ -24203,7 +25000,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19985698963174825,
-"targetPct": 0.5001787629603147
+"targetPct": 0.5001787629603147,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -24252,6 +25050,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -24267,7 +25066,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -24340,6 +25140,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -24355,7 +25156,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.29994329994330005
+"targetPct": 0.29994329994330005,
+"costMoved": null
 },
 {
 "premium": 227.15,
@@ -24370,7 +25172,8 @@
 "reentryLevel": 227.15,
 "cycles": null,
 "stopPct": 0.30002201188641875,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 240.3,
@@ -24385,10 +25188,11 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.300041614648356
+"targetPct": 0.300041614648356,
+"costMoved": null
 }
 ],
-"events": 3,
+"events": 4,
 "state": {
 "floor": null,
 "done": "sl"
@@ -24470,6 +25274,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -24485,7 +25290,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 73.05,
@@ -24500,7 +25306,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 63.25,
@@ -24515,7 +25322,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -24573,6 +25381,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -24588,7 +25397,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 143.75,
@@ -24603,7 +25413,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.49982608695652175,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -24648,6 +25459,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -24663,7 +25475,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -24706,6 +25519,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -24721,7 +25535,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -24814,6 +25629,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -24829,7 +25645,8 @@
 "reentryLevel": 257.3,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 248.4,
@@ -24844,7 +25661,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2999194847020934,
-"targetPct": 0.2999194847020932
+"targetPct": 0.2999194847020932,
+"costMoved": null
 },
 {
 "premium": 195.85,
@@ -24859,7 +25677,8 @@
 "reentryLevel": 195.85,
 "cycles": null,
 "stopPct": 0.5001276487107482,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 173.85,
@@ -24874,7 +25693,8 @@
 "reentryLevel": 173.85,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 4,
@@ -24953,6 +25773,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -24968,7 +25789,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 260.55,
@@ -24983,7 +25805,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 63.6,
@@ -24998,7 +25821,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -25075,6 +25899,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -25090,7 +25915,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19984170953700042,
-"targetPct": 0.4998021369212504
+"targetPct": 0.4998021369212504,
+"costMoved": null
 },
 {
 "premium": 57.8,
@@ -25105,7 +25931,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5000000000000002,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 67.8,
@@ -25120,12 +25947,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 5,
 "state": {
-"floor": 1000,
+"floor": 1000.0,
 "done": "target"
 }
 }
@@ -25195,6 +26023,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -25210,7 +26039,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.20007321984257742,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 228.25,
@@ -25225,7 +26055,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.29989047097480825,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 295.85,
@@ -25240,7 +26071,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2999830995436876,
-"targetPct": 0.5000845022815616
+"targetPct": 0.5000845022815616,
+"costMoved": null
 }
 ],
 "events": 4,
@@ -25330,6 +26162,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -25345,7 +26178,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30012004801920766,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 147.25,
@@ -25360,7 +26194,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 192.1,
@@ -25375,7 +26210,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 158.25,
@@ -25390,12 +26226,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5001579778830965,
-"targetPct": 0.2998420221169036
+"targetPct": 0.2998420221169036,
+"costMoved": null
 }
 ],
 "events": 4,
 "state": {
-"floor": 11000,
+"floor": 11000.0,
 "done": "target"
 }
 }
@@ -25478,6 +26315,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -25493,7 +26331,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.29997667366456726,
-"targetPct": 0.49988336832283653
+"targetPct": 0.49988336832283653,
+"costMoved": null
 },
 {
 "premium": 57.1,
@@ -25508,7 +26347,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 143.3,
@@ -25523,7 +26363,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 200.0,
@@ -25538,7 +26379,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -25600,6 +26442,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -25615,7 +26458,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 253.6,
@@ -25630,7 +26474,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -25720,6 +26565,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -25735,7 +26581,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 259.85,
@@ -25750,7 +26597,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 168.2,
@@ -25765,7 +26613,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 235.0,
@@ -25780,7 +26629,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30000000000000004,
-"targetPct": 0.30000000000000004
+"targetPct": 0.30000000000000004,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -25838,6 +26688,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -25853,7 +26704,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 232.35,
@@ -25868,7 +26720,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -25936,6 +26789,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -25951,7 +26805,8 @@
 "reentryLevel": 137.6,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 130.7,
@@ -25966,7 +26821,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -26051,6 +26907,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -26066,7 +26923,8 @@
 "reentryLevel": 151.0,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 25.6,
@@ -26081,7 +26939,8 @@
 "reentryLevel": 25.6,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 106.95,
@@ -26096,7 +26955,8 @@
 "reentryLevel": 106.95,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -26139,6 +26999,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -26154,7 +27015,8 @@
 "reentryLevel": 111.7,
 "cycles": null,
 "stopPct": 0.20008952551477177,
-"targetPct": 0.2999104744852281
+"targetPct": 0.2999104744852281,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -26245,6 +27107,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -26260,7 +27123,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5001060895395713,
-"targetPct": 0.5001060895395715
+"targetPct": 0.5001060895395715,
+"costMoved": null
 },
 {
 "premium": 136.25,
@@ -26275,7 +27139,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 227.45,
@@ -26290,7 +27155,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 186.8,
@@ -26305,12 +27171,13 @@
 "reentryLevel": 186.8,
 "cycles": null,
 "stopPct": 0.19994646680942196,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 4,
 "state": {
-"floor": 2500,
+"floor": 2500.0,
 "done": "target"
 }
 }
@@ -26377,6 +27244,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -26392,7 +27260,8 @@
 "reentryLevel": 282.7,
 "cycles": null,
 "stopPct": 0.29996462681287595,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 175.3,
@@ -26407,7 +27276,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 293.95,
@@ -26422,10 +27292,11 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.3000510290865792,
-"targetPct": 0.3000510290865793
+"targetPct": 0.3000510290865793,
+"costMoved": null
 }
 ],
-"events": 3,
+"events": 4,
 "state": {
 "floor": null,
 "done": "sl"
@@ -26465,6 +27336,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -26480,7 +27352,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -26523,6 +27396,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -26538,7 +27412,8 @@
 "reentryLevel": 80.85,
 "cycles": null,
 "stopPct": 0.19975262832405682,
-"targetPct": 0.500309214594929
+"targetPct": 0.500309214594929,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -26630,6 +27505,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -26645,7 +27521,8 @@
 "reentryLevel": 96.35,
 "cycles": null,
 "stopPct": 0.49974052932018687,
-"targetPct": 0.2999481058640373
+"targetPct": 0.2999481058640373,
+"costMoved": null
 },
 {
 "premium": 80.95,
@@ -26660,7 +27537,8 @@
 "reentryLevel": 80.95,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 285.8,
@@ -26675,7 +27553,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 160.45,
@@ -26690,12 +27569,13 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.3000934870676224
+"targetPct": 0.3000934870676224,
+"costMoved": null
 }
 ],
 "events": 3,
 "state": {
-"floor": 1000,
+"floor": 1000.0,
 "done": "target"
 }
 }
@@ -26733,6 +27613,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -26748,7 +27629,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -26836,6 +27718,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -26851,7 +27734,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 47.9,
@@ -26866,7 +27750,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 176.55,
@@ -26881,7 +27766,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 156.6,
@@ -26896,7 +27782,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -26998,6 +27885,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -27013,7 +27901,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.30003727171077155
+"targetPct": 0.30003727171077155,
+"costMoved": null
 },
 {
 "premium": 269.8,
@@ -27028,7 +27917,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 96.05,
@@ -27043,7 +27933,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 55.35,
@@ -27058,7 +27949,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 }
 ],
 "events": 3,
@@ -27116,6 +28008,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -27131,7 +28024,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5006002400960383,
-"targetPct": 0.30012004801920766
+"targetPct": 0.30012004801920766,
+"costMoved": null
 },
 {
 "premium": 104.55,
@@ -27146,7 +28040,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.29985652797704443,
-"targetPct": 0.29985652797704465
+"targetPct": 0.29985652797704465,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -27191,6 +28086,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -27206,7 +28102,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -27270,6 +28167,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -27285,7 +28183,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19978165938864623,
-"targetPct": 0.30021834061135366
+"targetPct": 0.30021834061135366,
+"costMoved": null
 },
 {
 "premium": 247.2,
@@ -27300,7 +28199,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -27381,6 +28281,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -27396,7 +28297,8 @@
 "reentryLevel": 269.35,
 "cycles": null,
 "stopPct": 0.19992574716911093,
-"targetPct": 0.5000928160386113
+"targetPct": 0.5000928160386113,
+"costMoved": null
 },
 {
 "premium": 67.95,
@@ -27411,7 +28313,8 @@
 "reentryLevel": 67.95,
 "cycles": null,
 "stopPct": 0.5003679175864606,
-"targetPct": 0.30022075055187647
+"targetPct": 0.30022075055187647,
+"costMoved": null
 },
 {
 "premium": 63.15,
@@ -27426,7 +28329,8 @@
 "reentryLevel": 63.15,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -27473,6 +28377,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -27488,7 +28393,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -27578,6 +28484,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -27593,7 +28500,8 @@
 "reentryLevel": 106.6,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.5000000000000002
+"targetPct": 0.5000000000000002,
+"costMoved": null
 },
 {
 "premium": 64.35,
@@ -27608,7 +28516,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.49961149961149975,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 28.1,
@@ -27623,7 +28532,8 @@
 "reentryLevel": 28.1,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.30071174377224175
+"targetPct": 0.30071174377224175,
+"costMoved": null
 },
 {
 "premium": 45.5,
@@ -27638,7 +28548,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.30000000000000004
+"targetPct": 0.30000000000000004,
+"costMoved": null
 }
 ],
 "events": 4,
@@ -27714,6 +28625,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -27729,7 +28641,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 260.95,
@@ -27744,7 +28657,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 },
 {
 "premium": 277.65,
@@ -27759,7 +28673,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.20007203313524236,
-"targetPct": 0.30001800828381053
+"targetPct": 0.30001800828381053,
+"costMoved": null
 }
 ],
 "events": 4,
@@ -27836,6 +28751,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -27851,7 +28767,8 @@
 "reentryLevel": 43.3,
 "cycles": null,
 "stopPct": 0.19976905311778292,
-"targetPct": 0.5000000000000002
+"targetPct": 0.5000000000000002,
+"costMoved": null
 },
 {
 "premium": 191.9,
@@ -27866,7 +28783,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 112.95,
@@ -27881,7 +28799,8 @@
 "reentryLevel": 112.95,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -27939,6 +28858,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -27954,7 +28874,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.20033812341504653,
-"targetPct": 0.30008453085376163
+"targetPct": 0.30008453085376163,
+"costMoved": null
 },
 {
 "premium": 230.25,
@@ -27969,7 +28890,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.3001085776330076,
-"targetPct": 0.2998914223669924
+"targetPct": 0.2998914223669924,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -28065,6 +28987,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -28080,7 +29003,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.3001349527665317
+"targetPct": 0.3001349527665317,
+"costMoved": null
 },
 {
 "premium": 185.95,
@@ -28095,7 +29019,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 105.05,
@@ -28110,7 +29035,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5002379819133747,
-"targetPct": 0.5002379819133747
+"targetPct": 0.5002379819133747,
+"costMoved": null
 },
 {
 "premium": 61.1,
@@ -28125,7 +29051,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19967266775777404,
-"targetPct": 0.30032733224222585
+"targetPct": 0.30032733224222585,
+"costMoved": null
 }
 ],
 "events": 4,
@@ -28185,6 +29112,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -28200,7 +29128,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 47.2,
@@ -28215,7 +29144,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -28310,6 +29240,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -28325,7 +29256,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 238.75,
@@ -28340,7 +29272,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 },
 {
 "premium": 105.5,
@@ -28355,7 +29288,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 113.45,
@@ -28370,7 +29304,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -28458,6 +29393,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -28473,7 +29409,8 @@
 "reentryLevel": 258.65,
 "cycles": null,
 "stopPct": 0.20007732456988214,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 174.25,
@@ -28488,7 +29425,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 67.4,
@@ -28503,7 +29441,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 128.85,
@@ -28518,7 +29457,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -28608,6 +29548,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -28623,7 +29564,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 49.7,
@@ -28638,7 +29580,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 105.75,
@@ -28653,7 +29596,8 @@
 "reentryLevel": 105.75,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": 0.30023640661938533
+"targetPct": 0.30023640661938533,
+"costMoved": null
 },
 {
 "premium": 223.7,
@@ -28668,7 +29612,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -28741,6 +29686,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -28756,7 +29702,8 @@
 "reentryLevel": 289.35,
 "cycles": null,
 "stopPct": 0.19993087955762923,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 35.0,
@@ -28771,7 +29718,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 119.85,
@@ -28786,7 +29734,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.1998331247392573,
-"targetPct": 0.4997914059240718
+"targetPct": 0.4997914059240718,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -28865,6 +29814,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -28880,7 +29830,8 @@
 "reentryLevel": 171.5,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 119.5,
@@ -28895,7 +29846,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 58.05,
@@ -28910,7 +29862,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2997416020671835,
-"targetPct": 0.49956933677863913
+"targetPct": 0.49956933677863913,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -29007,6 +29960,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -29022,7 +29976,8 @@
 "reentryLevel": 76.95,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 233.0,
@@ -29037,7 +29992,8 @@
 "reentryLevel": 233.0,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 284.75,
@@ -29052,7 +30008,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 241.4,
@@ -29067,7 +30024,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2999171499585751,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -29125,6 +30083,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -29140,7 +30099,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 292.15,
@@ -29155,7 +30115,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.300017114495978,
-"targetPct": 0.30001711449597823
+"targetPct": 0.30001711449597823,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -29253,6 +30214,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -29268,7 +30230,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.19964349376114088,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 237.1,
@@ -29283,7 +30246,8 @@
 "reentryLevel": 237.1,
 "cycles": null,
 "stopPct": 0.30008435259384225,
-"targetPct": 0.30008435259384236
+"targetPct": 0.30008435259384236,
+"costMoved": null
 },
 {
 "premium": 62.15,
@@ -29298,7 +30262,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 },
 {
 "premium": 244.15,
@@ -29313,7 +30278,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 5,
@@ -29358,6 +30324,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -29373,7 +30340,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.30017605633802813,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -29433,6 +30401,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -29448,7 +30417,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 76.4,
@@ -29463,7 +30433,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -29521,6 +30492,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -29536,7 +30508,8 @@
 "reentryLevel": 116.95,
 "cycles": null,
 "stopPct": 0.30012825994014547,
-"targetPct": 0.49978623343309114
+"targetPct": 0.49978623343309114,
+"costMoved": null
 },
 {
 "premium": 49.75,
@@ -29551,7 +30524,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.20000000000000007,
-"targetPct": 0.300502512562814
+"targetPct": 0.300502512562814,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -29641,6 +30615,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -29656,7 +30631,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2999747920342828,
-"targetPct": 0.49987396017141417
+"targetPct": 0.49987396017141417,
+"costMoved": null
 },
 {
 "premium": 72.9,
@@ -29671,7 +30647,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2002743484224967,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 124.2,
@@ -29686,7 +30663,8 @@
 "reentryLevel": 124.2,
 "cycles": null,
 "stopPct": 0.2999194847020932,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 207.25,
@@ -29701,7 +30679,8 @@
 "reentryLevel": 207.25,
 "cycles": null,
 "stopPct": 0.2998793727382387,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 5,
@@ -29775,6 +30754,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -29790,7 +30770,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.5002435460301997,
-"targetPct": 0.5002435460301997
+"targetPct": 0.5002435460301997,
+"costMoved": null
 },
 {
 "premium": 65.15,
@@ -29805,7 +30786,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.30007674597083644
+"targetPct": 0.30007674597083644,
+"costMoved": null
 },
 {
 "premium": 98.7,
@@ -29820,7 +30802,8 @@
 "reentryLevel": 98.7,
 "cycles": null,
 "stopPct": 0.2001013171225936,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -29886,6 +30869,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -29901,7 +30885,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 91.9,
@@ -29916,7 +30901,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.20021762785636565,
-"targetPct": 0.29978237214363435
+"targetPct": 0.29978237214363435,
+"costMoved": null
 }
 ],
 "events": 2,
@@ -29959,6 +30945,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -29974,7 +30961,8 @@
 "reentryLevel": 142.95,
 "cycles": null,
 "stopPct": 0.30010493179433384,
-"targetPct": 0.3001049317943336
+"targetPct": 0.3001049317943336,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -30017,6 +31005,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -30032,7 +31021,8 @@
 "reentryLevel": 45.9,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -30132,6 +31122,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -30147,7 +31138,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 272.55,
@@ -30162,7 +31154,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 245.45,
@@ -30177,7 +31170,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 226.2,
@@ -30192,7 +31186,8 @@
 "reentryLevel": null,
 "cycles": 1,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": false
 }
 ],
 "events": 1,
@@ -30292,6 +31287,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -30307,7 +31303,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.1999630723781387,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 },
 {
 "premium": 214.15,
@@ -30322,7 +31319,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 270.45,
@@ -30337,7 +31335,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 106.75,
@@ -30352,7 +31351,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 1,
@@ -30426,6 +31426,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -30441,7 +31442,8 @@
 "reentryLevel": 284.5,
 "cycles": null,
 "stopPct": 0.20000000000000007,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 284.05,
@@ -30456,7 +31458,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.2999471923957049
+"targetPct": 0.2999471923957049,
+"costMoved": null
 },
 {
 "premium": 49.65,
@@ -30471,7 +31474,8 @@
 "reentryLevel": 49.65,
 "cycles": null,
 "stopPct": 0.20040281973816731,
-"targetPct": 0.3001007049345418
+"targetPct": 0.3001007049345418,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -30546,6 +31550,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -30561,7 +31566,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 187.1,
@@ -30576,7 +31582,8 @@
 "reentryLevel": 187.1,
 "cycles": null,
 "stopPct": 0.5,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 146.05,
@@ -30591,7 +31598,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2998972954467649,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -30651,6 +31659,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
@@ -30666,7 +31675,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 53.7,
@@ -30681,7 +31691,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
 "events": 0,
@@ -30754,6 +31765,7 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -30769,7 +31781,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.2000637145587767,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 73.15,
@@ -30784,7 +31797,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.4996582365003418,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 152.2,
@@ -30799,7 +31813,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": 0.5
+"targetPct": 0.5,
+"costMoved": null
 }
 ],
 "events": 3,
@@ -30859,13 +31874,14 @@
 "done": null
 },
 "mult": 1,
+"moveToCost": true,
 "expected": {
 "legs": [
 {
 "premium": 161.35,
-"stop": 129.1,
-"stopBase": null,
-"stopTrailed": null,
+"stop": 161.35,
+"stopBase": 129.1,
+"stopTrailed": true,
 "target": null,
 "exitPrice": null,
 "exitReason": null,
@@ -30874,7 +31890,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": true
 },
 {
 "premium": 288.75,
@@ -30889,10 +31906,11 @@
 "reentryLevel": 288.75,
 "cycles": null,
 "stopPct": 0.19999999999999996,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 }
 ],
-"events": 1,
+"events": 2,
 "state": {
 "floor": null,
 "done": null
@@ -30982,6 +32000,7 @@
 "done": null
 },
 "mult": 2,
+"moveToCost": false,
 "expected": {
 "legs": [
 {
@@ -30997,7 +32016,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.49990676859966454,
-"targetPct": 0.4999067685996643
+"targetPct": 0.4999067685996643,
+"costMoved": null
 },
 {
 "premium": 272.05,
@@ -31012,7 +32032,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": null,
-"targetPct": null
+"targetPct": null,
+"costMoved": null
 },
 {
 "premium": 48.95,
@@ -31027,7 +32048,8 @@
 "reentryLevel": null,
 "cycles": null,
 "stopPct": 0.20020429009193053,
-"targetPct": 0.4994892747701737
+"targetPct": 0.4994892747701737,
+"costMoved": null
 },
 {
 "premium": 43.95,
@@ -31042,12 +32064,13 @@
 "reentryLevel": 43.95,
 "cycles": null,
 "stopPct": 0.30034129692832745,
-"targetPct": 0.4994311717861206
+"targetPct": 0.4994311717861206,
+"costMoved": null
 }
 ],
 "events": 3,
 "state": {
-"floor": 11000,
+"floor": 11000.0,
 "done": "target"
 }
 }

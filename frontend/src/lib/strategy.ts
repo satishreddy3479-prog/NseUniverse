@@ -49,6 +49,8 @@ export interface Leg {
   trailBy?: number | null;
   stopBase?: number | null;
   stopTrailed?: boolean;
+  /** the stop was moved to this leg's own entry premium because another leg of the same side was stopped out ("Move SL to cost") */
+  costMoved?: boolean;
   log?: { at: string; text: string }[];
 }
 
@@ -77,16 +79,19 @@ export function hitOf(l: { action: Action; premium?: number | null; target?: num
 const tick = (v: number) => Math.max(0.05, Math.round(v * 20) / 20);
 const stamp = (at: string) => new Date(at).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata" });
 
+/** The stop as the user set it: before any trailing, and nothing when the only stop is one the app moved to cost on a leg that had none. */
+const stopTyped = (l: Pick<Leg, "stop" | "stopBase" | "stopTrailed">): number | null => l.stopBase ?? (l.stopTrailed ? null : l.stop ?? null);
+
 /** Close a leg at `price` and book its P&L. The stop's distance is remembered so a re-entry can reuse it. */
 export function exitLeg(l: Leg, price: number, reason: "stop" | "target" | "manual" | "strategy", lotSize: number, at: string, lotsFactor = 1, label?: string): Leg {
   if (l.premium == null || isExited(l)) return l;
   const pnl = sign(l.action) * (price - l.premium) * l.lots * lotsFactor * lotSize;
-  const what = label ?? (reason === "stop" ? (l.stopTrailed ? "Trailing stop" : "Stop") : reason === "target" ? "Target" : "Manual exit");
+  const what = label ?? (reason === "stop" ? (l.costMoved ? "Stop at cost" : l.stopTrailed ? "Trailing stop" : "Stop") : reason === "target" ? "Target" : "Manual exit");
   const text = `${what}: ${l.action} ${l.strike} ${l.type} closed at ${price.toFixed(2)} (entry ${l.premium.toFixed(2)}), ${pnl < 0 ? "−" : "+"}₹${Math.round(Math.abs(pnl)).toLocaleString("en-IN")}`;
   return {
     ...l, exitPrice: price, exitReason: reason, exitedAt: at, realised: (l.realised ?? 0) + pnl,
     reentryLevel: reason === "stop" ? l.premium : null,
-    stopPct: (l.stopBase ?? l.stop) != null ? Math.abs((l.stopBase ?? l.stop!) / l.premium - 1) : l.stopPct ?? null,
+    stopPct: stopTyped(l) != null ? Math.abs(stopTyped(l)! / l.premium - 1) : l.stopPct ?? null,
     targetPct: l.target != null ? Math.abs(l.target / l.premium - 1) : l.targetPct ?? null,
     log: [...(l.log ?? []), { at, text: `${stamp(at)} ${text}` }].slice(-20),
   };
@@ -100,7 +105,7 @@ export function reenterLeg(l: Leg, price: number, at: string, viaBox: boolean): 
   const what = viaBox ? "Re-entry" : "Entered again";
   return {
     ...l, premium: price, premiumSource: "market", exitPrice: null, exitReason: null, exitedAt: null, reentryLevel: null,
-    stop: lvl(l.stopPct, false), target: lvl(l.targetPct, true), stopBase: null, stopTrailed: false,
+    stop: lvl(l.stopPct, false), target: lvl(l.targetPct, true), stopBase: null, stopTrailed: false, costMoved: false,
     reentry: viaBox ? Math.max(0, (l.reentry ?? 0) - 1) : l.reentry, cycles: (l.cycles ?? 0) + 1,
     log: [...(l.log ?? []), { at, text: `${stamp(at)} ${what}: ${l.action} ${l.strike} ${l.type} at ${price.toFixed(2)}` }].slice(-20),
   };
@@ -120,7 +125,7 @@ export function rollLeg(l: Leg, newStrike: number, oldPrice: number, newPrice: n
   const text = `Rolled ${l.action} ${l.strike} ${l.type} to ${newStrike} ${l.type}: old closed at ${oldPrice.toFixed(2)} (entry ${l.premium.toFixed(2)}), ${pnl < 0 ? "−" : "+"}₹${Math.round(Math.abs(pnl)).toLocaleString("en-IN")} booked; new entry ${newPrice.toFixed(2)}`;
   return {
     ...l, strike: newStrike, premium: newPrice, premiumSource: "market", realised: (l.realised ?? 0) + pnl, cycles: (l.cycles ?? 0) + 1,
-    stop: lvl(pct(l.stopBase ?? l.stop), false), target: lvl(pct(l.target), true), stopBase: null, stopTrailed: false, exitPrice: null, exitReason: null, reentryLevel: null,
+    stop: lvl(pct(stopTyped(l)), false), target: lvl(pct(l.target), true), stopBase: null, stopTrailed: false, costMoved: false, exitPrice: null, exitReason: null, reentryLevel: null,
     log: [...(l.log ?? []), { at, text: `${stamp(at)} ${text}` }].slice(-20),
   };
 }
@@ -235,8 +240,43 @@ export function applyStrategyRules(legs: Leg[], rules: StrategyRules, state: Rul
  *    its own entry premium: a sold option when the premium falls back to it or below, a bought option when it rises back.
  * Returns the new legs and the log lines of what happened. Legs without a live price are left alone.
  */
-export function applyAutomation(legs: Leg[], priceOf: (strike: number, type: OptionType, expiry: string) => number | null, lotSize: number, at: string, lotsFactor = 1): { legs: Leg[]; events: string[] } {
+/**
+ * "Move SL to cost". When a leg is stopped out, the stop of every OTHER open leg on the same side (buy or sell) moves to that leg's own entry
+ * premium, so a profitable leg can no longer turn into a loss. Only a leg that is in profit at that moment is moved (a stop at the entry of a leg already
+ * in loss would exit it at once); a leg without a live price, or not in profit, is left as it is and the event says so. The stop only ever tightens: a stop
+ * already at the entry or on the profit side stays. The moved stop is a trailed one (it may sit at the entry), and the stop you typed is remembered.
+ * Paper only: nothing is sent to a broker. The server applies the same rule (`move_stops_to_cost` in backend/app/strategy/automation.py).
+ */
+export function moveStopsToCost(legs: Leg[], stopped: Leg[], priceOf: (strike: number, type: OptionType, expiry: string) => number | null, at: string): { legs: Leg[]; events: string[] } {
   const events: string[] = [];
+  if (stopped.length === 0) return { legs, events };
+  const sides = new Set(stopped.map((s) => s.action));
+  const first = stopped[0]!;
+  const out = legs.map((l) => {
+    if (l.enabled === false || isExited(l) || l.premium == null || !sides.has(l.action)) return l;
+    const buy = l.action === "BUY";
+    const who = `${l.action} ${l.strike} ${l.type}`;
+    const px = priceOf(l.strike, l.type, l.expiry);
+    if (px == null || !(px > 0)) { events.push(`${stamp(at)} Stop to cost skipped for ${who}: no live price`); return l; }
+    if (buy ? !(px > l.premium) : !(px < l.premium)) {
+      events.push(`${stamp(at)} Stop to cost skipped for ${who}: it is not in profit (price ${px.toFixed(2)} against entry ${l.premium.toFixed(2)})`);
+      return l;
+    }
+    if (l.stop != null && (buy ? l.stop >= l.premium : l.stop <= l.premium)) return l; // already at the entry or tighter: never loosened
+    const text = `${stamp(at)} Stop moved to cost: ${who} stop ${l.stop == null ? "none" : l.stop.toFixed(2)} → ${l.premium.toFixed(2)} because ${first.action} ${first.strike} ${first.type} was stopped out`;
+    events.push(text);
+    const moved: Leg = { ...l, stopBase: l.stopBase ?? l.stop ?? null, stop: l.premium, stopTrailed: true, costMoved: true, log: [...(l.log ?? []), { at, text }].slice(-20) };
+    // a leg that had no stop could not trail before; now that it has one the trail is applied in the same pass, so a repeat pass over the same prices changes nothing
+    const tr = trailLeg(moved, px);
+    if (tr !== moved) events.push(`Trailing stop ${who}: stop ${moved.stop!.toFixed(2)} → ${tr.stop!.toFixed(2)} (price ${px.toFixed(2)})`);
+    return tr;
+  });
+  return { legs: out, events };
+}
+
+export function applyAutomation(legs: Leg[], priceOf: (strike: number, type: OptionType, expiry: string) => number | null, lotSize: number, at: string, lotsFactor = 1, moveToCost = false): { legs: Leg[]; events: string[] } {
+  const events: string[] = [];
+  const stoppedNow: Leg[] = []; // legs this pass closed by their stop
   const out = legs.map((l) => {
     if (l.enabled === false) return l;
     const px = priceOf(l.strike, l.type, l.expiry);
@@ -252,6 +292,7 @@ export function applyAutomation(legs: Leg[], priceOf: (strike: number, type: Opt
       if (kind == null) return l;
       const n = exitLeg(l, px, kind, lotSize, at, lotsFactor);
       events.push(n.log![n.log!.length - 1]!.text);
+      if (kind === "stop") stoppedNow.push(n);
       return n;
     }
     if (l.exitReason === "stop" && (l.reentry ?? 0) > 0 && l.reentryLevel != null) {
@@ -264,6 +305,11 @@ export function applyAutomation(legs: Leg[], priceOf: (strike: number, type: Opt
     }
     return l;
   });
+  if (moveToCost && stoppedNow.length > 0) {
+    const m = moveStopsToCost(out, stoppedNow, priceOf, at);
+    events.push(...m.events);
+    return { legs: m.legs, events };
+  }
   return { legs: out, events };
 }
 

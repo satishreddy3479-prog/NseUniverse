@@ -85,6 +85,49 @@ describe("automatic stop, target and re-entry through the page", () => {
   });
 });
 
+describe("Move SL to cost through the page", () => {
+  it("is off by default; when on, a stopped leg moves the other leg's stop to its entry, and the leg says so", async () => {
+    mount();
+    await waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"), { timeout: 15000 });
+    await userEvent.click(await screen.findByRole("tab", { name: TEMPLATE_BIAS.short_straddle! }));
+    await userEvent.click(await screen.findByRole("button", { name: TEMPLATES.find((t) => t.id === "short_straddle")!.label }));
+    const table = within(await screen.findByRole("table", { name: "Strategy legs" }));
+    for (const box of table.getAllByLabelText("Stop percent of entry premium")) await userEvent.type(box, "30"); // both legs: entry 100, stop 130
+    const toggle = await screen.findByRole("checkbox", { name: "Move other legs' stop to cost" });
+    expect(toggle).not.toBeChecked(); // a new rule is never on by itself
+    await userEvent.click(toggle);
+    expect(toggle).toBeChecked();
+    expect(await screen.findByTestId("auto-state")).toHaveTextContent("watching live prices");
+
+    tick("nse_fo|24050PE", 90); // the put is in profit (sold at 100)
+    tick("nse_fo|24050CE", 133); // the call reaches its stop of 130
+    await waitFor(() => expect(screen.getByTestId("leg-exited")).toHaveTextContent("Exited at 133.00 (stop)"), { timeout: 10000 });
+    await waitFor(() => expect(screen.getByTestId("stop-at-cost")).toHaveTextContent("stop moved to cost (100.00), was 130.00"), { timeout: 10000 });
+    expect((table.getAllByLabelText("Stop-loss premium")[1] as HTMLInputElement).value).toBe("100"); // the put's stop is now its entry
+    expect(screen.getByTestId("auto-note")).toHaveTextContent("Stop moved to cost: SELL 24050 PE stop 130.00 → 100.00");
+    expect((table.getAllByLabelText("Stop-loss premium")[1] as HTMLInputElement).className).not.toContain("border-down"); // at the entry on purpose: not flagged as a typing slip
+
+    tick("nse_fo|24050PE", 100); // the put premium climbs back to its entry: the moved stop closes it with no loss
+    await waitFor(() => expect(screen.getAllByTestId("leg-exited")).toHaveLength(2), { timeout: 10000 });
+    expect(screen.getAllByTestId("leg-exited")[1]).toHaveTextContent("Exited at 100.00 (stop)");
+  });
+
+  it("with the toggle off the other leg's stop stays where it was", async () => {
+    mount();
+    await waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"), { timeout: 15000 });
+    await userEvent.click(await screen.findByRole("tab", { name: TEMPLATE_BIAS.short_straddle! }));
+    await userEvent.click(await screen.findByRole("button", { name: TEMPLATES.find((t) => t.id === "short_straddle")!.label }));
+    const table = within(await screen.findByRole("table", { name: "Strategy legs" }));
+    for (const box of table.getAllByLabelText("Stop percent of entry premium")) await userEvent.type(box, "30");
+    expect(await screen.findByTestId("auto-state")).toHaveTextContent("watching live prices");
+    tick("nse_fo|24050PE", 90);
+    tick("nse_fo|24050CE", 133);
+    await waitFor(() => expect(screen.getByTestId("leg-exited")).toHaveTextContent("Exited at 133.00 (stop)"), { timeout: 10000 });
+    expect((table.getAllByLabelText("Stop-loss premium")[1] as HTMLInputElement).value).toBe("130");
+    expect(screen.queryByTestId("stop-at-cost")).toBeNull();
+  });
+});
+
 describe("strategy rules and the percentage trailing stop through the page", () => {
   const setup = async () => {
     mount();
