@@ -143,5 +143,5 @@ function Movers({ s }: { s: MarketSummary }) {
 
 export function IndexToolBody({ page }: { page: "contributors" | "weightage" | "breadth" | "sectors" | "movers" }) {
   const q = useSummary();
-  return <Guard q={q}>{(s) => (page === "contributors" ? <Contributors s={s} /> : page === "breadth" ? <Breadth s={s} /> : page === "weightage" ? <Weightage s={s} /> : page === "sectors" ? <Sectors s={s} /> : <Movers s={s} />)}</Guard>;
+  return <Guard q={q}>{(s) => (<section className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3 md:p-4">{page === "contributors" ? <Contributors s={s} /> : page === "breadth" ? <Breadth s={s} /> : page === "weightage" ? <Weightage s={s} /> : page === "sectors" ? <Sectors s={s} /> : <Movers s={s} />}</section>)}</Guard>;
 }

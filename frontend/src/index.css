@@ -218,6 +218,10 @@ header.bg-slate { background: var(--header-bg); box-shadow: var(--shadow); }
 [data-theme="light"] .bg-down\/15, [data-theme="light"] .bg-down\/20 { background: color-mix(in srgb, var(--down) 11%, white); }
 [data-theme="light"] .bg-warn\/15, [data-theme="light"] .bg-warn\/20 { background: color-mix(in srgb, var(--warn) 13%, white); }
 [data-theme="light"] .bg-brass\/20 { background: color-mix(in srgb, var(--brass) 15%, white); }
+/* Small chips whose text sits on a tint of its own colour, and faded warning text: dark enough to read at 11 px. */
+[data-theme="light"] .bg-brass\/20.text-brass, [data-theme="light"] .bg-brass\/15.text-brass, [data-theme="light"] .bg-brass\/10.text-brass { color: #7a4600; }
+[data-theme="light"] .bg-warn\/15.text-warn, [data-theme="light"] .bg-warn\/20.text-warn { color: #7d3604; }
+[data-theme="light"] .text-warn\/80, [data-theme="light"] .text-warn\/70 { color: var(--warn); }
 /* Pop-ups and the chart full-screen backdrop: a soft ink wash instead of near-black. */
 [data-theme="light"] .bg-black\/70 { background: rgba(14, 26, 51, 0.45); }
 /* Scrollbars that match the page rather than the operating system. */
