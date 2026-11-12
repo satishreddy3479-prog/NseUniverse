@@ -104,12 +104,19 @@ export interface IndexVwapEstimate {
   spot?: number; distance_pts?: number; distance_pct?: number; side?: string;
 }
 
+export interface TurnSignal { id: string; direction: "bullish" | "bearish"; title: string; evidence: string[]; invalidation: string; early?: boolean }
+export interface TurnChange { now: number | null; change: number | null; change_pct?: number | null }
+export interface TurnWatch {
+  available: boolean; reason?: string; signals: TurnSignal[]; lean?: "bullish" | "bearish" | "mixed" | "none"; strength?: number;
+  changes: Record<string, TurnChange | number>; persistence?: string; note?: string;
+}
+
 export interface Intelligence {
   generated_at: string; expiry: string | null; session: string; enabled: boolean; status: Record<string, InputStatus>; sentiment: Sentiment;
   regime: { name: string; evidence: string[]; volatility: string; gamma: string; previous: string | null; changed_at: string | null };
   engines: EngineView[]; pulse: Pulse; gex: GexState; interpretation: string; divergences: Divergence[]; divergences_invalidated: { id: string; status: string }[]; divergences_unavailable: string[];
   scenarios: Scenarios; panels: Panels; alerts: AlertRow[]; config: { weights: Record<string, number>; min_coverage: number; min_engines: number; note: string; groups?: Record<string, string> }; compute_ms: number;
-  capabilities?: Capability[]; overlap_audit?: OverlapAudit; heavyweights?: Heavyweights; stock_futures?: StockFutures | null; observations?: Observation[]; intraday_ml?: MlDigest | null;
+  capabilities?: Capability[]; overlap_audit?: OverlapAudit; heavyweights?: Heavyweights; stock_futures?: StockFutures | null; turn_watch?: TurnWatch; observations?: Observation[]; intraday_ml?: MlDigest | null;
 }
 export interface TimelinePoint {
   session: string; at: string; spot: number | null; score: number | null; confidence: number | null; coverage: number | null; regime: string | null; vol_regime: string | null; gamma_regime: string | null;

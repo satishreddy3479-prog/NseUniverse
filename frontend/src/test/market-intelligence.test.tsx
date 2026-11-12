@@ -504,3 +504,33 @@ describe("stock futures, rollover and the index VWAP estimate", () => {
     expect(card).toHaveTextContent("needs at least 30 stocks");
   });
 });
+
+describe("turn watch", () => {
+  const ch = (now: number | null, change: number | null) => ({ now, change });
+  const tw = {
+    available: true, lean: "bearish" as const, strength: 1, persistence: "present in at least 4 of the last 6 minutes", note: "Compares the last 5 minutes with the same average 20 minutes earlier.",
+    signals: [{ id: "flow_turn_down", direction: "bearish" as const, early: true, title: "Traded flow is turning down while OI levels still look bullish", evidence: ["Structure -18 and Participation -15 points in 20 min; NIFTY itself -0.05% over the same 20 min", "Positioning (OI levels) still +35"], invalidation: "both flow engines recover above their reading from 20 minutes ago" }],
+    changes: { score: ch(12, -22), positioning: ch(35, -3), orderflow: ch(5, 1), structure: ch(10, -18), participation: ch(4, -15), volatility: ch(null, null), spot: { now: 25300, change: -12, change_pct: -0.05 } },
+  };
+  it("shows the lean, the signal with its evidence and end condition, and the change table with missing readings as dashes", async () => {
+    view({ ...base, turn_watch: tw });
+    const p = await screen.findByTestId("tw-panel");
+    expect(within(p).getByTestId("tw-lean")).toHaveTextContent("Turning down");
+    const sig = within(p).getByTestId("tw-sig-flow_turn_down");
+    expect(sig).toHaveTextContent("while OI levels still look bullish");
+    expect(sig).toHaveTextContent("price has not confirmed yet");
+    expect(sig).toHaveTextContent("Ends when: both flow engines recover");
+    const rows = within(within(p).getByTestId("tw-changes")).getAllByRole("row");
+    expect(rows.find((r) => r.textContent?.includes("Structure"))).toHaveTextContent("−18");
+    expect(rows.find((r) => r.textContent?.includes("Volatility"))).toHaveTextContent("—");
+    expect(p).toHaveTextContent("tuned on the two stored sessions");
+  });
+  it("says why it is unavailable early in the session, and says plainly when there is no signal", async () => {
+    view({ ...base, turn_watch: { available: false, reason: "needs 26 stored minutes of this session; 9 so far", signals: [], changes: {} } });
+    expect((await screen.findByTestId("tw-panel")).textContent).toContain("9 so far");
+  });
+  it("no sustained change: a calm sentence, not a blank", async () => {
+    view({ ...base, turn_watch: { ...tw, lean: "none", signals: [] } });
+    expect((await screen.findByTestId("tw-signals")).textContent).toContain("No sustained change right now");
+  });
+});

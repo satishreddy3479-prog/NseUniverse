@@ -18,7 +18,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.intelligence import fusion as fz
-from app.intelligence import heavyweights, rolling, validation, voleval
+from app.intelligence import heavyweights, rolling, turn, validation, voleval
 from app.intelligence.store import IntelligenceStore
 
 logger = logging.getLogger(__name__)
@@ -185,7 +185,7 @@ class MarketIntelligence:
             "interpretation": fz.interpretation(fused, engines, reg, divs, gx, inp),
             "divergences": divs, "divergences_invalidated": gone, "divergences_unavailable": divs_missing,
             "scenarios": fz.scenarios(fused, engines, gx, inp, spot), "panels": self._panels(inp, by, gx), "capabilities": fz.capabilities(inp, status, gx),
-            "alerts": self.store.alerts(session, 30), "overlap_audit": fz.overlap_audit(engines),
+            "turn_watch": turn.assess_at(self.store.rows(session, 120)), "alerts": self.store.alerts(session, 30), "overlap_audit": fz.overlap_audit(engines),
             "config": {"weights": self.weights, "min_coverage": fz.MIN_COVERAGE, "min_engines": fz.MIN_ENGINES, "classes": [[lo, n] for lo, n in fz.CLASSES],
                        "note": fz.PROVISIONAL, "groups": {k: fz.ENGINE_NAMES[k] for k in fz.DEFAULT_WEIGHTS}},
             "compute_ms": round((_time.perf_counter() - t0) * 1000, 1),
@@ -344,6 +344,13 @@ class MarketIntelligence:
         vs, vp = cm.get("vwap_side"), pm.get("vwap_side")
         if vs in ("above", "below") and vp in ("above", "below") and vs != vp:
             add("VWAP reclaim" if vs == "above" else "VWAP breakdown", "medium", "bullish" if vs == "above" else "bearish", f"Future {'reclaimed' if vs == 'above' else 'lost'} its day VWAP", [], "holds for 5 minutes", "price crosses back")
+        rows = self.store.rows(s["session"], 120)  # the turn watch: alert once when a leaning signal switches on (the persistence rule already de-flickers it)
+        if len(rows) >= 2:
+            now_t, before_t = turn.assess_at(rows), turn.assess_at(rows, len(rows) - 2)
+            had = {x["id"] for x in before_t.get("signals", [])}
+            for x in now_t.get("signals", []):
+                if x["id"] not in had and not x["id"].startswith("breadth"):
+                    add("Turn watch", "high" if x.get("early") else "medium", x["direction"], x["title"] + (" (price has not confirmed yet)" if x.get("early") else ""), x["evidence"], "the signal stays on for 10 more minutes", x["invalidation"])
         for a in out:
             last = self.store.last_alert_at(s["session"], a["kind"], a["direction"])
             if last and (now - datetime.fromisoformat(last)).total_seconds() < ALERT_COOLDOWN_S:

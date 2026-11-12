@@ -6,6 +6,7 @@ import { AlertsPanel, DivergencePanel, ScenarioPanel, TimelinePanel } from "../c
 import { CommandStrip, EngineMatrix, Interpretation, PulseCards } from "../components/intelligence/Overview";
 import { HeavyweightPanel } from "../components/intelligence/Heavyweight";
 import { StockFuturesPanel } from "../components/intelligence/StockFutures";
+import { TurnWatchPanel } from "../components/intelligence/TurnWatch";
 import { IntradayMlPanel } from "../components/intelligence/IntradayMl";
 import { StraddleSummaryCard } from "../components/intelligence/StraddleDecay";
 import { Capabilities } from "../components/intelligence/Capabilities";
@@ -28,7 +29,7 @@ export function MarketIntelligence() {
     <div className="mx-auto flex max-w-[1500px] flex-col gap-3" data-testid="mi-page">
       <header><h1 className="text-xl font-semibold md:text-2xl">NIFTY 50 Market Intelligence</h1><p className="text-xs text-muted">Reads the existing engines, fuses them, and shows the evidence. Session {d.session}, expiry {d.expiry ?? MISSING}, updated {fmtTimeIST(d.generated_at)} IST.</p></header>
       <SectionNav items={NAV} />
-      <div id="mi-sentiment" className="flex scroll-mt-14 flex-col gap-3"><CommandStrip d={d} /><PulseCards d={d} /></div>
+      <div id="mi-sentiment" className="flex scroll-mt-14 flex-col gap-3"><CommandStrip d={d} /><TurnWatchPanel d={d} /><PulseCards d={d} /></div>
       <div id="mi-evidence" className="scroll-mt-14"><EngineMatrix d={d} /></div>
       <div id="mi-heavyweights" className="scroll-mt-14"><HeavyweightPanel d={d} /></div>
       <div id="mi-stockfut" className="scroll-mt-14"><StockFuturesPanel d={d} /></div>
