@@ -181,16 +181,6 @@ class TestService:
         assert svc.due()  # nothing downloaded yet
         await svc.refresh()
         assert not svc.due()  # already done today
-        clock.now = datetime(2026, 10, 29, 0, 30, tzinfo=UTC)  # 06:00 IST next day: before the morning run
-        assert not svc.due()
-        clock.now = datetime(2026, 10, 29, 2, 30, tzinfo=UTC)  # 08:00 IST: the overnight US close is in
-        svc.last_attempt = None
-        assert svc.due()
-        svc.last_attempt = clock.now  # (that run happens) ...
-        clock.now = datetime(2026, 10, 29, 4, 0, tzinfo=UTC)  # 09:30 IST: not again until the evening run
-        svc.last_attempt = None
-        svc.store.last_success_utc = lambda: datetime(2026, 10, 29, 2, 40, tzinfo=UTC)  # type: ignore[method-assign]
-        assert not svc.due()
         svc.store.last_success_utc = lambda: datetime(2026, 10, 28, 15, 0, tzinfo=UTC)  # type: ignore[method-assign]
         clock.now = datetime(2026, 10, 29, 13, 30, tzinfo=UTC)  # 19:00 IST
         assert svc.due()
@@ -240,7 +230,7 @@ def test_registry_is_honest_about_what_is_verified() -> None:
             continue
         closes = _dt(2026, 10, 28, s.close.hour, s.close.minute, tzinfo=ZoneInfo(s.timezone))
         assert closes.astimezone(ZoneInfo("Asia/Kolkata")) < _dt(2026, 10, 29, 8, 30, tzinfo=ZoneInfo("Asia/Kolkata")), s.key
-    assert len({s.key for s in SYMBOLS}) == len(SYMBOLS) and BY_KEY["USDINR"].close is None
+    assert len({s.key for s in SYMBOLS}) == len(SYMBOLS) and BY_KEY["INDIAVIX"].close is not None and set(BY_KEY) == {"NIFTY50", "INDIAVIX"}
 
 
 def test_api_status_and_refresh_endpoints(tmp_path: Path) -> None:
@@ -262,20 +252,6 @@ def test_api_status_and_refresh_endpoints(tmp_path: Path) -> None:
         assert (
             remote.post("/api/prediction/history/refresh").status_code == 403
         )  # local control only
-
-
-class TestMorningRetry:
-    async def test_late_overnight_bars_are_retried_every_ten_minutes_until_the_window(self, tmp_path: Path) -> None:
-        svc, dl, clock = make(tmp_path)
-        await svc.refresh()
-        # Thursday 29 Oct 2026, 07:45 IST; the store only has bars up to the evening of 28 Oct, so US bars (dated 28 Oct) are in...
-        clock.now = datetime(2026, 10, 29, 2, 15, tzinfo=UTC)
-        svc.last_attempt = clock.now - timedelta(minutes=11)
-        svc.store.last_success_utc = lambda: clock.now - timedelta(minutes=11)  # type: ignore[method-assign]
-        missing = svc.overnight_missing(clock.now)
-        assert svc.due() == bool(missing)  # retries only while something overnight is missing
-        svc.last_attempt = clock.now - timedelta(minutes=3)
-        assert not svc.due()  # but never faster than every 10 minutes
 
 
 class TestShiftedDates:
@@ -336,11 +312,3 @@ class TestBarDisagreements:
         assert st.bars("NIFTY50")[0].close == 100.0  # the first-seen value is still the one used
 
 
-def test_a_provisional_bar_means_the_overnight_series_is_not_missing(tmp_path: Path) -> None:
-    from app.prediction.targets import Bar
-
-    st = HistoryStore(tmp_path)
-    svc = HistoryService(st, downloader=lambda *a: [], clock=lambda: datetime(2026, 11, 11, 3, 0, tzinfo=UTC))  # 08:30 IST Wednesday
-    assert "BRENT" in svc.overnight_missing(svc._clock())  # nothing stored at all
-    st.set_provisional("BRENT", Bar(D("2026-11-10"), 90.0, 93.0, 89.0, 91.0), "2026-11-11T02:00:00+00:00")
-    assert "BRENT" not in svc.overnight_missing(svc._clock())  # the morning forecast may use it, so the ten-minute retries stop

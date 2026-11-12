@@ -6,9 +6,8 @@
 * A failure on one symbol never stops the others and is shown in the status; a failed run is retried
   after an hour. Nothing is invented or filled: missing days stay missing.
 * With a trading calendar the schedule also looks at the DATA, not only the clock: when the newest NIFTY 50 bar is older than the last
-  completed session, or an overnight series lacks the world session the next forecast needs, a run is due again (every 10 minutes in the
-  morning, hourly otherwise). A run that "succeeded" for 24 of 25 symbols therefore no longer ends the day's attempts, and a restart of the
-  program (which forgets its last attempt) cannot leave a gap unfilled.
+  completed session, a run is due again (hourly). A restart of the program (which forgets its last attempt) cannot leave a gap unfilled.
+* Only NIFTY 50 and India VIX are stored (the global, sector, FX and commodity series were removed, D149).
 """
 
 from __future__ import annotations
@@ -35,17 +34,12 @@ from app.prediction.sources.yahoo import (
     yahoo_download,
 )
 from app.prediction.targets import Bar, BarError
-from app.prediction.usmarket import last_us_session_on_or_before
 
 logger = logging.getLogger(__name__)
 SOURCE = "yahoo"
 OVERLAP_DAYS = 10
 RUN_AFTER = (18, 30)  # IST: Indian closing data is settled
-RUN_MORNING = (7, 30)  # IST: the US close (01:30 IST) and overnight settlements are in
 RETRY_AFTER = timedelta(hours=1)
-MORNING_RETRY = timedelta(minutes=10)  # while overnight bars are missing before the forecast
-MORNING_END = (9, 10)  # IST
-OVERNIGHT_KEYS = ("SPX", "VIX", "BRENT", "DXY", "USDINR", "UST10Y")
 POLL_S = 300.0
 _COV_FIELDS = ("first", "last", "bars", "disagreements")
 
@@ -182,26 +176,8 @@ class HistoryService:
         return self._running is not None and not self._running.done()
 
     # ------------------------------------------------------------------ schedule
-    def overnight_missing(self, now: datetime) -> list[str]:
-        """Overnight series whose newest bar is older than the last weekday (US session date)."""
-        d = now.astimezone(IST).date() - timedelta(days=1)
-        while d.weekday() >= 5:
-            d -= timedelta(days=1)
-        last = {c["symbol"]: c["last"] for c in self.store.coverage()}  # usable (final) bars only
-        out = []
-        for k in OVERNIGHT_KEYS:
-            prov = self.store.provisional_bar(k, None)  # a 24-hour series is provisional until New York midnight: the morning forecast may use it, so it is not "missing"
-            newest = max(last.get(k) or "", "" if prov is None else str(prov.session))
-            if newest < str(d):
-                out.append(k)
-        return out
-
     def data_gaps(self, now: datetime) -> list[str]:
-        """What the stored data lacks that a forecast needs and that is already published (empty without a calendar).
-
-        * NIFTY50: the final bar of the last completed NSE session.
-        * Overnight series (OVERNIGHT_KEYS): a final or provisional bar of the US trading day the next forecast needs, once that US session is over.
-        """
+        """What the stored data lacks that is already published (empty without a calendar): the final NIFTY50 bar of the last completed NSE session."""
         cal = self.calendar
         if cal is None:
             return []
@@ -219,15 +195,6 @@ class HistoryService:
             gaps: list[str] = []
             if (cov.get("NIFTY50") or "") < str(d):
                 gaps.append(f"NIFTY50 {d}")
-            first = cal.next_session(d, 1)
-            req = last_us_session_on_or_before(max(d, first - timedelta(days=1)))
-            if now >= datetime(req.year, req.month, req.day, 3, 0, tzinfo=IST) + timedelta(days=1):  # that US session is over
-                for k in OVERNIGHT_KEYS:
-                    final = cov.get(k) or ""
-                    prov = self.store.provisional_bar(k, None)
-                    newest = max(final, str(prov.session) if prov is not None else "")
-                    if newest < str(req):
-                        gaps.append(f"{k} {req}")
             return gaps
         except Exception:  # noqa: BLE001 - a calendar gap must never stop the clock-based schedule
             return []
@@ -246,16 +213,10 @@ class HistoryService:
         now = now or self._clock()
         if not self.enabled or self.running:
             return False
-        t0 = now.astimezone(IST)
         if self.calendar is not None and self.data_gaps(now):
-            in_morning = t0.weekday() < 5 and RUN_MORNING <= (t0.hour, t0.minute) < MORNING_END
             last = self._last_started()
-            if last is None or now - last >= (MORNING_RETRY if in_morning else RETRY_AFTER):
-                return True  # the data the next forecast needs is published but not stored: look again, whatever the clock rules say
-        morning = t0.weekday() < 5 and RUN_MORNING <= (t0.hour, t0.minute) < MORNING_END
-        retry_gap = self.last_attempt is not None and now - self.last_attempt >= MORNING_RETRY
-        if morning and retry_gap and self.overnight_missing(now):
-            return True  # overnight bars are late: retry every 10 minutes until the forecast window
+            if last is None or now - last >= RETRY_AFTER:
+                return True  # the NIFTY 50 bar is published but not stored: look again, whatever the clock rules say
         if self.last_attempt and now - self.last_attempt < RETRY_AFTER:
             return False
         ok = self.store.last_success_utc()
@@ -265,10 +226,8 @@ class HistoryService:
         after_close = t.weekday() < 5 and (t.hour, t.minute) >= RUN_AFTER
         close_start = t.replace(hour=RUN_AFTER[0], minute=RUN_AFTER[1], second=0, microsecond=0)
         if after_close and ok.astimezone(IST) < close_start:
-            return True  # a morning run does not count as the evening one
-        h, m = RUN_MORNING
-        morning_start = t.replace(hour=h, minute=m, second=0, microsecond=0)
-        return t.weekday() < 5 and t >= morning_start and ok.astimezone(IST) < morning_start
+            return True  # an earlier run does not count as the evening one
+        return False
 
     async def _loop(self) -> None:
         await asyncio.sleep(20)  # let the backend finish starting

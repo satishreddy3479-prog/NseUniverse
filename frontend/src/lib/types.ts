@@ -519,8 +519,6 @@ export interface IntradaySummary {
   narrative: string;
   context: { question: string; answer: string }[];
   levels: IntradayLevel[];
-  global: { key: string; name: string; session: string; ret_pct: number | null; sd_pct: number | null; fresh: boolean }[];
-  sectors: { rows: { key: string; name: string; session: string; ret_pct: number }[]; note: string };
   institutional: { session: string; fii_net: number | null; dii_net: number | null; fresh: boolean } | null;
   events: EventItem[];
   health: IntradayHealth[];

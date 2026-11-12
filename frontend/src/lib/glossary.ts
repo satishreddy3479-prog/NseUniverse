@@ -142,13 +142,13 @@ const E: Record<string, GlossaryEntry> = {
     caution: "Levels are references, not guarantees. Open-interest strikes show positioning, not support or resistance.",
   },
   "data coverage warnings": {
-    what: "Which data feeding this page is fresh, stale or missing: option chain, daily history, breadth, sectors, weights, volume baseline, flows, global markets, calendars and the intraday model.",
+    what: "Which data feeding this page is fresh, stale or missing: option chain, daily history, breadth, sectors, weights, volume baseline, flows and calendars.",
     read: "Green Fresh means usable. Anything else lowers how much to trust the readings that depend on it. The score's coverage figure counts how many groups had data.",
     caution: "A missing feed is shown as missing and left out, never filled with a made-up value.",
   },
-  "global sectors flows": {
-    what: "Overnight global markets, sector performance and the institutional cash flow (FII/DII) figures used as context for the day.",
-    read: "Global markets set the opening tone. Sector bars show which parts of the market lead or lag. FII/DII cash figures are the official provisional numbers from the previous session.",
+  "institutional flows": {
+    what: "The institutional cash flow (FII/DII) figures used as context for the day.",
+    read: "FII/DII cash figures are the official provisional numbers from the previous session.",
     caution: "Flows are published after about 18:00 IST, so they are never an intraday figure.",
   },
   "events": {

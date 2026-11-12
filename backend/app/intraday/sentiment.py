@@ -35,7 +35,6 @@ SCORE_CONFIG: dict[str, Any] = {
         "breadth": 0.15,
         "sectors": 0.10,
         "options": 0.20,
-        "global": 0.10,
         "institutional": 0.10,
     },
     "min_coverage": 0.45,
@@ -82,16 +81,6 @@ class Component:
 
     def public(self) -> dict[str, Any]:
         return {**self.__dict__, "contribution": self.contribution}
-
-
-@dataclass
-class GlobalInput:
-    key: str
-    name: str
-    session: str
-    ret_pct: float | None
-    sd_pct: float | None
-    fresh: bool
 
 
 @dataclass
@@ -151,24 +140,6 @@ def options_component(o: OptionsFeatures, as_of: str | None) -> Component:
         c.inputs.append({"name": "PCR (OI)", "value": o.pcr_oi, "unit": ""})
     if not parts:
         c.reason = "no option-chain sample with OI for this expiry today"
-        return c
-    c.available, c.score = True, sum(parts) / len(parts)
-    return c
-
-
-def global_component(items: list[GlobalInput]) -> Component:
-    c = Component("global", "Global markets (overnight)", SCORE_CONFIG["weights"]["global"], False,
-                  formula="mean of clip(S&P 500 return / its 60-day sd) and clip(-USD/INR return / its 60-day sd); last completed daily bars",
-                  source="Yahoo Finance daily bars (stored)")  # fmt: skip
-    parts = []
-    for key, sign in (("SPX", 1), ("USDINR", -1)):
-        g = next((x for x in items if x.key == key), None)
-        if g and g.fresh and g.ret_pct is not None and g.sd_pct:
-            parts.append(clip(sign * g.ret_pct / g.sd_pct))
-            c.inputs.append({"name": g.name, "value": g.ret_pct, "unit": "%", "session": g.session})
-            c.as_of = g.session
-    if not parts:
-        c.reason = "no fresh S&P 500 or USD/INR bar"
         return c
     c.available, c.score = True, sum(parts) / len(parts)
     return c

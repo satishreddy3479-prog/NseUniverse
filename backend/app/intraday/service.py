@@ -2,7 +2,7 @@
 
 Sources (all real, all stored locally):
 * observations.sqlite3: ~60-second option-chain samples (spot + every contract) in market hours.
-* market_history.sqlite3: daily bars (NIFTY 50, sector indices, US/Asia/Europe, FX, crude, yields).
+* market_history.sqlite3: daily bars (NIFTY 50 and India VIX).
 * nse_flows.sqlite3: NSE FII/DII provisional cash figures (previous session at best).
 * reference/events.json: verified economic calendar.
 Every section says where it came from, when it was observed and how fresh it is.
@@ -18,7 +18,6 @@ from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from dataclasses import asdict
 from datetime import UTC, date, datetime, time, timedelta
-from statistics import pstdev
 from time import perf_counter
 from typing import Any
 
@@ -54,11 +53,9 @@ from app.intraday.sentiment import (
     SCORE_CONFIG,
     SCORE_VERSION,
     FlowInput,
-    GlobalInput,
     _no_stocks_reason,
     assess,
     breadth_component,
-    global_component,
     institutional_component,
     narrative,
     options_component,
@@ -77,17 +74,6 @@ from app.storage.observations import ObservationStore, to_ms
 
 logger = logging.getLogger(__name__)
 
-GLOBAL_KEYS = ("SPX", "NDX_COMP", "VIX", "USDINR", "BRENT", "UST10Y", "GOLD", "N225", "HSI", "DAX")
-SECTOR_KEYS = (
-    "NIFTYBANK",
-    "NIFTYIT",
-    "NIFTYAUTO",
-    "NIFTYPHARMA",
-    "NIFTYFMCG",
-    "NIFTYMETAL",
-    "NIFTYENERGY",
-    "NIFTYREALTY",
-)
 LIVE_PHASES = {"opening", "morning", "midday", "afternoon", "closing"}
 FRESH_S, DELAYED_S = 180, 600
 SLOW_TTL_S = 600  # daily bars and session counts are re-read every 10 minutes
@@ -216,39 +202,6 @@ class IntradayService:
         ]
         self._slow[("bars", key)] = (now, bars)
         return bars
-
-    def _global(self, today: date) -> list[GlobalInput]:
-        out = []
-        for k in GLOBAL_KEYS:
-            # only completed earlier sessions: a bar dated today may still be forming
-            bars = [b for b in self._daily(k) if b.session < today]
-            if len(bars) < 2:
-                continue
-            a, b = bars[-2], bars[-1]
-            rets = [
-                (y.close / x.close - 1) * 100
-                for x, y in zip(bars[-61:], bars[-60:], strict=False)
-                if x.close
-            ]
-            fresh = (today - b.session).days <= 4
-            name = {"SPX": "S&P 500", "NDX_COMP": "Nasdaq Composite", "VIX": "CBOE VIX", "USDINR": "USD/INR",
-                    "BRENT": "Brent crude", "UST10Y": "US 10Y yield", "GOLD": "Gold", "N225": "Nikkei 225",
-                    "HSI": "Hang Seng", "DAX": "DAX"}[k]  # fmt: skip
-            out.append(GlobalInput(k, name, b.session.isoformat(), (b.close / a.close - 1) * 100 if a.close else None,
-                                   pstdev(rets) if len(rets) >= 20 else None, fresh))  # fmt: skip
-        return out
-
-    def _sectors(self, today: date, nifty_ret: float | None) -> list[dict[str, Any]]:
-        out = []
-        for k in SECTOR_KEYS:
-            bars = [b for b in self._daily(k) if b.session < today]
-            if len(bars) < 2:
-                continue
-            a, b = bars[-2], bars[-1]
-            r = (b.close / a.close - 1) * 100
-            out.append({"key": k, "name": k.replace("NIFTY", "NIFTY "), "session": b.session.isoformat(),
-                        "ret_pct": r, "rel_pct": None if nifty_ret is None else r - nifty_ret})  # fmt: skip
-        return sorted(out, key=lambda x: -x["ret_pct"])
 
     def _flows(self, prev: date | None, today: date) -> FlowInput | None:
         # only sessions before ``today``: a figure published after the close of ``today`` is not known during it, and a replay of an
@@ -382,7 +335,6 @@ class IntradayService:
             and bool(session_samples)
         )
         mk = None if replay else self._market_summary(now)  # a replay never reads today's live stock ticks
-        glob = self._global(today)
         flow = self._flows(prev_session, today)
         comps = [
             price_component(p, ctx),
@@ -390,7 +342,6 @@ class IntradayService:
             sectors_component(mk),
             options_component(o, _iso(latest.received_at) if latest else None) if opt_today
             else unavailable("options", "Options positioning", "no option-chain sample in today's session for this expiry"),
-            global_component(glob),
             institutional_component(flow),
         ]  # fmt: skip
         a = assess(comps, p)
@@ -422,11 +373,10 @@ class IntradayService:
         mark("assess_regime_store")
         levels = self._levels(p, o, ctx, expiry, latest)
         health = self._health_list(
-            mk, phase, chain_status, age, latest, p, ctx, prev_session, glob, flow, ev, trading
+            mk, phase, chain_status, age, latest, p, ctx, prev_session, flow, ev, trading
         )
         if prev_check:
             health.insert(1, prev_check)
-        sectors = self._sectors(today, None)
         mark("health_counts")
         result: dict[str, Any] = {
             "generated_at": now.isoformat(),
@@ -449,11 +399,9 @@ class IntradayService:
             "scenarios": scen,
             "scenarios_ruled_out": scen_ruled_out,
             "narrative": narrative(a, p, o, reg),
-            "context": self._context(a, p, o, reg, glob, upcoming, chain_status, mk),
+            "context": self._context(a, p, o, reg, upcoming, chain_status, mk),
             "stocks": mk,
             "levels": levels,
-            "global": [asdict(g) for g in glob],
-            "sectors": {"rows": sectors, "note": "Previous session's daily closes (Yahoo). Not intraday; not in the score."},
             "institutional": asdict(flow) if flow else None,
             "events": [e.public() for e in upcoming[:6]],
             "health": health,
@@ -1206,7 +1154,7 @@ class IntradayService:
         ]
 
     def _health_list(self, mk: dict[str, Any] | None, phase: str, chain_status: str, age: float | None, latest: Any, p: Any, ctx: Any,
-                     prev: date | None, glob: list[GlobalInput], flow: FlowInput | None, ev: Any, trading: bool | None) -> list[dict[str, Any]]:  # fmt: skip
+                     prev: date | None, flow: FlowInput | None, ev: Any, trading: bool | None) -> list[dict[str, Any]]:  # fmt: skip
         h = []
         if latest is None:
             h.append(
@@ -1237,9 +1185,6 @@ class IntradayService:
         else:
             h.append(_health("FII/DII cash", "fresh" if flow.fresh else "stale",
                              f"official provisional figure for {flow.session} (published after ~18:00 IST that day)", flow.session))  # fmt: skip
-        spx = next((g for g in glob if g.key == "SPX"), None)
-        h.append(_health("Global markets", "fresh" if spx and spx.fresh else "stale" if spx else "not_available",
-                         f"latest S&P 500 daily bar {spx.session}" if spx else "no stored US bars", spx.session if spx else None))  # fmt: skip
         h.append(
             _health(
                 "Economic calendar",
@@ -1249,13 +1194,6 @@ class IntradayService:
         )
         h.append(_health("Exchange calendar", "fresh" if trading is not None else "warning",
                          "NSE holiday list covers today" if trading is not None else "today is outside the verified holiday list"))  # fmt: skip
-        h.append(
-            _health(
-                "Intraday ML model",
-                "not_available",
-                "not trained: not enough complete intraday sessions",
-            )
-        )
         return h
 
     def _market_health(self, mk: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -1312,7 +1250,6 @@ class IntradayService:
         p: Any,
         o: Any,
         reg: dict[str, Any],
-        glob: list[GlobalInput],
         upcoming: list[Any],
         chain_status: str,
         mk: dict[str, Any] | None = None,
@@ -1364,16 +1301,6 @@ class IntradayService:
                 q(
                     "Accepting or rejecting levels?",
                     "Opening range not formed yet (needs 3 samples 09:15-09:30).",
-                )
-            )
-        spx = next((g for g in glob if g.key == "SPX"), None)
-        if spx and spx.ret_pct is not None:
-            out.append(
-                q(
-                    "Global conditions?",
-                    f"S&P 500 {spx.ret_pct:+.2f}% on {spx.session}"
-                    + ("" if spx.fresh else " (stale)")
-                    + ".",
                 )
             )
         hi = [e for e in upcoming if e.impact == "high"]

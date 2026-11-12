@@ -37,9 +37,7 @@ from app.intraday.features import (
 from app.intraday.sentiment import (
     SCORE_CONFIG,
     FlowInput,
-    GlobalInput,
     assess,
-    global_component,
     institutional_component,
     label_for,
     price_component,
@@ -234,7 +232,7 @@ class TestScore:
         f = price_features(pts, pts[-1].at, self.ctx(), 20000.0)
         price = price_component(f, self.ctx())
         comps = [price, unavailable("breadth", "b", "x"), unavailable("sectors", "s", "x"),
-                 unavailable("options", "o", "x"), unavailable("global", "g", "x"), institutional_component(None)]  # fmt: skip
+                 unavailable("options", "o", "x"), institutional_component(None)]  # fmt: skip
         a = assess(comps, f)
         w = SCORE_CONFIG["weights"]
         assert a.coverage == pytest.approx(w["price"] / sum(w.values()))
@@ -246,8 +244,6 @@ class TestScore:
         pts = path([20000 + 2 * i for i in range(61)])
         f = price_features(pts, pts[-1].at, self.ctx(), 20000.0)
         price = price_component(f, self.ctx())
-        glob = global_component([GlobalInput("SPX", "S&P 500", "2026-10-28", -1.0, 1.0, True),
-                                 GlobalInput("USDINR", "USD/INR", "2026-10-28", 0.0, 0.3, True)])  # fmt: skip
         inst = institutional_component(FlowInput("2026-10-28", -3000.0, 500.0, True))
         opt = unavailable("options", "o", "x")
         comps = [
@@ -255,19 +251,13 @@ class TestScore:
             unavailable("breadth", "b", "x"),
             unavailable("sectors", "s", "x"),
             opt,
-            glob,
             inst,
         ]
         a = assess(comps, f)
         w = SCORE_CONFIG["weights"]
-        g = (-1.0 + 0.0) / 2
         i = math.tanh(-1.0)
-        expected = (w["price"] * price.score + w["global"] * g + w["institutional"] * i) / (
-            w["price"] + w["global"] + w["institutional"]
-        )  # type: ignore[operator]
-        assert a.coverage == pytest.approx(
-            (w["price"] + w["global"] + w["institutional"]) / sum(w.values())
-        )
+        expected = (w["price"] * price.score + w["institutional"] * i) / (w["price"] + w["institutional"])  # type: ignore[operator]
+        assert a.coverage == pytest.approx((w["price"] + w["institutional"]) / sum(w.values()))
         assert a.score == pytest.approx(expected)
         assert a.label == label_for(expected)
 
@@ -398,8 +388,8 @@ def test_full_session_is_scored_recorded_once_and_explained(tmp_path: Path) -> N
                           clock=lambda: now.astimezone(UTC))  # fmt: skip
     out = svc.summary(EXP)
     a = out["assessment"]
-    # price (0.35) + options (0.20) available; breadth, sectors, global, flows missing -> 0.55
-    assert a["coverage"] == pytest.approx(0.55)
+    # price (0.35) + options (0.20) available of a 0.90 total; breadth, sectors, flows missing
+    assert a["coverage"] == pytest.approx(0.55 / 0.90)
     assert a["score"] is not None and a["label"] != "Insufficient data"
     assert out["daily"]["daily_sd_pct"] == pytest.approx(
         1.0, rel=0.05
@@ -462,24 +452,24 @@ class TestScenarioRelevance:
         return scenarios(a, f, options_features({}, None, None, None), DailyContext(), {"primary": regime}), a
 
     def test_choppy_session_with_only_bullish_evidence_shows_range_first_and_rules_out_bearish(self) -> None:
-        (shown, ruled), a = self.setup({"price": 0.3, "options": 0.4, "global": 0.2}, trend=False, regime="Mean-reverting / choppy")
+        (shown, ruled), a = self.setup({"price": 0.3, "options": 0.4, "institutional": 0.2}, trend=False, regime="Mean-reverting / choppy")
         assert a.direction == "Up"
         assert [x["name"] for x in shown] == ["Range-bound consolidation", "Bullish continuation / recovery"]
         assert [x["name"] for x in ruled] == ["Bearish continuation / reversal"]
         assert "none of the 3 available evidence groups is below -0.10" in ruled[0]["reason"] and "3 are bullish" in ruled[0]["reason"]
 
     def test_mixed_evidence_shows_all_three(self) -> None:
-        (shown, ruled), _ = self.setup({"price": 0.3, "options": -0.4, "global": 0.2}, trend=False, regime="Sideways consolidation")
+        (shown, ruled), _ = self.setup({"price": 0.3, "options": -0.4, "institutional": 0.2}, trend=False, regime="Sideways consolidation")
         assert len(shown) == 3 and ruled == [] and shown[0]["name"] == "Range-bound consolidation"
 
     def test_a_clean_strong_trend_rules_out_range_and_the_opposite_direction(self) -> None:
-        (shown, ruled), a = self.setup({"price": 0.9, "options": 0.8, "global": 0.5}, trend=True, regime="Uptrend")
+        (shown, ruled), a = self.setup({"price": 0.9, "options": 0.8, "institutional": 0.5}, trend=True, regime="Uptrend")
         assert a.score is not None and a.score >= 0.5
         assert [x["name"] for x in shown] == ["Bullish continuation / recovery"]
         assert {x["name"] for x in ruled} == {"Range-bound consolidation", "Bearish continuation / reversal"}
 
     def test_no_directional_evidence_falls_back_to_range_bound_only(self) -> None:
-        (shown, ruled), _ = self.setup({"price": 0.05, "options": -0.05, "global": 0.0}, trend=False, regime="Sideways consolidation")
+        (shown, ruled), _ = self.setup({"price": 0.05, "options": -0.05, "institutional": 0.0}, trend=False, regime="Sideways consolidation")
         assert [x["name"] for x in shown] == ["Range-bound consolidation"]
         assert len(ruled) == 2
 

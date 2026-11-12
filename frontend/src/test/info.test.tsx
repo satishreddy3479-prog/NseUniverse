@@ -12,7 +12,7 @@ describe("glossary", () => {
       "Current market sentiment", "Evidence breakdown", "Market regime & scenarios", "Market breadth & move quality", "NIFTY 50 heavyweights",
       "Breakout intelligence", "Setup monitor", "Implied volatility & Greeks", "Options positioning detail", "Futures flow and top-5 heavyweights", "Sectors",
       "Forward check of the rules-based sentiment", "Paper trading of the setups (after costs)", "Session replay",
-      "Intraday decision context", "Key levels", "Options positioning", "Data coverage & warnings", "Global, sectors & flows", "Events",
+      "Intraday decision context", "Key levels", "Options positioning", "Data coverage & warnings", "Institutional flows", "Events",
       "Sentiment history (today, stored)",
     ]) expect(lookup(t), `card: ${t}`).not.toBeNull();
   });

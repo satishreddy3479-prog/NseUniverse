@@ -898,43 +898,16 @@ function Health({ d }: { d: IntradaySummary }) {
 
 function Markets({ d }: { d: IntradaySummary }) {
   return (
-    <Card title="Global, sectors & flows" className="lg:col-span-8">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <h4 className="mb-1 text-[11px] uppercase tracking-wide text-muted">Last completed sessions</h4>
-          <table className="w-full text-xs"><tbody>
-            {d.global.map((g) => (
-              <tr key={g.key} className="border-b border-rule/40 last:border-0">
-                <td className="py-0.5 pr-2 text-muted">{g.name}</td>
-                <td className={`num py-0.5 text-right ${tone(g.ret_pct)}`}><span className="mr-2">{fmtPct(g.ret_pct)}</span><MiniBar value={g.ret_pct} scale={3} className="w-14" /></td>
-                <td className={`py-0.5 pl-2 text-right text-[10px] ${g.fresh ? "text-muted" : "text-warn"}`}>{g.session.slice(5)}</td>
-              </tr>
-            ))}
-            {d.global.length === 0 && <tr><td className="text-muted">No stored global bars.</td></tr>}
-          </tbody></table>
-        </div>
-        <div>
-          <h4 className="mb-1 text-[11px] uppercase tracking-wide text-muted">Sectors (previous session, daily)</h4>
-          <table className="w-full text-xs"><tbody>
-            {d.sectors.rows.map((s) => (
-              <tr key={s.key} className="border-b border-rule/40 last:border-0">
-                <td className="py-0.5 pr-2 text-muted">{s.name}</td>
-                <td className={`num py-0.5 text-right ${tone(s.ret_pct)}`}><span className="mr-2">{fmtPct(s.ret_pct)}</span><MiniBar value={s.ret_pct} scale={3} className="w-14" /></td>
-              </tr>
-            ))}
-            {d.sectors.rows.length === 0 && <tr><td className="text-muted">No stored sector bars.</td></tr>}
-          </tbody></table>
-          <h4 className="mb-1 mt-3 text-[11px] uppercase tracking-wide text-muted">FII / DII cash (official provisional)</h4>
-          {d.institutional ? (
-            <p className="num text-xs">
-              <span className={tone(d.institutional.fii_net)}>FII {d.institutional.fii_net == null ? MISSING : `${d.institutional.fii_net.toFixed(0)} cr`}</span>
-              {" · "}<span className={tone(d.institutional.dii_net)}>DII {d.institutional.dii_net == null ? MISSING : `${d.institutional.dii_net.toFixed(0)} cr`}</span>
-              <span className={`ml-1 text-[10px] ${d.institutional.fresh ? "text-muted" : "text-warn"}`}>({d.institutional.session})</span>
-            </p>
-          ) : <p className="text-xs text-muted">Not stored yet.</p>}
-          <p className="mt-1 text-[11px] text-muted">Published after ~18:00 IST; never an intraday figure.</p>
-        </div>
-      </div>
+    <Card title="Institutional flows" className="lg:col-span-8">
+      <h4 className="mb-1 text-[11px] uppercase tracking-wide text-muted">FII / DII cash (official provisional)</h4>
+      {d.institutional ? (
+        <p className="num text-xs">
+          <span className={tone(d.institutional.fii_net)}>FII {d.institutional.fii_net == null ? MISSING : `${d.institutional.fii_net.toFixed(0)} cr`}</span>
+          {" · "}<span className={tone(d.institutional.dii_net)}>DII {d.institutional.dii_net == null ? MISSING : `${d.institutional.dii_net.toFixed(0)} cr`}</span>
+          <span className={`ml-1 text-[10px] ${d.institutional.fresh ? "text-muted" : "text-warn"}`}>({d.institutional.session})</span>
+        </p>
+      ) : <p className="text-xs text-muted">Not stored yet.</p>}
+      <p className="mt-1 text-[11px] text-muted">Published after ~18:00 IST; never an intraday figure.</p>
     </Card>
   );
 }

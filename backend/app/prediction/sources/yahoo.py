@@ -37,52 +37,6 @@ class SymbolSpec:
 SYMBOLS: list[SymbolSpec] = [
     SymbolSpec("NIFTY50", "^NSEI", "NIFTY 50", "india_index", "Asia/Kolkata", time(15, 40), True),
     SymbolSpec("INDIAVIX", "^INDIAVIX", "India VIX", "india_vix", "Asia/Kolkata", time(15, 40)),
-    SymbolSpec("NIFTYBANK", "^NSEBANK", "NIFTY Bank", "india_index", "Asia/Kolkata", time(15, 40)),
-    SymbolSpec("NIFTYIT", "^CNXIT", "NIFTY IT", "india_index", "Asia/Kolkata", time(15, 40)),
-    SymbolSpec("NIFTYAUTO", "^CNXAUTO", "NIFTY Auto", "india_index", "Asia/Kolkata", time(15, 40)),
-    SymbolSpec(
-        "NIFTYPHARMA", "^CNXPHARMA", "NIFTY Pharma", "india_index", "Asia/Kolkata", time(15, 40)
-    ),
-    SymbolSpec("NIFTYFMCG", "^CNXFMCG", "NIFTY FMCG", "india_index", "Asia/Kolkata", time(15, 40)),
-    SymbolSpec(
-        "NIFTYMETAL", "^CNXMETAL", "NIFTY Metal", "india_index", "Asia/Kolkata", time(15, 40)
-    ),
-    SymbolSpec(
-        "NIFTYENERGY", "^CNXENERGY", "NIFTY Energy", "india_index", "Asia/Kolkata", time(15, 40)
-    ),
-    SymbolSpec(
-        "NIFTYREALTY", "^CNXREALTY", "NIFTY Realty", "india_index", "Asia/Kolkata", time(15, 40)
-    ),
-    SymbolSpec("SPX", "^GSPC", "S&P 500", "global_index", "America/New_York", time(16, 0)),
-    SymbolSpec(
-        "NDX_COMP", "^IXIC", "Nasdaq Composite", "global_index", "America/New_York", time(16, 0)
-    ),
-    SymbolSpec(
-        "DJI",
-        "^DJI",
-        "Dow Jones Industrial Average",
-        "global_index",
-        "America/New_York",
-        time(16, 0),
-    ),
-    SymbolSpec("VIX", "^VIX", "CBOE VIX", "global_index", "America/New_York", time(16, 15)),
-    SymbolSpec("N225", "^N225", "Nikkei 225", "global_index", "Asia/Tokyo", time(15, 30)),
-    SymbolSpec("HSI", "^HSI", "Hang Seng", "global_index", "Asia/Hong_Kong", time(16, 0)),
-    SymbolSpec(
-        "SSEC", "000001.SS", "Shanghai Composite", "global_index", "Asia/Shanghai", time(15, 0)
-    ),
-    SymbolSpec("DAX", "^GDAXI", "DAX", "global_index", "Europe/Berlin", time(17, 30)),
-    SymbolSpec("FTSE", "^FTSE", "FTSE 100", "global_index", "Europe/London", time(16, 30)),
-    SymbolSpec("UST10Y", "^TNX", "US 10-year yield (CBOE, x10)", "yield", "America/New_York", None),
-    SymbolSpec(
-        "BRENT", "BZ=F", "Brent crude futures (continuous)", "commodity", "America/New_York", None
-    ),
-    SymbolSpec(
-        "WTI", "CL=F", "WTI crude futures (continuous)", "commodity", "America/New_York", None
-    ),
-    SymbolSpec("GOLD", "GC=F", "Gold futures (continuous)", "commodity", "America/New_York", None),
-    SymbolSpec("DXY", "DX-Y.NYB", "US Dollar Index", "fx", "America/New_York", None),
-    SymbolSpec("USDINR", "INR=X", "USD/INR", "fx", "UTC", None),
 ]
 # Timing check (2026-10-28, research/timing_audit.py on the real history): every series is used only
 # through "the last bar dated on or before the reference session", which is complete by 08:30 IST the
