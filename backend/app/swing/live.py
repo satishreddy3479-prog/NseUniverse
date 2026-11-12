@@ -80,6 +80,8 @@ class SwingLive:
         self._prev_session = prev_session
         self._last_scan: str | None = None  # the session the queued orders were scanned at
         self._orders: list[Order] = []
+        self._minute_orders: list[Order] = []  # the live book's own copy of the scan's candidates (its queue, separate from the official book's)
+        self._minute_scan: str | None = None
         self._positions: list[Position] = []
         self._master: dict[str, TokenInfo] | None = None
         self._master_day: date | None = None
@@ -97,9 +99,29 @@ class SwingLive:
     # ------------------------------------------------------------------ what is watched
     def load_watch(self) -> None:
         book, last, no, pending = self.store.load_state(self.cfg)
+        m_orders, m_scan = self._load_minute_queue(last, pending)
         with self._lock:
             self._orders, self._positions, self._last_scan = list(pending), list(book.positions.values()), last
             self._no, self._last_exit = no, dict(book.last_exit_no)
+            self._minute_orders, self._minute_scan = m_orders, m_scan
+
+    def _load_minute_queue(self, official_scan: str | None, official_pending: list[Order]) -> tuple[list[Order], str | None]:
+        """The live book's candidates come from its own queue, filled by the evening scan. Once, when the queue is still empty (the first start
+        after the scan began handing candidates to both books), the candidates the scan has already queued are handed over; after that the live
+        book never reads the official book's orders, positions or decisions."""
+        if self.minute is None:
+            return [], None
+        ms = self.minute.store
+        if ms.latest_queue_session() is None and official_scan and official_pending:
+            ms.save_queue(official_scan, list(official_pending))
+        qs = ms.latest_queue_session()
+        return ([] if qs is None else ms.load_queue(qs)), qs
+
+    def minute_queue_state(self, now: datetime) -> dict[str, Any]:
+        """Is the live book's queue the one meant for today's session (the scan of the trading day before today)?"""
+        expected = self._prev_session(now.astimezone(IST).date()).isoformat()
+        scan = self._minute_scan
+        return {"scan_session": scan, "expected_scan_session": expected, "current": scan is not None and scan >= expected}
 
     def queue_state(self, now: datetime) -> dict[str, Any]:
         """Are the queued orders the ones meant for today's session? They are when the book's last scan is the trading
@@ -119,7 +141,7 @@ class SwingLive:
 
     def _symbols(self) -> list[str]:
         with self._lock:
-            held = {o.symbol for o in self._orders} | {p.symbol for p in self._positions}
+            held = {o.symbol for o in self._orders} | {p.symbol for p in self._positions} | {o.symbol for o in self._minute_orders}
         return sorted(held | (self.minute.open_symbols() if self.minute is not None else set()))
 
     async def _ensure_master(self, now: datetime) -> None:
@@ -180,8 +202,9 @@ class SwingLive:
             return 0  # the feed keeps the last values after the close: never act on them
         ticks, session = self._ticks(), now.astimezone(IST).date().isoformat()
         queue_ok = bool(self.queue_state(now)["current"])
+        minute_ok = bool(self.minute_queue_state(now)["current"])
         with self._lock:
-            orders, positions = list(self._orders), list(self._positions)
+            orders, positions, minute_orders = list(self._orders), list(self._positions), list(self._minute_orders)
         new = 0
 
         def record(kind: str, sym: str, price: float | None, tick: LiveTick | None, detail: dict[str, Any]) -> None:
@@ -220,7 +243,7 @@ class SwingLive:
         if self.minute is not None:
             try:
                 by_sym = {s: t for s in self._symbols() if (tok := self._tokens.get(s)) is not None and (t := self._fresh(ticks.get(tok.key), now)) is not None}
-                self.minute.on_poll(now, by_sym, orders if queue_ok else [])
+                self.minute.on_poll(now, by_sym, minute_orders if minute_ok else [])
             except Exception as e:  # noqa: BLE001 - the shadow book must never disturb the live view or the feed
                 log_event(logger, logging.ERROR, "swing_minute_poll_failed", error=type(e).__name__)
         return new

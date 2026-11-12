@@ -113,7 +113,7 @@ export function SwingMinutePanel() {
     <Panel title="Live paper book" actions={<span className="rounded-sm border border-warn/50 px-1.5 py-px text-[11px] text-warn" data-testid="minute-badge">Separate book · no orders</span>}>
       <div role="note" className="mb-3 rounded-sm border border-info/40 bg-info/10 px-3 py-2 text-sm" data-testid="minute-note">
         <p className="font-medium text-paper">A separate paper portfolio: its own cash, positions, stops and trades</p>
-        <p className="mt-1 text-muted">The same rules as the official book, run live: every decision is taken on the close of a completed 1-minute candle and filled at the next candle&apos;s open. This book never places an order and never reads or changes the official book&apos;s positions, so it can hold a stock the official book does not (and the other way round). Each evening it is compared with what the official daily-bar rules did. All times are IST.</p>
+        <p className="mt-1 text-muted">The same rules as the official book, run live: every decision is taken on the close of a completed 1-minute candle and filled at the next candle&apos;s open. This book never places an order. After the close the evening scan hands the same candidate list to both books; from then on this book works only from its own copy of that list and its own portfolio, so it can hold a stock the official book does not (and the other way round). Each evening it is compared with what the official daily-bar rules did. All times are IST.</p>
         {d && <details className="mt-1 text-xs text-muted"><summary className="cursor-pointer text-info">The rules</summary><ul className="mt-1 list-disc space-y-1 pl-5">{d.rules.map((r) => <li key={r}>{r}</li>)}</ul></details>}
       </div>
       {q.isPending && <p className="text-sm text-muted">Reading the live paper book…</p>}
@@ -134,7 +134,7 @@ export function SwingMinutePanel() {
           </p>
 
           <section aria-label="Tonight's orders" data-testid="minute-watching">
-            <h3 className="mb-1 text-sm font-semibold text-paper">Orders being watched ({d.windows.entry_from}–{d.windows.entry_until})</h3>
+            <h3 className="mb-1 text-sm font-semibold text-paper">Candidates from the evening scan, this book&apos;s own copy (watched {d.windows.entry_from}–{d.windows.entry_until})</h3>
             {d.watching.length === 0 ? <p className="text-sm text-muted" data-testid="minute-watch-empty">No order is queued for this session (or the book is catching up), so nothing is watched.</p> : (
               <div className={TABLE_WRAP}>
                 <table className="w-full min-w-[52rem] text-sm"><thead className={THEAD}><tr><th className={TH_L}>#</th><th className={TH_L}>Stock</th><th className={TH_R}>Trigger</th><th className={TH_R}>Stop</th><th className={TH_R}>Last candle close</th><th className={TH_R}>Volume pace</th><th className={TH_L}>Reading</th><th className={TH_L}>As of</th></tr></thead>

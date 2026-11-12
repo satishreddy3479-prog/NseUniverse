@@ -326,6 +326,8 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             profile=lambda: (market.baselines(datetime.now(UTC)) or {}).get("stock_profile"),
         )
         app.state.swing_minute = swing_minute
+        # the evening scan hands the same candidates to both books; the live book keeps its own copy
+        swing_paper.on_candidates = lambda s, o: swing_minute.store.save_queue(s, list(o))
 
         def _settled(s: str, decisions: Any, trades: Any) -> Any:
             out = swing_ledger.settled(s, decisions, trades)  # reconcile the live ledger

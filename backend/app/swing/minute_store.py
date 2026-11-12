@@ -10,6 +10,7 @@ Nothing here places an order or reads a broker.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import sqlite3
 import threading
@@ -18,7 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from app.swing.engine import Config
+from app.swing.engine import Config, Order
 from app.swing.minute_rules import Candle, ShadowPos
 
 SCHEMA = """
@@ -35,6 +36,8 @@ CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT, session TEXT NOT NULL, at TEXT NOT NULL, symbol TEXT NOT NULL, kind TEXT NOT NULL, price REAL, detail TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS ix_events_session ON events(session, id);
 CREATE TABLE IF NOT EXISTS comparisons (session TEXT PRIMARY KEY, at TEXT NOT NULL, data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS queue (
+  order_session TEXT NOT NULL, symbol TEXT NOT NULL, rank INTEGER NOT NULL, data TEXT NOT NULL, received_at TEXT NOT NULL, PRIMARY KEY (order_session, symbol));
 CREATE TABLE IF NOT EXISTS equity (at TEXT PRIMARY KEY, session TEXT NOT NULL, equity REAL NOT NULL, cash REAL NOT NULL, open INTEGER NOT NULL);
 """
 
@@ -155,6 +158,33 @@ class MinuteStore:
         with self._lock, closing(self._conn()) as db:
             rows = db.execute("SELECT detail FROM events WHERE session=? AND symbol=? AND kind='entry_state' ORDER BY id", (session, symbol)).fetchall()
         return [str(json.loads(r["detail"]).get("state")) for r in rows]
+
+    # ------------------------------------------------------------------ the candidate orders this book was handed by the evening scan
+    def save_queue(self, order_session: str, orders: list[Order], at: datetime | None = None) -> int:
+        """Keep this book's own copy of the scan's candidate orders for the session they were queued at. The first copy of a stock wins (a repeat
+        hand-over never rewrites it). Returns how many rows were added."""
+        added = 0
+        stamp = _iso(at or datetime.now(UTC))
+        with self._lock, closing(self._conn()) as db, db:
+            for o in orders:
+                cur = db.execute("INSERT OR IGNORE INTO queue VALUES (?,?,?,?,?)", (order_session, o.symbol, o.rank, json.dumps(dataclasses.asdict(o)), stamp))
+                added += int(bool(cur.rowcount))
+        return added
+
+    def latest_queue_session(self) -> str | None:
+        with self._lock, closing(self._conn()) as db:
+            r = db.execute("SELECT MAX(order_session) FROM queue").fetchone()
+        return None if r is None or r[0] is None else str(r[0])
+
+    def load_queue(self, order_session: str) -> list[Order]:
+        with self._lock, closing(self._conn()) as db:
+            rows = db.execute("SELECT data FROM queue WHERE order_session=? ORDER BY rank, symbol", (order_session,)).fetchall()
+        out: list[Order] = []
+        for r in rows:
+            d = json.loads(r["data"])
+            d["pillars"] = tuple(d["pillars"])
+            out.append(Order(**d))
+        return out
 
     # ------------------------------------------------------------------ equity curve
     def record_equity(self, at: datetime, session: str, equity: float, cash: float, open_: int) -> bool:

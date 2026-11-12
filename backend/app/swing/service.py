@@ -68,6 +68,8 @@ class SwingPaperService:
         self.done_on: date | None = None
         #: called with (session, decisions, trades) after a session is committed (the live paper ledger reconciles here); never allowed to fail the run
         self.on_session: Any = None
+        #: called with (session, candidate orders) once the evening scan has queued them: the scan hands the same candidates to every book, and each book keeps its own copy
+        self.on_candidates: Any = None
         self._nse_days: dict[str, dict[str, Any]] = {}  # session -> NSE bhavcopy bars, one download per session per pass
         self._filled: list[tuple[str, str]] = []  # (stock, session) bars taken from NSE instead of Yahoo in this pass
         self.last_attempt: datetime | None = None
@@ -311,6 +313,11 @@ class SwingPaperService:
                     log_event(logger, logging.ERROR, "swing_live_ledger_reconcile_failed", error=type(e).__name__)
             # the next session's orders are the ones just queued (ids come from the database)
             _, _, _, pending = self.store.load_state(cfg)
+            if self.on_candidates is not None:
+                try:
+                    self.on_candidates(s, pending)
+                except Exception as e:  # noqa: BLE001 - the official record is already committed; the live book's copy is retried by its own seeding
+                    log_event(logger, logging.ERROR, "swing_candidate_handover_failed", error=type(e).__name__)
         return {"state": "ok", "session": latest, "sessions": len(sessions), "candidates": len(pending),
                 "filled": sum(d.outcome == "filled" for d in settle.decisions), "closed": len(settle.trades)}
 

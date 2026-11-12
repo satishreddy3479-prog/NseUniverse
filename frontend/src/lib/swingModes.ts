@@ -38,7 +38,7 @@ export const MODES: SwingMode[] = [
     data: "Live Kotak prices, built into completed 1-minute candles",
     decides: "On the close of each 1-minute candle: entries 09:30-15:00, stops on every close, day-1 check at 15:20",
     fills: "The next candle's open, with 0.15% cost per side",
-    effect: "Its own cash, positions, stops, trades and equity. It takes the same queued candidate orders but never reads or changes the official book's positions; each evening it is compared with it",
+    effect: "Its own cash, positions, stops, trades and equity. After the close the scan hands the same candidate list to both books; from then on each works only on its own rules and portfolio. Each evening they are compared",
     tab: "live",
   },
   {

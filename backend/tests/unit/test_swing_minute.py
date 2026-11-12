@@ -246,7 +246,7 @@ def test_the_live_watcher_feeds_the_shadow_book_and_a_failing_shadow_never_break
     live = SwingLive(PaperStore(tmp_path), CFG, ticks=lambda: dict(ticks), scrip_master=None, add_tokens=None, feed_state=lambda: "streaming", clock=lambda: now["t"], minute=shadow)
     live.load_watch = lambda: None  # type: ignore[method-assign]
     o = order("ABC")
-    live._orders, live._last_scan, live._positions = [o], "2026-11-03", []
+    live._minute_orders, live._minute_scan, live._orders, live._last_scan, live._positions = [o], "2026-11-03", [], None, []  # the live book has its own queue; the official one is empty here
     live._tokens = {"ABC": FeedToken(exchange_segment="nse_cm", instrument_token="111")}
 
     def poll(hh: int, mm: int, ss: int, px: float) -> None:
@@ -259,7 +259,7 @@ def test_the_live_watcher_feeds_the_shadow_book_and_a_failing_shadow_never_break
     poll(10, 0, 5, 100.7)  # completes the 09:59 candle (close 100.6): a signal, filled at this first poll of the next minute
     f = shadow.store.fills_of("2026-11-04")
     assert len(f) == 1 and f[0]["symbol"] == "ABC" and f[0]["fill"] == 100.7
-    live._orders = []
+    live._orders, live._minute_orders = [], []
     assert live._symbols() == ["ABC"]  # the shadow book's open position keeps the stock watched and subscribed
     shadow.on_poll = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))  # type: ignore[method-assign]
     poll(10, 1, 5, 100.9)  # the poll survives a failing shadow book
@@ -294,3 +294,51 @@ def test_the_equity_curve_is_recorded_once_a_minute_and_the_view_carries_analyti
     assert p["level_1_8r"] == pytest.approx(p["fill"] + 1.8 * risk) and p["level_2_5r"] == pytest.approx(p["fill"] + 2.5 * risk)
     assert p["reached_1_8r"] is False and p["to_stop_pct"] == pytest.approx((p["tsl"] / p["last_price"] - 1) * 100)
     assert v["analytics"]["trades"] == 0 and v["analytics"]["win_rate_pct"] is None and v["analytics"]["profit_factor"] is None  # nothing closed: missing, not zero
+
+
+def test_the_scan_hands_the_same_candidates_to_both_books_and_each_keeps_its_own_copy(tmp_path: Path) -> None:
+    store = MinuteStore(tmp_path / "m.sqlite3")
+    a, b = order("AAA", 70, 1), order("BBB", 66, 2)
+    assert store.latest_queue_session() is None and store.load_queue("2026-11-10") == []
+    assert store.save_queue("2026-11-10", [a, b]) == 2
+    assert store.save_queue("2026-11-10", [a]) == 0  # a repeat hand-over adds nothing and never rewrites
+    got = store.load_queue("2026-11-10")
+    assert [o.symbol for o in got] == ["AAA", "BBB"] and got[0] == a and got[0].pillars == (20, 20, 15, 15)  # a faithful copy, tuple included
+    store.save_queue("2026-11-11", [b])
+    assert store.latest_queue_session() == "2026-11-11" and [o.symbol for o in store.load_queue("2026-11-11")] == ["BBB"]
+
+
+def test_the_live_book_reads_its_own_queue_never_the_official_books_orders_or_positions(tmp_path: Path) -> None:
+    from app.swing.live import SwingLive
+    from app.swing.store import PaperStore
+
+    shadow = MinuteShadow(MinuteStore(tmp_path / "m.sqlite3"), CFG, profile=lambda: PROFILE, prev_session=previous_session_default)
+    live = SwingLive(PaperStore(tmp_path), CFG, ticks=dict, scrip_master=None, add_tokens=None, feed_state=lambda: "streaming", clock=lambda: t(9, 40), minute=shadow)
+    # the official book has an open position and a queued order in ANANDRATHI-like stock "HELD"; the live book's own queue has other candidates
+    live._orders, live._last_scan = [order("HELD", 70, 1)], "2026-11-10"
+    shadow.store.save_queue("2026-11-10", [order("MINE", 70, 1)])
+    live._minute_orders, live._minute_scan = shadow.store.load_queue("2026-11-10"), "2026-11-10"
+    seen: dict[str, list[str]] = {}
+    shadow.on_poll = lambda now, ticks, orders: seen.update(orders=[o.symbol for o in orders]) or 0  # type: ignore[method-assign]
+    live._tokens = {}
+    live.poll(t(10, 0, 5))
+    assert seen["orders"] == ["MINE"]  # the live book was given its own candidates, not the official queue
+    state = live.minute_queue_state(t(10, 0, 5))
+    assert state["scan_session"] == "2026-11-10" and state["current"] is True  # judged by its own queue's scan date
+    live._minute_scan = "2026-11-06"
+    live.poll(t(10, 1, 5))
+    assert seen["orders"] == []  # a stale queue of its own is never acted on, whatever the official book holds
+
+
+def test_the_first_start_after_the_change_hands_over_the_candidates_already_queued_and_never_again(tmp_path: Path) -> None:
+    from app.swing.live import SwingLive
+    from app.swing.store import PaperStore
+
+    shadow = MinuteShadow(MinuteStore(tmp_path / "m.sqlite3"), CFG, profile=lambda: PROFILE, prev_session=previous_session_default)
+    live = SwingLive(PaperStore(tmp_path), CFG, ticks=dict, scrip_master=None, add_tokens=None, feed_state=lambda: "streaming", clock=lambda: t(9, 40), minute=shadow)
+    official = [order("OLD", 70, 1)]
+    orders, scan = live._load_minute_queue("2026-11-10", official)  # empty queue: the one-time hand-over
+    assert [o.symbol for o in orders] == ["OLD"] and scan == "2026-11-10"
+    shadow.store.save_queue("2026-11-11", [order("NEW", 70, 1)])
+    orders, scan = live._load_minute_queue("2026-11-10", official)  # the live queue now exists: the official book's orders are not read again
+    assert [o.symbol for o in orders] == ["NEW"] and scan == "2026-11-11"

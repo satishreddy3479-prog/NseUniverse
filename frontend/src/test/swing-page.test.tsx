@@ -262,7 +262,7 @@ describe("Swing trading page: what is being tested", () => {
     const live = within(box).getByTestId("swing-mode-live");
     expect(live).toHaveTextContent("completed 1-minute candles");
     expect(live).toHaveTextContent("The next candle's open");
-    expect(live).toHaveTextContent("never reads or changes the official book's positions");
+    expect(live).toHaveTextContent("hands the same candidate list to both books");
     expect(live).toHaveTextContent("Live paper book: separate");
     expect(within(box).getByTestId("swing-mode-official")).toHaveTextContent("Its own cash, positions, stops, trades and equity");
     expect(within(box).getByTestId("swing-mode-backtest")).toHaveTextContent("History: not live");
@@ -273,7 +273,7 @@ describe("Swing trading page: what is being tested", () => {
     expect(await screen.findByTestId("role-official")).toHaveTextContent("never changes this one");
     expect(screen.queryByText("Live prices from your Kotak feed")).toBeNull();
     await openTab("Live");
-    expect(await screen.findByTestId("role-live")).toHaveTextContent("Nothing here is held in, or changes, the official book");
+    expect(await screen.findByTestId("role-live")).toHaveTextContent("nothing here is held in, or changes, the official book");
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Official paper book", "Live paper book", "Backtest (history)", "Rules & limits"]); // one live page, no sub-tabs
     await openTab("Backtest");
     expect(await screen.findByTestId("role-history")).toHaveTextContent("not live and not a forecast");

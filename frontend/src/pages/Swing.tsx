@@ -98,7 +98,7 @@ export default function Swing() {
 
       {tab === "paper" && (
         <TabPanel id="paper">
-          <RoleBanner role="official">The positions, trades and equity below are the official paper book. A buy is booked only in the evening run (after 17:00 IST), judged on the whole day; the Live paper book is a separate portfolio and never changes this one.</RoleBanner>
+          <RoleBanner role="official">The positions, trades and equity below are the official paper book. A buy is booked only in the evening run (after 17:00 IST), judged on the whole day; after the close the scan hands the same candidate list to the Live paper book too, but that book is a separate portfolio and never changes this one.</RoleBanner>
           {paper.isPending ? <Loading what="the paper book" />
             : paper.isError ? <ErrorNote title="Could not load the paper book" message={paper.error instanceof Error ? paper.error.message : "Unknown error"} />
               : <SwingPaper view={paper.data} liveRows={live.data?.watching} market={live.data?.market} runPending={run.isPending} runNote={runNote} onRun={() => run.mutate()} />}
@@ -106,7 +106,7 @@ export default function Swing() {
       )}
       {tab === "live" && (
         <TabPanel id="live">
-          <RoleBanner role="live">The same rules run live, with its own cash, positions, stops, targets, trades and equity curve. Nothing here is held in, or changes, the official book.</RoleBanner>
+          <RoleBanner role="live">The same rules run live, with its own cash, positions, stops, targets, trades and equity curve. After the close it gets the same candidate list as the official book, then works only on its own rules and portfolio: nothing here is held in, or changes, the official book.</RoleBanner>
           <SwingMinutePanel />
         </TabPanel>
       )}
