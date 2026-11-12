@@ -225,6 +225,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             trading_day=lambda d: intraday.trading_day(d),
             enabled=settings.breadth_enabled,
             index_tick=lambda: stream.book.get(INDEX_KEY),
+            add_tokens=stream.add_internal_tokens,
         )
         app.state.market = market
         stream.on_internal = market.on_tick

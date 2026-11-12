@@ -230,7 +230,15 @@ async def test_the_token_refresh_finds_the_stock_futures_of_both_months_and_the_
 
     svc._scrip_master = scrip
     svc._monthly_expiry = lambda: date(2026, 11, 23)
+    added: list[str] = []
+
+    async def add(tokens: list) -> int:  # the running stream's add_internal_tokens
+        added.extend(t.instrument_token for t in tokens)
+        return len(tokens)
+
+    svc._add_tokens = add
     out = await svc.refresh_tokens()
+    assert sorted(added) == ["55002", "60000", "60006", "61000"]  # subscribed on the running feed as soon as they are found
     tm = svc.token_map()
     assert tm[f"{STK_PREFIX}ADANIENT"].token == "60000" and tm[f"{STK_PREFIX}ADANIENT:NEXT"].token == "61000" and tm[FUT_NEXT_SYMBOL].token == "55002"
     assert tm[f"{STK_PREFIX}BAJAJ-AUTO"].token == "60006" and f"{STK_PREFIX}BAJAJ-AUTO:NEXT" not in tm  # a contract the file lacks is absent, never invented

@@ -87,10 +87,12 @@ class MarketService:
         enabled: bool = True,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         index_tick: Callable[[], LiveTick | None] | None = None,
+        add_tokens: Callable[[list[FeedToken]], Awaitable[int]] | None = None,
     ) -> None:
         self.store, self._ticks, self._scrip_master = store, ticks, scrip_master
         # the index is an ordinary (public) tick, not one of the internal breadth ticks, so it is read from the book separately
         self._index_tick = index_tick
+        self._add_tokens = add_tokens  # subscribes tokens found after the stream connected (the stock futures), kept off the browser feed
         self._trading_day, self._approx, self.enabled, self._clock = (
             trading_day,
             approx_weights,
@@ -880,6 +882,11 @@ class MarketService:
                 keep[FUT_SYMBOL] = fut
             await self._refresh_futures_tokens(keep, exp)
         self.store.save_tokens(keep, self._clock().astimezone(IST).date())
+        if self._add_tokens is not None:
+            futures = [FeedToken(exchange_segment="nse_fo", instrument_token=v.token, kind="scrip", depth=False) for k, v in keep.items() if k.startswith(STK_PREFIX) or k == FUT_NEXT_SYMBOL]
+            if futures:
+                with contextlib.suppress(Exception):  # best effort: the next (re)connect subscribes them from the store anyway
+                    await self._add_tokens(futures)
         self.store.attempt(
             "tokens", bool(keep), f"{n_stocks} of {len(want)} stocks have a token", self._clock()
         )
