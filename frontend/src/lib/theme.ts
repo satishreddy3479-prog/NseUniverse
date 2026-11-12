@@ -5,12 +5,12 @@ export const THEMES: { id: Theme; label: string }[] = [
 ];
 const KEY = "nse-universe.theme";
 
-/** Saved choice; anything else (including the removed "ocean" theme) opens as dark. */
+/** Saved choice; with none (or the removed "ocean" theme) the app opens in the day theme. */
 export function loadTheme(): Theme {
   try {
-    return localStorage.getItem(KEY) === "light" ? "light" : "dark";
+    return localStorage.getItem(KEY) === "dark" ? "dark" : "light";
   } catch {
-    return "dark";
+    return "light";
   }
 }
 

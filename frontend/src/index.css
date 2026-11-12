@@ -3,7 +3,7 @@
 @import "@fontsource/ibm-plex-sans/500.css";
 @import "@fontsource/ibm-plex-sans/600.css";
 
-/* Design tokens. Dark is the default; light is an equal-quality alternative.
+/* Design tokens. Day (light) is the default and the primary design; dark is the equal-quality night alternative.
    up/down are reserved for direction of change; brass marks ATM and the second series;
    accent is the brand colour (selection, primary actions, focus). */
 :root,
@@ -31,29 +31,29 @@
   color-scheme: dark; /* native controls (drop-downs, scrollbars, date pickers) follow the theme */
 }
 
-/* Daylight. Designed for reading in a bright room, not derived from the dark theme: a warm paper page, white cards with a hairline
-   edge and a very small shadow, ink-blue text, and data colours chosen for contrast on white (green, red, amber and blue all
-   at 5:1 or better against the card). Corners are modest (10 px cards, 6 px controls), the type is the same IBM Plex Sans as the
-   dark theme so numbers keep their shapes, and charts take every colour from these tokens, so lines, grids, labels and
-   tooltips are re-tuned together. Rules for this theme that are not just a colour live at the bottom of this file. */
+/* Day. The primary theme: designed for reading in daylight, not derived from the dark one. A clean near-white page, white cards that lift off it
+   with a hairline edge and a soft two-layer shadow, deep ink text, and data colours chosen for contrast on white (text 5:1 or better).
+   Controls are white with a visible edge and a pressed state, selected states are filled, tables have a tinted head and clear rows. Charts take
+   every colour from these tokens, so lines, grids, labels and tooltips are tuned together. Rules for this theme that are more than a colour
+   live at the bottom of this file. */
 [data-theme="light"] {
-  --ink: #edf1f7;          /* page: a cool blue-grey paper, the daylight twin of the dark theme's navy */
+  --ink: #f1f4f9;          /* page */
   --slate: #ffffff;        /* cards and panels */
-  --slate-2: #f3f6fb;      /* inset areas: table heads, tiles */
-  --rule: #d3dae7;         /* hairlines */
-  --paper: #13203a;        /* text: deep navy ink */
-  --muted: #46546e;        /* secondary text, 7.6:1 on white, 7:1 on the inset panels */
-  --accent: #6445ec;       /* brand violet, as lively as the dark theme's */
-  --brass: #cc7f00;        /* ATM / second series */
-  --up: #067a54;           /* data colours: same hues as the dark theme, deep enough for text on white and on the inset panels (5:1 and better) */
-  --down: #c81e3e;
-  --warn: #a14a08;
-  --info: #165fc2;
+  --slate-2: #f5f7fb;      /* inset areas: table heads, tiles */
+  --rule: #dce3ed;         /* hairlines */
+  --paper: #0e1a33;        /* text: deep ink */
+  --muted: #4f5e78;        /* secondary text: 6.7:1 on white, 6:1 on the inset panels */
+  --accent: #5a3de8;       /* brand violet: primary actions, focus, selection */
+  --brass: #a86200;        /* ATM / second series */
+  --up: #087a55;           /* data colours: deep enough for text on white and on the inset panels (5:1 and better) */
+  --down: #cb2140;
+  --warn: #9a4505;
+  --info: #1760c4;
   --legend-off: #73809a;
-  --shadow: 0 0 0 0 transparent, 0 1px 2px rgba(19, 32, 58, 0.06);
-  --shadow-pop: 0 1px 2px rgba(19, 32, 58, 0.06), 0 12px 28px rgba(19, 32, 58, 0.16);
-  --r-panel: 10px;
-  --r-ctl: 6px;
+  --shadow: 0 1px 2px rgba(14, 26, 51, 0.05), 0 2px 10px rgba(14, 26, 51, 0.05);
+  --shadow-pop: 0 2px 4px rgba(14, 26, 51, 0.06), 0 16px 36px rgba(14, 26, 51, 0.18);
+  --r-panel: 12px;
+  --r-ctl: 8px;
   --body-bg: var(--ink);
   --header-bg: #ffffff;
   --font-ui: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
@@ -175,37 +175,55 @@ body {
 header.bg-slate { background: var(--header-bg); box-shadow: var(--shadow); }
 .shadow-xl { box-shadow: var(--shadow-pop); }
 
-/* ---- Daylight details ---- */
-[data-theme="light"] header.bg-slate { border-bottom-color: #c9d1e0; box-shadow: 0 1px 0 rgba(19, 32, 58, 0.04); }
+/* ---- Day details ---- */
+[data-theme="light"] header.bg-slate { border-bottom: 1px solid var(--rule); box-shadow: 0 1px 3px rgba(14, 26, 51, 0.06); }
 [data-theme="light"] .bg-slate { border-color: var(--rule); }
+/* Controls: white with a visible edge and a small lift, so a button looks like a button; hover and press are felt, not just coloured. */
+[data-theme="light"] button.bg-slate-2, [data-theme="light"] summary.bg-slate-2, [data-theme="light"] a.bg-slate-2,
+[data-theme="light"] select.bg-slate-2, [data-theme="light"] label.bg-slate-2 {
+  background-color: #ffffff; border-color: #c4cddc; color: var(--paper); box-shadow: 0 1px 1px rgba(14, 26, 51, 0.06);
+}
+[data-theme="light"] button.bg-slate-2:not(:disabled):hover, [data-theme="light"] summary.bg-slate-2:hover, [data-theme="light"] a.bg-slate-2:hover {
+  background-color: #f5f7fc; border-color: #8f9eb8;
+}
+[data-theme="light"] button:not(:disabled):active { transform: translateY(0.5px); box-shadow: none; }
+[data-theme="light"] button:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Selected states (the brass and info tints used for the chosen tab, expiry, template): a clear filled chip with a firm edge. */
+[data-theme="light"] .border-brass.bg-brass\/15, [data-theme="light"] .border-brass.bg-brass\/10, [data-theme="light"] .border-brass.bg-brass\/20 {
+  background-color: #fff3dc; border-color: #a86200; color: #5c3500;
+}
+[data-theme="light"] .border-info.bg-info\/10, [data-theme="light"] .border-info.bg-info\/15, [data-theme="light"] .border-info\/60.bg-info\/15 {
+  background-color: #e5efff; border-color: #1760c4; color: #0d3a7a;
+}
 [data-theme="light"] input,
 [data-theme="light"] select,
-[data-theme="light"] textarea { background-color: #ffffff; border-color: #bcc6d8; color: var(--paper); }
+[data-theme="light"] textarea { background-color: #ffffff; border-color: #c4cddc; color: var(--paper); box-shadow: inset 0 1px 1px rgba(14, 26, 51, 0.04); }
 [data-theme="light"] input::placeholder,
-[data-theme="light"] textarea::placeholder { color: #8793a8; }
+[data-theme="light"] textarea::placeholder { color: #7d8aa1; }
 [data-theme="light"] input:hover,
-[data-theme="light"] select:hover { border-color: #93a1ba; }
+[data-theme="light"] select:hover { border-color: #8f9eb8; }
 [data-theme="light"] input:focus,
 [data-theme="light"] select:focus,
-[data-theme="light"] textarea:focus { border-color: var(--accent); outline: 2px solid color-mix(in srgb, var(--accent) 28%, transparent); outline-offset: 0; }
+[data-theme="light"] textarea:focus { border-color: var(--accent); outline: 3px solid color-mix(in srgb, var(--accent) 22%, transparent); outline-offset: 0; }
+[data-theme="light"] input:disabled, [data-theme="light"] select:disabled { background-color: #eef1f6; color: #7d8aa1; }
 [data-theme="light"] ::selection { background: color-mix(in srgb, var(--accent) 20%, white); }
-[data-theme="light"] .hover\:bg-slate-2:hover { background: #e6ecf6; }
-[data-theme="light"] button:not(:disabled):hover { filter: none; }
-/* Tables: a quiet header, a hairline between rows, and a visible row under the pointer. */
+[data-theme="light"] .hover\:bg-slate-2:hover { background: #eaeff7; }
+/* Tables: a tinted head with a firm line under it, hairlines between rows, a visible row under the pointer. */
 [data-theme="light"] thead { color: var(--muted); }
-[data-theme="light"] tbody tr { border-color: #e3e8f1; }
-[data-theme="light"] tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
-/* Tints built on direction colours (badges, chips) keep their text readable on white. */
-[data-theme="light"] .bg-up\/15, [data-theme="light"] .bg-up\/20 { background: color-mix(in srgb, var(--up) 11%, white); }
-[data-theme="light"] .bg-down\/15, [data-theme="light"] .bg-down\/20 { background: color-mix(in srgb, var(--down) 10%, white); }
-[data-theme="light"] .bg-warn\/15, [data-theme="light"] .bg-warn\/20 { background: color-mix(in srgb, var(--warn) 12%, white); }
-[data-theme="light"] .bg-brass\/20 { background: color-mix(in srgb, var(--brass) 14%, white); }
+[data-theme="light"] thead th { background-color: #f5f7fb; border-bottom: 1px solid #cfd8e6; font-weight: 600; }
+[data-theme="light"] tbody tr { border-color: #e8edf5; }
+[data-theme="light"] tbody tr:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+/* Tints built on direction colours (badges, chips, bars) keep their text readable on white. */
+[data-theme="light"] .bg-up\/15, [data-theme="light"] .bg-up\/20 { background: color-mix(in srgb, var(--up) 12%, white); }
+[data-theme="light"] .bg-down\/15, [data-theme="light"] .bg-down\/20 { background: color-mix(in srgb, var(--down) 11%, white); }
+[data-theme="light"] .bg-warn\/15, [data-theme="light"] .bg-warn\/20 { background: color-mix(in srgb, var(--warn) 13%, white); }
+[data-theme="light"] .bg-brass\/20 { background: color-mix(in srgb, var(--brass) 15%, white); }
 /* Pop-ups and the chart full-screen backdrop: a soft ink wash instead of near-black. */
-[data-theme="light"] .bg-black\/70 { background: rgba(19, 32, 58, 0.45); }
+[data-theme="light"] .bg-black\/70 { background: rgba(14, 26, 51, 0.45); }
 /* Scrollbars that match the page rather than the operating system. */
-[data-theme="light"] * { scrollbar-color: #bcc6d8 transparent; }
+[data-theme="light"] * { scrollbar-color: #b9c3d4 transparent; }
 [data-theme="light"] ::-webkit-scrollbar { width: 10px; height: 10px; }
-[data-theme="light"] ::-webkit-scrollbar-thumb { background: #bcc6d8; border-radius: 6px; border: 2px solid var(--ink); }
+[data-theme="light"] ::-webkit-scrollbar-thumb { background: #b9c3d4; border-radius: 6px; border: 2px solid var(--ink); }
 [data-theme="light"] ::-webkit-scrollbar-track { background: transparent; }
 /* Installed app: respect the phone's notch and home bar. */
 @supports (padding: env(safe-area-inset-top)) {
@@ -215,7 +233,7 @@ header.bg-slate { background: var(--header-bg); box-shadow: var(--shadow); }
 
 /* Home: hero panel and the illustration tiles on tool cards. */
 .hero { background: radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--brass) 14%, var(--slate)) 0%, var(--slate) 55%); }
-[data-theme="light"] .hero { background: linear-gradient(135deg, #f7f9ff 0%, #ffffff 60%); border-left: 3px solid var(--brass); }
+[data-theme="light"] .hero { background: linear-gradient(135deg, #f4f1ff 0%, #ffffff 62%); border-left: 4px solid var(--accent); }
 .tool-art { background: linear-gradient(160deg, color-mix(in srgb, var(--info) 9%, var(--slate-2)), var(--slate-2)); border: 1px solid var(--rule); }
 [data-theme="light"] .tool-art { background: linear-gradient(160deg, #f3f6fb, #f3f6fb); }
 
