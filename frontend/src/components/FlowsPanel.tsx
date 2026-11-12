@@ -28,7 +28,7 @@ export function FlowsPanel() {
       <div className="mb-3"><FlowsUpdateLoader components={["participant_oi", "participant_vol"]} /></div>
       {q.isPending ? <p className="text-sm text-muted">Loading…</p>
         : q.error ? <p className="text-sm text-muted">Not available: the running backend does not have this module yet.</p>
-        : days.length === 0 ? <p className="text-sm text-muted" data-testid="flows-empty">No NSE participant files stored yet. They download by themselves (Settings → Prediction data: NSE institutional flows).</p>
+        : days.length === 0 ? <p className="text-sm text-muted" data-testid="flows-empty">No NSE participant files stored yet. They download by themselves (Settings → NSE institutional flows).</p>
         : (
           <div className="space-y-3">
             <ParticipantAnalysis oi={q.data?.open_interest ?? []} volume={q.data?.volume ?? []} />

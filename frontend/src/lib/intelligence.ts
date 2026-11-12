@@ -65,16 +65,6 @@ export interface Heavyweights {
   series: { t: string; session: number | null; w5: number | null; w15: number | null; spot: number | null }[];
   quality: { valid: number; of: number; weight_share: number; aggregate_available: boolean; valid_constituents?: number; weights: { as_of?: string; source?: string; age_days?: number | null; stale: boolean; approximate: boolean; rolled_to?: string | null; basis?: string; effective_date?: string; verified_at?: string | null; verified_note?: string; live?: boolean } };
 }
-export interface MlModelScore { log_loss: number | null; brier: number | null; n: number | null; ece: number | null }
-export interface MlEvaluation {
-  computed_at: string; horizon_minutes: number; barrier_k: number; status: string | null; sessions: number | null; test_sessions: number | null; rows: number | null; reason: string | null;
-  models: Record<string, MlModelScore>; best_baseline_log_loss: number | null; model_log_loss_gain: number | null; feature_groups?: Record<string, { log_loss: number; delta_vs_price_only: number }> | null;
-  gate: { status: string | null; show_probabilities: boolean; beat_share: number | null; mean_log_loss_gain: number | null; sign_test_p: number | null; ece: number | null; reasons: string[] };
-}
-export interface MlDigest {
-  status: { status: string; stage_name: string; labelled_sessions: number; complete_sessions: number; sessions_with_samples: number; stages: { id: string; name: string; from_sessions: number; what: string }[]; next: { name: string; at_sessions: number; sessions_to_go: number } | null };
-  last_evaluation: MlEvaluation | null; computing: boolean; next_run: string;
-}
 export interface VolBucket { ce_iv: number | null; pe_iv: number | null; ce_change: number | null; pe_change: number | null; risk_reversal: number | null; skew: number | null; rr_change: number | null; rr_previous_session: number | null; rr_change_since_previous_session: number | null; mechanism: string | null; movement?: string | null; avg_change?: number | null }
 export interface VolDetail {
   window: string; spot_change_pct: number | null; atm: VolBucket; d25: VolBucket; d10: VolBucket; total: number | null; verdict: "BULLISH" | "BEARISH" | "CONFLICTING" | "NEUTRAL" | "UNAVAILABLE";
@@ -116,7 +106,7 @@ export interface Intelligence {
   regime: { name: string; evidence: string[]; volatility: string; gamma: string; previous: string | null; changed_at: string | null };
   engines: EngineView[]; pulse: Pulse; gex: GexState; interpretation: string; divergences: Divergence[]; divergences_invalidated: { id: string; status: string }[]; divergences_unavailable: string[];
   scenarios: Scenarios; panels: Panels; alerts: AlertRow[]; config: { weights: Record<string, number>; min_coverage: number; min_engines: number; note: string; groups?: Record<string, string> }; compute_ms: number;
-  capabilities?: Capability[]; overlap_audit?: OverlapAudit; heavyweights?: Heavyweights; stock_futures?: StockFutures | null; turn_watch?: TurnWatch; observations?: Observation[]; intraday_ml?: MlDigest | null;
+  capabilities?: Capability[]; overlap_audit?: OverlapAudit; heavyweights?: Heavyweights; stock_futures?: StockFutures | null; turn_watch?: TurnWatch; observations?: Observation[];
 }
 export interface TimelinePoint {
   session: string; at: string; spot: number | null; score: number | null; confidence: number | null; coverage: number | null; regime: string | null; vol_regime: string | null; gamma_regime: string | null;

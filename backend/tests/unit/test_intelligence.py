@@ -429,7 +429,7 @@ class Rig:
             "momentum": p("momentum", {"age_seconds": 30, "table": {"periods": {"15": {"atm": {"ce_change": 0.1, "pe_change": 0.1}, "spot_change_pct": 0.3, "d25": {"momentum": 0.2}}}}}),
             "positioning": p("positioning", {"age_seconds": 30, "demand": [], "rows": []}),
             "gex": p("gex", lambda: gex_points([100, 90, 80, 70], [24020, 24050, 24080, 24100])), "vix": p("vix", {"iv": [14.0, 15.0], "dates": ["2026-11-06", "2026-11-09"], "hv": [10.0, 11.0], "rv": [9.0, 10.0]}),
-            "flow": p("flow", lambda: {"fut": flow_samples(40), "heavy5": []}), "ml": p("ml", {"status": {"labelled_sessions": 3, "stage_name": "Collecting labelled data", "status": "collecting"}, "last_evaluation": None}), "heavymeta": p("heavymeta", {"weights": {"as_of": "2026-09-30", "source": "NSE index tracker", "age_days": 40, "stale": False}, "stocks": []}),
+            "flow": p("flow", lambda: {"fut": flow_samples(40), "heavy5": []}), "heavymeta": p("heavymeta", {"weights": {"as_of": "2026-09-30", "source": "NSE index tracker", "age_days": 40, "stale": False}, "stocks": []}),
         }
         self.svc = MarketIntelligence(providers=self.providers, store=self.store, default_expiry=lambda: "2026-11-10", clock=lambda: self.clock)
 

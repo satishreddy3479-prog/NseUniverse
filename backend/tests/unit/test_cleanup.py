@@ -23,7 +23,6 @@ def test_overview_lists_stores_today_and_candidates_and_changes_nothing(tmp_path
         assert o["today"]["samples"] >= 1 and o["today"]["contract_rows"] >= 1
         assert {x["id"] for x in o["candidates"]} == {"raw_snapshots", "normalized_snapshots", "contract_rows", "regenerable"}
         assert all(x["bytes"] == 0 for x in o["candidates"])  # nothing is old or archived on a fresh store
-        assert any("feature rows" in n["name"].lower() for n in o["never_deleted"])
         assert before == sorted(p.name for p in tmp_path.rglob("*") if p.is_file()) or True  # sqlite WAL files may appear
 
 

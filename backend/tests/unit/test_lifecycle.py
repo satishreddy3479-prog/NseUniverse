@@ -115,15 +115,11 @@ class TestEod:
         out = svc.run()
         assert out["state"] == "ok"
         m = svc.manifest(DAY)
-        assert m and m["status"] == "complete" and m["ml_ready_session"] is True and m["archive"]["verified"] is True
+        assert m and m["status"] == "complete" and m["archive"]["verified"] is True
         assert m["validation"]["expiries"][EXP]["samples_in_session"] == 320
         assert verify_archive(tmp_path / m["archive"]["path"], m["archive"]["sha256"], 320, m["archive"]["contracts"]) is None
         sums = IntradayStore(tmp_path).summaries()
         assert len(sums) == 1 and sums[0]["expiry"] == EXP and sums[0]["status"] == "complete" and sums[0]["price"]["first"] > 0
-        # the labelled research dataset was built too: every sample after the 15-sample warm-up, once
-        from app.intraday.dataset import FEATURE_VERSION
-
-        assert IntradayStore(tmp_path).feature_sessions(FEATURE_VERSION) == {DAY.isoformat(): 320 - 15}
         # the compact close-of-day chain is kept in the permanent summary: every listed strike, both sides
         cc = sums[0]["close_chain"]
         assert cc["columns"][:3] == ["strike", "ce_ltp", "ce_oi"] and len(cc["rows"]) == 81 and cc["spot"] > 0
@@ -132,36 +128,11 @@ class TestEod:
         # idempotent: nothing pending, the second run writes nothing new
         assert svc.pending_days() == [] and len(IntradayStore(tmp_path).summaries()) == 1
 
-    def test_dataset_rows_carry_implied_volatility_from_the_real_chain_and_missing_market_columns_stay_missing(self, tmp_path: Path) -> None:
-        import json
-        import sqlite3
-
-        svc = service(tmp_path, fill(tmp_path, 60), ist(16, 0))
-        svc.run()
-        db = sqlite3.connect(IntradayStore(tmp_path).path)
-        feats = [json.loads(r[0]) for r in db.execute("SELECT features FROM feature_rows ORDER BY sample_utc")]
-        db.close()
-        assert len(feats) == 45 and all(15 < f["iv_atm"] < 18 for f in feats)  # the captured chain's ATM IV is about 16.5 %
-        # the stored chain never changes, so the only reason implied vol moves is 15 fewer minutes to expiry: a tiny positive number
-        assert all(f["iv_chg_15m"] is not None and 0 < f["iv_chg_15m"] < 0.05 for f in feats)
-        assert all(f["fut_vwap_dist_pct"] is None and f["ad_balance"] is None and f["breakout_state"] is None for f in feats)  # no futures/breadth recorded: missing, not zero
-
-    def test_older_sessions_are_rebuilt_when_the_feature_version_changes(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        import app.lifecycle.eod as eod_mod
-
-        svc = service(tmp_path, fill(tmp_path, 40), ist(16, 0))
-        svc.run()
-        assert svc.features_missing_days() == []
-        monkeypatch.setattr(eod_mod, "FEATURE_VERSION", "if-next")
-        assert svc.features_missing_days() == [DAY] and svc.due()
-        out = svc.run()
-        assert out["feature_rebuilds"] == {DAY.isoformat(): {EXP: 25}} and svc.features_missing_days() == []  # 40 samples - 15 warm-up
-
     def test_a_short_session_is_partial_not_ml_ready_and_still_archived(self, tmp_path: Path) -> None:
         svc = service(tmp_path, fill(tmp_path, 40), ist(16, 0))
         svc.run()
         m = svc.manifest(DAY)
-        assert m["status"] == "partial" and m["ml_ready_session"] is False and m["archive"]["verified"]
+        assert m["status"] == "partial" and m["archive"]["verified"]
         assert svc.status()["complete_sessions"] == 0 and svc.status()["sessions_archived"] == 1
 
     def test_missed_days_are_caught_up_oldest_first(self, tmp_path: Path) -> None:
@@ -312,7 +283,7 @@ class TestStorage:
         (tmp_path / "observations.sqlite3").write_bytes(b"x" * 1000)
         r = storage.report(tmp_path, None, DAY, prune_days=0, archived_days={"2026-10-28"})
         names = {c["name"] for c in r["categories"]}
-        assert {"observations", "snapshots", "forecast ledger", "archive", "backups", "exports"} <= names
+        assert {"observations", "snapshots", "archive", "backups", "exports"} <= names
         assert r["growth_bytes_per_day"] > 0 and r["runway_days"] and r["snapshot_pruning_plan"]["executed"] is False
 
 

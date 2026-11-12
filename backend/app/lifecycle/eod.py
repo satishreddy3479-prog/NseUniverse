@@ -24,8 +24,6 @@ from pathlib import Path
 from typing import Any
 
 from app.domain.session import session_close
-from app.intraday.dataset import FEATURE_VERSION, build_rows
-from app.intraday.enrich import Enricher
 from app.intraday.features import (
     IST,
     OPEN,
@@ -116,25 +114,13 @@ class EodService:
                 out.append(day)
         return out
 
-    def features_missing_days(self, now: datetime | None = None) -> list[date]:
-        """Finished sessions that have a manifest but no rows of the current feature version (older sessions after a version change)."""
-        now = now or self._clock()
-        t = now.astimezone(IST)
-        have = self.intraday.feature_sessions(FEATURE_VERSION)
-        out = []
-        for d, n in sorted(self.obs.session_sample_counts(self.underlying).items()):
-            day = date.fromisoformat(d)
-            if n >= 16 and d not in have and (day < t.date() or (day == t.date() and t.time() >= RUN_AFTER)) and self.manifest(day) is not None:
-                out.append(day)
-        return out
-
     def due(self, now: datetime | None = None) -> bool:
         now = now or self._clock()
         if not self.enabled:
             return False
         if self.last_attempt and now - self.last_attempt < RETRY_AFTER and self.last_result.get("state") == "error":
             return False
-        return bool(self.pending_days(now)) or bool(self.features_missing_days(now)) or self.backup_due(now) or self.prune_due(now)
+        return bool(self.pending_days(now)) or self.backup_due(now) or self.prune_due(now)
 
     def prune_due(self, now: datetime) -> bool:
         t = now.astimezone(IST)
@@ -216,36 +202,6 @@ class EodService:
             stored += self.intraday.record_summary(day.isoformat(), expiry, VERSION, status, len(samples), payload, now=self._clock())
         return stored
 
-    def build_dataset(self, day: date) -> dict[str, int]:
-        """Labelled feature rows of the finished session, one set per expiry (append-only)."""
-        start, end = day_window(day)
-        bars = [DailyBar(b.session, b.open, b.high, b.low, b.close) for b in self.history.bars("NIFTY50")[-120:]]
-        ctx = daily_context(bars, day)
-        stored: dict[str, int] = {}
-        for expiry, _ in self.obs.day_counts(self.underlying, start, end):
-            samples = [s for s in self.obs.samples(self.underlying, expiry, since=datetime.fromtimestamp(start / 1000, UTC), until=datetime.fromtimestamp((end - 1) / 1000, UTC), limit=5000)
-                       if s.spot is not None and s.spot > 0 and OPEN <= s.received_at.astimezone(IST).time() <= session_close()]  # fmt: skip
-            if len(samples) < 16:
-                continue
-            pts = [Point(s.received_at, float(s.spot or 0)) for s in samples]
-
-            def chain_at(i: int, _s: Any = samples) -> dict[tuple[float, int], Quote]:
-                return {k: Quote(c.ltp, c.oi, c.oi_prev, c.volume) for k, c in self.obs.contracts(_s[i].values_from).items()}
-
-            def prices_at(i: int, _s: Any = samples) -> dict[tuple[float, int], float | None]:
-                return {k: c.ltp for k, c in self.obs.contracts(_s[i].values_from).items()}
-
-            mk: dict[str, list[tuple[datetime, dict[str, Any]]]] = {}
-            if self.market is not None:
-                lo = datetime.fromtimestamp(start / 1000, UTC).isoformat()
-                hi = datetime.fromtimestamp(end / 1000, UTC)
-                for kind in ("fut", "nifty50", "breakout"):
-                    mk[kind] = [(datetime.fromisoformat(a), pl) for a, pl in self.market.samples_since(kind, lo) if datetime.fromisoformat(a) < hi]
-            extra = Enricher(pts, date.fromisoformat(expiry), prices_at, mk, self.risk_free_rate)
-            rows = build_rows(pts, chain_at, samples[0].prev_close, ctx, date.fromisoformat(expiry), day, extra)
-            stored[expiry] = self.intraday.record_features(day.isoformat(), expiry, FEATURE_VERSION, rows)
-        return stored
-
     def process_day(self, day: date) -> dict[str, Any]:
         v = self.validate(day)
         arch = archive_day(self.obs, self.underlying, day, self.data_dir, now=self._clock())
@@ -257,11 +213,10 @@ class EodService:
             res["state"] = f"archive not verified: {arch.problem}"
             return res
         res["summaries_stored"] = self.summarise(day, v["status"])
-        res["feature_rows_stored"] = self.build_dataset(day)
         self.manifests.mkdir(parents=True, exist_ok=True)
         doc = {"schema": 1, "version": VERSION, "day": day.isoformat(), "underlying": self.underlying, "status": v["status"], "created_utc": self._clock().isoformat(),
                "validation": v, "archive": arch.public(), "summaries": {"table": "intraday.sqlite3:daily_summaries", "version": VERSION},
-               "ml_ready_session": v["status"] == "complete", "feature_version": FEATURE_VERSION, "notes": "the database remains the primary store; the archive is a verified copy"}  # fmt: skip
+               "notes": "the database remains the primary store; the archive is a verified copy"}  # fmt: skip
         tmp = self.manifest_path(day).with_suffix(".json.tmp")
         tmp.write_text(json.dumps(doc, indent=1), "utf-8")
         tmp.replace(self.manifest_path(day))
@@ -282,8 +237,6 @@ class EodService:
                 out["days"].append(r)
                 if not r["manifest"] and not r["state"].startswith("skipped"):
                     out["state"] = "error"
-            for day in self.features_missing_days(now):  # rebuild older sessions under the current feature version
-                out.setdefault("feature_rebuilds", {})[day.isoformat()] = self.build_dataset(day)
             if self.backup_due(now):
                 self.obs.checkpoint()
                 b = backup_databases(self.data_dir, now.astimezone(IST).date(), keep_daily=self.keep_daily, keep_monthly=self.keep_monthly, now=now)

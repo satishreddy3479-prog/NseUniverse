@@ -40,7 +40,7 @@ function renderSettings() {
 }
 
 afterEach(() => vi.unstubAllGlobals());
-const panel = () => screen.findByRole("region", { name: "Prediction data: daily price history" });
+const panel = () => screen.findByRole("region", { name: "Daily price history" });
 
 describe("prediction data panel", () => {
   it("shows what is stored per series and what is not", async () => {

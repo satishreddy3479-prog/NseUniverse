@@ -7,9 +7,7 @@ const LEFT: { to: string; label: string }[] = [
   { to: "/market-intelligence", label: "Market Intelligence" },
   { to: "/swing", label: "Swing trading" },
 ];
-const RIGHT: { to: string; label: string }[] = [
-  { to: "/prediction", label: "Prediction" },
-];
+const RIGHT: { to: string; label: string }[] = [];
 export const STRATEGY: { to: string; label: string }[] = [
   { to: "/strategy", label: "Strategy builder" },
   { to: "/portfolio", label: "Strategy portfolio" },

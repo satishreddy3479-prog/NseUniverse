@@ -319,8 +319,6 @@ class TestService:
             h["source"] == "Market breadth" and h["status"] == "not_available"
             for h in out["health"]
         )
-        assert out["ml"]["status"] == "collecting" and out["ml"]["labelled_sessions"] == 0 and out["ml"]["model_trained"] is False
-        assert out["ml"]["next"]["at_sessions"] == 5
         assert out["scenarios"] == []  # no invented scenarios without an assessment
 
     def test_stale_and_historical_modes(self, tmp_path: Path) -> None:
@@ -370,7 +368,7 @@ def test_api_summary_and_scores(tmp_path: Path) -> None:
         r = c.get("/api/intraday/summary", params={"expiry": EXP})
         assert r.status_code == 200
         body = r.json()
-        for k in ("market", "assessment", "levels", "health", "ml", "context", "config"):
+        for k in ("market", "assessment", "levels", "health", "context", "config"):
             assert k in body
         assert body["assessment"]["provisional"] is True
         vwap = next(x for x in body["levels"] if x["name"] == "VWAP")

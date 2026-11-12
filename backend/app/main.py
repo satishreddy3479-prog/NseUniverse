@@ -36,10 +36,6 @@ from app.prediction.flows_service import FlowsService
 from app.prediction.flows_store import FlowsStore
 from app.prediction.history_service import HistoryService
 from app.prediction.history_store import HistoryStore
-from app.prediction.ledger import ForecastLedger
-from app.prediction.news_service import NewsService
-from app.prediction.news_store import NewsStore
-from app.prediction.research import PredictionResearch
 from app.servermgmt.api import router as servermgmt_router
 from app.servermgmt.scan import Area
 from app.servermgmt.service import ServerMgmt
@@ -157,33 +153,15 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         )
         app.state.stream = stream
         history_store = HistoryStore(settings.data_dir)
-        research_ref: dict[str, PredictionResearch] = {}
         history = HistoryService(
             history_store,
             enabled=settings.history_autofetch,
             start=settings.history_start,
-            # new final price bars -> the daily T+1/T+5 models retrain (never in market hours)
-            after_refresh=lambda: research_ref["r"].summary() if "r" in research_ref else None,
             calendar=_trading_calendar(),
         )
         app.state.history = history
-        ledger = ForecastLedger(settings.data_dir)
         history.start()
         flows_store = FlowsStore(settings.data_dir)
-        news_store = NewsStore(settings.data_dir)
-        news = NewsService(news_store, enabled=settings.news_autofetch)
-        app.state.news = news
-        news.start()
-        research = PredictionResearch(
-            history_store,
-            ledger,
-            cache_dir=settings.data_dir,
-            flows=flows_store,
-            settle_seconds=120.0,
-        )
-        app.state.research = research
-        research_ref["r"] = research
-        research.start()
         flows = FlowsService(
             flows_store,
             lambda: [
@@ -383,14 +361,10 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             await intraday.stop()
             intraday_store.close()
             await history.stop()
-            await research.stop()
-            await news.stop()
-            news_store.close()
             await flows.stop()
             flows_store.close()
             app.state.strategies.close()
             history_store.close()
-            ledger.close()
             await sampler.stop()
             await stream.shutdown()
             await b.close()

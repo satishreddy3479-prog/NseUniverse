@@ -11,11 +11,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from app.intraday import enrich, paper, setups
+from app.intraday import paper, setups
 from app.intraday import price_structure as ps
 from app.intraday import volatility as vol
 from app.intraday.costs import CostModel
-from app.intraday.dataset import build_rows
 from app.intraday.features import Point
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -166,47 +165,3 @@ def priced_chain(f: float, sigma: float, at: datetime) -> dict[tuple[float, int]
     return {(float(k), s): vol.price(s, f, k, t, sigma, 0.06) for k in range(23700, 24500, 50) for s in (0, 1)}
 
 
-def test_enrichment_is_as_of_the_sample_and_missing_stays_missing() -> None:
-    n = 40
-    p = pts([24000.0 + i for i in range(n)])
-    prices = {i: priced_chain(24060 + i, 0.15 + (0.01 if i >= 20 else 0.0), p[i].at) for i in range(n)}
-    t30 = p[30].at
-    market = {
-        "fut": [(t30 - timedelta(minutes=1), {"v": 1000, "cvd": 100, "ltp": 24101.0, "atp": 24100.0, "di": 0.2})],
-        "nifty50": [(p[10].at, {"advancing": 5, "declining": 3, "idx": 0.1, "equal_weight_return": 0.2}), (t30, {"advancing": 6, "declining": 2, "idx": 0.3, "equal_weight_return": 0.4})],
-    }
-    e = enrich.Enricher(p, date(2026, 11, 3), lambda i: prices[i], market)
-    f = e(30)
-    assert f["iv_atm"] == pytest.approx(16.0, abs=0.05) and f["iv_chg_15m"] == pytest.approx(1.0, abs=0.1)  # 16 % now vs 15 % 15 minutes earlier
-    assert f["fut_vwap_dist_pct"] == pytest.approx(1 / 24100 * 100, abs=1e-4) and f["fut_cvd_share"] == 0.1 and f["fut_depth_imb"] == 0.2
-    assert f["ad_balance"] == 0.5 and f["breadth_eq_return"] == 0.4  # (6-2)/(6+2)
-    assert f["breadth_mom_15m"] is None  # the reference sample 15 minutes earlier is older than 3 minutes: missing, not guessed
-    assert f["breakout_state"] == 0.0  # market data exists this session and no breakout was recorded
-    early = e(5)
-    assert early["fut_vwap_dist_pct"] is None and early["ad_balance"] is None and early["iv_chg_15m"] is None  # nothing at or before it
-    nomarket = enrich.Enricher(p, date(2026, 11, 3), lambda i: prices[i], {})
-    assert nomarket(30)["breakout_state"] is None and nomarket(30)["ad_balance"] is None and nomarket(30)["iv_atm"] is not None
-
-
-def test_a_later_sample_can_never_change_an_earlier_row() -> None:
-    n = 40
-    p = pts([24000.0 + i for i in range(n)])
-    prices = {i: priced_chain(24060, 0.15, p[i].at) for i in range(n)}
-    base_m = {"fut": [(p[20].at, {"v": 1000, "cvd": 100, "ltp": 24101.0, "atp": 24100.0, "di": 0.2})]}
-    later_m = {"fut": [*base_m["fut"], (p[30].at, {"v": 9999, "cvd": -9999, "ltp": 1.0, "atp": 99999.0, "di": -1.0})]}
-    a = enrich.Enricher(p, date(2026, 11, 3), lambda i: prices[i], base_m)(22)
-    b = enrich.Enricher(p, date(2026, 11, 3), lambda i: prices[i], later_m)(22)
-    assert a == b  # a recording made at sample 30 does not exist for sample 22
-
-
-def test_dataset_rows_carry_the_extra_columns_and_labels_use_only_later_samples() -> None:
-    n = 40
-    p = pts([24000.0 + i for i in range(n)])
-    from app.intraday.features import Quote, daily_context
-
-    chain = {(24000.0, 0): Quote(10, 100, 90, 5)}
-
-    c = daily_context([], date(2026, 10, 29))
-    rows = build_rows(p, lambda i: chain, 23990.0, c, date(2026, 11, 3), date(2026, 10, 29), extra=lambda i: {"iv_atm": float(i)})
-    assert rows and all("iv_atm" in r["features"] for r in rows) and rows[0]["features"]["iv_atm"] == 15.0  # warm-up 15 samples
-    assert rows[0]["labels"]["fwd_5m"] == round((p[20].spot / p[15].spot - 1) * 100, 6)  # the label is the return to a LATER sample

@@ -37,8 +37,6 @@ def classify(rel_path: str) -> tuple[str, bool]:
         return "regenerable", False
     if name.endswith(".tmp"):
         return "temporary", False
-    if name == "prediction_report.json":
-        return "cache", False
     if name.endswith((".log", ".gz")) and ("log" in parts[0:1] or name.endswith(".log") or ".log." in name):
         return "log", False
     if parts and parts[0] in PROTECTED_DIRS:

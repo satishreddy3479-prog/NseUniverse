@@ -20,7 +20,6 @@ const base = real as unknown as IntradaySummary;
 
 let paper: unknown = { sessions: 0, trades: 0, min_trades_for_a_conclusion: 30, conclusion: "no trades were triggered on the stored sessions", net_rupees: 0 };
 let replayResult: unknown = {};
-let research: unknown = { status: "insufficient", sessions: 1, rows: 0, horizon_minutes: 15, reason: "needs more than 3 labelled sessions to test on a later one (has 1)" };
 
 function mock(summary: IntradaySummary | null, scores: unknown[] = []) {
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -32,7 +31,6 @@ function mock(summary: IntradaySummary | null, scores: unknown[] = []) {
     if (url.startsWith("/api/intraday/paper")) return new Response(JSON.stringify(paper), { status: 200 });
     if (url.startsWith("/api/intraday/replay?session")) return new Response(JSON.stringify(replayResult), { status: 200 });
     if (url.startsWith("/api/intraday/replay")) return new Response(JSON.stringify({ sessions: [{ session: "2026-10-28", samples: 320, expiries: ["2026-11-03"] }] }), { status: 200 });
-    if (url.startsWith("/api/intraday/research")) return new Response(JSON.stringify(research), { status: 200 });
     if (url.startsWith("/api/intraday/scores")) return new Response(JSON.stringify({ session: "2026-10-29", expiry: "2026-11-03", rows: scores }), { status: 200 });
     return new Response(JSON.stringify({ detail: { code: "nf", message: "nf" } }), { status: 404 });
   }));
@@ -46,16 +44,13 @@ function renderCC(expiry: string | null = "2026-11-03") {
 afterEach(() => { vi.unstubAllGlobals(); localStorage.clear(); });
 
 describe("Market Sentiment Command Center", () => {
-  it("shows the backend's label, narrative, coverage and that the model is not trained", async () => {
+  it("shows the backend's label, narrative, coverage and that no machine-learning model is part of it", async () => {
     mock(base);
     renderCC();
     expect(await screen.findByTestId("cc-label")).toHaveTextContent(base.assessment.label);
     expect(screen.getByTestId("cc-narrative")).toHaveTextContent(base.narrative);
     expect(screen.getByText(`${Math.round(base.assessment.coverage * 100)}%`)).toBeInTheDocument();
-    const ml = within(screen.getByTestId("cc-ml"));
-    expect(ml.getByText("No model yet")).toBeInTheDocument();
-    expect(ml.getByRole("list", { name: "Intraday model stages" }).children).toHaveLength(4);
-    expect(ml.getByText(/session\(s\) of labelled data stored/)).toBeInTheDocument();
+    expect(screen.queryByTestId("cc-ml")).toBeNull(); // there is no machine-learning model on this page
     expect(screen.getByText("Not calibrated")).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/demo|mock/i);
   });
@@ -210,32 +205,6 @@ describe("Market Sentiment Command Center", () => {
     expect(box.getByText(/aggregate OI does not show who bought or sold/)).toBeInTheDocument();
     expect(box.getByText(/call OI did not increase, so the ratio is not meaningful/)).toBeInTheDocument();
     expect(screen.getByTestId("cc-term")).toHaveTextContent("upward (far expiry richer), far minus near 1.40 pts (2026-11-03 16.5%, 2026-11-24 17.9%)");
-  });
-
-  it("says there is not enough data for the prediction model and shows no probabilities", async () => {
-    mock(base);
-    renderCC();
-    const box = within(await screen.findByTestId("cc-research"));
-    expect(box.getByText(/Insufficient data/)).toBeInTheDocument();
-    expect(box.getByText(/needs more than 3 labelled sessions to test on a later one \(has 1\). No probabilities are shown./)).toBeInTheDocument();
-    expect(screen.queryByText(/upside probability/i)).toBeNull();
-  });
-
-  it("labels an unvalidated model as experimental and lists the baselines it is compared with", async () => {
-    research = {
-      status: "experimental", sessions: 8, rows: 960, horizon_minutes: 15,
-      gate: { status: "experimental", show_probabilities: false, reasons: ["only 8 labelled sessions (validation needs 60)"], label: "EXPERIMENTAL MODEL: PROBABILITIES NOT VALIDATED" },
-      models: { majority: { log_loss: 1.097, brier: 0.66, accuracy: 0.37, balanced_accuracy: 0.333, n: 600, calibration: { ece: 0.01 } }, logistic: { log_loss: 0.295, brier: 0.15, accuracy: 0.977, balanced_accuracy: 0.97, n: 600, calibration: { ece: 0.14 } } },
-      note: "Overlapping samples are not independent.",
-    };
-    mock(base);
-    renderCC();
-    const box = within(await screen.findByTestId("cc-research"));
-    expect(box.getByText(/EXPERIMENTAL MODEL: PROBABILITIES NOT VALIDATED/)).toBeInTheDocument();
-    expect(box.getByText(/only 8 labelled sessions/)).toBeInTheDocument();
-    expect(box.getByText("majority")).toBeInTheDocument();
-    expect(box.getByText("0.295")).toBeInTheDocument();
-    research = { status: "insufficient", sessions: 1, rows: 0, horizon_minutes: 15, reason: "needs more than 3 labelled sessions to test on a later one (has 1)" };
   });
 
   it("shows the setup monitor as read-only, with the reasons a rule was not taken and no probability", async () => {

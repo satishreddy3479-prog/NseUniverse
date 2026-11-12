@@ -1,13 +1,11 @@
-"""Guards that keep intraday and live data out of the prediction models, and keep the models'
-training and evaluation away from market hours.
+"""Guards that keep intraday and live data out of the daily price history.
 
-Three independent layers are tested:
+Two independent layers are tested:
 1. Code boundary: nothing under app/prediction may import live, broker, stream, observation-store,
    API or intraday code (so a future edit cannot wire intraday data into the models by accident).
 2. Data boundary: only final daily bars reach the models (a bar of a session that has not finished
    is dropped on download, and a partial bar that was stored too early is replaced by its final
    bar or held back, never used as it was).
-3. Time boundary: models are trained and evaluated only outside 09:15-15:45 IST on trading days.
 """
 
 from __future__ import annotations
@@ -23,7 +21,6 @@ from app.prediction.history_service import HistoryService
 from app.prediction.history_store import HistoryStore
 from app.prediction.sources.yahoo import BY_KEY, complete_after
 from tests.unit.test_history import EVENING, Clock, FakeDownloader, row
-from tests.unit.test_research import _at, _Cal, _service, _walk
 
 APP = Path(__file__).resolve().parents[2] / "app"
 FORBIDDEN = (
@@ -59,13 +56,6 @@ def test_prediction_code_never_names_the_intraday_or_observation_databases() -> 
     for f in (APP / "prediction").rglob("*.py"):
         text = f.read_text("utf-8")
         assert "intraday.sqlite3" not in text and "observations.sqlite3" not in text, f.name
-
-
-def test_intraday_package_never_imports_the_model_code() -> None:
-    """The reverse direction: intraday and lifecycle code may read stored daily data, never the models."""
-    models = ("app.prediction.research", "app.prediction.models", "app.prediction.features", "app.prediction.features_multi", "app.prediction.ledger")
-    for f in [*(APP / "intraday").rglob("*.py"), *(APP / "lifecycle").rglob("*.py")]:
-        assert not [m for m in _imports(f) if m in models], f.name
 
 
 # ----------------------------------------------------------------------- 2. data boundary
@@ -147,40 +137,6 @@ async def test_overnight_retry_logic_sees_a_held_back_bar_as_missing(tmp_path: P
     assert set(svc.overnight_missing(clock.now)) == {"SPX", "VIX", "BRENT", "DXY", "USDINR", "UST10Y"}
 
 
-# ------------------------------------------------------------------------ 3. time boundary
-
-
-def _paused(tmp_path: Path, now: datetime) -> bool:
-    svc, _ = _service(tmp_path, 560, now)
-    svc._pause_in_market_hours = True
-    s = svc.summary()
-    return bool(s.get("paused"))
-
-
-def test_models_are_not_trained_during_market_hours_but_are_after_the_close(tmp_path: Path) -> None:
-    last = _walk(560, 1)[-1].session
-    assert _paused(tmp_path / "a", _at(last, 10, 30))  # mid-session: paused
-    assert _paused(tmp_path / "b", _at(last, 15, 40))  # settlement window
-    assert not _paused(tmp_path / "c", _at(last, 15, 50))  # after the close: runs
-    assert not _paused(tmp_path / "d", _at(last, 9, 5))  # before the open (the 08:35-09:10 forecast window)
-
-
-def test_models_may_run_at_weekends(tmp_path: Path) -> None:
-    last = _walk(560, 1)[-1].session
-    saturday = last + timedelta(days=(5 - last.weekday()) % 7 or 7)
-    assert not _paused(tmp_path, _at(saturday, 11, 0))
-
-
-def test_paused_state_still_serves_a_cached_report(tmp_path: Path) -> None:
-    last = _walk(560, 1)[-1].session
-    svc, _ = _service(tmp_path, 560, _at(last, 16, 30))
-    ready = svc.summary(block=True)
-    assert ready.get("ready", True) is not False
-    next_day = _Cal().next_session(last)
-    svc._clock = lambda: _at(next_day, 11, 0)  # the market is open again next day; no new bar yet
-    svc._pause_in_market_hours = True
-    again = svc.summary()
-    assert "paused" not in again and "forecasts" in again
 
 
 # ----------------------------------------------- provisional bars of 24-hour series (5 Nov 2026 incident)

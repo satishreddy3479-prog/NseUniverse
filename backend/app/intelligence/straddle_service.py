@@ -93,7 +93,7 @@ def sources(mi: Mapping[str, Any], a: Mapping[str, Any]) -> list[dict[str, Any]]
     """Every input with its source, timestamp, age and status (AVAILABLE, PARTIAL when stale or failing, UNAVAILABLE)."""
     names = {"market": "Futures flow and heavyweights (market service)", "intraday": "Command centre (stored chain)", "futures": "Futures series", "skew": "IV skew and term structure", "momentum": "IV momentum",
              "positioning": "Strike positioning (OI, Smart OI)", "gex": "GEX history (modelled)", "vix": "IV chart and India VIX (daily close)", "flow": "Stored per-minute flow (rolling CVD)",
-             "heavymeta": "Heavyweight index weights", "ml": "Intraday ML research"}  # fmt: skip
+             "heavymeta": "Heavyweight index weights"}  # fmt: skip
     out = []
     q = a.get("quality") or {}
     out.append({"id": "chain", "name": "Option chain samples (stored, last traded prices)", "as_of": q.get("last_sample_at"), "age_s": None if q.get("age_minutes") is None else round(q["age_minutes"] * 60),

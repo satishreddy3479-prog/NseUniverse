@@ -34,5 +34,5 @@ Kotak Neo → broker adapter → normalizer → (storage, broadcaster) → WebSo
 - **Resource note:** polling must be cheap (`git ls-remote`/fetch on a timer); builds must fit the server's memory or be built elsewhere — open question.
 
 
-## Prediction subsystem (backend/app/prediction)
-Pure, dependency-light modules: `calendar` (exchange sessions), `targets` (labels), `pit` (information-cutoff guard), `ledger` (append-only forecasts in `data/forecasts.sqlite3`), `evaluation` (purged splits, metrics). It reads features through a backend interface (observation store, future feature tables), never from the frontend; training happens off the server.
+## Market-data subsystem (backend/app/prediction)
+The package name is historical: the forecasting models were removed (D148). What stays is shared data infrastructure: `calendar` (exchange sessions), `targets` (daily bars), `pit` (information-cutoff guard), `history_service`/`history_store` (daily price history in `data/market_history.sqlite3`), `flows_service`/`flows_store` (NSE institutional flows), `events` (the scheduled-events calendar) and `sources` (NSE and Yahoo downloads).

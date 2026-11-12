@@ -131,7 +131,6 @@ function Header({ d }: { d: IntradaySummary }) {
       <Stat label="Last stored sample" value={d.market.last_sample_at ? fmtTimeIST(d.market.last_sample_at) : MISSING}
         sub={d.market.age_seconds != null ? `${Math.round(d.market.age_seconds / 60)} min ago` : "none"} />
       <Stat label="Scoring" value="Rules v1 (provisional)" sub={d.assessment.version} />
-      <Stat label="Intraday ML" value={d.ml.model_trained ? d.ml.stage_name : "No model yet"} cls="text-muted" sub={`${d.ml.stage_name} · ${d.ml.labelled_sessions} session${d.ml.labelled_sessions === 1 ? "" : "s"} labelled`} />
     </div>
   );
 }
@@ -642,34 +641,6 @@ function ForwardCheckCard({ expiry }: { expiry: string }) {
   );
 }
 
-function ModelResearch() {
-  const q = useQuery({ queryKey: ["intradayResearch", 15], queryFn: () => api.intradayResearch(15), refetchInterval: 600_000, retry: false });
-  const r = q.data;
-  const models = r?.models ? Object.entries(r.models) : [];
-  return (
-    <Card title="Prediction model research (15 min)" className="lg:col-span-12" right={<span className="text-[11px] text-muted">walk-forward on stored sessions</span>}>
-      {q.isLoading ? <p className="text-sm text-muted">Loading…</p> : !r ? <p className="text-sm text-muted" data-testid="cc-research-error">Model research is unavailable.</p> : (
-        <div className="space-y-2 text-xs" data-testid="cc-research">
-          <p className="text-paper"><span className="font-semibold">{r.gate?.label ?? (r.status === "validated" ? "Validated" : "Insufficient data")}</span> · {r.sessions} labelled session(s), {r.rows} rows</p>
-          {r.reason && <p className="text-muted">{r.reason}. No probabilities are shown.</p>}
-          {r.gate?.reasons.map((x) => <p key={x} className="text-muted">• {x}</p>)}
-          {models.length > 0 && (
-            <table className="w-full min-w-[28rem] text-xs">
-              <thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Model</th><th className="py-1 text-right font-normal">Log loss</th><th className="py-1 text-right font-normal">Brier</th><th className="py-1 text-right font-normal">Balanced acc.</th><th className="py-1 text-right font-normal">Calibration error</th></tr></thead>
-              <tbody>
-                {models.map(([k, m]) => (
-                  <tr key={k} className="border-t border-rule/50"><td className="py-1 text-paper">{k.replace("_", " ")}</td><td className="num py-1 text-right">{m.log_loss.toFixed(3)}</td><td className="num py-1 text-right">{m.brier.toFixed(3)}</td><td className="num py-1 text-right">{m.balanced_accuracy == null ? MISSING : m.balanced_accuracy.toFixed(3)}</td><td className="num py-1 text-right">{m.calibration.ece.toFixed(3)}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          <p className="text-[11px] text-muted">{r.note}</p>
-        </div>
-      )}
-    </Card>
-  );
-}
-
 const SETUP_TONE: Record<string, string> = { ACTIVE: "text-up", WATCH: "text-warn", BLOCKED: "text-down", REJECTED: "text-muted" };
 
 function SetupRow({ c }: { c: SetupCandidate }) {
@@ -968,9 +939,9 @@ function Markets({ d }: { d: IntradaySummary }) {
   );
 }
 
-function EventsMl({ d }: { d: IntradaySummary }) {
+function Events({ d }: { d: IntradaySummary }) {
   return (
-    <Card title="Events & ML model" className="lg:col-span-6">
+    <Card title="Events" className="lg:col-span-6">
       <ul className="space-y-1">
         {d.events.slice(0, 4).map((e) => (
           <li key={e.id} className="flex justify-between gap-2 text-xs">
@@ -981,24 +952,6 @@ function EventsMl({ d }: { d: IntradaySummary }) {
         {d.events.length === 0 && <li className="text-xs text-muted">No calendar events in the next 7 days.</li>}
       </ul>
       <p className="mt-1 text-[11px] text-muted">“?” = time not confirmed by the publisher. Countdowns are not shown for unverified times.</p>
-      <div className="mt-3 rounded-sm border border-rule bg-slate-2 p-2" data-testid="cc-ml">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-semibold text-paper">Intraday ML model</span>
-          <Chip>{d.ml.model_trained ? d.ml.stage_name : "No model yet"}</Chip>
-        </div>
-        <p className="mt-1 text-xs text-muted">{d.ml.reason}</p>
-        <ol className="mt-2 grid grid-cols-4 gap-1" aria-label="Intraday model stages">
-          {d.ml.stages.map((st) => {
-            const done = d.ml.labelled_sessions >= st.from_sessions;
-            return (
-              <li key={st.id} title={st.what} className={`rounded-sm border px-1 py-1 text-center text-[10px] leading-tight ${done ? "border-accent/60 text-paper" : "border-rule text-muted"}`}>
-                <span className="block font-semibold">{st.from_sessions}+</span>{st.name}
-              </li>
-            );
-          })}
-        </ol>
-        <p className="mt-1 text-[11px] text-muted">The overnight T+1 / T+5 models are on the Prediction page and are separate from this.</p>
-      </div>
     </Card>
   );
 }
@@ -1076,7 +1029,6 @@ export function CommandCenter({ expiry }: { expiry: string | null }) {
             <SetupMonitor d={d} />
             <Volatility d={d} />
             <Positioning d={d} />
-            <ModelResearch />
             {expiry && <ForwardCheckCard expiry={expiry} />}
             <PaperResults />
             <Replay expiry={d.expiry} />
@@ -1085,7 +1037,7 @@ export function CommandCenter({ expiry }: { expiry: string | null }) {
             <Options d={d} />
             <Health d={d} />
             <Markets d={d} />
-            <EventsMl d={d} />
+            <Events d={d} />
             <History expiry={expiry} />
           </div>
         </>

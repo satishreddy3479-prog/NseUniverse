@@ -52,7 +52,7 @@ describe("top menu bar", () => {
     mockApi();
     renderAt("/overview");
     await screen.findByRole("heading", { name: "Overview" });
-    for (const name of ["Market Intelligence", "Swing trading", "Prediction"])
+    for (const name of ["Market Intelligence", "Swing trading"])
       expect(within(bar()).getByRole("link", { name })).toBeInTheDocument();
     expect(within(bar()).queryByRole("link", { name: "Option Chain" })).toBeNull(); // the chain lives under FNO Tools now
     expect(within(bar()).queryByRole("button", { name: /Options Lab|Future Lab/ })).toBeNull(); // the two labs became one menu
@@ -186,7 +186,7 @@ describe("phone menu", () => {
 
   it("lists the main destinations first and the sections collapsed", async () => {
     const m = await open();
-    for (const name of ["Home · all tools", "Market Intelligence", "Swing trading", "Prediction"]) expect(m.getByRole("link", { name })).toBeInTheDocument();
+    for (const name of ["Home · all tools", "Market Intelligence", "Swing trading"]) expect(m.getByRole("link", { name })).toBeInTheDocument();
     for (const name of ["Strategy Builder", "FNO Tools", "Analyse", "System"]) expect(m.getByRole("button", { name })).toHaveAttribute("aria-expanded", "false");
     expect(m.queryByRole("link", { name: "Smart OI" })).toBeNull();
   });

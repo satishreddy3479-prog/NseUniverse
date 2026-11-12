@@ -524,12 +524,6 @@ export interface IntradaySummary {
   institutional: { session: string; fii_net: number | null; dii_net: number | null; fresh: boolean } | null;
   events: EventItem[];
   health: IntradayHealth[];
-  ml: {
-    status: string; stage_name: string; labelled_sessions: number; complete_sessions: number; sessions_with_samples: number;
-    stages: { id: string; name: string; from_sessions: number; what: string }[];
-    next: { name: string; at_sessions: number; sessions_to_go: number } | null;
-    model_trained: boolean; reason: string;
-  };
   config: { version: string; weights: Record<string, number>; min_coverage: number };
 }
 export interface BreadthBlock {
@@ -636,14 +630,6 @@ export interface StorageStatus {
     backups_enabled: boolean; snapshot_retention: { raw_days: number; normalized_days: number; last_run: { raw_files: number; normalized_files: number } | null };
   };
   daily_models: { when: string; intraday_model: string };
-}
-
-// ---- Intraday model research (/api/intraday/research)
-export interface ModelMetrics { log_loss: number; brier: number; accuracy: number; balanced_accuracy: number | null; n: number; calibration: { ece: number } }
-export interface ResearchReport {
-  status: "insufficient" | "experimental" | "validated"; sessions: number; rows: number; horizon_minutes: number; reason?: string;
-  test_sessions?: number; models?: Record<string, ModelMetrics>; dropped?: { ambiguous: number; missing: number }; effective_observations?: number;
-  gate?: { status: string; show_probabilities: boolean; reasons: string[]; label: string | null; beat_share?: number; ece?: number }; note?: string;
 }
 
 // ---- Setup monitor (read-only decision support), replay and paper trading

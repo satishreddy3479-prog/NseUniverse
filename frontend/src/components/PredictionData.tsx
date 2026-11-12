@@ -3,7 +3,7 @@ import { api } from "../lib/api";
 import { fmtDateTimeIST, fmtInt } from "../lib/format";
 import { Button, Panel } from "./ui";
 
-/** Daily price history used by the prediction models: what exists, what is missing, and a refresh.
+/** Daily price history: what exists, what is missing, and a refresh.
  *  It also refreshes by itself once a day after the close; nothing here needs a restart. */
 export function PredictionData() {
   const qc = useQueryClient();
@@ -22,7 +22,7 @@ export function PredictionData() {
   const sum = run?.summary;
   return (
     <Panel
-      title="Prediction data: daily price history"
+      title="Daily price history"
       actions={
         <Button disabled={!s || s.running || refresh.isPending} onClick={() => refresh.mutate()}
           title="Download new daily bars now (also runs by itself once a day after the close)">

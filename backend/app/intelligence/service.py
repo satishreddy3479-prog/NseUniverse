@@ -24,7 +24,7 @@ from app.intelligence.store import IntelligenceStore
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 #: seconds an input is reused before the service is asked again
-TTL = {"market": 5.0, "intraday": 15.0, "futures": 15.0, "skew": 30.0, "momentum": 30.0, "positioning": 30.0, "gex": 30.0, "vix": 300.0, "flow": 15.0, "heavymeta": 300.0, "ml": 300.0}
+TTL = {"market": 5.0, "intraday": 15.0, "futures": 15.0, "skew": 30.0, "momentum": 30.0, "positioning": 30.0, "gex": 30.0, "vix": 300.0, "flow": 15.0, "heavymeta": 300.0}
 ALERT_COOLDOWN_S = 600.0
 
 
@@ -110,7 +110,7 @@ class MarketIntelligence:
         """The source's own timestamp (when its data was produced), not when this service read it."""
         pick = {"market": lambda: fz.g(d, "flow", "futures", "updated") or fz.g(d, "generated_at"), "intraday": lambda: fz.g(d, "market", "last_sample_at"),
                 "futures": lambda: (fz.g(d, "times") or [None])[-1], "skew": lambda: fz.g(d, "at"), "momentum": lambda: fz.g(d, "latest_at"), "positioning": lambda: fz.g(d, "at"),
-                "gex": lambda: (fz.g(d, "points") or [{}])[-1].get("at"), "vix": lambda: (fz.g(d, "dates") or [None])[-1], "flow": lambda: (fz.g(d, "fut") or [[None]])[-1][0], "ml": lambda: fz.g(d, "last_evaluation", "computed_at")}
+                "gex": lambda: (fz.g(d, "points") or [{}])[-1].get("at"), "vix": lambda: (fz.g(d, "dates") or [None])[-1], "flow": lambda: (fz.g(d, "fut") or [[None]])[-1][0]}
         try:
             v = pick[name]()
         except (KeyError, IndexError, TypeError, AttributeError):
@@ -181,7 +181,7 @@ class MarketIntelligence:
         return {
             "generated_at": now.isoformat(timespec="seconds"), "expiry": expiry, "session": session, "enabled": self.enabled,
             "status": status, "sentiment": sent, "regime": {**reg, "previous": None if prev_reg is None else prev_reg["regime"], "changed_at": since},
-            "engines": engines, "pulse": self._pulse(inp, by, gx, expiry), "gex": gx, "heavyweights": inp["heavy"], "stock_futures": fz.g(inp["market"], "stock_futures"), "intraday_ml": inp.get("ml"), "observations": fz.observations(inp, by, gx),
+            "engines": engines, "pulse": self._pulse(inp, by, gx, expiry), "gex": gx, "heavyweights": inp["heavy"], "stock_futures": fz.g(inp["market"], "stock_futures"), "observations": fz.observations(inp, by, gx),
             "interpretation": fz.interpretation(fused, engines, reg, divs, gx, inp),
             "divergences": divs, "divergences_invalidated": gone, "divergences_unavailable": divs_missing,
             "scenarios": fz.scenarios(fused, engines, gx, inp, spot), "panels": self._panels(inp, by, gx), "capabilities": fz.capabilities(inp, status, gx),

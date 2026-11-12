@@ -88,11 +88,11 @@ Chain/spot in market hours: fresh ≤ 3 min, delayed ≤ 10 min, stale beyond; o
 session". Daily history fresh when its last bar is the previous trading session. Global fresh within 4
 days. FII/DII fresh when it describes the previous trading session.
 
-## Separation from the T+1 / T+5 prediction models
-The intraday view reads stored daily bars; the prediction models never read intraday samples, chains, ticks or the score ledger, and they train only outside market hours (see D53 and `test_no_intraday_leak.py`). Any future intraday model gets its own pipeline and ledger.
+## Daily bars
+The intraday view reads stored daily bars (the daily price history never takes intraday samples, chains, ticks or the score ledger; see D53 and `test_no_intraday_leak.py`). The T+1 / T+5 prediction models that once read the same history were removed on 13 Nov 2026 (D148). Any future intraday model gets its own pipeline and ledger.
 
-## ML readiness
-Staged plan in [intraday-ml-plan](intraday-ml-plan.md): labelled data is built nightly from day one; experimental
+## ML readiness (removed)
+The intraday machine-learning research (nightly labelled data, models, evaluation) was removed on 13 Nov 2026 (D148); this page is rules-based only. The old plan said: experimental
 training starts at 5 labelled sessions, paper-testing at 20, and 60 only gates the label "validated".
 
 ## Not built yet (from the master spec; in dependency order)
@@ -100,5 +100,5 @@ training starts at 5 labelled sessions, paper-testing at 20, and 60 only gates t
    stocks are the likely route).
 2. News headline provider (licensing check pending; GDELT tone is collected but unused).
 3. Session manifests, Parquet archive, verified cleanup (no deletion is enabled).
-4. Intraday ML targets/baselines/walk-forward once ≥ 60 complete sessions exist; forward-test ledger.
+4. (Intraday ML research and a forward-test ledger were planned here; both were dropped, D148.)
 5. Daily research report, resource monitor for the PC.

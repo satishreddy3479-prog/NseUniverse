@@ -1,5 +1,5 @@
 [Unit]
-Description=NSE Universe backend (read-only Kotak Neo market data, analytics, prediction)
+Description=NSE Universe backend (read-only Kotak Neo market data and analytics)
 After=network-online.target
 Wants=network-online.target
 

@@ -9,7 +9,6 @@ import { CommandStrip, EngineMatrix, Interpretation, PulseCards } from "../compo
 import { HeavyweightPanel } from "../components/intelligence/Heavyweight";
 import { StockFuturesPanel } from "../components/intelligence/StockFutures";
 import { TurnWatchPanel } from "../components/intelligence/TurnWatch";
-import { IntradayMlPanel } from "../components/intelligence/IntradayMl";
 import { StraddleSummaryCard } from "../components/intelligence/StraddleDecay";
 import { Capabilities } from "../components/intelligence/Capabilities";
 import { EngineBars, VerdictCard } from "../components/intelligence/Verdict";
@@ -61,7 +60,6 @@ function MiBody({ d }: { d: Intelligence }) {
           <div id="mi-evidence"><EngineMatrix d={d} /></div>
           <div id="mi-heavyweights"><HeavyweightPanel d={d} /></div>
           <div id="mi-stockfut"><StockFuturesPanel d={d} /></div>
-          <div id="mi-ml"><IntradayMlPanel d={d} /></div>
         </TabPanel>
       )}
       {tab === "signals" && (

@@ -11,8 +11,8 @@ describe("glossary", () => {
     for (const t of [
       "Current market sentiment", "Evidence breakdown", "Market regime & scenarios", "Market breadth & move quality", "NIFTY 50 heavyweights",
       "Breakout intelligence", "Setup monitor", "Implied volatility & Greeks", "Options positioning detail", "Futures flow and top-5 heavyweights", "Sectors",
-      "Forward check of the rules-based sentiment", "Prediction model research (15 min)", "Paper trading of the setups (after costs)", "Session replay",
-      "Intraday decision context", "Key levels", "Options positioning", "Data coverage & warnings", "Global, sectors & flows", "Events & ML model",
+      "Forward check of the rules-based sentiment", "Paper trading of the setups (after costs)", "Session replay",
+      "Intraday decision context", "Key levels", "Options positioning", "Data coverage & warnings", "Global, sectors & flows", "Events",
       "Sentiment history (today, stored)",
     ]) expect(lookup(t), `card: ${t}`).not.toBeNull();
   });
@@ -21,7 +21,6 @@ describe("glossary", () => {
     for (const t of ["P&L now (vs entry)", "POP (model estimate)", "Reward : Risk", "Max profit", "Max loss", "Breakevens", "Net premium", "Net Δ (model)", "If targets hit", "If stops hit"]) {
       expect(lookup(t), t).not.toBeNull();
     }
-    expect(lookup("Model comparison — T+1 — untouched holdout 2026")).not.toBeNull();
     expect(lookup("Institutional positions — NSE F&O participant open interest (net = long − short, contracts)")).not.toBeNull();
     expect(lookup("A label nobody wrote help for")).toBeNull();
   });

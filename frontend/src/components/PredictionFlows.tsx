@@ -13,7 +13,7 @@ export function PredictionFlows() {
   const q = useFlowsStatus();
   const s = q.data;
   return (
-    <Panel title="Prediction data: NSE institutional flows">
+    <Panel title="NSE institutional flows">
       {q.isPending ? <p className="text-sm text-muted">Loading…</p>
         : q.error || !s ? <p className="text-sm text-muted">Not available: the running backend does not have this module yet.</p>
         : (

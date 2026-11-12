@@ -52,7 +52,6 @@ class Settings(BaseSettings):
     sampler_min_free_gb: float = Field(default=2.0, ge=0.1)
     history_autofetch: bool = True
     flows_history_days: int = 10  # NSE files are collected from this many days back, then daily
-    news_autofetch: bool = True  # GDELT daily tone/volume (headline aggregates only)
     risk_free_rate: float = 0.06  # annual discount rate for the IV model; an assumption
     # decision-support risk and cost assumptions (paper trading only; no orders are ever placed)
     risk_max_loss_per_trade_rs: float = 2000.0

@@ -2,8 +2,8 @@
 
 Everything here is measured from the real files and databases. ``overview`` changes nothing. ``run`` removes only the
 categories the caller names, only data the verified daily archive already holds (or that can be regenerated), and
-only after the same checks the nightly job uses. Immutable stores (forecasts, intraday scores and feature rows,
-daily bars, flows, news, strategies' history) and the archive itself are never offered for removal.
+only after the same checks the nightly job uses. Immutable stores (intraday scores and summaries,
+daily bars, flows, strategies' history) and the archive itself are never offered for removal.
 """
 
 from __future__ import annotations
@@ -23,12 +23,10 @@ IST = ZoneInfo("Asia/Kolkata")
 STORES: dict[str, tuple[str, str, str]] = {
     "observations.sqlite3": ("Option-chain observations", "One row per sample (time, spot) and one per contract per changed sample (price, OI, volume); feeds every chart.", "Kept forever; per-contract rows of old sessions can go once the archive holds them."),
     "index.sqlite3": ("Snapshot index", "Which snapshot files exist and their summary.", "Kept forever (small)."),
-    "intraday.sqlite3": ("Intraday ML data", "Sentiment scores every minute, feature rows with labels (the training data), daily summaries.", "Immutable and kept forever: this is what the intraday model trains and is tested on."),
-    "forecasts.sqlite3": ("Forecast ledger", "Every T+1 / T+5 forecast, written before the outcome and never edited.", "Immutable; the forward-test evidence."),
-    "market_history.sqlite3": ("Daily prices", "Daily bars of NIFTY and the other instruments used by the prediction models.", "Append-only; kept forever."),
+    "intraday.sqlite3": ("Intraday scores and summaries", "Sentiment scores every minute and daily summaries.", "Immutable and kept forever: this is what the intraday model trains and is tested on."),
+    "market_history.sqlite3": ("Daily prices", "Daily bars of NIFTY and the other instruments used by the volatility, sector and global-market views.", "Append-only; kept forever."),
     "nse_flows.sqlite3": ("Institutional flows", "NSE participant open interest and FII/DII cash files.", "Kept; small."),
     "market.sqlite3": ("Breadth and futures recordings", "Minute aggregates of breadth, sectors and futures flow.", "Append-only; about 1 MB a day."),
-    "news.sqlite3": ("News and events", "Collected headlines and the event calendar.", "Append-only; kept."),
     "strategies.sqlite3": ("Strategies", "Saved and closed strategies with every revision.", "Kept; deleting a strategy only hides it."),
 }
 
@@ -106,7 +104,7 @@ def overview(*, data_dir: Path, log_dir: Path | None, today: date, obs: Observat
         "contract_rows": day["contract_rows"], "contract_bytes_estimate": round(day["contract_rows"] * per_row),
         "snapshot_files": snaps_today[0], "snapshot_bytes": snaps_today[1],
         "intraday": intraday.day_counts(today.isoformat()),
-        "note": "Today's data stays until the end-of-day job has archived and verified it. The intraday model trains on its feature rows, which are never deleted.",
+        "note": "Today's data stays until the end-of-day job has archived and verified it. ",
     }
     # candidates (all measured, none executed)
     raw = storage.prune_snapshots(data_dir, today, raw_keep, 0, set(archived), obs.known_snapshot_ids(), dry_run=True) if raw_keep > 0 else None
@@ -125,10 +123,9 @@ def overview(*, data_dir: Path, log_dir: Path | None, today: date, obs: Observat
          "why_safe": "They can be created again.", "blocked": 0, "enabled": True},
     ]
     never = [
-        {"name": "Intraday feature rows, labels, scores and summaries", "why": "The training and testing data of the intraday model; immutable."},
-        {"name": "Forecast ledger", "why": "Forward-test evidence; immutable."},
+        {"name": "Intraday scores and summaries", "why": "The record of the rules-based sentiment; immutable."},
         {"name": "Daily archive and manifests", "why": "The verified copy that makes the removals above safe."},
-        {"name": "Daily prices, flows, news, strategies", "why": "Small, append-only and not regenerable."},
+        {"name": "Daily prices, flows, strategies", "why": "Small, append-only and not regenerable."},
         {"name": "Today's data", "why": "Not archived yet."},
     ]
     return {

@@ -8,5 +8,5 @@
 Do not implement a phase until explicitly requested.
 
 
-## Prediction Intelligence (T+1 / T+5)
-See `docs/prediction/overview.md`. Milestones 1-2 done (specifications, calendar, labels, point-in-time guard, forecast ledger, evaluation). Next: choose the NIFTY history source (approval), then historical dataset and baselines (M3-M5), feature families (M6-M8), advanced models (M9), dashboard (M10), shadow forward testing (M11), review (M12).
+## Prediction Intelligence (T+1 / T+5): removed
+Built and then removed on 13 Nov 2026 (D148): it is not part of the product. The daily history, institutional flows and event calendar it used remain as data services for the other pages.

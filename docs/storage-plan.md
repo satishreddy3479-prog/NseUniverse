@@ -85,8 +85,7 @@ re-imported by reading the JSONL lines (`t=sample` rows, then their `t=c` contra
 
 ## Not built yet
 
-Daily research report, Parquet format (not needed at this size), intraday ML targets and training (needs 60
-complete sessions), automatic off-server copy of the archive (recommended: copy `archive/` and `manifests/`
+Daily research report, Parquet format (not needed at this size), automatic off-server copy of the archive (recommended: copy `archive/` and `manifests/`
 off the server weekly).
 
 
@@ -132,16 +131,15 @@ Trigger: charts showed yesterday's data and two corrupt contract values (22100 C
 
 | Phase | What is kept | Why |
 |---|---|---|
-| Market hours (09:15-15:30) | Snapshots every 60 s to the observation DB (needed for live charts and the intraday model's features) | Intraday ML and the dashboard read these |
-| 15:50 EOD job | Verified daily archive of the day; intraday model trains on the day's feature rows, labels from the 1-minute spot path; scores and summary appended | Training is done once, after close |
-| After the job (approval needed) | Keep: feature rows, labels, 1-min spot path, scores, daily summary, verified archive. Drop (after archive verified): raw payloads, normalized snapshots, per-contract observation rows older than the chart window | These are re-derivable from the archive or no longer read |
+| Market hours (09:15-15:30) | Snapshots every 60 s to the observation DB (needed for live charts) | The dashboard reads these |
+| 15:50 EOD job | Verified daily archive of the day; scores and summary appended | Done once, after close |
+| After the job (approval needed) | Keep: scores, daily summary, verified archive. Drop (after archive verified): raw payloads, normalized snapshots, per-contract observation rows older than the chart window | These are re-derivable from the archive or no longer read |
 
 ### What each consumer needs
 
 | Consumer | Needs | Retain |
 |---|---|---|
-| Intraday ML training | feature rows (append-only), labels, 1-min spot path | forever (small) |
-| Forward test / audit | scores, forecast ledger | forever (append-only) |
+| Forward test / audit | scores | forever (append-only) |
 | Dashboard charts | today's per-contract rows | today + previous session only |
 | Research / backtests | verified daily archive | forever (about 2.6 GB a year) |
 

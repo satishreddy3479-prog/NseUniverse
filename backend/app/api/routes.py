@@ -900,19 +900,6 @@ async def intraday_iv_skew(
     return await asyncio.to_thread(svc.iv_skew, expiry.isoformat(), 15, iso)
 
 
-RESEARCH_K = (0.25, 0.5, 1.0)  # a fixed menu keeps the (cached) evaluation workload bounded
-
-
-@router.get("/intraday/research")
-async def intraday_research(request: Request, horizon: int = 15, k: float = 0.5) -> dict[str, Any]:
-    """Walk-forward evaluation of the intraday model against baselines (read-only)."""
-    if horizon not in (5, 15, 30, 60) or k not in RESEARCH_K:
-        raise HTTPException(
-            status_code=422, detail="horizon must be 5, 15, 30 or 60; k one of 0.25, 0.5, 1"
-        )
-    return await asyncio.to_thread(request.app.state.intraday.research, horizon, k)
-
-
 @router.get("/intraday/forward")
 async def intraday_forward(request: Request, expiry: date) -> dict[str, Any]:
     """Stored rules-based sentiment scores against what NIFTY did next (read-only)."""
@@ -958,7 +945,7 @@ async def intraday_scores(
 
 @router.get("/prediction/history/status")
 async def history_status(request: Request) -> dict[str, Any]:
-    """Coverage of the downloaded daily price history (Prediction Intelligence)."""
+    """Coverage of the downloaded daily price history ."""
     return await asyncio.to_thread(request.app.state.history.status)
 
 
@@ -968,24 +955,6 @@ async def history_refresh(request: Request) -> dict[str, Any]:
     started = request.app.state.history.trigger()
     status = await asyncio.to_thread(request.app.state.history.status)
     return {"started": started, **status}
-
-
-@router.get("/prediction/summary")
-async def prediction_summary(request: Request) -> dict[str, Any]:
-    """T+1 / T+5 model performance and the next-session forecast (computed from stored history)."""
-    try:
-        return await asyncio.to_thread(request.app.state.research.summary)
-    except RuntimeError as e:  # e.g. numpy missing on this machine
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e)) from e
-
-
-@router.post("/prediction/summary/recompute", dependencies=[Depends(require_local_control)])
-async def prediction_recompute(
-    request: Request, model: Annotated[str, Query(pattern="^(T1|T5|all)$")] = "all"
-) -> dict[str, Any]:
-    """Retrain by hand ("Compute now"), also in market hours; ``model`` picks one horizon."""
-    only = None if model == "all" else model
-    return await asyncio.to_thread(request.app.state.research.summary, True, False, "manual", only)
 
 
 @router.get("/prediction/flows/status")
@@ -1009,26 +978,6 @@ async def flows_latest(
     oi = await asyncio.to_thread(st.latest_participants, "fao_participant_oi", limit)
     vol = await asyncio.to_thread(st.latest_participants, "fao_participant_vol", limit)
     return {"open_interest": oi, "volume": vol}
-
-
-@router.get("/prediction/events")
-async def prediction_events(days: Annotated[int, Query(ge=1, le=120)] = 30) -> dict[str, Any]:
-    """Scheduled macro events from official calendars (dates known in advance)."""
-    from app.prediction.events import EventCalendar
-
-    cal = await asyncio.to_thread(EventCalendar.load)
-    return {"events": [e.public() for e in cal.upcoming(datetime.now(UTC), days)]}
-
-
-@router.get("/prediction/news/status")
-async def news_status(request: Request) -> dict[str, Any]:
-    return await asyncio.to_thread(request.app.state.news.status)
-
-
-@router.post("/prediction/news/refresh", dependencies=[Depends(require_local_control)])
-async def news_refresh(request: Request) -> dict[str, Any]:
-    started = request.app.state.news.trigger()
-    return {"started": started, **await asyncio.to_thread(request.app.state.news.status)}
 
 
 class CashImport(BaseModel):

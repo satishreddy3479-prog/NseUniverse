@@ -44,4 +44,4 @@ Swap: a 1 GB `/swapfile-nse` (priority 10) with `vm.swappiness=20`, so RAM is us
 ## Limits to know
 - This host may already run another project; nothing here stops or modifies it. With about 1 GB of RAM the two together will use swap: check `free -m`.
 - The backend's control endpoints trust local connections, and the proxy is local, so the website login is what protects them. Keep the login password strong; do not expose port 8010.
-- Prediction training and the Yahoo/NSE downloads run on the server; on 1 GB they are slow but bounded by the service memory limits.
+- The Yahoo/NSE downloads (daily history, institutional flows) run on the server; on 1 GB they are slow but bounded by the service memory limits.

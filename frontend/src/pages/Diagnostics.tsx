@@ -35,16 +35,14 @@ function DataPipelines({ serverTime, fetchedAt }: { serverTime: string | undefin
   const opt = { retry: false, refetchInterval: 60_000 } as const;
   const hist = useQuery({ queryKey: ["diag-history"], queryFn: api.historyStatus, ...opt });
   const flows = useQuery({ queryKey: ["diag-flows"], queryFn: api.flowsStatus, ...opt });
-  const news = useQuery({ queryKey: ["diag-news"], queryFn: api.newsStatus, ...opt });
   const store = useQuery({ queryKey: ["diag-storage"], queryFn: api.storageStatus, ...opt });
   // the skew is measured when the status arrives (server clock minus this browser's clock at that moment)
   const skew = serverTime && fetchedAt ? (new Date(serverTime).getTime() - fetchedAt) / 1000 : null;
   type Row = { name: string; state: "ok" | "problem" | "unknown"; detail: string; last: string | null };
   const rows: Row[] = [];
-  const h = hist.data, f = flows.data, n = news.data, st = store.data;
+  const h = hist.data, f = flows.data, st = store.data;
   rows.push(h ? { name: "Daily prices and global series", state: (h.last_run?.summary?.failed_symbols.length ?? 0) > 0 ? "problem" : "ok", detail: h.last_run?.summary ? `${h.last_run.summary.new_bars} new bars, ${h.last_run.summary.failed_symbols.length} failed symbol(s), ${h.last_run.summary.disagreements} disagreement(s)${h.running ? " · running now" : ""}` : "no completed run reported", last: h.last_run?.finished_at ?? null } : { name: "Daily prices and global series", state: "unknown", detail: hist.isError ? "status unavailable" : "loading", last: null });
   rows.push(f ? { name: "NSE flows (participants, FII/DII cash)", state: f.blocked || (f.missing_expected?.length ?? 0) > 0 || (f.last_run?.errors ?? 0) > 0 ? "problem" : "ok", detail: f.blocked ? `blocked: ${f.blocked}` : (f.missing_expected?.length ?? 0) > 0 ? `missing for ${f.expected_session}: ${f.missing_expected!.join(", ")}` : `expected session ${f.expected_session ?? "—"} stored`, last: f.last_attempt_utc ?? null } : { name: "NSE flows (participants, FII/DII cash)", state: "unknown", detail: flows.isError ? "status unavailable" : "loading", last: null });
-  rows.push(n ? { name: "News tone (GDELT)", state: n.problems.length > 0 ? "problem" : "ok", detail: n.problems.length > 0 ? n.problems.join("; ") : `${n.coverage.days} day(s) collected`, last: n.coverage.last_fetch } : { name: "News tone (GDELT)", state: "unknown", detail: news.isError ? "status unavailable" : "loading", last: null });
   rows.push(st ? { name: "End-of-day archive and backups", state: st.end_of_day.pending_days.length > 0 || st.pressure === "critical" || st.pressure === "low" ? "problem" : "ok", detail: `${st.end_of_day.sessions_archived} session(s) archived · pending ${st.end_of_day.pending_days.length} · disk pressure ${st.pressure} (${st.disk.free_gb} GB free) · last run: ${st.end_of_day.last_result.state}`, last: st.end_of_day.last_attempt_at } : { name: "End-of-day archive and backups", state: "unknown", detail: store.isError ? "status unavailable" : "loading", last: null });
   const tone = { ok: "text-up", problem: "text-down", unknown: "text-muted" } as const;
   return (

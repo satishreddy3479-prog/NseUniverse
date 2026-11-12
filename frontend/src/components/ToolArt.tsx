@@ -14,7 +14,7 @@ const ART: Record<string, ArtKind> = {
   "future-dashboard": "candles", "future-intraday": "area", "market-movers": "diverge", "future-oi": "bars",
   "future-price-oi": "candles", "fii-dii-summary": "flow", "fii-dii-cash": "flow", "index-contributors": "diverge",
   "advance-decline": "donut", "index-weightage": "donut", "sector-rotation": "heat",
-  strategy: "payoff", "option-chain": "table", portfolio: "area", prediction: "lines",
+  strategy: "payoff", "option-chain": "table", portfolio: "area",
 };
 export const artFor = (id: string): ArtKind => ART[id] ?? "bars";
 

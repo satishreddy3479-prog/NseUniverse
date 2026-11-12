@@ -25,7 +25,6 @@ from typing import Any
 from app.domain.session import market_time, session_close
 from app.intraday import (
     backtest,
-    evaluate,
     gex_history,
     labels,
     momentum,
@@ -78,15 +77,6 @@ from app.storage.observations import ObservationStore, to_ms
 
 logger = logging.getLogger(__name__)
 
-#: a session counts towards ML training data only if it holds this many in-session samples
-COMPLETE_SESSION_SAMPLES = 300
-#: documented minimum before an intraday model is even trained (docs/intraday.md)
-ML_STAGES: list[dict[str, Any]] = [
-    {"id": "collecting", "name": "Collecting labelled data", "from_sessions": 0, "what": "every finished session is turned into feature rows with forward-return labels"},
-    {"id": "experimental", "name": "Experimental training", "from_sessions": 5, "what": "baselines and a simple model, leave-one-day-out with a purge; shown as experimental, no validity claimed"},
-    {"id": "paper", "name": "Paper-testing", "from_sessions": 20, "what": "tree models vs baselines, calibration; every live prediction recorded before its outcome"},
-    {"id": "validated", "name": "Eligible for 'validated'", "from_sessions": 60, "what": "label 'validated' only if it beats the baselines across regimes with calibrated probabilities"},
-]
 GLOBAL_KEYS = ("SPX", "NDX_COMP", "VIX", "USDINR", "BRENT", "UST10Y", "GOLD", "N225", "HSI", "DAX")
 SECTOR_KEYS = (
     "NIFTYBANK",
@@ -165,7 +155,6 @@ class IntradayService:
         self._bt_job: dict[str, Any] | None = None
         self._bt_lock = threading.Lock()
         self._iv_cache: dict[tuple[Any, ...], dict[str, Any]] = {}  # one entry: the latest IV series
-        self._ml_job: threading.Thread | None = None
         self._slow: dict[Any, tuple[float, Any]] = _Bounded(48)  # cached slow results, keyed by (kind, ...); the oldest are dropped
         self._task: asyncio.Task[None] | None = None
         self.loop_note = "not started"
@@ -227,15 +216,6 @@ class IntradayService:
         ]
         self._slow[("bars", key)] = (now, bars)
         return bars
-
-    def _session_counts(self) -> dict[str, int]:
-        now = _time.monotonic()
-        hit = self._slow.get(("counts", ""))
-        if hit and now - hit[0] < SLOW_TTL_S:
-            return hit[1]  # type: ignore[no-any-return]
-        counts = self.obs.session_sample_counts(self.underlying)
-        self._slow[("counts", "")] = (now, counts)
-        return counts
 
     def _global(self, today: date) -> list[GlobalInput]:
         out = []
@@ -447,8 +427,6 @@ class IntradayService:
         if prev_check:
             health.insert(1, prev_check)
         sectors = self._sectors(today, None)
-        counts = self._session_counts()
-        complete = sorted(d for d, n in counts.items() if n >= COMPLETE_SESSION_SAMPLES)
         mark("health_counts")
         result: dict[str, Any] = {
             "generated_at": now.isoformat(),
@@ -479,7 +457,6 @@ class IntradayService:
             "institutional": asdict(flow) if flow else None,
             "events": [e.public() for e in upcoming[:6]],
             "health": health,
-            "ml": self._ml_status(len(complete), len(counts)),
             "config": {"version": SCORE_VERSION, "weights": SCORE_CONFIG["weights"], "min_coverage": SCORE_CONFIG["min_coverage"]},
             "compute_ms": None,
         }  # fmt: skip
@@ -1103,46 +1080,6 @@ class IntradayService:
             out.append({"date": d, "atm_iv": sf["atm_iv"], "expiry": exp, "days_to_expiry": sf.get("time_to_expiry_days"), "at": last.received_at.isoformat()})
         return out
 
-    def research(self, horizon: int = 15, k: float = labels.DEFAULT_K) -> dict[str, Any]:
-        """Walk-forward evaluation on every stored labelled session: barrier labels from the stored spot paths, features from
-        the nightly dataset (built from samples at or before each time). Probabilities are not shown unless the gate passes."""
-        from app.intraday.dataset import FEATURE_VERSION
-
-        key = ("research", horizon, k, len(self.store.feature_sessions(FEATURE_VERSION)))
-        with self._heavy:
-            return self._research_locked(key, horizon, k)
-
-    def _research_locked(self, key: Any, horizon: int, k: float) -> dict[str, Any]:
-        from app.intraday.dataset import FEATURE_VERSION
-
-        hit = self._slow.get(key)
-        if hit and _time.monotonic() - hit[0] < 600:
-            return hit[1]  # type: ignore[no-any-return]
-        rows: list[dict[str, Any]] = []
-        dropped = {"ambiguous": 0, "missing": 0}
-        for sess, (exp, frows) in sorted(self.store.feature_session_rows(FEATURE_VERSION).items()):
-            day = date.fromisoformat(sess)
-            lo = datetime.combine(day, OPEN, IST)
-            samples = self.obs.samples(self.underlying, exp, since=lo, until=datetime.combine(day, session_close(), IST), limit=2000)
-            pts = in_session([Point(x.received_at, x.spot) for x in samples if x.spot is not None], day)
-            ctx = daily_context([b for b in self._daily("NIFTY50") if b.session < day], day)
-            by_time = {p_.at.isoformat(): i for i, p_ in enumerate(pts)}
-            for stamp, feats in frows:
-                i = by_time.get(datetime.fromisoformat(stamp).isoformat())
-                if i is None:
-                    continue
-                lab = labels.label_at(pts, i, horizon, ctx.daily_sd_pct, k)
-                if lab["outcome"] in evaluate.CLASSES:
-                    rows.append({"session": sess, "features": feats, "outcome": lab["outcome"]})
-                else:
-                    dropped[lab["outcome"]] += 1
-        has_vwap = any(r["features"].get("fut_vwap_dist_pct") is not None for r in rows)
-        res = evaluate.walk_forward(rows, stride=max(1, horizon // 3), has_vwap=has_vwap, group_tests=True)
-        res |= {"horizon_minutes": horizon, "barrier_k": k, "dropped": dropped, "effective_observations": round(len(rows) / max(1, horizon)),
-                "features_version": FEATURE_VERSION, "note": "Barrier = k x daily sd x sqrt(h/375) from earlier sessions. Overlapping samples are not independent; the gate counts sessions."}  # fmt: skip
-        self._slow[key] = (_time.monotonic(), res)
-        return res
-
     def forward_check(self, expiry: str) -> dict[str, Any]:
         """What NIFTY did after each stored rules-based score (see forward.py); cached for ten minutes."""
         from app.intraday.forward import score_forward
@@ -1174,7 +1111,6 @@ class IntradayService:
         if not samples:
             return {"status": "no samples at or before that time", "session": session, "at": at.isoformat()}
         out = self._build(expiry, at, samples, replay=True)
-        out.pop("ml", None)  # readiness counts reflect the present, not that moment
         full = self.obs.samples(self.underlying, expiry, since=datetime.combine(day, OPEN, IST), until=datetime.combine(day, session_close(), IST), limit=5000)
         pts = in_session([Point(x.received_at, x.spot) for x in full if x.spot is not None], day)
         sd = daily_context([b for b in self._daily("NIFTY50") if b.session < day], day).daily_sd_pct
@@ -1246,50 +1182,6 @@ class IntradayService:
             sf = self._surface_of(ss[-1], date.fromisoformat(other), ss[-1].received_at)
             pts.append((date.fromisoformat(other), sf.get("time_to_expiry_days"), sf.get("atm_iv") if sf.get("status") == "ok" else None))
         return volmod.term_structure(pts)
-
-    def ml_digest(self, now: datetime | None = None) -> dict[str, Any]:
-        """Where the intraday model research stands and the result of its last evaluation (cheap: reads a small stored file).
-
-        The evaluation itself is heavy, so it is started in the background once per session day after 15:45 IST, never in market hours and
-        never twice at once; until it has run the digest says so. Nothing here is a prediction."""
-        from app.intraday import mldigest
-
-        folder = self.store.path.parent
-        now_ist = (now or datetime.now(IST)).astimezone(IST)
-        last = mldigest.load(folder)
-        if mldigest.due(last, now_ist) and self._ml_job is None:
-            def job() -> None:
-                try:
-                    res = self.research(15, 0.5)
-                    mldigest.save(folder, mldigest.digest(res, 15, 0.5, datetime.now(IST)))
-                except Exception:  # noqa: BLE001 - a failed night run must never reach the dashboard; it is tried again next call
-                    logger.exception("intraday ml digest failed")
-                finally:
-                    self._ml_job = None
-
-            self._ml_job = threading.Thread(target=job, daemon=True, name="intraday-ml-digest")
-            self._ml_job.start()
-        counts = self.obs.session_sample_counts(self.underlying)
-        complete = sum(1 for n in counts.values() if n >= COMPLETE_SESSION_SAMPLES)
-        status = self._ml_status(complete, len(counts))
-        return {"status": status, "last_evaluation": last, "computing": self._ml_job is not None, "next_run": "once a session day after 15:45 IST"}
-
-    def _ml_status(self, complete_sessions: int, sessions_with_samples: int) -> dict[str, Any]:
-        """Where the intraday model effort stands, from the labelled sessions actually stored."""
-        from app.intraday.dataset import FEATURE_VERSION
-
-        labelled = len(self.store.feature_sessions(FEATURE_VERSION))
-        stage = max((i for i, st in enumerate(ML_STAGES) if labelled >= st["from_sessions"]), default=0)
-        nxt = ML_STAGES[stage + 1] if stage + 1 < len(ML_STAGES) else None
-        return {
-            "status": ML_STAGES[stage]["id"], "stage_name": ML_STAGES[stage]["name"], "labelled_sessions": labelled,
-            "complete_sessions": complete_sessions, "sessions_with_samples": sessions_with_samples,
-            "stages": ML_STAGES, "next": None if nxt is None else {"name": nxt["name"], "at_sessions": nxt["from_sessions"], "sessions_to_go": nxt["from_sessions"] - labelled},
-            "model_trained": False,
-            "reason": f"{labelled} session(s) of labelled data stored (features at each sample, forward returns as labels). "
-                      + (f"Next: {nxt['name'].lower()} at {nxt['from_sessions']} sessions ({nxt['from_sessions'] - labelled} to go). " if nxt else "")
-                      + "No model has been trained yet; the sentiment shown is rules-based, not ML.",
-        }  # fmt: skip
 
     # ------------------------------------------------------------------ sections
 

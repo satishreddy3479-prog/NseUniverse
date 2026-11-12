@@ -151,10 +151,9 @@ const E: Record<string, GlossaryEntry> = {
     read: "Global markets set the opening tone. Sector bars show which parts of the market lead or lag. FII/DII cash figures are the official provisional numbers from the previous session.",
     caution: "Flows are published after about 18:00 IST, so they are never an intraday figure.",
   },
-  "events ml model": {
-    what: "Scheduled events that can move the market (results, elections, policy dates) and the status of the intraday machine-learning model.",
-    read: "Events marked with ? have an unconfirmed time. The model stages show whether enough complete sessions exist to train and validate it.",
-    caution: "Until the model is trained and validated, the sentiment on this page is rules-based, not ML.",
+  "events": {
+    what: "Scheduled events that can move the market (results, elections, policy dates).",
+    read: "Events marked with ? have an unconfirmed time, so no countdown is shown for them.",
   },
   "paper trading of the setups after costs": {
     what: "A simulation of the rule-based setups on stored sessions, including trading costs and slippage. Nothing is sent to any broker.",
@@ -165,11 +164,6 @@ const E: Record<string, GlossaryEntry> = {
     what: "Rule-based trade setups (such as an opening-range breakout) and whether their conditions are met right now.",
     read: "Each setup lists its trigger, the invalidation level and the current state. It is a checklist of conditions, nothing more.",
     caution: "Read-only, no orders and no probabilities.",
-  },
-  "prediction model research 15 min": {
-    what: "A walk-forward test of whether a model can predict the next 15 minutes from stored intraday data.",
-    read: "Compare the model with simple baselines on data it never saw. Only a clear, repeated edge over the baselines would justify using it.",
-    caution: "With few labelled sessions the result is insufficient data and says nothing about future accuracy.",
   },
   "session replay": {
     what: "Shows this dashboard as it was at an earlier time of a stored session, using only what had been stored at that moment.",
@@ -379,28 +373,7 @@ const E: Record<string, GlossaryEntry> = {
   "theta per day": { what: "Value an option loses per calendar day from time passing.", read: "Sold options earn it, bought options pay it.", caution: "" },
   "vega per vol point": { what: "Change in value for a 1-point rise in implied volatility.", read: "Positive for bought options, negative for sold ones.", caution: "" },
 
-  // ---------------------------------------------------------------- prediction and data
-  "model comparison": {
-    what: "Several forecasting models compared on data none of them was tuned on (the untouched holdout period).",
-    read: "A model is only worth using if it beats the simple baselines clearly and repeatedly on the holdout. Look at hit rates and errors, not at one good day.",
-    caution: "Past accuracy does not guarantee future accuracy.",
-  },
-  "forward scoreboard": {
-    what: "Results of forecasts that were locked before the outcome was known.",
-    read: "This is the honest test: only forecasts recorded in advance count. Wait for enough days before trusting any percentage.",
-  },
-  "forward test ledger": {
-    what: "The permanent record of each forecast, written before the outcome and never edited.",
-    read: "Each row shows the forecast, the cutoff time and, after settlement, what happened.",
-  },
-  "daily forward test log": {
-    what: "Every forecast day, whether it was recorded on time or missed.",
-    read: "Missed days are shown as missed, never filled in afterwards.",
-  },
-  "post mortem": {
-    what: "A review of settled forecasts: what the model got right and wrong.",
-    read: "Look for patterns (for example always too bullish after a gap) rather than single results.",
-  },
+  // ---------------------------------------------------------------- institutional flows
   "institutional positions": {
     what: "Open positions of FII, DII, proprietary traders and clients in NSE index futures and options, from the exchange's participant file.",
     read: "Net = long − short, in contracts. A large net short by FIIs in futures is read as bearish positioning.",

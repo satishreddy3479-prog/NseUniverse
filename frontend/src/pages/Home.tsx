@@ -25,7 +25,6 @@ const START: { to: string; label: string; text: string }[] = [
   { to: "/option-chain", label: "Option Chain", text: "The live chain with OI, volume, IV and Greeks." },
   { to: "/strategy", label: "Strategy Builder", text: "Build and track paper strategies." },
   { to: "/swing", label: "Swing trading", text: "Evening scan, paper book and live paper ledger." },
-  { to: "/prediction", label: "Prediction", text: "T+1 and T+5 research forecasts." },
 ];
 
 /** Home: the market in one strip first, then the places you go next, then every tool in one searchable list. */

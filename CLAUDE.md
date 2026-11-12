@@ -5,7 +5,7 @@
 - **Vision:** reliable broker connectivity → live option-chain data → professional dashboard → OI/Greeks/IV analysis → historical research → more NSE instruments. See [roadmap](docs/roadmap.md).
 - **Current phase:** Phase 1. Live option chain, streaming overlay, Intraday analysis page (rules-based command center + widgets, [intraday](docs/intraday.md)) and market-hours sampler built and tested on real captured payloads; live stream not yet verified in market hours. Status: [current-state](docs/current-state.md). Setup/run: [setup-windows](docs/setup-windows.md).
 - **Current priority:** Kotak Neo API integration + live NIFTY 50 option-chain streaming (weekly + current-monthly expiries).
-- **Requested 29 Oct 2026 (phased, see [intraday-engine-status](docs/intraday-engine-status.md)):** price structure, breakout intelligence, IV/Greeks, prediction engine, setup/risk (read-only), backtesting. **Still out of scope:** order placement, instruments other than NIFTY 50. (Already built: OI/volume/PCR/max-pain/straddle analytics on stored snapshots.)
+- **Requested 29 Oct 2026 (phased, see [intraday-engine-status](docs/intraday-engine-status.md)):** price structure, breakout intelligence, IV/Greeks, setup/risk (read-only), backtesting. (The prediction engine and the intraday ML research were built and then removed on 13 Nov 2026, D148.) **Still out of scope:** order placement, instruments other than NIFTY 50. (Already built: OI/volume/PCR/max-pain/straddle analytics on stored snapshots.)
 
 ## Architecture principles
 - Separate backend, frontend, market-data services, storage, analytics. Details: [architecture](docs/architecture.md).
@@ -48,9 +48,6 @@ Pure function in `frontend/src/lib/analytics.ts` (missing values skipped and cou
 ## Storage
 Snapshots are gzip files plus a SQLite index; the sampler stores every 60 s in market hours, skips unchanged chains, and pauses below 2 GB free. Measure before changing sampling or formats; never delete stored data without approval. Plan, sizes and approvals: [storage-plan](docs/storage-plan.md). Server rules: skills `nse-universe-project-rules`, `nse-trading-desk-master`.
 - Control endpoints trust loopback clients: do not put the backend behind a reverse proxy until they are authenticated.
-
-## Prediction work
-T+1/T+5 research system: read `docs/prediction/overview.md` first. Never use information published after a forecast cutoff, never fabricate history or news, never rewrite a stored forecast, never add a paid or account-based source without approval. Not a trading system.
 
 ## Testing and verification
 - Test before claiming completion; unit tests separate from live integration tests.

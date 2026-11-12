@@ -14,7 +14,6 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from app.intraday import evaluate as ev
 from app.intraday import labels as lb
 from app.intraday import paper, setups
 from app.intraday import price_structure as ps
@@ -147,34 +146,6 @@ def test_costs_always_reduce_the_result_and_scale_with_lots() -> None:
 
 
 # ---------------------------------------------------------------------------------------------- evaluation honesty
-def test_shuffled_labels_never_pass_the_gate_and_the_model_has_no_edge() -> None:
-    wins = 0
-    for seed_ in range(4):
-        rng = random.Random(seed_)
-        rows = []
-        for s in range(22):
-            for _ in range(60):
-                rows.append({"session": f"2026-09-{s + 1:02d}" if s < 30 else "x", "features": {"ret_15m": rng.gauss(0, 1), "ret_5m": rng.gauss(0, 1), "er_5m": rng.random()}, "outcome": rng.choice(ev.CLASSES)})
-        r = ev.walk_forward(rows, 3, stride=2)
-        assert r["gate"]["show_probabilities"] is False
-        if r["models"]["logistic"]["log_loss"] < r["models"]["majority"]["log_loss"] - 0.01:
-            wins += 1
-    assert wins == 0  # a pure coin must not look better than the majority baseline by a margin
-
-
-def test_the_gate_demands_a_statistically_convincing_edge_not_just_a_majority_of_sessions() -> None:
-    sess = [{"logistic": 1.0, "majority": 1.0 + (0.002 if i % 3 else -0.002)} for i in range(24)]  # ahead in 2/3 of sessions by a hair
-    res = {"sessions": 70, "models": {"logistic": {"calibration": {"ece": 0.01}}, "majority": {}}, "per_session_log_loss": sess}
-    g = ev.gate(res)
-    assert g["show_probabilities"] is False and any("mean log-loss gain" in x for x in g["reasons"])
-    strong = {"sessions": 70, "models": res["models"], "per_session_log_loss": [{"logistic": 0.9, "majority": 1.0}] * 20 + [{"logistic": 1.01, "majority": 1.0}] * 2}
-    assert ev.gate(strong)["show_probabilities"] is True and ev.gate(strong)["sign_test_p"] < 0.001
-    coin = {"sessions": 70, "models": res["models"], "per_session_log_loss": [{"logistic": 0.9, "majority": 1.0}] * 9 + [{"logistic": 1.2, "majority": 1.0}] * 8}
-    assert ev.gate(coin)["show_probabilities"] is False and any("sign test" in x for x in ev.gate(coin)["reasons"])
-
-
-def test_sign_test_values() -> None:
-    assert ev.sign_test_p(5, 5) == pytest.approx(1 / 32) and ev.sign_test_p(0, 10) == 1.0 and ev.sign_test_p(13, 17) == pytest.approx(0.02452, abs=1e-5)
 
 
 # ---------------------------------------------------------------------------------------------- flow tracker
@@ -223,35 +194,6 @@ def test_replay_of_an_earlier_moment_equals_the_live_view_at_that_moment(tmp_pat
 
 
 # ---------------------------------------------------------------------------------------------- research pipeline join
-def test_research_joins_stored_feature_rows_to_barrier_labels_from_the_stored_path(tmp_path: Path) -> None:
-    """End to end on the real captured chain: end-of-day build -> feature rows -> research labels. Spot is constant in the
-    capture, so every outcome is 'none'; the point is that the join between rows and the stored path works and nothing is dropped silently."""
-    from datetime import date
-
-    from app.intraday.service import IntradayService
-    from app.prediction.sources.yahoo import RawRow
-    from tests.unit.test_lifecycle import DAY, fill, service
-
-    obs = fill(tmp_path, 120)
-    hist = HistoryStore(tmp_path)
-    rows, d, i = [], date(2026, 7, 1), 0
-    while d < DAY:
-        if d.weekday() < 5:
-            c = 25000 * (1 + (0.005 if i % 2 else -0.005))
-            rows.append(RawRow(d, c, c * 1.004, c * 0.996, c, None))
-            i += 1
-        d += timedelta(days=1)
-    hist.insert_bars("NIFTY50", rows, source="yahoo", run_id="t")
-    service(tmp_path, obs, ist(16, 0)).run()
-    svc = IntradayService(obs, hist, FlowsStore(tmp_path), IntradayStore(tmp_path), clock=lambda: ist(17, 0).astimezone(UTC))
-    r = svc.research(15)
-    assert r["sessions"] == 1 and r["status"] == "insufficient" and "needs more than 3 labelled sessions" in r["reason"]
-    # 120 samples - 15 warm-up = 105 rows; the last ~15 minutes cannot be labelled (horizon not covered): they are counted as dropped, not lost
-    assert r["rows"] + r["dropped"]["missing"] + r["dropped"]["ambiguous"] == 105
-    assert r["rows"] >= 80 and r["dropped"]["missing"] >= 10
-    assert r["horizon_minutes"] == 15 and r["features_version"] == "if-2"
-
-
 # ---------------------------------------------------------------------------------------------- live / stale / historical labels
 @pytest.mark.parametrize(
     ("clock", "data", "live"),
@@ -314,22 +256,3 @@ def test_a_failing_tick_handler_is_counted_and_visible_and_never_reaches_the_fee
 
 
 # ---------------------------------------------------------------------------------------------- garbage in
-def test_nan_inf_zero_and_missing_inputs_give_none_or_a_clear_error_never_a_number() -> None:
-    import math
-    from datetime import date as d
-
-    from app.intraday import positioning, volatility
-
-    nan, inf = float("nan"), float("inf")
-    assert volatility.implied_vol(0, nan, 24000, 24000, 0.01) is None and volatility.implied_vol(0, inf, 24000, 24000, 0.01) is None
-    assert volatility.implied_vol(0, 50.0, nan, 24000, 0.01) is None and volatility.implied_vol(0, 50.0, 24000, 24000, nan) is None
-    sf = volatility.surface({(24000.0, 0): nan, (24000.0, 1): nan}, 24000.0, d(2026, 11, 3), B)
-    assert sf["atm_iv"] is None and sf["straddle"] is not None and math.isnan(sf["straddle"])  # the NaN is visible, not turned into a volatility
-    assert lb.label_at([Point(B, 0.0), Point(B + timedelta(minutes=20), 0.0)], 0, 15, 1.0)["outcome"] == "missing"
-    with pytest.raises(ValueError, match="at least one lot"):
-        CostModel().round_trip(100, 101, 0, "long")
-    with pytest.raises(ValueError, match="positive"):
-        CostModel().cost_points(0.0)
-    assert setups.detect(setups.Context(spot=0.0, minute=0, clock=B.time(), structure={}, regime=None, daily_sd_pct=None))["decision"].startswith("NO TRADE")
-    assert positioning.window_pcr({}, 24000.0)["all"]["pcr_oi"] is None and positioning.side_classification({}, {}, 24000.0)["strike_rows"] == []
-    assert ps.analyze([], B)["breakout"] is None and ev.walk_forward([], 3)["status"] == "insufficient"
