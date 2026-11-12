@@ -3,6 +3,7 @@
   bars         one row per completed 1-minute candle of a watched stock (prices as polled, about 45 bytes a row, roughly 0.2 MB a session);
   fills        the shadow book's positions: open ones change (stop, high-water mark), closed ones keep their exit; never deleted;
   events       append-only log of every state change (entry state, signal, fill, cancel, ratchet, exit);
+  equity       one row per minute of market hours: the book's equity, cash and open count (the equity curve; recorded from the day it was added, never back-filled);
   comparisons  after each evening settlement, what the official daily-bar book did against what this book did, per stock.
 Nothing here places an order or reads a broker.
 """
@@ -34,6 +35,7 @@ CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT, session TEXT NOT NULL, at TEXT NOT NULL, symbol TEXT NOT NULL, kind TEXT NOT NULL, price REAL, detail TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS ix_events_session ON events(session, id);
 CREATE TABLE IF NOT EXISTS comparisons (session TEXT PRIMARY KEY, at TEXT NOT NULL, data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS equity (at TEXT PRIMARY KEY, session TEXT NOT NULL, equity REAL NOT NULL, cash REAL NOT NULL, open INTEGER NOT NULL);
 """
 
 
@@ -153,6 +155,25 @@ class MinuteStore:
         with self._lock, closing(self._conn()) as db:
             rows = db.execute("SELECT detail FROM events WHERE session=? AND symbol=? AND kind='entry_state' ORDER BY id", (session, symbol)).fetchall()
         return [str(json.loads(r["detail"]).get("state")) for r in rows]
+
+    # ------------------------------------------------------------------ equity curve
+    def record_equity(self, at: datetime, session: str, equity: float, cash: float, open_: int) -> bool:
+        """One snapshot per minute (the minute is the key); False if that minute already has one."""
+        minute = at.astimezone(UTC).replace(second=0, microsecond=0)
+        with self._lock, closing(self._conn()) as db, db:
+            cur = db.execute("INSERT OR IGNORE INTO equity VALUES (?,?,?,?,?)", (_iso(minute), session, round(equity, 2), round(cash, 2), open_))
+            return bool(cur.rowcount)
+
+    def equity_series(self, limit: int = 2000) -> list[tuple[str, float]]:
+        """(time, equity) oldest first; when there are more than ``limit`` rows every n-th is kept, always including the newest."""
+        with self._lock, closing(self._conn()) as db:
+            rows = db.execute("SELECT at, equity FROM equity ORDER BY at").fetchall()
+        out = [(str(r["at"]), float(r["equity"])) for r in rows]
+        if len(out) <= limit:
+            return out
+        step = -(-len(out) // limit)
+        kept = out[::step]
+        return kept if kept[-1] == out[-1] else [*kept, out[-1]]
 
     # ------------------------------------------------------------------ comparisons
     def save_comparison(self, session: str, at: datetime, data: dict[str, Any]) -> None:

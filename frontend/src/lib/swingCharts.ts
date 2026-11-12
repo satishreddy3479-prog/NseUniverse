@@ -126,3 +126,30 @@ export function paperEquityOption(v: SwingPaperView, c: ChartColors): EChartsCor
     ],
   };
 }
+
+/** The live paper book's equity, one point per recorded minute, against its starting capital. Times are shown in IST with the date. */
+export function liveEquityOption(curve: { at: string; equity: number }[], capital: number, c: ChartColors): EChartsCoreOption {
+  const stamp = (iso: string) => {
+    const d = new Date(new Date(iso).getTime() + 5.5 * 3600_000);
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${p(d.getUTCDate())} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()]} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+  };
+  return {
+    ...base(c),
+    grid: { left: 62, right: 16, top: 36, bottom: 56 },
+    tooltip: {
+      ...tip(c),
+      formatter: (params: unknown) => {
+        const ps = params as { axisValue: string; seriesName: string; value: number | null; color: string }[];
+        return `<b>${ps[0]?.axisValue} IST</b><br/>` + ps.filter((p) => p.value != null).map((p) => `<span style="color:${p.color}">●</span> ${p.seriesName}: ₹${Math.round(p.value as number).toLocaleString("en-IN")}`).join("<br/>");
+      },
+    },
+    xAxis: dateAxis(c, curve.map((p) => stamp(p.at))),
+    yAxis: rupeeAxis(c, "Live book equity (₹)"),
+    dataZoom: zoom(c),
+    series: [
+      { name: "Live paper book equity", type: "line", showSymbol: curve.length < 40, data: curve.map((p) => p.equity), lineStyle: { color: c.brass, width: 2 }, itemStyle: { color: c.brass } },
+      { name: "Starting capital", type: "line", showSymbol: false, data: curve.map(() => capital), lineStyle: { color: c.muted, width: 1, type: "dashed" }, itemStyle: { color: c.muted } },
+    ],
+  };
+}

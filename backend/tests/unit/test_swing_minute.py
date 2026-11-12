@@ -214,7 +214,7 @@ def test_comparison_with_the_official_book(tmp_path: Path) -> None:
     a = next(e for e in cmp["entries"] if e["symbol"] == "AAA")
     assert a["same"] and a["fill_diff_pct"] == pytest.approx((100.7 / 100.3 - 1) * 100, abs=0.01) and "filled 100.70" in a["shadow"] and a["official"] == "filled 100.30 x 1990"
     b = next(e for e in cmp["entries"] if e["symbol"] == "BBB")
-    assert b["same"] and "no entry" in b["shadow"] and "below_trigger" in b["shadow"]
+    assert b["same"] and "not bought" in b["shadow"] and "below trigger" in b["shadow"]
     c = next(e for e in cmp["entries"] if e["symbol"] == "CCC")
     assert not c["same"] and c["shadow_filled"] and not c["official_filled"]
     assert cmp["exits"][0]["shadow_took_it"] is False  # the shadow book never held ZZZ
@@ -265,3 +265,32 @@ def test_the_live_watcher_feeds_the_shadow_book_and_a_failing_shadow_never_break
     poll(10, 1, 5, 100.9)  # the poll survives a failing shadow book
     now["t"] = t(15, 31, 0, d4)
     assert live.poll(now["t"]) == 0  # closed market: nothing to do, and the shadow book is told to complete its candles
+
+
+def test_the_comparison_says_the_official_book_already_held_the_stock_and_the_live_book_is_separate(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, CFG, [order("AAA", 70, 1)])
+    rig.minute(10, 0, {"AAA": [99.0]})  # below the trigger: the live book does not buy
+    rig.minute(10, 1, {"AAA": [99.0]})
+    decisions = [Decision(rig.orders[0], "skipped", "already holding this stock")]
+    rig.shadow.settled("2026-11-11", decisions, [], t(17, 5))
+    e = rig.store.comparisons(1)[0]["entries"][0]
+    assert e["official"].startswith("skipped: already holding this stock") and "live book is separate" in e["official"]
+    assert e["shadow"] == "not bought: last reading inside the entry window was below trigger" and e["shadow_filled"] is False
+
+
+def test_the_equity_curve_is_recorded_once_a_minute_and_the_view_carries_analytics_levels_and_dates(tmp_path: Path) -> None:
+    rig = Rig(tmp_path)
+    rig.minute(9, 59, [100.0, 100.6, 100.5])
+    rig.minute(10, 0, [100.7, 100.8, 100.9])
+    rig.minute(10, 1, [101.0, 101.1])
+    series = rig.store.equity_series()
+    assert len(series) == 3 and [a[11:16] for a, _ in series] == ["04:29", "04:30", "04:31"]  # 09:59, 10:00, 10:01 IST, one row per minute however many polls
+    assert series[0][1] == 1_000_000  # before the fill the book is flat
+    v = rig.shadow.view(t(10, 1, 30), market_open=True)
+    assert v["equity_curve"][0]["equity"] == 1_000_000 and v["equity_curve"][-1]["at"] == series[-1][0]
+    assert v["started"]["equity_recorded_from"] == series[0][0] and v["started"]["first_fill_at"] is not None
+    p = v["positions"][0]
+    risk = p["fill"] - p["initial_sl"]
+    assert p["level_1_8r"] == pytest.approx(p["fill"] + 1.8 * risk) and p["level_2_5r"] == pytest.approx(p["fill"] + 2.5 * risk)
+    assert p["reached_1_8r"] is False and p["to_stop_pct"] == pytest.approx((p["tsl"] / p["last_price"] - 1) * 100)
+    assert v["analytics"]["trades"] == 0 and v["analytics"]["win_rate_pct"] is None and v["analytics"]["profit_factor"] is None  # nothing closed: missing, not zero

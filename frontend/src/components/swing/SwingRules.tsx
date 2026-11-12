@@ -41,7 +41,7 @@ function Parameters({ p, l, version }: { p: SwingParams; l?: SwingLiveParams; ve
   ];
   if (l) {
     rows.push(
-      ["Live entry window", `${hhmm(l.entry_from_min)}-${hhmm(l.entry_until_min)}`, "1-minute shadow book: candle-close decision times."],
+      ["Live entry window", `${hhmm(l.entry_from_min)}-${hhmm(l.entry_until_min)}`, "Live paper book: candle-close decision times."],
       ["Live chase cap", `trigger × ${l.chase_cap}`, "Entry cancelled if the next open is above this."],
       ["Live day-1 check", hhmm(l.day1_check_min), "Candle closing at this time is tested against the pivot and the day's range."],
       ["Live wick fraction", pct(l.wick_fraction), "Bottom share of the day's range that counts as a rejection."],
@@ -80,8 +80,8 @@ export function SwingRules({ report, config }: { report: SwingReport; config?: {
         <ol className="list-decimal space-y-1 pl-5 text-sm text-muted">
           <li className={li}><span className="text-paper">After the close (from 17:00 IST):</span> the engine fetches the Chartink list and daily prices, scores every stock, and queues the best candidates as orders for the next session. It runs again until 23:30 if data was missing and catches up any session it missed.</li>
           <li className={li}><span className="text-paper">Next session:</span> queued orders are settled on the daily bar: stops on open positions first, then entries best score first.</li>
-          <li className={li}><span className="text-paper">During the session:</span> the live view and the live ledger watch the Kotak feed every {l?.poll_seconds ?? 2} s, and the 1-minute shadow book applies the live-style rules on completed candles. None of them places an order or changes the official book.</li>
-          <li className={li}><span className="text-paper">Next evening:</span> the official daily result is compared with the live ledger and the shadow book, so the differences show up in the open.</li>
+          <li className={li}><span className="text-paper">During the session:</span> the Live paper book reads the Kotak feed every {l?.poll_seconds ?? 2} s and applies the same rules on completed 1-minute candles, in its own portfolio. It places no order and never changes the official book.</li>
+          <li className={li}><span className="text-paper">Next evening:</span> the official daily result is compared with the Live paper book, so the differences show up in the open.</li>
         </ol>
       </Panel>
 
@@ -200,21 +200,17 @@ export function SwingRules({ report, config }: { report: SwingReport; config?: {
 
       <Panel title="7 · The live layers (research only, no orders)">
         <div className="grid gap-5 text-sm md:grid-cols-2">
-          <Block title="Live view" label="Live view">
+          <Block title="Live prices on the official book" label="Live view">
             <li className={li}>Watches queued orders and open positions on the feed every {l?.poll_seconds ?? 2} s and shows what would be decided now. Prices older than {l?.stale_after_seconds ?? 120} s are ignored.</li>
             <li className={li}>Events are shadow only: entry trigger, stop hit, 1.8R and 2.5R reached. Stops are not moved intraday here.</li>
           </Block>
-          <Block title="Live ledger" label="Live ledger">
-            <li className={li}>Records a live-style entry only after two consecutive polls show the trigger crossed; fill = the higher of the open and the trigger.</li>
-            <li className={li}>Reconciled with the official book after the evening run. It never changes the official book.</li>
-          </Block>
-          <Block title="1-minute shadow book: entry" label="Shadow entry">
+          <Block title="Live paper book: entry" label="Live book entry">
             <li className={li}>Decisions are taken on the close of a completed 1-minute candle and filled at the open of the next candle, never at the close they were decided on.</li>
             <li className={li}>Entry candles close between {l ? hhmm(l.entry_from_min) : "09:30"} and {l ? hhmm(l.entry_until_min) : "15:00"} IST, at or above the trigger and no more than {l ? pct(l.chase_cap - 1) : "1%"} above it. Entry is cancelled if the next open is above that cap.</li>
             <li className={li}>The day opened at or below the no-chase limit; the volume so far at least the minimum × the share of a normal day that should have traded by now (the recorded stock volume profile; a straight line when none exists, not judged before {l ? hhmm(l.straight_line_judge_min) : "09:45"}).</li>
             <li className={li}>Free slot, no holding, cooldown respected, {p ? pct(p.cost_per_side) : "0.15%"} cost per side, like the official book.</li>
           </Block>
-          <Block title="1-minute shadow book: exits" label="Shadow exits">
+          <Block title="Live paper book: exits" label="Live book exits">
             <li className={li}>Stop: a candle that closes at or below the stop in force exits at the next candle&apos;s open.</li>
             <li className={li}>Breakeven at +{p?.be_r ?? 1.8}R and trail at +{p?.trail_r ?? 2.5}R on the highest 1-minute close; the new level applies from the next candle. The trail uses the signal day&apos;s ATR14 and has no 10 EMA leg.</li>
             <li className={li}>Day 1: on the candle closing at {l ? hhmm(l.day1_check_min) : "15:20"}, exit if the close is below the pivot or in the bottom {l ? pct(l.wick_fraction) : "35%"} of the day&apos;s range so far.</li>
@@ -241,7 +237,7 @@ export function SwingRules({ report, config }: { report: SwingReport; config?: {
           <div><dt className="text-paper">Pivot</dt><dd className="text-muted">Highest high of the previous 20 sessions.</dd></div>
           <div><dt className="text-paper">Slot</dt><dd className="text-muted">One of the maximum simultaneous positions.</dd></div>
           <div><dt className="text-paper">Cooldown</dt><dd className="text-muted">Sessions a stock must wait after an exit.</dd></div>
-          <div><dt className="text-paper">Shadow</dt><dd className="text-muted">Recorded and compared, never traded.</dd></div>
+          <div><dt className="text-paper">Live paper book</dt><dd className="text-muted">A separate paper portfolio run on live prices: recorded and compared with the official book, never traded with real money.</dd></div>
         </dl>
       </Panel>
 

@@ -1,10 +1,14 @@
 // The 1-minute shadow book panel: shows exactly what the backend returned, says plainly when nothing exists, and never offers an order button.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SwingMinutePanel, eventText } from "../components/swing/SwingMinutePanel";
 import type { MinuteView } from "../lib/swingMinute";
 
+vi.mock("../components/EChart", () => ({
+  useChartColors: () => ({ up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" }),
+  EChart: ({ ariaLabel }: { ariaLabel: string }) => <div role="img" aria-label={ariaLabel} />,
+}));
 afterEach(() => vi.unstubAllGlobals());
 
 const base = (over: Partial<MinuteView> = {}): MinuteView => ({
@@ -75,7 +79,7 @@ describe("1-minute shadow book panel", () => {
     expect(rows[0]!.textContent).toContain("filled 100.30 x 1990");
     expect(rows[0]!.textContent).toContain("+0.40%");
     expect(rows[1]!.textContent).toContain("no entry (last reading: volume_short)");
-    expect(cmp.textContent).toContain("the shadow book did not hold it");
+    expect(cmp.textContent).toContain("the live book did not hold it");
   });
 
   it("empty states are explicit and a straight-line volume basis is named", async () => {
@@ -93,5 +97,73 @@ describe("1-minute shadow book panel", () => {
     unmount();
     mount({ detail: { message: "the 1-minute shadow book is not running" } }, 503);
     expect(await screen.findByTestId("minute-error")).toBeTruthy();
+  });
+});
+
+describe("live paper book as a portfolio", () => {
+  const analytics = {
+    trades: 3, wins: 2, losses: 1, win_rate_pct: 66.7, net_pnl: 810, gross_pnl: 900, costs: 90, avg_win: 675, avg_loss: -540, profit_factor: 2.5, expectancy: 270, avg_r: 0.67, avg_hold_minutes: 540,
+    best: { symbol: "AAA", pnl: 970 }, worst: { symbol: "BBB", pnl: -540 }, return_pct: 0.081, max_drawdown_pct: 0.05, equity_points: 4, equity_from: "2026-11-12T04:29:00+00:00",
+  };
+  const rich = () => base({
+    analytics, started: { first_fill_at: "2026-11-12T04:31:00+00:00", equity_recorded_from: "2026-11-12T04:29:00+00:00" },
+    equity_curve: [{ at: "2026-11-12T04:29:00+00:00", equity: 1_000_000 }, { at: "2026-11-12T04:30:00+00:00", equity: 1_000_400 }, { at: "2026-11-12T04:31:00+00:00", equity: 1_000_810 }],
+    positions: [{ ...base().positions[0]!, level_1_8r: 107.4, level_2_5r: 109.95, reached_1_8r: false, reached_2_5r: false, to_stop_pct: -4.1 }],
+    closed_trades: [{ ...base().recent_closed[0]!, initial_sl: 47, r: -0.5 }],
+  });
+
+  it("shows analytics from the book's own trades with dashes for what cannot be computed", async () => {
+    mount(rich());
+    const a = await screen.findByTestId("minute-analytics");
+    expect(a).toHaveTextContent("66.7%".replace("66.7", "67")); // win rate, rounded to a whole percent
+    expect(a).toHaveTextContent("2 won · 1 lost of 3");
+    expect(a).toHaveTextContent("2.50"); // profit factor
+    expect(a).toHaveTextContent("−0.05%"); // max drawdown, from recorded equity
+    expect(a).toHaveTextContent("4 recorded minutes since 12 Nov 2026 09:59 IST");
+    expect(a).toHaveTextContent("best AAA");
+    expect(a).toHaveTextContent("first trade 12 Nov 2026 10:01 IST");
+  });
+
+  it("shows no profit factor, win rate or drawdown as a number when nothing has closed", async () => {
+    mount(base({ analytics: { ...analytics, trades: 0, wins: 0, losses: 0, win_rate_pct: null, profit_factor: null, expectancy: null, avg_r: null, avg_win: null, avg_loss: null, max_drawdown_pct: null, costs: null, gross_pnl: null, net_pnl: null, avg_hold_minutes: null, best: null, worst: null, return_pct: 0, equity_points: 0, equity_from: null } }));
+    const a = await screen.findByTestId("minute-analytics");
+    expect(a).toHaveTextContent("no closed trade yet");
+    expect(a).toHaveTextContent("no equity recorded yet");
+    expect(within(a).getAllByText("—").length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("draws the equity curve with its recording window, and explains an empty one", async () => {
+    mount(rich());
+    expect(await screen.findByRole("img", { name: /Live paper book equity against its starting capital/ })).toBeTruthy();
+    expect(screen.getByTestId("minute-equity")).toHaveTextContent("recorded from 12 Nov 2026 09:59 IST to 12 Nov 2026 10:01 IST");
+    cleanup();
+    mount(base({ equity_curve: [] }));
+    expect((await screen.findByTestId("minute-equity-empty")).textContent).toContain("Nothing before the first recorded minute is back-filled");
+  });
+
+  it("open positions carry the stop, the distance to it, both targets and the entry date and time", async () => {
+    mount(rich());
+    const pos = await screen.findByTestId("minute-pos-row");
+    expect(pos).toHaveTextContent("12 Nov 2026 10:01 IST"); // entered
+    expect(pos).toHaveTextContent("107.40"); // 1.8R level
+    expect(pos).toHaveTextContent("109.95"); // 2.5R level
+    expect(pos).toHaveTextContent("−4.1%"); // distance to the stop
+    expect(pos).toHaveTextContent("12 Nov 2026 10:30 IST"); // last price time
+  });
+
+  it("closed trades show entry and exit date and time, how long they were held, R and net P&L", async () => {
+    mount(rich());
+    const row = await screen.findByTestId("minute-closed-row");
+    expect(row).toHaveTextContent("11 Nov 2026 09:30 IST"); // entered
+    expect(row).toHaveTextContent("11 Nov 2026 15:10 IST"); // exited
+    expect(row).toHaveTextContent("5.7 h");
+    expect(row).toHaveTextContent("−0.50"); // R
+    expect(row).toHaveTextContent("D1_FAIL_CLOSE");
+  });
+
+  it("events carry the date as well as the time", async () => {
+    mount(base());
+    const ev = await screen.findAllByTestId("minute-event");
+    expect(ev[0]).toHaveTextContent("12 Nov 2026 10:01:00 IST");
   });
 });

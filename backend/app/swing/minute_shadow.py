@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 from app.logging_setup import log_event
 from app.stream.models import LiveTick
 from app.swing.engine import Config, Decision, Order, Trade, position_size
+from app.swing.minute_analytics import book_analytics, trade_r
 from app.swing.minute_rules import (
     CHASE_CAP,
     D1_CHECK_MIN,
@@ -91,6 +92,7 @@ class MinuteShadow:
         self._last: dict[str, dict[str, Any]] = {}  # symbol -> the latest rule reading on a completed candle (for the page)
         self._orders: dict[str, Order] = {}
         self.last_poll_at: datetime | None = None
+        self._last_eq_minute: datetime | None = None
 
     # ------------------------------------------------------------------ what is watched
     def open_symbols(self) -> set[str]:
@@ -123,6 +125,7 @@ class MinuteShadow:
                     acc.day_open, acc.day_high, acc.day_low = t.open or acc.day_open, t.high or acc.day_high, t.low or acc.day_low
             self.last_poll_at = now
             self._handle(done, now)
+            self._snapshot(now)
             return len(done)
 
     def on_close(self, now: datetime) -> int:
@@ -132,7 +135,18 @@ class MinuteShadow:
         with self._lock:
             done: list[tuple[Candle, float | None, datetime]] = [(a.candle(), None, now) for a in self._cur.values()]
             self._cur.clear()
-            return len(self._handle(done, now))
+            n = len(self._handle(done, now))
+            self._snapshot(now)
+            return n
+
+    def _snapshot(self, now: datetime) -> None:
+        """Record the book's equity once a minute: the equity curve. Nothing before the first snapshot is invented."""
+        minute = now.astimezone(UTC).replace(second=0, microsecond=0)
+        if self._last_eq_minute == minute:
+            return
+        self._last_eq_minute = minute
+        cash, equity = self.store.cash_equity(self.cfg)
+        self.store.record_equity(now, now.astimezone(IST).date().isoformat(), equity, cash, len(self.store.open_rows()))
 
     # ------------------------------------------------------------------ rules on completed candles
     def _handle(self, done: list[tuple[Candle, float | None, datetime]], now: datetime) -> list[Any]:
@@ -151,6 +165,13 @@ class MinuteShadow:
             if o is not None and c.symbol not in rows:
                 self._entry(c, o, nxt, at, now, profile)
         return done
+
+    @staticmethod
+    def _read_at(session: str, minute_of_day: int | None) -> str | None:
+        """When the latest reading of a stock was taken: the session date and the minute of the candle it was decided on (IST), as an ISO time."""
+        if minute_of_day is None:
+            return None
+        return datetime.combine(date.fromisoformat(session), datetime.min.time(), tzinfo=IST).replace(hour=minute_of_day // 60, minute=minute_of_day % 60).isoformat()
 
     def _fill_price(self, c: Candle, nxt: float | None, at: datetime) -> tuple[float, str]:
         """The next candle's open: the first poll after the decision. A poll more than one minute late, or none (the close), is flagged."""
@@ -232,10 +253,15 @@ class MinuteShadow:
             f = fills.get(sym)
             hist = self.store.state_history(session, sym)
             official = f"filled {d.fill:.2f} x {d.shares}" if d.outcome == "filled" and d.fill is not None else f"skipped: {d.reason}"
+            if d.outcome != "filled" and "already holding" in (d.reason or ""):
+                official += " (the official book bought it earlier; the live book is separate and decides on its own)"
+            in_window = [h for h in hist if h != "outside_window"]
             if f is not None:
                 shadow = f"filled {f['fill']:.2f} x {f['shares']} at {_hhmm(f['filled_at'])}"
+            elif in_window:
+                shadow = f"not bought: last reading inside the entry window was {in_window[-1].replace('_', ' ')}"
             elif hist:
-                shadow = f"no entry (last reading: {hist[-1]})"
+                shadow = "not bought: no candle inside the entry window (09:30-15:00)"
             else:
                 shadow = "no data (the feed delivered no candle for this order)"
             diff = None if f is None or d.fill is None or not d.fill else round((f["fill"] / d.fill - 1) * 100, 2)
@@ -269,8 +295,14 @@ class MinuteShadow:
             risk = r["fill"] - r["initial_sl"]
             gain_r = (r["hh_close"] - r["fill"]) / risk if risk > 0 else None
             px = r["last_price"] or r["fill"]
-            pos_out.append(r | {"r_now": None if risk <= 0 else (px - r["fill"]) / risk, "stage": "trailing" if gain_r is not None and gain_r >= self.cfg.trail_r else "breakeven" if gain_r is not None and gain_r >= self.cfg.be_r else "initial stop",
+            lv = {"level_1_8r": r["fill"] + self.cfg.be_r * risk, "level_2_5r": r["fill"] + self.cfg.trail_r * risk, "reached_1_8r": r["hh_close"] >= r["fill"] + self.cfg.be_r * risk,
+                  "reached_2_5r": r["hh_close"] >= r["fill"] + self.cfg.trail_r * risk, "to_stop_pct": (r["tsl"] / px - 1) * 100 if px else None}
+            pos_out.append(r | lv | {"r_now": None if risk <= 0 else (px - r["fill"]) / risk, "stage": "trailing" if gain_r is not None and gain_r >= self.cfg.trail_r else "breakeven" if gain_r is not None and gain_r >= self.cfg.be_r else "initial stop",
                                 "unrealized_pnl": (px - r["fill"]) * r["shares"], "evidence": r["evidence"]})
+        closed_out = [c | {"r": trade_r(c)} for c in closed]
+        series = self.store.equity_series()
+        analytics = book_analytics(closed, self.cfg.capital, equity, series)
+        first_fill = min((r["filled_at"] for r in rows), default=None)
         frac, basis = expected_fraction(_mins(now), profile)
         stats = self.store.bar_stats(session)
         elapsed = max(0, min(SESSION_MINUTES, _mins(now) - SESSION_OPEN_MIN)) if market_open else SESSION_MINUTES
@@ -281,13 +313,14 @@ class MinuteShadow:
                 st = self.store.last_state(session, sym) or {}
                 watching.append({"symbol": sym, "rank": o.rank, "score": o.score, "trigger": o.trigger, "stop": o.initial_sl, "max_open": o.max_open, "min_volume": o.min_volume,
                                  "state": last.get("state") or st.get("state") or "waiting for the first candle", "note": last.get("note") or st.get("note"), "pace": last.get("pace") if last else st.get("pace"),
-                                 "last_close": last.get("close")})
+                                 "last_close": last.get("close"), "read_at": self._read_at(session, last.get("at"))})
         return {
             "mode": "shadow", "enabled": self.enabled, "rules": RULES, "market_open": market_open, "session": session,
             "volume_basis": basis, "expected_share_of_day_now": round(frac, 3), "profile_ready": bool(profile),
             "book": {"cash": round(cash, 2), "equity": round(equity, 2), "capital": self.cfg.capital, "open": len(open_), "closed": len(closed), "slots": self.cfg.slots,
                      "realised_pnl": round(sum(r["pnl"] or 0 for r in closed), 2), "unrealised_pnl": round(sum(p["unrealized_pnl"] for p in pos_out), 2)},
-            "positions": pos_out, "watching": watching, "recent_closed": closed[:30], "events": self.store.events(session, 80), "comparisons": self.store.comparisons(8),
+            "positions": pos_out, "watching": watching, "recent_closed": closed[:30], "closed_trades": closed_out, "analytics": analytics,
+            "equity_curve": [{"at": a, "equity": v} for a, v in series], "started": {"first_fill_at": first_fill, "equity_recorded_from": series[0][0] if series else None}, "events": self.store.events(session, 80), "comparisons": self.store.comparisons(8),
             "data": {"symbols_with_bars": len(stats), "bars_today": sum(s["bars"] for s in stats.values()), "expected_bars_per_symbol": elapsed,
                      "coverage": {k: (round(v["bars"] / elapsed * 100) if elapsed else None) for k, v in stats.items()}, "last_poll_at": None if self.last_poll_at is None else self.last_poll_at.isoformat(timespec="seconds"),
                      "note": "Candles are built from prices polled every 2 seconds; a minute without a poll has no candle (nothing is filled in)."},

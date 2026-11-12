@@ -5,29 +5,22 @@ import { fmtDateTimeIST } from "../lib/format";
 import { BASIS_LABEL, isStale, reportAgeDays, type Basis } from "../lib/swing";
 import { EmptyState, ErrorNote, Panel, Skeleton } from "../components/ui";
 import { SwingOverview } from "../components/swing/SwingOverview";
-import { SwingLedgerPanel } from "../components/swing/SwingLedgerPanel";
 import { SwingMinutePanel } from "../components/swing/SwingMinutePanel";
-import { SwingLivePanel } from "../components/swing/SwingLivePanel";
 import { SwingPaper, type RunNote } from "../components/swing/SwingPaper";
 import { SwingRobustness } from "../components/swing/SwingRobustness";
 import { SwingRules } from "../components/swing/SwingRules";
 import { RoleBanner, SwingModes } from "../components/swing/SwingModes";
-import type { BacktestSub, LiveSub, SwingMode, TopTab } from "../lib/swingModes";
+import type { BacktestSub, SwingMode, TopTab } from "../lib/swingModes";
 import { SwingTrades } from "../components/swing/SwingTrades";
 import { TabPanel, Tabs, type TabDef } from "../components/swing/shared";
 import type { SwingReport } from "../lib/types";
 
-// Four sections, one question each: the official book (A), the live shadow tests (B, C, D), the backtest (E), and the rules behind all of them.
+// Four sections, one question each: the official paper book, the live paper book (a separate portfolio), the backtest of the past, and the rules behind all of them.
 const TABS: TabDef[] = [
   { id: "paper", label: "Official paper book" },
-  { id: "live", label: "Live tests (shadow)" },
+  { id: "live", label: "Live paper book" },
   { id: "backtest", label: "Backtest (history)" },
   { id: "rules", label: "Rules & limits" },
-];
-const LIVE_TABS: TabDef[] = [
-  { id: "watch", label: "B · Live price watch" },
-  { id: "ledger", label: "C · Live paper ledger" },
-  { id: "minute", label: "D · 1-minute candles" },
 ];
 const BACKTEST_TABS: TabDef[] = [
   { id: "results", label: "Results" },
@@ -54,9 +47,8 @@ const MISSING_REPORT = (
 
 export default function Swing() {
   const [tab, setTab] = useState<TopTab>("paper");
-  const [liveSub, setLiveSub] = useState<LiveSub>("watch");
   const [btSub, setBtSub] = useState<BacktestSub>("results");
-  const openMode = (m: SwingMode) => { setTab(m.tab); if (m.tab === "live" && m.sub) setLiveSub(m.sub as LiveSub); if (m.tab === "backtest" && m.sub) setBtSub(m.sub as BacktestSub); };
+  const openMode = (m: SwingMode) => { setTab(m.tab); if (m.tab === "backtest" && m.sub) setBtSub(m.sub as BacktestSub); };
   const [basis, setBasis] = useState<Basis>("net");
   const qc = useQueryClient();
   // while a scan runs, follow its progress every 3 seconds; otherwise every 5 minutes
@@ -65,7 +57,7 @@ export default function Swing() {
     refetchInterval: (q) => (q.state.data?.status.running ? 3_000 : 5 * 60_000),
   });
   const [runNote, setRunNote] = useState<RunNote | null>(null);
-  const live = useQuery({ queryKey: ["swing-live"], queryFn: api.swingLive, refetchInterval: 5_000, retry: false, enabled: tab === "paper" || tab === "live" });
+  const live = useQuery({ queryKey: ["swing-live"], queryFn: api.swingLive, refetchInterval: 5_000, retry: false, enabled: tab === "paper" });
   const run = useMutation({
     mutationFn: api.swingRun,
     onSuccess: (r) => {
@@ -100,13 +92,13 @@ export default function Swing() {
         )}
       </header>
 
-      <SwingModes onOpen={openMode} current={tab === "paper" ? "official" : tab === "live" ? liveSub : tab === "backtest" ? "backtest" : null} />
+      <SwingModes onOpen={openMode} current={tab === "paper" ? "official" : tab === "live" ? "live" : tab === "backtest" ? "backtest" : null} />
 
       <Tabs tabs={TABS} value={tab} onChange={(t) => setTab(t as TopTab)} label="Swing trading sections" />
 
       {tab === "paper" && (
         <TabPanel id="paper">
-          <RoleBanner role="official">The positions, trades and equity below are the paper book. It is judged once a day on the daily bar, in the evening run; nothing on the Live tests tab changes it.</RoleBanner>
+          <RoleBanner role="official">The positions, trades and equity below are the official paper book. A buy is booked only in the evening run (after 17:00 IST), judged on the whole day; the Live paper book is a separate portfolio and never changes this one.</RoleBanner>
           {paper.isPending ? <Loading what="the paper book" />
             : paper.isError ? <ErrorNote title="Could not load the paper book" message={paper.error instanceof Error ? paper.error.message : "Unknown error"} />
               : <SwingPaper view={paper.data} liveRows={live.data?.watching} market={live.data?.market} runPending={run.isPending} runNote={runNote} onRun={() => run.mutate()} />}
@@ -114,13 +106,8 @@ export default function Swing() {
       )}
       {tab === "live" && (
         <TabPanel id="live">
-          <RoleBanner role="shadow">Three live tests of the same rules on live prices. None of them places an order or changes the official book; each is compared with the official decisions every evening. Pick one below.</RoleBanner>
-          <div className="flex flex-col gap-3">
-            <Tabs tabs={LIVE_TABS} value={liveSub} onChange={(t) => setLiveSub(t as LiveSub)} label="Live tests" />
-            {liveSub === "watch" && <TabPanel id="watch"><SwingLivePanel live={live.data} loading={live.isPending} error={live.error} /></TabPanel>}
-            {liveSub === "ledger" && <TabPanel id="ledger"><SwingLedgerPanel /></TabPanel>}
-            {liveSub === "minute" && <TabPanel id="minute"><SwingMinutePanel /></TabPanel>}
-          </div>
+          <RoleBanner role="live">The same rules run live, with its own cash, positions, stops, targets, trades and equity curve. Nothing here is held in, or changes, the official book.</RoleBanner>
+          <SwingMinutePanel />
         </TabPanel>
       )}
       {tab === "backtest" && (
