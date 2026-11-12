@@ -392,6 +392,17 @@ describe("Heavyweight Intelligence panel", () => {
     expect(panel.textContent).toContain("4 of 5 stocks (PARTIAL)");
     expect(panel.textContent).toContain("unavailable: 0 of 5 stocks valid (need 3 and 60% of the weight)"); // the 30-minute aggregate
   });
+  it("says in words why the whole-day aggregate is not shown, and lists the stocks as cards for a phone", async () => {
+    const part = hw.stocks.map((x, i) => (i < 2 ? { ...x, session: { ...x.session, norm: null } } : x));
+    view({ ...base, heavyweights: { ...hw, stocks: part, aggregate: { ...hw.aggregate, session: { score: null, valid: 3, of: 5, weight_share: 0.573, status: "unavailable: 3 of 5 stocks valid (need 3 and 60% of the weight)" } } } });
+    const panel = await screen.findByTestId("hw-panel");
+    const why = within(panel).getByTestId("hw-session-why");
+    expect(why).toHaveTextContent("only 3 of 5 stocks have a full-day reading");
+    expect(why).toHaveTextContent("HDFCBANK, RELIANCE");
+    expect(why).toHaveTextContent("57% of the weight and the rule needs at least 60%");
+    expect(within(panel).getByTestId("hw-cards").querySelectorAll("li")).toHaveLength(5);
+    expect(within(panel).getByTestId("hw-cards")).toHaveTextContent("part-day only");
+  });
   it("shows the aggregate windows, momentum, acceleration, participation breadth and NIFTY context", async () => {
     view(base);
     const panel = await screen.findByTestId("hw-panel");

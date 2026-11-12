@@ -34,24 +34,24 @@ export function HeavyweightPanel({ d }: { d: Intelligence }) {
   const h = d.heavyweights;
   const c = useChartColors();
   const lineOpt = useMemo(() => !h || h.series.filter((x) => x.w15 != null || x.session != null).length < 2 ? null : {
-    animation: false, grid: { left: 46, right: 56, top: 34, bottom: 30 },
-    legend: { top: 0, left: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
+    animation: false, grid: { left: 40, right: 54, top: 44, bottom: 28 },
+    legend: { top: 4, left: "center", itemGap: 12, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
     tooltip: { trigger: "axis", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 } },
-    xAxis: { type: "category", data: h.series.map((x) => fmtTimeIST(x.t)), axisLabel: { color: c.muted, hideOverlap: true }, axisLine: { lineStyle: { color: c.rule } } },
-    yAxis: [{ type: "value", min: -100, max: 100, axisLabel: { color: c.muted }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } }, { type: "value", scale: true, position: "right", axisLabel: { color: c.muted }, splitLine: { show: false } }],
+    xAxis: { type: "category", data: h.series.map((x) => fmtTimeIST(x.t)), axisLabel: { color: c.muted, hideOverlap: true, formatter: (v: string) => v.slice(0, 5) }, axisLine: { lineStyle: { color: c.rule } } },
+    yAxis: [{ type: "value", min: -100, max: 100, axisLabel: { color: c.muted }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } }, { type: "value", scale: true, position: "right", axisLabel: { color: c.muted, formatter: (v: number) => v.toLocaleString("en-IN") }, splitLine: { show: false } }],
     series: [
-      { name: "Aggregate session (proxy)", type: "line", showSymbol: false, connectNulls: false, data: h.series.map((x) => x.session), lineStyle: { color: c.brass, width: 2 } },
-      { name: "Aggregate 15 min (proxy)", type: "line", showSymbol: false, connectNulls: false, data: h.series.map((x) => x.w15), lineStyle: { color: c.info, width: 1.5 } },
-      { name: "Aggregate 5 min (proxy)", type: "line", showSymbol: false, connectNulls: false, data: h.series.map((x) => x.w5), lineStyle: { color: c.up, width: 1, type: "dashed" } },
-      { name: "NIFTY", type: "line", yAxisIndex: 1, showSymbol: false, connectNulls: true, data: h.series.map((x) => x.spot), lineStyle: { color: c.muted, width: 1 } },
+      { name: "Session", type: "line", showSymbol: false, connectNulls: false, data: h.series.map((x) => x.session), lineStyle: { color: c.brass, width: 2 } },
+      { name: "15 min", type: "line", showSymbol: false, connectNulls: false, data: h.series.map((x) => x.w15), lineStyle: { color: c.info, width: 1.5 } },
+      { name: "5 min", type: "line", showSymbol: false, connectNulls: false, data: h.series.map((x) => x.w5), lineStyle: { color: c.up, width: 1, type: "dashed" } },
+      { name: "NIFTY (right)", type: "line", yAxisIndex: 1, showSymbol: false, connectNulls: true, data: h.series.map((x) => x.spot), lineStyle: { color: c.muted, width: 1 } },
     ],
   }, [h, c]);
   const barOpt = useMemo(() => !h || h.stocks.every((s) => s.contribution_pct == null) ? null : {
-    animation: false, grid: { left: 90, right: 24, top: 8, bottom: 22 },
+    animation: false, grid: { left: 8, right: 28, top: 8, bottom: 22, containLabel: true },
     tooltip: { trigger: "item", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 } },
-    xAxis: { type: "value", axisLabel: { color: c.muted, formatter: "{value}%" }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
-    yAxis: { type: "category", data: h.stocks.map((s) => s.symbol), axisLabel: { color: c.paper }, axisLine: { lineStyle: { color: c.rule } } },
-    series: [{ type: "bar", data: h.stocks.map((s) => ({ value: s.contribution_pct, itemStyle: { color: (s.contribution_pct ?? 0) >= 0 ? c.up : c.down } })) }],
+    xAxis: { type: "value", min: -Math.ceil(Math.max(10, ...h.stocks.map((x) => Math.abs(x.contribution_pct ?? 0))) * 1.5), max: Math.ceil(Math.max(10, ...h.stocks.map((x) => Math.abs(x.contribution_pct ?? 0))) * 1.5), axisLabel: { color: c.muted, formatter: "{value}%" }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
+    yAxis: { type: "category", inverse: true, data: h.stocks.map((s) => s.symbol), axisLabel: { color: c.paper, fontSize: 12 }, axisLine: { lineStyle: { color: c.rule } } },
+    series: [{ type: "bar", barMaxWidth: 22, label: { show: true, position: "outside", color: c.paper, fontSize: 11, formatter: (x: { value: number | null }) => (x.value == null ? "" : `${x.value > 0 ? "+" : ""}${x.value.toFixed(0)}%`) }, data: h.stocks.map((s) => ({ value: s.contribution_pct, itemStyle: { color: (s.contribution_pct ?? 0) >= 0 ? c.up : c.down } })) }],
   }, [h, c]);
 
   if (!h || !h.available) {
@@ -66,10 +66,17 @@ export function HeavyweightPanel({ d }: { d: Intelligence }) {
         <h2 className="text-sm font-semibold text-paper">Heavyweight Intelligence <span className="font-normal text-muted">· is NIFTY supported by its five largest constituents?</span> <span className="ml-1 rounded-sm border border-warn/40 px-1 text-[10px] font-normal text-warn" title={CVD_TIP} data-testid="hw-proxy">CVD PROXY</span></h2>
         <Link to="/tools/future-flow" className="text-xs text-info hover:underline">Open the flow analysis →</Link>
       </div>
-      <p className="mt-1 text-[11px] text-muted" data-testid="hw-quality">{q.valid} of {q.of} heavyweights valid ({(q.weight_share * 100).toFixed(0)}% of the top-five weight){!q.aggregate_available && " · aggregate unavailable: never shown as a five-stock figure"}. Index weights (not live): {w.as_of ? `effective ${w.effective_date ?? w.as_of}, source ${w.source ?? "unknown"}, loaded into the store ${w.verified_at ? new Date(w.verified_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) + " IST" : "at an unknown time"} (not a re-check against NSE)${w.rolled_to ? `; scaled to ${w.rolled_to} closing prices, an estimate` : ""}` : "not available"}{w.approximate ? " · APPROXIMATE" : ""}{w.basis ? ` · ${w.basis}` : ""}. Valid constituents: {q.valid_constituents ?? q.valid}.</p>
+      <p className="mt-1 text-[11px] text-muted" data-testid="hw-quality">{q.valid} of {q.of} heavyweights valid for the live 5, 15 and 30 minute readings ({(q.weight_share * 100).toFixed(0)}% of the top-five weight){!q.aggregate_available && " · aggregate unavailable: never shown as a five-stock figure"}. Index weights (not live): {w.as_of ? `effective ${w.effective_date ?? w.as_of}, source ${w.source ?? "unknown"}, loaded into the store ${w.verified_at ? new Date(w.verified_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) + " IST" : "at an unknown time"} (not a re-check against NSE)${w.rolled_to ? `; scaled to ${w.rolled_to} closing prices, an estimate` : ""}` : "not available"}{w.approximate ? " · APPROXIMATE" : ""}{w.basis ? ` · ${w.basis}` : ""}. Valid constituents: {q.valid_constituents ?? q.valid}.</p>
       {w.stale && <p role="status" className="text-xs text-warn" data-testid="hw-stale-weights">The index weights are {w.age_days} days old: a newer official composition has not been loaded, so the top-five selection and weighting may be out of date.</p>}
+      {a.session.score == null && (
+        <p className="mt-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs leading-relaxed text-paper" role="status" data-testid="hw-session-why">
+          <b>Why the whole-day aggregate is not shown:</b> only {a.session.valid} of {a.session.of} stocks have a full-day reading ({h.stocks.filter((x) => x.session.norm == null).map((x) => x.symbol).join(", ") || "none"} {h.stocks.some((x) => x.session.norm == null) ? "were tracked for only part of the day, for example after the app restarted, and the volume traded while it was down is never guessed" : ""}). They carry {Math.round(a.session.weight_share * 100)}% of the weight and the rule needs at least 60%. The 5, 15 and 30 minute figures below are live and complete.
+        </p>
+      )}
       <div className="mt-3 grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
-        {tile("Aggregate session", "session")}{tile("Aggregate 5 min", "5")}{tile("Aggregate 15 min", "15")}{tile("Aggregate 30 min", "30")}
+        {a.session.score == null
+          ? <Tile label="Aggregate session" value="unavailable" tone="text-warn" tip={a.session.status} sub={`${a.session.valid} of ${a.session.of} stocks have a whole-day reading`} />
+          : tile("Aggregate session", "session")}{tile("Aggregate 5 min", "5")}{tile("Aggregate 15 min", "15")}{tile("Aggregate 30 min", "30")}
         <Tile label="Aggregate 5-min change" value={a.momentum == null ? MISSING : signed(a.momentum, 1)} tone={toneOf(a.momentum)} sub="this 5 min less the previous 5 min" />
         <Tile label="Aggregate acceleration" value={a.acceleration == null ? MISSING : signed(a.acceleration, 2)} tone={toneOf(a.acceleration)} sub="change per minute, equal windows" />
       </div>
@@ -82,12 +89,30 @@ export function HeavyweightPanel({ d }: { d: Intelligence }) {
           <div className={`text-[15px] font-semibold ${CLASS_TONE[p.class] ?? "text-paper"}`}>{p.class}</div>
           <div className="text-[10px] text-muted">{p.positive == null ? p.reason : `${p.positive} buying · ${p.negative} selling · ${p.neutral} neutral of ${p.valid} valid · weight ${((p.weight_share_positive ?? 0) * 100).toFixed(0)}% buying / ${((p.weight_share_negative ?? 0) * 100).toFixed(0)}% selling${p.top_contributor ? ` · largest ${p.top_contributor.symbol} (${(p.top_contributor.share * 100).toFixed(0)}% of that side)` : ""}`}</div></div>
       </div>
-      <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[52rem] text-xs" data-testid="hw-table">
+      <ul className="mt-3 space-y-2 md:hidden" data-testid="hw-cards" aria-label="Heavyweights">
+        {h.stocks.map((s) => {
+          const w15 = s.windows["15"];
+          return (
+            <li key={s.symbol} className="rounded-lg border border-rule bg-ink/40 p-3">
+              <div className="flex items-baseline justify-between gap-2"><span className="text-base font-semibold text-paper">{s.symbol}</span><span className="num text-xs text-muted">weight {n2(s.weight)}%</span></div>
+              <div className="text-[11px] text-muted">{s.name ?? ""}</div>
+              <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                <div><dt className="text-muted">Price today</dt><dd className={`num text-sm font-semibold ${toneOf(s.change_pct == null ? null : s.change_pct * 100)}`}>{pct(s.change_pct)}</dd></div>
+                <div><dt className="text-muted">Buying / selling pressure (session)</dt><dd className={`num text-sm font-semibold ${toneOf(s.session.norm)}`}>{s.session.pct == null ? MISSING : pct(s.session.pct, 1)}{s.session.norm == null && <span className="ml-1 text-[10px] font-normal text-warn">part-day only</span>}</dd></div>
+                <div><dt className="text-muted">Last 15 minutes</dt><dd className={`num text-sm font-semibold ${toneOf(w15.pct)}`}>{w15.status === "ok" ? pct(w15.pct, 1) : "unavailable"}</dd></div>
+                <div><dt className="text-muted">Price against its VWAP</dt><dd className="num text-sm font-semibold text-paper">{s.price_vs_vwap_pct == null ? MISSING : pct(s.price_vs_vwap_pct, 2)}</dd></div>
+              </dl>
+              <div className={`mt-2 text-xs font-medium ${s.bias.startsWith("Buying") ? "text-up" : s.bias.startsWith("Selling") ? "text-down" : "text-muted"}`}>{s.bias}{s.price_cvd_divergence ? <span className="ml-2 font-normal text-warn">{s.price_cvd_divergence}</span> : null}</div>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="mt-3 hidden overflow-x-auto md:block"><table className="w-full min-w-[52rem] text-xs" data-testid="hw-table">
         <thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Stock</th><th className="py-1 text-right font-normal">Index weight</th><th className="py-1 text-right font-normal">Price change</th><th className="py-1 text-right font-normal" title={CVD_TIP}>CVD (proxy)</th><th className="py-1 text-right font-normal" title="This 5-minute score less the previous, non-overlapping 5-minute score">5-min change</th><th className="py-1 text-right font-normal">VWAP</th><th className="py-1 pl-2 font-normal">Bias</th><th className="py-1 pl-2 font-normal">Feed and freshness</th></tr></thead>
         <tbody>{h.stocks.map((s) => <Row key={s.symbol} s={s} />)}</tbody></table></div>
       <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <div>{lineOpt ? <div style={{ height: 230 }}><EChart option={lineOpt} ariaLabel="Aggregate heavyweight CVD proxy against NIFTY through the session" /></div> : <p className="text-xs text-muted" data-testid="hw-no-chart">The aggregate series needs at least two stored minutes with a valid aggregate; none is reconstructed.</p>}</div>
-        <div>{barOpt ? <div style={{ height: 230 }}><EChart option={barOpt} ariaLabel="Share of heavyweight buying and selling pressure by stock" /></div> : <p className="text-xs text-muted">No stock has a valid reading to show a contribution.</p>}<p className="text-[10px] text-muted">Contribution = index weight × normalised CVD, as a share of the absolute total.</p></div>
+        <div>{lineOpt ? <><div className="mb-1 text-xs text-muted">Weighted heavyweight buying/selling pressure (−100 to +100, a proxy) against NIFTY (right axis)</div><div style={{ height: 250 }}><EChart option={lineOpt} ariaLabel="Aggregate heavyweight CVD proxy against NIFTY through the session" /></div></> : <p className="text-xs text-muted" data-testid="hw-no-chart">The aggregate series needs at least two stored minutes with a valid aggregate; none is reconstructed.</p>}</div>
+        <div>{barOpt ? <><div className="mb-1 text-xs text-muted">Who is pushing the aggregate (share of total pressure)</div><div style={{ height: 250 }}><EChart option={barOpt} ariaLabel="Share of heavyweight buying and selling pressure by stock" /></div></> : <p className="text-xs text-muted">No stock has a valid reading to show a contribution.</p>}<p className="text-[10px] text-muted">Contribution = index weight × normalised CVD, as a share of the absolute total.</p></div>
       </div>
       <details className="mt-2 text-xs text-muted"><summary className="cursor-pointer text-info">Method and limits</summary>
         <p className="mt-1">{h.method}. Normalised CVD = 100 × tanh(window CVD % ÷ 25); the aggregate is the index-weighted mean over valid stocks only, and needs at least 3 stocks and 60% of the weight.</p>

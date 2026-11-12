@@ -226,3 +226,13 @@ header.bg-slate { background: var(--header-bg); box-shadow: var(--shadow); }
 /* Light theme: faded text utilities and switched-off chart legends stay readable (the dim variants were written for the dark theme) */
 [data-theme="light"] .text-muted\/70, [data-theme="light"] .text-muted\/50 { color: var(--muted); }
 [data-theme="light"] .text-paper\/90 { color: var(--paper); }
+
+/* Tables that become a card per row below 768 px: each cell shows its data-label above its value. */
+@media (max-width: 767px) {
+  .stack-rows { min-width: 0 !important; }
+  .stack-rows thead { display: none; }
+  .stack-rows, .stack-rows tbody, .stack-rows tr, .stack-rows td { display: block; width: 100% !important; }
+  .stack-rows tr { margin-bottom: 8px; padding: 8px 10px; border: 1px solid var(--rule); border-radius: 8px; background: color-mix(in srgb, var(--ink) 40%, transparent); }
+  .stack-rows td { padding: 2px 0 !important; text-align: left !important; white-space: normal !important; }
+  .stack-rows td[data-label]::before { content: attr(data-label); display: block; font-size: 10px; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); }
+}

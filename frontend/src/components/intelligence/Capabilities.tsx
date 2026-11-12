@@ -24,23 +24,29 @@ export function Capabilities({ items }: { items: Capability[] }) {
   const feed = items.filter((c) => c.why === "feed").length, sub = items.filter((c) => c.why === "not_subscribed").length;
   return (
     <section aria-label="Data quality and freshness" className="rounded-[var(--radius-panel)] border border-rule bg-slate p-4" data-testid="mi-capabilities">
-      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-paper">Data quality and freshness <span className="font-normal text-muted">· what exists today, each with its own source timestamp</span></h2>
+      <details>
+        <summary className="cursor-pointer list-none">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-sm font-semibold text-paper">Data quality and freshness <span className="font-normal text-muted">· tap to see every input and why some are missing</span></h2>
+          </div>
+          <p className="mt-1 text-xs text-paper" data-testid="mi-cap-summary">
+            <span className="text-up">{n("AVAILABLE")} available</span> · <span className="text-warn">{n("PARTIAL")} partial</span> · <span className="text-down">{n("UNAVAILABLE")} unavailable</span>
+            {feed + sub > 0 && <span className="text-muted"> (of those, {feed} the broker feed does not carry and {sub} not subscribed yet)</span>}
+          </p>
+        </summary>
+      <div className="mb-2 mt-3 flex justify-end">
         <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted"><input type="checkbox" checked={gaps} onChange={(e) => setGaps(e.target.checked)} />Show only what is not fully available</label>
       </div>
-      <p className="mb-2 text-xs text-paper" data-testid="mi-cap-summary">
-        <span className="text-up">{n("AVAILABLE")} available</span> · <span className="text-warn">{n("PARTIAL")} partial</span> · <span className="text-down">{n("UNAVAILABLE")} unavailable</span>
-        {feed + sub > 0 && <span className="text-muted"> (of those, {feed} the broker feed does not carry and {sub} not subscribed yet)</span>}
-      </p>
-      <div className="overflow-x-auto"><table className="w-full min-w-[44rem] text-xs"><thead><tr className="text-left text-[11px] text-muted"><th className="w-[22%] py-1 font-normal">Capability</th><th className="w-[14%] py-1 font-normal">Status</th><th className="w-[14%] py-1 font-normal">Source as of</th><th className="py-1 font-normal">Why</th></tr></thead>
+      <div className="overflow-x-auto"><table className="stack-rows w-full min-w-[44rem] text-xs"><thead><tr className="text-left text-[11px] text-muted"><th className="w-[22%] py-1 font-normal">Capability</th><th className="w-[14%] py-1 font-normal">Status</th><th className="w-[14%] py-1 font-normal">Source as of</th><th className="py-1 font-normal">Why</th></tr></thead>
         <tbody>{rows.map((c) => (
           <tr key={c.id} className="border-t border-rule/50 align-top" data-testid={`mi-cap-${c.id}`}>
             <td className="py-1.5 pr-2 text-paper">{c.link ? <Link to={c.link} className="text-info hover:underline">{c.name}</Link> : c.name}</td>
-            <td className="whitespace-nowrap py-1.5 pr-2"><span className={`font-semibold ${STATE_TONE[c.status] ?? "text-muted"}`}>{c.status}</span>{c.status !== "AVAILABLE" && c.why && WHY[c.why] && <div className="mt-0.5 text-[10px] text-muted" title={WHY[c.why]!.title}>{WHY[c.why]!.text}</div>}</td>
-            <td className="num whitespace-nowrap py-1.5 pr-2 text-muted">{asOf(c.as_of)}</td>
-            <td className="py-1.5 text-muted">{c.reason}</td>
+            <td data-label="Status" className="whitespace-nowrap py-1.5 pr-2"><span className={`font-semibold ${STATE_TONE[c.status] ?? "text-muted"}`}>{c.status}</span>{c.status !== "AVAILABLE" && c.why && WHY[c.why] && <div className="mt-0.5 text-[10px] text-muted" title={WHY[c.why]!.title}>{WHY[c.why]!.text}</div>}</td>
+            <td data-label="Source as of" className="num whitespace-nowrap py-1.5 pr-2 text-muted">{asOf(c.as_of)}</td>
+            <td data-label="Detail" className="py-1.5 text-muted">{c.reason}</td>
           </tr>))}</tbody></table></div>
       <p className="mt-2 text-[11px] text-muted">AVAILABLE: computed in full from stored or live data. PARTIAL: an incomplete calculation or coverage, or the last stored minute while the live feed is not pushing (counted for only the share of its evidence that exists). UNAVAILABLE: the data is not collected or stored; nothing is estimated in its place.</p>
+      </details>
     </section>
   );
 }
