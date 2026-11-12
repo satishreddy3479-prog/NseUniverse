@@ -568,6 +568,7 @@ describe("the redesigned page: a reading first, five tabs", () => {
     expect(within(bars).getByRole("img", { name: /Volatility: no reading/ })).toBeInTheDocument(); // a group with no reading is not drawn as zero
     expect(screen.getByTestId("mi-pulses")).toBeInTheDocument();
     expect(screen.getByTestId("tw-panel")).toBeInTheDocument();
+    expect(await screen.findByTestId("sdi-card")).toBeInTheDocument(); // the straddle seller/buyer summary sits on the Overview, with its link to the full page
     expect(screen.queryByTestId("hw-nifty")).toBeNull(); // the evidence panels live in the Evidence tab
     expect(screen.queryByTestId("mi-sources")).toBeNull();
   });

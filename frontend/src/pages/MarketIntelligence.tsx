@@ -52,6 +52,7 @@ function MiBody({ d }: { d: Intelligence }) {
           <VerdictCard d={d} />
           <TurnWatchPanel d={d} />
           <EngineBars d={d} onMore={() => go("evidence")} />
+          <div id="mi-straddle"><StraddleSummaryCard /></div>
           <div><h2 className="mb-2 text-sm font-semibold text-paper">Key numbers <span className="font-normal text-muted">· the readings behind the verdict</span></h2><PulseCards d={d} /></div>
         </TabPanel>
       )}
@@ -60,7 +61,6 @@ function MiBody({ d }: { d: Intelligence }) {
           <div id="mi-evidence"><EngineMatrix d={d} /></div>
           <div id="mi-heavyweights"><HeavyweightPanel d={d} /></div>
           <div id="mi-stockfut"><StockFuturesPanel d={d} /></div>
-          <div id="mi-straddle"><StraddleSummaryCard /></div>
           <div id="mi-ml"><IntradayMlPanel d={d} /></div>
         </TabPanel>
       )}
