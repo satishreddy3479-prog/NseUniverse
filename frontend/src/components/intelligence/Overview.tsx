@@ -67,7 +67,7 @@ export function PulseCards({ d }: { d: Intelligence }) {
   const sgn = (v: number | null | undefined, dp = 2) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(dp)}`);
   const col = (v: number | null | undefined) => (v == null || v === 0 ? undefined : v > 0 ? "text-up" : "text-down");
   return (
-    <section aria-label="Market pulse" className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-9" data-testid="mi-pulses">
+    <section aria-label="Market pulse" className="tiles [--tile:9rem]" data-testid="mi-pulses">
       <Pulse label="NIFTY spot" value={n(p.spot)} sub={`${sgn(p.change_pct)}% day`} tone={col(p.change_pct)} />
       <Pulse label="Futures" value={n(p.futures)} sub={p.basis == null ? undefined : `basis ${sgn(p.basis, 1)} (${sgn(p.basis_pct, 2)}%)`} />
       <Pulse label={`ATM ${p.atm_strike ?? ""}`} value={`${n(p.atm_ce_premium, 1)} / ${n(p.atm_pe_premium, 1)}`} sub="CE / PE premium" />
@@ -119,7 +119,7 @@ export function EngineMatrix({ d }: { d: Intelligence }) {
   return (
     <section aria-label="Engine sentiment matrix">
       <h2 className="mb-2 text-sm font-semibold text-paper">Evidence groups <span className="font-normal text-muted">· five groups, each owning its inputs so none is counted twice; scored −100 to +100 from existing analytics; an unavailable group is left out, not scored neutral</span></h2>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="mi-engines">{ENGINE_ORDER.map((k) => by.get(k)).filter((e): e is EngineView => !!e).map((e) => <EngineCard key={e.key} e={e} />)}</div>
+      <div className="grid gap-3 sm:grid-cols-2 sm:[&>*:last-child:nth-child(odd)]:col-span-2 xl:grid-cols-6 xl:[&>*]:col-span-2 xl:[&>*:nth-child(n+4)]:col-span-3 xl:[&>*:last-child:nth-child(odd)]:col-span-3" data-testid="mi-engines">{ENGINE_ORDER.map((k) => by.get(k)).filter((e): e is EngineView => !!e).map((e) => <EngineCard key={e.key} e={e} />)}</div>
     </section>
   );
 }

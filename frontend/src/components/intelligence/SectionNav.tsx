@@ -18,7 +18,7 @@ export function SectionNav({ items }: { items: NavItem[] }) {
   }, [items]);
   const go = (id: string) => (e: React.MouseEvent) => { e.preventDefault(); document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }); };
   return (
-    <nav aria-label="Sections of this page" className="sticky top-0 z-20 -mx-1 border-b border-rule bg-ink px-1 py-1.5" data-testid="mi-nav">
+    <nav aria-label="Sections of this page" className="sticky -top-3 z-20 -mx-3 border-b border-rule bg-ink px-3 py-1.5 md:-top-4 md:-mx-4 md:px-4 lg:-top-6 lg:-mx-6 lg:px-6" data-testid="mi-nav">
       <ul className="flex gap-1.5 overflow-x-auto whitespace-nowrap pb-0.5 text-xs [scrollbar-width:thin]">
         {items.map((it) => (
           <li key={it.id}>

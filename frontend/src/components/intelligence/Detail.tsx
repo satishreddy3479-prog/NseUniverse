@@ -25,7 +25,7 @@ export function DetailPanels({ d }: { d: Intelligence }) {
   return (
     <section aria-label="Detailed intelligence" className="flex flex-col gap-2" data-testid="mi-details">
       <Block id="options" title="Options intelligence" link="/tools/strike-positioning">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+        <div className="tiles [--tile-gap:0.75rem]">
           <Kv k="CE OI (ATM ±10)" v={fmtInt(p.options.ce_oi)} /><Kv k="PE OI (ATM ±10)" v={fmtInt(p.options.pe_oi)} /><Kv k="CE OI change" v={sg(p.options.ce_oi_change, 0)} /><Kv k="PE OI change" v={sg(p.options.pe_oi_change, 0)} />
           <Kv k="PCR (OI)" v={n(p.options.pcr_oi)} /><Kv k="PCR now vs first sample" v={`${n(p.options.pcr_oi)} / ${n(p.options.pcr_first)}`} />
           <Kv k="Highest call OI (resistance)" v={String(p.options.max_ce_oi_strike ?? MISSING)} tone="text-down" /><Kv k="Highest put OI (support)" v={String(p.options.max_pe_oi_strike ?? MISSING)} tone="text-up" />
@@ -38,7 +38,7 @@ export function DetailPanels({ d }: { d: Intelligence }) {
       </Block>
       <Block id="gex" title="Gamma (modelled) and Vega intelligence" link="/tools/gamma-exposure">
         {p.gex.available ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+          <div className="tiles [--tile-gap:0.75rem]">
             <Kv k="Net GEX (modelled)" v={`${fmtCrore(p.gex.net)} cr`} tone={(p.gex.net ?? 0) >= 0 ? "text-up" : "text-down"} /><Kv k="CE GEX" v={`${fmtCrore(p.gex.ce)} cr`} /><Kv k="PE GEX" v={`${fmtCrore(p.gex.pe)} cr`} /><Kv k="Gamma regime" v={p.gex.regime ?? MISSING} />
             <Kv k="Gamma flip (modelled)" v={p.gex.flip == null ? "none within ±8%" : `${fmtInt(Math.round(p.gex.flip))}`} /><Kv k="Spot minus flip" v={p.gex.flip == null ? MISSING : `${sg(p.gex.flip_distance_pts ?? null, 0)} pts (${sg(p.gex.flip_distance_pct)}%)`} />
             <Kv k="Flip support" tone={p.gex.flip_support?.status === "unstable" ? "text-warn" : undefined} v={p.gex.flip_support ? p.gex.flip_support.status.toUpperCase() : MISSING} /><Kv k="Flip range under checks" v={p.gex.flip_range ? `${fmtInt(Math.round(p.gex.flip_range[0]))} to ${fmtInt(Math.round(p.gex.flip_range[1]))}` : MISSING} /><Kv k="Call wall / put wall" v={`${p.gex.call_wall ?? MISSING} / ${p.gex.put_wall ?? MISSING}`} /><Kv k="Peak gamma" v={String(p.gex.peak ?? MISSING)} /><Kv k="Near-ATM net GEX" v={`${fmtCrore(p.gex.near_net)} cr`} />
@@ -47,11 +47,11 @@ export function DetailPanels({ d }: { d: Intelligence }) {
         ) : <p className="text-muted">No rebuilt GEX snapshot is available.</p>}
         {p.gex.flip_support && p.gex.flip_support.reasons.length > 0 && <p className="mt-1 text-warn" data-testid="mi-flip-reasons">Gamma flip {p.gex.flip_support.status}: {p.gex.flip_support.reasons.join("; ")}. It is shown as calculated, not corrected; the range shows how far it moves with the strike set and a 10% disagreement about who holds the open interest.</p>}
         <Note><span title={GEX_TIP}>{p.gex.label ?? "Modelled GEX exposure (not observed dealer positioning)"}.</span> {p.gex.methodology ?? "GEX is a model; dealer positioning is not observed."} Universe: {p.gex.universe ?? "dynamic ATM ±10"}, rebuilt from the stored chain of {p.gex.session ?? MISSING}. Expiry-wise GEX is one expiry at a time (see the Gamma page).</Note>
-        <div className="mt-2 grid grid-cols-2 gap-3 border-t border-rule pt-2 sm:grid-cols-4"><Kv k="Average CE vega" v={n(p.vega.ce_avg_vega, 3)} /><Kv k="Average PE vega" v={n(p.vega.pe_avg_vega, 3)} /><Kv k="Strikes used" v={String(p.vega.strikes)} /></div>
+        <div className="tiles mt-2 border-t border-rule pt-2 [--tile-gap:0.75rem]"><Kv k="Average CE vega" v={n(p.vega.ce_avg_vega, 3)} /><Kv k="Average PE vega" v={n(p.vega.pe_avg_vega, 3)} /><Kv k="Strikes used" v={String(p.vega.strikes)} /></div>
         <Note>{p.vega.note}</Note>
       </Block>
       <Block id="volatility" title="Volatility intelligence" link="/tools/volatility-skew">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+        <div className="tiles [--tile-gap:0.75rem]">
           <Kv k="ATM IV" v={p.volatility.atm_iv == null ? MISSING : `${p.volatility.atm_iv.toFixed(2)}%`} /><Kv k="ATM IV change (15 min)" v={`${sg(p.volatility.iv_change_15m)} pts`} /><Kv k="HV (daily)" v={n(p.volatility.hv)} /><Kv k="RV (daily)" v={n(p.volatility.rv)} />
           <Kv k={p.volatility.india_vix_label ?? VIX_LABEL} v={`${n(p.volatility.india_vix)}${p.volatility.india_vix_as_of ? ` (${p.volatility.india_vix_as_of})` : ""}`} /><Kv k="IV Rank / Percentile (252d, VIX closes)" v={`${n(p.volatility.ivr_252 ?? null, 0)} / ${n(p.volatility.ivp_252 ?? null, 0)}`} />
           <Kv k="25Δ skew (put − call)" v={sg(p.volatility.skew_25d)} /><Kv k="10Δ skew" v={sg(p.volatility.skew_10d)} /><Kv k="Risk reversal 25Δ (call − put)" v={sg(p.volatility.risk_reversal_25d)} /><Kv k="25Δ butterfly" v={sg(p.volatility.butterfly_25d)} />
@@ -63,7 +63,7 @@ export function DetailPanels({ d }: { d: Intelligence }) {
         <Note>{p.volatility.note} IV rank and percentile describe the level of VIX and are never used on their own for direction.</Note>
       </Block>
       <Block id="futures" title="Futures and order flow" link="/tools/future-flow">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+        <div className="tiles [--tile-gap:0.75rem]">
           <Kv k="Contract" v={p.futures.contract ?? MISSING} /><Kv k="Futures / basis" v={`${n(p.futures.series?.future ?? null)} / ${sg(p.futures.series?.basis ?? null, 1)}`} /><Kv k="OI change" v={sg(p.futures.oi_change, 0)} /><Kv k="Volume" v={fmtInt(p.futures.volume)} />
           <Kv k="Buildup (15 min)" v={p.futures.buildup ?? MISSING} /><Kv k="Futures CVD (Proxy)" tip={CVD_TIP} v={p.futures.flow?.cvd_pct == null ? MISSING : `${sg(Number(p.futures.flow.cvd_pct), 1)}%`} /><Kv k="Classified share" v={p.futures.flow?.classified_share == null ? MISSING : `${(Number(p.futures.flow.classified_share) * 100).toFixed(0)}%`} />
           <Kv k="Depth imbalance" v={p.futures.flow?.depth_imbalance == null ? MISSING : sg(Number(p.futures.flow.depth_imbalance))} /><Kv k="VWAP" v={n(Number(p.futures.vwap?.vwap ?? NaN) || null)} /><Kv k="VWAP distance" v={p.futures.vwap?.distance_pct == null ? MISSING : `${sg(Number(p.futures.vwap.distance_pct), 3)}%`} /><Kv k="VWAP slope /15 min" v={p.futures.vwap?.slope_pts_per_15m == null ? MISSING : sg(Number(p.futures.vwap.slope_pts_per_15m), 1)} />

@@ -170,6 +170,10 @@ body {
   .legs-table tr:not(.legs-extra) > td:last-child { grid-column: 4 / -1; justify-self: stretch; text-align: right; }
 }
 
+/* Tiles that fill each row: a short last row stretches across the width instead of leaving an empty cell on the right (a fixed column count cannot know how many tiles there are). */
+.tiles { display: flex; flex-wrap: wrap; gap: var(--tile-gap, 0.5rem); }
+.tiles > * { flex: 1 1 var(--tile, 8.5rem); min-width: 0; }
+
 /* Theme surfaces: cards, bars and pop-ups take their elevation from the active theme. */
 .bg-slate { box-shadow: var(--shadow); }
 header.bg-slate { background: var(--header-bg); box-shadow: var(--shadow); }

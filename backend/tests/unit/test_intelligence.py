@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -566,3 +566,16 @@ def test_the_api_serves_a_partial_dashboard_when_the_underlying_modules_have_no_
         assert len(d["engines"]) == 5 and d["config"]["weights"]["positioning"] == 30.0
         t = c.get("/api/intelligence/timeline")
         assert t.status_code == 200 and t.json()["recorded"] == 0
+
+
+def test_a_divergence_that_is_gone_is_listed_by_its_id_string_not_as_a_record(tmp_path: Path) -> None:
+    """Regression: the invalidated list carried the whole stored record as the id, which the page printed as '[object Object]'."""
+    r = Rig(tmp_path)
+    snap = {"spot": 24100.0, "score": 10.0, "confidence": 50.0, "coverage": 0.8, "regime": "Sideways / Range", "vol_regime": None, "gamma_regime": None, "engines": {}, "metrics": {},
+            "divs": [{"id": "price_gex_zzz_not_present_now", "reading": "x", "direction": "bearish", "severity": "low"}]}
+    session = NOW.astimezone(timezone(timedelta(hours=5, minutes=30))).date().isoformat()
+    r.store.record(session, NOW.replace(second=0, microsecond=0) - timedelta(minutes=1), "2026-11-10", snap)
+    s = r.svc.summary()
+    gone = s["divergences_invalidated"]
+    assert gone == [{"id": "price_gex_zzz_not_present_now", "status": "invalidated"}]
+    assert all(isinstance(x["id"], str) for x in gone)

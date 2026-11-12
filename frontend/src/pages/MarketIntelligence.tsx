@@ -35,7 +35,7 @@ export function MarketIntelligence() {
       <div id="mi-stockfut" className="scroll-mt-14"><StockFuturesPanel d={d} /></div>
       <div id="mi-straddle" className="scroll-mt-14"><StraddleSummaryCard /></div>
       <div id="mi-ml" className="scroll-mt-14"><IntradayMlPanel d={d} /></div>
-      <div id="mi-interpretation" className="grid scroll-mt-14 items-start gap-3 xl:grid-cols-2">
+      <div id="mi-interpretation" className="grid scroll-mt-14 gap-3 xl:grid-cols-2">
         <Interpretation d={d} />
         {(d.observations ?? []).length > 0 && (
           <section aria-label="Conflicting and confirming readings" className="rounded-[var(--radius-panel)] border border-rule bg-slate p-4" data-testid="mi-observations">
@@ -44,7 +44,7 @@ export function MarketIntelligence() {
           </section>
         )}
       </div>
-      <div id="mi-divergences" className="grid scroll-mt-14 items-start gap-3 xl:grid-cols-2"><DivergencePanel d={d} /><AlertsPanel alerts={d.alerts} /></div>
+      <div id="mi-divergences" className="grid scroll-mt-14 gap-3 xl:grid-cols-2 xl:grid-rows-[minmax(20rem,auto)]"><DivergencePanel d={d} /><AlertsPanel alerts={d.alerts} /></div>
       <div id="mi-scenarios" className="scroll-mt-14"><ScenarioPanel s={d.scenarios} /></div>
       <div id="mi-timeline" className="scroll-mt-14"><TimelinePanel /></div>
       <div id="mi-details" className="scroll-mt-14"><DetailPanels d={d} /></div>

@@ -176,7 +176,7 @@ class MarketIntelligence:
         since = next((h["at"] for h in reversed(hist) if h["regime"] != reg["name"]), None)
         for d in divs:
             d["status"], d["since"], d["previous"] = self._div_status(d["id"], hist)
-        gone = [{"id": i, "status": "invalidated"} for i in (hist[0]["divs"] if hist else []) if isinstance(i, dict) and i.get("id") not in {d["id"] for d in divs}]
+        gone = [{"id": i["id"], "status": "invalidated"} for i in (hist[0]["divs"] if hist else []) if isinstance(i, dict) and i.get("id") not in {d["id"] for d in divs}]
         sent = self._sentiment(fused, inp, by)
         return {
             "generated_at": now.isoformat(timespec="seconds"), "expiry": expiry, "session": session, "enabled": self.enabled,
