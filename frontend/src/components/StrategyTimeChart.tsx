@@ -16,7 +16,7 @@ const pts = (v: number | null | undefined, d = 1) => (v == null ? "—" : `${v <
 const ordinal = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
 const tone = (v: number | null | undefined) => (v == null ? "text-muted" : v > 0 ? "text-up" : v < 0 ? "text-down" : "");
 
-interface ChartLeg { strike: number; type: OptionType; action: Action; lots: number; premium: number | null; expiry: string }
+interface ChartLeg { strike: number; type: OptionType; action: Action; lots: number; premium: number | null; expiry: string; /** the builder leg's live-feed key: unrelated to the stored series */ key?: string | null }
 
 /** The built strategy as one price through the day (and its P&L), against NIFTY spot and future, with averages, bands and a split of what moved it. */
 export function StrategyTimeChart({ legs, historyExpiries, lotSize, modelDelta, rules }: { legs: ChartLeg[]; /** expiries the sampler collects: only these have stored prices to draw */ historyExpiries: string[]; lotSize: number | null; modelDelta: number | null; rules: StrategyRules }) {
@@ -48,7 +48,7 @@ export function StrategyTimeChart({ legs, historyExpiries, lotSize, modelDelta, 
   const ssError = queries.find((q) => q.error)?.error as Error | undefined;
   const ssParts = queries.map((q, i) => (q.data ? { expiry: exps[i]!, ss: q.data } : null));
   const ss = { isPending: noHistory.length === 0 && ssPending, error: ssError, data: ssParts.every((x) => x) && ssParts.length ? (multi ? mergeStrikeSeries(ssParts as { expiry: string; ss: StrikeSeries }[]) : ssParts[0]!.ss) : undefined };
-  const use = useMemo(() => legs.map((l) => (multi ? { ...l, key: mergedKey(l.expiry, l.strike) } : l)), [legs, multi]);
+  const use = useMemo(() => legs.map((l) => (multi ? { ...l, seriesKey: mergedKey(l.expiry, l.strike) } : { ...l, seriesKey: undefined })), [legs, multi]);
   const fut = useQuery({ queryKey: ["strategy-timeline-fut", days], queryFn: () => api.futuresSeries(new Date(Date.now() - 8 * 86_400_000).toISOString()), refetchInterval: 30_000, retry: false, enabled: use.length > 0 });
 
   const model = useMemo(() => {
@@ -146,10 +146,11 @@ export function StrategyTimeChart({ legs, historyExpiries, lotSize, modelDelta, 
       </div>
 
       <div className="rounded-xl border border-rule bg-ink/40 p-2" data-testid="stl-main">
-        <div className="h-[380px]"><EChart group="strategy-timeline" ariaLabel={`Strategy ${mode === "pnl" ? "P&L" : "price"} against NIFTY spot and future`} option={main} /></div>
+        <div className="h-[360px]"><EChart group="strategy-timeline" ariaLabel={`Strategy ${mode === "pnl" ? "P&L" : "price"} against NIFTY spot and future`} option={main} /></div>
       </div>
       <div className="rounded-xl border border-rule bg-ink/40 p-2" data-testid="stl-split">
-        <div className="h-[170px]"><EChart group="strategy-timeline" ariaLabel="Spot-driven and other P&L since the first sample" option={dev} /></div>
+        <p className="mb-1 text-xs text-muted">{model.dec ? "P&L change since the first sample, split into what NIFTY's move explains (an estimate) and everything else" : "Spot-driven against other P&L: needs about 25 samples with every price"}</p>
+        <div className="h-[190px]"><EChart group="strategy-timeline" ariaLabel="Spot-driven and other P&L since the first sample" option={dev} /></div>
       </div>
 
       <ul className="space-y-1 text-sm text-paper" aria-label="Reading">
@@ -180,13 +181,13 @@ function buildOption(tl: Timeline, m: Model, mode: "premium" | "pnl", entry: num
   if (mode === "pnl" && rules.target != null && rules.target > 0) marks.push({ yAxis: rules.target, name: "Strategy target", lineStyle: { color: c.up, type: "dotted", width: 1 }, label: { formatter: "Target", color: c.up, fontSize: 10 } });
   const off = { sma14: false, ema50: false, bands: false, twap: false } as const;
   return {
-    animation: false, grid: { left: 62, right: 62, top: 62, bottom: 28 },
-    legend: { top: 0, left: 8, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 16, itemHeight: 8, selected: { "NIFTY spot": true, "NIFTY future": false, "Future VWAP": true, "Strategy VWAP": true, "Time average": off.twap, "SMA 14": off.sma14, "EMA 50": off.ema50, "Bollinger 20, 2σ": off.bands } },
+    animation: false, grid: { left: 58, right: 58, top: 40, bottom: 28 },
+    legend: { type: "scroll", top: 4, left: "center", width: "92%", pageIconSize: 10, pageTextStyle: { color: c.muted, fontSize: 10 }, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 16, itemHeight: 8, itemGap: 12, selected: { "NIFTY spot": true, "NIFTY future": false, "Future VWAP": true, "Strategy VWAP": true, "Time average": off.twap, "SMA 14": off.sma14, "EMA 50": off.ema50, "Bollinger 20, 2σ": off.bands } },
     tooltip: { trigger: "axis", confine: true, axisPointer: { type: "cross" }, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: unknown) => (v == null || Number.isNaN(Number(v)) ? "—" : Number(v).toLocaleString("en-IN", { maximumFractionDigits: 2 })) },
     xAxis: { type: "category", data: tl.label, boundaryGap: false, axisLabel: { ...ax, hideOverlap: true }, axisLine: { lineStyle: { color: c.rule } }, axisTick: { show: false } },
     yAxis: [
-      { type: "value", scale: true, name: mode === "pnl" ? "₹" : "points", nameTextStyle: ax, axisLabel: { ...ax, formatter: (v: number) => v.toLocaleString("en-IN") }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
-      { type: "value", scale: true, position: "right", name: "NIFTY", nameTextStyle: ax, axisLabel: { ...ax, formatter: (v: number) => v.toLocaleString("en-IN") }, splitLine: { show: false } },
+      { type: "value", scale: true, axisLabel: { ...ax, formatter: (v: number) => v.toLocaleString("en-IN") }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
+      { type: "value", scale: true, position: "right", axisLabel: { ...ax, formatter: (v: number) => v.toLocaleString("en-IN") }, splitLine: { show: false } },
     ],
     dataZoom: [{ type: "inside", filterMode: "none" }],
     series: [
@@ -206,11 +207,9 @@ function buildOption(tl: Timeline, m: Model, mode: "premium" | "pnl", entry: num
 
 function buildSplit(tl: Timeline, dec: { explained: (number | null)[]; rest: (number | null)[] } | null, c: ChartColors): EChartsCoreOption {
   const ax = { color: c.muted, fontSize: 11 };
-  const none = !dec;
   return {
-    animation: false, grid: { left: 62, right: 62, top: 30, bottom: 24 },
-    title: { text: none ? "Spot-driven vs other P&L: needs about 25 samples with every price" : "P&L change since the first sample: spot-driven (estimated) and everything else", left: 62, top: 0, textStyle: { color: c.muted, fontSize: 11, fontWeight: "normal" } },
-    legend: { top: 0, right: 8, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
+    animation: false, grid: { left: 58, right: 58, top: 34, bottom: 24 },
+    legend: { type: "scroll", top: 4, left: "center", width: "92%", textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8, itemGap: 12 },
     tooltip: { trigger: "axis", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: unknown) => (v == null ? "—" : `₹${Math.round(Number(v)).toLocaleString("en-IN")}`) },
     xAxis: { type: "category", data: tl.label, boundaryGap: false, axisLabel: { ...ax, hideOverlap: true }, axisLine: { lineStyle: { color: c.rule } }, axisTick: { show: false } },
     yAxis: { type: "value", scale: true, axisLabel: { ...ax, formatter: (v: number) => v.toLocaleString("en-IN") }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },

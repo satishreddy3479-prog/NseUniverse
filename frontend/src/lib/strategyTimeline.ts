@@ -22,7 +22,7 @@
 import type { Action, OptionType } from "./strategy";
 import type { FuturesSeries, StrikeSeries } from "./types";
 
-export interface TimelineLeg { strike: number; type: OptionType; action: Action; lots: number; premium: number | null; /** key of this leg in the series maps when it is not the plain strike (a merged multi-expiry series) */ key?: string }
+export interface TimelineLeg { strike: number; type: OptionType; action: Action; lots: number; premium: number | null; /** key of this leg in the series maps when it is not the plain strike (a merged multi-expiry series). NOT the builder leg's own `key`, which is its live-feed key. */ seriesKey?: string }
 
 export interface Timeline {
   /** ms since epoch; a spacer between days has t = the next day's first sample and every value null */
@@ -82,9 +82,9 @@ export function buildTimeline(legs: TimelineLeg[], ss: StrikeSeries, lotSize: nu
     let v: number | null = 0;
     let p: number | null = allEntry ? 0 : null;
     legs.forEach((l, li) => {
-      const px = priceAt(l.type === "CE" ? ss.ce_price : ss.pe_price, l.strike, i, l.key);
+      const px = priceAt(l.type === "CE" ? ss.ce_price : ss.pe_price, l.strike, i, l.seriesKey);
       // interval volume of this leg: the rise of its cumulative volume since the previous sample of the same day (the first sample: all of it)
-      const cum = priceAt(l.type === "CE" ? ss.ce_volume ?? {} : ss.pe_volume ?? {}, l.strike, i, l.key);
+      const cum = priceAt(l.type === "CE" ? ss.ce_volume ?? {} : ss.pe_volume ?? {}, l.strike, i, l.seriesKey);
       const a: NonNullable<Acc> = acc[li] ?? { pv: 0, v: 0, prevVol: null };
       acc[li] = a;
       if (cum != null) {
@@ -106,7 +106,7 @@ export function buildTimeline(legs: TimelineLeg[], ss: StrikeSeries, lotSize: nu
       if (vwp != null && l.premium != null) vwp += sgn(l.action) * l.lots * lotSize * (lv - l.premium);
     });
     out.vwap.push(vw); out.vwapPnl.push(vwp);
-    out.thinnestLegVolume = legs.length ? Math.min(...legs.map((l) => priceAt(l.type === "CE" ? ss.ce_volume ?? {} : ss.pe_volume ?? {}, l.strike, i, l.key) ?? 0)) : null;
+    out.thinnestLegVolume = legs.length ? Math.min(...legs.map((l) => priceAt(l.type === "CE" ? ss.ce_volume ?? {} : ss.pe_volume ?? {}, l.strike, i, l.seriesKey) ?? 0)) : null;
     out.samples++;
     if (v == null) out.missing++;
     out.t.push(ms); out.day.push(d); out.spacer.push(false);

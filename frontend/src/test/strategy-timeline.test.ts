@@ -45,6 +45,16 @@ describe("buildTimeline", () => {
   });
 });
 
+describe("a builder leg carries its own live-feed key (12 Nov 2026 regression)", () => {
+  it("the leg's `key` (nse_fo|<token>) is not a series key: prices are still found by strike", () => {
+    const legs = [{ ...short[0]!, key: "nse_fo|53219" }, { ...short[1]!, key: "nse_fo|53220" }];
+    const tl = buildTimeline(legs, ss(T, [200, 210, 220, 190], [100, 95, 90, 105], [25000, 25010, 25020, 24990]), 65);
+    expect(tl.value).toEqual([-400, -400, -400, -400]); // -(CE + 2 x PE); it was all null when the feed key was read as the series key
+    expect(tl.isCredit).toBe(true);
+    expect(tl.pnl[0]).toBe(0);
+  });
+});
+
 describe("strategy VWAP from each leg's own traded volume", () => {
   const withVol = (ce: number[], pe: number[]) => ({ ...ss(T.slice(0, 3), [200, 210, 220], [100, 100, 90], [1, 2, 3]), ce_volume: { "25000": ce }, pe_volume: { "25000": pe } });
   it("is the legs' VWAPs combined like the strategy value (hand-calculated)", () => {
@@ -149,8 +159,8 @@ describe("merging the samples of two expiries", () => {
     expect(m.spot).toEqual([25000, 25001, 25002]);
     // a calendar built on the merged series: sell the A call, buy the B call
     const legs = [
-      { strike: 25000, type: "CE" as const, action: "SELL" as const, lots: 1, premium: 100, key: mergedKey("A", 25000) },
-      { strike: 25000, type: "CE" as const, action: "BUY" as const, lots: 1, premium: 200, key: mergedKey("B", 25000) },
+      { strike: 25000, type: "CE" as const, action: "SELL" as const, lots: 1, premium: 100, seriesKey: mergedKey("A", 25000) },
+      { strike: 25000, type: "CE" as const, action: "BUY" as const, lots: 1, premium: 200, seriesKey: mergedKey("B", 25000) },
     ];
     const tl = buildTimeline(legs, m, 65);
     expect(tl.value).toEqual([100, 100, null]); // -100 + 200 = +100 at the first two samples; the third has no price for leg B
