@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { EChartsCoreOption } from "echarts/core";
-import { MISSING } from "../../lib/format";
+import { MISSING, fmtTimeIST } from "../../lib/format";
 import type { Intelligence, StockFuturesRow } from "../../lib/intelligence";
 import { EChart, useChartColors } from "../EChart";
 
@@ -49,10 +49,12 @@ export function StockFuturesPanel({ d }: { d: Intelligence }) {
   if (!sf) return <section aria-label="Stock futures and rollover" className="rounded-[var(--radius-panel)] border border-rule bg-slate p-4 text-sm text-muted" data-testid="sf-panel">Stock futures and rollover: not available in this reading.</section>;
   const nr = sf.nifty;
   const counts = sf.buildup_counts ?? {};
+  const since = sf.baseline_at ? fmtTimeIST(sf.baseline_at) : "the first reading";
   return (
     <section aria-label="Stock futures and rollover" className="rounded-[var(--radius-panel)] border border-rule bg-slate p-4" data-testid="sf-panel">
       <h2 className="text-sm font-semibold text-paper">Stock futures and rollover <span className="font-normal text-muted">· NIFTY 50 stocks, current month against next month</span></h2>
       <p className="mt-0.5 text-[13px] leading-snug text-muted">Which stocks have positions being added (open interest up) or closed, with price. Rollover is how much has moved to the next month; a rise into expiry is normal.</p>
+      {sf.baseline_at && <p className="mt-1 text-xs text-muted" data-testid="sf-baseline">Open interest changes are measured from {since}, the first reading this app has today; the feed has no previous-day open interest. Once a session is recorded from 09:15 the baseline is the opening reading.</p>}
       {sf.covered === 0 ? (
         <p className="mt-3 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-paper" role="status" data-testid="sf-none">No stock future has a fresh quote right now. {sf.tokens_note ?? ""} Nothing is estimated in its place.</p>
       ) : (
@@ -69,7 +71,7 @@ export function StockFuturesPanel({ d }: { d: Intelligence }) {
           </div>
           {bars && (
             <div className="mt-3">
-              <div className="mb-1 text-xs text-muted">Open interest change since the first reading of the session, strongest falls and rises (green = long buildup or short covering, red = short buildup or long unwinding)</div>
+              <div className="mb-1 text-xs text-muted">Open interest change since {since}, strongest falls and rises (green = long buildup or short covering, red = short buildup or long unwinding)</div>
               <div style={{ height: 40 + bars.n * 24 }}><EChart option={bars.option} ariaLabel="Open interest change of stock futures since the first reading" /></div>
             </div>
           )}

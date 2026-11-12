@@ -121,9 +121,11 @@ class MarketService:
         self.fo_next: dict[str, FoQuote] = {}
         self.fo_nifty_next = FoQuote()
         self._fo_roles_cache: tuple[float, dict[str, tuple[str, str]]] | None = None
-        self._fo_first: dict[tuple[str, str], tuple[str, int]] = {}  # (symbol or NIFTY, cur|next) -> (day, first open interest this app saw today)
+        self._fo_first: dict[tuple[str, str], tuple[str, int, datetime]] = {}  # (symbol or NIFTY, cur|next) -> (day, first open interest this app saw today, when)
+        self._fo_base_at: str | None = None  # when the open interest baseline was read
         self._fo_base_cache: tuple[str, dict[str, dict[str, int | None]]] | None = None
         self.fo_note = "not looked up yet"
+        self._idx_prev: float | None = None  # the last index previous close seen, so one missing index tick does not blank the VWAP estimate
 
     # ----------------------------------------------------------------------------- universe
     def universe(self, index: str) -> list[m.Stock]:
@@ -298,7 +300,7 @@ class MarketService:
             day = t.date().isoformat()
             first = self._fo_first.get((sym, which))
             if first is None or first[0] != day:
-                self._fo_first[(sym, which)] = (day, int(tick.oi))
+                self._fo_first[(sym, which)] = (day, int(tick.oi), tick.received_at)
         q.at = tick.received_at
 
     def _fo_base(self, now: datetime) -> dict[str, dict[str, int | None]]:
@@ -308,9 +310,11 @@ class MarketService:
         if self._fo_base_cache and self._fo_base_cache[0] == day and self._fo_base_cache[1].get("cur"):
             return self._fo_base_cache[1]
         out: dict[str, dict[str, int | None]] = {"cur": {}, "next": {}, "nifty": {}}
+        self._fo_base_at = None
         day_start = datetime.combine(now.astimezone(IST).date(), SESSION_OPEN, IST).astimezone(UTC).isoformat()
         first = next(iter(self.store.samples_since("stkfut", day_start)), None)
         if first is not None:
+            self._fo_base_at = first[0]
             for r in first[1].get("rows") or []:
                 if isinstance(r, list) and len(r) >= 7:
                     out["cur"][r[0]] = r[2] if isinstance(r[2], int) else None
@@ -318,7 +322,10 @@ class MarketService:
             nf = first[1].get("nf")
             if isinstance(nf, list) and len(nf) >= 3:
                 out["nifty"] = {"cur": nf[2] if isinstance(nf[2], int) else None, "next": nf[1] if isinstance(nf[1], int) else None}
-        for (sym, which), (d, oi) in self._fo_first.items():
+        seen_at = [at for d, _, at in self._fo_first.values() if d == day]
+        if first is None and seen_at:
+            self._fo_base_at = min(seen_at).isoformat()  # no stored sample yet: the baseline is the first reading this app saw
+        for (sym, which), (d, oi, _) in self._fo_first.items():
             if d == day:
                 if sym == "NIFTY":
                     out["nifty"].setdefault("next" if which == "next" else "cur", oi)
@@ -344,7 +351,9 @@ class MarketService:
             if sym in u50 and (now - lt.received_at).total_seconds() <= futmod.FRESH_S:
                 stocks[sym] = (u50[sym], lt.avg_price, lt.prev_close)
         idx = self._index()
-        return futmod.index_vwap(stocks, None if idx is None else idx.prev_close, self._spot_now(now))
+        if idx is not None and idx.prev_close:
+            self._idx_prev = idx.prev_close
+        return futmod.index_vwap(stocks, self._idx_prev, self._spot_now(now))
 
     def stock_futures_summary(self, now: datetime) -> dict[str, Any]:
         syms = [s.symbol for s in self.universe("nifty50")]
@@ -354,6 +363,7 @@ class MarketService:
         nb = base.get("nifty") or {}
         out["nifty"] = futmod.nifty_rollover(self._nifty_cur_quote(), self.fo_nifty_next, now, nb.get("cur"), nb.get("next"))
         out["tokens_note"] = self.fo_note
+        out["baseline_at"] = self._fo_base_at
         return out
 
     def _fut_key(self) -> str | None:

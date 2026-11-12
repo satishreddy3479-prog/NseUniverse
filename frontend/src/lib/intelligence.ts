@@ -97,7 +97,7 @@ export interface NiftyRollover {
 }
 export interface StockFutures {
   rows: StockFuturesRow[]; covered: number; of: number; buildup_counts: Record<string, number>; rollover_pct: number | null; rollover_stocks: number; note: string;
-  nifty: NiftyRollover; tokens_note?: string;
+  nifty: NiftyRollover; tokens_note?: string; baseline_at?: string | null;
 }
 export interface IndexVwapEstimate {
   value: number | null; stocks?: number; weight_share?: number; estimate?: boolean; note: string; method?: string; reason?: string;

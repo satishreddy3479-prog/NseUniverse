@@ -462,7 +462,7 @@ describe("stock futures, rollover and the index VWAP estimate", () => {
   const sf = {
     rows: [sfRow("RELIANCE"), sfRow("TCS", { price_change_pct: -0.8, oi_change: -9000, oi_change_pct: -2.1, buildup: "Long unwinding", rollover_pct: null, roll_cost_pct: null }), sfRow("INFY", { oi_change_pct: 11.2, oi_change: 80000, buildup: "Short buildup", price_change_pct: -0.3 })],
     covered: 3, of: 50, buildup_counts: { "Long buildup": 1, "Long unwinding": 1, "Short buildup": 1 }, rollover_pct: 7.4, rollover_stocks: 2, note: "Open interest change is against the first reading of the session.",
-    nifty: { available: true, rollover_pct: 7.5, rollover_pct_at_open: 5.0, roll_cost_pts: 80, roll_cost_pct: 0.316, cur_oi: 900000, next_oi: 72000 }, tokens_note: "stock futures subscribed: 50 of 50 current-month contracts",
+    nifty: { available: true, rollover_pct: 7.5, rollover_pct_at_open: 5.0, roll_cost_pts: 80, roll_cost_pct: 0.316, cur_oi: 900000, next_oi: 72000 }, tokens_note: "stock futures subscribed: 50 of 50 current-month contracts", baseline_at: "2026-11-12T07:31:00+00:00",
   };
   it("shows the NIFTY rollover, the buildup counts, a chart and every stock as a table row and a phone card", async () => {
     view({ ...base, stock_futures: sf });
@@ -473,6 +473,7 @@ describe("stock futures, rollover and the index VWAP estimate", () => {
     expect(tiles).toHaveTextContent("+80.0 pts");
     expect(tiles).toHaveTextContent("3 of 50");
     expect(within(p).getByTestId("sf-counts")).toHaveTextContent("Long buildup 1");
+    expect(within(p).getByTestId("sf-baseline")).toHaveTextContent("measured from 13:01");
     expect(within(p).getByRole("img", { name: /Open interest change of stock futures/ })).toBeInTheDocument();
     const row = within(p).getByTestId("sf-row-INFY");
     expect(row).toHaveTextContent("Short buildup");

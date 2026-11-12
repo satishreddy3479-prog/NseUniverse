@@ -175,6 +175,13 @@ def test_futures_ticks_feed_the_summary_and_the_stored_sample_and_a_restart_keep
     svc2.on_tick(fo_tick("60000", 103.0, 1100))
     base = svc2._fo_base(NOW)
     assert base["cur"]["ADANIENT"] == 1000 and base["next"]["ADANIENT"] == 200
+    assert svc2._fo_base_at is not None and svc2._fo_base_at.startswith(early.astimezone(UTC).replace(second=0, microsecond=0).isoformat()[:16])  # the baseline says when it was read
+    # without a stored sample the baseline is the first reading this process saw, and says so
+    svc3 = build(tmp_path / "x", {s: 101.0 for s in SYMS})
+    fo_tokens(svc3)
+    svc3.on_tick(fo_tick("60000", 100.0, 1000, at=early))
+    svc3.on_tick(fo_tick("60000", 103.0, 1100))
+    assert svc3.summary(NOW)["stock_futures"]["baseline_at"] == early.isoformat()
 
 
 def test_the_futures_ticks_are_not_mistaken_for_unmatched_keys_and_stale_ones_are_left_out(tmp_path: Path) -> None:
