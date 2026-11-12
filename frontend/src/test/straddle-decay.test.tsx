@@ -8,7 +8,7 @@ import type { Component, Environment, Stat, StraddleDecay, StraddleValidation, T
 
 vi.mock("../components/EChart", () => ({
   useChartColors: () => ({ up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" }),
-  EChart: ({ ariaLabel, option }: { ariaLabel: string; option?: { series?: { data?: unknown[] }[] } }) => <div role="img" aria-label={ariaLabel} data-last={JSON.stringify((option?.series ?? []).map((x) => (x.data ?? []).at(-1)))} />,
+  EChart: ({ ariaLabel, option }: { ariaLabel: string; option?: { series?: { data?: unknown[]; lineStyle?: { width?: number } }[] } }) => <div role="img" aria-label={ariaLabel} data-last={JSON.stringify((option?.series ?? []).map((x) => (x.data ?? []).at(-1)))} data-widths={JSON.stringify((option?.series ?? []).map((x) => x.lineStyle?.width ?? null))} />,
 }));
 afterEach(() => vi.unstubAllGlobals());
 
@@ -356,10 +356,11 @@ describe("the glance (12 Nov 2026)", () => {
     fireEvent.click(rl);
     expect(rl).toHaveTextContent("shown in the sections below");
     expect(screen.getByTestId("sdi-position-note")).toHaveTextContent("Rolling position");
-    expect(screen.getByText(/This comparison always shows both/)).toBeInTheDocument();
+    expect(screen.getByTestId("sdi-following-note")).toHaveTextContent("You are following Rolling ATM (now 24050)");
+    expect(screen.getByTestId("sdi-plotted")).toHaveTextContent("only the change of the same contract");
     expect(screen.getByRole("img", { name: /Change in straddle premium since the open/ })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: /Causes of the premium change/ })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: /Share of the opening price kept/ })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /Call and put premium at the open and now/ })).toBeInTheDocument();
   });
 });
 
@@ -369,5 +370,22 @@ describe("the glance: a label held down by a risk flag", () => {
     mount({ ...d, environment: { ...d.environment!, seller: { ...d.environment!.seller, capped_by_flags: "Neutral", class: "Neutral", score: 75 } } });
     const note = await screen.findByTestId("sdi-gauge-seller-cap");
     expect(note).toHaveTextContent("held at Neutral because a risk flag is active");
+  });
+});
+
+
+describe("choosing a position changes the glance charts", () => {
+  it("the followed line is bold and the other faded, in both directions", async () => {
+    mount(full({ spot: Array.from({ length: 90 }, (_, i) => 24000 + i) }));
+    const chart = () => screen.getByRole("img", { name: /Change in straddle premium since the open/ });
+    const widths = () => JSON.parse(chart().getAttribute("data-widths") ?? "[]") as (number | null)[]; // [fixed, rolling, NIFTY]
+    await screen.findByTestId("sdi-follow");
+    expect(widths()[0]!).toBeGreaterThan(widths()[1]!); // fixed is followed by default
+    fireEvent.click(within(screen.getByTestId("sdi-follow")).getByRole("button", { name: "Rolling ATM" }));
+    expect(widths()[1]!).toBeGreaterThan(widths()[0]!);
+    expect(screen.getByTestId("sdi-following-note")).toHaveTextContent("You are following Rolling ATM");
+    expect(screen.getByRole("img", { name: /Call and put premium at the open and now/ })).toBeInTheDocument();
+    fireEvent.click(within(screen.getByTestId("sdi-follow")).getByRole("button", { name: /^Fixed/ }));
+    expect(widths()[0]!).toBeGreaterThan(widths()[1]!);
   });
 });

@@ -69,6 +69,7 @@ export function StraddleGlance({ d, mode, setMode }: { d: StraddleDecay; mode: M
   const times = useMemo(() => (d.times ?? []).map((t) => new Date(t).getTime()), [d.times]);
   const lot = [d.attribution?.fixed.open, d.attribution?.fixed["60"], d.attribution?.fixed["30"], d.attribution?.rolling.open, d.attribution?.rolling["60"], d.attribution?.rolling["30"]].map((w) => w?.efficiency.lot_size).find((x) => x != null);
 
+  const posName = mode === "fixed" ? `Fixed ${tr?.fixed.strike ?? ""}` : `Rolling ATM (now ${tr?.atm_now ?? MISSING})`;
   const change = useMemo(() => {
     if (!d.series || !d.cumulative) return null;
     const fx = d.series.fixed.straddle;
@@ -79,8 +80,17 @@ export function StraddleGlance({ d, mode, setMode }: { d: StraddleDecay; mode: M
       { name: "Rolling ATM (roll-adjusted)", color: c.info, data: d.cumulative.rolling.actual, fmt: (v) => sg(v) },
     ];
     if (d.spot) lines.push({ name: "NIFTY (right axis)", color: c.muted, data: d.spot, axis: 1, dotted: true, fmt: (v) => v.toLocaleString("en-IN") });
-    return timeLinesOption(times, lines, c, null, { leftFmt: (v) => sg(v, 0), rightFmt: (v) => v.toLocaleString("en-IN"), zeroLine: true });
-  }, [d, times, c]);
+    const o = timeLinesOption(times, lines, c, null, { leftFmt: (v) => sg(v, 0), rightFmt: (v) => v.toLocaleString("en-IN"), zeroLine: true }) as unknown as { series: { name: string; lineStyle?: Record<string, unknown>; z?: number }[] };
+    // the position being followed is drawn bold, the other one thin and faded, so choosing a position visibly changes the chart
+    const on = mode === "fixed" ? "Fixed straddle (sold at the open)" : "Rolling ATM (roll-adjusted)";
+    for (const sr of o.series) {
+      if (sr.name.startsWith("NIFTY")) continue;
+      const sel = sr.name === on;
+      sr.lineStyle = { ...(sr.lineStyle ?? {}), width: sel ? 3.2 : 1.2, opacity: sel ? 1 : 0.35 };
+      sr.z = sel ? 5 : 2;
+    }
+    return o as unknown as EChartsCoreOption;
+  }, [d, times, c, mode]);
 
   const sources = useMemo(() => {
     const f = d.attribution?.fixed.open?.both, r = d.attribution?.rolling.open?.both;
@@ -92,25 +102,30 @@ export function StraddleGlance({ d, mode, setMode }: { d: StraddleDecay; mode: M
       xAxis: { type: "value", axisLabel: { color: c.muted, fontSize: 11 }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
       yAxis: { type: "category", inverse: true, data: TERM_LABEL.map(([, n]) => n), axisLabel: { color: c.paper, fontSize: 11 }, axisTick: { show: false } },
       series: [
-        { name: "Fixed", type: "bar", barMaxWidth: 14, itemStyle: { color: c.brass }, data: TERM_LABEL.map(([k]) => termValue(f, k)) },
-        { name: "Rolling ATM", type: "bar", barMaxWidth: 14, itemStyle: { color: c.info }, data: TERM_LABEL.map(([k]) => termValue(r, k)) },
+        { name: "Fixed", type: "bar", barMaxWidth: 14, itemStyle: { color: c.brass, opacity: mode === "fixed" ? 1 : 0.3 }, data: TERM_LABEL.map(([k]) => termValue(f, k)) },
+        { name: "Rolling ATM", type: "bar", barMaxWidth: 14, itemStyle: { color: c.info, opacity: mode === "rolling" ? 1 : 0.3 }, data: TERM_LABEL.map(([k]) => termValue(r, k)) },
       ],
     } as EChartsCoreOption;
-  }, [d, c]);
+  }, [d, c, mode]);
 
+  /** Call and put premium at the open and now for the followed position (the fixed strike, or the at-the-money strike of the first sample against the current one). */
   const kept = useMemo(() => {
-    const ce = tr?.fixed.ce, pe = tr?.fixed.pe;
-    if (!ce?.open || !pe?.open || ce.current == null || pe.current == null) return null;
-    const v = [Math.round((ce.current / ce.open) * 1000) / 10, Math.round((pe.current / pe.open) * 1000) / 10];
+    const pos = mode === "fixed" ? tr?.fixed : tr?.rolling;
+    const ce = pos?.ce, pe = pos?.pe;
+    if (ce?.open == null || pe?.open == null || ce.current == null || pe.current == null) return null;
+    const r1 = (x: number) => Math.round(x * 10) / 10;
     return {
-      animation: false, grid: { left: 8, right: 40, top: 8, bottom: 8, containLabel: true },
+      animation: false, grid: { left: 8, right: 44, top: 26, bottom: 8, containLabel: true },
+      legend: { top: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
       tooltip: { show: false },
-      xAxis: { type: "value", max: Math.max(150, Math.ceil(Math.max(...v) / 10) * 10), axisLabel: { color: c.muted, fontSize: 11, formatter: (x: number) => `${x}%` }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
+      xAxis: { type: "value", axisLabel: { color: c.muted, fontSize: 11 }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
       yAxis: { type: "category", inverse: true, data: ["Call (CE)", "Put (PE)"], axisLabel: { color: c.paper, fontSize: 12 }, axisTick: { show: false } },
-      series: [{ type: "bar", barMaxWidth: 22, data: v.map((x, i) => ({ value: x, itemStyle: { color: i === 0 ? c.up : c.down, borderRadius: 3 } })), label: { show: true, position: "right", color: c.paper, fontSize: 12, formatter: (p: { value: number }) => `${p.value}%` },
-        markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: c.muted, type: "dashed" }, data: [{ xAxis: 100 }] } }],
+      series: [
+        { name: "At the open", type: "bar", barMaxWidth: 16, itemStyle: { color: c.muted, borderRadius: 3 }, data: [r1(ce.open), r1(pe.open)], label: { show: true, position: "right", color: c.paper, fontSize: 11 } },
+        { name: "Now", type: "bar", barMaxWidth: 16, itemStyle: { color: mode === "fixed" ? c.brass : c.info, borderRadius: 3 }, data: [r1(ce.current), r1(pe.current)], label: { show: true, position: "right", color: c.paper, fontSize: 11 } },
+      ],
     } as EChartsCoreOption;
-  }, [tr, c]);
+  }, [tr, c, mode]);
 
   const hist = useMemo(() => {
     const h = d.history;
@@ -137,6 +152,12 @@ export function StraddleGlance({ d, mode, setMode }: { d: StraddleDecay; mode: M
     <div className="mt-3 space-y-3" data-testid="sdi-glance">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-base font-semibold text-paper">Today at a glance</h3>
+        <div role="group" aria-label="Position to follow" className="flex flex-wrap items-center gap-1.5 text-sm" data-testid="sdi-follow">
+          <span className="text-muted">Following</span>
+          {tr && ([["fixed", `Fixed ${tr.fixed.strike}`], ["rolling", "Rolling ATM"]] as const).map(([m, l]) => (
+            <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)} className={`min-h-9 rounded-full border px-3 ${mode === m ? "border-brass bg-brass/15 font-semibold text-paper" : "border-rule text-muted hover:text-paper"}`}>{l}</button>
+          ))}
+        </div>
         <nav aria-label="Jump to a section" className="flex flex-wrap gap-1 text-xs">
           {[["sdi-glance-compare", "Fixed vs rolling"], ["sdi-glance-why", "Why these scores"], ["sdi-glance-sources", "What moved the premium"], ["sdi-tracker", "Details"]].map(([id, label]) => (
             <a key={id} href={`#${id}`} className="rounded-full border border-rule px-2.5 py-1 text-muted hover:text-paper">{label}</a>
@@ -155,7 +176,7 @@ export function StraddleGlance({ d, mode, setMode }: { d: StraddleDecay; mode: M
       {tr && (
         <section id="sdi-glance-compare" aria-label="Fixed against rolling" className="scroll-mt-16 rounded-xl border border-rule bg-ink/40 p-3" data-testid="sdi-compare">
           <h4 className="text-sm font-semibold text-paper">Fixed against rolling: two ways to follow a straddle</h4>
-          <p className="mt-1 text-xs leading-relaxed text-muted">This comparison always shows both. The Fixed / Rolling buttons only choose which one the detailed sections further down use.</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted" data-testid="sdi-following-note">You are following <b className="text-paper">{posName}</b>. Its line is bold in the charts below and the detailed sections further down use it; the other is shown faded for comparison. The two cards always show both.</p>
           <div className="mt-2 grid gap-3 md:grid-cols-2">
             {([
               ["fixed", `Fixed ${tr.fixed.strike}`, `The ${tr.fixed.strike} straddle that was at the money when the session opened${tr.opening_at ? ` (${fmtTimeIST(tr.opening_at)})` : ""}, held all day.`, tr.fixed.straddle.open, tr.fixed.straddle.current, fixedChg, "text-brass"],
@@ -175,7 +196,7 @@ export function StraddleGlance({ d, mode, setMode }: { d: StraddleDecay; mode: M
             ))}
           </div>
           {change && <div className="mt-3"><div className="mb-1 text-xs text-muted">Change in premium since the open, in points (below zero = premium has decayed; NIFTY on the right axis)</div><div className="h-[220px]"><EChart group="sdi" option={change} ariaLabel="Change in straddle premium since the open: fixed against rolling" /></div></div>}
-          {kept && <div className="mt-3"><div className="mb-1 text-xs text-muted">How much of its opening price each side of the fixed {tr.fixed.strike} straddle still has (the dashed line is 100%, the opening price; above it = more expensive now)</div><div className="h-[96px]"><EChart option={kept} ariaLabel="Share of the opening price kept by the call and the put" /></div></div>}
+          {kept && <div className="mt-3"><div className="mb-1 text-xs text-muted">{mode === "fixed" ? `Call and put price of the fixed ${tr.fixed.strike} straddle: at the open and now (points)` : `Call and put price of the at-the-money strike: at the first sample (${tr.fixed.strike}) and now (${tr.atm_now ?? MISSING}). They are different strikes, so compare the level, not the decay`}</div><div className="h-[130px]"><EChart option={kept} ariaLabel="Call and put premium at the open and now for the followed position" /></div></div>}
         </section>
       )}
 
@@ -205,6 +226,17 @@ export function StraddleGlance({ d, mode, setMode }: { d: StraddleDecay; mode: M
           <p className="text-[11px] text-muted" data-testid="sdi-hist-note">One recorded reading per minute; the last point is the current reading shown in the gauges above.</p>
         </section>
       )}
+
+      <details className="rounded-xl border border-rule bg-ink/40 p-3" data-testid="sdi-plotted">
+        <summary className="cursor-pointer text-sm font-semibold text-paper">How are these charts drawn?</summary>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-muted">
+          <li><b className="text-paper">Data:</b> the option-chain samples stored about once a minute during the session (last traded prices, not bid/ask), plus the Market Intelligence engines for the score evidence.</li>
+          <li><b className="text-paper">Fixed line:</b> call price + put price of the one strike chosen at the open ({tr?.fixed.strike ?? MISSING}), minus its opening value. It is the profit or loss, in premium points, of a straddle sold at the open and never adjusted.</li>
+          <li><b className="text-paper">Rolling line:</b> at every minute the straddle at the strike nearest NIFTY is used, and only the change of the same contract between two minutes is added up. When the at-the-money strike moves, the new contract starts from its own price, so the line has no jump from switching strikes.</li>
+          <li><b className="text-paper">Why they differ:</b> as NIFTY rises, the fixed strike goes in the money and its call gains while its put loses, so the fixed line mostly follows NIFTY. The rolling line keeps resetting to at the money, so it shows the decay and volatility change of an always-ATM straddle.</li>
+          <li><b className="text-paper">Scores:</b> are computed once on the server from all the evidence and do not depend on which position you follow.</li>
+        </ul>
+      </details>
 
       <details className="rounded-xl border border-rule bg-ink/40 p-3" data-testid="sdi-words">
         <summary className="cursor-pointer text-sm font-semibold text-paper">What do these words mean?</summary>
