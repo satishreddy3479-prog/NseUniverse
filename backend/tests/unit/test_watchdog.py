@@ -120,6 +120,14 @@ def test_a_lost_broker_login_and_a_stale_feed_in_market_hours(tmp_path: Path) ->
     assert any("bad otp" in a["text"] for a in alerts)
 
 
+def test_the_silent_pre_open_gap_is_not_a_dead_feed(tmp_path: Path) -> None:
+    quiet = healthy(**{"/api/status": {"auth": {"state": "authenticated"}, "stream": {"state": "streaming", "freshness": "stale", "data_age_seconds": 263, "market": {"state": "open"}}}})
+    gap = datetime(2026, 11, 13, 3, 42, 51, tzinfo=UTC)  # 09:12:51 IST, the exact moment of the false alarm
+    assert "live-feed" not in keys(run(tmp_path, quiet, gap)[0])
+    after = datetime(2026, 11, 13, 3, 48, tzinfo=UTC)  # 09:18 IST: trading has begun, silence now matters
+    assert "live-feed" in keys(run(tmp_path, quiet, after)[0])
+
+
 def test_a_sampler_that_has_stopped_storing_is_critical_only_after_09_25(tmp_path: Path) -> None:
     stale = healthy(**{"/api/sampler/status": {"enabled": True, "in_session": True, "state": "sampling", "last_success_at": "2026-11-13T04:40:00Z", "last_attempt_at": "2026-11-13T04:59:00Z", "last_error": None}})
     assert "sampler" in keys(run(tmp_path, stale, NOON)[0])  # 20 minutes without a stored sample at 10:30 IST

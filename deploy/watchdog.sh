@@ -59,9 +59,12 @@ if reachable:
         stream = st.get("stream") or {}
         fo = (stream.get("market") or {}).get("state")
         # during the NSE F&O session the feed must be delivering; "market_closed" is the only quiet state
-        if fo == "open" and stream.get("freshness") in ("stale", "none"):
+        # The exchange reports "open" from 09:00, but index options trade only from 09:15 (the pre-open gap is silent), so a quiet feed counts
+        # only from 09:17 to the close; without this the strip cried wolf every morning at 09:12.
+        trading = (9, 17) <= (ist.hour, ist.minute) < (15, 32)
+        if fo == "open" and trading and stream.get("freshness") in ("stale", "none"):
             add("live-feed", "critical", f"Market is open but the live feed is {stream.get('freshness')} (last data {stream.get('data_age_seconds')} s ago).")
-        if stream.get("state") not in ("streaming", None) and fo == "open":
+        if stream.get("state") not in ("streaming", None) and fo == "open" and trading:
             add("stream-state", "warning", f"Stream state is '{stream.get('state')}' while the market is open.")
     except Exception as e:  # noqa: BLE001
         add("status", "warning", f"/api/status failed ({type(e).__name__}).")
