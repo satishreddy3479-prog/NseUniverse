@@ -584,9 +584,17 @@ async def market_weights_import(request: Request, body: WeightsImport) -> dict[s
         ) from None
 
 
+#: The storage report walks every stored file (about 7 s on the server), so the walk is reused for two minutes; the disk figures are read fresh each time.
+_STORAGE_TTL_SECONDS = 120.0
+_storage_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
 @router.get("/storage/status")
 async def storage_status(request: Request) -> dict[str, Any]:
     """Storage sizes, growth and runway, backups, end-of-day status and the pruning dry run."""
+    import shutil
+    import time as _time
+
     from app.lifecycle import storage as st
 
     eod = request.app.state.eod
@@ -594,8 +602,23 @@ async def storage_status(request: Request) -> dict[str, Any]:
 
     def build() -> dict[str, Any]:
         today = datetime.now(UTC).astimezone(IST).date()
+        key = f"{s.data_dir}|{today}"
+        hit = _storage_cache.get(key)
+        if hit is not None and _time.monotonic() - hit[0] < _STORAGE_TTL_SECONDS:
+            rep = dict(hit[1])
+        else:
+            rep = st.report(s.data_dir, s.log_dir, today, archived_days=eod.archived_days())
+            _storage_cache.clear()
+            _storage_cache[key] = (_time.monotonic(), rep)
+        usage = shutil.disk_usage(s.data_dir)  # cheap: always current, so a filling disk is never hidden by the cache
+        growth = rep.get("growth_bytes_per_day") or 0
+        rep.update(
+            disk={"free_bytes": usage.free, "total_bytes": usage.total, "free_gb": round(usage.free / 1e9, 1)},
+            runway_days=round(usage.free / growth) if growth > 0 else None,
+            pressure=st.pressure(usage.free, usage.total),
+        )
         return {
-            **st.report(s.data_dir, s.log_dir, today, archived_days=eod.archived_days()),
+            **rep,
             "end_of_day": eod.status(),
             "daily_models": {
                 "when": "retrained on each new final daily bar, after 18:30 IST, off market hours",
@@ -659,6 +682,7 @@ async def storage_cleanup_run(body: CleanupRequest, request: Request) -> dict[st
             422, {"code": "confirmation_required", "message": "send confirm: true to remove data"}
         )
     a = _cleanup_args(request)
+    _storage_cache.clear()  # what is stored is about to change
     try:
         res = await asyncio.to_thread(
             lambda: cleanup.run(

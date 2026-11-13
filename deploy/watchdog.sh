@@ -28,8 +28,8 @@ def add(key: str, level: str, text: str) -> None:
     alerts.append({"key": key, "level": level, "text": text})
 
 
-def get(path: str):
-    with urllib.request.urlopen(api + path, timeout=8) as r:
+def get(path: str, timeout: int = 8):
+    with urllib.request.urlopen(api + path, timeout=timeout) as r:
         return json.load(r)
 
 
@@ -84,7 +84,7 @@ if reachable:
     except Exception as e:  # noqa: BLE001
         add("sampler-status", "warning", f"/api/sampler/status failed ({type(e).__name__}).")
     try:
-        sto = get("/api/storage/status")
+        sto = get("/api/storage/status", timeout=40)  # walks every stored file: seconds, not milliseconds, when the cache is cold
         free_gb = ((sto.get("disk") or {}).get("free_gb"))
         if free_gb is not None and free_gb < 1.5:
             add("disk", "critical", f"Only {free_gb} GB of disk is free; updates stop at 1.5 GB and the sampler at 2 GB.")
