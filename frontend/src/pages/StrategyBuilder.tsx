@@ -321,7 +321,7 @@ export default function StrategyBuilder() {
     const m = spot * 0.012;
     const lo = Math.min(...near) - m, hi = Math.max(...near) + m;
     const step = Math.max(1, Math.round((hi - lo) / 240));
-    return multi ? curveOf(pnlFn, Math.floor(lo / step) * step, hi, step) : payoffCurve(live, lotSize, Math.floor(lo / step) * step, hi, step);
+    return multi ? curveOf(pnlFn, Math.floor(lo / step) * step, hi, step, ks) : payoffCurve(live, lotSize, Math.floor(lo / step) * step, hi, step);
   }, [ready, a, lotSize, spot, live, bands, multi, pnlFn]);
   const target = useMemo(() => (curve && lotSize ? curve.map((p) => ({ s: p.s, pnl: theoreticalPnl(mAll, p.s, targetMs, lotSize, val) })) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps

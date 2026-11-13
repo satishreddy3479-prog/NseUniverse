@@ -679,3 +679,7 @@ The payoff y-axis clipped a side at 3x the other, so an iron fly whose maximum p
 
 ## D160 (13 Nov 2026): a closed trade is never filed twice
 The builder files any working strategy whose legs are all out as a new Closed trade. The working copy is kept in the browser without the "opened closed trade" mark, so a closed trade opened to look at and then restored (refresh, page switch) came back as plain finished legs and was filed again under a new name ("Strategy 13 Nov, 17:51" and "21:56" copied "Straddle - neutral 13/11/2026", +3,660 each). Before filing, the legs are now compared (side, type, strike, expiry, entry premium, exit price) with every closed trade; a match is shown as that closed trade instead. The two duplicate records already stored are NOT removed by this change (stored data is only deleted with approval).
+
+
+## D161 (13 Nov 2026): payoff curve samples the strikes
+The payoff chart was drawn from a uniform grid (about 7 points apart for a wide window). An expiry payoff only bends at the strikes, so when a short strike (an iron fly peak at 25150) fell between two grid points the peak was cut and drawn as a small bend instead of a sharp tip. The strikes are now always sampled, so the peak and every kink are exact. Option prices were checked against the stored chain: put-call parity gives a forward of about 25151 across strikes, and volume and open interest kept updating until 15:39, so the prices are real last-traded values, not closed-market leftovers.

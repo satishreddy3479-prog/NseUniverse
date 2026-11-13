@@ -268,3 +268,16 @@ describe("adoptExits: the server's exits are carried into an open local copy", (
     expect(adoptExits(local, [mk({ id: "srv" })])).toBe(local); // nothing closed on the server: the same array back
   });
 });
+
+describe("payoffCurve keeps the bends at the strikes", () => {
+  // iron fly, lot 65: sell 25150 CE at 139 and PE at 138, buy 25250 CE at 94 and 25050 PE at 90
+  const L = (action: "BUY" | "SELL", type: "CE" | "PE", strike: number, premium: number) => ({ id: `${action}${type}${strike}`, action, type, strike, expiry: "2026-11-17", lots: 1, premium }) as Leg;
+  const fly = [L("SELL", "CE", 25150, 139), L("SELL", "PE", 25150, 138), L("BUY", "CE", 25250, 94), L("BUY", "PE", 25050, 90)];
+  it("samples the strike levels even when the grid does not land on them, so the peak is exact", () => {
+    // net credit = 139 + 138 - 94 - 90 = 93 points; at 25150 both short options and both wings expire worthless: 93 x 65 = 6045
+    const c = payoffCurve(fly, 65, 24943, 25360, 7); // 25150 - 24943 = 207 is not a multiple of 7: the grid misses 25150
+    expect(c.some((p) => p.s === 25150)).toBe(true);
+    expect(Math.max(...c.map((p) => p.pnl))).toBeCloseTo(6045, 6);
+    expect(c.map((p) => p.s)).toEqual([...c.map((p) => p.s)].sort((a, b) => a - b));
+  });
+});

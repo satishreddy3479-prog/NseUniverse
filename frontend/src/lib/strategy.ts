@@ -386,10 +386,19 @@ export function analyzeExpiry(legs: Leg[], lotSize: number): ExpiryAnalysis {
   };
 }
 
+/** The price levels of a payoff curve: every ``step`` from ``lo`` to ``hi`` plus the ``extra`` levels (the strikes), sorted and without repeats. */
+export function curveLevels(lo: number, hi: number, step: number, extra: readonly number[] = []): number[] {
+  const set = new Set<number>();
+  for (let s = lo; s <= hi + 1e-9; s += step) set.add(Math.round(s * 1e6) / 1e6);
+  for (const k of extra) if (Number.isFinite(k) && k >= lo && k <= hi) set.add(k);
+  return [...set].sort((a, b) => a - b);
+}
+
 export function payoffCurve(legs: Leg[], lotSize: number, lo: number, hi: number, step: number): { s: number; pnl: number }[] {
   const out: { s: number; pnl: number }[] = [];
   if (!(step > 0) || hi < lo) return out;
-  for (let s = lo; s <= hi + 1e-9; s += step) {
+  // the expiry payoff only bends at the strikes: sample them too, or a peak that falls between two grid points is cut off
+  for (const s of curveLevels(lo, hi, step, legs.map((l) => l.strike))) {
     const p = expiryPnl(legs, s, lotSize);
     if (p == null) return [];
     out.push({ s, pnl: p });

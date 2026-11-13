@@ -14,7 +14,7 @@
  * Pure functions, no UI, no network.
  */
 import { expiryEnd, theoreticalPnl, type Valuation } from "./optionModel";
-import { sign, type Leg } from "./strategy";
+import { curveLevels, sign, type Leg } from "./strategy";
 
 /** The distinct expiries of the legs, earliest first. */
 export function legExpiries(legs: Pick<Leg, "expiry">[]): string[] {
@@ -93,11 +93,11 @@ export function analyzeCurve(legs: Leg[], lotSize: number, spot: number, pnlAt: 
   };
 }
 
-/** Payoff curve over [lo, hi] at ``step`` using ``pnlAt``; empty when any level cannot be valued. */
-export function curveOf(pnlAt: (s: number) => number | null, lo: number, hi: number, step: number): { s: number; pnl: number }[] {
+/** Payoff curve over [lo, hi] at ``step`` using ``pnlAt``; empty when any level cannot be valued. ``extra`` levels (the strikes, where the payoff bends) are always included. */
+export function curveOf(pnlAt: (s: number) => number | null, lo: number, hi: number, step: number, extra: readonly number[] = []): { s: number; pnl: number }[] {
   const out: { s: number; pnl: number }[] = [];
   if (!(step > 0) || hi < lo) return out;
-  for (let s = lo; s <= hi + 1e-9; s += step) {
+  for (const s of curveLevels(lo, hi, step, extra)) {
     const p = pnlAt(s);
     if (p == null) return [];
     out.push({ s, pnl: p });
