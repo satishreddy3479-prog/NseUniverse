@@ -147,12 +147,17 @@ describe("top menu bar", () => {
     mockApi();
     renderAt("/overview");
     await screen.findByRole("heading", { name: "Overview" });
-    const group = screen.getByRole("group", { name: "Theme" });
-    expect(within(group).queryByRole("button", { name: "Ocean" })).toBeNull();
-    await userEvent.click(within(group).getByRole("button", { name: "Light" }));
+    const toggle = () => screen.getByRole("button", { name: /Switch to the (night|day) theme/ });
+    expect(screen.queryByRole("group", { name: "Theme" })).toBeNull(); // one button, not two
+    // the button names what a click switches to; two clicks go to night and back to day, and the last choice is remembered
+    if (toggle().getAttribute("aria-label") === "Switch to the day theme") await userEvent.click(toggle());
+    await userEvent.click(toggle()); // day -> night
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(toggle()).toHaveAccessibleName("Switch to the day theme");
+    await userEvent.click(toggle()); // night -> day
     expect(document.documentElement.dataset.theme).toBe("light");
-    expect(within(group).getByRole("button", { name: "Light" })).toHaveAttribute("aria-pressed", "true");
-    await userEvent.click(within(group).getByRole("button", { name: "Dark" }));
+    expect(toggle()).toHaveAccessibleName("Switch to the night theme");
+    await userEvent.click(toggle());
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(localStorage.getItem("nse-universe.theme")).toBe("dark");
   });
@@ -167,7 +172,7 @@ describe("top bar", () => {
     expect(await within(header).findByText("22,698.85")).toBeInTheDocument();
     expect(within(header).getByRole("link", { name: /System status:/ })).toBeInTheDocument();
     expect(within(header).queryByRole("button", { name: "Refresh" })).toBeNull();
-    expect(within(header).queryByRole("button", { name: /theme/i })).toBeNull();
+    expect(within(header).getAllByRole("button", { name: /theme/i })).toHaveLength(1); // the single day/night button
     expect(within(header).queryByText(/Last update/)).toBeNull();
     expect(within(header).queryByRole("list", { name: "System signals" })).toBeNull();
     expect(within(header).queryByText(/Weekly/)).toBeNull();

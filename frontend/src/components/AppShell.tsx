@@ -50,10 +50,13 @@ export function AppShell() {
           </span>
         </Link>
         <TopNav />
-        <div className="ml-auto flex shrink-0 items-center justify-end gap-x-2 whitespace-nowrap sm:gap-x-2.5">
+        {/* on a phone the price sits next to the logo and the status and theme button go to the far edge; from md up everything is pushed right */}
+        <div className="flex min-w-0 flex-1 items-center justify-between gap-x-2 whitespace-nowrap md:ml-auto md:flex-none md:justify-end sm:gap-x-2.5">
           <SpotBadge latest={spotSnapshot ?? latest} className="md:flex-nowrap" />
-          <StatusPill signals={signals} />
-          <ThemeSwitch />
+          <div className="flex shrink-0 items-center gap-x-2 sm:gap-x-2.5">
+            <StatusPill signals={signals} />
+            <ThemeSwitch />
+          </div>
         </div>
       </header>
       {menuOpen && (
