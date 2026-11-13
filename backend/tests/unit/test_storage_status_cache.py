@@ -4,6 +4,7 @@ What must never be cached is the free disk space: a disk that fills up has to sh
 from __future__ import annotations
 
 import shutil
+import time
 from collections import namedtuple
 from pathlib import Path
 
@@ -49,3 +50,32 @@ def test_the_cache_expires(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
         monkeypatch.setattr(routes, "_STORAGE_TTL_SECONDS", 0.0)
         c.get("/api/storage/status")
     assert calls["n"] == 2
+
+
+def test_a_slow_read_only_answer_is_built_once_for_calls_that_overlap_and_again_after_it_expires() -> None:
+    import threading
+    import time
+
+    built = {"n": 0}
+
+    def slow() -> dict[str, int]:
+        built["n"] += 1
+        time.sleep(0.2)
+        return {"n": built["n"]}
+
+    routes._ttl_cache.clear()  # noqa: SLF001
+    out: list[dict[str, int]] = []
+    ts = [threading.Thread(target=lambda: out.append(routes._cached("k", 60.0, slow))) for _ in range(4)]  # noqa: SLF001
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert built["n"] == 1 and all(o == {"n": 1} for o in out)  # four overlapping callers, one build
+    assert routes._cached("k", 0.0, slow) == {"n": 2}  # noqa: SLF001 - expired: built again
+
+
+def test_cleaning_up_data_drops_the_cached_overview(tmp_path: Path) -> None:
+    routes._ttl_cache["cleanup|x|2026-11-13"] = (time.monotonic(), {"old": True})  # noqa: SLF001
+    with TestClient(make_app(tmp_path), client=("127.0.0.1", 50000)) as c:  # the cleanup endpoint only answers local clients
+        assert c.post("/api/storage/cleanup", json={"items": ["regenerable"], "confirm": True}).status_code == 200
+    assert not [k for k in routes._ttl_cache if k.startswith("cleanup|")]  # noqa: SLF001

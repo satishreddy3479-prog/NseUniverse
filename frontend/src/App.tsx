@@ -2,6 +2,8 @@ import { lazy, Suspense, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { warmUp } from "./lib/chunkReload";
 import { DataSessions } from "./pages/DataSessions";
 import { OptionChain } from "./pages/OptionChain";
 import { Home } from "./pages/Home";
@@ -22,6 +24,28 @@ const ServerManagement = named(() => import("./pages/ServerManagement"), "Server
 const Portfolio = named(() => import("./pages/Portfolio"), "Portfolio");
 const Diagnostics = named(() => import("./pages/Diagnostics"), "Diagnostics");
 const Settings = named(() => import("./pages/Settings"), "Settings");
+/** The pages that load on demand, most used first. Fetched quietly once the first screen is up (see prefetchPages), so a click on a menu item does not wait for the network. */
+const PAGE_LOADERS: (() => Promise<unknown>)[] = [
+  () => import("./pages/MarketIntelligence"), () => import("./pages/StrategyBuilder"), () => import("./pages/ToolPage"), () => import("./pages/Analysis"),
+  () => import("./pages/StraddleIntelligence"), () => import("./pages/Swing"), () => import("./pages/Settings"), () => import("./pages/Portfolio"),
+  () => import("./pages/Diagnostics"), () => import("./pages/ServerManagement"), () => import("./pages/DataCleanup"),
+];
+
+/** Warm the browser cache with the other pages, one at a time while the browser is idle. Skipped on a saver or very slow connection. */
+export function prefetchPages(): void {
+  const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  if (conn?.saveData || /(^|-)2g$/.test(conn?.effectiveType ?? "")) return;
+  const idle = (fn: () => void) => { if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(fn, { timeout: 4000 }); else setTimeout(fn, 800); };
+  let i = 0;
+  const next = () => {
+    const load = PAGE_LOADERS[i++];
+    if (!load) return;
+    warmUp.active = true;
+    load().catch(() => { /* a failed warm-up is harmless: the page is fetched when it is opened */ }).finally(() => { warmUp.active = false; idle(next); });
+  };
+  idle(next);
+}
+
 const wait = (what: string, el: React.ReactNode) => <Suspense fallback={<p className="text-muted" role="status">Loading {what}…</p>}>{el}</Suspense>;
 
 export function makeQueryClient() {
@@ -67,10 +91,12 @@ export function AppRoutes() {
 export default function App() {
   const [client] = useState(makeQueryClient);
   return (
-    <QueryClientProvider client={client}>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ErrorBoundary scope="app">
+      <QueryClientProvider client={client}>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

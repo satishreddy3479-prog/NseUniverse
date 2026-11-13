@@ -24,8 +24,17 @@ __DOMAIN__ {
 	handle /ws/* {
 		reverse_proxy 127.0.0.1:8010
 	}
+	# Built files carry a content hash in their name, so a browser may keep them for good. A name that does not exist is a plain
+	# 404 (never the index page: a page that asked for a file from an older build must fail clearly, not receive HTML as script).
+	handle /assets/* {
+		root * /opt/nse-universe/current/frontend/dist
+		@present file
+		header @present Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
 	handle {
 		root * /opt/nse-universe/current/frontend/dist
+		header Cache-Control "no-cache"
 		try_files {path} /index.html
 		file_server
 	}

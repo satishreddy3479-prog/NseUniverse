@@ -1,7 +1,7 @@
 /* NSE Universe service worker.
  * Caches only the static app shell (built files) so the app opens fast and installs.
  * Market data is NEVER cached or replayed: /api and /ws always go to the network. */
-const CACHE = "nse-universe-shell-v1";
+const CACHE = "nse-universe-shell-v2"; // v2: old caches (which could hold an index page stored under a script name) are dropped on activate
 self.addEventListener("install", (e) => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then((c) => c.add("/"))); });
 self.addEventListener("activate", (e) => {
   e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
@@ -16,6 +16,8 @@ self.addEventListener("fetch", (e) => {
     return;
   }
   if (url.pathname.startsWith("/assets/")) { // hashed build files never change: cache first
-    e.respondWith(caches.match(req).then((hit) => hit || fetch(req).then((r) => { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); return r; })));
+    // Only a real file is stored: a missing name can come back as the index page or an error, and keeping that would break the page for good.
+    const real = (r) => r.ok && !(r.headers.get("content-type") || "").includes("text/html");
+    e.respondWith(caches.match(req).then((hit) => hit || fetch(req).then((r) => { if (real(r)) { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); } return r; })));
   }
 });

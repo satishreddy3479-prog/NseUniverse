@@ -96,6 +96,15 @@ if [ "$TEST_MODE" != 1 ]; then
   [ -f "$rel/frontend/dist/index.html" ] || fail "frontend build produced no index.html"
 fi
 
+# ---- Keep the previous release's built files next to the new ones. The app's pages are loaded on demand under hashed names; a tab
+# (or the installed app) opened before this deploy still asks for the old names, and when they are gone that page cannot open
+# (a blank screen until the person reloads). Names are content hashes, so old and new never clash; files older than 14 days go.
+oldd=$(readlink -f "$ROOT/current" 2>/dev/null || true)
+if [ -n "$oldd" ] && [ "$oldd" != "$rel" ] && [ -d "$oldd/frontend/dist/assets" ] && [ -d "$rel/frontend/dist/assets" ]; then
+  cp -an "$oldd/frontend/dist/assets/." "$rel/frontend/dist/assets/" 2>/dev/null || true
+  find "$rel/frontend/dist/assets" -type f -mtime +14 -delete 2>/dev/null || true
+fi
+
 # ---- Switch over, check health, roll back on failure
 prev=$(readlink -f "$ROOT/current" 2>/dev/null || true)
 ln -sfn "$rel" "$ROOT/current.new" && mv -T "$ROOT/current.new" "$ROOT/current"

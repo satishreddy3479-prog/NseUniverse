@@ -220,7 +220,8 @@ describe("Strategies kept on the server", () => {
     await userEvent.type(await screen.findByLabelText("Strategy name"), "persist me");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url === "/api/strategies/saved" && (c.body as { key: string }).key === "persist me")).toBe(true));
-    const put = calls.find((c) => c.method === "PUT")!.body as { doc: { name: string; legs: unknown[] } };
+    // the save the person asked for, not an earlier automatic draft save (which carries no name yet)
+    const put = calls.find((c) => c.method === "PUT" && (c.body as { key?: string }).key === "persist me")!.body as { doc: { name: string; legs: unknown[] } };
     expect(put.doc.name).toBe("persist me");
     expect(put.doc.legs).toHaveLength(2);
   });

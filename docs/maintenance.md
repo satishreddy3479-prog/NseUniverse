@@ -10,6 +10,7 @@ The app is built so most things fail loudly and early instead of quietly: the se
 | **Monthly** | Look at System > Connection diagnostics and the watchdog journal | `journalctl -u nse-universe-watchdog --since "30 days ago" \| grep -v "all checks"` |
 | **When a reboot is flagged** | Reboot the server on a weekend | `ssh nse-server reboot`. The service, Caddy and all timers start by themselves and the app signs in to the broker at start. Afterwards check `curl -s http://127.0.0.1:8010/api/health` and System > Platform status. |
 | **When NSE changes the NIFTY lot size** | Set `COST_LOT_SIZE` | The app compares the stored chain's lot size with the cost model and raises `lot-size`. Set `COST_LOT_SIZE=<new>` in `/etc/nse-universe/backend.env`, `systemctl restart nse-universe`. Strategy P&L already uses the chain's own lot size. |
+| **After a change to `deploy/Caddyfile.template`** | Apply it on the server | A normal deploy does not touch Caddy's config. `ssh nse-server` then `sudo bash /opt/nse-universe/current/deploy/apply-caddyfile.sh <your domain>` (it validates, keeps a backup of the old file and reloads). |
 | **Once a year** | Review upgrades on purpose | See "Upgrading packages" below. |
 
 ## What each alert means

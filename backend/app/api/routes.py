@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -584,7 +585,34 @@ async def market_weights_import(request: Request, body: WeightsImport) -> dict[s
         ) from None
 
 
-#: The storage report walks every stored file (about 7 s on the server), so the walk is reused for two minutes; the disk figures are read fresh each time.
+_ttl_cache: dict[str, tuple[float, Any]] = {}
+_ttl_locks: dict[str, Any] = {}
+
+
+def _cached(key: str, ttl: float, build: Callable[[], Any]) -> Any:
+    """Reuse a slow, read-only answer for ``ttl`` seconds.
+
+    Calls that arrive while it is being built wait for it instead of repeating the work. The server
+    has one CPU core: two copies of a 20-second job would make everything else wait twice as long.
+    """
+    import threading
+    import time as _time
+
+    hit = _ttl_cache.get(key)
+    if hit is not None and _time.monotonic() - hit[0] < ttl:
+        return hit[1]
+    lock = _ttl_locks.setdefault(key, threading.Lock())
+    with lock:
+        hit = _ttl_cache.get(key)
+        if hit is not None and _time.monotonic() - hit[0] < ttl:
+            return hit[1]
+        val = build()
+        _ttl_cache[key] = (_time.monotonic(), val)
+        return val
+
+
+#: The storage report walks every stored file (about 7 s on the server), so the walk is
+#: reused for two minutes. The disk figures are read fresh each time.
 _STORAGE_TTL_SECONDS = 120.0
 _storage_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
@@ -610,10 +638,14 @@ async def storage_status(request: Request) -> dict[str, Any]:
             rep = st.report(s.data_dir, s.log_dir, today, archived_days=eod.archived_days())
             _storage_cache.clear()
             _storage_cache[key] = (_time.monotonic(), rep)
-        usage = shutil.disk_usage(s.data_dir)  # cheap: always current, so a filling disk is never hidden by the cache
+        usage = shutil.disk_usage(s.data_dir)  # cheap and always current: a filling disk shows
         growth = rep.get("growth_bytes_per_day") or 0
         rep.update(
-            disk={"free_bytes": usage.free, "total_bytes": usage.total, "free_gb": round(usage.free / 1e9, 1)},
+            disk={
+                "free_bytes": usage.free,
+                "total_bytes": usage.total,
+                "free_gb": round(usage.free / 1e9, 1),
+            },
             runway_days=round(usage.free / growth) if growth > 0 else None,
             pressure=st.pressure(usage.free, usage.total),
         )
@@ -655,21 +687,22 @@ async def storage_cleanup_overview(request: Request) -> dict[str, Any]:
 
     s = request.app.state.settings
     a = _cleanup_args(request)
-    return await asyncio.to_thread(
-        lambda: cleanup.overview(
-            data_dir=a["data_dir"],
-            log_dir=s.log_dir,
-            today=a["today"],
-            obs=a["obs"],
-            intraday=request.app.state.intraday_store,
-            eod=a["eod"],
-            raw_keep=a["raw_keep"],
-            norm_keep=a["norm_keep"],
-            obs_keep=a["obs_keep"],
-            underlying=s.underlying,
-            now=a["now"],
-        )
+    # walks every stored file (about 20 s on the server), so it is reused for two minutes
+    build = lambda: cleanup.overview(  # noqa: E731
+        data_dir=a["data_dir"],
+        log_dir=s.log_dir,
+        today=a["today"],
+        obs=a["obs"],
+        intraday=request.app.state.intraday_store,
+        eod=a["eod"],
+        raw_keep=a["raw_keep"],
+        norm_keep=a["norm_keep"],
+        obs_keep=a["obs_keep"],
+        underlying=s.underlying,
+        now=a["now"],
     )
+    key = f"cleanup|{s.data_dir}|{a['today']}"
+    return await asyncio.to_thread(_cached, key, _STORAGE_TTL_SECONDS, build)
 
 
 @router.post("/storage/cleanup", dependencies=[Depends(require_local_control)])
@@ -683,6 +716,8 @@ async def storage_cleanup_run(body: CleanupRequest, request: Request) -> dict[st
         )
     a = _cleanup_args(request)
     _storage_cache.clear()  # what is stored is about to change
+    for k in [k for k in _ttl_cache if k.startswith("cleanup|")]:
+        _ttl_cache.pop(k, None)
     try:
         res = await asyncio.to_thread(
             lambda: cleanup.run(
@@ -805,7 +840,11 @@ async def intelligence_straddle_alerts(
 async def intelligence_straddle_validation(request: Request, sessions: int = 20) -> dict[str, Any]:
     """Predicted theta decay vs actual premium change over stored sessions (read-only)."""
     svc = _straddle(request)
-    return await asyncio.to_thread(svc.validation, max(1, min(sessions, 60)))
+    n = max(1, min(sessions, 60))
+    # it recomputes over every stored session (about 5 s) and past sessions do not change
+    # minute to minute: reused for five minutes
+    key = f"straddle-validation|{id(svc)}|{n}"
+    return await asyncio.to_thread(_cached, key, 300.0, lambda: svc.validation(n))
 
 
 @router.get("/swing/minute")

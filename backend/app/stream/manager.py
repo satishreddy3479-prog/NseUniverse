@@ -439,13 +439,23 @@ class StreamManager:
                 return
 
     # ----------------------------------------------------------------- events
+    def _internal_alias(self, tick: LiveTick) -> LiveTick:
+        """The exchange spells an index its own way ("INDIA VIX" for the subscribed "India VIX").
+
+        One matching an internal key ignoring case is stored under that key, off the browser feed.
+        """
+        keys = self.book.internal_keys
+        if tick.key in keys:
+            return tick
+        canon = next((k for k in keys if k.casefold() == tick.key.casefold()), None)
+        if canon is None:
+            return tick
+        return tick.model_copy(update={"key": canon, "instrument_token": canon.split("|", 1)[1]})
+
     def _handle(self, ev: FeedEvent, feed: FeedSession) -> None:
         now = self._now()
-        if ev.kind == "tick" and ev.tick is not None and ev.tick.kind == "index" and ev.tick.key not in self.book.internal_keys:
-            # the exchange names an index in its own spelling ("INDIA VIX" for the subscribed "India VIX"): match it to the internal key ignoring case
-            canon = next((k for k in self.book.internal_keys if k.casefold() == ev.tick.key.casefold()), None)
-            if canon is not None:
-                ev = ev.model_copy(update={"tick": ev.tick.model_copy(update={"key": canon, "instrument_token": canon.split("|", 1)[1]})})
+        if ev.kind == "tick" and ev.tick is not None and ev.tick.kind == "index":
+            ev = ev.model_copy(update={"tick": self._internal_alias(ev.tick)})
         if ev.kind == "tick" and ev.tick is not None and ev.tick.key in self.book.internal_keys:
             self.book.update_internal(ev.tick)
             self.market_message_count += 1

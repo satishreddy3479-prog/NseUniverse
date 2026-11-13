@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import { ToolTabs } from "./ToolTabs";
 import { api } from "../lib/api";
 import { setSessionClock } from "../lib/session";
@@ -12,12 +12,14 @@ import { ThemeSwitch } from "./ThemeSwitch";
 import { SpotBadge } from "./SpotBadge";
 import { StatusPill } from "./StatusPill";
 import { AlertStrip } from "./AlertStrip";
+import { ErrorBoundary } from "./ErrorBoundary";
 
 
 /** Top bar keeps only what matters at a glance: the product, the NIFTY level and one status.
  *  Everything else (full signal list, expiries, last update, refresh, theme) is in Settings. */
 export function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const { pathname } = useLocation();
   useLiveConnection();
   // The session's open, close and holidays come from the backend, which follows the exchange feed; pages are
   // redrawn once when they differ from the defaults.
@@ -67,7 +69,7 @@ export function AppShell() {
       <AlertStrip />
       <main className="relative min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 md:p-4 lg:p-6">
         <ToolTabs />
-        <Outlet key={clockKey} />
+        <ErrorBoundary resetKey={pathname} scope="page"><Outlet key={clockKey} /></ErrorBoundary>
       </main>
     </div>
   );
