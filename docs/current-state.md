@@ -511,4 +511,4 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 
 **13 Nov 2026 (D149):** the daily-history service now stores only NIFTY 50 and India VIX; the global, sector-index, FX and commodity series, the intraday score's "Global markets" group and the Command Center global/sector tables are removed.
 
-**13 Nov 2026 (D153):** production hardening pass: server watchdog with an in-app alert strip, release id in /api/health, restore check proven, off-server backup copy on S:\NseUniverse-backups, CI workflow, .gitattributes. Open for the user: SSH hardening (`deploy/harden.sh`), an alert push channel, and a market-hours check of the live stream (`scripts\stream-check.ps1`).
+**13 Nov 2026 (D153):** production hardening pass: server watchdog with an in-app alert strip, release id in /api/health, restore check proven, off-server backup copy on S:\NseUniverse-backups, .gitattributes (no GitHub workflows). Open for the user: SSH hardening (`deploy/harden.sh`), an alert push channel, and a market-hours check of the live stream (`scripts\stream-check.ps1`).
