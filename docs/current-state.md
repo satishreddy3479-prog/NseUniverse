@@ -514,3 +514,5 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 **13 Nov 2026 (D153):** production hardening pass: server watchdog with an in-app alert strip, release id in /api/health, restore check proven, off-server backup copy on S:\NseUniverse-backups, .gitattributes (no GitHub workflows). Open for the user: SSH hardening (`deploy/harden.sh`), an alert push channel, and a market-hours check of the live stream (`scripts\stream-check.ps1`).
 
 **13 Nov 2026 (D154):** robustness pass: pinned Python dependencies (`backend/requirements.lock`), watchdog checks for holiday-list expiry (list ends 31 Dec 2026: action needed in December), daily-history and flow staleness, pending reboot; lot-size drift alert; runbook in `docs/maintenance.md`.
+
+**13 Nov 2026 (D155):** Settings > Exchange holidays: paste NSE's circular to extend the holiday list (kept in data/holidays_user.json, merged over the verified list). The list still ends 31 Dec 2026 until the 2027 circular is entered.

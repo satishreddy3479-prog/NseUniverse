@@ -98,7 +98,18 @@ export interface CleanupOverview {
 export interface OpsAlert { key: string; level: "critical" | "warning"; text: string }
 export interface OpsAlerts { available: boolean; checked_at: string | null; alerts: OpsAlert[]; release: string | null }
 
+export interface HolidayEntry { date: string; name: string }
+export interface HolidaysView {
+  reference: { coverage: [string, string]; holidays: HolidayEntry[]; special_sessions: HolidayEntry[] };
+  user: { coverage_to: string | null; source: string | null; updated_at: string | null; holidays: HolidayEntry[]; special_sessions: HolidayEntry[] };
+  effective_coverage: [string, string];
+}
+export interface HolidaysUpdate { coverage_to: string; source: string; holidays: HolidayEntry[]; special_sessions: HolidayEntry[]; confirm_complete: boolean }
+
 export const api = {
+  holidays: () => request<HolidaysView>("/api/market/holidays"),
+  putHolidays: (body: HolidaysUpdate) =>
+    request<HolidaysView>("/api/market/holidays", { method: "PUT", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify(body) }),
   opsAlerts: () => request<OpsAlerts>("/api/ops/alerts"),
   cleanupOverview: () => request<CleanupOverview>("/api/storage/cleanup"),
   cleanupRun: (items: string[]) =>

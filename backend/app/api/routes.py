@@ -1201,6 +1201,67 @@ async def market_session(request: Request) -> dict[str, Any]:
     }
 
 
+class HolidayEntry(BaseModel):
+    date: str
+    name: str
+
+
+class HolidaysUpdate(BaseModel):
+    coverage_to: str
+    source: str
+    holidays: list[HolidayEntry] = []
+    special_sessions: list[HolidayEntry] = []
+    confirm_complete: bool = False
+
+
+def _holiday_view() -> dict[str, Any]:
+    from app.prediction.calendar import REFERENCE, TradingCalendar, read_user_file
+
+    cal = TradingCalendar.load()
+    ref = TradingCalendar._parse(REFERENCE)
+    user = read_user_file() or {}
+    return {
+        "reference": {
+            "coverage": [ref.coverage[0].isoformat(), ref.coverage[1].isoformat()],
+            "holidays": [
+                {"date": d.isoformat(), "name": n} for d, n in sorted(ref.holidays.items())
+            ],
+            "special_sessions": [
+                {"date": d.isoformat(), "name": n} for d, n in sorted(ref.special_sessions.items())
+            ],
+        },
+        "user": {
+            "coverage_to": user.get("coverage_to"),
+            "source": user.get("source"),
+            "updated_at": user.get("updated_at"),
+            "holidays": user.get("holidays", []),
+            "special_sessions": user.get("special_sessions", []),
+        },
+        "effective_coverage": [cal.coverage[0].isoformat(), cal.coverage[1].isoformat()],
+    }
+
+
+@router.get("/market/holidays")
+async def market_holidays() -> dict[str, Any]:
+    """The NSE circular holiday list (read-only) and the holidays added in Settings."""
+    return _holiday_view()
+
+
+@router.put("/market/holidays", dependencies=[Depends(require_local_control)])
+async def update_market_holidays(body: HolidaysUpdate) -> dict[str, Any]:
+    """Replace the user's additions to the holiday list (the NSE circular list is never changed)."""
+    from app.prediction.calendar import save_user_holidays, validate_user_holidays
+
+    clean, errors = validate_user_holidays(body.model_dump())
+    if clean is None:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "invalid_holidays", "message": " ".join(errors), "errors": errors},
+        )
+    save_user_holidays(clean)
+    return _holiday_view()
+
+
 # ------------------------------------------------------- NIFTY future: basis, open interest, volume
 @router.get("/futures/series")
 async def futures_series_route(

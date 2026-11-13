@@ -31,6 +31,8 @@ for db in "$DATA"/*.sqlite3; do
   n=$((n + 1))
 done
 [ "$n" -gt 0 ] || { echo "backup: no databases found in $DATA"; exit 0; }
+# the holidays entered in Settings (a small JSON file) travel with the databases
+[ -f "$DATA/holidays_user.json" ] && cp "$DATA/holidays_user.json" "$tmp/holidays_user.json"
 rm -rf "$out"; mv "$tmp" "$out"; trap - EXIT
 echo "backup: $n databases saved to $out ($(du -sh "$out" | cut -f1))"
 # retention for backup copies only (verified new backup exists above)

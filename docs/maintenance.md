@@ -5,7 +5,7 @@ The app is built so most things fail loudly and early instead of quietly: the se
 ## Scheduled duties
 | When | What | How |
 |---|---|---|
-| **Every December** (before 1 Jan) | Add the next year's NSE holiday list | NSE publishes the trading-holiday circular in December. Add the dates to `backend/app/prediction/reference/nse_cm_holidays.json` (`weekday_holidays`, `special_sessions` such as Muhurat, `coverage.to`, the circular's reference under `sources`). Only dates from the official circular: never guess. **The list currently ends on 31 Dec 2026**; the watchdog warns from 60 days before the end and turns critical 14 days before. After the end date the app falls back to "every weekday is a session", which is wrong on holidays. |
+| **Every December** (before 1 Jan) | Add the next year's NSE holiday list | NSE publishes the trading-holiday circular in December. Open **Settings > Exchange holidays**, paste the circular's holiday lines (e.g. `26-Jan-2027 Tuesday Republic Day`), check the rows, name the circular, tick the confirmation and Save. Add Muhurat as a "Special session". Only dates from the official circular: never guess. **The list currently ends on 31 Dec 2026**; the watchdog warns from 60 days before the end and turns critical 14 days before, and the warning disappears when you save. After the end date the app falls back to "every weekday is a session", which is wrong on holidays. Your entries are kept in `data/holidays_user.json` (in the nightly backup and the off-server copy); the NSE circular file in the code is never edited. If NSE later declares an extra holiday, add it the same way (no new year needed). |
 | **Weekly** | Off-server copy | `powershell -ExecutionPolicy Bypass -File scripts\pull-backups.ps1` (adds only what is new, deletes nothing). |
 | **Monthly** | Look at System > Connection diagnostics and the watchdog journal | `journalctl -u nse-universe-watchdog --since "30 days ago" \| grep -v "all checks"` |
 | **When a reboot is flagged** | Reboot the server on a weekend | `ssh nse-server reboot`. The service, Caddy and all timers start by themselves and the app signs in to the broker at start. Afterwards check `curl -s http://127.0.0.1:8010/api/health` and System > Platform status. |
@@ -25,7 +25,7 @@ The app is built so most things fail loudly and early instead of quietly: the se
 | `eod` | End-of-day processing pending | `journalctl -u nse-universe -n 80 \| grep eod`; it retries by itself. |
 | `history`, `history-source` | Daily NIFTY 50 / India VIX bars missing or Yahoo download failed | Yahoo is an unofficial source and sometimes blocks; it retries hourly. If it lasts days, the source changed: see `backend/app/prediction/sources/yahoo.py`. |
 | `flows`, `flows-blocked` | NSE institutional-flow files missing or NSE refused the request | NSE publishes about 18:00 IST; a block usually clears; the downloads are low-rate. |
-| `holiday-list` | The NSE holiday list is about to end | See "Every December". |
+| `holiday-list` | The NSE holiday list is about to end | Settings > Exchange holidays; see "Every December". |
 | `lot-size` | NSE changed the lot size | See "When NSE changes the NIFTY lot size". |
 | `reboot` | Security updates need a reboot | See "When a reboot is flagged". |
 

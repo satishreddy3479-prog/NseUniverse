@@ -96,8 +96,16 @@ def _trading_calendar() -> Any:
         return None
 
 
+def _use_user_holidays(settings: Settings) -> None:
+    """Holidays entered in Settings live in the data folder; they are merged over the NSE list."""
+    from app.prediction.calendar import USER_FILE_NAME, set_user_file
+
+    set_user_file(settings.data_dir / USER_FILE_NAME)
+
+
 def create_app(settings: Settings | None = None, broker: MarketDataBroker | None = None) -> FastAPI:
     settings = settings or get_settings()
+    _use_user_holidays(settings)
     setup_logging(settings.log_level, settings.log_dir, settings.secret_values())
 
     @asynccontextmanager

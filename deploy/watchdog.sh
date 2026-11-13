@@ -101,8 +101,8 @@ if reachable:
             left = (date.fromisoformat(cov) - ist.date()).days
             if left < 60:
                 add("holiday-list", "critical" if left < 14 else "warning",
-                    f"The NSE holiday list ends on {cov} ({max(left, 0)} days). Add the new year's NSE holiday circular to "
-                    "backend/app/prediction/reference/nse_cm_holidays.json; after that date holidays would be treated as normal weekdays.")
+                    f"The NSE holiday list ends on {cov} ({max(left, 0)} days). Open Settings > Exchange holidays and paste the new "
+                    "year's NSE holiday circular (NSE publishes it in December); after that date holidays would be treated as normal weekdays.")
     except Exception as e:  # noqa: BLE001
         add("holiday-status", "warning", f"/api/market/session failed ({type(e).__name__}).")
     try:
