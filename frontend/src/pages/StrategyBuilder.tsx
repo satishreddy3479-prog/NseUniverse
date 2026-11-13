@@ -27,6 +27,11 @@ export interface Saved { name: string; savedAt: string; updatedAt?: string; expi
 export const CLOSED_KEY = "nse.closed.v1";
 export interface ClosedLeg extends Leg { exit: number }
 export interface Closed { id: string; name: string; closedAt: string; snapshotAt: string; expiry: string; lotSize: number; pnl: number; legs: ClosedLeg[]; /** the stored chain was stale when the exit prices were read */ stale?: boolean }
+/** Two lists of legs are the same trade when every enabled leg has the same side, type, strike, expiry, entry premium and exit price. */
+export const sameTrade = (a: Leg[], b: Leg[]): boolean => {
+  const sig = (ls: Leg[]) => ls.filter((l) => l.enabled !== false).map((l) => JSON.stringify([l.action, l.type, l.strike, l.expiry, l.premium, l.exitPrice ?? (l as { exit?: number }).exit ?? null])).sort().join("|");
+  return a.length > 0 && sig(a) === sig(b);
+};
 const loadClosed = (): Closed[] => { try { return JSON.parse(localStorage.getItem(CLOSED_KEY) ?? "[]") as Closed[]; } catch { return []; } };
 /** A number box that commits on blur or Enter, so a half-typed "2" on the way to "2000" never arms a rule. Empty clears it. */
 function NumBox({ value, onCommit, className, ariaLabel }: { value: number | null | undefined; onCommit: (v: number | null) => void; className: string; ariaLabel: string }) {
@@ -687,6 +692,10 @@ export default function StrategyBuilder() {
     if (!hydrated || !lotSize || sync !== "server") return;
     if (opened == null && legs.length > 0 && isFinished(legs) && snap && !filed.current.has(`open:${loaded ?? ""}`)) {
       filed.current.add(`open:${loaded ?? ""}`);
+      // The same finished legs may already be in Closed: a closed trade that was opened to look at, then restored after a refresh or a
+      // page switch, comes back as plain legs. Filing them again would book the same P&L twice, so it is shown as the closed trade it is.
+      const twin = closed.find((c) => sameTrade(c.legs, legs));
+      if (twin) { setOpened(twin); return; }
       exitAll();
       setNote("All legs were closed by the strategy's own close rule, so it moved to Closed.");
       return;

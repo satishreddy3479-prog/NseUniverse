@@ -675,3 +675,7 @@ The straddle service thinned a session to 240 points, so a full day (about 385 o
 
 ## D159 (13 Nov 2026): payoff chart shows the full shape of a bounded strategy
 The payoff y-axis clipped a side at 3x the other, so an iron fly whose maximum profit was over 3x its maximum loss had its peak cut off. A payoff that is flat at both ends (iron fly, condor, spreads) now shows its real peak and trough; only a side that keeps running is still clipped. Choosing a different strategy (strikes, sides, types) also resets the zoom to the profit-zone view instead of keeping the previous zoom.
+
+
+## D160 (13 Nov 2026): a closed trade is never filed twice
+The builder files any working strategy whose legs are all out as a new Closed trade. The working copy is kept in the browser without the "opened closed trade" mark, so a closed trade opened to look at and then restored (refresh, page switch) came back as plain finished legs and was filed again under a new name ("Strategy 13 Nov, 17:51" and "21:56" copied "Straddle - neutral 13/11/2026", +3,660 each). Before filing, the legs are now compared (side, type, strike, expiry, entry premium, exit price) with every closed trade; a match is shown as that closed trade instead. The two duplicate records already stored are NOT removed by this change (stored data is only deleted with approval).

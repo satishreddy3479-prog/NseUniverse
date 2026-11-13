@@ -170,4 +170,19 @@ describe("a strategy closed by its own close rule moves to Closed", () => {
     expect((store.closed[0] as { name: string; pnl: number }).pnl).toBe(3900);
     expect(await screen.findByText(/moved to Closed/)).toBeTruthy();
   });
+
+  it("does not file a second copy of a closed trade that was opened to look at and came back after a refresh", async () => {
+    const legs = [leg(out(80, "strategy", 1300)), leg({ type: "PE", ...out(60, "strategy", 2600) })];
+    const was = { id: "c1", name: "straddle", closedAt: "2026-11-02T09:50:23Z", snapshotAt: "2026-11-02T09:50:00Z", expiry: "2026-11-03", lotSize: 65, pnl: 3900,
+      legs: legs.map((l) => ({ ...l, id: `old-${Math.random()}`, exit: (l as unknown as { exitPrice: number }).exitPrice })) };
+    store.closed = [was];
+    // the refreshed page restores the legs without the "opened closed trade" mark: no name, nothing loaded
+    localStorage.setItem("nse.builder.working.v1", JSON.stringify({ legs, expiry: null, name: "", loaded: null, baseline: legs, at: Date.now() }));
+    mount();
+    await waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"), { timeout: 15000 });
+    expect(await screen.findByText(/Opened closed trade/, undefined, { timeout: 15000 })).toBeTruthy(); // shown as the closed trade it is
+    await new Promise((r) => setTimeout(r, 100));
+    expect(screen.getByTestId("closed-menu")).toHaveTextContent("Closed (1)");
+    expect(store.closed).toHaveLength(1); // nothing was booked twice
+  });
 });
