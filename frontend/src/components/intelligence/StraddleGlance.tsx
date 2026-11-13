@@ -24,8 +24,8 @@ export function Gauge({ title, subtitle, score, cls, zones, trend, coverage, tes
   const pos = (v: number) => `${Math.max(0, Math.min(100, v))}%`;
   return (
     <div className="rounded-xl border border-rule bg-ink/40 p-4" data-testid={testid}>
-      <div className="flex items-start justify-between gap-2">
-        <div><div className="text-sm font-semibold text-paper">{title}</div><div className="text-xs leading-snug text-muted">{subtitle}</div></div>
+      <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
+        <div className="min-w-[12rem] flex-1"><div className="text-sm font-semibold text-paper">{title}</div><div className="text-xs leading-snug text-muted">{subtitle}</div></div>
         {move != null && Math.abs(move) >= 0.5 && <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${move > 0 ? "bg-up/15 text-up" : "bg-down/15 text-down"}`}>{move > 0 ? "▲" : "▼"} {Math.abs(move).toFixed(0)} vs 15 min ago</span>}
       </div>
       <div className="mt-2 flex items-baseline gap-2"><span className="num text-4xl font-bold text-paper" data-testid={`${testid}-score`}>{score == null ? MISSING : score.toFixed(0)}</span><span className="text-sm text-muted">/ 100</span><span className="ml-1 text-base font-semibold text-paper">{cls}</span></div>
