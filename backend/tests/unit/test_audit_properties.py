@@ -256,3 +256,19 @@ def test_a_failing_tick_handler_is_counted_and_visible_and_never_reaches_the_fee
 
 
 # ---------------------------------------------------------------------------------------------- garbage in
+
+
+def test_an_index_the_exchange_spells_in_capitals_still_lands_on_its_internal_key(tmp_path: Path) -> None:
+    """Seen live on 13 Nov: subscribed as "India VIX", delivered as "INDIA VIX". It must reach the internal book, not the browser feed."""
+    from fastapi.testclient import TestClient
+
+    from app.stream.models import FeedEvent, LiveTick
+    from tests.conftest import make_app
+
+    with TestClient(make_app(tmp_path)) as c:
+        stream = c.app.state.stream
+        stream.book.internal_keys = {"nse_cm|India VIX"}
+        tick = LiveTick(key="nse_cm|INDIA VIX", kind="index", exchange_segment="nse_cm", instrument_token="INDIA VIX", ltp=16.32, prev_close=16.62, received_at=datetime.now(UTC))
+        stream._handle(FeedEvent(kind="tick", tick=tick), feed=None)  # type: ignore[arg-type]
+        assert stream.book.internal_ticks()["nse_cm|India VIX"].ltp == 16.32
+        assert stream.book.get("nse_cm|INDIA VIX") is None  # not on the public feed

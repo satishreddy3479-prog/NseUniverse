@@ -441,6 +441,11 @@ class StreamManager:
     # ----------------------------------------------------------------- events
     def _handle(self, ev: FeedEvent, feed: FeedSession) -> None:
         now = self._now()
+        if ev.kind == "tick" and ev.tick is not None and ev.tick.kind == "index" and ev.tick.key not in self.book.internal_keys:
+            # the exchange names an index in its own spelling ("INDIA VIX" for the subscribed "India VIX"): match it to the internal key ignoring case
+            canon = next((k for k in self.book.internal_keys if k.casefold() == ev.tick.key.casefold()), None)
+            if canon is not None:
+                ev = ev.model_copy(update={"tick": ev.tick.model_copy(update={"key": canon, "instrument_token": canon.split("|", 1)[1]})})
         if ev.kind == "tick" and ev.tick is not None and ev.tick.key in self.book.internal_keys:
             self.book.update_internal(ev.tick)
             self.market_message_count += 1
