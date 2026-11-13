@@ -655,31 +655,24 @@ export function divergingBarOption(rows: { name: string; value: number }[], c: C
  * are dropped, a gap is left between days instead of a line across the night, and for the Session range the axis is
  * fixed to that session. Works on any series whose data are [timeMs, value] pairs; other series are untouched.
  */
-/**
- * Right edge of a session chart: the session close once the day is done, but while it is still running only a
- * little past the newest sample, so a morning's data fills the chart instead of hugging the left edge.
- */
-function fitMax(bounds: { min: number; max: number }, series: { data?: unknown }[]): number {
-  let last = -Infinity;
-  for (const s of series) {
-    if (!Array.isArray(s.data)) continue;
-    for (const d of s.data as unknown[]) if (Array.isArray(d) && typeof d[0] === "number" && d[1] != null && d[0] > last) last = d[0];
-  }
-  if (!Number.isFinite(last) || last >= bounds.max) return bounds.max;
-  return Math.min(bounds.max, last + Math.max(10 * 60_000, (last - bounds.min) * 0.1));
+/** The [time, value] of one chart point: a plain pair, or an object whose ``value`` is the pair (points that carry extra fields for the tooltip). */
+function pointOf(d: unknown): [number, unknown] | null {
+  const v = Array.isArray(d) ? d : d && typeof d === "object" && Array.isArray((d as { value?: unknown }).value) ? (d as { value: unknown[] }).value : null;
+  return v && typeof v[0] === "number" ? [v[0], v[1]] : null;
 }
 
 export function sessionize(option: EChartsCoreOption, bounds: { min: number; max: number } | null): EChartsCoreOption {
   const o = option as { series?: { data?: unknown }[]; xAxis?: Record<string, unknown> };
   if (!Array.isArray(o.series)) return option;
   const clip = (data: unknown): unknown => {
-    if (!Array.isArray(data) || !data.every((d) => Array.isArray(d) && typeof d[0] === "number")) return data;
+    if (!Array.isArray(data) || !data.every((d) => pointOf(d))) return data;
     const out: unknown[] = [];
     let lastDay: string | null = null;
-    for (const d of data as [number, unknown][]) {
-      if (!isSessionMs(d[0])) continue;
-      const day = new Date(d[0] + 330 * 60_000).toISOString().slice(0, 10);
-      if (lastDay != null && day !== lastDay) out.push([d[0] - 1, null]);
+    for (const d of data) {
+      const t = pointOf(d)![0];
+      if (!isSessionMs(t)) continue;
+      const day = new Date(t + 330 * 60_000).toISOString().slice(0, 10);
+      if (lastDay != null && day !== lastDay) out.push([t - 1, null]);
       lastDay = day;
       out.push(d);
     }
@@ -688,10 +681,11 @@ export function sessionize(option: EChartsCoreOption, bounds: { min: number; max
   const clipped = o.series.map((s) => ({ ...s, data: clip(s.data) }));
   // A labelled divider at the first sample of every later day, so a multi-day range reads as separate sessions.
   const firsts = new Map<string, number>();
-  for (const d of (clipped[0]?.data as [number, unknown][] | undefined) ?? []) {
-    if (!Array.isArray(d) || typeof d[0] !== "number" || d[1] == null) continue;
-    const day = new Date(d[0] + 330 * 60_000).toISOString().slice(0, 10);
-    if (!firsts.has(day)) firsts.set(day, d[0]);
+  for (const d of (clipped[0]?.data as unknown[] | undefined) ?? []) {
+    const pt = pointOf(d);
+    if (!pt || pt[1] == null) continue;
+    const day = new Date(pt[0] + 330 * 60_000).toISOString().slice(0, 10);
+    if (!firsts.has(day)) firsts.set(day, pt[0]);
   }
   const dividers = [...firsts.entries()].slice(1).map(([day, x]) => ({
     xAxis: x, label: { show: true, formatter: day.slice(8) + "/" + day.slice(5, 7), color: "#8a8f98", fontSize: 10, position: "insideStartTop" },
@@ -705,7 +699,7 @@ export function sessionize(option: EChartsCoreOption, bounds: { min: number; max
   }
   return {
     ...(option as object),
-    ...(bounds && o.xAxis ? { xAxis: { ...o.xAxis, min: bounds.min, max: fitMax(bounds, clipped) } } : {}),
+    ...(bounds && o.xAxis ? { xAxis: { ...o.xAxis, min: bounds.min, max: bounds.max } } : {}),
     series: clipped,
   } as EChartsCoreOption;
 }

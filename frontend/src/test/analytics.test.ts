@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sessionDays, sessionWindow, atmStraddle, buildupRows, buildupSession, classifyBuildup, compactIN, computeTotals, maxPain, OI_WINDOWS, oiWindowStats, isSessionMs, pcr, rangeObservations, universeRows, windowEndIso, windowStartIso } from "../lib/analytics";
+import { sessionDays, sessionWindow, atmStraddle, buildupRows, buildupSession, classifyBuildup, compactIN, computeTotals, maxPain, OI_WINDOWS, oiWindowStats, isSessionMs, pcr, rangeObservations, spanMinutes, universeRows, windowEndIso, windowStartIso } from "../lib/analytics";
 import type { OptionChainRow, OptionQuote } from "../lib/types";
 
 const q = (over: Partial<OptionQuote> = {}): OptionQuote => ({
@@ -132,6 +132,25 @@ describe("rangeObservations", () => {
     const b = rangeObservations(obs, "session").bounds!;
     expect(b.min).toBe(Date.UTC(2026, 9, 29, 9, 15) - 5.5 * 3600_000);
     expect(b.max).toBe(Date.UTC(2026, 9, 29, 15, 40) - 5.5 * 3600_000);
+  });
+  it("the axis fits the data: a morning's samples end a little after the newest one, not at the close", () => {
+    const m = (h: number, mi: number) => Date.UTC(2026, 9, 29, h, mi) - 5.5 * 3600_000;
+    const morning = [at(29, 9, 15), at(29, 9, 25), at(29, 9, 33)];
+    // session: from the 09:15 open; room = max(2 min, 6 % of the 18 min) = 2 min
+    expect(rangeObservations(morning, "session").bounds).toEqual({ min: m(9, 15), max: m(9, 35) });
+    // 30 min and 1 hour cannot start before the first sample: the same line, the same axis
+    expect(rangeObservations(morning, "30m").bounds).toEqual({ min: m(9, 15), max: m(9, 35) });
+    expect(rangeObservations(morning, "1h").bounds).toEqual({ min: m(9, 15), max: m(9, 35) });
+    // later in the day the windows differ: 30 min = 14:30-15:00 (+2 min), 1 hour = 14:00-15:00 (+3.6 min), session = 09:15-15:00 (+6 % of 5 h 45 min = 20.7 min)
+    const day = [at(29, 9, 15), at(29, 12, 0), at(29, 14, 0), at(29, 14, 30), at(29, 15, 0)];
+    expect(rangeObservations(day, "30m").bounds).toEqual({ min: m(14, 30), max: m(15, 0) + 2 * 60_000 });
+    expect(rangeObservations(day, "1h").bounds).toEqual({ min: m(14, 0), max: m(15, 0) + 3.6 * 60_000 });
+    expect(rangeObservations(day, "session").bounds).toEqual({ min: m(9, 15), max: m(15, 0) + 20.7 * 60_000 });
+    expect(rangeObservations(day, "all").bounds).toBeNull(); // All: the chart fits itself
+  });
+  it("spanMinutes says how much history there really is", () => {
+    expect(spanMinutes([at(29, 9, 15), at(29, 9, 33)])).toBe(18);
+    expect(spanMinutes([at(29, 9, 15)])).toBe(0);
   });
   it("samples fetched overnight or at the weekend are not session samples", () => {
     const night = [at(30, 2, 37), at(30, 8, 17), at(31, 12, 0), at(29, 12, 0)]; // Fri 02:37, Fri 08:17, Sat noon, Thu noon

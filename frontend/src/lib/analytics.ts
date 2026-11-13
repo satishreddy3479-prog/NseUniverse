@@ -157,12 +157,25 @@ export function rangeObservations<T extends { retrieved_at: string }>(obs: T[], 
   if (live.length === 0) return { rows: obs, note: `No sample was taken during ${sessionLabel()} IST; showing the after-hours samples that are stored.`, bounds: null, afterHoursOnly: true };
   const newest = Math.max(...live.map(ms));
   if (range === "all") return { rows: live, note: null, ...none };
+  // The axis fits the data: it starts at the first drawn sample (or the session open) and ends a little after the newest sample while the
+  // session is running, so a morning's samples fill the chart instead of hugging the left edge of a 09:15-15:30 axis.
+  const full = sessionBoundsOf(newest);
+  const room = (from: number) => Math.max(2 * 60_000, (newest - from) * 0.06);
   if (range === "30m" || range === "1h") {
     const from = newest - (range === "30m" ? 30 : 60) * 60_000;
-    return { rows: live.filter((o) => ms(o) >= from), note: null, ...none };
+    const rows = live.filter((o) => ms(o) >= from);
+    const min = Math.max(from, Math.min(...rows.map(ms)));
+    return { rows, note: null, bounds: { min, max: Math.min(full.max, newest + room(min)) }, afterHoursOnly: false };
   }
   const day = istDay(newest);
-  return { rows: live.filter((o) => istDay(ms(o)) === day), note: null, bounds: sessionBoundsOf(newest), afterHoursOnly: false };
+  return { rows: live.filter((o) => istDay(ms(o)) === day), note: null, bounds: { min: full.min, max: Math.min(full.max, newest + room(full.min)) }, afterHoursOnly: false };
+}
+
+/** Minutes between the first and the last of these samples (0 for fewer than two): how much history a chart really has. */
+export function spanMinutes(obs: { retrieved_at: string }[]): number {
+  if (obs.length < 2) return 0;
+  const t = obs.map((o) => new Date(o.retrieved_at).getTime());
+  return (Math.max(...t) - Math.min(...t)) / 60_000;
 }
 
 // ---------- OI by window (Last 3 min ... All) ----------

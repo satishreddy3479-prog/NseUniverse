@@ -8,7 +8,7 @@ import { useDash } from "./DashContext";
 import { GexWidget, IvSkewWidget, PeCeWidget, SmartOiWidget as OiBuildupWidget, VegaWidget } from "./toolWidgets";
 import { FullChart } from "./FullChart";
 import { sessionCloseMin, sessionOpenMin } from "../../lib/session";
-import { atmStraddle, compactIN, computeTotals, maxPain, OI_MODES, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, TS_RANGES, windowEndIso, windowStartIso, type OiMode } from "../../lib/analytics";
+import { atmStraddle, compactIN, computeTotals, maxPain, OI_MODES, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, spanMinutes, TS_RANGES, windowEndIso, windowStartIso, type OiMode } from "../../lib/analytics";
 import {
   smartOiDayOption, smartOiOption, smartOiRatioOption, smartOiVolumeOption, decayOption, oiChangeBarOption, oiSeriesOption, type OiSeriesKind, oiHeatmapOption, premiumOption, spotOption, straddleOption, strikeBarOption,
   oiExplorerOption, futuresOption, sessionize, totalsBarOption, type FuturesKind, type StrikeMetric } from "../../lib/chartOptions";
@@ -194,6 +194,10 @@ function TimeSeries({ build, label, note, extra }: {
   const opt = useMemo(() => (afterHoursOnly ? build(obs, colors) : sessionize(build(obs, colors), bounds)), [build, obs, colors, bounds, afterHoursOnly]);
   const distinct = new Set(obs.map((o) => `${o.underlying_ltp}|${o.total_ce_oi}|${o.total_pe_oi}|${o.total_ce_premium}|${o.total_pe_premium}`)).size;
   const rangeLabel = TS_RANGES.find((r) => r.id === d.tsRange)!.label;
+  // a 30 min or 1 hour window cannot show more than is stored: say so, otherwise the three buttons look like they do nothing
+  const want = d.tsRange === "30m" ? 30 : d.tsRange === "1h" ? 60 : 0;
+  const have = Math.round(spanMinutes(obs));
+  const shortHistory = want > 0 && !afterHoursOnly && obs.length >= 2 && have < want * 0.85;
   const close = useCallback(() => setOpen(false), []);
   return (
     <ChainGuard>
@@ -217,6 +221,7 @@ function TimeSeries({ build, label, note, extra }: {
                 {obs.length < 2 ? `Fewer than two samples in “${rangeLabel}”: pick a longer range.` : rangeNote}
               </p>
             )}
+            {shortHistory && <p className="mb-1 text-[11px] text-muted" data-testid="short-history">Only {have} min of samples are stored today, so “{rangeLabel}” shows the same line as the longer ranges until more is collected.</p>}
             {obs.length >= 2 && distinct < 2 && (
               <p className="mb-1 rounded-sm border border-warn/40 bg-warn/10 px-2 py-1 text-[11px] text-warn">
                 All {obs.length} samples in this range carry identical values (market closed or nothing changed), so the line is flat.

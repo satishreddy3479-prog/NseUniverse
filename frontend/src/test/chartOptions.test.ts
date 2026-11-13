@@ -296,8 +296,15 @@ describe("sessionize", () => {
     expect(out.series[0]!.data).toEqual([[ist(29, 15, 40), 10], [ist(30, 9, 15) - 1, null], [ist(30, 9, 15), 12], [ist(30, 9, 16), 13]]);
     expect(out.series[1]!.data).toEqual([1, 2, 3]); // not a time series: untouched
     expect(out.xAxis.min).toBe(b.min);
-    // newest sample 09:16: the axis ends just after it (10 min), not at the 15:40 close, while the session runs
-    expect(out.xAxis.max).toBe(ist(30, 9, 26));
+    expect(out.xAxis.max).toBe(b.max); // the caller (rangeObservations) already fitted the bounds to the data
+  });
+
+  it("clips points that are objects carrying a value pair too (the ATM straddle's points carry the ATM strike)", async () => {
+    const { sessionize } = await import("../lib/chartOptions");
+    const pt = (t: number, v: number) => ({ value: [t, v], atm: 25100 });
+    const opt = { xAxis: { type: "time" }, series: [{ data: [pt(ist(30, 2, 37), 9), pt(ist(30, 9, 15), 12), pt(ist(30, 9, 16), 13)] }] };
+    const out = sessionize(opt as never, null) as unknown as { series: { data: unknown[] }[] };
+    expect(out.series[0]!.data).toEqual([pt(ist(30, 9, 15), 12), pt(ist(30, 9, 16), 13)]); // the overnight point is gone, the extra field kept
   });
 
   it("marks the first sample of each later day with a labelled divider and keeps the series' own marks", async () => {
