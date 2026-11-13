@@ -909,7 +909,7 @@ export default function StrategyBuilder() {
             {legs.length === 0 ? (
               <div className="p-3" data-testid="gallery">
                 <h2 className="mb-2 text-sm font-semibold text-paper">Ready-made strategies</h2>
-                <div role="tablist" aria-label="Strategy view" className="mb-3 flex gap-2">
+                <div role="tablist" aria-label="Strategy view" className="mb-3 flex flex-wrap gap-2">
                   {(["Bullish", "Bearish", "Neutral", "Calendar", "Other"] as const).map((b) => <button key={b} role="tab" type="button" aria-selected={bias === b} onClick={() => setBias(b)} className={`min-h-8 rounded-sm border px-3 text-sm ${bias === b ? "border-info bg-info/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{b}</button>)}
                 </div>
                 {bias === "Calendar" && (
