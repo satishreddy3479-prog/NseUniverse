@@ -54,6 +54,9 @@ from app.stream.models import FeedToken, LiveTick
 IST = ZoneInfo("Asia/Kolkata")
 logger = logging.getLogger(__name__)
 INDEX_KEY = "nse_cm|Nifty 50"
+VIX_NAME = "India VIX"  # Kotak subscribes indices by name; whether the exchange feed serves it is shown by the data itself (see vix_live)
+VIX_KEY = f"nse_cm|{VIX_NAME}"
+VIX_FRESH_SECONDS = 120.0
 FUT_SYMBOL = "FUT:NIFTY"
 FUT_NEXT_SYMBOL = "FUT:NIFTY:NEXT"
 STK_PREFIX = "FUTSTK:"
@@ -163,6 +166,7 @@ class MarketService:
                     exchange_segment="nse_fo", instrument_token=nfut.token, kind="scrip", depth=True
                 )
             )
+        out.append(FeedToken(exchange_segment="nse_cm", instrument_token=VIX_NAME, kind="index"))  # India VIX: best effort, kept off the browser feed like the stocks
         for k in sorted(tm):  # the stock futures and the NIFTY next-month future: touch line only (no depth), about 100 tokens against a limit of 3000
             if k.startswith(STK_PREFIX) or k == FUT_NEXT_SYMBOL:
                 out.append(FeedToken(exchange_segment="nse_fo", instrument_token=tm[k].token, kind="scrip", depth=False))
@@ -660,6 +664,22 @@ class MarketService:
     def _index(self) -> LiveTick | None:
         return (self._index_tick() if self._index_tick is not None else None) or self._ticks().get(INDEX_KEY)
 
+    def vix_live(self, now: datetime | None = None) -> dict[str, Any]:
+        """India VIX from the live index tick: the value, the previous close it is measured from, the day's change and how old it is.
+
+        ``available`` is False until the feed has actually delivered a VIX tick: nothing is guessed or carried over from the daily history
+        (that stays a separate, labelled daily close). ``fresh`` means a tick arrived within two minutes.
+        """
+        now = now or self._clock()
+        lt = self._ticks().get(VIX_KEY)
+        if lt is None or lt.ltp is None:
+            return {"available": False, "value": None, "prev_close": None, "change": None, "change_pct": None, "received_at": None, "age_seconds": None, "fresh": False, "source": "Kotak live index feed"}
+        age = max(0.0, (now - lt.received_at).total_seconds())
+        chg = None if lt.prev_close in (None, 0) else float(lt.ltp) - float(lt.prev_close)
+        pct = None if chg is None else chg / float(lt.prev_close) * 100  # type: ignore[arg-type]
+        return {"available": True, "value": float(lt.ltp), "prev_close": lt.prev_close, "change": chg, "change_pct": pct, "high": lt.high, "low": lt.low,
+                "received_at": lt.received_at.isoformat(), "age_seconds": round(age, 1), "fresh": age <= VIX_FRESH_SECONDS, "source": "Kotak live index feed"}
+
     def index_change(self) -> float | None:
         lt = self._index()
         return (
@@ -748,6 +768,7 @@ class MarketService:
             "generated_at": now.isoformat(),
             "elapsed_minutes": round(elapsed, 1),
             "index_change_pct": idx,
+            "india_vix_live": self.vix_live(now),
             "sources": self.sources(now),
             "nifty50": {
                 "breadth": b50.public(),

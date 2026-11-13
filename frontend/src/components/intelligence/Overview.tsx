@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { fmtInt, fmtTimeIST, MISSING } from "../../lib/format";
-import { CVD_TIP, ENGINE_ORDER, GEX_TIP, VIX_LABEL, freshLabel, signed, toneOf, type EngineView, type Intelligence } from "../../lib/intelligence";
+import { CVD_TIP, ENGINE_ORDER, GEX_TIP, VIX_LABEL, freshLabel, liveVix, signed, toneOf, type EngineView, type Intelligence } from "../../lib/intelligence";
 
 const bar = (s: number) => `${Math.max(0, Math.min(100, (s + 100) / 2))}%`;
 
@@ -63,6 +63,7 @@ function Pulse({ label, value, sub, tone, tip }: { label: string; value: string;
 
 export function PulseCards({ d }: { d: Intelligence }) {
   const p = d.pulse;
+  const live = liveVix(p.india_vix_live);
   const n = (v: number | null | undefined, dp = 2) => (v == null ? MISSING : v.toLocaleString("en-IN", { maximumFractionDigits: dp, minimumFractionDigits: dp }));
   const sgn = (v: number | null | undefined, dp = 2) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(dp)}`);
   const col = (v: number | null | undefined) => (v == null || v === 0 ? undefined : v > 0 ? "text-up" : "text-down");
@@ -72,7 +73,13 @@ export function PulseCards({ d }: { d: Intelligence }) {
       <Pulse label="Futures" value={n(p.futures)} sub={p.basis == null ? undefined : `basis ${sgn(p.basis, 1)} (${sgn(p.basis_pct, 2)}%)`} />
       <Pulse label={`ATM ${p.atm_strike ?? ""}`} value={`${n(p.atm_ce_premium, 1)} / ${n(p.atm_pe_premium, 1)}`} sub="CE / PE premium" />
       <Pulse label="ATM IV" value={p.atm_iv == null ? MISSING : `${p.atm_iv.toFixed(2)}%`} sub={`expiry ${p.expiry ?? MISSING}`} />
-      <Pulse label={VIX_LABEL} value={p.india_vix.value == null ? MISSING : p.india_vix.value.toFixed(2)} sub={p.india_vix.as_of ? `observed ${p.india_vix.as_of} (not live)` : "daily close, date unknown"} tip="A daily close with its observation date. It is not a live quote and is not used as an intraday volatility signal: live ATM IV and the expiry-specific skew are." />
+      {live ? (
+        <Pulse label="India VIX (live)" value={live.value!.toFixed(2)} tone={col(live.change)}
+          sub={`${live.change == null ? "" : `${sgn(live.change)} (${sgn(live.change_pct)}%) · `}${live.received_at ? `${fmtTimeIST(live.received_at)} IST` : ""}`}
+          tip={`NSE India VIX from the broker's live index feed${live.prev_close == null ? "" : `, measured from the previous close ${live.prev_close.toFixed(2)}`}. It is NSE's 30-day implied volatility, not one expiry's ATM IV, and it is context: the intraday score does not use it.`} />
+      ) : (
+        <Pulse label={VIX_LABEL} value={p.india_vix.value == null ? MISSING : p.india_vix.value.toFixed(2)} sub={p.india_vix.as_of ? `observed ${p.india_vix.as_of} (not live)` : "daily close, date unknown"} tip="A daily close with its observation date. The live VIX shows here when the broker feed delivers it; it is not used as an intraday volatility signal: live ATM IV and the expiry-specific skew are." />
+      )}
       <Pulse label="PCR (OI)" value={n(p.pcr)} />
       <Pulse label="Net GEX (modelled)" value={p.net_gex == null ? MISSING : `${n(p.net_gex, 1)} cr`} sub="assumed sign, not observed" tone={col(p.net_gex)} tip={GEX_TIP} />
       <Pulse label="Gamma flip (modelled)" tip={GEX_TIP} value={p.gamma_flip == null ? MISSING : fmtInt(Math.round(p.gamma_flip))} sub={d.gex.flip_distance_pct == null ? undefined : `spot ${sgn(d.gex.flip_distance_pct)}% from it`} />

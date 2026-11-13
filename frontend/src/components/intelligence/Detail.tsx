@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import type { ReactNode } from "react";
 import { fmtInt, MISSING } from "../../lib/format";
 import { fmtCrore } from "../../lib/gammaAnalysis";
-import { CVD_TIP, GEX_TIP, VIX_LABEL, type Intelligence } from "../../lib/intelligence";
+import { CVD_TIP, GEX_TIP, VIX_LABEL, liveVix, type Intelligence } from "../../lib/intelligence";
 import { VolatilityEvidence } from "./VolatilityEvidence";
 
 const n = (v: number | null | undefined, d = 2) => (v == null ? MISSING : v.toLocaleString("en-IN", { maximumFractionDigits: d, minimumFractionDigits: d }));
@@ -53,6 +53,7 @@ export function DetailPanels({ d }: { d: Intelligence }) {
       <Block id="volatility" title="Volatility intelligence" link="/tools/volatility-skew">
         <div className="tiles [--tile-gap:0.75rem]">
           <Kv k="ATM IV" v={p.volatility.atm_iv == null ? MISSING : `${p.volatility.atm_iv.toFixed(2)}%`} /><Kv k="ATM IV change (15 min)" v={`${sg(p.volatility.iv_change_15m)} pts`} /><Kv k="HV (daily)" v={n(p.volatility.hv)} /><Kv k="RV (daily)" v={n(p.volatility.rv)} />
+          {liveVix(d.pulse.india_vix_live) && <Kv k="India VIX (live)" v={liveVix(d.pulse.india_vix_live)!.value!.toFixed(2)} />}
           <Kv k={p.volatility.india_vix_label ?? VIX_LABEL} v={`${n(p.volatility.india_vix)}${p.volatility.india_vix_as_of ? ` (${p.volatility.india_vix_as_of})` : ""}`} /><Kv k="IV Rank / Percentile (252d, VIX closes)" v={`${n(p.volatility.ivr_252 ?? null, 0)} / ${n(p.volatility.ivp_252 ?? null, 0)}`} />
           <Kv k="25Δ skew (put − call)" v={sg(p.volatility.skew_25d)} /><Kv k="10Δ skew" v={sg(p.volatility.skew_10d)} /><Kv k="Risk reversal 25Δ (call − put)" v={sg(p.volatility.risk_reversal_25d)} /><Kv k="25Δ butterfly" v={sg(p.volatility.butterfly_25d)} />
           <Kv k="Term slope /30d" v={`${sg(p.volatility.term_slope_30d)} (${p.volatility.term_shape ?? MISSING})`} /><Kv k="Expected move (1σ to expiry)" v={p.volatility.expected_move_1sd_pts == null ? MISSING : `±${p.volatility.expected_move_1sd_pts.toFixed(0)} pts`} />

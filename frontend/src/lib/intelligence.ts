@@ -75,7 +75,7 @@ export interface VolDetail {
 export interface Pulse {
   spot: number | null; change_pct: number | null; futures: number | null; basis: number | null; basis_pct: number | null; atm_strike: number | null; expiry: string | null; atm_ce_premium: number | null; atm_pe_premium: number | null;
   atm_iv: number | null; vwap?: { instrument: string; futures_price: number | null; futures_vwap: number | null; distance_pts: number | null; distance_pct: number | null; side: string | null; spot_vwap: number | null; spot_vwap_estimate?: IndexVwapEstimate; spot_vwap_note: string };
-  india_vix: { value: number | null; as_of: string | null; note: string; label?: string; intraday_signal?: boolean }; pcr: number | null; net_gex: number | null; gamma_flip: number | null; futures_oi_change: number | null; futures_cvd_pct: number | null; futures_vwap: number | null; heavyweight_cvd: number | null;
+  india_vix: { value: number | null; as_of: string | null; note: string; label?: string; intraday_signal?: boolean }; india_vix_live?: VixLive | null; pcr: number | null; net_gex: number | null; gamma_flip: number | null; futures_oi_change: number | null; futures_cvd_pct: number | null; futures_vwap: number | null; heavyweight_cvd: number | null;
 }
 export interface StockFuturesRow {
   symbol: string; ltp: number | null; price_change_pct: number | null; oi: number | null; oi_change: number | null; oi_change_pct: number | null; buildup: string | null; volume: number | null;
@@ -122,6 +122,10 @@ export const ENGINE_ORDER = ["positioning", "orderflow", "volatility", "structur
 export const CVD_TIP = "Estimated from the quote stream: each trade is classified buyer- or seller-initiated by the quote rule (against the prevailing best bid and ask) and then the tick rule. The feed carries no aggressor-side trade tape, so buyer and seller volume are not observed. A proxy, not genuine aggressor-side CVD.";
 export const GEX_TIP = "Modelled exposure: gamma x open interest x spot^2 x 1% with an ASSUMED sign (calls +, puts -). Dealer positioning is not observed.";
 export const VIX_LABEL = "India VIX – Last Daily Close";
+/** India VIX from the broker's live index feed. ``available`` is false until a tick has really arrived; ``fresh`` = a tick within two minutes. */
+export interface VixLive { available: boolean; value: number | null; prev_close: number | null; change: number | null; change_pct: number | null; received_at: string | null; age_seconds: number | null; fresh: boolean; source: string }
+/** The live VIX when the feed is delivering it, else null (the daily close is shown instead, labelled as such). */
+export const liveVix = (v: VixLive | null | undefined): VixLive | null => (v && v.available && v.fresh && v.value != null ? v : null);
 /** The freshness of an engine in words, never showing stale data as live. */
 export function freshLabel(e: { freshness: { fresh: boolean | null; age_s: number | null } }): string {
   if (e.freshness.fresh == null) return "no data";

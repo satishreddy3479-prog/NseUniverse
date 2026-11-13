@@ -134,6 +134,17 @@ describe("Market Intelligence page", () => {
     await openTab(/Signals/);
     expect((await screen.findByTestId("mi-scenarios")).textContent).toContain("Scenarios need a fused sentiment");
   });
+  it("shows the live India VIX when the feed delivers it, and the labelled daily close when it is missing or old", async () => {
+    const live = { available: true, value: 17.5, prev_close: 16.0, change: 1.5, change_pct: 9.375, received_at: "2026-11-09T04:30:00Z", age_seconds: 4, fresh: true, source: "Kotak live index feed" };
+    const a = view({ ...base, pulse: { ...base.pulse, india_vix_live: live } });
+    const pulses = (await screen.findAllByTestId("mi-pulse")).map((p) => p.textContent).join("|");
+    expect(pulses).toContain("India VIX (live)17.50");
+    expect(pulses).toContain("+1.50 (+9.38%)");
+    expect(pulses).not.toContain("India VIX – Last Daily Close");
+    a.unmount();
+    view({ ...base, pulse: { ...base.pulse, india_vix_live: { ...live, fresh: false, age_seconds: 600 } } }); // an old tick is never shown as live
+    expect((await screen.findAllByTestId("mi-pulse")).map((p) => p.textContent).join("|")).toContain("India VIX – Last Daily Close14.10");
+  });
   it("lists the pulse values from the service, including the VIX close label", async () => {
     view(base);
     const pulses = (await screen.findAllByTestId("mi-pulse")).map((p) => p.textContent).join("|");

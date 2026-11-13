@@ -233,6 +233,7 @@ class MarketIntelligence:
             "atm_strike": atm, "expiry": expiry, "atm_ce_premium": num(px.get((atm, "CE"))), "atm_pe_premium": num(px.get((atm, "PE"))), "atm_iv": num(vol.get("atm_iv")),
             "vwap": {"instrument": "NIFTY current-month future", "futures_price": num(g(ins, "vwap", "price")), "futures_vwap": num(g(ins, "vwap", "vwap")), "distance_pts": num(g(ins, "vwap", "distance_pts")),
                      "distance_pct": num(g(ins, "vwap", "distance_pct")), "side": g(ins, "vwap", "side"), "spot_vwap": g_iv.get("value"), "spot_vwap_estimate": g_iv, "spot_vwap_note": "an ESTIMATE from the constituents' day VWAPs (the index itself has no traded volume); never compared with the futures VWAP"},
+            "india_vix_live": g(mk, "india_vix_live"),
             "india_vix": {"value": vix_last, "as_of": vix_date, "label": "India VIX – Last Daily Close", "intraday_signal": False,
                           "note": "A daily close dated " + (str(vix_date) if vix_date else "(date unknown)") + ", not a live quote: it is not used as an intraday volatility signal (live ATM IV and the expiry-specific skew are)."}, "pcr": num(g(ins, "options", "pcr_oi")), "net_gex": gx.get("net"), "gamma_flip": gx.get("flip"),
             "futures_oi_change": oi_ch, "futures_cvd_pct": num(flow.get("cvd_pct")), "futures_vwap": num(g(ins, "vwap", "vwap")),

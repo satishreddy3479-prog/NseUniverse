@@ -518,3 +518,5 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 **13 Nov 2026 (D155):** Settings > Exchange holidays: paste NSE's circular to extend the holiday list (kept in data/holidays_user.json, merged over the verified list). The list still ends 31 Dec 2026 until the 2027 circular is entered.
 
 - 13 Nov 2026: stored-sample charts (ATM straddle, premium, OI series...) now fit their data: Session runs from the 09:15 open to a little after the newest sample (it was stuck on the whole 09:15-15:30 day because the straddle's object-style points were skipped), 30 min and 1 hour start at their own window or the first sample, All fits itself; a note says when fewer minutes are stored than the window asks for. Straddle score gauges: zone names are a wrapping legend. Watchdog: a quiet feed counts only 09:17-15:32.
+
+- 13 Nov 2026 (D156): live India VIX subscribed and shown on the pulse card when fresh (else the daily close, labelled). Tests pass; whether the broker serves it is checked on the server after deploy.

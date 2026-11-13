@@ -393,7 +393,8 @@ def test_heavy_five_follow_the_weights_and_get_depth_tokens(tmp_path: Path) -> N
     toks = svc.stream_tokens()
     depth = {t.key for t in toks if t.depth}
     assert depth == {f"nse_cm|{TOKENS[s]}" for s in heavy} | {"nse_fo|55001"}
-    assert len([t for t in toks if t.exchange_segment == "nse_cm"]) == 8  # no duplicate subscription for the five
+    assert len([t for t in toks if t.exchange_segment == "nse_cm" and t.kind == "scrip"]) == 8  # no duplicate subscription for the five
+    assert [t.key for t in toks if t.kind == "index"] == ["nse_cm|India VIX"]  # the live VIX rides along as an index token
 
 
 def test_without_weights_the_five_are_chosen_by_traded_value_and_labelled_as_a_proxy(tmp_path: Path) -> None:
@@ -651,3 +652,16 @@ def test_heavy_meta_gives_the_effective_date_verification_time_source_and_never_
     w = svc.heavy_meta()["weights"]
     assert w["effective_date"] == w["as_of"] and w["source"] and w["live"] is False
     assert w["verified_at"] and "not a re-check against NSE" in w["verified_note"]
+
+
+def test_live_india_vix_is_read_from_the_feed_only_and_says_how_old_it_is(tmp_path: Path) -> None:
+    svc = build(tmp_path, {})
+    assert svc.vix_live(NOW) == {"available": False, "value": None, "prev_close": None, "change": None, "change_pct": None, "received_at": None, "age_seconds": None, "fresh": False, "source": "Kotak live index feed"}
+    book = svc._ticks()  # noqa: SLF001 - the test feeds the book the stream would
+    book["nse_cm|India VIX"] = LiveTick(key="nse_cm|India VIX", kind="index", exchange_segment="nse_cm", instrument_token="India VIX", ltp=17.5, prev_close=16.0, received_at=NOW)
+    v = svc.vix_live(NOW + timedelta(seconds=30))
+    # hand calculation: 17.5 - 16.0 = +1.5 points = 1.5 / 16 = 9.375 %
+    assert (v["available"], v["value"], v["change"], v["fresh"], v["age_seconds"]) == (True, 17.5, 1.5, True, 30.0)
+    assert v["change_pct"] == pytest.approx(9.375)
+    assert svc.vix_live(NOW + timedelta(seconds=300))["fresh"] is False  # an old tick is shown as old, never as live
+    assert svc.summary(NOW)["india_vix_live"]["value"] == 17.5
