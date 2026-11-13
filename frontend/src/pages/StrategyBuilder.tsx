@@ -335,6 +335,9 @@ export default function StrategyBuilder() {
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [curve, mlegs, targetMs, r, carry, ivPts, spot, whatPct]);
+  // a different strategy (strikes, sides, types) starts framed on its profit zone, not at the zoom left from the previous one
+  const shapeKey = live.map((l) => `${l.action}${l.type}${l.strike}`).join(",");
+  useEffect(() => { setZoom(0); }, [shapeKey]);
   const view = useMemo(() => (curve?.length && a?.defined && spot ? payoffView(curve, a.breakevens, spot, live.map((l) => l.strike), zoom) : null), [curve, a, spot, live, zoom]);
   const chartNow = useMemo(() => (curve?.length && a?.defined && spot ? payoffOption({
     expiry: curve, target: target && target.some((x) => x.pnl != null) ? target : null,

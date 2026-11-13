@@ -257,6 +257,24 @@ describe("payoffOption", () => {
 });
 
 
+describe("payoffOption y scale", () => {
+  // an iron fly: loss -800 flat to 24900, rises to +4000 at 25150, falls back to -800 from 25400 (hand-made numbers)
+  const fly = [24500, 24700, 24900, 25025, 25150, 25275, 25400, 25600, 25800].map((x) => ({ s: x, pnl: x <= 24900 || x >= 25400 ? -800 : 4000 - Math.abs(x - 25150) * (4800 / 250) }));
+  const base = { spot: 25150, breakevens: [25044, 25256], target: null, targetLabel: "", bands: null, oi: null };
+  it("shows the full maximum profit of a payoff that is flat at both ends, even when it is more than 3x the loss", async () => {
+    const { payoffOption } = await import("../lib/chartOptions");
+    const o = payoffOption({ ...base, expiry: fly }, colors) as unknown as { yAxis: { min: number; max: number }[] };
+    expect(o.yAxis[0]!.max).toBeGreaterThan(4000); // the peak of 4000 is inside the axis, not cut at 3 x 800
+    expect(o.yAxis[0]!.min).toBeLessThan(-800);
+  });
+  it("still clips a side that keeps running", async () => {
+    const { payoffOption } = await import("../lib/chartOptions");
+    const open = [{ s: 24000, pnl: -90000 }, { s: 24500, pnl: -40000 }, { s: 25000, pnl: 500 }, { s: 25500, pnl: 1000 }];
+    const o = payoffOption({ ...base, expiry: open }, colors) as unknown as { yAxis: { min: number; max: number }[] };
+    expect(o.yAxis[0]!.min).toBeGreaterThan(-90000);
+  });
+});
+
 describe("divergingBarOption", () => {
   it("leaves room beyond the longest bars so value labels never meet the names", async () => {
     const { divergingBarOption } = await import("../lib/chartOptions");

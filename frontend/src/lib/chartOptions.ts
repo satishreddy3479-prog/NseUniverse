@@ -561,7 +561,11 @@ export function payoffOption(p: PayoffSeries, c: ChartColors, view?: { lo: numbe
   const vals = [...inView.map((x) => x.pnl), ...edge];
   const peak = Math.max(0, ...vals), trough = Math.min(0, ...vals);
   let top = peak, bottom = trough;
-  if (peak > 0 && trough < 0) { if (-trough > 3 * peak) bottom = -3 * peak; else if (peak > -trough * 3) top = -trough * 3; }
+  // A payoff that goes flat at both ends (iron fly, iron condor, spreads) has a real maximum profit and loss: show both in full.
+  // Only a side that keeps running (naked legs) is clipped.
+  const flat = (a: { s: number; pnl: number }, b: { s: number; pnl: number }) => Math.abs(b.pnl - a.pnl) <= 1e-6 * Math.max(1, Math.abs(a.pnl), Math.abs(b.pnl));
+  const bounded = p.expiry.length > 3 && flat(p.expiry[0]!, p.expiry[1]!) && flat(p.expiry[p.expiry.length - 2]!, p.expiry[p.expiry.length - 1]!);
+  if (!bounded && peak > 0 && trough < 0) { if (-trough > 3 * peak) bottom = -3 * peak; else if (peak > -trough * 3) top = -trough * 3; }
   const pad = Math.max(top - bottom, 1) * 0.12;
   const yMax = top + pad, yMin = bottom - pad;
   const money = (v: number) => (v < 0 ? "−" : "") + "₹" + (Math.abs(v) >= 1e5 ? `${(Math.abs(v) / 1e5).toFixed(1)}L` : Math.abs(v) >= 1e3 ? `${(Math.abs(v) / 1e3).toFixed(Math.abs(v) >= 1e4 ? 0 : 1)}K` : `${Math.round(Math.abs(v))}`);

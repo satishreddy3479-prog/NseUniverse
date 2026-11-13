@@ -671,3 +671,7 @@ The verified NSE holiday list ends on 31 Dec 2026 and had to be extended by edit
 
 ## D158 (13 Nov 2026): straddle charts show every stored minute
 The straddle service thinned a session to 240 points, so a full day (about 385 one-minute samples) was drawn at every second minute. The cap is now 400 (the IV series default too, was 90), so nothing is thinned; the charts use every stored sample. Both lines of the fixed-against-rolling chart are drawn equally thick; the followed one is solid, the other faded. Cost: the straddle summary reads about twice the snapshots (cached 20 s).
+
+
+## D159 (13 Nov 2026): payoff chart shows the full shape of a bounded strategy
+The payoff y-axis clipped a side at 3x the other, so an iron fly whose maximum profit was over 3x its maximum loss had its peak cut off. A payoff that is flat at both ends (iron fly, condor, spreads) now shows its real peak and trough; only a side that keeps running is still clipped. Choosing a different strategy (strikes, sides, types) also resets the zoom to the profit-zone view instead of keeping the previous zoom.
