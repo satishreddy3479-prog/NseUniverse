@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { EChartsCoreOption } from "echarts/core";
+import { isSessionMs } from "../../lib/analytics";
 import { MISSING, fmtTimeIST } from "../../lib/format";
 import { timeLinesOption, type Line } from "../../lib/priceCharts";
 import type { Component, StraddleDecay, Terms } from "../../lib/straddleDecay";
@@ -143,14 +144,17 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
     if (!h) return null;
     const ht = (h.times ?? []).map((t) => new Date(t).getTime());
     const hs = [...h.seller], hb = [...h.buyer];
-    // current reading as the last point, so the chart and the gauges agree
+    // current reading as the last point, so the chart and the gauges agree; after the close nothing is added (a flat line to 17:45 would say the score was steady while the market was shut)
     const nowMs = d.generated_at ? new Date(d.generated_at).getTime() : NaN;
-    if (env && Number.isFinite(nowMs) && ht.length > 0 && nowMs > (ht[ht.length - 1] as number)) { ht.push(nowMs); hs.push(env.seller.score); hb.push(env.buyer.score); }
+    if (env && Number.isFinite(nowMs) && ht.length > 0 && nowMs > (ht[ht.length - 1] as number) && isSessionMs(nowMs)) { ht.push(nowMs); hs.push(env.seller.score); hb.push(env.buyer.score); }
     if (ht.length < 2) return null;
     const f = (v: number) => v.toFixed(0);
     return timeLinesOption(ht, [{ name: "Seller environment", color: c.up, data: hs, fmt: f }, { name: "Buyer environment", color: c.brass, data: hb, fmt: f }], c, null, { leftFmt: f });
   }, [d, env, c]);
 
+  const histEnd = d.history?.times?.length ? d.history.times[d.history.times.length - 1] : null;
+  const generatedMs = d.generated_at ? new Date(d.generated_at).getTime() : NaN;
+  const histLive = Number.isFinite(generatedMs) && isSessionMs(generatedMs);
   const fixedChg = tr?.fixed.straddle.change ?? null;
   const rollChg = tr?.rolling.adjusted_change ?? null;
   const sellerPnl = (pts: number | null) => (pts == null || lot == null ? null : -pts * lot);
@@ -223,7 +227,7 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
         <section aria-label="Score history" className="rounded-xl border border-rule bg-ink/40 p-3">
           <h4 className="text-sm font-semibold text-paper">How the scores moved today</h4>
           <div className="mt-1 h-[190px]"><EChart group="sdi" option={hist} ariaLabel="Seller and buyer environment score history" /></div>
-          <p className="text-[11px] text-muted" data-testid="sdi-hist-note">One recorded reading per minute; the last point is the current reading shown in the gauges above.</p>
+          <p className="text-[11px] text-muted" data-testid="sdi-hist-note">{histLive ? "One recorded reading per minute; the last point is the current reading shown in the gauges above." : `One recorded reading per minute. The market is closed: the chart ends at the last recorded minute${histEnd ? ` (${fmtTimeIST(histEnd)} IST)` : ""}.`}</p>
         </section>
       )}
 

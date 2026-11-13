@@ -330,6 +330,16 @@ describe("audit fixes (12 Nov 2026)", () => {
     expect(screen.getByTestId("sdi-hist-note")).toHaveTextContent("last point is the current reading");
   });
 
+  itIn("overview", "after the close the history ends at the last recorded minute instead of drawing a flat line to the time the page was opened", async () => {
+    const d = rich();
+    mount({ ...d, generated_at: "2026-11-11T12:16:00Z", history: { times: ["2026-11-11T09:58:00Z", "2026-11-11T09:59:00Z"], seller: [60.2, 48.7], buyer: [48, 53.7], regime: [null, null], eff30: [null, null], spot: [1, 2] } }); // opened at 17:46 IST
+    const chart = await screen.findByRole("img", { name: "Seller and buyer environment score history" });
+    const last = JSON.parse(chart.getAttribute("data-last") ?? "[]") as [number, number][];
+    expect(last[0]![0]).toBe(Date.parse("2026-11-11T09:59:00Z")); // 15:29 IST, the last recorded minute: nothing appended
+    expect(screen.getByTestId("sdi-hist-note")).toHaveTextContent("market is closed");
+    expect(screen.getByTestId("sdi-hist-note")).toHaveTextContent("15:29");
+  });
+
   itIn("overview", "when the newest recorded minute is as new as the reading, nothing is appended", async () => {
     const d = rich();
     mount({ ...d, generated_at: "2026-11-11T04:09:00Z", history: { times: ["2026-11-11T04:08:00Z", "2026-11-11T04:09:00Z"], seller: [60.2, 48.7], buyer: [48, 53.7], regime: [null, null], eff30: [null, null], spot: [1, 2] } });
