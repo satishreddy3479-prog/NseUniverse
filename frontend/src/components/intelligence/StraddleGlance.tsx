@@ -35,7 +35,13 @@ export function Gauge({ title, subtitle, score, cls, zones, trend, coverage, tes
         </div>
         {trend?.m15 != null && <span className="absolute -top-1 h-5 w-0.5 rounded bg-paper/50" style={{ left: pos(trend.m15) }} title={`15 minutes ago: ${trend.m15.toFixed(0)}`} />}
         {score != null && <span className="absolute -top-1.5 grid h-6 w-6 -translate-x-1/2 place-items-center rounded-full border-2 border-paper bg-ink text-[9px] font-bold text-paper" style={{ left: pos(score) }}>●</span>}
-        <div className="mt-1 flex justify-between text-[10px] text-muted">{zones.map(([lo, name]) => <span key={name} className="text-center" style={{ width: 0, flex: "1 1 0" }}>{name.replace(" environment", "")}<br /><span className="num opacity-70">{lo}+</span></span>)}</div>
+        <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted" data-testid={`${testid}-zones`} aria-label="Score zones">
+          {zones.map(([lo, name], i) => {
+            const hi = i + 1 < zones.length ? zones[i + 1]![0] : 101;
+            const here = score != null && score >= lo && score < hi;
+            return <li key={name} className={`flex items-center gap-1 whitespace-nowrap ${here ? "font-semibold text-paper" : ""}`}><span aria-hidden className={`inline-block h-2.5 w-2.5 rounded-sm ${ZONE_BG[i]}`} />{name} <span className="num opacity-70">{lo}+</span></li>;
+          })}
+        </ul>
       </div>
       {capped && <p className="mt-2 rounded-md bg-warn/10 px-2 py-1 text-xs leading-snug text-paper" data-testid={`${testid}-cap`}>The score sits in a higher zone, but the label is held at <b>{capped}</b> because a risk flag is active (see the flags under Why these scores).</p>}
       <p className="mt-2 text-[11px] text-muted">Built from {Math.round(coverage * 100)}% of the evidence inputs. 15 minutes ago: {trend?.m15 == null ? "not recorded" : trend.m15.toFixed(0)}{trend?.m30 != null ? ` · 30 minutes ago: ${trend.m30.toFixed(0)}` : ""}.</p>
