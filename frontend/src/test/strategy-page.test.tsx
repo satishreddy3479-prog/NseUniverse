@@ -269,7 +269,7 @@ describe("Option chain inside the builder", () => {
     expect((within(t).getByLabelText("Lots") as HTMLInputElement).value).toBe("2"); // same leg, one more lot
     await userEvent.click(screen.getByRole("button", { name: "Sell PE 24000" }));
     expect(within(t).getAllByLabelText("Action").map((x) => (x as HTMLSelectElement).value)).toEqual(["BUY", "SELL"]);
-    expect(screen.getByRole("button", { name: "Buy CE 24100" })).toHaveTextContent("B 2"); // the chain shows what is held
+    expect(screen.getByRole("button", { name: "Buy CE 24100" })).toHaveTextContent(/Bs*2/); // the chain shows what is held
   });
 
   it("a contract without a stored quote is added with the premium left for you to enter", async () => {

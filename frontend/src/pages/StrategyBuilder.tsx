@@ -833,7 +833,7 @@ export default function StrategyBuilder() {
                     const held = netCe !== 0 || netPe !== 0;
                     const side = (v: number) => (v > 0 ? "bg-up/20" : v < 0 ? "bg-down/20" : "");
                     const pm = (type: OptionType, v: number) => v === 0 ? null : (
-                      <span className="flex items-center gap-0.5">
+                      <span className="flex shrink-0 items-center gap-0.5">
                         <button type="button" aria-label={`Remove one lot ${type} ${row.strike}`} title="One lot fewer (the leg is removed with its last lot)" onClick={(e) => { e.stopPropagation(); adjust(row.strike, type, -1); }} className="grid size-6 place-items-center rounded-sm border border-rule bg-slate-2 text-paper hover:border-down">−</button>
                         <button type="button" aria-label={`Add one lot ${type} ${row.strike}`} title="One more lot in the same direction" onClick={(e) => { e.stopPropagation(); adjust(row.strike, type, 1); }} className="grid size-6 place-items-center rounded-sm border border-rule bg-slate-2 text-paper hover:border-up">+</button>
                       </span>
@@ -844,12 +844,12 @@ export default function StrategyBuilder() {
                         <button key={action} type="button" aria-label={`${action === "BUY" ? "Buy" : "Sell"} ${type} ${row.strike}`}
                           title={ltp(row.strike, type) == null ? "No stored quote: the premium must be entered by hand" : `${action === "BUY" ? "Buy" : "Sell"} one lot at ${fmtPrice(ltp(row.strike, type))}`}
                           onClick={(e) => { e.stopPropagation(); fromChain(row.strike, type, action); }}
-                          className={`min-h-6 min-w-6 rounded-sm border px-1 text-[11px] font-semibold ${action === "BUY" ? "border-up bg-up/10 text-up" : "border-down bg-down text-white"} ${mine > 0 ? "ring-1 ring-paper" : ""}`}>
-                          {action === "BUY" ? "B" : "S"}{mine > 0 ? ` ${mine}` : ""}
+                          className={`inline-flex h-6 min-w-6 shrink-0 items-center justify-center gap-0.5 whitespace-nowrap rounded-sm border px-1.5 text-[11px] font-semibold leading-none ${action === "BUY" ? (mine > 0 ? "border-up bg-up/30 text-up ring-1 ring-up" : "border-up/50 bg-slate-2 text-up") : (mine > 0 ? "border-down bg-down/30 text-down ring-1 ring-down" : "border-down/50 bg-slate-2 text-down")}`}>
+                          {action === "BUY" ? "B" : "S"}{mine > 0 && <span className="num">{mine}</span>}
                         </button>
                       );
                     });
-                    const tag = (v: number) => (v === 0 ? null : <span data-testid={`held-${row.strike}`} className={`rounded-sm border px-1 text-[10px] font-semibold ${v > 0 ? "border-up text-up" : "border-down text-down"}`}>{v > 0 ? "+" : "−"}{Math.abs(v)} lot{Math.abs(v) === 1 ? "" : "s"}</span>);
+                    const tag = (v: number) => (v === 0 ? null : <span data-testid={`held-${row.strike}`} className={`whitespace-nowrap rounded-sm border px-1 text-[10px] font-semibold ${v > 0 ? "border-up text-up" : "border-down text-down"}`}>{v > 0 ? "+" : "−"}{Math.abs(v)} lot{Math.abs(v) === 1 ? "" : "s"}</span>);
                     const bar = (v: number | null, color: string, align: "left" | "right") => (
                       <div className={`flex h-4 ${align === "right" ? "justify-end" : ""}`}><div className="h-4 rounded-sm" style={{ width: `${v == null ? 0 : Math.max(2, (v / maxOi) * 100)}%`, background: color, opacity: 0.35 }} title={v == null ? "no OI" : `OI ${compactIN(v)}`} /></div>
                     );
@@ -860,13 +860,13 @@ export default function StrategyBuilder() {
                       <tr key={row.strike} onClick={() => setSel(row.strike)} data-testid={`chain-${row.strike}`} data-held={held ? "true" : undefined}
                         className={`group num cursor-pointer border-t border-rule/40 align-top ${on ? "bg-info/20" : held ? "bg-info/[0.08]" : isAtm ? "bg-brass/10" : row.strike < (spot ?? 0) ? "bg-up/[0.04]" : "bg-down/[0.03]"}`}>
                         {GCOLS.filter((x) => gcols.includes(x.key)).map((x) => cell(g?.ce, x.key, false))}
-                        <td className={`px-2 py-1 text-left ${side(netCe)}`}><div className="flex items-center gap-1">{ltp(row.strike, "CE") == null ? "—" : fmtPrice(ltp(row.strike, "CE"))}{tag(netCe)}</div>
-                          <div className={`mt-0.5 flex items-center gap-1 ${on || netCe !== 0 ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:hidden"}`}>{pm("CE", netCe)}{bs("CE")}</div></td>
+                        <td className={`px-2 py-1 text-left ${side(netCe)}`}><div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5"><span>{ltp(row.strike, "CE") == null ? "—" : fmtPrice(ltp(row.strike, "CE"))}</span>{tag(netCe)}</div>
+                          <div className={`mt-0.5 flex flex-wrap items-center gap-1 ${on || netCe !== 0 ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:hidden"}`}>{pm("CE", netCe)}{bs("CE")}</div></td>
                         <td className="w-[16%] px-1 py-1">{bar(row.call?.oi ?? null, colors.up, "right")}</td>
                         <td className={`px-2 py-1 text-center font-medium ${isAtm ? "text-brass" : "text-paper"}`}><span className={`inline-block min-w-[3.6rem] rounded-sm border px-1.5 py-0.5 ${held ? "border-info bg-info/25" : "border-rule bg-slate-2"}`}>{fmtInt(row.strike)}</span></td>
                         <td className="w-[16%] px-1 py-1">{bar(row.put?.oi ?? null, colors.down, "left")}</td>
-                        <td className={`px-2 py-1 text-right ${side(netPe)}`}><div className="flex items-center justify-end gap-1">{tag(netPe)}{ltp(row.strike, "PE") == null ? "—" : fmtPrice(ltp(row.strike, "PE"))}</div>
-                          <div className={`mt-0.5 flex items-center justify-end gap-1 ${on || netPe !== 0 ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:hidden"}`}>{pm("PE", netPe)}{bs("PE")}</div></td>
+                        <td className={`px-2 py-1 text-right ${side(netPe)}`}><div className="flex flex-wrap items-center justify-end gap-x-1.5 gap-y-0.5">{tag(netPe)}{ltp(row.strike, "PE") == null ? "—" : fmtPrice(ltp(row.strike, "PE"))}</div>
+                          <div className={`mt-0.5 flex flex-wrap items-center justify-end gap-1 ${on || netPe !== 0 ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:hidden"}`}>{pm("PE", netPe)}{bs("PE")}</div></td>
                         {[...GCOLS].reverse().filter((x) => gcols.includes(x.key)).map((x) => cell(g?.pe, x.key, true))}
                       </tr>
                     );
