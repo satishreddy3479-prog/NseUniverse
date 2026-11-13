@@ -39,8 +39,8 @@ export function useRecordTool(pathname: string): void {
   }, [pathname]);
 }
 
-/** The most recently used tools that still exist and are ready, up to ``n``. */
-export function useRecentTools(n = 3): Tool[] {
+/** The most recently used tools that still exist and are ready, up to ``n``; with ``menu``, only that menu's own tools. */
+export function useRecentTools(n = 3, menu?: string): Tool[] {
   const [ids, setIds] = useState<string[]>(load);
   useEffect(() => {
     const sync = () => setIds(load());
@@ -48,5 +48,5 @@ export function useRecentTools(n = 3): Tool[] {
     window.addEventListener("storage", sync);
     return () => { window.removeEventListener(EVENT, sync); window.removeEventListener("storage", sync); };
   }, []);
-  return ids.map((id) => TOOLS.find((t) => t.id === id)).filter((t): t is Tool => !!t && toolPath(t) !== null).slice(0, n);
+  return ids.map((id) => TOOLS.find((t) => t.id === id)).filter((t): t is Tool => !!t && toolPath(t) !== null && (!menu || t.menu === menu)).slice(0, n);
 }

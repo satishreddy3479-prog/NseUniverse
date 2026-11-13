@@ -24,10 +24,12 @@ export function ToolItem({ t, onPick, big }: { t: Tool; onPick: () => void; big?
  *  No groups: the same list works as a wide drop-down (the list flows down columns) and on a phone (one column). */
 export function ToolMenu({ menu, onPick, phone }: { menu: MenuId; onPick: () => void; phone?: boolean }) {
   const [q, setQ] = useState("");
-  const recent = useRecentTools(3);
+  const recent = useRecentTools(3, menu);
   const all = useMemo(() => TOOLS.filter((t) => t.menu === menu).sort((a, b) => a.label.localeCompare(b.label, "en", { sensitivity: "base", numeric: true })), [menu]);
   const needle = q.trim().toLowerCase();
-  const list = needle ? all.filter((t) => `${t.label} ${t.blurb}`.toLowerCase().includes(needle)) : all;
+  // A tool is listed once: under Recently used, or in the A to Z list below it.
+  const rest = all.filter((t) => !recent.some((r) => r.id === t.id));
+  const list = needle ? all.filter((t) => `${t.label} ${t.blurb}`.toLowerCase().includes(needle)) : rest;
   return (
     <div className="min-w-0" data-testid={`toolmenu-${menu}`}>
       <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Find a tool (${all.length})`} aria-label="Find a tool"
@@ -40,7 +42,7 @@ export function ToolMenu({ menu, onPick, phone }: { menu: MenuId; onPick: () => 
           </div>
         </div>
       )}
-      {!needle && <div className="mb-0.5 px-2 text-[11px] font-medium uppercase tracking-wide text-muted">All tools · A to Z</div>}
+      {!needle && <div className="mb-0.5 px-2 text-[11px] font-medium uppercase tracking-wide text-muted">{recent.length > 0 ? "Other tools" : "All tools"} · A to Z</div>}
       {list.length === 0 ? <p className="px-2 py-2 text-sm text-muted">No tool matches “{q}”.</p> : (
         <ul className={phone ? "" : "gap-x-4 sm:columns-2 lg:columns-3"}>
           {list.map((t) => <li key={t.id} className="break-inside-avoid"><ToolItem t={t} onPick={onPick} big={phone} /></li>)}

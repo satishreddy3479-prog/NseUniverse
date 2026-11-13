@@ -116,6 +116,19 @@ describe("top menu bar", () => {
     await userEvent.click(within(bar()).getByRole("button", { name: /FNO Tools/ }));
     const recent = within(screen.getByTestId("recent-tools"));
     expect(recent.getAllByRole("link").map((a) => a.textContent)).toEqual(["Max Pain", "Smart OI", "Option Chain"]); // only three
+    // each tool appears once in the menu: the recent ones are not repeated in the A to Z list
+    const all = within(screen.getByTestId("toolmenu-fno")).getAllByRole("link").map((a) => a.textContent);
+    expect(all.filter((n) => n === "Max Pain")).toHaveLength(1);
+    expect(all.filter((n) => n === "Option Chain")).toHaveLength(1);
+  });
+
+  it("a menu's recent list holds only that menu's own tools", async () => {
+    localStorage.setItem("nse-universe.recent-tools", JSON.stringify(["max-pain"])); // an FNO tool
+    mockApi();
+    renderAt("/overview");
+    await screen.findByRole("heading", { name: "Overview" });
+    await userEvent.click(within(bar()).getByRole("button", { name: /Analyse/ }));
+    expect(within(screen.getByTestId("toolmenu-analyse")).queryByTestId("recent-tools")).toBeNull();
   });
 
   it("opening a tool page records it as the newest recent tool", async () => {
