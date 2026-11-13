@@ -63,13 +63,16 @@ git "${GIT_SAFE[@]}" -C "$ROOT/repo" archive "$sha" | tar -x -C "$rel" || fail "
 chown -R "$APP_USER:$APP_USER" "$rel" 2>/dev/null || true
 
 # ---- Python dependencies (shared venv, reinstalled only when requirements change)
-reqhash=$(cat "$rel"/backend/requirements.txt "$rel"/backend/requirements-research.txt | sha256sum | cut -c1-16)
+reqhash=$(cat "$rel"/backend/requirements.txt "$rel"/backend/requirements-research.txt "$rel"/backend/requirements.lock 2>/dev/null | sha256sum | cut -c1-16)
 if [ "$TEST_MODE" != 1 ] && [ "$(cat "$ROOT/venv/.reqhash" 2>/dev/null || true)" != "$reqhash" ]; then
   log "installing Python packages"
   PYBIN=$(cat /etc/nse-universe-python 2>/dev/null || echo python3)
   [ -x "$ROOT/venv/bin/python" ] || as_app "$PYBIN" -m venv "$ROOT/venv" || fail "venv"
+  # the lock file pins every package to the version the server was proven with; without it the ranges in requirements*.txt pick the newest release
+  lock=(); [ -f "$rel/backend/requirements.lock" ] && lock=(-c "$rel/backend/requirements.lock")
   as_app "$ROOT/venv/bin/pip" install --quiet --disable-pip-version-check \
-    -r "$rel/backend/requirements.txt" -r "$rel/backend/requirements-research.txt" || fail "pip install"
+    -r "$rel/backend/requirements.txt" -r "$rel/backend/requirements-research.txt" "${lock[@]}" || fail "pip install"
+  as_app "$ROOT/venv/bin/pip" check >/dev/null 2>&1 || fail "pip check: the installed packages conflict"
   echo "$reqhash" > "$ROOT/venv/.reqhash"
 fi
 if [ "$TEST_MODE" != 1 ]; then

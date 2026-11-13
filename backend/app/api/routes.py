@@ -162,18 +162,40 @@ async def health() -> Health:
 
 
 @router.get("/ops/alerts")
-async def ops_alerts() -> dict[str, Any]:
-    """What the server watchdog last found; ``available`` is false where none runs (development)."""
+async def ops_alerts(request: Request) -> dict[str, Any]:
+    """What the server watchdog last found, plus the app's own consistency checks.
+
+    ``available`` is false where no watchdog runs; the app's own checks are still listed.
+    """
     state_dir = Path(os.environ.get("NSE_STATE_DIR", "/opt/nse-universe/state"))
     path = state_dir / "alerts.json"
+    alerts: list[dict[str, Any]] = []
+    checked_at: str | None = None
+    available = False
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
+        alerts = [a for a in data.get("alerts", []) if isinstance(a, dict)]
+        checked_at = data.get("checked_at")
+        available = True
     except (OSError, ValueError):
-        return {"available": False, "checked_at": None, "alerts": [], "release": release_id()}
-    alerts = [a for a in data.get("alerts", []) if isinstance(a, dict)]
+        pass
+    # NSE revises the NIFTY lot size now and then; the cost model must follow the broker chain's lot
+    try:
+        cfg = request.app.state.settings
+        stored = _obs(request).latest_lot_size(cfg.underlying)
+        configured = cfg.cost_lot_size
+        if stored is not None and stored != configured:
+            alerts.append({
+                "key": "lot-size",
+                "level": "warning",
+                "text": f"The stored chain reports a lot size of {stored} but the cost model uses "
+                f"{configured}. Set COST_LOT_SIZE={stored} in the server settings.",
+            })
+    except Exception:  # noqa: BLE001, S110 - a failed check must not break the alert list
+        pass
     return {
-        "available": True,
-        "checked_at": data.get("checked_at"),
+        "available": available,
+        "checked_at": checked_at,
         "alerts": alerts,
         "release": release_id(),
     }

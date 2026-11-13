@@ -15,7 +15,7 @@ mkdir -p "$STATE"
 
 python3 - "$API" "$STATE" "$BACKUPS" "$NOTIFY_ENV" <<'PY'
 import json, os, sys, time, urllib.parse, urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 api, state_dir, backups, notify_env = sys.argv[1:5]
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -92,6 +92,47 @@ if reachable:
             add("eod", "warning", f"End-of-day processing is pending for {', '.join(eod['pending_days'])}.")
     except Exception as e:  # noqa: BLE001
         add("storage-status", "warning", f"/api/storage/status failed ({type(e).__name__}).")
+
+if reachable:
+    # the things that quietly go out of date: the holiday list (it ends with the year), the daily history, the institutional flows
+    try:
+        cov = (get("/api/market/session").get("holiday_coverage") or [None, None])[1]
+        if cov:
+            left = (date.fromisoformat(cov) - ist.date()).days
+            if left < 60:
+                add("holiday-list", "critical" if left < 14 else "warning",
+                    f"The NSE holiday list ends on {cov} ({max(left, 0)} days). Add the new year's NSE holiday circular to "
+                    "backend/app/prediction/reference/nse_cm_holidays.json; after that date holidays would be treated as normal weekdays.")
+    except Exception as e:  # noqa: BLE001
+        add("holiday-status", "warning", f"/api/market/session failed ({type(e).__name__}).")
+    try:
+        h = get("/api/prediction/history/status")
+        evening = ist.weekday() < 5 and (ist.hour, ist.minute) >= (19, 30)
+        if h.get("enabled") and h.get("data_gaps") and evening:
+            add("history", "warning", f"Daily price history is missing: {', '.join(h['data_gaps'])}.")
+        failed = (((h.get("last_run") or {}).get("summary") or {}).get("failed_symbols")) or []
+        if failed:
+            add("history-source", "warning", f"The last daily-history download failed for: {', '.join(failed)}.")
+    except Exception as e:  # noqa: BLE001
+        add("history-status", "warning", f"/api/prediction/history/status failed ({type(e).__name__}).")
+    try:
+        fl = get("/api/prediction/flows/status")
+        if fl.get("blocked"):
+            add("flows-blocked", "warning", f"NSE institutional-flow downloads are blocked: {fl['blocked']}.")
+        elif fl.get("missing_expected") and ist.hour >= 21:
+            add("flows", "warning", f"NSE flows for {fl.get('expected_session')} are still missing: {', '.join(fl['missing_expected'])}.")
+    except Exception as e:  # noqa: BLE001
+        add("flows-status", "warning", f"/api/prediction/flows/status failed ({type(e).__name__}).")
+
+# 1b. security updates that only take effect after a reboot (a kernel update): flagged after a week, to be done on a weekend
+try:
+    rf = os.environ.get("NSE_REBOOT_FILE", "/var/run/reboot-required")
+    if os.path.exists(rf):
+        days = (now.timestamp() - os.path.getmtime(rf)) / 86400
+        if days > 7:
+            add("reboot", "warning", f"The server has needed a reboot for security updates for {int(days)} days. Reboot it on a weekend (the app starts and signs in to the broker by itself).")
+except OSError:
+    pass
 
 # 2. a recent verified backup exists (the nightly one runs at 18:30 UTC)
 try:

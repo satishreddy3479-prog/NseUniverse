@@ -79,6 +79,9 @@ def healthy(**over: Any) -> dict[str, Any]:
         "/api/status": {"auth": {"state": "authenticated"}, "stream": {"state": "streaming", "freshness": "fresh", "market": {"state": "open"}}},
         "/api/sampler/status": {"enabled": True, "in_session": True, "state": "sampling", "last_success_at": "2026-11-13T04:58:00Z", "last_attempt_at": "2026-11-13T04:58:00Z", "last_error": None},
         "/api/storage/status": {"disk": {"free_gb": 11.5}, "end_of_day": {"pending_days": []}},
+        "/api/market/session": {"holiday_coverage": ["2026-01-01", "2027-12-31"]},
+        "/api/prediction/history/status": {"enabled": True, "data_gaps": [], "last_run": {"summary": {"failed_symbols": []}}},
+        "/api/prediction/flows/status": {"blocked": None, "missing_expected": [], "expected_session": "2026-11-12"},
     }
     r.update(over)
     return r
@@ -157,3 +160,44 @@ def test_notifications_go_out_once_when_an_alert_appears_and_once_when_it_clears
 @pytest.mark.skipif(os.name == "nt", reason="bash syntax check needs a POSIX shell")
 def test_the_shell_wrapper_parses() -> None:
     assert subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True).returncode == 0
+
+
+
+def coverage(end: str) -> dict[str, Any]:
+    return {"/api/market/session": {"holiday_coverage": ["2026-01-01", end]}}
+
+
+def test_the_holiday_list_running_out_is_flagged_early_and_then_loudly(tmp_path: Path) -> None:
+    a = run(tmp_path, healthy(**coverage("2026-12-31")), NOON)[0]  # 48 days left on 13 Nov 2026
+    assert [x["level"] for x in a if x["key"] == "holiday-list"] == ["warning"]
+    assert "holiday" in a[0]["text"].lower() and "2026-12-31" in a[0]["text"]
+    late = datetime(2026, 12, 25, 5, 0, tzinfo=UTC)
+    assert [x["level"] for x in run(tmp_path, healthy(**coverage("2026-12-31")), late)[0] if x["key"] == "holiday-list"] == ["critical"]
+    assert "holiday-list" not in keys(run(tmp_path, healthy(**coverage("2027-12-31")), NOON)[0])
+
+
+def test_history_and_flow_problems_are_flagged_only_when_the_data_is_due(tmp_path: Path) -> None:
+    evening = datetime(2026, 11, 13, 14, 30, tzinfo=UTC)  # 20:00 IST, Friday
+    gap = healthy(**{"/api/prediction/history/status": {"enabled": True, "data_gaps": ["NIFTY50 2026-11-13"], "last_run": {"summary": {"failed_symbols": ["INDIAVIX"]}}}})
+    got = keys(run(tmp_path, gap, evening)[0])
+    assert {"history", "history-source"} <= got
+    assert "history" not in keys(run(tmp_path, gap, NOON)[0])  # 10:30 IST: today's bar is not due yet
+    flows = healthy(**{"/api/prediction/flows/status": {"blocked": None, "missing_expected": ["fii_dii"], "expected_session": "2026-11-13"}})
+    assert "flows" not in keys(run(tmp_path, flows, evening)[0])  # NSE publishes around 18:00; waited until 21:00 IST
+    late_night = datetime(2026, 11, 13, 16, 0, tzinfo=UTC)  # 21:30 IST
+    assert "flows" in keys(run(tmp_path, flows, late_night)[0])
+    blocked = healthy(**{"/api/prediction/flows/status": {"blocked": "HTTP 403", "missing_expected": [], "expected_session": "2026-11-13"}})
+    assert "flows-blocked" in keys(run(tmp_path, blocked, NOON)[0])
+
+
+def test_a_pending_reboot_is_flagged_after_a_week(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    flag = tmp_path / "reboot-required"
+    flag.write_text("*** System restart required ***", encoding="utf-8")
+    monkeypatch.setenv("NSE_REBOOT_FILE", str(flag))
+    fresh = (NOON - timedelta(days=2)).timestamp()
+    os.utime(flag, (fresh, fresh))
+    assert "reboot" not in keys(run(tmp_path, healthy(), NOON)[0])
+    old = (NOON - timedelta(days=9)).timestamp()
+    os.utime(flag, (old, old))
+    got = [a for a in run(tmp_path, healthy(), NOON)[0] if a["key"] == "reboot"]
+    assert len(got) == 1 and "9 days" in got[0]["text"]

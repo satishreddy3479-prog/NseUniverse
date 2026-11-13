@@ -370,6 +370,16 @@ class ObservationStore:
             ).fetchall()
         return [(str(e), int(n)) for e, n in rows]
 
+    def latest_lot_size(self, underlying: str) -> int | None:
+        """The lot size carried by the newest stored sample that has one (None when none does)."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT lot_size FROM samples WHERE underlying=? AND lot_size IS NOT NULL"
+                " ORDER BY received_ms DESC, sample_id DESC LIMIT 1",
+                (underlying,),
+            ).fetchone()
+        return int(row[0]) if row else None
+
     def session_sample_counts(self, underlying: str) -> dict[str, int]:
         """IST date -> in-session samples (09:15-15:40 IST) of the best-covered expiry that day.
 

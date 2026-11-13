@@ -208,3 +208,19 @@ def test_ops_alerts_reads_the_watchdog_file_and_reports_unavailable_without_one(
     assert r["available"] is True and r["alerts"][0]["key"] == "disk"
     assert r["checked_at"].startswith("2026-11-13")
     assert "release" in client.get("/api/health").json()
+
+
+def test_ops_alerts_flags_a_lot_size_that_differs_from_the_cost_model(
+    client, monkeypatch  # type: ignore[no-untyped-def]
+) -> None:
+    monkeypatch.setenv("NSE_STATE_DIR", "/nonexistent")
+    obs = client.app.state.observations
+    monkeypatch.setattr(obs, "latest_lot_size", lambda underlying: 75)
+    alerts = client.get("/api/ops/alerts").json()["alerts"]
+    assert [a["key"] for a in alerts] == ["lot-size"]
+    assert "75" in alerts[0]["text"] and "65" in alerts[0]["text"]
+    monkeypatch.setattr(obs, "latest_lot_size", lambda underlying: 65)
+    assert client.get("/api/ops/alerts").json()["alerts"] == []
+    monkeypatch.setattr(obs, "latest_lot_size", lambda underlying: None)
+    # no stored sample with a lot size: nothing to compare
+    assert client.get("/api/ops/alerts").json()["alerts"] == []

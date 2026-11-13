@@ -4,11 +4,11 @@ import { api } from "../lib/api";
 import { fmtDateTimeIST } from "../lib/format";
 
 /** What the server watchdog found, shown on every page while something is wrong (a dead feed, a lost broker login, a full disk, a missed backup).
- *  Nothing is shown when there are no alerts or where no watchdog runs (a development machine). */
+ *  Nothing is shown when there are no alerts (on a development machine only the app's own consistency checks, such as the lot size, can appear). */
 export function AlertStrip() {
   const q = useQuery({ queryKey: ["ops-alerts"], queryFn: api.opsAlerts, refetchInterval: 60_000, retry: false });
   const d = q.data;
-  if (!d || !d.available || d.alerts.length === 0) return null;
+  if (!d || d.alerts.length === 0) return null;
   const critical = d.alerts.some((a) => a.level === "critical");
   return (
     <div role="alert" data-testid="alert-strip"
