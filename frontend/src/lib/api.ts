@@ -95,7 +95,11 @@ export interface CleanupOverview {
   last_runs: Record<string, unknown>;
 }
 
+export interface OpsAlert { key: string; level: "critical" | "warning"; text: string }
+export interface OpsAlerts { available: boolean; checked_at: string | null; alerts: OpsAlert[]; release: string | null }
+
 export const api = {
+  opsAlerts: () => request<OpsAlerts>("/api/ops/alerts"),
   cleanupOverview: () => request<CleanupOverview>("/api/storage/cleanup"),
   cleanupRun: (items: string[]) =>
     request<{ ok: boolean; result: Record<string, unknown> }>("/api/storage/cleanup", {

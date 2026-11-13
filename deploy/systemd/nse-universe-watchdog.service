@@ -1,0 +1,7 @@
+[Unit]
+Description=NSE Universe: health watchdog (reads only; writes alerts.json)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nse-universe-watchdog
+Nice=15

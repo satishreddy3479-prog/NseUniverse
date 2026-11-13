@@ -36,6 +36,7 @@ function DataPipelines({ serverTime, fetchedAt }: { serverTime: string | undefin
   const hist = useQuery({ queryKey: ["diag-history"], queryFn: api.historyStatus, ...opt });
   const flows = useQuery({ queryKey: ["diag-flows"], queryFn: api.flowsStatus, ...opt });
   const store = useQuery({ queryKey: ["diag-storage"], queryFn: api.storageStatus, ...opt });
+  const ops = useQuery({ queryKey: ["ops-alerts"], queryFn: api.opsAlerts, ...opt });
   // the skew is measured when the status arrives (server clock minus this browser's clock at that moment)
   const skew = serverTime && fetchedAt ? (new Date(serverTime).getTime() - fetchedAt) / 1000 : null;
   type Row = { name: string; state: "ok" | "problem" | "unknown"; detail: string; last: string | null };
@@ -44,6 +45,10 @@ function DataPipelines({ serverTime, fetchedAt }: { serverTime: string | undefin
   rows.push(h ? { name: "Daily prices (NIFTY 50, India VIX)", state: (h.last_run?.summary?.failed_symbols.length ?? 0) > 0 ? "problem" : "ok", detail: h.last_run?.summary ? `${h.last_run.summary.new_bars} new bars, ${h.last_run.summary.failed_symbols.length} failed symbol(s), ${h.last_run.summary.disagreements} disagreement(s)${h.running ? " · running now" : ""}` : "no completed run reported", last: h.last_run?.finished_at ?? null } : { name: "Daily prices (NIFTY 50, India VIX)", state: "unknown", detail: hist.isError ? "status unavailable" : "loading", last: null });
   rows.push(f ? { name: "NSE flows (participants, FII/DII cash)", state: f.blocked || (f.missing_expected?.length ?? 0) > 0 || (f.last_run?.errors ?? 0) > 0 ? "problem" : "ok", detail: f.blocked ? `blocked: ${f.blocked}` : (f.missing_expected?.length ?? 0) > 0 ? `missing for ${f.expected_session}: ${f.missing_expected!.join(", ")}` : `expected session ${f.expected_session ?? "—"} stored`, last: f.last_attempt_utc ?? null } : { name: "NSE flows (participants, FII/DII cash)", state: "unknown", detail: flows.isError ? "status unavailable" : "loading", last: null });
   rows.push(st ? { name: "End-of-day archive and backups", state: st.end_of_day.pending_days.length > 0 || st.pressure === "critical" || st.pressure === "low" ? "problem" : "ok", detail: `${st.end_of_day.sessions_archived} session(s) archived · pending ${st.end_of_day.pending_days.length} · disk pressure ${st.pressure} (${st.disk.free_gb} GB free) · last run: ${st.end_of_day.last_result.state}`, last: st.end_of_day.last_attempt_at } : { name: "End-of-day archive and backups", state: "unknown", detail: store.isError ? "status unavailable" : "loading", last: null });
+  const o = ops.data;
+  rows.push(o && o.available
+    ? { name: "Server watchdog (every 5 min)", state: o.alerts.length > 0 ? "problem" : "ok", detail: o.alerts.length > 0 ? o.alerts.map((a) => a.text).join(" · ") : `all checks passed${o.release ? ` · running release ${o.release}` : ""}`, last: o.checked_at }
+    : { name: "Server watchdog (every 5 min)", state: "unknown", detail: o ? "not running here (it runs on the server)" : "not reachable", last: null });
   const tone = { ok: "text-up", problem: "text-down", unknown: "text-muted" } as const;
   return (
     <Panel title="Server clock and data jobs">

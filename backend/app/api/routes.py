@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -114,6 +117,16 @@ def _check_underlying(svc: SnapshotService, underlying: str | None) -> None:
 class Health(BaseModel):
     status: str
     time: datetime
+    #: the commit this server runs (its release folder's name); None from a source checkout
+    release: str | None = None
+
+
+def release_id() -> str | None:
+    parts = Path(__file__).resolve().parts
+    if "releases" not in parts:
+        return None
+    i = parts.index("releases") + 1
+    return parts[i][:12] if i < len(parts) else None
 
 
 class AppStatus(BaseModel):
@@ -145,7 +158,25 @@ class ChainResponse(BaseModel):
 
 @router.get("/health", response_model=Health)
 async def health() -> Health:
-    return Health(status="ok", time=datetime.now(UTC))
+    return Health(status="ok", time=datetime.now(UTC), release=release_id())
+
+
+@router.get("/ops/alerts")
+async def ops_alerts() -> dict[str, Any]:
+    """What the server watchdog last found; ``available`` is false where none runs (development)."""
+    state_dir = Path(os.environ.get("NSE_STATE_DIR", "/opt/nse-universe/state"))
+    path = state_dir / "alerts.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"available": False, "checked_at": None, "alerts": [], "release": release_id()}
+    alerts = [a for a in data.get("alerts", []) if isinstance(a, dict)]
+    return {
+        "available": True,
+        "checked_at": data.get("checked_at"),
+        "alerts": alerts,
+        "release": release_id(),
+    }
 
 
 @router.get("/status", response_model=AppStatus)

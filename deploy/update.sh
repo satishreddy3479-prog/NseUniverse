@@ -115,10 +115,15 @@ echo "$sha" > "$STATE/deployed_sha"
 rm -f "$STATE/failed_sha"
 # the scripts the timers run are refreshed from the release that just proved healthy
 if [ "$TEST_MODE" != 1 ]; then
-  for pair in update:nse-universe-update backup:nse-universe-backup monitor:nse-universe-monitor; do
+  for pair in update:nse-universe-update backup:nse-universe-backup monitor:nse-universe-monitor watchdog:nse-universe-watchdog; do
     src="$rel/deploy/${pair%%:*}.sh"; dst="/usr/local/sbin/${pair##*:}"
     [ -f "$src" ] && install -m 755 "$src" "$dst.new" && mv -f "$dst.new" "$dst"
   done
+fi
+# the watchdog's timer units are installed once (idempotent), so an older server picks them up from the first release that carries them
+if [ "$TEST_MODE" != 1 ] && [ -f "$rel/deploy/systemd/nse-universe-watchdog.timer" ] && [ ! -f /etc/systemd/system/nse-universe-watchdog.timer ]; then
+  install -m 644 "$rel"/deploy/systemd/nse-universe-watchdog.service "$rel"/deploy/systemd/nse-universe-watchdog.timer /etc/systemd/system/
+  systemctl daemon-reload && systemctl enable --now nse-universe-watchdog.timer || log "could not enable the watchdog timer"
 fi
 log "deployed $sha; healthy"
 

@@ -174,6 +174,7 @@ src="$ROOT/repo.bootstrap/deploy"
 install -m 755 "$src/update.sh" /usr/local/sbin/nse-universe-update
 install -m 755 "$src/backup.sh" /usr/local/sbin/nse-universe-backup
 install -m 755 "$src/monitor.sh" /usr/local/sbin/nse-universe-monitor
+install -m 755 "$src/watchdog.sh" /usr/local/sbin/nse-universe-watchdog
 install -m 644 "$src"/systemd/*.service "$src"/systemd/*.timer /etc/systemd/system/
 install -m 644 "$src/logrotate-nse-universe" /etc/logrotate.d/nse-universe
 mkdir -p /etc/caddy /var/log/caddy && chown caddy:caddy /var/log/caddy 2>/dev/null || true
@@ -185,7 +186,7 @@ say "First deployment from GitHub (installs Python/Node packages and builds the 
 NSE_REPO_URL="$REPO_URL" NSE_BRANCH="$BRANCH" NSE_MIN_FREE_MB=1500 /usr/local/sbin/nse-universe-update || {
   echo; echo "The first deployment failed. Details: journalctl -u nse-universe -n 80 ; the update log is printed above."; exit 1; }
 systemctl enable --now nse-universe.service
-systemctl enable --now nse-universe-update.timer nse-universe-backup.timer nse-universe-monitor.timer
+systemctl enable --now nse-universe-update.timer nse-universe-backup.timer nse-universe-monitor.timer nse-universe-watchdog.timer
 
 say "Firewall (additive only)"
 if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then

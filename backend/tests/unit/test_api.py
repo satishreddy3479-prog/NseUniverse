@@ -190,3 +190,21 @@ def test_on_demand_chain_is_fetched_not_stored_and_reused_briefly(tmp_path: Path
         # an expiry the broker does not list is refused without a broker call
         assert c.get("/api/option-chain/on-demand?expiry=2030-01-01").status_code == 400
     assert broker.chain_calls == ["2026-11-23"]
+
+
+def test_ops_alerts_reads_the_watchdog_file_and_reports_unavailable_without_one(
+    client, tmp_path, monkeypatch  # type: ignore[no-untyped-def]
+) -> None:
+    import json
+
+    monkeypatch.setenv("NSE_STATE_DIR", str(tmp_path))
+    r = client.get("/api/ops/alerts").json()
+    assert r["available"] is False and r["alerts"] == []
+    alert = {"key": "disk", "level": "warning", "text": "Disk is getting full: 2.2 GB free."}
+    (tmp_path / "alerts.json").write_text(
+        json.dumps({"checked_at": "2026-11-13T05:00:00+00:00", "alerts": [alert]}), encoding="utf-8"
+    )
+    r = client.get("/api/ops/alerts").json()
+    assert r["available"] is True and r["alerts"][0]["key"] == "disk"
+    assert r["checked_at"].startswith("2026-11-13")
+    assert "release" in client.get("/api/health").json()

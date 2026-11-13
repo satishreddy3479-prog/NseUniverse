@@ -11,6 +11,7 @@ import { MobileNav, TopNav } from "./TopNav";
 import { ThemeSwitch } from "./ThemeSwitch";
 import { SpotBadge } from "./SpotBadge";
 import { StatusPill } from "./StatusPill";
+import { AlertStrip } from "./AlertStrip";
 
 
 /** Top bar keeps only what matters at a glance: the product, the NIFTY level and one status.
@@ -60,6 +61,7 @@ export function AppShell() {
           <MobileNav onNavigate={() => setMenuOpen(false)} />
         </div>
       )}
+      <AlertStrip />
       <main className="relative min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 md:p-4 lg:p-6">
         <ToolTabs />
         <Outlet key={clockKey} />

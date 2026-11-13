@@ -6,7 +6,7 @@ paths:
 ---
 # Python rules
 - **Versions:** target Python 3.11+ (open question: confirm server version in [decisions](../../docs/decisions.md)); avoid features unavailable on the production server.
-- **Style:** type hints on all public functions; PEP 8; one formatter + linter (proposed: ruff) configured in `pyproject.toml`; run mypy/pyright if adopted.
+- **Style:** type hints on all public functions; PEP 8; linter ruff (`ruff check`) and mypy are enforced (scripts\check.ps1 and CI); `ruff format` is deliberately not enforced (it would rewrite about 140 files and bury the history), so do not reformat files you are not changing.
 - **Design:** small focused modules; I/O (broker, DB, network) behind interfaces so logic is testable; typed models (e.g. pydantic/dataclasses) for data contracts; no duplicated logic.
 - **Errors:** raise specific exceptions with context; never swallow exceptions; no bare `except`; do not return fake defaults on failure.
 - **Logging:** `logging` with structured fields; never log secrets or full auth payloads; log reconnects, subscription state, data gaps.

@@ -27,6 +27,7 @@ for db in "$DATA"/*.sqlite3; do
   sqlite3 "$db" ".backup '$tmp/$name'"
   [ "$(sqlite3 "$tmp/$name" 'PRAGMA quick_check;')" = "ok" ] || { echo "backup: integrity check FAILED for $name; nothing replaced"; exit 1; }
   gzip -f "$tmp/$name"
+  gzip -t "$tmp/$name.gz" || { echo "backup: compressed copy of $name is damaged; nothing replaced"; exit 1; }
   n=$((n + 1))
 done
 [ "$n" -gt 0 ] || { echo "backup: no databases found in $DATA"; exit 0; }
