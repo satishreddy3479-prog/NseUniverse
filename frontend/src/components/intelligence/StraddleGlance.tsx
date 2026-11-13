@@ -93,12 +93,12 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
     const o = timeLinesOption(times, lines, c, null, { leftFmt: (v) => sg(v, 0), rightFmt: (v) => v.toLocaleString("en-IN"), zeroLine: true }) as unknown as { grid: Record<string, unknown>; legend: Record<string, unknown>; series: { name: string; lineStyle?: Record<string, unknown>; z?: number }[] };
     o.grid = { ...o.grid, top: 40 };
     o.legend = { ...o.legend, top: 4, left: "center", itemGap: 14 };
-    // the position being followed is drawn bold, the other one thin and faded, so choosing a position visibly changes the chart
+    // the position being followed is drawn bold, the other as thick but faded, so choosing a position visibly changes the chart
     const on = mode === "fixed" ? "Fixed" : "Rolling ATM";
     for (const sr of o.series) {
       if (sr.name.startsWith("NIFTY")) continue;
       const sel = sr.name === on;
-      sr.lineStyle = { ...(sr.lineStyle ?? {}), width: sel ? 3.2 : 1.2, opacity: sel ? 1 : 0.35 };
+      sr.lineStyle = { ...(sr.lineStyle ?? {}), width: 3.2, opacity: sel ? 1 : 0.55 };
       sr.z = sel ? 5 : 2;
     }
     return o as unknown as EChartsCoreOption;

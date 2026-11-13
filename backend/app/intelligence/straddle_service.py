@@ -22,7 +22,7 @@ from app.storage.observations import to_ms
 
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
-MAX_POINTS = 240
+MAX_POINTS = 400  # a full session is about 385 one-minute samples: nothing is thinned
 CACHE_S = 20.0
 OPEN_T, CLOSE_T = time(9, 15), time(15, 40)
 

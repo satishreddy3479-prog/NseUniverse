@@ -885,7 +885,7 @@ class IntradayService:
         self._iv_cache = {key: out}
         return out
 
-    def iv_series(self, expiry: str, max_points: int = 90, session: str | None = None, tf: int = 1) -> dict[str, Any]:
+    def iv_series(self, expiry: str, max_points: int = 400, session: str | None = None, tf: int = 1) -> dict[str, Any]:
         """At-the-money implied volatility through one stored session of this expiry (the latest unless ``session`` is given),
         the last snapshot of each ``tf``-minute candle counted from the open, thinned to at most ``max_points``. Same model
         and inputs as the command center's IV."""

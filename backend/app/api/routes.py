@@ -919,7 +919,7 @@ async def intraday_iv_chart(request: Request, hv: int = 21) -> dict[str, Any]:
 
 @router.get("/intraday/iv-series")
 async def intraday_iv_series(
-    request: Request, expiry: date, session: date | None = None, tf: int = 1, max_points: int = 90
+    request: Request, expiry: date, session: date | None = None, tf: int = 1, max_points: int = 400
 ) -> dict[str, Any]:
     """ATM implied volatility through a stored session (the latest unless `session` is given)."""
     if tf not in (1, 3, 5, 15) or not 10 <= max_points <= 400:

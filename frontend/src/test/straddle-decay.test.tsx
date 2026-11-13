@@ -8,7 +8,7 @@ import type { Component, Environment, Stat, StraddleDecay, StraddleValidation, T
 
 vi.mock("../components/EChart", () => ({
   useChartColors: () => ({ up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" }),
-  EChart: ({ ariaLabel, option }: { ariaLabel: string; option?: { series?: { data?: unknown[]; lineStyle?: { width?: number } }[] } }) => <div role="img" aria-label={ariaLabel} data-last={JSON.stringify((option?.series ?? []).map((x) => (x.data ?? []).at(-1)))} data-widths={JSON.stringify((option?.series ?? []).map((x) => x.lineStyle?.width ?? null))} />,
+  EChart: ({ ariaLabel, option }: { ariaLabel: string; option?: { series?: { data?: unknown[]; lineStyle?: { width?: number; opacity?: number } }[] } }) => <div role="img" aria-label={ariaLabel} data-opacities={JSON.stringify((option?.series ?? []).map((x) => x.lineStyle?.opacity ?? null))} data-last={JSON.stringify((option?.series ?? []).map((x) => (x.data ?? []).at(-1)))} data-widths={JSON.stringify((option?.series ?? []).map((x) => x.lineStyle?.width ?? null))} />,
 }));
 afterEach(() => vi.unstubAllGlobals());
 
@@ -400,18 +400,20 @@ describe("the glance: a label held down by a risk flag", () => {
 
 
 describe("choosing a position changes the glance charts", () => {
-  itIn("today", "the followed line is bold and the other faded, in both directions", async () => {
+  itIn("today", "both lines are equally thick; the followed one is solid and the other faded, in both directions", async () => {
     mount(full({ spot: Array.from({ length: 90 }, (_, i) => 24000 + i) }));
     const chart = () => screen.getByRole("img", { name: /Change in straddle premium since the open/ });
     const widths = () => JSON.parse(chart().getAttribute("data-widths") ?? "[]") as (number | null)[]; // [fixed, rolling, NIFTY]
     await screen.findByTestId("sdi-follow");
-    expect(widths()[0]!).toBeGreaterThan(widths()[1]!); // fixed is followed by default
+    const opac = () => JSON.parse(chart().getAttribute("data-opacities") ?? "[]") as (number | null)[];
+    expect(widths()[0]).toBe(widths()[1]); // the same thickness for both
+    expect(opac()[0]!).toBeGreaterThan(opac()[1]!); // fixed is followed by default
     fireEvent.click(within(screen.getByTestId("sdi-follow")).getByRole("button", { name: "Rolling ATM" }));
-    expect(widths()[1]!).toBeGreaterThan(widths()[0]!);
+    expect(opac()[1]!).toBeGreaterThan(opac()[0]!);
     expect(screen.getByTestId("sdi-following-note")).toHaveTextContent("You are following Rolling ATM");
     expect(screen.getByRole("img", { name: /Call and put premium at the open and now/ })).toBeInTheDocument();
     fireEvent.click(within(screen.getByTestId("sdi-follow")).getByRole("button", { name: /^Fixed/ }));
-    expect(widths()[0]!).toBeGreaterThan(widths()[1]!);
+    expect(opac()[0]!).toBeGreaterThan(opac()[1]!);
   });
 });
 
