@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { EChart, useChartColors } from "../EChart";
 import { EmptyState } from "../ui";
@@ -56,6 +56,7 @@ export function useStrikeSeries(strikes: string) {
     queryKey: ["strikeSeries", d.expiry, strikes, w.since, w.until],
     queryFn: () => api.strikeSeries(d.expiry!, strikes, w.since, w.until),
     enabled: !!d.expiry && !!w.since, refetchInterval: w.until ? false : 30_000, retry: false,
+    placeholderData: keepPreviousData, // a changed strike set (the ATM moved) keeps the chart up while the new series loads, instead of "Loading"
   });
   const data = useClipped(q.data); // during a replay: only what was stored up to the replay time
   return { q: { ...q, data } as typeof q, w };

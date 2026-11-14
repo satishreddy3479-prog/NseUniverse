@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { EChart, useChartColors } from "../EChart";
 import { EmptyState } from "../ui";
 import { useDash } from "./DashContext";
+import { useReplay } from "./ReplayContext";
+import { sessionWindow } from "../../lib/analytics";
 import { Frame, GROUP, Panel, pill, useStrikeSeries } from "./PriceBoards";
 import { fmtInt, fmtTimeIST, MISSING } from "../../lib/format";
 import { strikeBoard, strikesAround } from "../../lib/optionTools";
@@ -29,7 +31,18 @@ export function RollingStraddleBoard() {
   const [ruleId, setRuleId] = useState("nearest");
   const rule = RULES.find((r) => r.id === ruleId)!.rule;
   const listed = useMemo(() => [...new Set(d.rows.map((r) => r.strike))].sort((x, y) => x - y), [d.rows]);
-  const strikes = useMemo(() => strikesAround(listed, d.atmStrike, 21), [listed, d.atmStrike]);
+  // During a replay the ATM moves with every step; a strike set that followed it would be a new request each time and the board would
+  // keep showing "loading". The set stays on the strikes around the session's opening ATM (the history is cut at the replay time, so the
+  // newest day in it is the replayed one); outside a replay it follows the live ATM as before.
+  const replaying = useReplay().on;
+  const all = d.history.data?.observations;
+  const openAtm = useMemo(() => {
+    if (!replaying || !all) return null;
+    const since = sessionWindow(all, null, "fit").since;
+    return all.find((o) => o.retrieved_at === since)?.atm_strike ?? null;
+  }, [replaying, all]);
+  const centre = replaying && openAtm != null ? openAtm : d.atmStrike;
+  const strikes = useMemo(() => strikesAround(listed, centre, replaying ? 41 : 21), [listed, centre, replaying]);
   const key = strikes.join(",");
   const { q, w } = useStrikeSeries(key || "atm");
   const res = q.data;

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { fmtInt, fmtPct, MISSING } from "../../lib/format";
 import { maxPain } from "../../lib/analytics";
@@ -61,7 +61,7 @@ export function GammaAnalysisBoard() {
   const q = useQuery({
     queryKey: ["gexDay", d.expiry, key, w.since, w.until],
     queryFn: () => api.strikeSeries(d.expiry!, key, w.since, w.until),
-    enabled: !!d.expiry && !!w.since && !!key, refetchInterval: w.until ? false : 30_000, retry: false,
+    enabled: !!d.expiry && !!w.since && !!key, refetchInterval: w.until ? false : 30_000, retry: false, placeholderData: keepPreviousData,
   });
   const qd = useClipped(q.data); // during a replay: only what was stored up to the replay time
   const structure = useMemo(() => {

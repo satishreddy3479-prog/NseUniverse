@@ -53,18 +53,34 @@ const oiSeries = {
   ce_change: times.map((_, i) => 100 * i), pe_change: times.map((_, i) => 200 * i), stride: 1, warnings: [], definitions: {},
 };
 const asked: string[] = [];
+/** a chain with 61 strikes (22 550 to 25 550) so that a narrower or wider strike window really is a different request */
+function wideChain() {
+  const base = bigChain();
+  const tpl = base.snapshot.rows[3]!;
+  const rows = Array.from({ length: 61 }, (_, i) => 22550 + 50 * i).map((k) => ({
+    ...tpl, strike: k,
+    call: { ...tpl.call!, instrument_token: `${k}CE`, trading_symbol: `N${k}CE`, moneyness: k === 24050 ? "ATM" : "OTM" },
+    put: { ...tpl.put!, instrument_token: `${k}PE`, trading_symbol: `N${k}PE`, moneyness: k === 24050 ? "ATM" : "OTM" },
+  }));
+  return { ...base, snapshot: { ...base.snapshot, rows } };
+}
+let wide = false;
+let slowSeries = 0; // ms a strike-series answer is held back
 let missingFrom = Infinity; // snapshots with an index from here on are "not stored" (404)
 function mockApi() {
   asked.length = 0;
   missingFrom = Infinity;
+  slowSeries = 0;
+  wide = false;
   const routes: Record<string, unknown> = {
-    "/api/status": status(), "/api/expiries": expiries, "/api/snapshots": [], "/api/sessions": [], "/api/option-chain": bigChain(),
+    "/api/status": status(), "/api/expiries": expiries, "/api/snapshots": [], "/api/sessions": [], "/api/option-chain": () => (wide ? wideChain() : bigChain()),
     "/api/history/observations": hist, "/api/history/strike-series": strikeSeries, "/api/history/oi-series": oiSeries, "/api/market/index-bars": { day: null, bars: [], note: "" },
   };
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const path = String(input).split("?")[0]!;
     asked.push(path);
+    if (slowSeries && path === "/api/history/strike-series") await new Promise((r) => setTimeout(r, slowSeries));
     const snapNo = /^\/api\/snapshots\/s(\d+)$/.exec(path)?.[1];
     if (snapNo != null && Number(snapNo) >= missingFrom) return new Response(JSON.stringify({ detail: { code: "not_found", message: "snapshot not found" } }), { status: 404 });
     const hit = path.startsWith("/api/snapshots/") && !path.endsWith("/csv") ? bigChain() : routes[path];
@@ -133,6 +149,19 @@ describe("replay clock", () => {
     await waitFor(() => expect(asked).toContain("/api/snapshots/s20")); // asked for, and refused
     await new Promise((r) => setTimeout(r, 900));
     expect(screen.getByRole("img", { name: "Call vega, put vega and NIFTY through the session" })).toBeInTheDocument();
+  });
+  it("a new strike set (the ATM moved) keeps the chart up while its series loads, it does not fall back to \"Loading\"", async () => {
+    mockApi();
+    wide = true;
+    renderAt("/tools/vega-analysis");
+    await screen.findByTestId("vega-cards");
+    const chart = () => screen.getByRole("img", { name: "Call vega, put vega and NIFTY through the session" });
+    expect(chart()).toBeInTheDocument();
+    slowSeries = 600; // the next series takes a while
+    fireEvent.change(screen.getByRole("combobox", { name: "Strikes per side" }), { target: { value: "10" } }); // another strike band: a new request
+    await new Promise((r) => setTimeout(r, 150));
+    expect(screen.queryByText(/Loading stored samples/)).toBeNull();
+    expect(chart()).toBeInTheDocument();
   });
   it("a tool that does not replay has no replay bar", async () => {
     mockApi();

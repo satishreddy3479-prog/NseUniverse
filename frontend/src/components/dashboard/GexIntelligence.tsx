@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import { fmtCrore, gexSamples, gexStructure, type GexRow } from "../../lib/gammaAnalysis";
@@ -87,7 +87,7 @@ export function GexSessionIntel({ expiry, listed, openAtm, curAtm, rate }: { exp
   const q = useQuery({
     queryKey: ["gexIntel", expiry, uni, key, w.since, w.until],
     queryFn: () => api.strikeSeries(expiry, key, w.since, w.until),
-    enabled: !!w.since && !!key, refetchInterval: w.until ? false : 30_000, retry: false,
+    enabled: !!w.since && !!key, refetchInterval: w.until ? false : 30_000, retry: false, placeholderData: keepPreviousData,
   });
   const qd = useClipped(q.data); // during a replay: only what was stored up to the replay time
   const pts = useMemo(() => {

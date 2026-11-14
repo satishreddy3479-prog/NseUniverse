@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { fmtInt } from "../../lib/format";
 import { MISSING } from "../../lib/format";
@@ -98,7 +98,7 @@ export function VegaAnalysisBoard() {
   const q = useQuery({
     queryKey: ["vegaDay", d.expiry, fetchKey, w.since, w.until],
     queryFn: () => api.strikeSeries(d.expiry!, fetchKey, w.since, w.until),
-    enabled: !!d.expiry && !!w.since && !!fetchKey, refetchInterval: w.until ? false : 30_000, retry: false,
+    enabled: !!d.expiry && !!w.since && !!fetchKey, refetchInterval: w.until ? false : 30_000, retry: false, placeholderData: keepPreviousData,
   });
   const hq = useQuery({
     queryKey: ["vegaHistory", d.expiry, histKey, histSince],
