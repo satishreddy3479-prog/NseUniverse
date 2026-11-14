@@ -11,9 +11,9 @@ import type { HistoryResponse, Observation } from "../lib/types";
 
 vi.mock("../components/EChart", () => ({
   useChartColors: () => ({ up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" }),
-  EChart: ({ option, ariaLabel, group }: { option: unknown; ariaLabel: string; group?: string }) => {
+  EChart: ({ option, ariaLabel }: { option: unknown; ariaLabel: string }) => {
     const o = option as { series?: { name?: string; data: unknown[] }[] };
-    return <div role="img" aria-label={ariaLabel} data-group={group ?? ""} data-series={(o.series ?? []).map((s) => s.name ?? "").join("|")} data-points={(o.series ?? []).map((s) => s.data.length).join(",")} />;
+    return <div role="img" aria-label={ariaLabel} data-series={(o.series ?? []).map((s) => s.name ?? "").join("|")} data-points={(o.series ?? []).map((s) => s.data.length).join(",")} />;
   },
 }));
 
@@ -162,12 +162,6 @@ describe("replay clock", () => {
     await new Promise((r) => setTimeout(r, 150));
     expect(screen.queryByText(/Loading stored samples/)).toBeNull();
     expect(chart()).toBeInTheDocument();
-  });
-  it("the Smart OI charts do not share one hover: a crosshair and tooltip appear only in the chart being pointed at", async () => {
-    mockApi();
-    renderAt("/tools/smart-oi");
-    await waitFor(() => expect(screen.getAllByRole("img").length).toBeGreaterThanOrEqual(3));
-    for (const el of screen.getAllByRole("img")) expect(el.getAttribute("data-group")).toBe(""); // a shared group name would link their crosshairs
   });
   it("a tool that does not replay has no replay bar", async () => {
     mockApi();

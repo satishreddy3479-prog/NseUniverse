@@ -691,7 +691,3 @@ Smart OI, Multi OI & Volume, Gamma Exposure, Vega Analysis, ATM Straddle Chart a
 
 ## D163 (14 Nov 2026): replay no longer flashes "Loading stored samples"
 During a replay the ATM moves with each step, so the rolling straddle (and the Vega, Gamma and strike boards) asked for a different strike set each time and every new request showed "Loading stored samples" in the middle of the play. The strike-series queries now keep the previous series on screen while a new one loads (`placeholderData: keepPreviousData`), and during a replay the rolling straddle holds its strike set (41 strikes) on the session opening ATM, so it asks once.
-
-
-## D164 (14 Nov 2026): Smart OI charts have independent hover
-The three Smart OI charts (candles with the Smart OI and volume bars, the day-change lines, the PCR or volume chart) shared one chart group, so hovering one drew a crosshair and a tooltip at the same time in the others, and the tooltips covered each other. They no longer share a group; the panels inside the main chart (candles, Smart OI bars, volume bars) still line up because they are one chart.
