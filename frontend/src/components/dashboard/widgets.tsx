@@ -410,16 +410,16 @@ function SmartOiChartWidget() {
             </EmptyState>
           ) : (
             <div className="grid min-h-0 flex-1 gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-              <div><EChart className="echart-fixed !h-[440px]" group="smart-oi" option={main} ariaLabel="NIFTY candles, Smart OI candles and option volume" /></div>
+              <div><EChart className="echart-fixed !h-[440px]" option={main} ariaLabel="NIFTY candles, Smart OI candles and option volume" /></div>
               <div className="grid min-h-0 grid-rows-2 gap-2">
-                <div><EChart className="echart-fixed !h-[210px]" group="smart-oi" option={dayOpt} ariaLabel="Put, call and put minus call OI change since the first candle" /></div>
+                <div><EChart className="echart-fixed !h-[210px]" option={dayOpt} ariaLabel="Put, call and put minus call OI change since the first candle" /></div>
                 <div>
                   <div role="group" aria-label="Lower right chart" className="mb-1 flex flex-wrap justify-end gap-0.5">
                     {([["pcr", "PCR"], ["volume", "PE, CE & PE − CE volume"]] as const).map(([k, l]) => (
                       <button key={k} type="button" aria-pressed={lower === k} onClick={() => setLower(k)} className={`widget-nodrag min-h-6 rounded-sm border px-2 text-xs ${lower === k ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{l}</button>
                     ))}
                   </div>
-                  <EChart className="echart-fixed !h-[184px]" group="smart-oi" option={ratioOpt} ariaLabel={lower === "volume" ? "Put and call volume today with the put minus call difference on the right axis" : "OI put-call ratio and volume put-call ratio"} />
+                  <EChart className="echart-fixed !h-[184px]" option={ratioOpt} ariaLabel={lower === "volume" ? "Put and call volume today with the put minus call difference on the right axis" : "OI put-call ratio and volume put-call ratio"} />
                 </div>
               </div>
             </div>
