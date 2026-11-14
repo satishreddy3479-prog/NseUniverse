@@ -5,6 +5,9 @@ _Last updated: 2026-11-04_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Replay on six tool pages (14 Nov 2026)
+Replay button (off by default, never auto-starts) on Smart OI, Multi OI & Volume, Gamma Exposure, Vega Analysis, ATM Straddle Chart and ATM Rolling Straddle: plays a stored session one stored sample at a time, every chart and the chain on the page showing only what was stored up to that time (D162). Tested: frontend tests for the helpers and each page (they fail when the cut is disabled); not yet checked in a real browser or against the server's stored snapshots, and the Straddle Intelligence page is not on the replay.
+
 ## NIFTY 50 Market Intelligence (10 Nov 2026)
 New first menu item and Home strip: fused sentiment (-100..+100) over five evidence groups (derivatives positioning, order-flow proxies, volatility, market structure, participation), with score, confidence, data coverage (available / partial / unavailable), evidence agreement and data freshness as separate quantities, regime, evidence per group, divergences, heuristic scenarios, timeline of recorded minutes, alerts, rolling 5/15/30-minute CVD (proxy), a visible Data quality and freshness section (AVAILABLE / PARTIAL / UNAVAILABLE per capability with source timestamps), and drill-down links to every existing page (D102, D103, [audit, overlap correction and methodology](market-intelligence-audit.md)). The command-centre score is no longer an input (double counting removed); weights are provisional and labelled so; walk-forward validation exists (`/api/intelligence/validation`) but has no real stored history to run on yet. Tested with fixtures and fake providers; not seen with live data in market hours or on a phone.
 

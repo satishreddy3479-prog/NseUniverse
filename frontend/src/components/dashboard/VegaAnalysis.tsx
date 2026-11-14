@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { fmtInt } from "../../lib/format";
@@ -14,6 +14,7 @@ import {
 import { EChart, useChartColors } from "../EChart";
 import { EmptyState } from "../ui";
 import { useDash } from "./DashContext";
+import { useClipped } from "./ReplayContext";
 import { useSessionWindow } from "./PriceBoards";
 
 const GROUP_A = "vega-level";
@@ -71,9 +72,6 @@ export function VegaAnalysisBoard() {
   const [showSel, setShowSel] = useState(false);
   const [showFwd, setShowFwd] = useState(true);
   const [show, setShow] = useState({ call: true, put: true, price: true, diff: true, range: false, run: false });
-  const [cursor, setCursor] = useState<number | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1);
 
   const listed = useMemo(() => [...new Set(d.rows.map((r) => r.strike))].sort((a, b) => a - b), [d.rows]);
   const all = d.history.data?.observations;
@@ -107,13 +105,16 @@ export function VegaAnalysisBoard() {
     queryFn: () => api.strikeSeries(d.expiry!, histKey, histSince),
     enabled: !!d.expiry && !!histSince && !!histKey, refetchInterval: 120_000, retry: false,
   });
-  const samples = useMemo(() => (q.data && d.expiry ? vegaSamples(q.data, d.expiry).filter((s) => !w.day || s.day === w.day) : []), [q.data, d.expiry, w.day]);
-  const hist = useMemo(() => (hq.data && d.expiry ? vegaSamples(hq.data, d.expiry) : []), [hq.data, d.expiry]);
+  // the shared replay on this page (components/dashboard/ReplayBar.tsx) cuts what was stored at the replay time
+  const qSeries = useClipped(q.data);
+  const hSeries = useClipped(hq.data);
+  const samples = useMemo(() => (qSeries && d.expiry ? vegaSamples(qSeries, d.expiry).filter((s) => !w.day || s.day === w.day) : []), [qSeries, d.expiry, w.day]);
+  const hist = useMemo(() => (hSeries && d.expiry ? vegaSamples(hSeries, d.expiry) : []), [hSeries, d.expiry]);
 
   const levelAll = useMemo(() => vegaLevel(samples, win), [samples, win]);
   const level = useMemo(() => candles(levelAll, tf, sessionOpenMin()), [levelAll, tf]);
   const last = level.length - 1;
-  const at = cursor == null ? last : Math.min(cursor, last);
+  const at = last; // the replay cuts the data itself, so the newest candle is always the one shown
   const now: LevelPoint | undefined = level[at];
   const histLevel = useMemo(() => vegaLevel(hist, win), [hist, win]);
   const histAvg = histLevel.map((p) => p.avg).filter((x): x is number => x != null);
@@ -127,17 +128,6 @@ export function VegaAnalysisBoard() {
   const ceStats = stats(level.slice(0, at + 1).map((p) => p.ce));
   const peStats = stats(level.slice(0, at + 1).map((p) => p.pe));
   const avgStats = stats(level.slice(0, at + 1).map((p) => p.avg));
-
-  // replay: one candle per tick
-  useEffect(() => {
-    if (!playing) return;
-    const id = setInterval(() => setCursor((cur) => {
-      const n = (cur ?? last) + 1;
-      if (n >= last) { setPlaying(false); return last; }
-      return n;
-    }), 1000 / speed);
-    return () => clearInterval(id);
-  }, [playing, speed, last]);
 
   const optA = useMemo(() => {
     const shown = level.slice(0, at + 1);
@@ -200,14 +190,14 @@ export function VegaAnalysisBoard() {
   if (level.length < 2) return <EmptyState title="Not enough usable samples">Vega needs at least two stored samples in the session with prices for the chosen strikes ({level.length} so far).</EmptyState>;
 
   const toggle = (k: keyof typeof show) => setShow((s) => ({ ...s, [k]: !s[k] }));
-  const tfBtn = (m: number) => <button key={m} type="button" aria-pressed={tf === m} onClick={() => { setTf(m); setCursor(null); }} className={pill(tf === m)}>{m}m</button>;
+  const tfBtn = (m: number) => <button key={m} type="button" aria-pressed={tf === m} onClick={() => setTf(m)} className={pill(tf === m)}>{m}m</button>;
   return (
     <div className="flex flex-col gap-3" data-testid="vega-analysis">
       <div className="flex flex-col gap-2 rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2">
         {w.controls}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
           <label className="flex items-center gap-2 text-muted">Strike
-            <select aria-label="Strike" value={pick == null ? "atm" : String(pick)} onChange={(e) => { setPick(e.target.value === "atm" ? null : Number(e.target.value)); setCursor(null); }} className={field}>
+            <select aria-label="Strike" value={pick == null ? "atm" : String(pick)} onChange={(e) => { setPick(e.target.value === "atm" ? null : Number(e.target.value)); }} className={field}>
               <option value="atm">ATM{d.atmStrike != null ? ` (${fmtInt(d.atmStrike)})` : ""}, latest</option>
               {listed.map((k) => <option key={k} value={k}>{fmtInt(k)}</option>)}
             </select>
@@ -238,16 +228,6 @@ export function VegaAnalysisBoard() {
           <button type="button" aria-pressed={show.diff} onClick={() => toggle("diff")} className={pill(show.diff)}>CE−PE</button>
           <button type="button" aria-pressed={show.range} onClick={() => toggle("range")} className={pill(show.range)} title="The day's highest and lowest average vega so far">Daily range</button>
           <button type="button" aria-pressed={show.run} onClick={() => toggle("run")} className={pill(show.run)} title="Running average of the average vega since the open">Run avg</button>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-rule px-3 py-2" data-testid="vega-replay">
-          <button type="button" onClick={() => { if (!playing && at >= last) setCursor(0); setPlaying((p) => !p); }} className={pill(playing)}>{playing ? "Pause" : "Play"}</button>
-          <label className="flex items-center gap-2 text-xs text-muted">Speed
-            <select aria-label="Speed" value={speed} onChange={(e) => setSpeed(Number(e.target.value))} className={field}>{[1, 2, 5, 10].map((s) => <option key={s} value={s}>{s}×</option>)}</select>
-          </label>
-          <label className="flex min-w-[12rem] flex-1 items-center gap-3 text-xs text-muted">Replay time
-            <input type="range" aria-label="Replay time" min={0} max={last} value={at} onChange={(e) => { setPlaying(false); setCursor(Number(e.target.value)); }} className="flex-1 accent-[var(--brass)]" />
-            <span className="num text-paper">{now ? new Date(now.t + 330 * 60_000).toISOString().slice(11, 16) : MISSING}</span>
-          </label>
         </div>
         <div className="p-2">
           <div style={{ height: 380 }}><EChart group={GROUP_A} option={optA} ariaLabel="Call vega, put vega and NIFTY through the session" /></div>

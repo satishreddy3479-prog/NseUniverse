@@ -10,6 +10,7 @@ import { sessionOpenMin } from "../../lib/session";
 import type { OptionChainRow } from "../../lib/types";
 import { candles } from "../../lib/vegaAnalysis";
 import { EChart, useChartColors } from "../EChart";
+import { useClipped } from "./ReplayContext";
 import { MethodologyPanel } from "../MethodologyPanel";
 import { useSessionWindow } from "./PriceBoards";
 import { Section } from "./VegaAnalysis";
@@ -88,14 +89,15 @@ export function GexSessionIntel({ expiry, listed, openAtm, curAtm, rate }: { exp
     queryFn: () => api.strikeSeries(expiry, key, w.since, w.until),
     enabled: !!w.since && !!key, refetchInterval: w.until ? false : 30_000, retry: false,
   });
+  const qd = useClipped(q.data); // during a replay: only what was stored up to the replay time
   const pts = useMemo(() => {
-    if (!q.data) return [];
-    const s = gexSamples(q.data, expiry, rate, uni === "dynamic" ? 10 : undefined).filter((x) => !w.day || x.day === w.day);
+    if (!qd) return [];
+    const s = gexSamples(qd, expiry, rate, uni === "dynamic" ? 10 : undefined).filter((x) => !w.day || x.day === w.day);
     return gexStructure(candles(s, tf, sessionOpenMin()));
-  }, [q.data, expiry, uni, tf, w.day, rate]);
+  }, [qd, expiry, uni, tf, w.day, rate]);
   const dyn = useMemo(() => gexDynamics(pts), [pts]);
   const ft = useMemo(() => flipTime(pts), [pts]);
-  const five = useMemo(() => gexStructure(candles(q.data ? gexSamples(q.data, expiry, rate, uni === "dynamic" ? 10 : undefined).filter((x) => !w.day || x.day === w.day) : [], 5, sessionOpenMin())), [q.data, expiry, uni, w.day, rate]);
+  const five = useMemo(() => gexStructure(candles(qd ? gexSamples(qd, expiry, rate, uni === "dynamic" ? 10 : undefined).filter((x) => !w.day || x.day === w.day) : [], 5, sessionOpenMin())), [qd, expiry, uni, w.day, rate]);
   const div = useMemo(() => WINDOWS.map(([label, m]) => [label, gexPriceDivergence(five, m)] as const), [five]);
   const th = "px-2 py-1.5 text-right font-normal";
   const btn = (on: boolean) => pill(on);
@@ -126,7 +128,7 @@ export function GexSessionIntel({ expiry, listed, openAtm, curAtm, rate }: { exp
     `Window 1 hour: NIFTY ${fmtInt(five[five.length - 1]!.spot - (d1.spotChange ?? 0))} → ${fmtInt(five[five.length - 1]!.spot)}: ${sg(d1.spotChange, 1)} points (${sg(d1.spotChangePct, 3)}%)`,
     `Net GEX ${fmtCrore(d1.netThen)} → ${fmtCrore(d1.netNow)}: ${sg(d1.netChange, 2)} cr (${sg(d1.netChangePct, 1)}%)`, `Reading: ${d1.label}`,
   ] : [];
-  const fresh = { updatedAt: pts.length ? new Date(pts[pts.length - 1]!.t).toISOString() : null, session: w.day ?? null, expiry, used: pts.length, missing: q.data ? Math.max(0, q.data.times.length - pts.length) : null, timeframe: `${tf}-minute candles (${uni} universe); divergence on 5-minute candles` };
+  const fresh = { updatedAt: pts.length ? new Date(pts[pts.length - 1]!.t).toISOString() : null, session: w.day ?? null, expiry, used: pts.length, missing: qd ? Math.max(0, qd.times.length - pts.length) : null, timeframe: `${tf}-minute candles (${uni} universe); divergence on 5-minute candles` };
   return (
     <>
       <Section title="Intraday GEX: movement, migration and time around the flip" right={<span className="text-xs text-muted">{pts.length} candles · session {w.day ?? MISSING}</span>}>

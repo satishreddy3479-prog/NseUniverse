@@ -4,6 +4,7 @@ import { api } from "../../lib/api";
 import { EChart, useChartColors } from "../EChart";
 import { EmptyState } from "../ui";
 import { useDash } from "./DashContext";
+import { useClipped, useReplay } from "./ReplayContext";
 import { sessionWindow, TIMELINE_VIEWS, type TimelineView } from "../../lib/analytics";
 import { fmtExpiry, fmtInt, fmtTimeIST } from "../../lib/format";
 import { strikeBoard, strikesAround, type StrikeBoard } from "../../lib/optionTools";
@@ -15,21 +16,24 @@ export const GROUP = "price-tools";
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 /** "Wed 04 Nov 2026" from an IST calendar day (no locale: the label is the same on every device). */
-const fmtDay = (iso: string, newest: boolean) =>
+export const fmtDay = (iso: string, newest: boolean) =>
   `${WEEKDAYS[new Date(`${iso}T00:00:00Z`).getUTCDay()]} ${iso.slice(8)} ${MONTHS[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}${newest ? " (latest)" : ""}`;
 
 /** Which session and which stretch of it the three boards draw, from the stored samples every chart uses. */
 export function useSessionWindow() {
   const d = useDash();
   const all = d.history.data?.observations;
-  const [day, setDay] = useState<string | null>(null);
+  const [picked, setDay] = useState<string | null>(null);
   const [view, setView] = useState<TimelineView>("fit");
+  // during a replay the session shown is the replayed one (the history is already cut at the replay time, so the newest day is it)
+  const replaying = useReplay().on;
+  const day = replaying ? null : picked;
   const s = useMemo(() => sessionWindow(all ?? [], day, view), [all, day, view]);
   const controls = s.days.length === 0 ? null : (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm" data-testid="session-timeline">
       <label className="flex items-center gap-2 text-muted">
         Session
-        <select aria-label="Session" value={s.day ?? ""} onChange={(e) => setDay(e.target.value)}
+        <select aria-label="Session" value={s.day ?? ""} disabled={replaying} title={replaying ? "The replay bar chooses the day while a replay runs" : undefined} onChange={(e) => setDay(e.target.value)}
           className="widget-nodrag min-h-9 rounded-sm border border-rule bg-slate-2 px-2 text-paper">
           {s.days.map((x, i) => <option key={x} value={x}>{fmtDay(x, i === 0)}</option>)}
         </select>
@@ -53,7 +57,8 @@ export function useStrikeSeries(strikes: string) {
     queryFn: () => api.strikeSeries(d.expiry!, strikes, w.since, w.until),
     enabled: !!d.expiry && !!w.since, refetchInterval: w.until ? false : 30_000, retry: false,
   });
-  return { q, w };
+  const data = useClipped(q.data); // during a replay: only what was stored up to the replay time
+  return { q: { ...q, data } as typeof q, w };
 }
 
 export function Panel({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {

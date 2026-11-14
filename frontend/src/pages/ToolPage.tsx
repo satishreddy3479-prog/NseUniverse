@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Info } from "../components/Info";
 import { DashProvider, type Range } from "../components/dashboard/DashContext";
+import { ReplayProvider } from "../components/dashboard/ReplayContext";
+import { ReplayBar } from "../components/dashboard/ReplayBar";
 import { WIDGETS } from "../components/dashboard/widgets";
 import { MultiStrikeBoard, PriceOiBoard } from "../components/dashboard/PriceBoards";
 import { RollingStraddleBoard } from "../components/dashboard/RollingStraddle";
@@ -69,6 +71,7 @@ export default function ToolPage() {
   );
 
   return (
+    <ReplayProvider>
     <DashProvider expiry={expiry} range={range} showCalls={showCalls} showPuts={showPuts}>
       <div className="mx-auto flex max-w-[1700px] flex-col gap-3">
         <div className="flex flex-wrap items-end justify-between gap-3">
@@ -106,6 +109,7 @@ export default function ToolPage() {
             {strikeControls && <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={showPuts} onChange={(e) => setShowPuts(e.target.checked)} className="accent-[var(--brass)]" /> Puts</label>}
           </div>
         )}
+        {tool.replay && <ReplayBar />}
         {tool.widgets && (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-12" data-testid="tool-widgets">
             {tool.widgets.map((wid) => {
@@ -146,5 +150,6 @@ export default function ToolPage() {
         {tool.page && tool.page !== "flows" && tool.page !== "cash" && tool.page !== "futflow" && tool.page !== "futsectors" && tool.page !== "futbuildup" && tool.page !== "ivhv" && tool.page !== "ivchart" && tool.page !== "ivskew" && tool.page !== "ivmomentum" && tool.page !== "strikepos" && tool.page !== "marketstructure" && tool.page !== "backtest" && tool.page !== "ivintraday" && <IndexToolBody page={tool.page} />}
       </div>
     </DashProvider>
+    </ReplayProvider>
   );
 }

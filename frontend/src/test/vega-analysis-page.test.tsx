@@ -54,7 +54,8 @@ function mockApi() {
   };
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-    const hit = routes[String(input).split("?")[0]!];
+    const path = String(input).split("?")[0]!;
+    const hit = path.startsWith("/api/snapshots/") ? bigChain() : routes[path]; // a stored snapshot of any replay time
     if (hit === undefined) return new Response(JSON.stringify({ detail: { code: "nf", message: "nf" } }), { status: 404 });
     return new Response(JSON.stringify(typeof hit === "function" ? (hit as (u: string) => unknown)(String(input)) : hit), { status: 200, headers: { "Content-Type": "application/json" } });
   }));
@@ -96,18 +97,27 @@ describe("Vega Analysis page", () => {
     expect(screen.queryByRole("img", { name: "Call vega minus put vega" })).toBeNull();
   });
 
-  it("replays the session: the slider moves the cards back in time and Play runs forward from there", async () => {
+  it("is live until Replay is pressed, then the shared replay shows only what was stored up to its time", async () => {
     mockApi();
     renderPage();
+    const chart = async () => screen.findByRole("img", { name: "Call vega, put vega and NIFTY through the session" }); // the charts draw after their data has loaded
+    const points = async () => Number((await chart()).getAttribute("data-points")!.split(",")[0]);
+    await screen.findByTestId("vega-cards");
+    expect(screen.queryByRole("slider", { name: "Replay time" })).toBeNull(); // not started by itself
+    const full = await points();
+    expect(full).toBeGreaterThan(3); // 40 minutes in 5-minute candles
+    await userEvent.click(screen.getByRole("button", { name: /Replay/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /Pause/ })); // it started playing by itself: stop it to look
     const slider = (await screen.findByRole("slider", { name: "Replay time" })) as HTMLInputElement;
-    const last = Number(slider.max);
-    expect(last).toBeGreaterThan(3); // 40 minutes in 5-minute candles
-    expect(Number(slider.value)).toBe(last);
-    const points = () => Number(screen.getByRole("img", { name: "Call vega, put vega and NIFTY through the session" }).getAttribute("data-points")!.split(",")[0]);
-    expect(points()).toBe(last + 1);
-    fireEvent.change(slider, { target: { value: "2" } });
-    expect(points()).toBe(3); // only what had happened by then is drawn
-    expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+    expect(Number(slider.max)).toBe(N - 1); // one step per stored sample
+    fireEvent.change(slider, { target: { value: "12" } });
+    expect(await points()).toBeLessThan(full); // only what had happened by then is drawn
+    expect(screen.getByTestId("replay-time")).toHaveTextContent("09:32 IST"); // 09:20 + 12 minutes
+    fireEvent.change(slider, { target: { value: String(N - 1) } });
+    expect(await points()).toBe(full);
+    await userEvent.click(screen.getByRole("button", { name: "Exit replay" }));
+    expect(screen.queryByRole("slider", { name: "Replay time" })).toBeNull();
+    expect(await points()).toBe(full);
   });
 
   it("shows the vega change of the anchored band from a baseline, starting at zero, latest first", async () => {

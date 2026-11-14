@@ -5,6 +5,7 @@ import { EChart, useChartColors } from "../EChart";
 import { ChainTable } from "../ChainTable";
 import { Button, EmptyState, SourceTag } from "../ui";
 import { useDash } from "./DashContext";
+import { useClipped, useReplay } from "./ReplayContext";
 import { GexWidget, IvSkewWidget, PeCeWidget, SmartOiWidget as OiBuildupWidget, VegaWidget } from "./toolWidgets";
 import { FullChart } from "./FullChart";
 import { sessionCloseMin, sessionOpenMin } from "../../lib/session";
@@ -292,11 +293,13 @@ function useOiSeries(strikes: number | "all") {
   const d = useDash();
   const all = d.history.data?.observations;
   const since = useMemo(() => rangeObservations(all ?? [], d.tsRange).rows[0]?.retrieved_at, [all, d.tsRange]);
-  return useQuery({
+  const q = useQuery({
     queryKey: ["oiSeries", d.expiry, strikes, since],
     queryFn: () => api.oiSeries(d.expiry!, strikesParam(strikes), since),
     enabled: !!d.expiry && !!since, refetchInterval: 30_000, retry: false,
   });
+  const data = useClipped(q.data); // during a replay: only what was stored up to the replay time
+  return { ...q, data } as typeof q;
 }
 
 function OiSeriesWidget({ kind, label }: { kind: OiSeriesKind; label: string }) {
@@ -341,7 +344,14 @@ function SmartOiChartWidget() {
   });
   // One-minute index bars (real highs and lows). Not essential: without them the candles are cut from the stored samples.
   const bars = useQuery({ queryKey: ["indexBars"], queryFn: () => api.indexBars(), refetchInterval: 30_000, retry: false });
-  const res = useMemo(() => (q.data ? smartOiCandles(q.data, tf, { openMin: sessionOpenMin(), closeMin: sessionCloseMin(), bars: bars.data?.bars }) : null), [q.data, tf, bars.data]);
+  // during a replay: only what was stored up to the replay time, and the index bars of the replayed day up to that time
+  const rp = useReplay();
+  const series = useClipped(q.data);
+  const barList = useMemo(() => {
+    if (rp.cutMs == null) return bars.data?.bars;
+    return bars.data && bars.data.day === rp.day ? bars.data.bars.filter((b) => Date.parse(b.at) <= rp.cutMs!) : undefined;
+  }, [bars.data, rp.cutMs, rp.day]);
+  const res = useMemo(() => (series ? smartOiCandles(series, tf, { openMin: sessionOpenMin(), closeMin: sessionCloseMin(), bars: barList }) : null), [series, tf, barList]);
   const main = useMemo(() => (res ? smartOiOption(res, colors) : null), [res, colors]);
   const dayOpt = useMemo(() => (res ? smartOiDayOption(res, colors) : null), [res, colors]);
   const [lower, setLower] = useState<"pcr" | "volume">("pcr");

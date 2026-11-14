@@ -16,6 +16,7 @@ import { MethodologyPanel } from "../MethodologyPanel";
 import { METRICS } from "../../lib/metricRegistry";
 import { GexSessionIntel, GexUniversesSection } from "./GexIntelligence";
 import { useDash } from "./DashContext";
+import { useClipped } from "./ReplayContext";
 import { useSessionWindow } from "./PriceBoards";
 import { Card, Section } from "./VegaAnalysis";
 
@@ -62,11 +63,12 @@ export function GammaAnalysisBoard() {
     queryFn: () => api.strikeSeries(d.expiry!, key, w.since, w.until),
     enabled: !!d.expiry && !!w.since && !!key, refetchInterval: w.until ? false : 30_000, retry: false,
   });
+  const qd = useClipped(q.data); // during a replay: only what was stored up to the replay time
   const structure = useMemo(() => {
-    if (!q.data || !d.expiry) return [];
-    const s = gexSamples(q.data, d.expiry).filter((x) => !w.day || x.day === w.day);
+    if (!qd || !d.expiry) return [];
+    const s = gexSamples(qd, d.expiry).filter((x) => !w.day || x.day === w.day);
     return gexStructure(candles(s, tf, sessionOpenMin()));
-  }, [q.data, d.expiry, w.day, tf]);
+  }, [qd, d.expiry, w.day, tf]);
 
   // ---- chart options
   const posOf = (strikes: number[], x: number) => {
