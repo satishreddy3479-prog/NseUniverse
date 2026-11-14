@@ -9,6 +9,10 @@ import { LabelLayout, LegacyGridContainLabel } from "echarts/features";
 import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsCoreOption, ECharts } from "echarts/core";
 import type { ChartColors } from "../lib/chartOptions";
+import { hideHover, syncHover, type HoverChart } from "../lib/hoverSync";
+
+/** The charts of each hover group (see ``hoverGroup`` on EChart). */
+const HOVER_GROUPS = new Map<string, Set<HoverChart>>();
 
 // Everything a chart option in this app can use must be registered here: ECharts ignores a series type, component or feature that was not, without an error in
 // production (a scatter series simply never appeared; text corners, diamond markers, overlap-free end labels and containLabel grids were silently dropped).
@@ -237,18 +241,25 @@ export function keepLegend(option: EChartsCoreOption, user: Record<string, boole
 }
 
 /** Thin ECharts wrapper: owns the instance, resizes with its container, keeps zoom and the user's legend choices across updates. */
-export function EChart({ option, onClick, ariaLabel, className = "", group }: {
+export function EChart({ option, onClick, ariaLabel, className = "", group, hoverGroup }: {
   option: EChartsCoreOption;
   onClick?: (p: PointClick) => void;
   ariaLabel: string;
   className?: string;
   /** Charts with the same group name share one crosshair and tooltip: hovering one marks the same x position in the others. */
   group?: string;
+  /**
+   * Charts with the same hover group name show one hover: pointing at a time in one marks the same time in the others (tooltip and crosshair), by
+   * position on the shared category axis, so it works whichever series are switched on in a legend. Use for charts that share a time axis; unlike
+   * ``group`` it does not link zoom or legends.
+   */
+  hoverGroup?: string;
 }) {
   const el = useRef<HTMLDivElement>(null);
   const chart = useRef<ECharts | null>(null);
   const clickRef = useRef(onClick);
   clickRef.current = onClick;
+  const categories = useRef(0); // the number of categories on the first x axis, for the shared hover
   const userLegend = useRef<Record<string, boolean>>({});
   const legendDefaults = useRef<Record<string, boolean>>({});
   const [width, setWidth] = useState(0);
@@ -262,6 +273,22 @@ export function EChart({ option, onClick, ariaLabel, className = "", group }: {
     (node as unknown as { __chart?: ECharts }).__chart = c; // read by the layout audit in the browser console
     if (group) { c.group = group; echarts.connect(group); }
     c.on("click", (p) => clickRef.current?.(p as PointClick));
+    let leaveHover: (() => void) | undefined;
+    if (hoverGroup) {
+      const me: HoverChart = {
+        convertFromPixel: (f, x) => c.convertFromPixel(f, x), convertToPixel: (f, v) => c.convertToPixel(f, v),
+        containPixel: (f, pt) => c.containPixel(f, pt), getHeight: () => c.getHeight(), dispatchAction: (a) => c.dispatchAction(a), categoryCount: () => categories.current,
+      };
+      const members = HOVER_GROUPS.get(hoverGroup) ?? new Set<HoverChart>();
+      members.add(me);
+      HOVER_GROUPS.set(hoverGroup, members);
+      const zr = c.getZr();
+      const move = (e: { offsetX: number }) => syncHover(me, e.offsetX, members);
+      const out = () => hideHover(me, members);
+      zr.on("mousemove", move);
+      zr.on("globalout", out);
+      leaveHover = () => { zr.off("mousemove", move); zr.off("globalout", out); members.delete(me); if (members.size === 0) HOVER_GROUPS.delete(hoverGroup); };
+    }
     // remember what the user toggles in the legend (one series, all, or invert) so the next data refresh does not undo it
     for (const ev of ["legendselectchanged", "legendselectall", "legendinverseselect"]) c.on(ev, (e) => { Object.assign(userLegend.current, (e as { selected?: Record<string, boolean> }).selected ?? {}); });
     const ro = new ResizeObserver(() => { c.resize(); setWidth(node.clientWidth); setHeight(node.clientHeight); });
@@ -269,6 +296,7 @@ export function EChart({ option, onClick, ariaLabel, className = "", group }: {
     setHeight(node.clientHeight);
     ro.observe(node);
     return () => {
+      leaveHover?.();
       ro.disconnect();
       c.dispose();
       chart.current = null;
@@ -276,6 +304,9 @@ export function EChart({ option, onClick, ariaLabel, className = "", group }: {
   }, []);
 
   useEffect(() => {
+    const xs = (option as { xAxis?: unknown }).xAxis;
+    const first = (Array.isArray(xs) ? xs[0] : xs) as { data?: unknown[] } | undefined;
+    categories.current = first?.data?.length ?? 0;
     // replaceMerge keeps the user's zoom while series appear/disappear with the CE/PE toggles.
     // No chart animates: a live chart redrawn on every tick must not keep sliding, and a still chart can be read (animation off everywhere).
     chart.current?.setOption({ ...(withInactiveLegend(keepLegend(fitLayout(fitNarrow(safeTooltips(option), width), width, height), userLegend.current, legendDefaults.current), getComputedStyle(document.documentElement).getPropertyValue("--legend-off").trim() || "#8a96ab") as Obj), animation: false, animationDuration: 0, animationDurationUpdate: 0 }, { replaceMerge: ["series"] });
