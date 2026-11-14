@@ -724,6 +724,17 @@ export function groupedBarsOption(categories: string[], series: { name: string; 
 const upTxt = (v: number | null) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${compactIN(Math.abs(v))}`);
 
 /** Spot candles (top), Smart OI zero-baseline candles (middle) and option volume per candle (bottom) on one shared time axis. */
+/** The volume lines of the Smart OI tooltip: contracts traded in this candle (put, call, total, put share) and the day's totals so far. */
+function volumeLines(k: SmartOiResult["candles"][number]): string {
+  const u = (v: number | null) => (v == null ? "—" : compactIN(v));
+  const bothNow = k.peVolDelta != null && k.ceVolDelta != null;
+  const tot = bothNow ? k.peVolDelta! + k.ceVolDelta! : null;
+  const share = tot != null && tot > 0 ? ` · puts ${((k.peVolDelta! / tot) * 100).toFixed(0)}% of it` : "";
+  return `<br/><b>Volume traded in this candle</b><br/>Put ${u(k.peVolDelta)} · Call ${u(k.ceVolDelta)}` +
+    (tot != null ? ` · total ${u(tot)}${share}<br/>Put − Call ${k.peVolDelta! - k.ceVolDelta! >= 0 ? "+" : "−"}${compactIN(Math.abs(k.peVolDelta! - k.ceVolDelta!))}` : "") +
+    `<br/>Day so far: Put ${u(k.peVol)} · Call ${u(k.ceVol)}`;
+}
+
 export function smartOiOption(r: SmartOiResult, c: ChartColors): EChartsCoreOption {
   const cs = r.candles;
   const labels = cs.map((x) => x.label);
@@ -750,26 +761,29 @@ export function smartOiOption(r: SmartOiResult, c: ChartColors): EChartsCoreOpti
           (k.p == null ? "Baseline candle: no change yet" :
             `ΔPut ${upTxt(k.dPe)} · ΔCall ${upTxt(k.dCe)}<br/><b>Smart OI ${upTxt(k.p)}</b> ${k.p >= 0 ? "(puts added faster)" : "(calls added faster)"}` +
             (k.span > 1 ? `<br/>spans ${k.span} candles: samples missing in between` : "") +
-            (k.strikesChanged ? "<br/>⚠ the number of strikes behind the totals changed, so this bar is not like for like" : ""));
+            (k.strikesChanged ? "<br/>⚠ the number of strikes behind the totals changed, so this bar is not like for like" : "")) +
+          volumeLines(k);
       },
     },
     // panel titles sit inside the top-left of each panel so the three charts read without a legend
     title: [
       { text: cs.length > 0 && cs.every((k) => k.spotFromBars || !k.spot) ? "NIFTY (1-minute bars from the live index feed)" : cs.some((k) => k.spotFromBars) ? "NIFTY (1-minute index bars where recorded, stored samples before)" : "NIFTY (from stored 1-min samples: no real highs and lows)", left: 66, top: "1%", textStyle: { color: c.muted, fontSize: 11, fontWeight: "normal" } },
-      { text: "Smart OI = ΔPut − ΔCall per candle", left: 66, top: "51%", textStyle: { color: c.muted, fontSize: 11, fontWeight: "normal" } },
-      { text: "Option volume per candle (put green, call red)", left: 66, top: "76%", textStyle: { color: c.muted, fontSize: 11, fontWeight: "normal" } },
+      { text: "Smart OI = ΔPut − ΔCall per candle", left: 66, top: "46%", textStyle: { color: c.muted, fontSize: 11, fontWeight: "normal" } },
+      { text: "Volume per candle: put (green) + call (red)", left: 66, top: "68%", textStyle: { color: c.muted, fontSize: 11, fontWeight: "normal" } },
     ],
     grid: [
-      { left: 60, right: 12, top: "5%", height: "42%" },
-      { left: 60, right: 12, top: "55%", height: "17%" },
-      { left: 60, right: 12, top: "80%", height: "11%" },
+      { left: 60, right: 12, top: "5%", height: "38%" },
+      { left: 60, right: 12, top: "50%", height: "15%" },
+      { left: 60, right: 12, top: "72%", height: "19%" },
     ],
     xAxis: [axis(0, false), axis(1, false), axis(2, true)],
     yAxis: [
       val(0, { axisLabel: { ...axisText(c), formatter: (v: number) => v.toLocaleString("en-IN") } }),
       val(1, { scale: false, axisLabel: { ...axisText(c), formatter: (v: number) => upTxt(v) } }),
-      val(2, { scale: false, splitNumber: 2, axisLabel: { ...axisText(c), formatter: (v: number) => compactIN(v) } }),
+      val(2, { scale: false, splitNumber: 3, axisLabel: { ...axisText(c), formatter: (v: number) => compactIN(v) } }),
     ],
+    // a small legend for the volume panel only (the other two panels are named by their titles); it also switches puts or calls off to read one side
+    legend: { data: [{ name: "Put volume", itemStyle: { color: c.up } }, { name: "Call volume", itemStyle: { color: c.down } }], top: "67%", right: 14, itemWidth: 12, itemHeight: 8, itemGap: 12, textStyle: { color: c.paper, fontSize: 11 } },
     dataZoom: [{ type: "inside", xAxisIndex: [0, 1, 2], filterMode: "none" }],
     series: [
       {
@@ -784,8 +798,8 @@ export function smartOiOption(r: SmartOiResult, c: ChartColors): EChartsCoreOpti
         itemStyle: { color: c.up, color0: c.down, borderColor: c.up, borderColor0: c.down },
         markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: c.muted, width: 1 }, data: [{ yAxis: 0 }] },
       },
-      { name: "Put volume", type: "bar", stack: "v", xAxisIndex: 2, yAxisIndex: 2, data: cs.map((k) => k.peVolDelta), itemStyle: { color: c.up, opacity: 0.7 } },
-      { name: "Call volume", type: "bar", stack: "v", xAxisIndex: 2, yAxisIndex: 2, data: cs.map((k) => k.ceVolDelta), itemStyle: { color: c.down, opacity: 0.7 } },
+      { name: "Put volume", type: "bar", stack: "v", xAxisIndex: 2, yAxisIndex: 2, data: cs.map((k) => k.peVolDelta), itemStyle: { color: c.up, opacity: 0.85 } },
+      { name: "Call volume", type: "bar", stack: "v", xAxisIndex: 2, yAxisIndex: 2, data: cs.map((k) => k.ceVolDelta), itemStyle: { color: c.down, opacity: 0.85 } },
     ],
   };
 }
