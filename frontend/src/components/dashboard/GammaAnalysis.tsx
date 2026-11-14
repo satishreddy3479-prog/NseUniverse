@@ -6,7 +6,7 @@ import { maxPain } from "../../lib/analytics";
 import { strikesAround } from "../../lib/optionTools";
 import { sessionOpenMin } from "../../lib/session";
 import {
-  corridor, fmtCrore, gammaDensity, gexLevels, gexProfile, gexSamples, gexStructure, IMPLICATION, regimeFor, strikeType,
+  corridor, fmtCrore, gammaDensity, gexLevels, gexProfile, gexSamples, gexStructure, IMPLICATION, labelRowOffset, labelRowsTop, regimeFor, strikeType,
   type GexRow,
 } from "../../lib/gammaAnalysis";
 import { candles } from "../../lib/vegaAnalysis";
@@ -81,14 +81,15 @@ export function GammaAnalysisBoard() {
     if (!lv || visible.length === 0) return null;
     const strikes = visible.map((r) => r.strike);
     const pick = (r: GexRow) => (type === "ce" ? r.ce : type === "pe" ? r.pe : r.net);
-    // level labels sit horizontally at the top, staggered over four rows so close levels (wall, flip, peak, spot) never overlap
+    // level labels sit horizontally at the top, each on a row of its own (lowest level lowest) so two levels that are close or equal (wall and peak) never overlap, on a phone too
     const defs: [string, number | null, string, string][] = [["Spot", lv.spot, c.brass, "solid"], ["Call wall", lv.callWall, c.down, "dashed"], ["Put wall", lv.putWall, c.up, "dashed"], ["Peak", lv.peak, c.info, "dotted"], ["Flip", lv.flip, c.muted, "dotted"]];
     const levelMarks = !levelsOn ? [] : defs.filter((x): x is [string, number, string, string] => x[1] != null).sort((p, q) => p[1] - q[1]).map(([name, x, color, dash], k) => ({
       name, xAxis: posOf(strikes, x), lineStyle: { color, type: dash, width: 1.4 },
-      label: { formatter: `${name} ${fmtInt(Math.round(x))}`, color, fontSize: 10, position: "end", rotate: 0, align: "center", offset: [0, -13 * (k % 4)] },
+      label: { formatter: `${name} ${fmtInt(Math.round(x))}`, color, fontSize: 10, position: "end", rotate: 0, align: "center", offset: labelRowOffset(k) },
     }));
+    const top = labelRowsTop(levelMarks.length);
     return {
-      animation: false, grid: { left: 62, right: 30, top: 84, bottom: 56 },
+      animation: false, grid: { left: 62, right: 30, top, bottom: 56 },
       legend: { type: "scroll", top: 0, left: 0, right: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
       tooltip: { trigger: "axis", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: number | null) => (v == null ? MISSING : `${fmtCrore(v)} cr`) },
       xAxis: { type: "category", data: strikes.map(String), axisLabel: { color: c.muted, fontSize: 10, rotate: 45, hideOverlap: true }, axisLine: { lineStyle: { color: c.rule } } },
@@ -107,17 +108,18 @@ export function GammaAnalysisBoard() {
   const densityOpt = useMemo(() => {
     if (!density || !lv) return null;
     const line = (name: string, color: string, data: number[], dotted = false) => ({ name, type: "line", showSymbol: false, smooth: true, data: density.xs.map((x, i) => [x, data[i]]), lineStyle: { color, width: 2, type: dotted ? "dotted" : "solid" }, itemStyle: { color } });
-    // horizontal labels staggered over rows so close peaks never overlap
+    // horizontal labels, each on a row of its own so close peaks never overlap
     let row = 0;
-    const vline = (name: string, x: number | null, color: string) => (x == null ? [] : [{ name, xAxis: x, lineStyle: { color, width: 1.2 }, label: { formatter: `${name} ${fmtInt(Math.round(x))}`, color, fontSize: 10, position: "end", rotate: 0, align: "center", offset: [0, -13 * (row++ % 4)] } }]);
+    const vline = (name: string, x: number | null, color: string) => (x == null ? [] : [{ name, xAxis: x, lineStyle: { color, width: 1.2 }, label: { formatter: `${name} ${fmtInt(Math.round(x))}`, color, fontSize: 10, position: "end", rotate: 0, align: "center", offset: labelRowOffset(row++) } }]);
+    const marks = [...vline("Sell peak", density.sellPeak, c.down), ...vline("Buy peak", density.buyPeak, c.up), ...vline("Total peak", density.neutralPeak, c.brass), ...vline("Spot", lv.spot, c.muted)];
     return {
-      animation: false, grid: { left: 62, right: 30, top: 84, bottom: 40 },
+      animation: false, grid: { left: 62, right: 30, top: labelRowsTop(marks.length), bottom: 40 },
       legend: { type: "scroll", top: 0, left: 0, right: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
       tooltip: { trigger: "axis", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: number) => `${fmtCrore(v)} cr` },
       xAxis: { type: "value", scale: true, axisLabel: { color: c.muted, formatter: (v: number) => fmtInt(Math.round(v)) }, axisLine: { lineStyle: { color: c.rule } }, splitLine: { show: false } },
       yAxis: { type: "value", axisLabel: { color: c.muted, formatter: (v: number) => fmtCrore(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
       series: [
-        { ...line("Sell gamma (calls)", c.down, density.sell), markLine: { symbol: "none", silent: true, data: [...vline("Sell peak", density.sellPeak, c.down), ...vline("Buy peak", density.buyPeak, c.up), ...vline("Total peak", density.neutralPeak, c.brass), ...vline("Spot", lv.spot, c.muted)] } },
+        { ...line("Sell gamma (calls)", c.down, density.sell), markLine: { symbol: "none", silent: true, data: marks } },
         line("Buy gamma (puts)", c.up, density.buy), line("Total", c.brass, density.neutral, true),
       ],
     };

@@ -230,3 +230,9 @@ export function fmtCrore(v: number | null | undefined): string {
   const s = a >= 1000 ? `${(a / 1000).toFixed(2)}K` : a >= 100 ? a.toFixed(0) : a.toFixed(2);
   return `${v < 0 ? "−" : ""}${s}`;
 }
+
+/** The pixel offset of the ``k``-th level label above a chart: every label gets a row of its own, 13 px apart, so labels of close or equal levels never overlap. */
+export const labelRowOffset = (k: number): [number, number] => [0, k === 0 ? 0 : -13 * k];
+
+/** Top margin of a chart whose ``n`` level labels each take a row above the plot, under a one-line legend (so the labels never run into the legend). */
+export const labelRowsTop = (n: number): number => 34 + 13 * Math.max(0, n);

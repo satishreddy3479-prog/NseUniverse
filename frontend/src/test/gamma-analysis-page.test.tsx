@@ -12,8 +12,9 @@ import type { HistoryResponse, Observation } from "../lib/types";
 vi.mock("../components/EChart", () => ({
   useChartColors: () => ({ up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" }),
   EChart: ({ option, ariaLabel }: { option: unknown; ariaLabel: string }) => {
-    const o = option as { series?: { name?: string; data: unknown[] }[] };
-    return <div role="img" aria-label={ariaLabel} data-series={(o.series ?? []).map((s) => s.name ?? "").join("|")} data-points={(o.series ?? []).map((s) => s.data.length).join(",")} />;
+    const o = option as { series?: { name?: string; data: unknown[]; markLine?: { data: { label?: { offset?: number[] } }[] } }[]; grid?: { top?: number } };
+    const offsets = (o.series?.[0]?.markLine?.data ?? []).map((m) => m.label?.offset?.[1] ?? 0);
+    return <div role="img" aria-label={ariaLabel} data-series={(o.series ?? []).map((s) => s.name ?? "").join("|")} data-points={(o.series ?? []).map((s) => s.data.length).join(",")} data-grid-top={String(o.grid?.top ?? "")} data-label-offsets={offsets.join(",")} />;
   },
 }));
 
@@ -95,6 +96,17 @@ describe("Gamma Exposure page", () => {
     expect(screen.getByTestId("gamma-density-note")).toHaveTextContent("Sell × buy intersection");
   });
 
+  it("the level labels above the profile each have a row of their own, with room for them under the legend", async () => {
+    mockApi();
+    renderPage();
+    const chart = await screen.findByRole("img", { name: "Gamma exposure by strike" });
+    const offs = chart.getAttribute("data-label-offsets")!.split(",").filter(Boolean).map(Number);
+    expect(offs.length).toBeGreaterThanOrEqual(3); // spot, the walls, flip and peak
+    expect(new Set(offs).size).toBe(offs.length); // no two labels on the same row (two equal levels, wall and peak, used to share one)
+    const top = Number(chart.getAttribute("data-grid-top"));
+    expect(top).toBeGreaterThanOrEqual(34 + 13 * offs.length); // the highest label stays under the one-line legend
+    expect(Math.min(...offs)).toBeGreaterThanOrEqual(-13 * (offs.length - 1)); // rows are 13 px apart, none higher than the room reserved
+  });
   it("lists up to ten strikes by size of net GEX with a type and what it implies", async () => {
     mockApi();
     renderPage();
