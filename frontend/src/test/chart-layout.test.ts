@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitLayout, legendBox } from "../components/EChart";
+import { fitLayout, fitNarrow, legendBox } from "../components/EChart";
 
 type Obj = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -52,5 +52,58 @@ describe("axes and tags", () => {
   it("raises a right margin that is too small for the end label", () => {
     const o = fitLayout({ grid: { left: 46, right: 14, top: 40 }, series: [{ endLabel: { show: true, formatter: "30 d 15.7", fontSize: 10 } }] } as never, 337, 300) as Obj;
     expect(o.grid.right).toBe(Math.ceil("30 d 15.7".length * 10 * 0.58 + 10)); // text width + 10 px
+  });
+});
+
+describe("narrow charts use their width", () => {
+  const tagged = (over: Obj = {}) => ({
+    legend: { top: 0 },
+    grid: { left: 58, right: 132, top: 34 },
+    yAxis: [{ position: "left" }, { position: "right", axisLabel: { margin: 70 } }],
+    series: [
+      { name: "Rolling", data: [[1, 290], [2, 299.99], [3, null]], endLabel: { show: true, fontSize: 11, formatter: (p: { value: [number, number | null] }) => (p.value[1] ?? 0).toFixed(2) } },
+      { name: "Fixed", data: [[1, 280], [2, 292.14]], endLabel: { show: true, fontSize: 11, formatter: (p: { value: [number, number | null] }) => (p.value[1] ?? 0).toFixed(2) } },
+    ],
+    ...over,
+  });
+
+  it("moves the latest-value tags into the legend text and gives their column to the plot", () => {
+    const o = fitNarrow(tagged() as never, 375) as Obj;
+    expect(o.series.every((x: Obj) => x.endLabel.show === false)).toBe(true);
+    expect(o.legend.formatter("Rolling")).toBe("Rolling  299.99"); // the last real point, not the trailing gap
+    expect(o.legend.formatter("Fixed")).toBe("Fixed  292.14");
+    expect(o.legend.formatter("Other")).toBe("Other"); // an entry without a tag is untouched
+    expect(o.grid.right).toBe(14); // nothing is left at the right of the plot, so the margin is only a small gutter
+    expect(o.grid.left).toBe(46);
+  });
+  it("keeps the tags when there is no legend to carry them", () => {
+    const o = fitNarrow(tagged({ legend: undefined }) as never, 375) as Obj;
+    expect(o.series.every((x: Obj) => x.endLabel.show === true)).toBe(true);
+    expect(o.grid.right).toBe(54);
+  });
+  it("keeps the room for a right axis whose numbers are shown", () => {
+    const o = fitNarrow({ grid: { left: 58, right: 80 }, yAxis: [{ position: "left" }, { position: "right" }], series: [{ name: "a", data: [1] }] } as never, 375) as Obj;
+    expect(o.grid.right).toBe(66);
+  });
+  it("a chart with nothing at its right edge takes the whole width", () => {
+    const o = fitNarrow({ grid: { left: 62, right: 78 }, yAxis: { type: "value" }, series: [{ name: "a", data: [1] }] } as never, 375) as Obj;
+    expect(o.grid).toMatchObject({ left: 46, right: 14 });
+  });
+  it("a tag drawn above its end point does not claim a column at the right", () => {
+    const above = { grid: { left: 74, right: 24 }, series: [{ name: "a", data: [1], endLabel: { show: true, position: "top", formatter: "+₹13,300", fontSize: 11 } }] };
+    expect((fitNarrow(above as never, 375) as Obj).grid.right).toBe(14);
+    expect((fitLayout(above as never, 700, 300) as Obj).grid.right).toBe(24); // and the wide layout does not raise the margin for it either
+  });
+  it("leaves wide charts alone", () => {
+    const opt = tagged();
+    expect(fitNarrow(opt as never, 900)).toBe(opt);
+  });
+  it("counts the legend rows with the latest values it now carries, so a wrapped legend still gets its room", () => {
+    // jsdom measures 0.58 em per character: two 12-character entries fit one row of 300 px; with "  299.99" added to each they need two
+    const plain = { top: 0, textStyle: { fontSize: 12 }, itemWidth: 14, itemGap: 10, padding: 5 };
+    const withValues = { ...plain, formatter: (n: string) => `${n}  299.99` };
+    const nm = ["Rolling ATM!", "Fixed 25150!"];
+    expect(legendBox(plain, nm, 300).rows).toBe(1);
+    expect(legendBox(withValues, nm, 300).rows).toBe(2);
   });
 });

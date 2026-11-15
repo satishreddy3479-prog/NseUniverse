@@ -74,3 +74,18 @@ describe("formatting helpers", () => {
     expect(shortDay(Date.parse("2026-11-03T05:00:00Z"))).toBe("3 Nov");
   });
 });
+
+describe("portfolio chart latest-value tag", () => {
+  type Tag = { series: { endLabel: { position: string; align: string }; markPoint: { label: { show: boolean } } }[]; grid: { right: number }[] };
+  it("is drawn above its dot, ending at it, so the plot keeps the full width (no column reserved at the right)", () => {
+    const o = portfolioEquityOption(portfolioStats(SET), C) as unknown as Tag;
+    expect(o.series[0]!.endLabel).toMatchObject({ position: "top", align: "right" });
+    for (const g of o.grid) expect(g.right).toBeLessThanOrEqual(24);
+  });
+  it("the Peak label is not drawn when the latest point is the peak (the tag shows the same value), and is drawn when the peak was earlier", () => {
+    const atPeak = portfolioEquityOption(portfolioStats(SET), C) as unknown as Tag; // cumulative ends at its highest, 3200
+    expect(atPeak.series[0]!.markPoint.label.show).toBe(false);
+    const earlier = portfolioEquityOption(portfolioStats([...SET, c("h", "2026-11-07T05:00:00Z", -1000)]), C) as unknown as Tag; // ends at 2200, peak was 3200
+    expect(earlier.series[0]!.markPoint.label.show).toBe(true);
+  });
+});

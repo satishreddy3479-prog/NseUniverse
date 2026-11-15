@@ -25,7 +25,7 @@ export function shortDay(ms: number): string {
 export interface EquityLayout { height: number }
 /** Pixel layout (the container is ``height`` tall): equity panel, per-close bars, drawdown, then room for the axis labels. */
 export const EQUITY_HEIGHT = 470;
-const G = { left: 74, right: 78, eqTop: 30, eqH: 196, barTop: 270, barH: 70, ddTop: 384, ddH: 54 };
+const G = { left: 74, right: 24, eqTop: 30, eqH: 196, barTop: 270, barH: 70, ddTop: 384, ddH: 54 };
 
 export function portfolioEquityOption(stats: PortfolioStats, c: ChartColors): EChartsCoreOption {
   const cv = stats.curve;
@@ -74,8 +74,9 @@ export function portfolioEquityOption(stats: PortfolioStats, c: ChartColors): EC
         data: cum.map((v) => ({ value: v, itemStyle: { color: v > 0 ? c.up : v < 0 ? c.down : c.muted } })),
         areaStyle: { color: c.info, opacity: 0.06 },
         markLine: { silent: true, symbol: "none", label: { show: false }, lineStyle: { color: c.muted, type: "dashed", opacity: 0.7 }, data: [{ yAxis: 0 }] },
-        markPoint: { silent: true, symbol: "circle", symbolSize: 1, data: [{ type: "max", name: "Peak" }], label: { show: true, position: side(peakAt, "top"), distance: 8, color: c.muted, fontSize: 10, formatter: (p: { value?: number }) => `Peak ${money(p.value ?? 0)}` } },
-        endLabel: { show: true, formatter: () => money(last), backgroundColor: last >= 0 ? c.up : c.down, color: "#fff", padding: [2, 6], borderRadius: 3, fontSize: 11, offset: [6, 0] }, labelLayout: { moveOverlap: "shiftY" },
+        markPoint: { silent: true, symbol: "circle", symbolSize: 1, data: [{ type: "max", name: "Peak" }], label: { show: peakAt !== cum.length - 1 /* the latest value is tagged at the same dot */, position: side(peakAt, "top"), distance: 8, color: c.muted, fontSize: 10, formatter: (p: { value?: number }) => `Peak ${money(p.value ?? 0)}` } },
+        // the latest value is tagged above its dot, ending at it, so the plot does not have to leave a column for it at the right
+        endLabel: { show: true, position: "top", align: "right", formatter: () => money(last), backgroundColor: last >= 0 ? c.up : c.down, color: "#fff", padding: [2, 6], borderRadius: 3, fontSize: 11, offset: [4, -4] }, labelLayout: { moveOverlap: "shiftY" },
       },
       {
         name: "Result of each close", type: "bar", xAxisIndex: 1, yAxisIndex: 1, data: pnl.map((v) => (v == null ? null : { value: v, itemStyle: { color: v > 0 ? c.up : v < 0 ? c.down : c.muted, borderRadius: v >= 0 ? [2, 2, 0, 0] : [0, 0, 2, 2] } })),

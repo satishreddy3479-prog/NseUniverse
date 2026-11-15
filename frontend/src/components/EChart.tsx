@@ -34,24 +34,61 @@ export interface PointClick {
 export const NARROW_CHART_PX = 560;
 
 type Obj = Record<string, unknown>;
+/** An end label that sits in the margin to the right of the plot (the default position): the only kind that needs room there. */
+const isRightTag = (e: Obj | undefined): boolean => !!e && e.show !== false && (e.position === undefined || e.position === "right");
+
+/** The text of the latest-value tag of a series (its endLabel formatter applied to the last real point), or null when it cannot be told. */
+function tagText(x: Obj): string | null {
+  const e = x.endLabel as Obj | undefined;
+  const data = x.data;
+  if (!e || typeof e.formatter !== "function" || !Array.isArray(data)) return null;
+  for (let i = data.length - 1; i >= 0; i--) {
+    const p = data[i] as unknown;
+    const v = Array.isArray(p) ? p[1] : p && typeof p === "object" && "value" in (p as Obj) ? (p as Obj).value : p;
+    if (v == null) continue;
+    try { const out = (e.formatter as (q: unknown) => unknown)({ value: p }); return out == null || out === "" ? null : String(out); } catch { return null; }
+  }
+  return null;
+}
+
 /**
- * The same option, made to fit a narrow container: numeric grid margins are capped, a right axis whose numbers were pushed out
- * beside the latest-value tags (a large label margin) hides them (the tags carry the values and the tooltip has them all), and the
- * tags use a smaller font. Wide containers get the option unchanged.
+ * The same option, made to fit a narrow container, using the width instead of leaving it blank:
+ *  - numeric grid margins are capped (left 46; right 54 for latest-value tags, 66 for a visible right axis, otherwise 14);
+ *  - when the chart has a legend, the latest-value tags (a column of about 55 px at the right that is empty between the tags) move into the legend text
+ *    ("Straddle 299.16") and the plot takes that width; without a legend the tags stay;
+ *  - a right axis whose numbers were pushed out beside the tags (a large label margin) hides them (the legend and the tooltip carry the values);
+ *  - the tags that remain use a smaller font. Wide containers get the option unchanged.
  */
 export function fitNarrow(option: EChartsCoreOption, width: number): EChartsCoreOption {
   if (width <= 0 || width >= NARROW_CHART_PX) return option;
   const o = { ...(option as Obj) };
+  const legend = !Array.isArray(o.legend) && o.legend && typeof o.legend === "object" ? (o.legend as Obj) : null;
+  if (legend && legend.show !== false && Array.isArray(o.series)) {
+    const texts = new Map<string, string>();
+    const moved = (o.series as Obj[]).map((x) => {
+      const text = typeof x.name === "string" && isRightTag(x.endLabel as Obj | undefined) ? tagText(x) : null;
+      if (text === null) return x;
+      texts.set(x.name as string, text);
+      return { ...x, endLabel: { ...(x.endLabel as Obj), show: false } };
+    });
+    if (texts.size > 0) {
+      o.series = moved;
+      o.legend = { ...legend, formatter: (name: string) => (texts.has(name) ? `${name}  ${texts.get(name)}` : name) };
+    }
+  }
   // a chart whose right margin only holds latest-value tags needs room for the tag text, not the desktop margin
-  const tags = Array.isArray(o.series) && (o.series as Obj[]).some((x) => (x.endLabel as Obj | undefined)?.show);
-  const fixGrid = (g: Obj): Obj => ({ ...g, ...(typeof g.left === "number" ? { left: Math.min(g.left, 46) } : {}), ...(typeof g.right === "number" ? { right: Math.min(g.right, tags ? 54 : 66) } : {}) });
-  if (Array.isArray(o.grid)) o.grid = o.grid.map((g) => fixGrid(g as Obj)); else if (o.grid) o.grid = fixGrid(o.grid as Obj);
+  const tags = Array.isArray(o.series) && (o.series as Obj[]).some((x) => isRightTag(x.endLabel as Obj | undefined));
   const fixAxis = (a: Obj): Obj => {
     const label = a.axisLabel as Obj | undefined;
     return a.position === "right" && typeof label?.margin === "number" && label.margin >= 30 ? { ...a, axisLabel: { ...label, show: false } } : a;
   };
   if (Array.isArray(o.yAxis)) o.yAxis = o.yAxis.map((a) => fixAxis(a as Obj)); else if (o.yAxis) o.yAxis = fixAxis(o.yAxis as Obj);
-  if (Array.isArray(o.series)) o.series = o.series.map((x) => { const e = (x as Obj).endLabel as Obj | undefined; return e ? { ...(x as Obj), endLabel: { ...e, fontSize: 10, padding: [1, 3], offset: [2, 0] } } : x; });
+  const yAxes = (Array.isArray(o.yAxis) ? o.yAxis : o.yAxis ? [o.yAxis] : []) as Obj[];
+  const rightNumbers = yAxes.some((a) => a.position === "right" && a.show !== false && (a.axisLabel as Obj | undefined)?.show !== false);
+  const rightCap = tags ? 54 : rightNumbers ? 66 : 14; // nothing at the right of the plot: it takes the width
+  const fixGrid = (g: Obj): Obj => ({ ...g, ...(typeof g.left === "number" ? { left: Math.min(g.left, 46) } : {}), ...(typeof g.right === "number" ? { right: Math.min(g.right, rightCap) } : {}) });
+  if (Array.isArray(o.grid)) o.grid = o.grid.map((g) => fixGrid(g as Obj)); else if (o.grid) o.grid = fixGrid(o.grid as Obj);
+  if (Array.isArray(o.series)) o.series = o.series.map((x) => { const e = (x as Obj).endLabel as Obj | undefined; return e && e.show !== false ? { ...(x as Obj), endLabel: { ...e, fontSize: 10, padding: [1, 3], offset: [2, 0] } } : x; });
   return o as EChartsCoreOption;
 }
 
@@ -93,7 +130,8 @@ export function legendBox(legend: Obj, seriesNames: string[], width: number): { 
   let rows = 1;
   let cur = 0;
   for (const n of names.filter(Boolean)) {
-    const w = itemW + 5 + textWidth(n, fs) + gap;
+    const shown = typeof legend.formatter === "function" ? String((legend.formatter as (x: string) => unknown)(n)) : n; // the text as it is drawn (a legend can carry the latest values)
+    const w = itemW + 5 + textWidth(shown, fs) + gap;
     if (cur > 0 && cur + w - gap > avail) { rows++; cur = 0; }
     cur += w;
   }
@@ -161,7 +199,7 @@ export function fitLayout(option: EChartsCoreOption, width: number, height: numb
   let needRight = 0;
   for (const x of (Array.isArray(o.series) ? o.series : []) as Obj[]) {
     const e = x.endLabel as Obj | undefined;
-    if (!e || e.show === false) continue;
+    if (!isRightTag(e) || !e) continue; // a tag drawn above or beside the end point needs nothing at the right of the plot
     const fs = num(e.fontSize) ?? 12;
     const pad = Array.isArray(e.padding) ? (((e.padding as number[])[1] ?? 0) * 2) : 0;
     const w = typeof e.formatter === "string" ? textWidth(e.formatter, fs) : fs * 0.6 * 8;
