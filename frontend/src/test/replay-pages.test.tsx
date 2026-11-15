@@ -163,6 +163,12 @@ describe("replay clock", () => {
     expect(screen.queryByText(/Loading stored samples/)).toBeNull();
     expect(chart()).toBeInTheDocument();
   });
+  it("a tool page has the Hide chart info button beside its heading, and no chart has a button of its own", async () => {
+    mockApi();
+    renderAt("/tools/smart-oi");
+    await screen.findByRole("heading", { level: 1, name: /^Smart OI/ });
+    expect(screen.getAllByTestId("chart-info-toggle")).toHaveLength(1); // one for the page, not one per chart
+  });
   it("a tool that does not replay has no replay bar", async () => {
     mockApi();
     renderAt("/tools/max-pain");

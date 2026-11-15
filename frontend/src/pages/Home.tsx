@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { CommandStrip } from "../components/intelligence/Overview";
@@ -38,7 +39,7 @@ export function Home() {
     <div className="mx-auto flex max-w-[1500px] flex-col gap-5">
       <header className="flex flex-wrap items-end justify-between gap-2">
         <div><h1 className="text-xl font-semibold md:text-2xl">NIFTY 50 command centre</h1><p className="text-xs text-muted md:text-sm">Your own Kotak feed and the snapshots this server stores every minute. {ready} tools are ready.</p></div>
-        <Link to="/market-intelligence" className="rounded-sm border border-brass px-3 py-1.5 text-sm text-paper hover:bg-brass/15">Open the full dashboard →</Link>
+        <div className="flex flex-wrap items-center gap-2"><ChartInfoToggle /><Link to="/market-intelligence" className="rounded-sm border border-brass px-3 py-1.5 text-sm text-paper hover:bg-brass/15">Open the full dashboard →</Link></div>
       </header>
       {intel.isPending && <div className="h-28 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading the market summary" />}
       {intel.data && <CommandStrip d={intel.data} compact />}

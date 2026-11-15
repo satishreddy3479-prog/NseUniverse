@@ -9,6 +9,7 @@ import { DEFAULT_ACTIVE, LAB_ONLY_WIDGETS, NEW_DEFAULT_WIDGETS, WIDGETS as ALL_W
 const WIDGETS = ALL_WIDGETS.filter((w) => !LAB_ONLY_WIDGETS.includes(w.id));
 import { CommandCenter } from "../components/CommandCenter";
 import { StreamButtons } from "../components/LiveActivity";
+import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { Button } from "../components/ui";
 import { fmtExpiry, fmtPct, fmtPrice, fmtSigned } from "../lib/format";
 import { useQuery } from "@tanstack/react-query";
@@ -243,7 +244,7 @@ export function Analysis() {
               NIFTY 50 session view from the Kotak Neo samples stored every minute in market hours. Sentiment is rules-based and provisional; widgets update live when the stream runs.
             </p>
           </div>
-          <StreamButtons />
+          <div className="flex flex-wrap items-center gap-2"><ChartInfoToggle /><StreamButtons /></div>
         </div>
 
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2">

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { useState } from "react";
 import { api } from "../lib/api";
 import type { Intelligence } from "../lib/intelligence";
@@ -41,7 +42,7 @@ function MiBody({ d }: { d: Intelligence }) {
   ];
   return (
     <div className="mx-auto flex max-w-[1500px] flex-col gap-3" data-testid="mi-page">
-      <header><h1 className="text-xl font-semibold md:text-2xl">NIFTY 50 Market Intelligence</h1><p className="text-xs text-muted">A plain reading of the market built from the existing analysis: what it is doing, why, and what to watch. Session {d.session}, expiry {d.expiry ?? MISSING}, updated {fmtTimeIST(d.generated_at)}.</p></header>
+      <header className="flex flex-wrap items-start justify-between gap-2"><div><h1 className="text-xl font-semibold md:text-2xl">NIFTY 50 Market Intelligence</h1><p className="text-xs text-muted">A plain reading of the market built from the existing analysis: what it is doing, why, and what to watch. Session {d.session}, expiry {d.expiry ?? MISSING}, updated {fmtTimeIST(d.generated_at)}.</p></div><ChartInfoToggle /></header>
       <div className="sticky -top-3 z-20 -mx-3 bg-ink px-3 md:-top-4 md:-mx-4 md:px-4 lg:-top-6 lg:-mx-6 lg:px-6" data-testid="mi-nav">
         <Tabs tabs={tabs} value={tab} onChange={(t) => go(t as MiTab)} label="Market intelligence sections" />
       </div>

@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StrategyTimeChart } from "../components/StrategyTimeChart";
 import { liveKey, mergeRows, type LiveMode } from "../components/ChainTable";
@@ -732,6 +733,7 @@ export default function StrategyBuilder() {
     <div className="mx-auto flex max-w-[1500px] flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="mr-2 w-full text-xl font-semibold sm:w-auto">Strategy builder</h1>
+        <ChartInfoToggle />
         <span className="rounded-sm border border-rule bg-slate-2 px-2 py-1 text-sm text-paper">NIFTY 50</span>
         <input className={`${field} min-w-[10rem] flex-1 sm:w-40 sm:flex-none`} aria-label="Strategy name" value={name} onChange={(e) => setName(e.target.value)} placeholder="name to save" />
         <Button variant="primary" disabled={!name.trim() || legs.length === 0 || !expiry} onClick={() => { persist([{ name: name.trim(), savedAt: new Date().toISOString(), expiry: strategyExpiry!, legs }, ...saved.filter((s) => s.name !== name.trim())]); setLoaded(name.trim()); setBaseline(legs); setName(""); }}>Save</Button>

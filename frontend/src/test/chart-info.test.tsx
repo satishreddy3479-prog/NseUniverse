@@ -1,4 +1,6 @@
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { getHideInfo, setHideInfo, subscribeHideInfo, withInfoHidden } from "../lib/chartInfo";
 
 beforeEach(() => { setHideInfo(false); localStorage.clear(); });
@@ -37,5 +39,22 @@ describe("hide info on charts", () => {
     setHideInfo(false);
     expect(seen).toHaveBeenCalledTimes(1); // an unsubscribed chart is not told
     expect(localStorage.getItem("nse.charts.hideInfo")).toBe("0");
+  });
+});
+
+describe("the Hide chart info button", () => {
+  it("is one switch for all charts: it says what it will do, and pressing it flips the shared choice and its own label", () => {
+    render(<><ChartInfoToggle /><ChartInfoToggle /></>); // two sections of a page, each with the button
+    const [a, b] = screen.getAllByTestId("chart-info-toggle");
+    expect(a).toHaveTextContent("Hide chart info");
+    expect(a).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(a!);
+    expect(getHideInfo()).toBe(true);
+    expect(a).toHaveTextContent("Show chart info");
+    expect(b).toHaveTextContent("Show chart info"); // the other button follows: it is the same choice
+    expect(b).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(b!);
+    expect(getHideInfo()).toBe(false);
+    expect(a).toHaveTextContent("Hide chart info");
   });
 });

@@ -1,4 +1,5 @@
 import { useSearchParams } from "react-router-dom";
+import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { AlertsTab, AuditTab, ConfigTab, MaintenanceTab } from "../components/servermgmt/AdminTabs";
 import { Async, Badge, useServerQuery } from "../components/servermgmt/common";
 import { OverviewTab, StorageTab } from "../components/servermgmt/StorageTabs";
@@ -23,6 +24,7 @@ export function ServerManagement() {
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="text-xl font-semibold">Server Management Centre</h1>
         <p className="text-xs text-muted">Monitoring and approved maintenance for the NSE Universe server · times in IST</p>
+        <ChartInfoToggle />
       </div>
       <nav aria-label="Server management sections" className="flex gap-1 overflow-x-auto pb-1">
         {TABS.map(([id, label]) => (

@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { createPortal } from "react-dom";
 import * as echarts from "echarts/core";
 import { BarChart, CandlestickChart, HeatmapChart, LineChart, ScatterChart } from "echarts/charts";
 import {
@@ -10,7 +9,7 @@ import { LabelLayout, LegacyGridContainLabel } from "echarts/features";
 import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsCoreOption, ECharts } from "echarts/core";
 import type { ChartColors } from "../lib/chartOptions";
-import { getHideInfo, setHideInfo, subscribeHideInfo, withInfoHidden } from "../lib/chartInfo";
+import { getHideInfo, subscribeHideInfo, withInfoHidden } from "../lib/chartInfo";
 import { hideHover, syncHover, syncLegend, syncZoom, type LinkChart } from "../lib/hoverSync";
 
 /** The charts of each link group (see ``group`` and ``hoverGroup`` on EChart). */
@@ -271,7 +270,6 @@ export function EChart({ option, onClick, ariaLabel, className = "", group, hove
   const legendDefaults = useRef<Record<string, boolean>>({});
   const [width, setWidth] = useState(0);
   const [height, setHeight] = useState(0);
-  const [host, setHost] = useState<HTMLDivElement | null>(null); // the chart container once it is initialised: the info button is drawn into it
   const hideInfo = useSyncExternalStore(subscribeHideInfo, getHideInfo, () => false);
   const lastHide = useRef(hideInfo);
 
@@ -280,7 +278,6 @@ export function EChart({ option, onClick, ariaLabel, className = "", group, hove
     if (!node) return;
     const c = echarts.init(node, undefined, { renderer: "canvas" });
     chart.current = c;
-    setHost(node);
     (node as unknown as { __chart?: ECharts }).__chart = c; // read by the layout audit in the browser console
     c.on("click", (p) => clickRef.current?.(p as PointClick));
     let leaveLink: (() => void) | undefined;
@@ -349,16 +346,7 @@ export function EChart({ option, onClick, ariaLabel, className = "", group, hove
     if (hideInfo) chart.current?.dispatchAction({ type: "hideTip" }); // a card that is showing goes away at once
   }, [option, width, height, hideInfo]);
 
-  return (
-    <>
-      <div ref={el} role="img" aria-label={ariaLabel} className={`echart-box relative h-full min-h-[120px] w-full ${className}`} />
-      {host && createPortal(
-        <button type="button" onClick={() => setHideInfo(!hideInfo)} aria-pressed={hideInfo} title={hideInfo ? "Show the card with the values when you point at the chart" : "Hide the card with the values when you point at the chart (the line that marks the position stays)"}
-          className="absolute right-1 top-1 z-10 min-h-6 rounded-sm border border-rule bg-slate/80 px-1.5 text-[10px] leading-none text-muted opacity-80 hover:text-paper hover:opacity-100" data-testid="chart-info-toggle">
-          {hideInfo ? "Show info" : "Hide info"}
-        </button>, host)}
-    </>
-  );
+  return <div ref={el} role="img" aria-label={ariaLabel} className={`echart-box h-full min-h-[120px] w-full ${className}`} />;
 }
 
 /** Chart colours follow the active theme (CSS variables) and update when the theme changes. */

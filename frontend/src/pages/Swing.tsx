@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { useState, type ReactNode } from "react";
 import { ApiError, api } from "../lib/api";
 import { fmtDateTimeIST } from "../lib/format";
@@ -83,6 +84,7 @@ export default function Swing() {
             day-1 cuts and a trailing stop. It scans after every close and paper-trades the rules automatically; no real orders are placed.
           </p>
         </div>
+        <ChartInfoToggle />
         {through && (
           <p className="num text-left text-xs text-muted sm:text-right">
             Paper book through the close of {through}

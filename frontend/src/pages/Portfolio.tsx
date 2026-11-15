@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { mergeRows, type LiveMode } from "../components/ChainTable";
@@ -82,7 +83,7 @@ export function Portfolio() {
 
   return (
     <div className="mx-auto flex max-w-[1200px] flex-col gap-3">
-      <h1 className="text-xl font-semibold">Strategy portfolio</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2"><h1 className="text-xl font-semibold">Strategy portfolio</h1><ChartInfoToggle /></div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid="portfolio-tiles">
         <Tile label="Running strategies (live)" value={money(knownTotals.length ? runningTotal : null)} cls={tone(knownTotals.length ? runningTotal : null)}
           sub={`${rows.length} running${rows.length > knownTotals.length ? ` · ${rows.length - knownTotals.length} without a price` : ""}`} />

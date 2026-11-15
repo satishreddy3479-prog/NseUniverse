@@ -10,6 +10,7 @@ import { RollingStraddleBoard } from "../components/dashboard/RollingStraddle";
 import { VegaAnalysisBoard } from "../components/dashboard/VegaAnalysis";
 import { GammaAnalysisBoard } from "../components/dashboard/GammaAnalysis";
 import { StreamButtons } from "../components/LiveActivity";
+import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { IndexToolBody } from "../components/IndexTools";
 import { FlowsPanel } from "../components/FlowsPanel";
 import { CashPanel } from "../components/CashPanel";
@@ -79,7 +80,7 @@ export default function ToolPage() {
             <h1 className="flex items-center gap-2 text-xl font-semibold">{tool.label}<Info term={tool.label} /></h1>
             <p className="text-sm text-muted">{tool.blurb}</p>
           </div>
-          {usesChain && <StreamButtons />}
+          <div className="flex flex-wrap items-center gap-2"><ChartInfoToggle />{usesChain && <StreamButtons />}</div>
         </div>
         {usesChain && (
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2">
