@@ -123,7 +123,7 @@ def service(tmp_path: Path, frames: list[Any] | None = None, fetch: Any = None, 
         return frame
 
     def http(url: str) -> bytes:
-        name = {"1977021501": "et_markets.xml", "business": "bbc_business.xml", "10000664": "cnbc_finance.xml", "thisweek": "ff_thisweek.json"}
+        name = {"1977021501": "et_markets.xml", "business": "bbc_business.xml", "10000664": "cnbc_finance.xml", "thisweek": "ff_thisweek.json", "biquote.io": "biquote_calendar.json"}
         for k, f in name.items():
             if k in url:
                 return (FIX / f).read_bytes()
@@ -252,7 +252,7 @@ def test_the_calendar_groups_high_impact_events_by_when_in_ist_with_countdowns(t
     assert cpi["minutes_to"] == round((datetime(2026, 11, 16, 13, 30, tzinfo=UTC) - now).total_seconds() / 60)  # 1110 minutes
     assert all(e["impact"] == "high" for x in v["sections"] for e in x["events"])  # only the three-star level
     assert v["next"] and v["next"]["time_ist"] <= cpi["time_ist"]
-    assert {x["name"] for x in v["sources"]} == {calendar_feed.OFFICIAL_LABEL, calendar_feed.FF_LABEL} and all(x["last_ok"] for x in v["sources"])
+    assert {x["name"] for x in v["sources"]} == {calendar_feed.OFFICIAL_LABEL, calendar_feed.FF_LABEL, calendar_feed.BQ_LABEL} and all(x["last_ok"] for x in v["sources"])
 
 
 def test_a_calendar_feed_that_fails_is_recorded_and_the_events_already_stored_stay(tmp_path: Path) -> None:
@@ -330,7 +330,7 @@ def test_without_the_file_nothing_changes_and_with_it_its_events_win_over_the_sa
     s.poll_calendar()
     assert s.poll_local_calendar() is None  # no file: the other sources carry on alone
     base = s.calendar_view()
-    assert [x["name"] for x in base["sources"]] == [calendar_feed.OFFICIAL_LABEL, calendar_feed.FF_LABEL]
+    assert [x["name"] for x in base["sources"]] == [calendar_feed.OFFICIAL_LABEL, calendar_feed.FF_LABEL, calendar_feed.BQ_LABEL]
     path = tmp_path / calendar_feed.LOCAL_NAME
     path.write_text(json.dumps(LOCAL_DOC))
     assert s.poll_local_calendar() == {"new": 3, "changed": 0, "same": 0}
@@ -351,7 +351,7 @@ def test_a_broken_local_file_is_reported_and_the_other_sources_stay(tmp_path: Pa
     r = s.poll_local_calendar()
     assert r and "error" in r
     v = s.calendar_view()
-    assert v["sources"][-1]["last_error"] and sum(len(x["events"]) for x in v["sections"]) > 0
+    assert v["sources"][-1]["last_error"] and v["sources"][-1]["name"] == calendar_feed.LOCAL_LABEL and sum(len(x["events"]) for x in v["sections"]) > 0
 
 
 # ------------------------------------------------------------------ fresher news
@@ -393,3 +393,74 @@ def test_news_is_polled_every_two_minutes_in_indian_market_hours_and_every_ten_o
     assert s._news_interval(datetime(2026, 11, 16, 4, 30, tzinfo=UTC)) == 120.0  # Monday 10:00 IST  # noqa: SLF001
     assert s._news_interval(datetime(2026, 11, 16, 11, 0, tzinfo=UTC)) == 600.0  # 16:30 IST  # noqa: SLF001
     assert s._news_interval(datetime(2026, 11, 15, 5, 0, tzinfo=UTC)) == 600.0  # Sunday  # noqa: SLF001
+
+
+# ------------------------------------------------------------------ biquote / MQL5 calendar (real response captured 15 Nov 2026)
+def bq_events() -> list[dict[str, Any]]:
+    return calendar_feed.parse_biquote((FIX / "biquote_calendar.json").read_bytes())
+
+
+def test_biquote_rows_are_mapped_with_ist_dates_units_and_missing_kept_missing() -> None:
+    ev = {(e["country"], e["name"], e["date_ist"]): e for e in bq_events()}
+    rbi = ev[("India", "RBI Interest Rate Decision", "2026-12-04")]
+    assert rbi["ts"] == int(datetime(2026, 12, 4, 4, 30, tzinfo=UTC).timestamp() * 1000) and rbi["impact"] == "medium"  # 04:30 UTC is 10:00 IST
+    assert rbi["previous"] == "5.50%" and rbi["actual"] is None and rbi["forecast"] is None and not rbi["all_day"]
+    cpi = ev[("India", "CPI y/y", "2026-11-12")]
+    assert cpi["actual"] == "6.08%" and cpi["forecast"] is None and cpi["previous"] is None  # a reading the source did not publish is missing, not zero
+    nfp = ev[("US", "Nonfarm Payrolls", "2026-12-04")]
+    assert nfp["impact"] == "high" and nfp["actual"] is None and nfp["source"] == calendar_feed.BQ_LABEL
+    wpi = ev[("India", "WPI y/y", "2026-11-16")]
+    assert wpi["forecast"] == "7.46%" and wpi["previous"] == "11.39%"
+    assert len({e["id"] for e in bq_events()}) == len(bq_events())
+
+
+def test_biquote_values_carry_k_and_m_for_thousands_and_millions_and_bad_rows_are_skipped() -> None:
+    raw = [
+        {"id": "mql5:1", "time": "2026-11-12T15:00:00Z", "countryCode": "US", "name": "Existing Home Sales", "importance": "high", "type": "indicator", "unit": "none", "multiplier": "millions", "digits": 2, "actual": 3.75, "forecast": 4.04, "previous": 3.99, "timeMode": "exact"},
+        {"id": "mql5:2", "time": "2026-11-13T13:30:00Z", "countryCode": "US", "name": "Initial Jobless Claims", "importance": "high", "type": "indicator", "unit": "none", "multiplier": "thousands", "digits": 0, "actual": 152, "forecast": None, "previous": 0, "timeMode": "exact"},
+        {"id": "mql5:3", "time": "2026-11-14T00:00:00Z", "countryCode": "US", "name": "Placeholder time", "importance": "medium", "type": "event", "timeMode": "tentative"},
+        {"id": "mql5:4", "time": "bad", "countryCode": "US", "name": "No time", "importance": "high", "type": "event"},
+        {"id": "mql5:5", "time": "2026-11-14T00:00:00Z", "countryCode": "US", "name": "Holiday", "importance": "high", "type": "holiday"},
+        {"id": "mql5:6", "time": "2026-11-14T00:00:00Z", "countryCode": "US", "name": "Minor", "importance": "low", "type": "indicator"},
+        {"id": "mql5:7", "time": "2026-11-14T00:00:00Z", "countryCode": "TR", "name": "Other country", "importance": "high", "type": "indicator"},
+    ]
+    ev = {e["name"]: e for e in calendar_feed.parse_biquote(json.dumps(raw).encode())}
+    assert set(ev) == {"Existing Home Sales", "Initial Jobless Claims", "Placeholder time"}
+    assert (ev["Existing Home Sales"]["actual"], ev["Existing Home Sales"]["forecast"]) == ("3.75M", "4.04M")
+    assert ev["Initial Jobless Claims"]["actual"] == "152K" and ev["Initial Jobless Claims"]["previous"] == "0K" and ev["Initial Jobless Claims"]["forecast"] is None  # a published zero stays zero
+    assert ev["Placeholder time"]["all_day"] and ev["Placeholder time"]["note"]  # no clock shown for a placeholder time
+    assert calendar_feed.parse_biquote(b'{"error": "Invalid importance"}') == []
+
+
+def test_the_request_asks_for_india_and_us_at_medium_and_above_over_the_next_sixty_days() -> None:
+    url = calendar_feed.bq_url(datetime(2026, 11, 15, 19, 0, tzinfo=UTC))
+    assert url == "https://biquote.io/api/calendar?from=2026-11-14&to=2027-01-14&countries=IN,US&importance=medium&limit=500"  # importance is a minimum: "high,medium" is rejected by the API
+
+
+def test_biquote_events_replace_the_same_release_from_the_official_list_and_forex_factory(tmp_path: Path) -> None:
+    now = datetime(2026, 12, 1, 18, 0, tzinfo=UTC)  # Tuesday 1 Dec 23:30 IST: the RBI decision is later this week, the Fed decision next week
+    s, _ = service(tmp_path, now=now)
+    r = s.poll_calendar()
+    assert r["biquote"]["new"] > 0
+    v = s.calendar_view()
+    rows = [e for x in v["sections"] for e in x["events"]]
+    rbi = [e for e in rows if "RBI" in e["name"] and e["time_ist"].startswith("2026-12-04")]
+    assert [(e["name"], e["source"], e["impact"]) for e in rbi] == [("RBI Interest Rate Decision", calendar_feed.BQ_LABEL, "high")]  # the official "RBI monetary policy decision" is the same release; biquote rates it medium, the page keeps the higher level
+    fomc = [e for e in rows if e["time_ist"].startswith("2026-12-10T00:30") and e["country"] == "US"]
+    assert any(e["name"] == "Fed Interest Rate Decision" for e in fomc) and not any(e["source"] == calendar_feed.OFFICIAL_LABEL for e in fomc)
+    assert next(x for x in v["sources"] if x["name"] == calendar_feed.BQ_LABEL)["last_ok"]
+
+
+def test_a_biquote_failure_is_recorded_and_the_other_sources_stay(tmp_path: Path) -> None:
+    now = datetime(2026, 11, 15, 19, 0, tzinfo=UTC)
+    s, _ = service(tmp_path, now=now)
+
+    def broken(url: str) -> bytes:
+        if "biquote" in url:
+            raise OSError("503")
+        return (FIX / "ff_thisweek.json").read_bytes()
+
+    s._fetch = broken  # noqa: SLF001
+    r = s.poll_calendar()
+    assert "error" in r["biquote"] and r["feed"]["new"] > 0
+    assert next(x for x in s.calendar_view()["sources"] if x["name"] == calendar_feed.BQ_LABEL)["last_error"]

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -25,6 +25,8 @@ from app.prediction.events import REFERENCE, EventCalendar
 
 IST = ZoneInfo("Asia/Kolkata")
 FF_URLS = ["https://nfs.faireconomy.media/ff_calendar_thisweek.json", "https://nfs.faireconomy.media/ff_calendar_nextweek.json"]
+BQ_LABEL = "biquote / MQL5 (third-party feed)"
+BQ_URL = "https://biquote.io/api/calendar"
 LOCAL_LABEL = "Moneycontrol export (local file)"
 LOCAL_NAME = "economic_calendar.json"
 FF_LABEL = "Forex Factory public feed (unofficial)"
@@ -144,3 +146,54 @@ def same_event(a: dict[str, Any], b: dict[str, Any]) -> bool:
     if a["country"] != b["country"] or abs(a["ts"] - b["ts"]) > 5 * 60_000:
         return False
     return bool(_words(a["name"]) & _words(b["name"]))
+
+
+BQ_COUNTRIES = {"IN": "India", "US": "US"}
+_BQ_SCALE = {"thousands": "K", "millions": "M", "billions": "B", "trillions": "T"}
+
+
+def bq_url(now: datetime) -> str:
+    """The biquote request: India and the US, medium importance and above (the API's importance is a minimum), from yesterday to 60 days ahead."""
+    start, end = (now - timedelta(days=1)).date(), (now + timedelta(days=60)).date()
+    return f"{BQ_URL}?from={start}&to={end}&countries=IN,US&importance=medium&limit=500"
+
+
+def _bq_value(v: Any, e: dict[str, Any]) -> str | None:
+    """A reading as text with its unit: null stays missing (not zero); percent gets %, thousands and millions their K / M."""
+    if v is None:
+        return None
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return None
+    digits = e.get("digits") if isinstance(e.get("digits"), int) and 0 <= e["digits"] <= 6 else 2
+    text = f"{x:.{digits}f}"
+    if e.get("unit") == "percent":
+        return text + "%"
+    return text + _BQ_SCALE.get(str(e.get("multiplier") or "").lower(), "") if e.get("multiplier") not in (None, "none") else text
+
+
+def parse_biquote(data: bytes) -> list[dict[str, Any]]:
+    """Events of one biquote calendar response (a bare JSON array of MQL5 calendar rows). Holidays and low-importance rows are dropped; a row without a parseable UTC time is
+    skipped. When the clock is only a placeholder (timeMode other than exact) the event is shown as all-day, never at a made-up time."""
+    rows = json.loads(data)
+    out: list[dict[str, Any]] = []
+    for e in rows if isinstance(rows, list) else []:
+        impact = str(e.get("importance", "")).lower()
+        if impact not in ("high", "medium") or e.get("type") == "holiday" or not e.get("name") or e.get("countryCode") not in BQ_COUNTRIES:
+            continue
+        try:
+            when = datetime.fromisoformat(str(e["time"]).replace("Z", "+00:00"))
+        except (KeyError, ValueError):
+            continue
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=UTC)
+        exact = e.get("timeMode", "exact") == "exact"
+        ts = int(when.astimezone(UTC).timestamp() * 1000)
+        out.append({
+            "id": "bq:" + str(e.get("id") or hashlib.sha1(f"{ts}|{e['countryCode']}|{e['name']}".encode()).hexdigest()[:16]),  # noqa: S324 - an identifier, not security
+            "source": BQ_LABEL, "ts": ts, "date_ist": when.astimezone(IST).date().isoformat(), "all_day": not exact, "country": BQ_COUNTRIES[e["countryCode"]], "name": str(e["name"]).strip(),
+            "impact": impact, "actual": _bq_value(e.get("actual"), e), "forecast": _bq_value(e.get("forecast"), e), "previous": _bq_value(e.get("previous"), e),
+            "note": None if exact else "time not set by the source",
+        })  # fmt: skip
+    return out

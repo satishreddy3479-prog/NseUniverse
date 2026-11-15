@@ -26,6 +26,7 @@ IST = ZoneInfo("Asia/Kolkata")
 QUOTE_FAST_S, QUOTE_SLOW_S, QUOTE_RETRY_S = 60.0, 300.0, 120.0
 NEWS_S, NEWS_FAST_S, CAL_S, CAL_RETRY_S = 600.0, 120.0, 6 * 3600.0, 1800.0  # news: every 2 minutes in Indian market hours, every 10 otherwise
 FULL_REFRESH_S = 6 * 3600.0
+BQ_S = 900.0
 NSE_WINDOW = (time(9, 0), time(15, 45))  # IST: polled every minute then, every five minutes otherwise
 SPARK_POINTS = 48
 Fetch = Callable[[str], bytes]
@@ -121,6 +122,7 @@ class GlobalService:
             out["official"] = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
             self.store.add_run("calendar_official", now, False, out["official"])
         if include_feed:
+            out["biquote"] = self.poll_biquote()
             res: dict[str, Any] = {"new": 0, "changed": 0, "same": 0}
             errors: list[str] = []
             for url in calendar_feed.FF_URLS:
@@ -134,6 +136,17 @@ class GlobalService:
             out["feed"] = res | ({"errors": errors} if errors else {})
             self.store.add_run("calendar_feed", now, ok, out["feed"])
         return out
+
+    def poll_biquote(self) -> dict[str, Any]:
+        """India and US events with forecasts and actuals from the biquote calendar: one small request, repeated every 15 minutes because actuals appear through the day."""
+        now = self._clock()
+        try:
+            res: dict[str, Any] = dict(self.store.upsert_events(calendar_feed.parse_biquote(self._fetch(calendar_feed.bq_url(now))), now))
+            self.store.add_run("calendar_biquote", now, True, res)
+        except Exception as e:  # noqa: BLE001 - recorded; the stored events stay
+            res = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
+            self.store.add_run("calendar_biquote", now, False, res)
+        return res
 
     def poll_local_calendar(self, force: bool = False) -> dict[str, Any] | None:
         """Merge ``economic_calendar.json`` from the data directory into the calendar when it is there and has changed since it was last read; None when there is no file."""
@@ -208,9 +221,20 @@ class GlobalService:
         def at(d: Any) -> int:
             return ms(datetime(d.year, d.month, d.day, tzinfo=IST))
 
-        rows = [r for r in self.store.events_between(at(today), at(horizon + timedelta(days=1))) if r["impact"] == "high"]
-        mine = [r for r in rows if r["source"] == calendar_feed.LOCAL_LABEL]
-        rows = [r for r in rows if r["source"] == calendar_feed.LOCAL_LABEL or not any(calendar_feed.same_event(r, m) for m in mine)]  # the export wins over the same release elsewhere
+        every = self.store.events_between(at(today), at(horizon + timedelta(days=1)))
+        rank = {calendar_feed.LOCAL_LABEL: 0, calendar_feed.BQ_LABEL: 1}  # a release in a higher source (the export, then biquote with exact times and readings) replaces the same one in the others
+        level = {"low": 0, "medium": 1, "high": 2}
+
+        def beaten(r: dict[str, Any]) -> bool:
+            mine = rank.get(r["source"], 2)
+            return any(rank.get(o["source"], 2) < mine and calendar_feed.same_event(r, o) for o in every)
+
+        def top(r: dict[str, Any]) -> dict[str, Any]:
+            """The winning row keeps the highest importance any source gave the release (MQL5 rates the RBI decision medium, the official list high)."""
+            best = max([r["impact"], *(o["impact"] for o in every if o is not r and calendar_feed.same_event(r, o))], key=lambda i: level.get(i, 0))
+            return r | {"impact": best}
+
+        rows = [x for x in (top(r) for r in every if not beaten(r)) if x["impact"] == "high"]
         nowms = ms(now)
 
         def shape(r: dict[str, Any]) -> dict[str, Any]:
@@ -235,7 +259,7 @@ class GlobalService:
         sections = [{"key": k, "title": title, "events": [shape(r) for r in rows if match(day(r))]} for k, title, match in spec]
         nxt = next((shape(r) for r in rows if r["ts"] >= nowms), None)
         sources = []
-        for kind, label in (("calendar_official", calendar_feed.OFFICIAL_LABEL), ("calendar_feed", calendar_feed.FF_LABEL), ("calendar_local", calendar_feed.LOCAL_LABEL)):
+        for kind, label in (("calendar_official", calendar_feed.OFFICIAL_LABEL), ("calendar_feed", calendar_feed.FF_LABEL), ("calendar_biquote", calendar_feed.BQ_LABEL), ("calendar_local", calendar_feed.LOCAL_LABEL)):
             ok, last = self.store.last_run(kind, True), self.store.last_run(kind)
             if kind == "calendar_local" and last is None:
                 continue  # no file has been dropped in: nothing to report
@@ -275,7 +299,7 @@ class GlobalService:
         return NEWS_FAST_S if t.weekday() < 5 and NSE_WINDOW[0] <= t.time() < NSE_WINDOW[1] else NEWS_S
 
     async def _loop(self) -> None:
-        due = {"quotes": 0.0, "news": 0.0, "calendar": 0.0, "local": 0.0}
+        due = {"quotes": 0.0, "news": 0.0, "calendar": 0.0, "local": 0.0, "bq": 900.0}
         while True:
             now_m = _time.monotonic()
             try:
@@ -289,6 +313,9 @@ class GlobalService:
                     r = await asyncio.to_thread(self.poll_calendar)
                     feed_ok = "feed" in r and "errors" not in r["feed"]
                     due["calendar"] = now_m + (CAL_S if feed_ok else CAL_RETRY_S)
+                if now_m >= due["bq"]:
+                    r2 = await asyncio.to_thread(self.poll_biquote)
+                    due["bq"] = now_m + (BQ_S if "error" not in r2 else CAL_RETRY_S)
                 if now_m >= due["local"]:
                     await asyncio.to_thread(self.poll_local_calendar)
                     due["local"] = now_m + 300
