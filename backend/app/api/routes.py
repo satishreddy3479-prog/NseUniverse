@@ -1381,7 +1381,7 @@ async def global_health(request: Request) -> dict[str, Any]:
 
 @router.get("/global/series")
 async def global_series(
-    request: Request, symbol: str, hours: Annotated[float, Query(ge=0, le=72)] = 24.0
+    request: Request, symbol: str, hours: Annotated[float, Query(ge=0, le=168)] = 24.0
 ) -> dict[str, Any]:
     """The stored one-minute closes of one symbol (the last ``hours`` of its data)."""
     return await asyncio.to_thread(_globalmkts(request).series, symbol, hours)

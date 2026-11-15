@@ -39,57 +39,115 @@ function Spark({ values, up }: { values: number[]; up: boolean }) {
   );
 }
 
-function Card({ it, selected, onPick }: { it: GlobalItem; selected: boolean; onPick: () => void }) {
+function Card({ it, onOpen }: { it: GlobalItem; onOpen: () => void }) {
   const has = it.price != null;
   const d = it.decimals;
   const up = (it.change ?? 0) >= 0;
   return (
-    <div className={`flex flex-col rounded-[var(--radius-panel)] border transition-colors ${selected ? "border-brass bg-brass/10" : "border-rule bg-slate hover:border-muted"}`}>
-    <button type="button" onClick={onPick} aria-pressed={selected} disabled={!has} className="flex flex-col gap-1 p-3 pb-2 text-left disabled:opacity-60">
-      <span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold">{it.name}</span><StatusChip status={it.status} /></span>
-      <span className="text-xl font-semibold tabular-nums">{has ? `${num(it.price as number, d)}${it.yield ? "%" : ""}` : MISSING}</span>
-      <span className={`text-sm tabular-nums ${tone(it.change)}`}>
-        {it.change == null ? "No reference close" : it.yield && it.bp != null ? `${signed(it.bp, 1)} bp` : `${signed(it.change, d)} (${signed(it.change_pct ?? 0, 2)}%)`}
-      </span>
-      {has && it.spark ? <Spark values={it.spark} up={up} /> : null}
-      <span className="text-[11px] text-muted">{has ? `${it.status === "live" ? "Updated" : "Last price"} ${fmtAge(it.age_s)}` : "No price stored yet"}</span>
-      {it.note && <span className="text-[11px] text-muted">{it.note}</span>}
-    </button>
-    {it.chart_url && (
-      <a href={it.chart_url} target="_blank" rel="noopener noreferrer" aria-label={`View chart of ${it.name}`}
-        className="mx-3 mb-3 inline-flex min-h-9 items-center justify-center rounded-sm border border-rule bg-slate-2 px-3 text-sm text-paper hover:border-brass hover:text-brass">View chart ↗</a>
-    )}
+    <div className="flex flex-col rounded-[var(--radius-panel)] border border-rule bg-slate transition-colors hover:border-muted">
+      <button type="button" onClick={onOpen} disabled={!has} aria-label={`Open chart of ${it.name}`} className="flex flex-col gap-1 p-3 pb-2 text-left disabled:opacity-60">
+        <span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold">{it.name}</span><StatusChip status={it.status} /></span>
+        <span className="text-xl font-semibold tabular-nums">{has ? `${num(it.price as number, d)}${it.yield ? "%" : ""}` : MISSING}</span>
+        <span className={`text-sm tabular-nums ${tone(it.change)}`}>
+          {it.change == null ? "No reference close" : it.yield && it.bp != null ? `${signed(it.bp, 1)} bp` : `${signed(it.change, d)} (${signed(it.change_pct ?? 0, 2)}%)`}
+        </span>
+        {has && it.spark ? <Spark values={it.spark} up={up} /> : null}
+        <span className="text-[11px] text-muted">{has ? `${it.status === "live" ? "Updated" : "Last price"} ${fmtAge(it.age_s)}` : "No price stored yet"}</span>
+        {it.note && <span className="text-[11px] text-muted">{it.note}</span>}
+      </button>
+      <div className="mx-3 mb-3 flex gap-2">
+        <button type="button" onClick={onOpen} disabled={!has} className="inline-flex min-h-9 flex-1 items-center justify-center rounded-sm border border-brass bg-brass/10 px-3 text-sm text-paper hover:bg-brass/20 disabled:opacity-50">View chart</button>
+        {it.chart_url && (
+          <a href={it.chart_url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${it.name} at its source`}
+            className="inline-flex min-h-9 items-center justify-center rounded-sm border border-rule bg-slate-2 px-3 text-sm text-paper hover:border-brass hover:text-brass">Source ↗</a>
+        )}
+      </div>
     </div>
   );
 }
 
-function SeriesChart({ item }: { item: GlobalItem }) {
+const RANGES = [{ h: 24, label: "1D" }, { h: 72, label: "3D" }, { h: 168, label: "7D" }] as const;
+const GAP_MS = 90 * 60_000; // a longer silence between two prices is a closed market: the line breaks there instead of joining them
+
+function SeriesChart({ item, hours }: { item: GlobalItem; hours: number }) {
   const colors = useChartColors();
-  const q = useQuery({ queryKey: ["globalSeries", item.key], queryFn: () => api.globalSeries(item.key, 24), refetchInterval: 60_000, retry: false });
+  const q = useQuery({ queryKey: ["globalSeries", item.key, hours], queryFn: () => api.globalSeries(item.key, hours), refetchInterval: 60_000, retry: false });
   if (q.isLoading) return <Loading />;
   if (q.isError || !q.data) return <Problem what="The chart" e={q.error} />;
   const s = q.data;
   if (s.prices.length < 2) return <p className="p-4 text-sm text-muted">Not enough stored one-minute prices yet to draw {item.name}.</p>;
   const d = item.decimals;
+  const data: [number, number | null][] = [];
+  s.times.forEach((t, i) => {
+    const ms = new Date(t).getTime();
+    const prev = data.length ? data[data.length - 1]![0] : null;
+    if (prev != null && ms - prev > GAP_MS) data.push([prev + 60_000, null]);
+    data.push([ms, s.prices[i]!]);
+  });
+  const multiDay = hours > 24;
+  const stamp = (v: number) => new Intl.DateTimeFormat("en-IN", { ...(multiDay ? { day: "numeric", month: "short" } : {}), hour: "2-digit", minute: "2-digit", hour12: false, timeZone: IST }).format(new Date(v));
+  const ref = s.prev_close;
   const option = {
-    animation: false, grid: { left: 56, right: 16, top: 16, bottom: 28 },
-    tooltip: { trigger: "axis", valueFormatter: (v: unknown) => (typeof v === "number" ? num(v, d) : String(v)) },
-    xAxis: { type: "time", axisLabel: { color: colors.muted, hideOverlap: true, formatter: (v: number) => istTime(new Date(v).toISOString()) }, axisLine: { lineStyle: { color: colors.rule } } },
+    animation: false, grid: { left: 60, right: 14, top: 16, bottom: 28 },
+    tooltip: { trigger: "axis", formatter: (p: { value: [number, number | null] }[]) => { const v = p[0]?.value; return v && v[1] != null ? `${stamp(v[0])} IST<br/><b>${num(v[1], d)}</b>` : ""; } },
+    xAxis: { type: "time", axisLabel: { color: colors.muted, hideOverlap: true, formatter: (v: number) => stamp(v) }, axisLine: { lineStyle: { color: colors.rule } } },
     yAxis: { type: "value", scale: true, axisLabel: { color: colors.muted, formatter: (v: number) => num(v, d) }, splitLine: { lineStyle: { color: colors.rule, opacity: 0.5 } } },
-    series: [{ name: item.name, type: "line", showSymbol: false, data: s.times.map((t, i) => [t, s.prices[i]]), lineStyle: { width: 2, color: colors.brass }, itemStyle: { color: colors.brass } }],
+    series: [{
+      name: item.name, type: "line", showSymbol: false, connectNulls: false, data, lineStyle: { width: 2, color: colors.brass }, itemStyle: { color: colors.brass },
+      markLine: ref != null ? { silent: true, symbol: "none", lineStyle: { color: colors.muted, type: "dashed" }, label: { color: colors.muted, formatter: `Prev close ${num(ref, d)}`, position: "insideEndTop" }, data: [{ yAxis: ref }] } : undefined,
+    }],
   };
-  return <EChart option={option} ariaLabel={`${item.name}, last 24 hours of one-minute prices (times in IST)`} className="h-[280px] w-full" />;
+  return <EChart option={option} ariaLabel={`${item.name}, last ${hours / 24} day${hours > 24 ? "s" : ""} of one-minute prices (times in IST)`} className="h-[min(60vh,420px)] w-full" />;
+}
+
+/** The chart of one symbol over the stored prices, full screen on a phone: 1, 3 or 7 days, the previous close as a dashed line, and a link to the symbol at its source. */
+function ChartSheet({ item, onClose }: { item: GlobalItem; onClose: () => void }) {
+  const [hours, setHours] = useState<number>(24);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", key);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", key); document.body.style.overflow = prev; };
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center sm:p-4" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label={`${item.name} chart`} onClick={(e) => e.stopPropagation()}
+        className="flex max-h-full w-full flex-col gap-2 overflow-y-auto rounded-t-[var(--radius-panel)] border border-rule bg-slate p-3 sm:max-w-[900px] sm:rounded-[var(--radius-panel)]">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold">{item.name}</h2>
+            <p className="text-sm tabular-nums">
+              {item.price != null ? `${num(item.price, item.decimals)}${item.yield ? "%" : ""}` : MISSING}
+              {item.change != null && <span className={`ml-2 ${tone(item.change)}`}>{item.yield && item.bp != null ? `${signed(item.bp, 1)} bp` : `${signed(item.change, item.decimals)} (${signed(item.change_pct ?? 0, 2)}%)`}</span>}
+              <span className="ml-2"><StatusChip status={item.status} /></span>
+            </p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close chart" className="min-h-9 min-w-9 rounded-sm border border-rule bg-slate-2 px-2 text-lg leading-none hover:border-brass">×</button>
+        </div>
+        <div role="group" aria-label="Range" className="flex flex-wrap items-center gap-2">
+          {RANGES.map((r) => (
+            <button key={r.h} type="button" aria-pressed={hours === r.h} onClick={() => setHours(r.h)}
+              className={`min-h-9 rounded-sm border px-3 text-sm ${hours === r.h ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{r.label}</button>
+          ))}
+          {item.chart_url && <a href={item.chart_url} target="_blank" rel="noopener noreferrer" className="ml-auto inline-flex min-h-9 items-center rounded-sm border border-rule bg-slate-2 px-3 text-sm text-paper hover:border-brass hover:text-brass">Open at source ↗</a>}
+        </div>
+        <SeriesChart item={item} hours={hours} />
+        <p className="text-[11px] text-muted">One-minute prices stored by this app, times in IST. A gap in the line is a closed market. The dashed line is the previous close the change is measured from.</p>
+      </div>
+    </div>
+  );
 }
 
 /** US futures, cash indices, rates, commodities and Asia on one board, with each quote's own age and status. */
 export function GlobalBody() {
   const q = useQuery({ queryKey: ["globalOverview"], queryFn: api.globalOverview, refetchInterval: 30_000, retry: false });
-  const [pick, setPick] = useState("ES");
+  const [open, setOpen] = useState<string | null>(null);
   if (q.isLoading) return <Loading />;
   if (q.isError || !q.data) return <Problem what="The global board" e={q.error} />;
   const o = q.data;
   const all = o.groups.flatMap((g) => g.items);
-  const sel = all.find((i) => i.key === pick && i.price != null) ?? all.find((i) => i.price != null);
+  const sel = all.find((i) => i.key === open && i.price != null) ?? null;
   const nothing = !all.some((i) => i.price != null);
   return (
     <div className="flex flex-col gap-3">
@@ -99,22 +157,17 @@ export function GlobalBody() {
         </p>
       )}
       {nothing && <p className="rounded-sm border border-rule bg-slate p-3 text-sm text-muted">No global prices have been stored yet. The server fetches them every minute during Indian market hours and every five minutes otherwise.</p>}
-      {o.groups.map((g) => (
+      {o.groups.filter((g) => g.items.length > 0).map((g) => (
         <section key={g.key} aria-label={g.title}>
           <h2 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">{g.title}</h2>
           <div className="grid grid-cols-1 gap-2 min-[480px]:grid-cols-2 lg:grid-cols-4">
-            {g.items.map((it) => <Card key={it.key} it={it} selected={sel?.key === it.key} onPick={() => setPick(it.key)} />)}
+            {g.items.map((it) => <Card key={it.key} it={it} onOpen={() => setOpen(it.key)} />)}
           </div>
         </section>
       ))}
-      {sel && (
-        <section aria-label="Chart" className="rounded-[var(--radius-panel)] border border-rule bg-slate p-2">
-          <h2 className="px-1 text-sm font-semibold">{sel.name} · last 24 hours <span className="font-normal text-muted">(one-minute prices, times in IST)</span></h2>
-          <SeriesChart item={sel} />
-        </section>
-      )}
+      {sel && <ChartSheet item={sel} onClose={() => setOpen(null)} />}
       <p className="text-xs text-muted">
-        {o.meta.source}. Change is computed here from the stored previous close: US index futures from the 16:00 New York cash close, the others from the previous session's last price. A future that has rolled to a new contract can show a one-off jump. GIFT Nifty is not on this board: no source for it is connected yet.
+        {o.meta.source}. A closed cash index shows its official close; a market that trades shows the latest one-minute price. Change is computed here from the stored previous close: US index futures from the 16:00 New York cash close, the others from the previous session. A future that has rolled to a new contract can show a one-off jump. GIFT Nifty is the near-month NIFTY future at NSE IX.
       </p>
     </div>
   );

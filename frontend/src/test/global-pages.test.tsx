@@ -15,7 +15,7 @@ const overview = {
       { key: "GIFT", name: "GIFT Nifty futures", unit: "", decimals: 2, kind: "gift", core: true, yield: false, price: 25266, change: 94.5, change_pct: 0.3754, prev_close: 25171.5, status: "closed", age_s: 100000, spark: [25200, 25266], chart_url: "https://www.nseix.com/get-quotes", note: "Near-month contract, expires 23 Nov 2026. NSE IX website feed (unofficial endpoint)." },
     ] },
     { key: "us_futures", title: "US index futures", items: [
-      { key: "ES", name: "S&P 500 futures", unit: "pts", decimals: 2, kind: "future", core: true, yield: false, price: 7583, change: -33.25, change_pct: -0.4366, prev_close: 7616.25, status: "closed", age_s: purePast(), spark: [7600, 7590, 7583], chart_url: "https://finance.yahoo.com/chart/ES%3DF" },
+      { key: "ES", name: "S&P 500 futures", unit: "pts", decimals: 2, kind: "future", core: true, yield: false, price: 7583, change: -33.25, change_pct: -0.4366, prev_close: 7616.25, status: "closed", age_s: purePast(), spark: [7600, 7590, 7583], chart_url: "https://finance.yahoo.com/quote/ES%3DF/" },
       { key: "NQ", name: "Nasdaq 100 futures", unit: "pts", decimals: 2, kind: "future", core: true, yield: false, price: null, status: "no data" },
     ] },
     { key: "rates_fx", title: "Rates, dollar and currency", items: [
@@ -180,20 +180,45 @@ describe("quick links in the Analyse menu", () => {
   });
 });
 
-describe("global board chart links", () => {
-  it("every card links to its full chart at the original source in a new tab, and GIFT Nifty shows its contract and source", async () => {
+describe("global board charts", () => {
+  it("opens the chart in the page (full screen on a phone) with 1D, 3D and 7D, closes with the button or Escape, and keeps a link to the symbol at its source", async () => {
     mockApi();
     renderAt("/tools/global-markets");
-    const es = await screen.findByRole("link", { name: "View chart of S&P 500 futures" });
-    expect(es).toHaveAttribute("href", "https://finance.yahoo.com/chart/ES%3DF");
+    const view = (await screen.findAllByRole("button", { name: "View chart" }))[1]!; // India pre-market comes first, then the US futures: the second is S&P 500
+    await userEvent.click(view);
+    const dlg = screen.getByRole("dialog", { name: "S&P 500 futures chart" });
+    expect(within(dlg).getByText("7,583.00")).toBeInTheDocument();
+    const src = within(dlg).getByRole("link", { name: /Open at source/ });
+    expect(src).toHaveAttribute("href", "https://finance.yahoo.com/quote/ES%3DF/");
+    expect(src).toHaveAttribute("target", "_blank");
+    expect(src).toHaveAttribute("rel", "noopener noreferrer");
+    const range = within(dlg).getByRole("group", { name: "Range" });
+    expect(within(range).getByRole("button", { name: "1D" })).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(within(range).getByRole("button", { name: "3D" }));
+    expect(within(range).getByRole("button", { name: "3D" })).toHaveAttribute("aria-pressed", "true");
+    const urls = (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((c) => String(c[0]));
+    expect(urls.some((u) => u.includes("/api/global/series?symbol=ES&hours=24"))).toBe(true);
+    expect(urls.some((u) => u.includes("/api/global/series?symbol=ES&hours=72"))).toBe(true);
+    await userEvent.click(within(dlg).getByRole("button", { name: "Close chart" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await userEvent.click((await screen.findAllByRole("button", { name: "View chart" }))[1]!);
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("every card also links to its page at the original source in a new tab, and GIFT Nifty shows its contract and source", async () => {
+    mockApi();
+    renderAt("/tools/global-markets");
+    const es = await screen.findByRole("link", { name: "Open S&P 500 futures at its source" });
+    expect(es).toHaveAttribute("href", "https://finance.yahoo.com/quote/ES%3DF/");
     expect(es).toHaveAttribute("target", "_blank");
     expect(es).toHaveAttribute("rel", "noopener noreferrer");
-    const gift = screen.getByRole("link", { name: "View chart of GIFT Nifty futures" });
+    const gift = screen.getByRole("link", { name: "Open GIFT Nifty futures at its source" });
     expect(gift).toHaveAttribute("href", "https://www.nseix.com/get-quotes");
-    const card = gift.closest("div")!;
+    const card = gift.closest("div")!.parentElement!;
     expect(within(card).getByText("25,266.00")).toBeInTheDocument();
     expect(within(card).getByText(/expires 23 Nov 2026/)).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "View chart of Nasdaq 100 futures" })).toBeNull(); // no link was given for a symbol without one
+    expect(screen.queryByRole("link", { name: "Open Nasdaq 100 futures at its source" })).toBeNull(); // no link was given for a symbol without one
   });
 });
 

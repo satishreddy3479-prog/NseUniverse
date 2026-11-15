@@ -71,8 +71,8 @@ BY_YAHOO = {s.yahoo: s for s in SYMBOLS if s.yahoo}
 
 
 def chart_url(spec: GSymbol) -> str:
-    """Where the full chart of this symbol is at its original source."""
-    return spec.view_url or f"https://finance.yahoo.com/chart/{quote(spec.yahoo, safe='')}"
+    """The symbol's page at its original source (Yahoo's quote page with its chart; its separate full-screen chart page is heavy and often fails to load on a phone)."""
+    return spec.view_url or f"https://finance.yahoo.com/quote/{quote(spec.yahoo, safe='')}/"
 
 
 def session_key(spec: GSymbol, ts: datetime) -> str:

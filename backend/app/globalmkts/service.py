@@ -37,6 +37,7 @@ QUOTE_FAST_S, QUOTE_SLOW_S, QUOTE_RETRY_S = 60.0, 300.0, 120.0
 NEWS_S, NEWS_FAST_S, CAL_S, CAL_RETRY_S = 600.0, 120.0, 6 * 3600.0, 1800.0  # news: every 2 minutes in Indian market hours, every 10 otherwise
 FULL_REFRESH_S = 6 * 3600.0
 BQ_S = 900.0
+SERIES_FETCH, SERIES_MAX = 12000, 720  # bars read for a chart, and the most points sent
 DAILY_S = 1800.0  # official closes of the cash indices are re-read this often
 BARS_KEEP_D = 7  # one-minute price bars older than this are deleted (the change reference needs only the previous session)
 TASK_TIMEOUT_S, MAX_BACKOFF_S = 300.0, 900.0
@@ -317,11 +318,22 @@ class GlobalService:
         spec = BY_KEY.get(key)
         if spec is None:
             return {"key": key, "error": "unknown symbol", "points": []}
-        pts = self.store.series(key, 0, 1500)
+        pts = self.store.series(key, 0, SERIES_FETCH)
         if hours and pts:
             cut = pts[-1][0] - int(hours * 3600 * 1000)
             pts = [p for p in pts if p[0] >= cut]
-        return {"key": key, "name": spec.name, "unit": spec.unit, "decimals": spec.decimals, "times": [datetime.fromtimestamp(t / 1000, UTC).isoformat() for t, _ in pts], "prices": [p for _, p in pts]}
+        if len(pts) > SERIES_MAX:  # a few days of one-minute bars: keep the last price of each equal slice of the time span, so the chart stays light and its ends are exact
+            span = (pts[-1][0] - pts[0][0]) or 1
+            slots: dict[int, tuple[int, float]] = {}
+            for t, p in pts:
+                slots[min(SERIES_MAX - 1, int((t - pts[0][0]) * SERIES_MAX / span))] = (t, p)
+            pts = [slots[k] for k in sorted(slots)]
+        row = self.store.latest_all().get(key)
+        return {
+            "key": key, "name": spec.name, "unit": spec.unit, "decimals": spec.decimals, "yield": spec.yield_pct, "status": None if row is None else row["status"],
+            "prev_close": None if row is None else row["prev_close"], "source_url": chart_url(spec),
+            "times": [datetime.fromtimestamp(t / 1000, UTC).isoformat() for t, _ in pts], "prices": [p for _, p in pts],
+        }  # fmt: skip
 
     def calendar_view(self) -> dict[str, Any]:
         now = self._clock()

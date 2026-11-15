@@ -296,7 +296,7 @@ def test_the_api_serves_the_board_the_calendar_and_the_news(tmp_path: Path) -> N
         assert next(i for g in ov["groups"] for i in g["items"] if i["key"] == "ES")["price"] == 7583.0
         ser = c.get("/api/global/series", params={"symbol": "ES", "hours": 3}).json()
         assert ser["prices"] and ser["name"] == "S&P 500 futures"
-        assert c.get("/api/global/series", params={"symbol": "ES", "hours": 500}).status_code == 422  # at most 72 hours
+        assert c.get("/api/global/series", params={"symbol": "ES", "hours": 500}).status_code == 422  # at most 168 hours (7 days, the retention)
         assert len(c.get("/api/calendar").json()["sections"]) == 6
         assert c.get("/api/news").json()["india"]
 
@@ -546,9 +546,9 @@ def test_a_gift_nifty_failure_is_recorded_and_the_stored_quote_stays(tmp_path: P
 
 
 def test_every_symbol_has_a_full_chart_link_at_its_original_source() -> None:
-    assert chart_url(BY_KEY["ES"]) == "https://finance.yahoo.com/chart/ES%3DF"
-    assert chart_url(BY_KEY["SPX"]) == "https://finance.yahoo.com/chart/%5EGSPC"
-    assert chart_url(BY_KEY["DXY"]) == "https://finance.yahoo.com/chart/DX-Y.NYB"
+    assert chart_url(BY_KEY["ES"]) == "https://finance.yahoo.com/quote/ES%3DF/"
+    assert chart_url(BY_KEY["SPX"]) == "https://finance.yahoo.com/quote/%5EGSPC/"
+    assert chart_url(BY_KEY["DXY"]) == "https://finance.yahoo.com/quote/DX-Y.NYB/"
     assert chart_url(BY_KEY["GIFT"]) == "https://www.nseix.com/get-quotes"
 
 
@@ -734,3 +734,18 @@ def test_a_failed_daily_download_leaves_the_one_minute_quotes_alone(tmp_path: Pa
     s._daily_dl = down  # noqa: SLF001
     assert s.poll_quotes()["ok"]
     assert s.store.latest_all()["SPX"]["price"] == pytest.approx(7560.8701171875)  # the last one-minute bar
+
+
+def test_a_chart_series_carries_the_previous_close_the_source_link_and_stays_light_over_days(tmp_path: Path) -> None:
+    s, _ = service(tmp_path)
+    s.poll_quotes()
+    one = s.series("ES", hours=24)
+    assert one["prev_close"] == 7616.25 and one["status"] == "closed" and one["source_url"] == "https://finance.yahoo.com/quote/ES%3DF/" and one["prices"][-1] == 7583.0
+    # three days of one-minute bars (4,000+ points) are cut to at most 720, keeping the first and the last price exactly
+    base = 1_800_000_000_000
+    with __import__("sqlite3").connect(s.store.path) as c:
+        c.executemany("INSERT OR IGNORE INTO bars VALUES (?,?,?)", [("NQ", base + i * 60_000, 28000 + (i % 50)) for i in range(4300)])
+    many = s.series("NQ", hours=168)
+    assert len(many["prices"]) <= 720 and len(many["times"]) == len(many["prices"])
+    assert many["times"] == sorted(many["times"]) and many["prices"][-1] == 28000 + (4299 % 50)
+    assert s.series("NOPE")["error"]

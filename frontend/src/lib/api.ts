@@ -115,7 +115,7 @@ export interface GlobalOverview {
   generated_at: string; groups: { key: string; title: string; items: GlobalItem[] }[];
   meta: { source: string; last_poll_ok: string | null; last_poll_age_s: number | null; last_error: string | null; stale: boolean };
 }
-export interface GlobalSeries { key: string; name?: string; unit?: string; decimals?: number; times: string[]; prices: number[]; error?: string }
+export interface GlobalSeries { key: string; name?: string; unit?: string; decimals?: number; yield?: boolean; status?: string | null; prev_close?: number | null; source_url?: string; times: string[]; prices: number[]; error?: string }
 export interface CalEvent {
   id: string; time_ist: string; all_day: boolean; country: string; name: string; impact: string; actual: string | null; forecast: string | null; previous: string | null;
   source: string; note: string | null; state: "upcoming" | "released" | "past"; minutes_to: number | null;
