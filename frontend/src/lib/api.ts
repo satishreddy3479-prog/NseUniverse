@@ -106,7 +106,36 @@ export interface HolidaysView {
 }
 export interface HolidaysUpdate { coverage_to: string; source: string; holidays: HolidayEntry[]; special_sessions: HolidayEntry[]; confirm_complete: boolean }
 
+export interface GlobalItem {
+  key: string; name: string; unit: string; decimals: number; kind: string; core: boolean; yield: boolean;
+  price: number | null; status: string; change?: number | null; change_pct?: number | null; bp?: number | null; prev_close?: number | null;
+  as_of?: string; age_s?: number; session?: string; spark?: number[];
+}
+export interface GlobalOverview {
+  generated_at: string; groups: { key: string; title: string; items: GlobalItem[] }[];
+  meta: { source: string; last_poll_ok: string | null; last_poll_age_s: number | null; last_error: string | null; stale: boolean };
+}
+export interface GlobalSeries { key: string; name?: string; unit?: string; decimals?: number; times: string[]; prices: number[]; error?: string }
+export interface CalEvent {
+  id: string; time_ist: string; all_day: boolean; country: string; name: string; impact: string; actual: string | null; forecast: string | null; previous: string | null;
+  source: string; note: string | null; state: "upcoming" | "released" | "past"; minutes_to: number | null;
+}
+export interface CalendarView {
+  generated_at: string; today: string; note: string; next: CalEvent | null;
+  sections: { key: string; title: string; events: CalEvent[] }[];
+  sources: { name: string; last_ok: string | null; last_error: unknown }[];
+}
+export interface NewsItem { id: string; title: string; link: string; summary: string; source: string; section: string; published: string; age_min: number }
+export interface NewsView {
+  generated_at: string; india: NewsItem[]; global: NewsItem[];
+  meta: { last_poll_ok: string | null; stale: boolean; last_error: unknown; sources: string[]; note: string };
+}
+
 export const api = {
+  globalOverview: () => request<GlobalOverview>("/api/global/overview"),
+  globalSeries: (symbol: string, hours: number) => request<GlobalSeries>(`/api/global/series?symbol=${encodeURIComponent(symbol)}&hours=${hours}`),
+  calendar: () => request<CalendarView>("/api/calendar"),
+  news: () => request<NewsView>("/api/news"),
   holidays: () => request<HolidaysView>("/api/market/holidays"),
   putHolidays: (body: HolidaysUpdate) =>
     request<HolidaysView>("/api/market/holidays", { method: "PUT", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify(body) }),

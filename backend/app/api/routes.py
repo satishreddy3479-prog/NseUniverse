@@ -1349,3 +1349,34 @@ async def futures_series_route(
         futures_series, market.store, _obs(request), s.underlying,
         rate=s.risk_free_rate, day=day, since=parse_time(since),
     )
+
+
+# ------------------------------------------------------------ global markets, calendar, news
+def _globalmkts(request: Request) -> Any:
+    return request.app.state.globalmkts
+
+
+@router.get("/global/overview")
+async def global_overview(request: Request) -> dict[str, Any]:
+    """The global board: US futures and indices, rates, gold, silver, Brent, Asian indices."""
+    return await asyncio.to_thread(_globalmkts(request).overview)
+
+
+@router.get("/global/series")
+async def global_series(
+    request: Request, symbol: str, hours: Annotated[float, Query(ge=0, le=72)] = 24.0
+) -> dict[str, Any]:
+    """The stored one-minute closes of one symbol (the last ``hours`` of its data)."""
+    return await asyncio.to_thread(_globalmkts(request).series, symbol, hours)
+
+
+@router.get("/calendar")
+async def economic_calendar(request: Request) -> dict[str, Any]:
+    """High-impact economic events by when they happen (today ... later this month), in IST."""
+    return await asyncio.to_thread(_globalmkts(request).calendar_view)
+
+
+@router.get("/news")
+async def news_feed(request: Request) -> dict[str, Any]:
+    """The latest Indian and global headlines from public RSS feeds, with links."""
+    return await asyncio.to_thread(_globalmkts(request).news_view)

@@ -5,6 +5,9 @@ _Last updated: 2026-11-04_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Global markets, economic calendar, news (16 Nov 2026)
+Built (D172), three pages in the Analyse menu fed by `app/globalmkts` (Yahoo one-minute bars, Forex Factory public feed plus the official event list, ET/BBC/CNBC RSS). Backend 19 new tests and frontend 3 new tests on real captured payloads; full suites pass. Moneycontrol is not used (blocked for honest clients). To verify after deploy: `/api/global/overview`, `/api/calendar`, `/api/news` on the server, the futures' real delay once CME reopens (Mon 04:30 IST), `global.sqlite3` growth. GIFT Nifty has no source yet.
+
 ## Replay on six tool pages (14 Nov 2026)
 Replay button (off by default, never auto-starts) on Smart OI, Multi OI & Volume, Gamma Exposure, Vega Analysis, ATM Straddle Chart and ATM Rolling Straddle: plays a stored session one stored sample at a time, every chart and the chain on the page showing only what was stored up to that time (D162). Tested: frontend tests for the helpers and each page (they fail when the cut is disabled); not yet checked in a real browser or against the server's stored snapshots. 15 Nov: the Straddle Intelligence page has it too (D168): the server computes the analysis as of the replay minute (`as_of`), about 2.5 to 3 s per request on a full day, one request in flight at a time; not yet watched on the server.
 

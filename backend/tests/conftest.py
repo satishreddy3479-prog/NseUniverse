@@ -34,6 +34,7 @@ def make_settings(tmp_path: Path, **overrides: Any) -> Settings:
         "swing_paper_enabled": False,
         "swing_live_enabled": False,
         "breadth_enabled": False,
+        "globalmkts_enabled": False,  # no network polling in tests
         **CREDS,
     }
     base.update(overrides)

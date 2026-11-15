@@ -23,7 +23,7 @@ export interface Tool {
   /** the page can replay a stored session on one shared clock (components/dashboard/ReplayBar.tsx) */
   replay?: boolean;
   /** a special page body (see pages/ToolPage.tsx) */
-  page?: "flows" | "cash" | "contributors" | "weightage" | "breadth" | "sectors" | "movers" | "futflow" | "futsectors" | "futbuildup" | "ivhv" | "ivchart" | "ivskew" | "ivmomentum" | "backtest" | "marketstructure" | "strikepos" | "ivintraday";
+  page?: "flows" | "cash" | "contributors" | "weightage" | "breadth" | "sectors" | "movers" | "futflow" | "futsectors" | "futbuildup" | "ivhv" | "ivchart" | "ivskew" | "ivmomentum" | "backtest" | "marketstructure" | "strikepos" | "ivintraday" | "global" | "calendar" | "news";
   /** why a planned tool is not available yet */
   needs?: string;
   isNew?: boolean;
@@ -74,6 +74,9 @@ export const TOOLS: Tool[] = [
   { id: "advance-decline", label: "Advance Decline", menu: "analyse", group: "Index", status: "ready", page: "breadth", blurb: "How many NIFTY 50 stocks are up and down." },
   { id: "index-weightage", label: "Index Weightage", menu: "analyse", group: "Index", status: "ready", page: "weightage", blurb: "NIFTY 50 weights, with their source and date." },
   { id: "sector-rotation", label: "Sector Rotation", menu: "analyse", group: "Index", status: "ready", isNew: true, page: "sectors", blurb: "Sector strength inside NIFTY 50 and its change in rank." },
+  { id: "global-markets", label: "Global Markets", menu: "analyse", group: "World", status: "ready", isNew: true, popular: true, page: "global", blurb: "US index futures and cash indices, VIX, the 10-year yield, dollar, gold, silver, Brent and the Asian indices, each with its age and status." },
+  { id: "economic-calendar", label: "Economic Calendar", menu: "analyse", group: "World", status: "ready", isNew: true, page: "calendar", blurb: "The high-impact events ahead, in IST: today, tomorrow, the rest of the week, next week and later this month." },
+  { id: "market-news", label: "News", menu: "analyse", group: "World", status: "ready", isNew: true, page: "news", blurb: "Latest Indian and global market headlines from Economic Times, BBC and CNBC, linked to the publisher." },
 ];
 
 export const toolPath = (t: Tool): string | null => (t.status !== "ready" ? null : t.to ?? `/tools/${t.id}`);

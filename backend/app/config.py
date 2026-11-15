@@ -91,6 +91,8 @@ class Settings(BaseSettings):
     broker_login_time: str = "08:30"  # IST, HH:MM
     intraday_autoscore: bool = True  # record the rules-based intraday score each minute in session
     flows_autofetch: bool = True  # NSE participant-wise F&O files and FII/DII cash (low rate)
+    # global markets, economic calendar and news (read-only context)
+    globalmkts_enabled: bool = True
     history_start: date = date(2007, 1, 1)
     ws_max_clients: int = Field(default=10, ge=1, le=100)
 

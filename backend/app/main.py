@@ -20,6 +20,8 @@ from app.api.routes import router
 from app.api.ws import router as ws_router
 from app.broker.base import MarketDataBroker
 from app.config import Settings, get_settings
+from app.globalmkts.service import GlobalService
+from app.globalmkts.store import GlobalStore
 from app.intelligence.straddle_service import StraddleDecay
 from app.intelligence.straddle_store import StraddleStore
 from app.intelligence.wiring import create as create_intelligence
@@ -194,6 +196,11 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         app.state.strategy_automation = strategy_automation
         strategy_automation.start()
         flows.start()
+        globalmkts = GlobalService(
+            GlobalStore(settings.data_dir), enabled=settings.globalmkts_enabled
+        )
+        app.state.globalmkts = globalmkts
+        globalmkts.start()
         intraday_store = IntradayStore(settings.data_dir)
         intraday = IntradayService(
             observations, history_store, flows_store, intraday_store, settings.underlying
@@ -370,6 +377,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             intraday_store.close()
             await history.stop()
             await flows.stop()
+            await globalmkts.stop()
             flows_store.close()
             app.state.strategies.close()
             history_store.close()
