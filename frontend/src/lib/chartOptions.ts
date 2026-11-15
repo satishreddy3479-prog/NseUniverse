@@ -769,12 +769,12 @@ export function smartOiOption(r: SmartOiResult, c: ChartColors): EChartsCoreOpti
     title: [
       { text: cs.length > 0 && cs.every((k) => k.spotFromBars || !k.spot) ? "NIFTY (1-minute bars from the live index feed)" : cs.some((k) => k.spotFromBars) ? "NIFTY (1-minute index bars where recorded, stored samples before)" : "NIFTY (from stored 1-min samples: no real highs and lows)", left: 66, top: "1%", textStyle: { color: c.muted, fontSize: 11, fontWeight: "normal" } },
       { text: "Smart OI = ΔPut − ΔCall per candle", left: 66, top: "46%", textStyle: { color: c.muted, fontSize: 11, fontWeight: "normal" } },
-      { text: "Volume per candle: put (green) + call (red)", left: 66, top: "68%", textStyle: { color: c.muted, fontSize: 11, fontWeight: "normal" } },
+      { text: "Volume per candle: put (green) + call (red)", left: 66, top: "66.5%", textStyle: { color: c.muted, fontSize: 11, fontWeight: "normal" } },
     ],
     grid: [
       { left: 60, right: 12, top: "5%", height: "38%" },
       { left: 60, right: 12, top: "50%", height: "15%" },
-      { left: 60, right: 12, top: "72%", height: "19%" },
+      { left: 60, right: 12, top: "76%", height: "15%" },
     ],
     xAxis: [axis(0, false), axis(1, false), axis(2, true)],
     yAxis: [
@@ -783,7 +783,7 @@ export function smartOiOption(r: SmartOiResult, c: ChartColors): EChartsCoreOpti
       val(2, { scale: false, splitNumber: 3, axisLabel: { ...axisText(c), formatter: (v: number) => compactIN(v) } }),
     ],
     // a small legend for the volume panel only (the other two panels are named by their titles); it also switches puts or calls off to read one side
-    legend: { data: [{ name: "Put volume", itemStyle: { color: c.up } }, { name: "Call volume", itemStyle: { color: c.down } }], top: "67%", right: 14, itemWidth: 12, itemHeight: 8, itemGap: 12, textStyle: { color: c.paper, fontSize: 11 } },
+    legend: { data: [{ name: "Put volume", itemStyle: { color: c.up } }, { name: "Call volume", itemStyle: { color: c.down } }], top: "70%", left: 62, itemWidth: 12, itemHeight: 8, itemGap: 12, textStyle: { color: c.paper, fontSize: 11 } },
     dataZoom: [{ type: "inside", xAxisIndex: [0, 1, 2], filterMode: "none" }],
     series: [
       {

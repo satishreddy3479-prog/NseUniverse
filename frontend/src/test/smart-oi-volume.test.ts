@@ -49,4 +49,13 @@ describe("Smart OI chart: the volume panel", () => {
     expect(opt.series.map((x) => x.name)).toEqual(["NIFTY", "Smart OI", "Put volume", "Call volume"]);
     expect(opt.grid).toHaveLength(3);
   });
+  it("the legend sits on its own line under the title, so the two never overlap on a narrow chart", () => {
+    const o = opt as unknown as { title: { text: string; top: string }[]; legend: { top: string; left: number; right?: number }; grid: { top: string; height: string }[] };
+    const pct = (v: string) => Number(v.replace("%", ""));
+    const title = o.title.find((x) => x.text.startsWith("Volume per candle"))!;
+    expect(pct(o.legend.top)).toBeGreaterThan(pct(title.top)); // below the title, not beside it
+    expect(o.legend.right).toBeUndefined(); // anchored at the left like the title, not at the right edge
+    expect(pct(o.grid[2]!.top)).toBeGreaterThan(pct(o.legend.top)); // and above the bars
+    expect(pct(o.grid[2]!.top) + pct(o.grid[2]!.height)).toBeLessThan(93); // the time labels still fit under the bars
+  });
 });
