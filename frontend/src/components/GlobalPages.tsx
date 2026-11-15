@@ -132,7 +132,7 @@ function EventRow({ e, now }: { e: CalEvent; now: number }) {
       </div>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          <span className="text-brass" aria-label="High impact" title="High impact">★★★</span>
+          <span className="text-brass" aria-label={e.impact === "high" ? "High impact" : "Medium impact"} title={e.impact === "high" ? "High impact" : "Medium impact (India)"}>{e.impact === "high" ? "★★★" : "★★☆"}</span>
           <span className="text-sm font-semibold">{e.name}</span>
           <span className="rounded-full border border-rule px-2 py-0.5 text-[11px] text-muted">{e.country || "Global"}</span>
           {state === "upcoming" && <span className="text-xs text-info">{countdown(Math.max(0, mins))}</span>}
@@ -175,11 +175,11 @@ export function CalendarBody() {
           </div>
         </section>
       )}
-      {total === 0 && <p className="rounded-sm border border-rule bg-slate p-3 text-sm text-muted">No high-impact events are stored for this month yet.</p>}
+      {total === 0 && <p className="rounded-sm border border-rule bg-slate p-3 text-sm text-muted">No events are stored for this month yet.</p>}
       {c.sections.map((s) => (
         <section key={s.key} aria-label={s.title} className="overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate">
           <h2 className="flex items-center justify-between border-b border-rule bg-slate-2 px-3 py-2 text-sm font-semibold">{s.title}<span className="text-xs font-normal text-muted">{s.events.length} {s.events.length === 1 ? "event" : "events"}</span></h2>
-          {s.events.length === 0 ? <p className="px-3 py-3 text-sm text-muted">Nothing high-impact scheduled.</p> : (
+          {s.events.length === 0 ? <p className="px-3 py-3 text-sm text-muted">Nothing scheduled.</p> : (
             <>
               {s.events.map((e, i) => {
                 const day = istDay(e.time_ist);

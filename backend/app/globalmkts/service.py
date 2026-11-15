@@ -234,7 +234,7 @@ class GlobalService:
             best = max([r["impact"], *(o["impact"] for o in every if o is not r and calendar_feed.same_event(r, o))], key=lambda i: level.get(i, 0))
             return r | {"impact": best}
 
-        rows = [x for x in (top(r) for r in every if not beaten(r)) if x["impact"] == "high"]
+        rows = [x for x in (top(r) for r in every if not beaten(r)) if x["impact"] == "high" or (x["impact"] == "medium" and x["country"] == "India")]  # three-star events, plus India's two-star ones (MQL5 rates most Indian releases medium)
         nowms = ms(now)
 
         def shape(r: dict[str, Any]) -> dict[str, Any]:
@@ -268,7 +268,7 @@ class GlobalService:
                 "last_error": None if last is None or last["ok"] else last["detail"],
             })  # fmt: skip
         return {"generated_at": now.isoformat(), "today": today.isoformat(), "sections": sections, "next": nxt, "sources": sources,
-                "note": "High-impact events only (the three-star level). Times are in IST. Official dates come from the central banks and statistics agencies named on each event; the feed is a third-party feed."}  # fmt: skip
+                "note": "Three-star events, plus India's two-star releases (shown with two stars). Times are in IST. Official dates come from the central banks and statistics agencies named on each event; the feed is a third-party feed."}  # fmt: skip
 
     def news_view(self) -> dict[str, Any]:
         now = self._clock()

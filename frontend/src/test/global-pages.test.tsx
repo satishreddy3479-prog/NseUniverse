@@ -30,7 +30,7 @@ const calendar = {
   generated_at: "2026-11-15T19:00:00+00:00", today: "2026-11-16", note: "High-impact events only.", next: ev("a", "CPI m/m", "2026-11-16T19:00:00+05:30", "upcoming"),
   sections: [
     { key: "today", title: "Today", events: [ev("a", "CPI m/m", "2026-11-16T19:00:00+05:30", "upcoming", { forecast: "0.3%", previous: "0.4%" })] },
-    { key: "tomorrow", title: "Tomorrow", events: [] },
+    { key: "tomorrow", title: "Tomorrow", events: [ev("w", "WPI y/y", "2026-11-17T12:00:00+05:30", "upcoming", { country: "India", impact: "medium", forecast: "7.46%", previous: "11.39%" })] },
     { key: "week", title: "Rest of this week", events: [ev("b", "FOMC Meeting Minutes", "2026-11-19T00:30:00+05:30", "upcoming")] },
     { key: "nextweek", title: "Next week", events: [] },
     { key: "month", title: "Later this month", events: [] },
@@ -93,7 +93,11 @@ describe("economic calendar page", () => {
     expect(within(today).getByText("CPI m/m")).toBeInTheDocument();
     expect(within(today).getByText("19:00")).toBeInTheDocument();
     expect(within(today).getByText("0.3%")).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "Tomorrow" })).getByText("Nothing high-impact scheduled.")).toBeInTheDocument();
+    const wpi = within(screen.getByRole("region", { name: "Tomorrow" }));
+    expect(wpi.getByText("WPI y/y")).toBeInTheDocument();
+    expect(wpi.getByLabelText("Medium impact")).toHaveTextContent("★★☆"); // India's two-star release, shown with its own rating
+    expect(within(today).getByLabelText("High impact")).toHaveTextContent("★★★");
+    expect(within(screen.getByRole("region", { name: "Next week" })).getByText("Nothing scheduled.")).toBeInTheDocument();
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.getByText(/Moneycontrol is not used/)).toBeInTheDocument();
     expect(screen.getByText(/Forex Factory public feed \(unofficial\) \(could not be read\)/)).toBeInTheDocument();

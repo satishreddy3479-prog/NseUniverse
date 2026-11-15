@@ -250,7 +250,7 @@ def test_the_calendar_groups_high_impact_events_by_when_in_ist_with_countdowns(t
     cpi = next(e for e in today if e["name"] == "CPI m/m" and e["country"] == "Canada")
     assert cpi["time_ist"].startswith("2026-11-16T19:00") and cpi["state"] == "upcoming"
     assert cpi["minutes_to"] == round((datetime(2026, 11, 16, 13, 30, tzinfo=UTC) - now).total_seconds() / 60)  # 1110 minutes
-    assert all(e["impact"] == "high" for x in v["sections"] for e in x["events"])  # only the three-star level
+    assert all(e["impact"] == "high" or (e["impact"] == "medium" and e["country"] == "India") for x in v["sections"] for e in x["events"])  # three-star, plus India two-star
     assert v["next"] and v["next"]["time_ist"] <= cpi["time_ist"]
     assert {x["name"] for x in v["sources"]} == {calendar_feed.OFFICIAL_LABEL, calendar_feed.FF_LABEL, calendar_feed.BQ_LABEL} and all(x["last_ok"] for x in v["sources"])
 
@@ -464,3 +464,13 @@ def test_a_biquote_failure_is_recorded_and_the_other_sources_stay(tmp_path: Path
     r = s.poll_calendar()
     assert "error" in r["biquote"] and r["feed"]["new"] > 0
     assert next(x for x in s.calendar_view()["sources"] if x["name"] == calendar_feed.BQ_LABEL)["last_error"]
+
+
+def test_india_medium_releases_are_shown_with_their_two_star_rating_and_other_countries_medium_are_not(tmp_path: Path) -> None:
+    s, _ = service(tmp_path, now=datetime(2026, 11, 15, 19, 0, tzinfo=UTC))  # Monday 16 Nov 00:30 IST
+    s.poll_calendar()
+    rows = [e for x in s.calendar_view()["sections"] for e in x["events"]]
+    wpi = next(e for e in rows if e["country"] == "India" and e["name"] == "WPI y/y")
+    assert wpi["impact"] == "medium" and wpi["forecast"] == "7.46%" and wpi["previous"] == "11.39%" and wpi["time_ist"].startswith("2026-11-16T12:00")  # 06:30 UTC
+    assert any(e["country"] == "India" and e["name"] == "GDP y/y" for e in rows)
+    assert not any(e["country"] != "India" and e["impact"] == "medium" for e in rows)  # a medium US or Canadian release stays out
