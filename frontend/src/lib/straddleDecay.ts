@@ -57,6 +57,8 @@ export interface StraddleDecay {
   status: "ok" | "unavailable";
   message?: string;
   session?: string;
+  /** set on a replay answer: the moment the analysis is as of (only the samples stored up to it were read) */
+  as_of?: string;
   expiry?: string;
   expiry_day?: boolean;
   generated_at?: string;

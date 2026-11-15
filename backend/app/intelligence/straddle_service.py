@@ -10,6 +10,7 @@ import asyncio
 import logging
 import threading
 import time as _time
+from collections import OrderedDict
 from collections.abc import Callable, Mapping
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 MAX_POINTS = 400  # a full session is about 385 one-minute samples: nothing is thinned
 CACHE_S = 20.0
+ASOF_KEEP = 48  # replay answers kept (each is a few hundred KB)
 OPEN_T, CLOSE_T = time(9, 15), time(15, 40)
 
 
@@ -114,6 +116,7 @@ class StraddleDecay:
         self.obs, self.underlying, self._gex, self.rate, self.enabled, self._clock = observations, underlying, gex, rate, enabled, clock
         self.store, self._mi, self.alert_cfg = store, mi, dict(alert_cfg or straddle_watch.CFG)
         self._cache: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
+        self._asof: OrderedDict[tuple[str, str, str], dict[str, Any]] = OrderedDict()  # replay answers (past minutes do not change); a few dozen kept
         self._last: dict[tuple[str, str], straddle.Snap | None] = {}
         self._lock = threading.RLock()
         self._task: asyncio.Task[None] | None = None
@@ -134,8 +137,10 @@ class StraddleDecay:
                 return day, ex[0]
         return None
 
-    def _read(self, expiry: str, day: date, max_points: int | None = MAX_POINTS) -> tuple[list[straddle.Snap], list[tuple[datetime, float | None]]]:
+    def _read(self, expiry: str, day: date, max_points: int | None = MAX_POINTS, until: datetime | None = None) -> tuple[list[straddle.Snap], list[tuple[datetime, float | None]]]:
         lo, hi = datetime.combine(day, OPEN_T, IST), datetime.combine(day, CLOSE_T, IST)
+        if until is not None:
+            hi = min(hi, until)  # a replay: only what had been stored by then
         samples = [s for s in self.obs.samples(self.underlying, expiry, since=lo, until=hi) if s.spot is not None]
         spots = [(s.received_at, s.spot) for s in samples]
         stride = 1 if not max_points else max(1, -(-len(samples) // max_points))
@@ -152,7 +157,10 @@ class StraddleDecay:
         return snaps, spots
 
     # ------------------------------------------------------------------ views
-    def summary(self, expiry: str | None = None, session: str | None = None) -> dict[str, Any]:
+    def summary(self, expiry: str | None = None, session: str | None = None, as_of: datetime | None = None) -> dict[str, Any]:
+        """The analysis of one stored session. With ``as_of`` it is the analysis as it stood at that moment (a replay): only the samples stored up to it,
+        the recorded history and alerts up to it, never live and never the buyer/seller environments (they read live flow). Nothing of it touches the
+        live minute's cache or the premium ladder that ``record`` keeps."""
         pick = self.latest()
         day = date.fromisoformat(session) if session else (pick[0] if pick else None)
         if day is None:
@@ -164,14 +172,21 @@ class StraddleDecay:
             return {"status": "unavailable", "message": f"No samples are stored for {day.isoformat()}.", "interpretation": [], "session": day.isoformat()}
         key = (expiry, day.isoformat())
         with self._lock:
-            hit = self._cache.get(key)
+            if as_of is not None:
+                as_of = as_of.astimezone(IST).replace(second=0, microsecond=0) + timedelta(seconds=59)  # one answer per stored minute
+                akey = (expiry, day.isoformat(), as_of.isoformat())
+                got = self._asof.get(akey)
+                if got is not None:
+                    self._asof.move_to_end(akey)
+                    return got
+            hit = self._cache.get(key) if as_of is None else None
             if hit is not None and _time.monotonic() - hit[0] < CACHE_S:
                 return hit[1]
-            now = self._clock()
+            now = self._clock() if as_of is None else as_of
             t0 = _time.perf_counter()
-            snaps, spots = self._read(expiry, day)
+            snaps, spots = self._read(expiry, day, until=as_of)
             t_read = _time.perf_counter()
-            live = day == now.astimezone(IST).date()
+            live = as_of is None and day == now.astimezone(IST).date()
             gex: dict[str, Any] | None = None
             points: list[Any] = []
             if self._gex is not None and live:
@@ -184,7 +199,8 @@ class StraddleDecay:
             out |= {"session": day.isoformat(), "expiry": expiry, "generated_at": now.isoformat(timespec="seconds"), "expiry_day": expiry == day.isoformat()}
             t_an = _time.perf_counter()
             if out["status"] == "ok":
-                self._last[key] = snaps[-1] if snaps else None  # used by record() for the premium ladder
+                if as_of is None:
+                    self._last[key] = snaps[-1] if snaps else None  # used by record() for the premium ladder (a replay must not overwrite it)
                 mi: Mapping[str, Any] = {}
                 if live and self._mi is not None:
                     try:
@@ -197,17 +213,26 @@ class StraddleDecay:
                 else:
                     out["environment"], out["context"] = None, None
                     out["environment_note"] = "Buyer and seller environments are computed for the live session only (they read live flow and positioning). The recorded history below is what was stored."
-                out |= self._history(day.isoformat())
+                out |= self._history(day.isoformat(), until=as_of)
+            if as_of is not None:
+                out["as_of"] = as_of.isoformat(timespec="seconds")
             t_end = _time.perf_counter()
             out["compute_ms"] = round((t_end - t0) * 1000, 1)
             out["timing_ms"] = {"read_samples": round((t_read - t0) * 1000), "gex_and_analysis": round((t_an - t_read) * 1000), "environment_and_inputs": round((t_end - t_an) * 1000)}
-            self._cache[key] = (_time.monotonic(), out)
+            if as_of is None:
+                self._cache[key] = (_time.monotonic(), out)
+            else:
+                self._asof[akey] = out
+                while len(self._asof) > ASOF_KEEP:
+                    self._asof.popitem(last=False)
             return out
 
-    def _history(self, session: str) -> dict[str, Any]:
+    def _history(self, session: str, until: datetime | None = None) -> dict[str, Any]:
         if self.store is None:
             return {"history": None, "alerts": [], "environment_trend": None}
         rows = self.store.rows(session, 500)
+        if until is not None:
+            rows = [r for r in rows if datetime.fromisoformat(r["at"]) <= until]  # a replay: only what had been recorded by then
         hist = {"times": [r["at"] for r in rows], "seller": [r["seller"] for r in rows], "buyer": [r["buyer"] for r in rows], "regime": [r["regime"] for r in rows],
                 "eff30": [(r["data"].get("eff30") or {}).get("pct") for r in rows], "spot": [r["spot"] for r in rows]}  # fmt: skip
         trend: dict[str, Any] | None = None
@@ -220,7 +245,10 @@ class StraddleDecay:
                 return old[-1][key] if old and datetime.fromisoformat(old[-1]["at"]) >= cut - timedelta(minutes=3) else None
 
             trend = {k: {"now": rows[-1][k], "m15": at(15, k), "m30": at(30, k)} for k in ("seller", "buyer")}
-        return {"history": hist, "alerts": self.store.alerts(session, 30), "environment_trend": trend, "storage": {"rows_today": len(rows), "bytes": self.store.size_bytes()}}
+        alerts = self.store.alerts(session, 30 if until is None else 500)
+        if until is not None:
+            alerts = [a for a in alerts if datetime.fromisoformat(a["at"]) <= until][:30]
+        return {"history": hist, "alerts": alerts, "environment_trend": trend, "storage": {"rows_today": len(rows), "bytes": self.store.size_bytes()}}
 
     def alerts(self, session: str | None = None, limit: int = 60) -> dict[str, Any]:
         day = session or self._clock().astimezone(IST).date().isoformat()

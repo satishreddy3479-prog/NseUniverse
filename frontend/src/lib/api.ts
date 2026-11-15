@@ -209,7 +209,11 @@ export const api = {
   swingReport: () => request<SwingReport>("/api/swing/report"),
   swingPaper: () => request<SwingPaperView>("/api/swing/paper"),
   swingLive: () => request<SwingLiveView>("/api/swing/live"),
-  straddleDecay: () => request<import("./straddleDecay").StraddleDecay>("/api/intelligence/straddle"),
+  /** The straddle analysis of the latest stored session; with ``session`` and ``asOf`` (an ISO time with a zone) it is that session as it stood at that moment: a replay. */
+  straddleDecay: (o: { session?: string; asOf?: string } = {}) =>
+    request<import("./straddleDecay").StraddleDecay>(
+      "/api/intelligence/straddle" + (o.session || o.asOf ? `?${[o.session ? `session=${encodeURIComponent(o.session)}` : "", o.asOf ? `as_of=${encodeURIComponent(o.asOf)}` : ""].filter(Boolean).join("&")}` : ""),
+    ),
   straddleValidation: () => request<import("./straddleDecay").StraddleValidation>("/api/intelligence/straddle/validation"),
   intelligenceSummary: (expiry?: string) => request<import("./intelligence").Intelligence>(`/api/intelligence/summary${expiry ? `?expiry=${encodeURIComponent(expiry)}` : ""}`),
   intelligenceTimeline: (session?: string) => request<import("./intelligence").Timeline>(`/api/intelligence/timeline${session ? `?session=${encodeURIComponent(session)}` : ""}`),

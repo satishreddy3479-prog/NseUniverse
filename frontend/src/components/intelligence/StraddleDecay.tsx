@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../lib/api";
 import { fmtTimeIST, MISSING } from "../../lib/format";
@@ -7,6 +7,7 @@ import { rupee, timeLinesOption, type Line } from "../../lib/priceCharts";
 import type { AlertRow, Component, EnvBucket, Moves, Stat, StraddleDecay, Terms, Window, Windows } from "../../lib/straddleDecay";
 import { EChart, useChartColors } from "../EChart";
 import { pill } from "../dashboard/PriceBoards";
+import { useReplay } from "../dashboard/ReplayContext";
 import { StraddleGlance } from "./StraddleGlance";
 import { StraddleReadingCard } from "./StraddleReading";
 import { TabPanel, Tabs, type TabDef } from "../swing/shared";
@@ -101,9 +102,26 @@ const startTab = (): SdTab => {
   return (SD_TABS.map((t) => t.id) as string[]).includes(h) ? (h as SdTab) : "overview";
 };
 
+/** The key of the straddle analysis query when no replay runs (the replay bar shares it to learn the expiry). */
+export const STRADDLE_KEY = ["straddle-decay", null, null] as const;
+
 export function StraddleDecayPanel() {
   const c = useChartColors();
-  const q = useQuery({ queryKey: ["straddle-decay"], queryFn: () => api.straddleDecay(), refetchInterval: 30_000, retry: false });
+  // during a replay the page shows the analysis as it stood at the replay time (the server reads only the samples stored up to it). One analysis
+  // takes the server a few seconds, so only one request is in flight at a time and each asks for the newest replay time; the previous answer
+  // stays on screen until the next arrives, and the header says which minute it is as of.
+  const rp = useReplay();
+  const [asked, setAsked] = useState<number | null>(null);
+  const asOf = rp.on && asked != null ? new Date(asked).toISOString() : null;
+  const q = useQuery({
+    queryKey: rp.on ? ["straddle-decay", rp.day, asOf] : STRADDLE_KEY,
+    queryFn: () => api.straddleDecay(rp.on && asOf ? { session: rp.day ?? undefined, asOf } : {}),
+    refetchInterval: rp.on ? false : 30_000, retry: false, placeholderData: keepPreviousData, staleTime: rp.on ? Infinity : 0,
+  });
+  useEffect(() => {
+    if (!rp.on) { if (asked != null) setAsked(null); return; }
+    if (asked == null || (rp.cutMs != null && rp.cutMs !== asked && !q.isFetching)) setAsked(rp.cutMs);
+  }, [rp.on, rp.cutMs, asked, q.isFetching]);
   const [mode, setMode] = useState<"fixed" | "rolling">("fixed");
   const [tab, setTab] = useState<SdTab>(startTab);
   const go = (t: SdTab) => { setTab(t); try { window.history.replaceState(null, "", `#${t}`); } catch { /* the tab still changes without the address */ } };
@@ -132,7 +150,7 @@ export function StraddleDecayPanel() {
   const head = (
     <div className="flex flex-wrap items-baseline justify-between gap-2">
       <h2 className="text-sm font-semibold text-paper">Straddle decay intelligence <span className="font-normal text-muted">· separate from the sentiment score, descriptive only, not a trading signal</span></h2>
-      {d.session && <span className="text-xs text-muted">Session {d.session} · expiry {d.expiry}{d.expiry_day ? " (expiry day)" : ""}</span>}
+      {d.session && <span className="text-xs text-muted">Session {d.session} · expiry {d.expiry}{d.expiry_day ? " (expiry day)" : ""}{d.as_of ? <span data-testid="sdi-as-of"> · replay: analysis as of {fmtTimeIST(d.as_of)}</span> : null}</span>}
     </div>
   );
   if (d.status !== "ok" || !d.tracker || !d.iv || !d.attribution || !d.realised_vs_implied || !d.structure || !d.quality) {

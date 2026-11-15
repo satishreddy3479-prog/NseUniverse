@@ -13,8 +13,12 @@ const hhmm = (ms: number) => new Date(ms + 330 * 60_000).toISOString().slice(11,
  */
 export function ReplayBar() {
   const d = useDash();
+  return <ReplayBarView observations={d.historyRaw.data?.observations} ready={!!d.expiry} />;
+}
+
+/** The bar itself, for any page that can hand it the stored samples (their times are the steps): the tool pages through the dashboard state, the straddle page through its own history. */
+export function ReplayBarView({ observations: raw, ready }: { observations: readonly { retrieved_at: string }[] | undefined; ready: boolean }) {
   const rp = useReplay();
-  const raw = d.historyRaw.data?.observations;
   const days = useMemo(() => replayDays(raw), [raw]);
   const day = rp.day ?? days[0] ?? null;
   const steps = useMemo(() => replaySteps(raw, day), [raw, day]);
@@ -32,7 +36,7 @@ export function ReplayBar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rp.on, rp.playing, rp.speed, rp.cutMs, steps]);
 
-  if (!d.expiry) return null;
+  if (!ready) return null;
   if (!rp.on) {
     return (
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2" data-testid="replay-bar">

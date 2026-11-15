@@ -819,12 +819,21 @@ def _straddle(request: Request) -> Any:
 
 @router.get("/intelligence/straddle")
 async def intelligence_straddle(
-    request: Request, expiry: date | None = None, session: date | None = None
+    request: Request,
+    expiry: date | None = None,
+    session: date | None = None,
+    as_of: datetime | None = None,
 ) -> dict[str, Any]:
-    """Straddle decay intelligence of one stored session (separate from the sentiment score)."""
+    """Straddle decay intelligence of one stored session (separate from the sentiment score).
+
+    With ``as_of`` it is the analysis as it stood at that moment, from the samples stored
+    up to it: what the page's replay shows."""
     svc = _straddle(request)
     ex, day = (None if x is None else x.isoformat() for x in (expiry, session))
-    return await asyncio.to_thread(svc.summary, ex, day)
+    if as_of is not None and as_of.tzinfo is None:
+        msg = "as_of needs a time zone (for example ...Z)"
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, {"code": "bad_as_of", "message": msg})
+    return await asyncio.to_thread(svc.summary, ex, day, as_of)
 
 
 @router.get("/intelligence/straddle/alerts")

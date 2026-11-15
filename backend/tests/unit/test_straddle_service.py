@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.intelligence.straddle_service import StraddleDecay
+from app.intelligence.straddle_store import StraddleStore
 from tests.unit.test_straddle_decay import EXPIRY, OPEN, STRIKES, chain
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -38,7 +40,7 @@ class FakeObs:
         return [(EXPIRY.isoformat(), len(self.snaps))] if lo <= d0 <= hi else []
 
     def samples(self, underlying: str, expiry: str, *, since: datetime | None = None, until: datetime | None = None, limit: int = 5000) -> list[FakeSample]:
-        return [FakeSample(i, s.at, s.spot, i) for i, s in enumerate(self.snaps)]
+        return [FakeSample(i, s.at, s.spot, i) for i, s in enumerate(self.snaps) if (since is None or s.at >= since) and (until is None or s.at <= until)]
 
     def contracts(self, sample_id: int) -> dict[tuple[float, int], FakeContract]:
         s = self.snaps[sample_id]
@@ -81,3 +83,51 @@ def test_expiry_date_type() -> None:
     assert isinstance(EXPIRY, date)
     other: Any = svc().summary(expiry=EXPIRY.isoformat())
     assert other["expiry"] == EXPIRY.isoformat()
+
+
+def test_as_of_is_the_analysis_as_it_stood_at_that_minute() -> None:
+    now = OPEN + timedelta(days=2)
+    s = svc(n=60, now=now)
+    full = s.summary(session="2026-11-11")
+    at = s.summary(session="2026-11-11", as_of=OPEN + timedelta(minutes=29, seconds=20))  # the 30th minute of 60
+    assert at["status"] == "ok" and at["samples"] == 30 and len(at["times"]) == 30  # nothing after that minute is read
+    assert full["samples"] == 60
+    assert at["as_of"].startswith("2026-11-11T09:45:59")  # one answer per stored minute
+    assert at["quality"]["live"] is False and at["environment"] is None  # never live, no buyer/seller scores
+    assert at["tracker"]["fixed"]["straddle"]["current"] != full["tracker"]["fixed"]["straddle"]["current"]  # its "now" is that minute, not the close
+
+
+def test_as_of_answers_are_reused_for_the_same_minute_and_do_not_touch_the_live_state() -> None:
+    s = svc(n=60, now=OPEN + timedelta(days=2))
+    live = s.summary(session="2026-11-11")
+    kept = dict(s._last)  # noqa: SLF001 - what record() reads for the premium ladder
+    cached = dict(s._cache)  # noqa: SLF001
+    a1 = s.summary(session="2026-11-11", as_of=OPEN + timedelta(minutes=20, seconds=5))
+    a2 = s.summary(session="2026-11-11", as_of=OPEN + timedelta(minutes=20, seconds=40))  # the same stored minute
+    assert a1 is a2
+    assert s._last == kept and s._cache == cached  # noqa: SLF001 - a replay leaves the live minute's reading alone
+    assert s.summary(session="2026-11-11") is live  # the live answer is still the cached one
+
+
+def test_as_of_keeps_only_a_few_dozen_answers() -> None:
+    from app.intelligence import straddle_service as m
+
+    s = svc(n=60, now=OPEN + timedelta(days=2))
+    for i in range(m.ASOF_KEEP + 5):
+        s.summary(session="2026-11-11", as_of=OPEN + timedelta(minutes=i % 55 + 2, seconds=i // 55))
+    assert len(s._asof) <= m.ASOF_KEEP  # noqa: SLF001
+
+
+def test_as_of_shows_only_the_recorded_history_and_alerts_up_to_that_minute(tmp_path: Path) -> None:
+    store = StraddleStore(tmp_path)
+    for m in (5, 15, 25, 35, 45):  # recorded minutes, 09:21 .. 10:01 IST
+        at = (OPEN + timedelta(minutes=m)).astimezone(UTC)
+        store.record("2026-11-11", at, EXPIRY.isoformat(), {"spot": 24000.0, "seller": 60.0 + m, "buyer": 40.0, "regime": "no clear regime", "eff30": {"pct": 50.0}})
+        store.add_alert("2026-11-11", at, {"kind": f"k{m}", "severity": "low", "direction": "neutral", "text": f"alert at {m}", "evidence": []})
+    s = StraddleDecay(observations=FakeObs(60), underlying="NIFTY", gex=None, rate=0.06, clock=lambda: OPEN + timedelta(days=2), store=store)
+    full = s.summary(session="2026-11-11")
+    assert len(full["history"]["times"]) == 5 and len(full["alerts"]) == 5
+    at = s.summary(session="2026-11-11", as_of=OPEN + timedelta(minutes=26))
+    assert [x for x in at["history"]["seller"]] == [65.0, 75.0, 85.0]  # only the minutes recorded by 26 minutes in
+    assert sorted(a["kind"] for a in at["alerts"]) == ["k15", "k25", "k5"]
+    assert at["environment_trend"]["seller"]["now"] == 85.0
