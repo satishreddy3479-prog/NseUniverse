@@ -298,3 +298,57 @@ def test_the_api_serves_the_board_the_calendar_and_the_news(tmp_path: Path) -> N
         assert c.get("/api/global/series", params={"symbol": "ES", "hours": 500}).status_code == 422  # at most 72 hours
         assert len(c.get("/api/calendar").json()["sections"]) == 5
         assert c.get("/api/news").json()["india"]
+
+
+# ------------------------------------------------------------------ the optional local economic_calendar.json
+LOCAL_DOC = {
+    "status": "OK", "date": "2026-11-16", "total_events": 4,
+    "events": [
+        {"time_ist": "17:30", "country_code": "IND", "country_name": "India", "event": "WPI Inflation YoY", "impact": 3, "actual": "-", "previous": "1.2%", "consensus": "1.5%"},
+        {"time_ist": "19:00", "country_code": "CAN", "country_name": "Canada", "event": "CPI Inflation MoM", "impact": 3, "actual": "-", "previous": "0.1%", "consensus": "0.3%"},
+        {"time_ist": "-", "country_code": "USA", "country_name": "United States", "event": "Bank holiday", "impact": 2, "actual": "-", "previous": "-", "consensus": "-"},
+        {"time_ist": "10:00", "country_code": "IND", "country_name": "India", "event": "Minor release", "impact": 1, "actual": "-", "previous": "-", "consensus": "-"},
+    ],
+}  # the layout of the user's export; the values are made up to exercise the reader, not market data
+
+
+def test_a_local_file_is_read_with_missing_values_kept_missing_and_low_impact_dropped() -> None:
+    ev = calendar_feed.parse_local(json.dumps(LOCAL_DOC).encode())
+    assert [e["name"] for e in ev] == ["WPI Inflation YoY", "CPI Inflation MoM", "Bank holiday"]  # the one-star release is dropped
+    wpi = ev[0]
+    assert wpi["country"] == "India" and wpi["impact"] == "high" and wpi["actual"] is None and wpi["forecast"] == "1.5%" and wpi["previous"] == "1.2%"
+    assert wpi["ts"] == int(datetime(2026, 11, 16, 12, 0, tzinfo=UTC).timestamp() * 1000)  # 17:30 IST
+    assert ev[2]["all_day"] and ev[2]["country"] == "US" and ev[2]["impact"] == "medium" and ev[2]["forecast"] is None
+    with pytest.raises(ValueError):
+        calendar_feed.parse_local(b'{"events": "no"}')
+    assert calendar_feed.parse_local(json.dumps({"events": [{"time_ist": "17:30", "event": "x", "impact": 3}]}).encode()) == []  # no date anywhere: skipped, not guessed
+
+
+def test_without_the_file_nothing_changes_and_with_it_its_events_win_over_the_same_release(tmp_path: Path) -> None:
+    now = datetime(2026, 11, 15, 19, 0, tzinfo=UTC)
+    s, _ = service(tmp_path, now=now)
+    s.poll_calendar()
+    assert s.poll_local_calendar() is None  # no file: the other sources carry on alone
+    base = s.calendar_view()
+    assert [x["name"] for x in base["sources"]] == [calendar_feed.OFFICIAL_LABEL, calendar_feed.FF_LABEL]
+    path = tmp_path / calendar_feed.LOCAL_NAME
+    path.write_text(json.dumps(LOCAL_DOC))
+    assert s.poll_local_calendar() == {"new": 3, "changed": 0, "same": 0}
+    assert s.poll_local_calendar() is None  # unchanged file: not read again
+    v = s.calendar_view()
+    today = next(x for x in v["sections"] if x["key"] == "today")["events"]
+    names = [(e["country"], e["name"], e["source"]) for e in today]
+    assert ("India", "WPI Inflation YoY", calendar_feed.LOCAL_LABEL) in names
+    canada = [n for n in names if n[0] == "Canada"]
+    assert canada == [("Canada", "CPI Inflation MoM", calendar_feed.LOCAL_LABEL)]  # the Forex Factory CPI rows at the same minute are the same release
+    assert [x["name"] for x in v["sources"]][-1] == calendar_feed.LOCAL_LABEL
+
+
+def test_a_broken_local_file_is_reported_and_the_other_sources_stay(tmp_path: Path) -> None:
+    s, _ = service(tmp_path)
+    s.poll_calendar()
+    (tmp_path / calendar_feed.LOCAL_NAME).write_text("{not json")
+    r = s.poll_local_calendar()
+    assert r and "error" in r
+    v = s.calendar_view()
+    assert v["sources"][-1]["last_error"] and sum(len(x["events"]) for x in v["sections"]) > 0

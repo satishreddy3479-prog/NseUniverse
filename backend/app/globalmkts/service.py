@@ -56,6 +56,7 @@ class GlobalService:
         self.symbols = symbols if symbols is not None else list(SYMBOLS)
         self.official_path = official_path
         self._task: asyncio.Task[None] | None = None
+        self._local_mtime: float | None = None
         self._full_at: float | None = None  # monotonic time of the last five-day download
 
     # ------------------------------------------------------------------ polls (blocking: run them in a thread)
@@ -126,6 +127,25 @@ class GlobalService:
             self.store.add_run("calendar_feed", now, ok, out["feed"])
         return out
 
+    def poll_local_calendar(self, force: bool = False) -> dict[str, Any] | None:
+        """Merge ``economic_calendar.json`` from the data directory into the calendar when it is there and has changed since it was last read; None when there is no file."""
+        path = self.store.path.parent / calendar_feed.LOCAL_NAME
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            return None
+        if not force and mtime == self._local_mtime:
+            return None
+        now = self._clock()
+        self._local_mtime = mtime
+        try:
+            res: dict[str, Any] = dict(self.store.upsert_events(calendar_feed.parse_local(path.read_bytes()), now))
+            self.store.add_run("calendar_local", now, True, res)
+        except Exception as e:  # noqa: BLE001 - a bad file is reported and the other sources carry on
+            res = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
+            self.store.add_run("calendar_local", now, False, res)
+        return res
+
     # ------------------------------------------------------------------ views
     def overview(self) -> dict[str, Any]:
         now = self._clock()
@@ -181,6 +201,8 @@ class GlobalService:
             return ms(datetime(d.year, d.month, d.day, tzinfo=IST))
 
         rows = [r for r in self.store.events_between(at(today), at(horizon + timedelta(days=1))) if r["impact"] == "high"]
+        mine = [r for r in rows if r["source"] == calendar_feed.LOCAL_LABEL]
+        rows = [r for r in rows if r["source"] == calendar_feed.LOCAL_LABEL or not any(calendar_feed.same_event(r, m) for m in mine)]  # the export wins over the same release elsewhere
         nowms = ms(now)
 
         def shape(r: dict[str, Any]) -> dict[str, Any]:
@@ -205,8 +227,10 @@ class GlobalService:
         sections = [{"key": k, "title": title, "events": [shape(r) for r in rows if match(day(r))]} for k, title, match in spec]
         nxt = next((shape(r) for r in rows if r["ts"] >= nowms), None)
         sources = []
-        for kind, label in (("calendar_official", calendar_feed.OFFICIAL_LABEL), ("calendar_feed", calendar_feed.FF_LABEL)):
+        for kind, label in (("calendar_official", calendar_feed.OFFICIAL_LABEL), ("calendar_feed", calendar_feed.FF_LABEL), ("calendar_local", calendar_feed.LOCAL_LABEL)):
             ok, last = self.store.last_run(kind, True), self.store.last_run(kind)
+            if kind == "calendar_local" and last is None:
+                continue  # no file has been dropped in: nothing to report
             sources.append({
                 "name": label, "last_ok": None if ok is None else datetime.fromtimestamp(ok["at_ms"] / 1000, UTC).isoformat(),
                 "last_error": None if last is None or last["ok"] else last["detail"],
@@ -236,7 +260,7 @@ class GlobalService:
         return QUOTE_FAST_S if t.weekday() < 5 and NSE_WINDOW[0] <= t.time() < NSE_WINDOW[1] else QUOTE_SLOW_S
 
     async def _loop(self) -> None:
-        due = {"quotes": 0.0, "news": 0.0, "calendar": 0.0}
+        due = {"quotes": 0.0, "news": 0.0, "calendar": 0.0, "local": 0.0}
         while True:
             now_m = _time.monotonic()
             try:
@@ -250,6 +274,9 @@ class GlobalService:
                     r = await asyncio.to_thread(self.poll_calendar)
                     feed_ok = "feed" in r and "errors" not in r["feed"]
                     due["calendar"] = now_m + (CAL_S if feed_ok else CAL_RETRY_S)
+                if now_m >= due["local"]:
+                    await asyncio.to_thread(self.poll_local_calendar)
+                    due["local"] = now_m + 300
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001 - the loop must survive anything
