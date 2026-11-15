@@ -6,14 +6,17 @@ Bars are stored once (the primary key is the symbol and the minute) and never re
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 from contextlib import closing
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from app.globalmkts.quotes import Quote
+
+logger = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS bars (symbol TEXT NOT NULL, ts INTEGER NOT NULL, price REAL NOT NULL, PRIMARY KEY (symbol, ts)) WITHOUT ROWID;
@@ -43,8 +46,29 @@ class GlobalStore:
         self.path = Path(data_dir) / "global.sqlite3"
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self._check_integrity()
         with closing(self._conn()) as c, c:
             c.executescript(SCHEMA)
+
+    def _check_integrity(self) -> None:
+        """A damaged database file is moved aside (kept, not deleted) and a fresh one started: everything in it is re-fetched from the sources."""
+        if not self.path.exists():
+            return
+        c = sqlite3.connect(self.path, timeout=10)
+        try:
+            ok = c.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+        except sqlite3.DatabaseError:
+            ok = False
+        finally:
+            c.close()
+        if ok:
+            return
+        aside = self.path.with_name(f"{self.path.name}.corrupt-{datetime.now(UTC):%Y%m%d-%H%M%S}")
+        logger.error("global_store_corrupt_moved_aside", extra={"to": str(aside)})
+        for suffix in ("", "-wal", "-shm"):
+            p = Path(str(self.path) + suffix)
+            if p.exists():
+                p.replace(Path(str(aside) + suffix))
 
     def _conn(self) -> sqlite3.Connection:
         c = sqlite3.connect(self.path, timeout=10)
@@ -143,13 +167,31 @@ class GlobalStore:
             return [dict(r) for r in c.execute("SELECT * FROM news WHERE region=? ORDER BY published DESC LIMIT ?", (region, limit))]
 
     # ------------------------------------------------------------------ clean-up
-    def prune(self, today_ist: str, news_before_ms: int) -> dict[str, int]:
-        """Delete the calendar events of days before ``today_ist`` (with their revisions) and the news published before ``news_before_ms``. Bars are not touched here."""
+    def prune(self, today_ist: str, news_before_ms: int, bars_before_ms: int | None = None) -> dict[str, int]:
+        """Delete the calendar events of days before ``today_ist`` (with their revisions), the news published before ``news_before_ms`` and, when given, the price bars
+        older than ``bars_before_ms``; then give the freed space back when a lot was deleted. The latest quote of each symbol is never deleted."""
         with self._lock, closing(self._conn()) as c, c:
             ev = c.execute("DELETE FROM events WHERE date_ist < ?", (today_ist,)).rowcount
             rev = c.execute("DELETE FROM event_revisions WHERE event_id NOT IN (SELECT id FROM events)").rowcount
             nw = c.execute("DELETE FROM news WHERE published < ?", (news_before_ms,)).rowcount
-        return {"events": ev, "revisions": rev, "news": nw}
+            bars = 0 if bars_before_ms is None else c.execute("DELETE FROM bars WHERE ts < ?", (bars_before_ms,)).rowcount
+        if ev + rev + nw + bars >= 2000:
+            self.compact()
+        return {"events": ev, "revisions": rev, "news": nw, "bars": bars}
+
+    def compact(self) -> None:
+        """Rebuild the file so deleted rows stop taking space (the database is small, so this is quick)."""
+        with self._lock:
+            c = sqlite3.connect(self.path, timeout=30, isolation_level=None)
+            try:
+                c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                c.execute("VACUUM")
+            finally:
+                c.close()
+
+    def counts(self) -> dict[str, int]:
+        with self._lock, closing(self._conn()) as c:
+            return {t: c.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in ("bars", "events", "news", "latest")}  # noqa: S608 - fixed table names
 
     def size_bytes(self) -> int:
         total = 0

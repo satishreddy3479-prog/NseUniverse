@@ -194,6 +194,17 @@ async def ops_alerts(request: Request) -> dict[str, Any]:
             })
     except Exception:  # noqa: BLE001, S110 - a failed check must not break the alert list
         pass
+    try:  # the global board, calendar and news jobs
+        h = await asyncio.to_thread(request.app.state.globalmkts.health)
+        for x in h["tasks"]:
+            if x["status"] in ("stale", "failing"):
+                age = x["last_ok_age_s"]
+                since = "" if age is None else f" (last success {round(age / 60)} min ago)"
+                why = f": {x['last_error']}" if x["last_error"] else ""
+                text = f"Global markets job '{x['task']}' is {x['status']}{since}{why}."
+                alerts.append({"key": f"global-{x['task']}", "level": "warning", "text": text})
+    except Exception:  # noqa: BLE001, S110 - a failed check must not break the alert list
+        pass
     return {
         "available": available,
         "checked_at": checked_at,
@@ -1360,6 +1371,12 @@ def _globalmkts(request: Request) -> Any:
 async def global_overview(request: Request) -> dict[str, Any]:
     """The global board: US futures and indices, rates, gold, silver, Brent, Asian indices."""
     return await asyncio.to_thread(_globalmkts(request).overview)
+
+
+@router.get("/global/health")
+async def global_health(request: Request) -> dict[str, Any]:
+    """Whether the global jobs ran recently; database size and retention."""
+    return await asyncio.to_thread(_globalmkts(request).health)
 
 
 @router.get("/global/series")

@@ -10,6 +10,7 @@ import contextlib
 import logging
 import time as _time
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,8 @@ QUOTE_FAST_S, QUOTE_SLOW_S, QUOTE_RETRY_S = 60.0, 300.0, 120.0
 NEWS_S, NEWS_FAST_S, CAL_S, CAL_RETRY_S = 600.0, 120.0, 6 * 3600.0, 1800.0  # news: every 2 minutes in Indian market hours, every 10 otherwise
 FULL_REFRESH_S = 6 * 3600.0
 BQ_S = 900.0
+BARS_KEEP_D = 7  # one-minute price bars older than this are deleted (the change reference needs only the previous session)
+TASK_TIMEOUT_S, MAX_BACKOFF_S = 300.0, 900.0
 NEWS_KEEP_H = 48  # news older than this is deleted; calendar events are deleted when their day (IST) has passed
 CLEAN_S = 3600.0
 NSE_WINDOW = (time(9, 0), time(15, 45))  # IST: polled every minute then, every five minutes otherwise
@@ -42,6 +45,17 @@ def _spark(points: list[tuple[int, float]]) -> list[float]:
     out = [points[int(i * step)][1] for i in range(SPARK_POINTS - 1)]
     out.append(points[-1][1])
     return out
+
+
+@dataclass(frozen=True)
+class _Task:
+    name: str
+    kind: str  # the run-log kind that records its outcome
+    fn: Callable[[], dict[str, Any]]
+    next_delay: Callable[[dict[str, Any]], float]
+    first_delay: float
+    stale_after: float | None  # seconds without a success after which it counts as stale (None: never, e.g. an optional file)
+    enabled: bool = True
 
 
 class GlobalService:
@@ -63,6 +77,10 @@ class GlobalService:
         self._validators: dict[str, news.Validators] = {}
         self._task: asyncio.Task[None] | None = None
         self._local_mtime: float | None = None
+        self._fails: dict[str, int] = {}
+        self._last_error: dict[str, str] = {}
+        self._started_at: float | None = None
+        self._tasks_running: list[asyncio.Task[None]] = []
         self._full_at: float | None = None  # monotonic time of the last five-day download
 
     # ------------------------------------------------------------------ polls (blocking: run them in a thread)
@@ -176,7 +194,7 @@ class GlobalService:
     def cleanup(self) -> dict[str, int]:
         """Delete calendar events of days that have passed and news older than the retention (the page only shows what is current); the numbers go in the run log."""
         now = self._clock()
-        res = self.store.prune(self._today(now), ms(now - timedelta(hours=NEWS_KEEP_H)))
+        res = self.store.prune(self._today(now), ms(now - timedelta(hours=NEWS_KEEP_H)), ms(now - timedelta(days=BARS_KEEP_D)))
         self.store.add_run("cleanup", now, True, res | {"bytes": self.store.size_bytes()})
         return res
 
@@ -335,47 +353,90 @@ class GlobalService:
         t = now.astimezone(IST)
         return NEWS_FAST_S if t.weekday() < 5 and NSE_WINDOW[0] <= t.time() < NSE_WINDOW[1] else NEWS_S
 
-    async def _loop(self) -> None:
-        due = {"quotes": 0.0, "news": 0.0, "calendar": 0.0, "local": 0.0, "bq": 900.0, "gift": 0.0, "clean": 0.0}
+    # ------------------------------------------------------------------ the supervised tasks
+    def _tasks(self) -> list[_Task]:
+        """Every job the service runs on its own, with how soon it runs again and when a missing success counts as stale. Each job has its own loop: a slow or failing one
+        never delays or resets the others."""
+        gift_on = any(s.source == "nseix" for s in self.symbols)
+        return [
+            _Task("quotes", "quotes", self.poll_quotes, lambda r: self._quote_interval(self._clock()) if r.get("ok") else QUOTE_RETRY_S, 0.0, 20 * 60),
+            _Task("gift", "gift", self.poll_gift, lambda r: (QUOTE_FAST_S if expected_open(BY_KEY["GIFT"], self._clock()) else QUOTE_SLOW_S) if r.get("ok") else QUOTE_RETRY_S, 3.0, 20 * 60, enabled=gift_on),
+            _Task("news", "news", self.poll_news, lambda r: self._news_interval(self._clock()) if r.get("ok") else QUOTE_RETRY_S, 6.0, 40 * 60),
+            _Task("calendar", "calendar_feed", self.poll_calendar, lambda r: CAL_S if "feed" in r and "errors" not in r["feed"] else CAL_RETRY_S, 9.0, 13 * 3600),
+            _Task("biquote", "calendar_biquote", self.poll_biquote, lambda r: BQ_S if "error" not in r else CAL_RETRY_S, 12.0, 45 * 60),
+            _Task("local", "calendar_local", lambda: self.poll_local_calendar() or {}, lambda r: 300.0, 15.0, None),
+            _Task("cleanup", "cleanup", self.cleanup, lambda r: CLEAN_S, 30.0, 3 * 3600),
+        ]
+
+    async def _run_task(self, t: _Task) -> None:
+        """One job forever: wait its first delay, run it in a thread, record the outcome, wait its next delay (a failure backs off, up to 15 minutes). Never exits except on cancel."""
+        await asyncio.sleep(t.first_delay)
         while True:
-            now_m = _time.monotonic()
+            delay = QUOTE_RETRY_S
             try:
-                if now_m >= due["quotes"]:
-                    r = await asyncio.to_thread(self.poll_quotes)
-                    due["quotes"] = now_m + (self._quote_interval(self._clock()) if r["ok"] else QUOTE_RETRY_S)
-                if now_m >= due["news"]:
-                    r = await asyncio.to_thread(self.poll_news)
-                    due["news"] = now_m + (self._news_interval(self._clock()) if r["ok"] else QUOTE_RETRY_S)
-                if now_m >= due["calendar"]:
-                    r = await asyncio.to_thread(self.poll_calendar)
-                    feed_ok = "feed" in r and "errors" not in r["feed"]
-                    due["calendar"] = now_m + (CAL_S if feed_ok else CAL_RETRY_S)
-                if now_m >= due["gift"] and any(s.source == "nseix" for s in self.symbols):
-                    r3 = await asyncio.to_thread(self.poll_gift)
-                    due["gift"] = now_m + (QUOTE_FAST_S if r3.get("ok") and expected_open(BY_KEY["GIFT"], self._clock()) else QUOTE_SLOW_S if r3.get("ok") else QUOTE_RETRY_S)
-                if now_m >= due["clean"]:
-                    await asyncio.to_thread(self.cleanup)
-                    due["clean"] = now_m + CLEAN_S
-                if now_m >= due["bq"]:
-                    r2 = await asyncio.to_thread(self.poll_biquote)
-                    due["bq"] = now_m + (BQ_S if "error" not in r2 else CAL_RETRY_S)
-                if now_m >= due["local"]:
-                    await asyncio.to_thread(self.poll_local_calendar)
-                    due["local"] = now_m + 300
+                result = await asyncio.wait_for(asyncio.to_thread(t.fn), timeout=TASK_TIMEOUT_S)
+                ok = "error" not in result and result.get("ok", True) is not False
+                self._fails[t.name] = 0 if ok else self._fails.get(t.name, 0) + 1
+                delay = t.next_delay(result)
             except asyncio.CancelledError:
                 raise
-            except Exception:  # noqa: BLE001 - the loop must survive anything
-                logger.exception("global_markets_loop_failed")
-                due = {k: now_m + QUOTE_RETRY_S for k in due}
-            await asyncio.sleep(15)
+            except Exception as e:  # noqa: BLE001 - one job must never stop the service
+                self._fails[t.name] = self._fails.get(t.name, 0) + 1
+                self._last_error[t.name] = f"{type(e).__name__}: {str(e)[:120]}"
+                logger.exception("global_markets_task_failed", extra={"task": t.name})
+            n = self._fails.get(t.name, 0)
+            if n > 0:
+                delay = min(max(delay, QUOTE_RETRY_S) * 2 ** (n - 1), MAX_BACKOFF_S)
+            await asyncio.sleep(delay)
+
+    def health(self) -> dict[str, Any]:
+        """Whether each job has succeeded recently: ok, stale (no success within its allowance), failing (three failures in a row) or starting. Also the database size and row counts."""
+        now = self._clock()
+        out: list[dict[str, Any]] = []
+        if not self.enabled:  # switched off in the settings: nothing is expected to run
+            return {"status": "disabled", "tasks": [], "database": {"bytes": self.store.size_bytes(), **self.store.counts()}, "retention": {}}
+        for t in self._tasks():
+            if not t.enabled:
+                continue
+            ok_run, last = self.store.last_run(t.kind, True), self.store.last_run(t.kind)
+            age = None if ok_run is None else max(0.0, now.timestamp() - ok_run["at_ms"] / 1000)
+            fails = self._fails.get(t.name, 0)
+            if fails >= 3:
+                status = "failing"
+            elif t.stale_after is None:
+                status = "ok"
+            elif age is None:
+                status = "starting" if (self._started_at is not None and now.timestamp() - self._started_at < 600) else "stale"
+            else:
+                status = "ok" if age <= t.stale_after else "stale"
+            detail = last["detail"] if last is not None and not last["ok"] else None
+            out.append({"task": t.name, "status": status, "last_ok_age_s": None if age is None else round(age), "consecutive_failures": fails, "last_error": self._last_error.get(t.name) or (detail.get("error") if isinstance(detail, dict) else None) if status != "ok" else None})
+        bad = [x for x in out if x["status"] in ("stale", "failing")]
+        return {"status": "degraded" if bad else "ok", "tasks": out, "database": {"bytes": self.store.size_bytes(), **self.store.counts()}, "retention": {"bars_days": BARS_KEEP_D, "news_hours": NEWS_KEEP_H, "events": "days that have passed"}}
 
     def start(self) -> None:
         if self.enabled and self._task is None:
-            self._task = asyncio.create_task(self._loop())
+            self._started_at = _time.time()
+            self._tasks_running = [asyncio.create_task(self._run_task(t), name=f"global-{t.name}") for t in self._tasks() if t.enabled]
+            self._task = asyncio.create_task(self._supervise())
+
+    async def _supervise(self) -> None:
+        """Restart any job loop that has died for a reason nothing else caught (they are meant to run forever)."""
+        while True:
+            await asyncio.sleep(60)
+            for i, task in enumerate(self._tasks_running):
+                if task.done() and not task.cancelled():
+                    logger.error("global_markets_task_died_restarting", extra={"task": task.get_name(), "error": repr(task.exception())})
+                    t = next((x for x in self._tasks() if f"global-{x.name}" == task.get_name()), None)
+                    if t is not None:
+                        self._tasks_running[i] = asyncio.create_task(self._run_task(t), name=task.get_name())
 
     async def stop(self) -> None:
         if self._task is not None:
-            self._task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._task
+            for t in [self._task, *self._tasks_running]:
+                t.cancel()
+            for t in [self._task, *self._tasks_running]:
+                with contextlib.suppress(asyncio.CancelledError):
+                    await t
             self._task = None
+            self._tasks_running = []

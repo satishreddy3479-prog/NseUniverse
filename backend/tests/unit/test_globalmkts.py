@@ -6,6 +6,7 @@ sampled; three RSS feeds trimmed to their first items; the whole Forex Factory w
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -588,6 +589,89 @@ def test_prune_removes_the_revisions_of_deleted_events_and_leaves_bars_alone(tmp
     keep = base | {"id": "x:2", "date_ist": "2026-11-16"}
     s.store.upsert_events([keep], t0)
     out = s.store.prune("2026-11-16", 0)
-    assert out == {"events": 1, "revisions": 1, "news": 0}
+    assert out == {"events": 1, "revisions": 1, "news": 0, "bars": 0}  # no bar cut-off given: bars are not touched
     assert [e["id"] for e in s.store.events_between(0, 4_000_000_000_000)] == ["x:2"]
     assert s.store.bar_counts() == bars  # price bars are not deleted by this clean-up
+
+
+# ------------------------------------------------------------------ retention of price bars, health and robustness
+def test_price_bars_older_than_seven_days_are_deleted_and_the_latest_quote_stays(tmp_path: Path) -> None:
+    now = datetime(2026, 11, 22, 12, 0, tzinfo=UTC)
+    s, _ = service(tmp_path, now=SUNDAY_EVENING)
+    s.poll_quotes()  # bars of 12-13 Nov
+    total = sum(s.store.bar_counts().values())
+    latest = s.store.latest_all()
+    s._clock = lambda: now  # noqa: SLF001  - nine days after the last bar
+    res = s.cleanup()
+    assert res["bars"] == total and sum(s.store.bar_counts().values()) == 0
+    assert s.store.latest_all() == latest  # the board still has its last quotes, aged
+    s._clock = lambda: datetime(2026, 11, 15, 20, 0, tzinfo=UTC)  # noqa: SLF001 - two days after the bars: all within seven days
+    s.poll_quotes()
+    kept = sum(s.store.bar_counts().values())
+    assert kept > 0 and s.cleanup()["bars"] == 0 and sum(s.store.bar_counts().values()) == kept
+
+
+def test_health_says_ok_stale_or_failing_per_job_with_the_database_size(tmp_path: Path) -> None:
+    s, _ = service(tmp_path, now=SUNDAY_EVENING)
+    h = s.health()
+    assert h["status"] == "degraded" and {x["task"] for x in h["tasks"]} == {"quotes", "news", "calendar", "biquote", "local", "cleanup"}  # nothing has run, and the service has not been started
+    s.poll_quotes()
+    s.poll_news()
+    s.poll_calendar()
+    s.cleanup()
+    h = s.health()
+    assert h["status"] == "ok" and all(x["status"] == "ok" for x in h["tasks"]) and h["database"]["bytes"] > 0 and h["database"]["bars"] > 0
+    assert h["retention"] == {"bars_days": 7, "news_hours": 48, "events": "days that have passed"}
+    s._clock = lambda: SUNDAY_EVENING + timedelta(hours=1)  # noqa: SLF001
+    stale = {x["task"]: x["status"] for x in s.health()["tasks"]}
+    assert stale["quotes"] == "stale" and stale["news"] == "stale" and stale["calendar"] == "ok"  # 20 and 40 minute allowances, a 13 hour one for the calendar
+    s._fails["news"] = 3  # noqa: SLF001
+    assert next(x for x in s.health()["tasks"] if x["task"] == "news")["status"] == "failing"
+
+
+def test_a_job_that_raises_does_not_stop_the_others_and_backs_off(tmp_path: Path) -> None:
+    s, _ = service(tmp_path, now=SUNDAY_EVENING)
+    ran: list[str] = []
+
+    def boom() -> dict[str, object]:
+        ran.append("boom")
+        raise RuntimeError("disk is full")
+
+    def fine() -> dict[str, object]:
+        ran.append("fine")
+        return {"ok": True}
+
+    from app.globalmkts import service as svc_mod
+
+    t_bad = svc_mod._Task("bad", "x", boom, lambda r: 0.0, 0.0, None)  # noqa: SLF001
+    t_ok = svc_mod._Task("good", "y", fine, lambda r: 0.01, 0.0, None)  # noqa: SLF001
+
+    async def go() -> None:
+        tasks = [asyncio.create_task(s._run_task(t)) for t in (t_bad, t_ok)]  # noqa: SLF001
+        await asyncio.sleep(0.5)
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    asyncio.run(go())
+    assert ran.count("boom") == 1  # backed off: the failing job is not retried at once
+    assert ran.count("fine") >= 3 and s._fails["bad"] == 1 and s._fails["good"] == 0  # noqa: SLF001
+    assert "disk is full" in s._last_error["bad"]  # noqa: SLF001
+
+
+def test_a_damaged_database_file_is_moved_aside_and_a_fresh_one_started(tmp_path: Path) -> None:
+    (tmp_path / "global.sqlite3").write_bytes(b"this is not a sqlite file" * 50)
+    store = GlobalStore(tmp_path)
+    assert store.counts() == {"bars": 0, "events": 0, "news": 0, "latest": 0}
+    assert [p.name for p in tmp_path.glob("global.sqlite3.corrupt-*")]  # kept, not deleted
+
+
+def test_the_api_serves_health_and_the_alert_list_names_a_stale_job(tmp_path: Path) -> None:
+    app = make_app(tmp_path)
+    with TestClient(app) as c:
+        svc, _ = service(tmp_path / "g", now=SUNDAY_EVENING)
+        app.state.globalmkts = svc
+        h = c.get("/api/global/health").json()
+        assert h["status"] == "degraded" and h["database"]["bytes"] >= 0
+        alerts = c.get("/api/ops/alerts").json()["alerts"]
+        assert any(a["key"] == "global-quotes" and "stale" in a["text"] for a in alerts)
