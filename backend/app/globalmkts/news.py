@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import html
 import re
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET  # noqa: S405 - feeds of fixed, named publishers; no entity expansion is enabled in the standard parser
 from dataclasses import dataclass
@@ -46,6 +47,54 @@ def http_get(url: str, timeout: float = 20.0) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/xml,application/json,text/xml,*/*"})  # noqa: S310 - https URLs from the list above
     with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310
         return bytes(r.read())
+
+
+class NotModified(Exception):
+    """The publisher answered 304: the feed is unchanged since the validators we sent."""
+
+
+Validators = dict[str, str]
+
+
+def http_get_cond(url: str, validators: Validators | None = None, timeout: float = 20.0) -> tuple[bytes | None, Validators]:
+    """Like ``http_get`` but sends the feed's last ETag / Last-Modified so an unchanged feed costs one tiny response. Returns (None, validators) when unchanged."""
+    headers = {"User-Agent": USER_AGENT, "Accept": "application/xml,application/json,text/xml,*/*"}
+    if validators and validators.get("etag"):
+        headers["If-None-Match"] = validators["etag"]
+    if validators and validators.get("modified"):
+        headers["If-Modified-Since"] = validators["modified"]
+    req = urllib.request.Request(url, headers=headers)  # noqa: S310 - https URLs from the list above
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310
+            new: Validators = {}
+            if r.headers.get("ETag"):
+                new["etag"] = r.headers["ETag"]
+            if r.headers.get("Last-Modified"):
+                new["modified"] = r.headers["Last-Modified"]
+            return bytes(r.read()), new
+    except urllib.error.HTTPError as e:
+        if e.code == 304:
+            return None, validators or {}
+        raise
+
+
+# What a headline is about, from words in its title and summary (shown as chips; "market-moving" means at least one of these).
+TOPICS: list[tuple[str, re.Pattern[str]]] = [
+    ("NIFTY", re.compile(r"\b(nifty|sensex|bank nifty|dalal street)\b", re.I)),
+    ("RBI", re.compile(r"\b(rbi|reserve bank of india|repo rate|mpc)\b", re.I)),
+    ("Fed", re.compile(r"\b(fed|federal reserve|fomc|powell|warsh)\b", re.I)),
+    ("Crude", re.compile(r"\b(crude|brent|opec|oil prices?)\b", re.I)),
+    ("Gold", re.compile(r"\b(gold|silver)\b", re.I)),
+    ("Rupee", re.compile(r"\b(rupee|usd/inr|dollar index)\b", re.I)),
+    ("Inflation", re.compile(r"\b(inflation|cpi|wpi|gdp)\b", re.I)),
+    ("Earnings", re.compile(r"\b(q[1-4] (results|earnings)|quarterly results|earnings)\b", re.I)),
+    ("FII", re.compile(r"\b(fii|fpi|dii|foreign (institutional|portfolio))\b", re.I)),
+]
+
+
+def topics(title: str, summary: str = "") -> list[str]:
+    text = f"{title} {summary}"
+    return [name for name, rx in TOPICS if rx.search(text)]
 
 
 _TAG = re.compile(r"<[^>]+>")

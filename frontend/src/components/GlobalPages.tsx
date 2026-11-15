@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, type CalEvent, type GlobalItem, type NewsItem } from "../lib/api";
 import { fmtAge, MISSING } from "../lib/format";
@@ -201,7 +201,9 @@ export function CalendarBody() {
   );
 }
 
-function NewsList({ title, items }: { title: string; items: NewsItem[] }) {
+const SEEN_KEY = "newsSeenAt";
+
+function NewsList({ title, items, since }: { title: string; items: NewsItem[]; since: number | null }) {
   return (
     <section aria-label={title} className="overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate">
       <h2 className="border-b border-rule bg-slate-2 px-3 py-2 text-sm font-semibold">{title}</h2>
@@ -209,11 +211,15 @@ function NewsList({ title, items }: { title: string; items: NewsItem[] }) {
         <ul>
           {items.map((n) => (
             <li key={n.id} className="border-t border-rule px-3 py-2.5 first:border-t-0">
-              <a href={n.link} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold hover:text-brass hover:underline">{n.title}</a>
+              <a href={n.link} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold hover:text-brass hover:underline">
+                {since != null && new Date(n.fetched).getTime() > since && <span className="mr-1.5 rounded-sm bg-brass px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase text-slate">New</span>}
+                {n.title}
+              </a>
               {n.summary && <p className="mt-0.5 line-clamp-2 text-xs text-muted">{n.summary}</p>}
               <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted">
                 <span className="rounded-full border border-rule px-2 py-0.5">{n.source}</span>
                 <span>{n.section}</span><span>· {fmtAge(n.age_min * 60)}</span>
+                {n.topics.map((t) => <span key={t} className="rounded-full bg-brass/15 px-2 py-0.5 text-brass">{t}</span>)}
               </div>
             </li>
           ))}
@@ -225,17 +231,32 @@ function NewsList({ title, items }: { title: string; items: NewsItem[] }) {
 
 /** Indian and global headlines from the publishers' public RSS feeds: headline, a short summary and a link, nothing more. */
 export function NewsBody() {
-  const q = useQuery({ queryKey: ["news"], queryFn: api.news, refetchInterval: 120_000, retry: false });
+  const q = useQuery({ queryKey: ["news"], queryFn: api.news, refetchInterval: 60_000, retry: false });
+  // "New" = stored after the page was last opened (kept in this browser), so items that arrive while it is open are marked too; null on a first visit
+  const since = useRef<number | null>((() => { const v = Number(localStorage.getItem(SEEN_KEY)); return v > 0 ? v : null; })());
+  useEffect(() => {
+    const save = () => localStorage.setItem(SEEN_KEY, String(Date.now()));
+    const hide = () => { if (document.visibilityState === "hidden") save(); };
+    document.addEventListener("visibilitychange", hide);
+    return () => { document.removeEventListener("visibilitychange", hide); save(); };
+  }, []);
+  const [moving, setMoving] = useState(false);
   const age = useMemo(() => (q.data?.meta.last_poll_ok ? (Date.now() - new Date(q.data.meta.last_poll_ok).getTime()) / 1000 : null), [q.data]);
   if (q.isLoading) return <Loading />;
   if (q.isError || !q.data) return <Problem what="The news" e={q.error} />;
   const n = q.data;
+  const keep = (l: NewsItem[]) => (moving ? l.filter((i) => i.topics.length > 0) : l);
+  const fresh = [...n.india, ...n.global].filter((i) => since.current != null && new Date(i.fetched).getTime() > since.current).length;
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted" role="status">{since.current == null ? "First visit: nothing is marked new yet." : fresh > 0 ? `${fresh} new since you last looked` : "Nothing new since you last looked"}</p>
+        <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={moving} onChange={(e) => setMoving(e.target.checked)} className="accent-[var(--brass)]" /> Market-moving topics only</label>
+      </div>
       {n.meta.stale && <p role="status" className="rounded-sm border border-warn/50 p-2 text-sm text-warn">{age == null ? "No headlines have been fetched yet." : `The feeds were last read ${fmtAge(age)}.`} Headlines below may be out of date.</p>}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <NewsList title="India" items={n.india} />
-        <NewsList title="Global" items={n.global} />
+        <NewsList title="India" items={keep(n.india)} since={since.current} />
+        <NewsList title="Global" items={keep(n.global)} since={since.current} />
       </div>
       <p className="text-xs text-muted">{n.meta.note} Sources: {n.meta.sources.join(", ")}. Moneycontrol is not included: it blocks automated reading.</p>
     </div>

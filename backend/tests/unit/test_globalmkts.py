@@ -352,3 +352,44 @@ def test_a_broken_local_file_is_reported_and_the_other_sources_stay(tmp_path: Pa
     assert r and "error" in r
     v = s.calendar_view()
     assert v["sources"][-1]["last_error"] and sum(len(x["events"]) for x in v["sections"]) > 0
+
+
+# ------------------------------------------------------------------ fresher news
+def test_topics_are_found_by_whole_words_in_the_headline_and_summary() -> None:
+    assert news.topics("Sensex, Nifty fall as Fed signals pause", "") == ["NIFTY", "Fed"]
+    assert news.topics("RBI keeps repo rate unchanged", "Rupee steady, crude lower") == ["RBI", "Crude", "Rupee"]
+    assert news.topics("Federation of traders meets", "A confederation of shops, Fedex parcels") == []  # "fed" inside another word does not count
+    assert news.topics("Local football results", "") == []
+
+
+def test_every_real_headline_in_the_fixtures_has_a_topics_list_and_a_fetch_time(tmp_path: Path) -> None:
+    s, _ = service(tmp_path)
+    s.poll_news()
+    v = s.news_view()
+    for it in v["india"] + v["global"]:
+        assert isinstance(it["topics"], list) and it["fetched"].startswith("2026-11-15T18:30")
+
+
+def test_an_unchanged_feed_is_not_parsed_again_and_the_validators_are_remembered(tmp_path: Path) -> None:
+    s, _ = service(tmp_path)
+    calls: list[dict[str, str] | None] = []
+
+    def cond(url: str, validators: dict[str, str] | None) -> tuple[bytes | None, dict[str, str]]:
+        calls.append(validators)
+        if validators:
+            return None, validators
+        return (FIX / "bbc_business.xml").read_bytes(), {"etag": '"abc"'}
+
+    s._cond = cond  # noqa: SLF001
+    first = s.poll_news()
+    assert first["added"] > 0 and calls and all(c is None for c in calls)
+    second = s.poll_news()
+    assert second["added"] == 0 and all(v == {"unchanged": True} for v in second["feeds"].values())
+    assert all(c == {"etag": '"abc"'} for c in calls[len(calls) // 2 :])  # the second round sent the ETag each feed had given
+
+
+def test_news_is_polled_every_two_minutes_in_indian_market_hours_and_every_ten_otherwise(tmp_path: Path) -> None:
+    s, _ = service(tmp_path)
+    assert s._news_interval(datetime(2026, 11, 16, 4, 30, tzinfo=UTC)) == 120.0  # Monday 10:00 IST  # noqa: SLF001
+    assert s._news_interval(datetime(2026, 11, 16, 11, 0, tzinfo=UTC)) == 600.0  # 16:30 IST  # noqa: SLF001
+    assert s._news_interval(datetime(2026, 11, 15, 5, 0, tzinfo=UTC)) == 600.0  # Sunday  # noqa: SLF001

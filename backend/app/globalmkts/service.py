@@ -24,11 +24,12 @@ from app.prediction.events import REFERENCE
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 QUOTE_FAST_S, QUOTE_SLOW_S, QUOTE_RETRY_S = 60.0, 300.0, 120.0
-NEWS_S, CAL_S, CAL_RETRY_S = 600.0, 6 * 3600.0, 1800.0
+NEWS_S, NEWS_FAST_S, CAL_S, CAL_RETRY_S = 600.0, 120.0, 6 * 3600.0, 1800.0  # news: every 2 minutes in Indian market hours, every 10 otherwise
 FULL_REFRESH_S = 6 * 3600.0
 NSE_WINDOW = (time(9, 0), time(15, 45))  # IST: polled every minute then, every five minutes otherwise
 SPARK_POINTS = 48
 Fetch = Callable[[str], bytes]
+CondFetch = Callable[[str, news.Validators | None], tuple[bytes | None, news.Validators]]
 
 
 def _spark(points: list[tuple[int, float]]) -> list[float]:
@@ -55,6 +56,8 @@ class GlobalService:
         self.store, self.enabled, self._download, self._fetch, self._clock = store, enabled, downloader, fetch, clock
         self.symbols = symbols if symbols is not None else list(SYMBOLS)
         self.official_path = official_path
+        self._cond: CondFetch = news.http_get_cond if fetch is news.http_get else (lambda url, _v: (fetch(url), {}))  # a fake fetch (tests) has no validators
+        self._validators: dict[str, news.Validators] = {}
         self._task: asyncio.Task[None] | None = None
         self._local_mtime: float | None = None
         self._full_at: float | None = None  # monotonic time of the last five-day download
@@ -94,7 +97,12 @@ class GlobalService:
         for feed in news.FEEDS:
             label = f"{feed.source} · {feed.section}"
             try:
-                items, skipped = news.parse_rss(self._fetch(feed.url), feed)
+                data, valid = self._cond(feed.url, self._validators.get(feed.url))
+                if data is None:
+                    results[label] = {"unchanged": True}
+                    continue
+                items, skipped = news.parse_rss(data, feed)
+                self._validators[feed.url] = valid
                 added += self.store.add_news(items, now)
                 results[label] = {"items": len(items), "skipped": skipped}
             except Exception as e:  # noqa: BLE001 - one feed failing must not stop the others
@@ -243,7 +251,10 @@ class GlobalService:
 
         def shape(r: dict[str, Any]) -> dict[str, Any]:
             when = datetime.fromtimestamp(r["published"] / 1000, UTC)
-            return {"id": r["id"], "title": r["title"], "link": r["link"], "summary": r["summary"], "source": r["source"], "section": r["section"], "published": when.isoformat(), "age_min": max(0, round((now - when).total_seconds() / 60))}
+            return {
+                "id": r["id"], "title": r["title"], "link": r["link"], "summary": r["summary"], "source": r["source"], "section": r["section"], "published": when.isoformat(),
+                "age_min": max(0, round((now - when).total_seconds() / 60)), "fetched": datetime.fromtimestamp(r["fetched"] / 1000, UTC).isoformat(), "topics": news.topics(r["title"], r["summary"]),
+            }  # fmt: skip
 
         ok, last = self.store.last_run("news", True), self.store.last_run("news")
         polled = None if ok is None else datetime.fromtimestamp(ok["at_ms"] / 1000, UTC)
@@ -259,6 +270,10 @@ class GlobalService:
         t = now.astimezone(IST)
         return QUOTE_FAST_S if t.weekday() < 5 and NSE_WINDOW[0] <= t.time() < NSE_WINDOW[1] else QUOTE_SLOW_S
 
+    def _news_interval(self, now: datetime) -> float:
+        t = now.astimezone(IST)
+        return NEWS_FAST_S if t.weekday() < 5 and NSE_WINDOW[0] <= t.time() < NSE_WINDOW[1] else NEWS_S
+
     async def _loop(self) -> None:
         due = {"quotes": 0.0, "news": 0.0, "calendar": 0.0, "local": 0.0}
         while True:
@@ -269,7 +284,7 @@ class GlobalService:
                     due["quotes"] = now_m + (self._quote_interval(self._clock()) if r["ok"] else QUOTE_RETRY_S)
                 if now_m >= due["news"]:
                     r = await asyncio.to_thread(self.poll_news)
-                    due["news"] = now_m + (NEWS_S if r["ok"] else QUOTE_RETRY_S)
+                    due["news"] = now_m + (self._news_interval(self._clock()) if r["ok"] else QUOTE_RETRY_S)
                 if now_m >= due["calendar"]:
                     r = await asyncio.to_thread(self.poll_calendar)
                     feed_ok = "feed" in r and "errors" not in r["feed"]

@@ -125,7 +125,7 @@ export interface CalendarView {
   sections: { key: string; title: string; events: CalEvent[] }[];
   sources: { name: string; last_ok: string | null; last_error: unknown }[];
 }
-export interface NewsItem { id: string; title: string; link: string; summary: string; source: string; section: string; published: string; age_min: number }
+export interface NewsItem { id: string; title: string; link: string; summary: string; source: string; section: string; published: string; age_min: number; fetched: string; topics: string[] }
 export interface NewsView {
   generated_at: string; india: NewsItem[]; global: NewsItem[];
   meta: { last_poll_ok: string | null; stale: boolean; last_error: unknown; sources: string[]; note: string };

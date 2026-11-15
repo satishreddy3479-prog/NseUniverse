@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
@@ -37,7 +38,8 @@ const calendar = {
 };
 const news = {
   generated_at: "2026-11-15T19:00:00+00:00",
-  india: [{ id: "i1", title: "Sensex ends higher", link: "https://economictimes.indiatimes.com/a", summary: "Banks led.", source: "Economic Times", section: "Markets", published: "2026-11-15T18:00:00+00:00", age_min: 60 }],
+  india: [{ id: "i1", title: "Sensex ends higher", link: "https://economictimes.indiatimes.com/a", summary: "Banks led.", source: "Economic Times", section: "Markets", published: "2026-11-15T18:00:00+00:00", age_min: 60, fetched: "2026-11-15T18:05:00+00:00", topics: ["NIFTY"] },
+    { id: "i2", title: "Local fair opens", link: "https://economictimes.indiatimes.com/b", summary: "", source: "Economic Times", section: "Top stories", published: "2026-11-15T17:00:00+00:00", age_min: 120, fetched: "2026-11-15T17:05:00+00:00", topics: [] }],
   global: [], meta: { last_poll_ok: "2026-11-15T18:50:00+00:00", stale: false, last_error: null, sources: ["BBC News", "CNBC", "Economic Times"], note: "Headlines and the short summary." },
 };
 
@@ -104,7 +106,30 @@ describe("news page", () => {
     const link = await screen.findByRole("link", { name: "Sensex ends higher" });
     expect(link).toHaveAttribute("href", "https://economictimes.indiatimes.com/a");
     expect(link).toHaveAttribute("rel", expect.stringContaining("noopener"));
-    expect(screen.getByText("Economic Times", { selector: "span" })).toBeInTheDocument();
+    expect(screen.getAllByText("Economic Times", { selector: "span" }).length).toBe(2);
     expect(within(screen.getByRole("region", { name: "Global" })).getByText("No headlines stored yet.")).toBeInTheDocument();
+  });
+});
+
+describe("news freshness", () => {
+  it("marks headlines stored after the last visit as new, shows topic chips and can keep only market-moving topics", async () => {
+    mockApi();
+    localStorage.setItem("newsSeenAt", String(new Date("2026-11-15T17:30:00Z").getTime()));
+    renderAt("/tools/market-news");
+    const link = await screen.findByRole("link", { name: /Sensex ends higher/ });
+    expect(within(link).getByText("New")).toBeInTheDocument();
+    expect(within(screen.getByRole("link", { name: /Local fair opens/ })).queryByText("New")).toBeNull(); // stored before the last visit
+    expect(screen.getByText("1 new since you last looked")).toBeInTheDocument();
+    expect(within(link.closest("li")!).getByText("NIFTY")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("checkbox", { name: /Market-moving topics only/ }));
+    expect(screen.queryByRole("link", { name: /Local fair opens/ })).toBeNull();
+    expect(screen.getByRole("link", { name: /Sensex ends higher/ })).toBeInTheDocument();
+  });
+
+  it("marks nothing as new on a first visit and says so", async () => {
+    mockApi();
+    renderAt("/tools/market-news");
+    expect(await screen.findByText("First visit: nothing is marked new yet.")).toBeInTheDocument();
+    expect(screen.queryByText("New")).toBeNull();
   });
 });
