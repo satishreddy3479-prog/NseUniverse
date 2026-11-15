@@ -10,14 +10,21 @@ import contextlib
 import logging
 import time as _time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.globalmkts import calendar_feed, news, nseix
-from app.globalmkts.quotes import Bar, Downloader, bars_from_frame, build_quote, yahoo_download
+from app.globalmkts.quotes import (
+    Bar,
+    Downloader,
+    Quote,
+    bars_from_frame,
+    build_quote,
+    yahoo_download,
+)
 from app.globalmkts.store import GlobalStore, ms
 from app.globalmkts.symbols import BY_KEY, GROUPS, SYMBOLS, GSymbol, chart_url, expected_open
 from app.prediction.events import REFERENCE
@@ -36,6 +43,17 @@ NSE_WINDOW = (time(9, 0), time(15, 45))  # IST: polled every minute then, every 
 SPARK_POINTS = 48
 Fetch = Callable[[str], bytes]
 CondFetch = Callable[[str, news.Validators | None], tuple[bytes | None, news.Validators]]
+
+
+def _keep_reference(q: Quote, row: dict[str, Any] | None) -> Quote:
+    """A poll of today's bars alone (a cash index on a weekend, a restart in mid-session) cannot see the previous session, so it finds no reference close. The stored quote of the
+    same session already has one, and it does not change within a session: keep it instead of replacing a change figure with nothing."""
+    if q.prev_close is not None or row is None or row["session"] != q.session or row["prev_close"] is None:
+        return q
+    ref = float(row["prev_close"])
+    change = q.price - ref
+    prev_ts = None if row["prev_ts"] is None else datetime.fromtimestamp(row["prev_ts"] / 1000, UTC)
+    return replace(q, prev_close=ref, prev_ts=prev_ts, change=change, change_pct=change / ref * 100 if ref > 0 else None)
 
 
 def _spark(points: list[tuple[int, float]]) -> list[float]:
@@ -98,6 +116,7 @@ class GlobalService:
             self.store.add_run("quotes", now, False, failure)
             return {"ok": False, **failure}
         ok, missing, new_bars = 0, [], 0
+        stored = self.store.latest_all()
         for spec in (s for s in self.symbols if s.source == "yahoo"):
             fresh = bars_from_frame(frame, spec.yahoo)
             older = [Bar(datetime.fromtimestamp(t / 1000, UTC), p) for t, p in self.store.bars_before(spec.key, ms(fresh[0].ts))] if fresh else []
@@ -105,6 +124,7 @@ class GlobalService:
             if q is None:
                 missing.append(spec.key)
                 continue
+            q = _keep_reference(q, stored.get(spec.key))
             new_bars += self.store.save_quote(q, now)
             ok += 1
         detail: dict[str, Any] = {"symbols": ok, "missing": missing, "new_bars": new_bars, "ms": round((_time.perf_counter() - t0) * 1000)}

@@ -675,3 +675,18 @@ def test_the_api_serves_health_and_the_alert_list_names_a_stale_job(tmp_path: Pa
         assert h["status"] == "degraded" and h["database"]["bytes"] >= 0
         alerts = c.get("/api/ops/alerts").json()["alerts"]
         assert any(a["key"] == "global-quotes" and "stale" in a["text"] for a in alerts)
+
+
+def test_a_poll_of_todays_bars_alone_keeps_the_stored_reference_close(tmp_path: Path) -> None:
+    """A cash index on a weekend: the one-day download holds only Friday, so the previous session is not in it. The change must not turn into "no reference"."""
+    s, _ = service(tmp_path)
+    s.poll_quotes()  # the five-day poll: both sessions
+    before = s.store.latest_all()["SPX"]
+    assert before["prev_close"] == pytest.approx(7591.85986328125) and before["change"] == pytest.approx(-30.98974609375)
+    frame = yahoo_frame()
+    today_only = frame[frame.index >= pd.Timestamp("2026-11-13T00:00:00Z")]
+    s._download = lambda tickers, period: today_only  # noqa: SLF001
+    again = s.poll_quotes()
+    after = s.store.latest_all()["SPX"]
+    assert again["ok"] and after["prev_close"] == before["prev_close"] and after["change"] == pytest.approx(before["change"])
+    assert next(i for g in s.overview()["groups"] for i in g["items"] if i["key"] == "SPX")["change"] == pytest.approx(-30.98974609375)
