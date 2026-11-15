@@ -161,3 +161,7 @@ Measured on the server: data 47-50 MB, growth about 7.5 MB/day, 12 GB free; at t
 
 ## Data clean-up page (30 Oct 2026)
 `/cleanup` shows what the server stores and what could be removed, measured from the real files and databases. Removable: raw broker responses and normalized snapshot files older than their approved days, per-contract observation rows older than the last two sessions, and regenerable files (old exports, stray `.tmp`). Each removal is limited to days whose verified archive covers it (the archive must hold at least as many contract rows as the database) and needs review plus an acknowledgement. Never offered: intraday feature rows and scores (the model's training data), the forecast ledger, the archive and manifests, daily prices, flows, news, strategies. Today's data is shown but cannot be removed.
+
+
+## Global board store (`global.sqlite3`, D172)
+Tables: one-minute price bars of 20 symbols (about 1,400 a day for futures, fewer for cash indices; kept, not deleted, awaiting an approved retention), latest quote per symbol, run log, calendar events and revisions (deleted when their day has passed), news (deleted after 48 hours). The hourly clean-up logs the database size in its run record (`cleanup`).

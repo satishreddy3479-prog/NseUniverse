@@ -109,7 +109,7 @@ export interface HolidaysUpdate { coverage_to: string; source: string; holidays:
 export interface GlobalItem {
   key: string; name: string; unit: string; decimals: number; kind: string; core: boolean; yield: boolean;
   price: number | null; status: string; change?: number | null; change_pct?: number | null; bp?: number | null; prev_close?: number | null;
-  as_of?: string; age_s?: number; session?: string; spark?: number[];
+  as_of?: string; age_s?: number; session?: string; spark?: number[]; chart_url?: string; note?: string;
 }
 export interface GlobalOverview {
   generated_at: string; groups: { key: string; title: string; items: GlobalItem[] }[];

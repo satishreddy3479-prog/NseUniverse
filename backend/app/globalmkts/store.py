@@ -101,9 +101,11 @@ class GlobalStore:
         return d
 
     # ------------------------------------------------------------------ calendar
-    def upsert_events(self, events: list[dict[str, Any]], now: datetime) -> dict[str, int]:
+    def upsert_events(self, events: list[dict[str, Any]], now: datetime, min_date: str | None = None) -> dict[str, int]:
         """Insert new events and update the ones that changed (a moved time or a new forecast or actual is recorded as a revision)."""
         new = changed = same = 0
+        if min_date is not None:  # events of days that have passed are not kept (see prune)
+            events = [e for e in events if e["date_ist"] >= min_date]
         with self._lock, closing(self._conn()) as c, c:
             for e in events:
                 old = c.execute("SELECT * FROM events WHERE id=?", (e["id"],)).fetchone()
@@ -126,8 +128,10 @@ class GlobalStore:
             return [dict(r) for r in c.execute("SELECT * FROM events WHERE ts>=? AND ts<? ORDER BY ts, name", (start_ms, end_ms))]
 
     # ------------------------------------------------------------------ news
-    def add_news(self, items: list[dict[str, Any]], now: datetime) -> int:
+    def add_news(self, items: list[dict[str, Any]], now: datetime, min_published_ms: int | None = None) -> int:
         added = 0
+        if min_published_ms is not None:  # a feed still carries items older than the retention: they are not stored again after being cleaned
+            items = [n for n in items if n["published"] >= min_published_ms]
         with self._lock, closing(self._conn()) as c, c:
             for n in items:
                 cur = c.execute("INSERT OR IGNORE INTO news VALUES (?,?,?,?,?,?,?,?,?)", (n["id"], n["source"], n["region"], n["section"], n["title"], n["link"], n["summary"], n["published"], ms(now)))
@@ -137,3 +141,20 @@ class GlobalStore:
     def news(self, region: str, limit: int = 60) -> list[dict[str, Any]]:
         with self._lock, closing(self._conn()) as c:
             return [dict(r) for r in c.execute("SELECT * FROM news WHERE region=? ORDER BY published DESC LIMIT ?", (region, limit))]
+
+    # ------------------------------------------------------------------ clean-up
+    def prune(self, today_ist: str, news_before_ms: int) -> dict[str, int]:
+        """Delete the calendar events of days before ``today_ist`` (with their revisions) and the news published before ``news_before_ms``. Bars are not touched here."""
+        with self._lock, closing(self._conn()) as c, c:
+            ev = c.execute("DELETE FROM events WHERE date_ist < ?", (today_ist,)).rowcount
+            rev = c.execute("DELETE FROM event_revisions WHERE event_id NOT IN (SELECT id FROM events)").rowcount
+            nw = c.execute("DELETE FROM news WHERE published < ?", (news_before_ms,)).rowcount
+        return {"events": ev, "revisions": rev, "news": nw}
+
+    def size_bytes(self) -> int:
+        total = 0
+        for suffix in ("", "-wal", "-shm"):
+            p = Path(str(self.path) + suffix)
+            if p.exists():
+                total += p.stat().st_size
+        return total

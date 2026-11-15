@@ -11,8 +11,11 @@ import { expiries, status, summary } from "./fixtures";
 const overview = {
   generated_at: "2026-11-15T18:30:00+00:00",
   groups: [
+    { key: "india", title: "India pre-market", items: [
+      { key: "GIFT", name: "GIFT Nifty futures", unit: "", decimals: 2, kind: "gift", core: true, yield: false, price: 25266, change: 94.5, change_pct: 0.3754, prev_close: 25171.5, status: "closed", age_s: 100000, spark: [25200, 25266], chart_url: "https://www.nseix.com/get-quotes", note: "Near-month contract, expires 23 Nov 2026. NSE IX website feed (unofficial endpoint)." },
+    ] },
     { key: "us_futures", title: "US index futures", items: [
-      { key: "ES", name: "S&P 500 futures", unit: "pts", decimals: 2, kind: "future", core: true, yield: false, price: 7583, change: -33.25, change_pct: -0.4366, prev_close: 7616.25, status: "closed", age_s: purePast(), spark: [7600, 7590, 7583] },
+      { key: "ES", name: "S&P 500 futures", unit: "pts", decimals: 2, kind: "future", core: true, yield: false, price: 7583, change: -33.25, change_pct: -0.4366, prev_close: 7616.25, status: "closed", age_s: purePast(), spark: [7600, 7590, 7583], chart_url: "https://finance.yahoo.com/chart/ES%3DF" },
       { key: "NQ", name: "Nasdaq 100 futures", unit: "pts", decimals: 2, kind: "future", core: true, yield: false, price: null, status: "no data" },
     ] },
     { key: "rates_fx", title: "Rates, dollar and currency", items: [
@@ -174,5 +177,43 @@ describe("quick links in the Analyse menu", () => {
     a.unmount();
     render(ui("fno"));
     expect(screen.queryByTestId("quick-links")).toBeNull();
+  });
+});
+
+describe("global board chart links", () => {
+  it("every card links to its full chart at the original source in a new tab, and GIFT Nifty shows its contract and source", async () => {
+    mockApi();
+    renderAt("/tools/global-markets");
+    const es = await screen.findByRole("link", { name: "View chart of S&P 500 futures" });
+    expect(es).toHaveAttribute("href", "https://finance.yahoo.com/chart/ES%3DF");
+    expect(es).toHaveAttribute("target", "_blank");
+    expect(es).toHaveAttribute("rel", "noopener noreferrer");
+    const gift = screen.getByRole("link", { name: "View chart of GIFT Nifty futures" });
+    expect(gift).toHaveAttribute("href", "https://www.nseix.com/get-quotes");
+    const card = gift.closest("div")!;
+    expect(within(card).getByText("25,266.00")).toBeInTheDocument();
+    expect(within(card).getByText(/expires 23 Nov 2026/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "View chart of Nasdaq 100 futures" })).toBeNull(); // no link was given for a symbol without one
+  });
+});
+
+describe("calendar country filter", () => {
+  it("shows All, India or US events and the next-event card follows the filter", async () => {
+    mockApi();
+    renderAt("/tools/economic-calendar");
+    expect((await screen.findAllByText("CPI m/m")).length).toBeGreaterThan(0);
+    const group = screen.getByRole("group", { name: "Country" });
+    expect(within(group).getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(within(group).getByRole("button", { name: "India" }));
+    expect(screen.queryAllByText("CPI m/m")).toHaveLength(0); // a US event
+    expect(within(screen.getByRole("region", { name: "Tomorrow" })).getByText("WPI y/y")).toBeInTheDocument();
+    expect(screen.getByText("RBI Interest Rate Decision")).toBeInTheDocument();
+    const next = within(screen.getByRole("region", { name: "Next event" }));
+    expect(next.getByText("Next event · India")).toBeInTheDocument();
+    expect(next.getByText("WPI y/y")).toBeInTheDocument();
+    await userEvent.click(within(group).getByRole("button", { name: "US" }));
+    expect(screen.queryAllByText("WPI y/y")).toHaveLength(0);
+    expect(within(screen.getByRole("region", { name: "Today" })).getByText("CPI m/m")).toBeInTheDocument();
+    expect(screen.getByText("FOMC Meeting Minutes")).toBeInTheDocument();
   });
 });

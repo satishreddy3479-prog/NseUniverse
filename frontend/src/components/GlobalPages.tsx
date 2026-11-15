@@ -44,8 +44,8 @@ function Card({ it, selected, onPick }: { it: GlobalItem; selected: boolean; onP
   const d = it.decimals;
   const up = (it.change ?? 0) >= 0;
   return (
-    <button type="button" onClick={onPick} aria-pressed={selected} disabled={!has}
-      className={`flex flex-col gap-1 rounded-[var(--radius-panel)] border p-3 text-left transition-colors disabled:opacity-60 ${selected ? "border-brass bg-brass/10" : "border-rule bg-slate hover:border-muted"}`}>
+    <div className={`flex flex-col rounded-[var(--radius-panel)] border transition-colors ${selected ? "border-brass bg-brass/10" : "border-rule bg-slate hover:border-muted"}`}>
+    <button type="button" onClick={onPick} aria-pressed={selected} disabled={!has} className="flex flex-col gap-1 p-3 pb-2 text-left disabled:opacity-60">
       <span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold">{it.name}</span><StatusChip status={it.status} /></span>
       <span className="text-xl font-semibold tabular-nums">{has ? `${num(it.price as number, d)}${it.yield ? "%" : ""}` : MISSING}</span>
       <span className={`text-sm tabular-nums ${tone(it.change)}`}>
@@ -53,7 +53,13 @@ function Card({ it, selected, onPick }: { it: GlobalItem; selected: boolean; onP
       </span>
       {has && it.spark ? <Spark values={it.spark} up={up} /> : null}
       <span className="text-[11px] text-muted">{has ? `${it.status === "live" ? "Updated" : "Last price"} ${fmtAge(it.age_s)}` : "No price stored yet"}</span>
+      {it.note && <span className="text-[11px] text-muted">{it.note}</span>}
     </button>
+    {it.chart_url && (
+      <a href={it.chart_url} target="_blank" rel="noopener noreferrer" aria-label={`View chart of ${it.name}`}
+        className="mx-3 mb-3 inline-flex min-h-9 items-center justify-center rounded-sm border border-rule bg-slate-2 px-3 text-sm text-paper hover:border-brass hover:text-brass">View chart ↗</a>
+    )}
+    </div>
   );
 }
 
@@ -173,19 +179,27 @@ function EventRow({ e, now }: { e: CalEvent; now: number }) {
 /** High-impact events grouped by when, with no filters: the page only ever shows the three-star level. */
 export function CalendarBody() {
   const q = useQuery({ queryKey: ["calendar"], queryFn: api.calendar, refetchInterval: 60_000, retry: false });
+  const [who, setWho] = useState<"all" | "India" | "US">("all");
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t); }, []);
   if (q.isLoading) return <Loading />;
   if (q.isError || !q.data) return <Problem what="The calendar" e={q.error} />;
   const c = q.data;
-  const total = c.sections.reduce((n, s) => n + s.events.length, 0);
-  const nx = c.next;
+  const sections = c.sections.map((s) => ({ ...s, events: who === "all" ? s.events : s.events.filter((e) => e.country === who) }));
+  const total = sections.reduce((n, s) => n + s.events.length, 0);
+  const nx = sections.flatMap((s) => s.events).find((e) => e.state === "upcoming" && new Date(e.time_ist).getTime() >= now - 60_000) ?? null;
   return (
     <div className="flex flex-col gap-3">
       <QuickLinks />
+      <div role="group" aria-label="Country" className="flex flex-wrap items-center gap-2">
+        {([["all", "All"], ["India", "India"], ["US", "US"]] as const).map(([v, label]) => (
+          <button key={v} type="button" aria-pressed={who === v} onClick={() => setWho(v)}
+            className={`min-h-9 rounded-sm border px-3 text-sm ${who === v ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{label}</button>
+        ))}
+      </div>
       {nx && (
         <section aria-label="Next event" className="rounded-[var(--radius-panel)] border border-brass bg-brass/10 p-3">
-          <div className="text-xs uppercase tracking-wide text-muted">Next high-impact event</div>
+          <div className="text-xs uppercase tracking-wide text-muted">Next event{who === "all" ? "" : ` · ${who}`}</div>
           <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span className="text-lg font-semibold">{nx.name}</span>
             <span className="text-sm text-muted">{nx.country || "Global"} · {istDay(nx.time_ist)}{nx.all_day ? "" : `, ${istTime(nx.time_ist)} IST`}</span>
@@ -193,8 +207,8 @@ export function CalendarBody() {
           </div>
         </section>
       )}
-      {total === 0 && <p className="rounded-sm border border-rule bg-slate p-3 text-sm text-muted">No events are stored for this month yet.</p>}
-      {c.sections.map((s) => (
+      {total === 0 && <p className="rounded-sm border border-rule bg-slate p-3 text-sm text-muted">{who === "all" ? "No events are stored yet." : `No ${who} events are stored in the coming weeks.`}</p>}
+      {sections.map((s) => (
         <section key={s.key} aria-label={s.title} className="overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate">
           <h2 className="flex items-center justify-between border-b border-rule bg-slate-2 px-3 py-2 text-sm font-semibold">{s.title}<span className="text-xs font-normal text-muted">{s.events.length} {s.events.length === 1 ? "event" : "events"}</span></h2>
           {s.events.length === 0 ? <p className="px-3 py-3 text-sm text-muted">Nothing scheduled.</p> : (

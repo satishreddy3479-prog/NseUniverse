@@ -7,7 +7,7 @@ sampled; three RSS feeds trimmed to their first items; the whole Forex Factory w
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -16,11 +16,11 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from app.globalmkts import calendar_feed, news
+from app.globalmkts import calendar_feed, news, nseix
 from app.globalmkts.quotes import Bar, bars_from_frame, build_quote
 from app.globalmkts.service import GlobalService
 from app.globalmkts.store import GlobalStore
-from app.globalmkts.symbols import BY_KEY, BY_YAHOO, expected_open, session_key
+from app.globalmkts.symbols import BY_KEY, BY_YAHOO, chart_url, expected_open, session_key
 from tests.conftest import make_app
 
 FIX = Path(__file__).parent.parent / "fixtures" / "global"
@@ -123,7 +123,7 @@ def service(tmp_path: Path, frames: list[Any] | None = None, fetch: Any = None, 
         return frame
 
     def http(url: str) -> bytes:
-        name = {"1977021501": "et_markets.xml", "business": "bbc_business.xml", "10000664": "cnbc_finance.xml", "thisweek": "ff_thisweek.json", "biquote.io": "biquote_calendar.json"}
+        name = {"1977021501": "et_markets.xml", "business": "bbc_business.xml", "10000664": "cnbc_finance.xml", "thisweek": "ff_thisweek.json", "biquote.io": "biquote_calendar.json", "derivatives-watch": "nseix_derivatives_watch.json"}
         for k, f in name.items():
             if k in url:
                 return (FIX / f).read_bytes()
@@ -434,7 +434,7 @@ def test_biquote_values_carry_k_and_m_for_thousands_and_millions_and_bad_rows_ar
 
 def test_the_request_asks_for_india_and_us_at_medium_and_above_over_the_next_sixty_days() -> None:
     url = calendar_feed.bq_url(datetime(2026, 11, 15, 19, 0, tzinfo=UTC))
-    assert url == "https://biquote.io/api/calendar?from=2026-11-14&to=2027-01-14&countries=IN,US&importance=medium&limit=500"  # importance is a minimum: "high,medium" is rejected by the API
+    assert url == "https://biquote.io/api/calendar?from=2026-11-16&to=2027-01-14&countries=IN,US&importance=medium&limit=500"  # importance is a minimum: "high,medium" is rejected by the API
 
 
 def test_biquote_events_replace_the_same_release_from_the_official_list_and_forex_factory(tmp_path: Path) -> None:
@@ -484,3 +484,110 @@ def test_events_past_the_end_of_the_month_are_listed_under_coming_up(tmp_path: P
     assert [(e["name"], e["time_ist"][:16], e["previous"], e["forecast"], e["actual"]) for e in rbi] == [("RBI Interest Rate Decision", "2026-12-04T10:00", "5.50%", None, None)]
     assert any(e["name"] == "Fed Interest Rate Decision" and e["time_ist"].startswith("2026-12-10T00:30") for e in sec["later"])
     assert not any(e["time_ist"] > "2026-12-31" for x in sec.values() for e in x)  # nothing beyond the 45-day horizon
+
+
+# ------------------------------------------------------------------ GIFT Nifty (real NSE IX response captured 16 Nov 2026 01:50 IST)
+GIFT_NOW = datetime(2026, 11, 15, 20, 30, tzinfo=UTC)  # Monday 16 Nov 02:00 IST
+
+
+def test_gift_nifty_is_the_near_month_future_measured_from_the_exchange_previous_close() -> None:
+    got = nseix.gift_quote((FIX / "nseix_derivatives_watch.json").read_bytes(), GIFT_NOW, BY_KEY["GIFT"])
+    assert got is not None
+    q, expiry = got
+    assert expiry == "23 Nov 2026" and q.price == 25266 and q.prev_close == 25171.5
+    assert q.change == pytest.approx(94.5) and q.change_pct == pytest.approx(94.5 / 25171.5 * 100)  # +0.3754 %, from the contract's own close, not the feed's column
+    assert q.bar_ts == datetime(2026, 11, 13, 21, 14, tzinfo=UTC) and q.as_of == datetime(2026, 11, 13, 21, 14, 30, tzinfo=UTC)  # last trade 14 Nov 02:44:30 IST
+    assert q.status == "closed" and q.session == "2026-11-13" and len(q.bars) == 1
+
+
+def test_gift_nifty_rolls_to_the_next_contract_after_expiry_and_a_feed_without_a_trade_gives_no_quote() -> None:
+    data = (FIX / "nseix_derivatives_watch.json").read_bytes()
+    after = nseix.gift_quote(data, datetime(2026, 11, 24, 5, 0, tzinfo=UTC), BY_KEY["GIFT"])
+    assert after and after[1] == "29 Dec 2026" and after[0].price == 25332.5 and after[0].prev_close == 25304
+    untraded = {"data": [{"INSTRUMENTTYPE": "FUTIDX", "SYMBOL": "NIFTY", "LASTPRICE": 0, "EXPIRYDATE": "23-Nov-2026", "TIMESTMP": "14-Nov-2026 02:44:30"}]}
+    assert nseix.gift_quote(json.dumps(untraded).encode(), GIFT_NOW, BY_KEY["GIFT"]) is None
+    assert nseix.gift_quote(b'{"data": []}', GIFT_NOW, BY_KEY["GIFT"]) is None
+
+
+def test_gift_nifty_trading_hours_cross_midnight() -> None:
+    g = BY_KEY["GIFT"]
+    ist = ZoneInfo("Asia/Kolkata")
+    cases = [
+        ((2026, 11, 16, 10, 0), True), ((2026, 11, 16, 16, 0), False), ((2026, 11, 16, 17, 0), True), ((2026, 11, 17, 2, 0), True),  # Monday: day session, break, evening session, into Tuesday
+        ((2026, 11, 14, 2, 0), True), ((2026, 11, 14, 10, 0), False), ((2026, 11, 15, 2, 0), False), ((2026, 11, 16, 2, 0), False), ((2026, 11, 13, 18, 0), True), ((2026, 11, 14, 18, 0), False),
+    ]
+    for when, want in cases:
+        assert expected_open(g, datetime(*when, tzinfo=ist)) is want, when
+
+
+def test_gift_nifty_is_polled_stored_and_shown_with_its_contract_and_a_chart_link(tmp_path: Path) -> None:
+    s = service(tmp_path, now=GIFT_NOW)[0]
+    s.symbols = [BY_KEY["GIFT"], *s.symbols]
+    assert s.poll_gift()["ok"]
+    item = next(i for g in s.overview()["groups"] for i in g["items"] if i["key"] == "GIFT")
+    assert item["price"] == 25266 and item["change"] == pytest.approx(94.5) and item["status"] == "closed" and item["chart_url"] == "https://www.nseix.com/get-quotes"
+    assert "expires 23 Nov 2026" in item["note"] and "NSE IX" in item["note"]
+    assert s.poll_quotes()["ok"] and "GIFT" not in s.poll_quotes().get("missing", [])  # the Yahoo poll leaves it alone
+
+
+def test_a_gift_nifty_failure_is_recorded_and_the_stored_quote_stays(tmp_path: Path) -> None:
+    s = service(tmp_path, now=GIFT_NOW)[0]
+    s.symbols = [BY_KEY["GIFT"], *s.symbols]
+    s.poll_gift()
+
+    def down(url: str) -> bytes:
+        raise OSError("503")
+
+    s._fetch = down  # noqa: SLF001
+    r = s.poll_gift()
+    assert not r["ok"] and "OSError" in r["error"]
+    assert s.store.latest_all()["GIFT"]["price"] == 25266
+
+
+def test_every_symbol_has_a_full_chart_link_at_its_original_source() -> None:
+    assert chart_url(BY_KEY["ES"]) == "https://finance.yahoo.com/chart/ES%3DF"
+    assert chart_url(BY_KEY["SPX"]) == "https://finance.yahoo.com/chart/%5EGSPC"
+    assert chart_url(BY_KEY["DXY"]) == "https://finance.yahoo.com/chart/DX-Y.NYB"
+    assert chart_url(BY_KEY["GIFT"]) == "https://www.nseix.com/get-quotes"
+
+
+# ------------------------------------------------------------------ clean-up of days that have passed
+def test_events_of_past_days_and_old_news_are_not_stored_and_are_deleted_when_their_day_passes(tmp_path: Path) -> None:
+    now = datetime(2026, 11, 15, 19, 0, tzinfo=UTC)  # Monday 16 Nov 00:30 IST
+    s, _ = service(tmp_path, now=now)
+    s.poll_calendar()
+    s.poll_news()
+    all_events = s.store.events_between(0, 4_000_000_000_000)
+    assert all_events and min(e["date_ist"] for e in all_events) >= "2026-11-16"  # the official list's earlier dates and the feeds' earlier days were not stored
+    cutoff = int((now - timedelta(hours=48)).timestamp() * 1000)
+    assert min(n["published"] for n in s.store.news("India", 500) + s.store.news("Global", 500)) >= cutoff
+    # the clock moves on two days: yesterday's events and news older than 48 hours go, today's stay
+    later = datetime(2026, 11, 17, 19, 0, tzinfo=UTC)  # Tuesday 18 Nov 00:30 IST
+    s._clock = lambda: later  # noqa: SLF001
+    before_ev, before_news = len(all_events), len(s.store.news("India", 500)) + len(s.store.news("Global", 500))
+    res = s.cleanup()
+    left = s.store.events_between(0, 4_000_000_000_000)
+    assert res["events"] > 0 and min(e["date_ist"] for e in left) >= "2026-11-18" and len(left) == before_ev - res["events"]
+    assert res["news"] > 0 and len(s.store.news("India", 500)) + len(s.store.news("Global", 500)) == before_news - res["news"]
+    run = s.store.last_run("cleanup")
+    assert run and run["ok"] and run["detail"]["events"] == res["events"] and run["detail"]["bytes"] > 0
+    s.poll_calendar()
+    s.poll_news()  # the feeds still carry the old items: they do not come back
+    assert min(e["date_ist"] for e in s.store.events_between(0, 4_000_000_000_000)) >= "2026-11-18"
+    assert all(n["published"] >= int((later - timedelta(hours=48)).timestamp() * 1000) for n in s.store.news("India", 500) + s.store.news("Global", 500))  # all fixture items are older: none stored
+
+
+def test_prune_removes_the_revisions_of_deleted_events_and_leaves_bars_alone(tmp_path: Path) -> None:
+    s, _ = service(tmp_path)
+    s.poll_quotes()
+    bars = s.store.bar_counts()
+    base = {"id": "x:1", "source": "s", "ts": 1_700_000_000_000, "date_ist": "2026-11-10", "all_day": False, "country": "US", "name": "CPI", "impact": "high", "actual": None, "forecast": "0.3%", "previous": None, "note": None}
+    t0 = datetime(2026, 11, 10, 12, 0, tzinfo=UTC)
+    s.store.upsert_events([base], t0)
+    s.store.upsert_events([base | {"actual": "0.2%"}], t0)  # a revision
+    keep = base | {"id": "x:2", "date_ist": "2026-11-16"}
+    s.store.upsert_events([keep], t0)
+    out = s.store.prune("2026-11-16", 0)
+    assert out == {"events": 1, "revisions": 1, "news": 0}
+    assert [e["id"] for e in s.store.events_between(0, 4_000_000_000_000)] == ["x:2"]
+    assert s.store.bar_counts() == bars  # price bars are not deleted by this clean-up

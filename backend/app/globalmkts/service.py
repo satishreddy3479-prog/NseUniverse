@@ -15,10 +15,10 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from app.globalmkts import calendar_feed, news
+from app.globalmkts import calendar_feed, news, nseix
 from app.globalmkts.quotes import Bar, Downloader, bars_from_frame, build_quote, yahoo_download
 from app.globalmkts.store import GlobalStore, ms
-from app.globalmkts.symbols import BY_KEY, GROUPS, SYMBOLS, GSymbol
+from app.globalmkts.symbols import BY_KEY, GROUPS, SYMBOLS, GSymbol, chart_url, expected_open
 from app.prediction.events import REFERENCE
 
 logger = logging.getLogger(__name__)
@@ -27,6 +27,8 @@ QUOTE_FAST_S, QUOTE_SLOW_S, QUOTE_RETRY_S = 60.0, 300.0, 120.0
 NEWS_S, NEWS_FAST_S, CAL_S, CAL_RETRY_S = 600.0, 120.0, 6 * 3600.0, 1800.0  # news: every 2 minutes in Indian market hours, every 10 otherwise
 FULL_REFRESH_S = 6 * 3600.0
 BQ_S = 900.0
+NEWS_KEEP_H = 48  # news older than this is deleted; calendar events are deleted when their day (IST) has passed
+CLEAN_S = 3600.0
 NSE_WINDOW = (time(9, 0), time(15, 45))  # IST: polled every minute then, every five minutes otherwise
 SPARK_POINTS = 48
 Fetch = Callable[[str], bytes]
@@ -70,7 +72,7 @@ class GlobalService:
         # five days of bars on the first poll and every six hours (they reach the session before the latest one even over a weekend), today's only otherwise
         full = self._full_at is None or _time.monotonic() - self._full_at > FULL_REFRESH_S
         try:
-            frame = self._download([s.yahoo for s in self.symbols], "5d" if full else "1d")
+            frame = self._download([s.yahoo for s in self.symbols if s.source == "yahoo"], "5d" if full else "1d")
             if full:
                 self._full_at = _time.monotonic()
         except Exception as e:  # noqa: BLE001 - a failed download is recorded, the old quotes stay (flagged stale by their age)
@@ -78,7 +80,7 @@ class GlobalService:
             self.store.add_run("quotes", now, False, failure)
             return {"ok": False, **failure}
         ok, missing, new_bars = 0, [], 0
-        for spec in self.symbols:
+        for spec in (s for s in self.symbols if s.source == "yahoo"):
             fresh = bars_from_frame(frame, spec.yahoo)
             older = [Bar(datetime.fromtimestamp(t / 1000, UTC), p) for t, p in self.store.bars_before(spec.key, ms(fresh[0].ts))] if fresh else []
             q = build_quote(spec, fresh, now, older)
@@ -104,7 +106,7 @@ class GlobalService:
                     continue
                 items, skipped = news.parse_rss(data, feed)
                 self._validators[feed.url] = valid
-                added += self.store.add_news(items, now)
+                added += self.store.add_news(items, now, ms(now - timedelta(hours=NEWS_KEEP_H)))
                 results[label] = {"items": len(items), "skipped": skipped}
             except Exception as e:  # noqa: BLE001 - one feed failing must not stop the others
                 results[label] = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
@@ -116,7 +118,7 @@ class GlobalService:
         now = self._clock()
         out: dict[str, Any] = {}
         try:
-            out["official"] = self.store.upsert_events(calendar_feed.official_events(self.official_path), now)
+            out["official"] = self.store.upsert_events(calendar_feed.official_events(self.official_path), now, self._today(now))
             self.store.add_run("calendar_official", now, True, out["official"])
         except Exception as e:  # noqa: BLE001
             out["official"] = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
@@ -127,7 +129,7 @@ class GlobalService:
             errors: list[str] = []
             for url in calendar_feed.FF_URLS:
                 try:
-                    r = self.store.upsert_events(calendar_feed.parse_ff(self._fetch(url)), now)
+                    r = self.store.upsert_events(calendar_feed.parse_ff(self._fetch(url)), now, self._today(now))
                     for k in ("new", "changed", "same"):
                         res[k] += r[k]
                 except Exception as e:  # noqa: BLE001 - the feed rate-limits or is down: recorded, the stored events stay
@@ -141,11 +143,41 @@ class GlobalService:
         """India and US events with forecasts and actuals from the biquote calendar: one small request, repeated every 15 minutes because actuals appear through the day."""
         now = self._clock()
         try:
-            res: dict[str, Any] = dict(self.store.upsert_events(calendar_feed.parse_biquote(self._fetch(calendar_feed.bq_url(now))), now))
+            res: dict[str, Any] = dict(self.store.upsert_events(calendar_feed.parse_biquote(self._fetch(calendar_feed.bq_url(now))), now, self._today(now)))
             self.store.add_run("calendar_biquote", now, True, res)
         except Exception as e:  # noqa: BLE001 - recorded; the stored events stay
             res = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
             self.store.add_run("calendar_biquote", now, False, res)
+        return res
+
+    @staticmethod
+    def _today(now: datetime) -> str:
+        return now.astimezone(IST).date().isoformat()
+
+    def poll_gift(self) -> dict[str, Any]:
+        """GIFT Nifty (the near-month NIFTY future at NSE IX): one small request; the quote and its bar are stored like the others."""
+        now = self._clock()
+        spec = BY_KEY["GIFT"]
+        try:
+            got = nseix.gift_quote(self._fetch(nseix.DW_URL), now, spec)
+            if got is None:
+                res: dict[str, Any] = {"ok": False, "error": "no traded NIFTY future in the feed"}
+                self.store.add_run("gift", now, False, res)
+                return res
+            q, expiry = got
+            new = self.store.save_quote(q, now)
+            res = {"ok": True, "expiry": expiry, "new_bars": new}
+            self.store.add_run("gift", now, True, res)
+        except Exception as e:  # noqa: BLE001 - recorded; the stored quote stays and ages
+            res = {"ok": False, "error": f"{type(e).__name__}: {str(e)[:120]}"}
+            self.store.add_run("gift", now, False, res)
+        return res
+
+    def cleanup(self) -> dict[str, int]:
+        """Delete calendar events of days that have passed and news older than the retention (the page only shows what is current); the numbers go in the run log."""
+        now = self._clock()
+        res = self.store.prune(self._today(now), ms(now - timedelta(hours=NEWS_KEEP_H)))
+        self.store.add_run("cleanup", now, True, res | {"bytes": self.store.size_bytes()})
         return res
 
     def poll_local_calendar(self, force: bool = False) -> dict[str, Any] | None:
@@ -160,7 +192,7 @@ class GlobalService:
         now = self._clock()
         self._local_mtime = mtime
         try:
-            res: dict[str, Any] = dict(self.store.upsert_events(calendar_feed.parse_local(path.read_bytes()), now))
+            res: dict[str, Any] = dict(self.store.upsert_events(calendar_feed.parse_local(path.read_bytes()), now, self._today(now)))
             self.store.add_run("calendar_local", now, True, res)
         except Exception as e:  # noqa: BLE001 - a bad file is reported and the other sources carry on
             res = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
@@ -176,7 +208,10 @@ class GlobalService:
             items = []
             for s in (x for x in self.symbols if x.group == gkey):
                 r = latest.get(s.key)
-                item: dict[str, Any] = {"key": s.key, "name": s.name, "unit": s.unit, "decimals": s.decimals, "kind": s.kind, "core": s.core, "yield": s.yield_pct}
+                item: dict[str, Any] = {"key": s.key, "name": s.name, "unit": s.unit, "decimals": s.decimals, "kind": s.kind, "core": s.core, "yield": s.yield_pct, "chart_url": chart_url(s)}
+                if s.key == "GIFT":
+                    g = self.store.last_run("gift", True)
+                    item["note"] = f"Near-month contract, expires {g['detail']['expiry']}. {nseix.SOURCE_LABEL}." if g else nseix.SOURCE_LABEL
                 if r is None:
                     items.append(item | {"price": None, "status": "no data"})
                     continue
@@ -301,7 +336,7 @@ class GlobalService:
         return NEWS_FAST_S if t.weekday() < 5 and NSE_WINDOW[0] <= t.time() < NSE_WINDOW[1] else NEWS_S
 
     async def _loop(self) -> None:
-        due = {"quotes": 0.0, "news": 0.0, "calendar": 0.0, "local": 0.0, "bq": 900.0}
+        due = {"quotes": 0.0, "news": 0.0, "calendar": 0.0, "local": 0.0, "bq": 900.0, "gift": 0.0, "clean": 0.0}
         while True:
             now_m = _time.monotonic()
             try:
@@ -315,6 +350,12 @@ class GlobalService:
                     r = await asyncio.to_thread(self.poll_calendar)
                     feed_ok = "feed" in r and "errors" not in r["feed"]
                     due["calendar"] = now_m + (CAL_S if feed_ok else CAL_RETRY_S)
+                if now_m >= due["gift"] and any(s.source == "nseix" for s in self.symbols):
+                    r3 = await asyncio.to_thread(self.poll_gift)
+                    due["gift"] = now_m + (QUOTE_FAST_S if r3.get("ok") and expected_open(BY_KEY["GIFT"], self._clock()) else QUOTE_SLOW_S if r3.get("ok") else QUOTE_RETRY_S)
+                if now_m >= due["clean"]:
+                    await asyncio.to_thread(self.cleanup)
+                    due["clean"] = now_m + CLEAN_S
                 if now_m >= due["bq"]:
                     r2 = await asyncio.to_thread(self.poll_biquote)
                     due["bq"] = now_m + (BQ_S if "error" not in r2 else CAL_RETRY_S)

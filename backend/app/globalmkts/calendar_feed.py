@@ -153,8 +153,8 @@ _BQ_SCALE = {"thousands": "K", "millions": "M", "billions": "B", "trillions": "T
 
 
 def bq_url(now: datetime) -> str:
-    """The biquote request: India and the US, medium importance and above (the API's importance is a minimum), from yesterday to 60 days ahead."""
-    start, end = (now - timedelta(days=1)).date(), (now + timedelta(days=60)).date()
+    """The biquote request: India and the US, medium importance and above (the API's importance is a minimum), from today (IST) to 60 days ahead."""
+    start, end = now.astimezone(IST).date(), (now + timedelta(days=60)).date()
     return f"{BQ_URL}?from={start}&to={end}&countries=IN,US&importance=medium&limit=500"
 
 
