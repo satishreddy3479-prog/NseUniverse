@@ -120,10 +120,30 @@ function countdown(min: number): string {
   return h < 24 ? `in ${h} h ${m} min` : `in ${Math.floor(h / 24)} d ${h % 24} h`;
 }
 
+const readingNumber = (v: string | null): number | null => {
+  if (v == null) return null;
+  const n = Number(v.replace(/[%,KMBT]/g, ""));
+  return Number.isFinite(n) ? n : null;
+};
+/** Where the actual came out against the forecast (a plain comparison of the two numbers, not a judgement of good or bad). */
+function verdict(actual: string | null, forecast: string | null): string | null {
+  const a = readingNumber(actual), f = readingNumber(forecast);
+  if (a == null || f == null) return null;
+  return a > f ? "above forecast" : a < f ? "below forecast" : "in line with forecast";
+}
+function Reading({ label, value, pending, verdict: v }: { label: string; value: string | null; pending?: boolean; verdict?: string | null }) {
+  return (
+    <div className="rounded-sm bg-slate-2 px-2 py-1">
+      <dt className="text-[11px] uppercase tracking-wide text-muted">{label}</dt>
+      <dd className={`tabular-nums ${value ? "font-semibold text-paper" : "text-muted"}`} title={value ? undefined : pending ? "Not released yet" : "Not published by the source"}>{value ?? (pending ? "Pending" : MISSING)}</dd>
+      {v && <dd className="text-[11px] text-muted">{v}</dd>}
+    </div>
+  );
+}
+
 function EventRow({ e, now }: { e: CalEvent; now: number }) {
   const mins = Math.round((new Date(e.time_ist).getTime() - now) / 60000);
   const state = e.state === "upcoming" && mins < 0 ? "past" : e.state;
-  const has = e.actual || e.forecast || e.previous;
   return (
     <li className={`grid grid-cols-[4.5rem_1fr] gap-x-3 gap-y-1 border-t border-rule px-3 py-2.5 first:border-t-0 ${state === "upcoming" ? "" : "opacity-75"}`}>
       <div className="text-sm tabular-nums">
@@ -139,13 +159,11 @@ function EventRow({ e, now }: { e: CalEvent; now: number }) {
           {state === "released" && <span className="text-xs text-up">Released</span>}
           {state === "past" && <span className="text-xs text-muted">Time passed, no actual value in the feed</span>}
         </div>
-        {has && (
-          <dl className="mt-1 flex flex-wrap gap-x-4 text-xs text-muted">
-            {e.actual && <div><dt className="inline">Actual </dt><dd className="inline font-semibold text-paper">{e.actual}</dd></div>}
-            {e.forecast && <div><dt className="inline">Forecast </dt><dd className="inline text-paper">{e.forecast}</dd></div>}
-            {e.previous && <div><dt className="inline">Previous </dt><dd className="inline text-paper">{e.previous}</dd></div>}
-          </dl>
-        )}
+        <dl className="mt-1.5 grid max-w-[460px] grid-cols-3 gap-2 text-sm" aria-label="Readings">
+          <Reading label="Previous" value={e.previous} />
+          <Reading label="Forecast" value={e.forecast} />
+          <Reading label="Actual" value={e.actual} pending={state === "upcoming"} verdict={verdict(e.actual, e.forecast)} />
+        </dl>
         {e.note && <p className="mt-0.5 text-[11px] text-muted">{e.note}</p>}
       </div>
     </li>

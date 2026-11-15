@@ -34,6 +34,7 @@ const calendar = {
     { key: "week", title: "Rest of this week", events: [ev("b", "FOMC Meeting Minutes", "2026-11-19T00:30:00+05:30", "upcoming")] },
     { key: "nextweek", title: "Next week", events: [] },
     { key: "month", title: "Later this month", events: [] },
+    { key: "later", title: "Coming up", events: [ev("r", "RBI Interest Rate Decision", "2026-12-04T10:00:00+05:30", "upcoming", { country: "India", impact: "medium", previous: "5.50%" }), ev("c", "CPI y/y", "2026-11-12T16:00:00+05:30", "released", { country: "India", impact: "medium", actual: "6.08%", forecast: "5.90%", previous: "5.50%" })] },
   ],
   sources: [{ name: "Official calendar", last_ok: "2026-11-15T18:00:00+00:00", last_error: null }, { name: "Forex Factory public feed (unofficial)", last_ok: null, last_error: { errors: ["x"] } }],
 };
@@ -88,7 +89,7 @@ describe("economic calendar page", () => {
     mockApi();
     renderAt("/tools/economic-calendar");
     expect(await screen.findByRole("region", { name: "Today" })).toBeInTheDocument();
-    for (const t of ["Tomorrow", "Rest of this week", "Next week", "Later this month"]) expect(screen.getByRole("region", { name: t })).toBeInTheDocument();
+    for (const t of ["Tomorrow", "Rest of this week", "Next week", "Later this month", "Coming up"]) expect(screen.getByRole("region", { name: t })).toBeInTheDocument();
     const today = screen.getByRole("region", { name: "Today" });
     expect(within(today).getByText("CPI m/m")).toBeInTheDocument();
     expect(within(today).getByText("19:00")).toBeInTheDocument();
@@ -98,6 +99,15 @@ describe("economic calendar page", () => {
     expect(wpi.getByLabelText("Medium impact")).toHaveTextContent("★★☆"); // India's two-star release, shown with its own rating
     expect(within(today).getByLabelText("High impact")).toHaveTextContent("★★★");
     expect(within(screen.getByRole("region", { name: "Next week" })).getByText("Nothing scheduled.")).toBeInTheDocument();
+    // every event shows Previous, Forecast and Actual; a missing value says so instead of showing a zero
+    const rbi = within(screen.getByRole("region", { name: "Coming up" }));
+    const reads = within(rbi.getByText("RBI Interest Rate Decision").closest("li")!);
+    expect(reads.getByText("5.50%")).toBeInTheDocument();
+    expect(reads.getByText("Pending")).toBeInTheDocument(); // actual of an upcoming event
+    expect(reads.getAllByText("—").length).toBe(1); // forecast not published
+    const cpi = within(rbi.getByText("CPI y/y").closest("li")!);
+    expect(cpi.getByText("6.08%")).toBeInTheDocument();
+    expect(cpi.getByText("above forecast")).toBeInTheDocument();
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(screen.getByText(/Moneycontrol is not used/)).toBeInTheDocument();
     expect(screen.getByText(/Forex Factory public feed \(unofficial\) \(could not be read\)/)).toBeInTheDocument();

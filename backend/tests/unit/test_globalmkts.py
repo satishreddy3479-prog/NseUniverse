@@ -245,7 +245,7 @@ def test_the_calendar_groups_high_impact_events_by_when_in_ist_with_countdowns(t
     v = s.calendar_view()
     assert v["today"] == "2026-11-16"
     keys = [x["key"] for x in v["sections"]]
-    assert keys == ["today", "tomorrow", "week", "nextweek", "month"]
+    assert keys == ["today", "tomorrow", "week", "nextweek", "month", "later"]
     today = next(x for x in v["sections"] if x["key"] == "today")["events"]
     cpi = next(e for e in today if e["name"] == "CPI m/m" and e["country"] == "Canada")
     assert cpi["time_ist"].startswith("2026-11-16T19:00") and cpi["state"] == "upcoming"
@@ -296,7 +296,7 @@ def test_the_api_serves_the_board_the_calendar_and_the_news(tmp_path: Path) -> N
         ser = c.get("/api/global/series", params={"symbol": "ES", "hours": 3}).json()
         assert ser["prices"] and ser["name"] == "S&P 500 futures"
         assert c.get("/api/global/series", params={"symbol": "ES", "hours": 500}).status_code == 422  # at most 72 hours
-        assert len(c.get("/api/calendar").json()["sections"]) == 5
+        assert len(c.get("/api/calendar").json()["sections"]) == 6
         assert c.get("/api/news").json()["india"]
 
 
@@ -474,3 +474,13 @@ def test_india_medium_releases_are_shown_with_their_two_star_rating_and_other_co
     assert wpi["impact"] == "medium" and wpi["forecast"] == "7.46%" and wpi["previous"] == "11.39%" and wpi["time_ist"].startswith("2026-11-16T12:00")  # 06:30 UTC
     assert any(e["country"] == "India" and e["name"] == "GDP y/y" for e in rows)
     assert not any(e["country"] != "India" and e["impact"] == "medium" for e in rows)  # a medium US or Canadian release stays out
+
+
+def test_events_past_the_end_of_the_month_are_listed_under_coming_up(tmp_path: Path) -> None:
+    s, _ = service(tmp_path, now=datetime(2026, 11, 15, 19, 0, tzinfo=UTC))  # Monday 16 Nov: the month ends 30 Nov
+    s.poll_calendar()
+    sec = {x["key"]: x["events"] for x in s.calendar_view()["sections"]}
+    rbi = [e for e in sec["later"] if "RBI" in e["name"]]
+    assert [(e["name"], e["time_ist"][:16], e["previous"], e["forecast"], e["actual"]) for e in rbi] == [("RBI Interest Rate Decision", "2026-12-04T10:00", "5.50%", None, None)]
+    assert any(e["name"] == "Fed Interest Rate Decision" and e["time_ist"].startswith("2026-12-10T00:30") for e in sec["later"])
+    assert not any(e["time_ist"] > "2026-12-31" for x in sec.values() for e in x)  # nothing beyond the 45-day horizon

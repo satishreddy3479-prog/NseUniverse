@@ -216,7 +216,8 @@ class GlobalService:
         week_end = today + timedelta(days=6 - today.weekday())  # Sunday
         next_end = week_end + timedelta(days=7)
         month_end = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-        horizon = max(next_end, month_end)
+        ahead_end = today + timedelta(days=45)  # "Coming up": past the end of this month, so the next RBI or Fed decision shows early
+        horizon = max(next_end, month_end, ahead_end)
 
         def at(d: Any) -> int:
             return ms(datetime(d.year, d.month, d.day, tzinfo=IST))
@@ -255,6 +256,7 @@ class GlobalService:
             ("week", "Rest of this week", lambda d: today + timedelta(days=1) < d <= week_end),
             ("nextweek", "Next week", lambda d: week_end < d <= next_end),
             ("month", "Later this month", lambda d: next_end < d <= month_end),
+            ("later", "Coming up", lambda d: max(next_end, month_end) < d <= ahead_end),
         ]
         sections = [{"key": k, "title": title, "events": [shape(r) for r in rows if match(day(r))]} for k, title, match in spec]
         nxt = next((shape(r) for r in rows if r["ts"] >= nowms), None)
