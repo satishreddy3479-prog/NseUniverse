@@ -23,6 +23,8 @@ from app.globalmkts.quotes import (
     Quote,
     bars_from_frame,
     build_quote,
+    daily_closes,
+    yahoo_daily,
     yahoo_download,
 )
 from app.globalmkts.store import GlobalStore, ms
@@ -35,6 +37,7 @@ QUOTE_FAST_S, QUOTE_SLOW_S, QUOTE_RETRY_S = 60.0, 300.0, 120.0
 NEWS_S, NEWS_FAST_S, CAL_S, CAL_RETRY_S = 600.0, 120.0, 6 * 3600.0, 1800.0  # news: every 2 minutes in Indian market hours, every 10 otherwise
 FULL_REFRESH_S = 6 * 3600.0
 BQ_S = 900.0
+DAILY_S = 1800.0  # official closes of the cash indices are re-read this often
 BARS_KEEP_D = 7  # one-minute price bars older than this are deleted (the change reference needs only the previous session)
 TASK_TIMEOUT_S, MAX_BACKOFF_S = 300.0, 900.0
 NEWS_KEEP_H = 48  # news older than this is deleted; calendar events are deleted when their day (IST) has passed
@@ -87,6 +90,7 @@ class GlobalService:
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         symbols: list[GSymbol] | None = None,
         official_path: Path = REFERENCE,
+        daily: Downloader = yahoo_daily,
     ) -> None:
         self.store, self.enabled, self._download, self._fetch, self._clock = store, enabled, downloader, fetch, clock
         self.symbols = symbols if symbols is not None else list(SYMBOLS)
@@ -94,6 +98,9 @@ class GlobalService:
         self._cond: CondFetch = news.http_get_cond if fetch is news.http_get else (lambda url, _v: (fetch(url), {}))  # a fake fetch (tests) has no validators
         self._validators: dict[str, news.Validators] = {}
         self._task: asyncio.Task[None] | None = None
+        self._daily_dl = daily
+        self._official: dict[str, list[tuple[Any, float]]] = {}  # cash index -> (date, official close), oldest first
+        self._daily_at: float | None = None
         self._local_mtime: float | None = None
         self._fails: dict[str, int] = {}
         self._last_error: dict[str, str] = {}
@@ -115,6 +122,7 @@ class GlobalService:
             failure = {"error": f"{type(e).__name__}: {str(e)[:160]}"}
             self.store.add_run("quotes", now, False, failure)
             return {"ok": False, **failure}
+        self._refresh_official()
         ok, missing, new_bars = 0, [], 0
         stored = self.store.latest_all()
         for spec in (s for s in self.symbols if s.source == "yahoo"):
@@ -124,12 +132,44 @@ class GlobalService:
             if q is None:
                 missing.append(spec.key)
                 continue
-            q = _keep_reference(q, stored.get(spec.key))
+            q = _keep_reference(self._official_close(q, spec), stored.get(spec.key))
             new_bars += self.store.save_quote(q, now)
             ok += 1
         detail: dict[str, Any] = {"symbols": ok, "missing": missing, "new_bars": new_bars, "ms": round((_time.perf_counter() - t0) * 1000)}
         self.store.add_run("quotes", now, ok > 0, detail)
         return {"ok": ok > 0, **detail}
+
+    def _refresh_official(self) -> None:
+        """The official daily closes of the cash indices (what Yahoo's own page shows after the close), re-read every 30 minutes; a failure keeps the last ones."""
+        if self._daily_at is not None and _time.monotonic() - self._daily_at < DAILY_S:
+            return
+        cash = [s for s in self.symbols if s.source == "yahoo" and s.kind == "cash"]
+        if not cash:
+            return
+        try:
+            frame = self._daily_dl([s.yahoo for s in cash], "10d")
+            for s in cash:
+                closes = daily_closes(frame, s.yahoo)
+                if closes:
+                    self._official[s.key] = closes
+            self._daily_at = _time.monotonic()
+        except Exception as e:  # noqa: BLE001 - the one-minute quotes still work without them
+            logger.warning("global_daily_closes_failed", extra={"error": f"{type(e).__name__}: {str(e)[:120]}"})
+            self._daily_at = _time.monotonic() - DAILY_S + 300  # try again in five minutes
+
+    def _official_close(self, q: Quote, spec: GSymbol) -> Quote:
+        """Once a cash market is closed, its quote is the official closing value and the previous official close: the last one-minute bar is taken before the closing auction
+        and can differ from the close by a few points. While the market trades the one-minute quote stands."""
+        closes = self._official.get(spec.key)
+        if spec.kind != "cash" or q.status != "closed" or not closes:
+            return q
+        today = next((i for i, (d, _) in enumerate(closes) if d.isoformat() == q.session), None)
+        if today is None:
+            return q
+        price = closes[today][1]
+        ref = closes[today - 1][1] if today > 0 else q.prev_close
+        change = None if ref is None else price - ref
+        return replace(q, price=price, prev_close=ref, change=change, change_pct=None if ref is None or ref <= 0 or change is None else change / ref * 100)
 
     def poll_news(self) -> dict[str, Any]:
         now = self._clock()

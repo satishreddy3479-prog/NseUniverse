@@ -131,7 +131,7 @@ def service(tmp_path: Path, frames: list[Any] | None = None, fetch: Any = None, 
         raise OSError("not in the fixtures: " + url)
 
     syms = [BY_YAHOO[y] for y in ("ES=F", "^GSPC", "^N225", "^TNX")]
-    return GlobalService(GlobalStore(tmp_path), downloader=download, fetch=fetch or http, clock=lambda: now, symbols=syms), periods
+    return GlobalService(GlobalStore(tmp_path), downloader=download, fetch=fetch or http, clock=lambda: now, symbols=syms, daily=lambda tickers, period: None), periods
 
 
 def test_a_poll_stores_quotes_and_bars_once_and_reports_what_was_missing(tmp_path: Path) -> None:
@@ -690,3 +690,47 @@ def test_a_poll_of_todays_bars_alone_keeps_the_stored_reference_close(tmp_path: 
     after = s.store.latest_all()["SPX"]
     assert again["ok"] and after["prev_close"] == before["prev_close"] and after["change"] == pytest.approx(before["change"])
     assert next(i for g in s.overview()["groups"] for i in g["items"] if i["key"] == "SPX")["change"] == pytest.approx(-30.98974609375)
+
+
+# ------------------------------------------------------------------ official closes of the cash indices (real Yahoo daily closes, captured 16 Nov 2026)
+def daily_frame() -> Any:
+    raw = json.loads((FIX / "yahoo_daily.json").read_text())
+    parts = {y: pd.DataFrame({"Close": [c for _, c in rows]}, index=pd.DatetimeIndex([pd.Timestamp(d) for d, _ in rows])) for y, rows in raw.items()}
+    return pd.concat(parts, axis=1)
+
+
+def test_a_closed_cash_index_shows_its_official_close_and_the_previous_official_close(tmp_path: Path) -> None:
+    s, _ = service(tmp_path)
+    s._daily_dl = lambda tickers, period: daily_frame()  # noqa: SLF001
+    s.poll_quotes()
+    latest = s.store.latest_all()
+    assert latest["SPX"]["price"] == pytest.approx(7561.669921875) and latest["SPX"]["prev_close"] == pytest.approx(7592.39990234375)
+    assert latest["SPX"]["change"] == pytest.approx(7561.669921875 - 7592.39990234375)  # -30.73, as Yahoo's page shows (the last one-minute bar, 7560.87, is before the closing auction)
+    assert latest["N225"]["price"] == pytest.approx(61142.3515625) and latest["N225"]["change"] == pytest.approx(61142.3515625 - 60819.359375)  # +322.99
+    assert latest["ES"]["price"] == 7583.0 and latest["ES"]["prev_close"] == 7616.25  # futures are not cash indices: the one-minute quote stands
+
+
+def test_a_cash_index_that_is_trading_keeps_its_live_one_minute_quote(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    s, _ = service(tmp_path)
+    s._daily_dl = lambda tickers, period: daily_frame()  # noqa: SLF001
+    s._refresh_official()  # noqa: SLF001
+    spx = BY_KEY["SPX"]
+    q = build_quote(spx, bars_from_frame(yahoo_frame(), "^GSPC"), SUNDAY_EVENING)
+    assert q is not None
+    live = replace(q, status="live")
+    assert s._official_close(live, spx) is live  # noqa: SLF001
+    assert s._official_close(q, spx).price == pytest.approx(7561.669921875)  # noqa: SLF001
+    assert s._official_close(replace(q, session="2026-11-20"), spx).price == q.price  # noqa: SLF001 - no official close for that date yet
+
+
+def test_a_failed_daily_download_leaves_the_one_minute_quotes_alone(tmp_path: Path) -> None:
+    s, _ = service(tmp_path)
+
+    def down(tickers: list[str], period: str) -> Any:
+        raise ConnectionError("no route")
+
+    s._daily_dl = down  # noqa: SLF001
+    assert s.poll_quotes()["ok"]
+    assert s.store.latest_all()["SPX"]["price"] == pytest.approx(7560.8701171875)  # the last one-minute bar
