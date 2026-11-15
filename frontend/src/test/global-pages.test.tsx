@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
+import { ToolMenu } from "../components/ToolMenu";
 import { expiries, status, summary } from "./fixtures";
 
 // Values are the ones the backend tests hand-check from the captured Yahoo bars: ES 7583.00 against the 16:00 New York close 7616.25 (-33.25, -0.4366 %).
@@ -131,5 +132,33 @@ describe("news freshness", () => {
     renderAt("/tools/market-news");
     expect(await screen.findByText("First visit: nothing is marked new yet.")).toBeInTheDocument();
     expect(screen.queryByText("New")).toBeNull();
+  });
+});
+
+describe("quick links", () => {
+  it("open Moneycontrol's calendar and the Redbox squawk in a clean new tab from the calendar page, the news page and the Analyse menu", async () => {
+    mockApi();
+    renderAt("/tools/economic-calendar");
+    const cal = await screen.findByRole("link", { name: /Open Moneycontrol Economic Calendar/ });
+    expect(cal).toHaveAttribute("href", "https://www.moneycontrol.com/economic-calendar");
+    expect(cal).toHaveAttribute("target", "_blank");
+    expect(cal).toHaveAttribute("rel", "noopener noreferrer");
+    const sq = screen.getByRole("link", { name: /Open Redbox India Live Squawk/ });
+    expect(sq).toHaveAttribute("href", "https://x.com/REDBOXINDIA");
+    expect(sq).toHaveAttribute("rel", "noopener noreferrer");
+  });
+});
+
+describe("quick links in the Analyse menu", () => {
+  it("are listed under the Analyse tools only, not under FNO Tools, and are hidden while searching", async () => {
+    const ui = (menu: "analyse" | "fno") => <MemoryRouter><ToolMenu menu={menu} onPick={() => {}} /></MemoryRouter>;
+    const a = render(ui("analyse"));
+    expect(screen.getByRole("link", { name: /Moneycontrol Economic Calendar/ })).toHaveAttribute("target", "_blank");
+    expect(screen.getByRole("link", { name: /Redbox India Live Squawk/ })).toHaveAttribute("href", "https://x.com/REDBOXINDIA");
+    await userEvent.type(screen.getByRole("searchbox", { name: "Find a tool" }), "news");
+    expect(screen.queryByTestId("quick-links")).toBeNull();
+    a.unmount();
+    render(ui("fno"));
+    expect(screen.queryByTestId("quick-links")).toBeNull();
   });
 });

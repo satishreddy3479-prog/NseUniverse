@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, type CalEvent, type GlobalItem, type NewsItem } from "../lib/api";
 import { fmtAge, MISSING } from "../lib/format";
 import { EChart, useChartColors } from "./EChart";
+import { QuickLinks } from "./ToolMenu";
 
 const Loading = () => <div className="h-40 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading" />;
 const Problem = ({ what, e }: { what: string; e: unknown }) => (
@@ -163,6 +164,7 @@ export function CalendarBody() {
   const nx = c.next;
   return (
     <div className="flex flex-col gap-3">
+      <QuickLinks />
       {nx && (
         <section aria-label="Next event" className="rounded-[var(--radius-panel)] border border-brass bg-brass/10 p-3">
           <div className="text-xs uppercase tracking-wide text-muted">Next high-impact event</div>
@@ -249,6 +251,7 @@ export function NewsBody() {
   const fresh = [...n.india, ...n.global].filter((i) => since.current != null && new Date(i.fetched).getTime() > since.current).length;
   return (
     <div className="flex flex-col gap-3">
+      <QuickLinks />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted" role="status">{since.current == null ? "First visit: nothing is marked new yet." : fresh > 0 ? `${fresh} new since you last looked` : "Nothing new since you last looked"}</p>
         <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={moving} onChange={(e) => setMoving(e.target.checked)} className="accent-[var(--brass)]" /> Market-moving topics only</label>

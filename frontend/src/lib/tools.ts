@@ -92,3 +92,9 @@ export function menuGroups(menu: MenuId): { group: string; tools: Tool[] }[] {
   }
   return out;
 }
+
+/** Sites opened in a new tab from the Analyse menu and the calendar and news pages (not read by this app). */
+export const QUICK_LINKS = [
+  { id: "mc-calendar", label: "📅 Open Moneycontrol Economic Calendar ↗", href: "https://www.moneycontrol.com/economic-calendar" },
+  { id: "redbox-squawk", label: "🔴 Open Redbox India Live Squawk ↗", href: "https://x.com/REDBOXINDIA" },
+] as const;

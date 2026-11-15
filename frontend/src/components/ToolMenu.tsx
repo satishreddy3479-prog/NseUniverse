@@ -1,7 +1,19 @@
 import { useMemo, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useRecentTools } from "../lib/recentTools";
-import { TOOLS, toolPath, type MenuId, type Tool } from "../lib/tools";
+import { QUICK_LINKS, TOOLS, toolPath, type MenuId, type Tool } from "../lib/tools";
+
+/** The outside sites as buttons that open in a clean new tab. */
+export function QuickLinks({ big, className = "" }: { big?: boolean; className?: string }) {
+  return (
+    <div className={`flex flex-wrap gap-2 ${className}`} data-testid="quick-links">
+      {QUICK_LINKS.map((l) => (
+        <a key={l.id} href={l.href} target="_blank" rel="noopener noreferrer"
+          className={`inline-flex items-center rounded-sm border border-rule bg-slate-2 px-3 text-sm text-paper hover:border-brass hover:text-brass ${big ? "min-h-11" : "min-h-9"}`}>{l.label}</a>
+      ))}
+    </div>
+  );
+}
 
 export function ToolItem({ t, onPick, big }: { t: Tool; onPick: () => void; big?: boolean }) {
   const to = toolPath(t);
@@ -47,6 +59,12 @@ export function ToolMenu({ menu, onPick, phone }: { menu: MenuId; onPick: () => 
         <ul className={phone ? "" : "gap-x-4 sm:columns-2 lg:columns-3"}>
           {list.map((t) => <li key={t.id} className="break-inside-avoid"><ToolItem t={t} onPick={onPick} big={phone} /></li>)}
         </ul>
+      )}
+      {menu === "analyse" && !needle && (
+        <div className="mt-2 border-t border-rule pt-2">
+          <div className="mb-1 px-2 text-[11px] font-medium uppercase tracking-wide text-muted">Quick links · open in a new tab</div>
+          <QuickLinks big={phone} className="px-2" />
+        </div>
       )}
     </div>
   );
