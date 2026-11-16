@@ -863,3 +863,13 @@ def test_usdinr_with_sparse_overnight_bars_is_not_called_stale_within_three_hour
     now = datetime(2026, 11, 16, 2, 20, tzinfo=UTC)  # the server's stored bars: 02:18, 02:16, then 00:38 (a gap of 98 minutes)
     assert build_quote(inr, [Bar(datetime(2026, 11, 16, 0, 38, tzinfo=UTC), 94.23)], now).status == "live"  # type: ignore[union-attr]
     assert build_quote(inr, [Bar(datetime(2026, 11, 15, 22, 0, tzinfo=UTC), 94.2)], now).status == "stale"  # type: ignore[union-attr]  # 4 hours without a bar while FX trades
+
+
+def test_the_nasdaq_100_index_is_on_the_board_and_vix_is_given_its_measured_delay() -> None:
+    ndx, vix = BY_KEY["NDX"], BY_KEY["VIX"]
+    assert ndx.yahoo == "^NDX" and ndx.group == "us_cash" and ndx.kind == "cash" and ndx.delay_min == 0  # real time on Yahoo: its bar was 0 minutes old at 20:12 IST
+    assert vix.delay_min == 15
+    now = datetime(2026, 11, 16, 14, 42, tzinfo=UTC)  # 09:42 New York: the cash session is open
+    old = Bar(datetime(2026, 11, 16, 14, 24, tzinfo=UTC), 20.47)  # VIX's newest bar at that moment, 17 minutes complete
+    assert build_quote(vix, [old], now).status == "live"  # type: ignore[union-attr]  # inside 15 + 8 minutes
+    assert build_quote(ndx, [old], now).status == "stale"  # type: ignore[union-attr]  # a real-time index with a bar that old is stale

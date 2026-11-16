@@ -52,9 +52,10 @@ SYMBOLS: list[GSymbol] = [
     GSymbol("YM", "YM=F", "Dow futures", "us_futures", "futures", "America/New_York", core=True, ref_close=time(16, 0), delay_min=10),
     GSymbol("RTY", "RTY=F", "Russell 2000 futures", "us_futures", "futures", "America/New_York", ref_close=time(16, 0), delay_min=10),
     GSymbol("SPX", "^GSPC", "S&P 500", "us_cash", "cash", "America/New_York", hours=_US),
+    GSymbol("NDX", "^NDX", "Nasdaq 100", "us_cash", "cash", "America/New_York", hours=_US),
     GSymbol("COMP", "^IXIC", "Nasdaq Composite", "us_cash", "cash", "America/New_York", hours=_US),
     GSymbol("DJI", "^DJI", "Dow Jones", "us_cash", "cash", "America/New_York", hours=_US),
-    GSymbol("VIX", "^VIX", "US VIX", "us_cash", "cash", "America/New_York", hours=(time(9, 30), time(16, 15))),
+    GSymbol("VIX", "^VIX", "US VIX", "us_cash", "cash", "America/New_York", hours=(time(9, 30), time(16, 15)), delay_min=15),  # measured on 16 Nov at 20:12 IST: its newest bar was 18 minutes old while the cash indices were 3 minutes old
     GSymbol("ZN", "ZN=F", "US 10-year note futures", "rates_fx", "futures", "America/New_York", decimals=3, core=True, delay_min=10),
     GSymbol("US10Y", "^TNX", "US 10-year yield", "rates_fx", "cash", "America/New_York", unit="%", decimals=3, yield_pct=True, hours=(time(8, 0), time(17, 0))),
     GSymbol("DXY", "DX-Y.NYB", "US dollar index", "rates_fx", "futures", "America/New_York", decimals=3, delay_min=10),
