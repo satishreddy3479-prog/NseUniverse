@@ -25,7 +25,7 @@ const STATUS: Record<string, { label: string; dot: string }> = {
 };
 function StatusChip({ status, delay }: { status: string; delay?: number }) {
   const base = STATUS[status] ?? { label: status, dot: "bg-down" };
-  const s = status === "live" && delay ? { ...base, label: `Live · ${delay} min delay` } : base; // the source feed is behind real time by about this much
+  const s = status === "live" && delay && delay < 60 ? { ...base, label: `Live · ${delay} min delay` } : base; // the source feed is behind real time by about this much
   return <span className="inline-flex items-center gap-1 rounded-full border border-rule px-2 py-0.5 text-[11px] text-muted"><span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} aria-hidden />{s.label}</span>;
 }
 

@@ -856,3 +856,10 @@ def test_a_delayed_feed_is_live_within_its_normal_delay_and_stale_beyond_it() ->
     assert build_quote(kospi, [kbar], monday).status == "live"  # type: ignore[union-attr]  # 19.3 minutes behind: normal for Yahoo's KOSPI
     cash = Bar(datetime(2026, 11, 16, 15, 0, tzinfo=UTC) - timedelta(minutes=12), 7560.0)  # a cash index with no delay allowance: 11 minutes old is stale while it should trade
     assert build_quote(spx, [cash], datetime(2026, 11, 16, 15, 0, tzinfo=UTC)).status == "stale"  # type: ignore[union-attr]
+
+
+def test_usdinr_with_sparse_overnight_bars_is_not_called_stale_within_three_hours() -> None:
+    inr = BY_KEY["USDINR"]
+    now = datetime(2026, 11, 16, 2, 20, tzinfo=UTC)  # the server's stored bars: 02:18, 02:16, then 00:38 (a gap of 98 minutes)
+    assert build_quote(inr, [Bar(datetime(2026, 11, 16, 0, 38, tzinfo=UTC), 94.23)], now).status == "live"  # type: ignore[union-attr]
+    assert build_quote(inr, [Bar(datetime(2026, 11, 15, 22, 0, tzinfo=UTC), 94.2)], now).status == "stale"  # type: ignore[union-attr]  # 4 hours without a bar while FX trades

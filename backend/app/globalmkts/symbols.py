@@ -29,7 +29,7 @@ class GSymbol:
     yield_pct: bool = False  # a yield in percent: the change is also shown in basis points
     hours: tuple[time, time] | None = None  # cash: regular open and close in tz
     breaks: tuple[tuple[time, time], ...] = ()  # cash: lunch breaks
-    delay_min: int = 0  # how far behind real time Yahoo's feed of this symbol normally is (measured: CME and ICE futures about 10 minutes, Asian indices 14-19)
+    delay_min: int = 0  # how far behind real time (or, for a thin market, how long it can go without a bar) Yahoo's feed of this symbol normally is (measured: CME and ICE futures about 10 minutes, Asian indices 14-19)
     source: str = "yahoo"  # "yahoo" (one-minute bars) or "nseix" (the NSE IX website feed: GIFT Nifty)
     view_url: str = ""  # the full chart page at the original source; Yahoo's chart page of the ticker when empty
     ref_close: time | None = None  # futures: the change is measured from the last bar before this local time of the previous session (the 16:00 US cash close)
@@ -58,7 +58,7 @@ SYMBOLS: list[GSymbol] = [
     GSymbol("ZN", "ZN=F", "US 10-year note futures", "rates_fx", "futures", "America/New_York", decimals=3, core=True, delay_min=10),
     GSymbol("US10Y", "^TNX", "US 10-year yield", "rates_fx", "cash", "America/New_York", unit="%", decimals=3, yield_pct=True, hours=(time(8, 0), time(17, 0))),
     GSymbol("DXY", "DX-Y.NYB", "US dollar index", "rates_fx", "futures", "America/New_York", decimals=3, delay_min=10),
-    GSymbol("USDINR", "INR=X", "USD/INR", "rates_fx", "futures", "America/New_York", decimals=3),
+    GSymbol("USDINR", "INR=X", "USD/INR", "rates_fx", "futures", "America/New_York", decimals=3, delay_min=180),  # Yahoo writes a USD/INR bar only when the price moves: overnight the gaps run to hours (seen 2 hours), so it is stale only after 3 hours
     GSymbol("GOLD", "GC=F", "Gold futures", "commodities", "futures", "America/New_York", unit="$", core=True, delay_min=10),
     GSymbol("SILVER", "SI=F", "Silver futures", "commodities", "futures", "America/New_York", unit="$", decimals=3, delay_min=10),
     GSymbol("BRENT", "BZ=F", "Brent crude futures", "commodities", "futures", "America/New_York", unit="$", core=True, delay_min=10),
