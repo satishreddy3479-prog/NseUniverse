@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 from app.globalmkts.symbols import GSymbol, expected_open, session_key
 
-LIVE_MAX_AGE_S = 8 * 60  # a bar older than this means the market is not trading (or the feed is not updating)
+LIVE_MAX_AGE_S = 8 * 60  # a bar older than this (plus the symbol's normal source delay) means the market is not trading (or the feed is not updating)
 
 
 @dataclass(frozen=True)
@@ -90,7 +90,7 @@ def build_quote(spec: GSymbol, bars: Sequence[Bar], now: datetime, earlier: Sequ
         ref = at_close[-1] if at_close else ref
     as_of = last.ts + timedelta(minutes=1)
     age = max(0.0, (now - as_of).total_seconds())
-    status = "live" if age <= LIVE_MAX_AGE_S else ("stale" if expected_open(spec, now) else "closed")
+    status = "live" if age <= LIVE_MAX_AGE_S + spec.delay_min * 60 else ("stale" if expected_open(spec, now) else "closed")
     change = None if ref is None else last.close - ref.close
     pct = None if ref is None or ref.close <= 0 or change is None else change / ref.close * 100
     return Quote(spec.key, last.close, last.ts, as_of, age, status, session, None if ref is None else ref.close, None if ref is None else ref.ts, change, pct, mine)

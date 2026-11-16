@@ -50,8 +50,8 @@ export function HeadsUpStrip() {
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t); }, []);
   const d = q.data;
   if (!d) return null;
-  const reminders = d.reminders.filter((r) => !(hidden[r.key] && hidden[r.key]! > now) && new Date(r.time_ist).getTime() > now - 60_000);
-  const news = d.news.filter((n) => !(hidden[n.key] && hidden[n.key]! > now));
+  const reminders = (d.reminders ?? []).filter((r) => !(hidden[r.key] && hidden[r.key]! > now) && new Date(r.time_ist).getTime() > now - 60_000);
+  const news = (d.news ?? []).filter((n) => !(hidden[n.key] && hidden[n.key]! > now));
   if (reminders.length === 0 && news.length === 0) return null;
   const close = () => {
     const next = { ...loadHidden(), ...hidden };

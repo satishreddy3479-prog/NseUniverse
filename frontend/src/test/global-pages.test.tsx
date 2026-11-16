@@ -15,7 +15,7 @@ const overview = {
       { key: "GIFT", name: "GIFT Nifty futures", unit: "", decimals: 2, kind: "gift", core: true, yield: false, price: 25266, change: 94.5, change_pct: 0.3754, prev_close: 25171.5, status: "closed", age_s: 100000, spark: [25200, 25266], chart_url: "https://www.nseix.com/get-quotes", note: "Near-month contract, expires 23 Nov 2026. NSE IX website feed (unofficial endpoint)." },
     ] },
     { key: "us_futures", title: "US index futures", items: [
-      { key: "ES", name: "S&P 500 futures", unit: "pts", decimals: 2, kind: "future", core: true, yield: false, price: 7583, change: -33.25, change_pct: -0.4366, prev_close: 7616.25, status: "closed", age_s: purePast(), spark: [7600, 7590, 7583], chart_url: "https://finance.yahoo.com/quote/ES%3DF/" },
+      { key: "ES", name: "S&P 500 futures", unit: "pts", decimals: 2, kind: "future", core: true, yield: false, price: 7583, change: -33.25, change_pct: -0.4366, prev_close: 7616.25, status: "closed", age_s: purePast(), spark: [7600, 7590, 7583], chart_url: "https://finance.yahoo.com/quote/ES%3DF/", delay_min: 10 },
       { key: "NQ", name: "Nasdaq 100 futures", unit: "pts", decimals: 2, kind: "future", core: true, yield: false, price: null, status: "no data" },
     ] },
     { key: "rates_fx", title: "Rates, dollar and currency", items: [
@@ -48,11 +48,11 @@ const news = {
   global: [], meta: { last_poll_ok: "2026-11-15T18:50:00+00:00", stale: false, last_error: null, sources: ["BBC News", "CNBC", "Economic Times"], note: "Headlines and the short summary." },
 };
 
-function mockApi() {
+function mockApi(extra: Record<string, unknown> = {}) {
   const routes: Record<string, unknown> = {
     "/api/status": status(), "/api/expiries": expiries, "/api/snapshots": [summary()], "/api/sessions": [], "/api/errors": [],
     "/api/global/overview": overview, "/api/global/series": { key: "ES", name: "S&P 500 futures", unit: "pts", decimals: 2, times: [], prices: [] },
-    "/api/calendar": calendar, "/api/news": news,
+    "/api/calendar": calendar, "/api/news": news, ...extra,
   };
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -240,5 +240,15 @@ describe("calendar country filter", () => {
     expect(screen.queryAllByText("WPI y/y")).toHaveLength(0);
     expect(within(screen.getByRole("region", { name: "Today" })).getByText("CPI m/m")).toBeInTheDocument();
     expect(screen.getByText("FOMC Meeting Minutes")).toBeInTheDocument();
+  });
+});
+
+describe("delayed feeds", () => {
+  it("shows a live future with its source delay instead of calling it stale", async () => {
+    const live = { ...overview, groups: [{ key: "us_futures", title: "US index futures", items: [{ ...overview.groups[1]!.items[0]!, status: "live", age_s: 560, delay_min: 10 }] }] };
+    mockApi({ "/api/global/overview": live });
+    renderAt("/tools/global-markets");
+    expect(await screen.findByText("Live · 10 min delay")).toBeInTheDocument();
+    expect(screen.queryByText("Stale")).toBeNull();
   });
 });

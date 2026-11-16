@@ -287,7 +287,7 @@ class GlobalService:
             items = []
             for s in (x for x in self.symbols if x.group == gkey):
                 r = latest.get(s.key)
-                item: dict[str, Any] = {"key": s.key, "name": s.name, "unit": s.unit, "decimals": s.decimals, "kind": s.kind, "core": s.core, "yield": s.yield_pct, "chart_url": chart_url(s)}
+                item: dict[str, Any] = {"key": s.key, "name": s.name, "unit": s.unit, "decimals": s.decimals, "kind": s.kind, "core": s.core, "yield": s.yield_pct, "chart_url": chart_url(s), "delay_min": s.delay_min}
                 if s.key == "GIFT":
                     g = self.store.last_run("gift", True)
                     item["note"] = f"Near-month contract, expires {g['detail']['expiry']}. {nseix.SOURCE_LABEL}." if g else nseix.SOURCE_LABEL

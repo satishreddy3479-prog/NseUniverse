@@ -23,8 +23,9 @@ const STATUS: Record<string, { label: string; dot: string }> = {
   closed: { label: "Closed", dot: "bg-muted" },
   "no data": { label: "No data", dot: "bg-down" },
 };
-function StatusChip({ status }: { status: string }) {
-  const s = STATUS[status] ?? { label: status, dot: "bg-down" };
+function StatusChip({ status, delay }: { status: string; delay?: number }) {
+  const base = STATUS[status] ?? { label: status, dot: "bg-down" };
+  const s = status === "live" && delay ? { ...base, label: `Live · ${delay} min delay` } : base; // the source feed is behind real time by about this much
   return <span className="inline-flex items-center gap-1 rounded-full border border-rule px-2 py-0.5 text-[11px] text-muted"><span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} aria-hidden />{s.label}</span>;
 }
 
@@ -46,7 +47,7 @@ function Card({ it, onOpen }: { it: GlobalItem; onOpen: () => void }) {
   return (
     <div className="flex flex-col rounded-[var(--radius-panel)] border border-rule bg-slate transition-colors hover:border-muted">
       <button type="button" onClick={onOpen} disabled={!has} aria-label={`Open chart of ${it.name}`} className="flex flex-col gap-1 p-3 pb-2 text-left disabled:opacity-60">
-        <span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold">{it.name}</span><StatusChip status={it.status} /></span>
+        <span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-semibold">{it.name}</span><StatusChip status={it.status} delay={it.delay_min} /></span>
         <span className="text-xl font-semibold tabular-nums">{has ? `${num(it.price as number, d)}${it.yield ? "%" : ""}` : MISSING}</span>
         <span className={`text-sm tabular-nums ${tone(it.change)}`}>
           {it.change == null ? "No reference close" : it.yield && it.bp != null ? `${signed(it.bp, 1)} bp` : `${signed(it.change, d)} (${signed(it.change_pct ?? 0, 2)}%)`}
@@ -120,7 +121,7 @@ function ChartSheet({ item, onClose }: { item: GlobalItem; onClose: () => void }
             <p className="text-sm tabular-nums">
               {item.price != null ? `${num(item.price, item.decimals)}${item.yield ? "%" : ""}` : MISSING}
               {item.change != null && <span className={`ml-2 ${tone(item.change)}`}>{item.yield && item.bp != null ? `${signed(item.bp, 1)} bp` : `${signed(item.change, item.decimals)} (${signed(item.change_pct ?? 0, 2)}%)`}</span>}
-              <span className="ml-2"><StatusChip status={item.status} /></span>
+              <span className="ml-2"><StatusChip status={item.status} delay={item.delay_min} /></span>
             </p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close chart" className="min-h-9 min-w-9 rounded-sm border border-rule bg-slate-2 px-2 text-lg leading-none hover:border-brass">×</button>

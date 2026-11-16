@@ -842,3 +842,17 @@ def test_the_api_serves_the_headsup(tmp_path: Path) -> None:
         svc.poll_calendar()
         body = c.get("/api/global/headsup").json()
         assert body["news"] == [] and any(r["name"] == "RBI Interest Rate Decision" and r["phase"] == "d3" for r in body["reminders"])
+
+
+def test_a_delayed_feed_is_live_within_its_normal_delay_and_stale_beyond_it() -> None:
+    es, kospi, spx = BY_KEY["ES"], BY_KEY["KOSPI"], BY_KEY["SPX"]
+    assert es.delay_min == 10 and kospi.delay_min == 20 and BY_KEY["N225"].delay_min == 15 and spx.delay_min == 0
+    monday = datetime(2026, 11, 16, 2, 0, tzinfo=UTC)  # Sunday 21:00 New York: the futures are trading; 07:30 IST: Korea has been open since 05:30
+    bar = Bar(monday - timedelta(minutes=10, seconds=20), 7580.0)  # stamped 10m20s ago: complete 9m20s ago, as the server saw at 02:18 (9.3 minutes behind)
+    assert build_quote(es, [bar], monday).status == "live"  # type: ignore[union-attr]  # 9.3 minutes old, inside the 18 minute allowance for a CME future
+    old = Bar(monday - timedelta(minutes=25), 7580.0)
+    assert build_quote(es, [old], monday).status == "stale"  # type: ignore[union-attr]  # 24 minutes: beyond the normal delay plus a poll
+    kbar = Bar(monday - timedelta(minutes=20), 5290.0)
+    assert build_quote(kospi, [kbar], monday).status == "live"  # type: ignore[union-attr]  # 19.3 minutes behind: normal for Yahoo's KOSPI
+    cash = Bar(datetime(2026, 11, 16, 15, 0, tzinfo=UTC) - timedelta(minutes=12), 7560.0)  # a cash index with no delay allowance: 11 minutes old is stale while it should trade
+    assert build_quote(spx, [cash], datetime(2026, 11, 16, 15, 0, tzinfo=UTC)).status == "stale"  # type: ignore[union-attr]
