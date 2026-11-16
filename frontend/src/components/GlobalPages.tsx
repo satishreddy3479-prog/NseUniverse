@@ -290,17 +290,35 @@ export function CalendarBody() {
 }
 
 const SEEN_KEY = "newsSeenAt";
+const READ_KEY = "nse-universe.news-read";
+const READ_KEEP_MS = 7 * 24 * 3_600_000; // the server keeps headlines 48 hours; a read mark is remembered longer than that and then dropped
 
-function NewsList({ title, items, since }: { title: string; items: NewsItem[]; since: number | null }) {
+/** Headlines marked read in this browser: {headline id: when}. Entries older than a week are dropped. */
+function loadRead(now = Date.now()): Record<string, number> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(READ_KEY) ?? "{}") as Record<string, number>;
+    return Object.fromEntries(Object.entries(raw).filter(([, at]) => typeof at === "number" && now - at < READ_KEEP_MS));
+  } catch {
+    return {};
+  }
+}
+
+interface ReadApi { read: Record<string, number>; mark: (ids: string[]) => void; unmark: (id: string) => void }
+
+function NewsList({ title, items, since, reads, empty }: { title: string; items: NewsItem[]; since: number | null; reads: ReadApi; empty: string }) {
   return (
     <section aria-label={title} className="overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate">
       <h2 className="border-b border-rule bg-slate-2 px-3 py-2 text-sm font-semibold">{title}</h2>
-      {items.length === 0 ? <p className="p-3 text-sm text-muted">No headlines stored yet.</p> : (
+      {items.length === 0 ? <p className="p-3 text-sm text-muted">{empty}</p> : (
         <ul>
-          {items.map((n) => (
-            <li key={n.id} className="border-t border-rule px-3 py-2.5 first:border-t-0">
-              <a href={n.link} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold hover:text-brass hover:underline">
-                {since != null && new Date(n.fetched).getTime() > since && <span className="mr-1.5 rounded-sm bg-brass px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase text-slate">New</span>}
+          {items.map((n) => {
+            const isRead = reads.read[n.id] != null;
+            return (
+            <li key={n.id} data-read={isRead ? "true" : "false"} className={`border-t border-rule px-3 py-2.5 first:border-t-0 ${isRead ? "opacity-60" : ""}`}>
+              {/* opening the headline (click, middle click or Enter) marks it read */}
+              <a href={n.link} target="_blank" rel="noopener noreferrer" onClick={() => reads.mark([n.id])} onAuxClick={() => reads.mark([n.id])}
+                className={`text-sm hover:text-brass hover:underline ${isRead ? "font-normal" : "font-semibold"}`}>
+                {!isRead && since != null && new Date(n.fetched).getTime() > since && <span className="mr-1.5 rounded-sm bg-brass px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase text-slate">New</span>}
                 {n.title}
               </a>
               {n.summary && <p className="mt-0.5 line-clamp-2 text-xs text-muted">{n.summary}</p>}
@@ -308,9 +326,12 @@ function NewsList({ title, items, since }: { title: string; items: NewsItem[]; s
                 <span className="rounded-full border border-rule px-2 py-0.5">{n.source}</span>
                 <span>{n.section}</span><span>· {fmtAge(n.age_min * 60)}</span>
                 {n.topics.map((t) => <span key={t} className="rounded-full bg-brass/15 px-2 py-0.5 text-brass">{t}</span>)}
+                <button type="button" onClick={() => (isRead ? reads.unmark(n.id) : reads.mark([n.id]))} aria-pressed={isRead} aria-label={`${isRead ? "Mark as unread" : "Mark as read"}: ${n.title}`}
+                  className="ml-auto min-h-7 rounded-sm border border-rule px-2 text-[11px] text-muted hover:border-brass hover:text-paper">{isRead ? "Mark unread" : "Mark read"}</button>
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </section>
@@ -329,23 +350,38 @@ export function NewsBody() {
     return () => { document.removeEventListener("visibilitychange", hide); save(); };
   }, []);
   const [moving, setMoving] = useState(false);
+  const [hideRead, setHideRead] = useState(false);
+  const [read, setRead] = useState<Record<string, number>>(() => loadRead());
+  const save = (next: Record<string, number>) => { try { localStorage.setItem(READ_KEY, JSON.stringify(next)); } catch { /* storage unavailable: kept for this visit only */ } return next; };
+  const reads: ReadApi = {
+    read,
+    mark: (ids) => setRead((cur) => { const at = Date.now(); const next = { ...loadRead(), ...cur }; let changed = false; for (const id of ids) if (next[id] == null) { next[id] = at; changed = true; } return changed ? save(next) : cur; }),
+    unmark: (id) => setRead((cur) => { const next = { ...loadRead(), ...cur }; delete next[id]; return save(next); }),
+  };
   const age = useMemo(() => (q.data?.meta.last_poll_ok ? (Date.now() - new Date(q.data.meta.last_poll_ok).getTime()) / 1000 : null), [q.data]);
   if (q.isLoading) return <Loading />;
   if (q.isError || !q.data) return <Problem what="The news" e={q.error} />;
   const n = q.data;
-  const keep = (l: NewsItem[]) => (moving ? l.filter((i) => i.topics.length > 0) : l);
-  const fresh = [...n.india, ...n.global].filter((i) => since.current != null && new Date(i.fetched).getTime() > since.current).length;
+  const keep = (l: NewsItem[]) => l.filter((i) => (!moving || i.topics.length > 0) && (!hideRead || read[i.id] == null));
+  const all = [...n.india, ...n.global];
+  const unread = all.filter((i) => read[i.id] == null);
+  const fresh = unread.filter((i) => since.current != null && new Date(i.fetched).getTime() > since.current).length;
   return (
     <div className="flex flex-col gap-3">
       <QuickLinks />
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted" role="status">{since.current == null ? "First visit: nothing is marked new yet." : fresh > 0 ? `${fresh} new since you last looked` : "Nothing new since you last looked"}</p>
-        <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={moving} onChange={(e) => setMoving(e.target.checked)} className="accent-[var(--brass)]" /> Market-moving topics only</label>
+        <p className="text-sm text-muted" role="status">{since.current == null ? "First visit: nothing is marked new yet." : fresh > 0 ? `${fresh} new since you last looked` : "Nothing new since you last looked"} · {unread.length} unread of {all.length}</p>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={moving} onChange={(e) => setMoving(e.target.checked)} className="accent-[var(--brass)]" /> Market-moving topics only</label>
+          <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={hideRead} onChange={(e) => setHideRead(e.target.checked)} className="accent-[var(--brass)]" /> Hide read</label>
+          <button type="button" disabled={unread.length === 0} onClick={() => reads.mark(unread.map((i) => i.id))}
+            className="min-h-9 rounded-sm border border-rule bg-slate-2 px-3 text-sm text-paper hover:border-brass disabled:opacity-40">Mark all as read</button>
+        </div>
       </div>
       {n.meta.stale && <p role="status" className="rounded-sm border border-warn/50 p-2 text-sm text-warn">{age == null ? "No headlines have been fetched yet." : `The feeds were last read ${fmtAge(age)}.`} Headlines below may be out of date.</p>}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <NewsList title="India" items={keep(n.india)} since={since.current} />
-        <NewsList title="Global" items={keep(n.global)} since={since.current} />
+        <NewsList title="India" items={keep(n.india)} since={since.current} reads={reads} empty={n.india.length ? "Nothing to show with these filters." : "No headlines stored yet."} />
+        <NewsList title="Global" items={keep(n.global)} since={since.current} reads={reads} empty={n.global.length ? "Nothing to show with these filters." : "No headlines stored yet."} />
       </div>
       <p className="text-xs text-muted">{n.meta.note} Sources: {n.meta.sources.join(", ")}. Moneycontrol is not included: it blocks automated reading.</p>
     </div>

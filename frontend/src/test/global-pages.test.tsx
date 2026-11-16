@@ -137,7 +137,7 @@ describe("news freshness", () => {
     const link = await screen.findByRole("link", { name: /Sensex ends higher/ });
     expect(within(link).getByText("New")).toBeInTheDocument();
     expect(within(screen.getByRole("link", { name: /Local fair opens/ })).queryByText("New")).toBeNull(); // stored before the last visit
-    expect(screen.getByText("1 new since you last looked")).toBeInTheDocument();
+    expect(screen.getByText(/^1 new since you last looked/)).toBeInTheDocument();
     expect(within(link.closest("li")!).getByText("NIFTY")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("checkbox", { name: /Market-moving topics only/ }));
     expect(screen.queryByRole("link", { name: /Local fair opens/ })).toBeNull();
@@ -147,7 +147,7 @@ describe("news freshness", () => {
   it("marks nothing as new on a first visit and says so", async () => {
     mockApi();
     renderAt("/tools/market-news");
-    expect(await screen.findByText("First visit: nothing is marked new yet.")).toBeInTheDocument();
+    expect(await screen.findByText(/^First visit: nothing is marked new yet\./)).toBeInTheDocument();
     expect(screen.queryByText("New")).toBeNull();
   });
 });
@@ -250,5 +250,68 @@ describe("delayed feeds", () => {
     renderAt("/tools/global-markets");
     expect(await screen.findByText("Live · 10 min delay")).toBeInTheDocument();
     expect(screen.queryByText("Stale")).toBeNull();
+  });
+});
+
+describe("news read marks", () => {
+  const link = (name: RegExp) => screen.findByRole("link", { name });
+  const stored = () => JSON.parse(localStorage.getItem("nse-universe.news-read") ?? "{}") as Record<string, number>;
+
+  it("opening a headline marks it read, dims it and removes its New badge; the mark survives a reload", async () => {
+    mockApi();
+    localStorage.setItem("newsSeenAt", String(new Date("2026-11-15T17:30:00Z").getTime()));
+    const first = renderAt("/tools/market-news");
+    const a = await link(/Sensex ends higher/);
+    expect(a.closest("li")).toHaveAttribute("data-read", "false");
+    expect(within(a).getByText("New")).toBeInTheDocument();
+    expect(screen.getByText(/· 2 unread of 2/)).toBeInTheDocument();
+    a.addEventListener("click", (e) => e.preventDefault()); // jsdom does not navigate; the page's own handler still runs
+    await userEvent.click(a);
+    expect(a.closest("li")).toHaveAttribute("data-read", "true");
+    expect(within(a).queryByText("New")).toBeNull();
+    expect(screen.getByText(/· 1 unread of 2/)).toBeInTheDocument();
+    expect(Object.keys(stored())).toEqual(["i1"]);
+    first.unmount();
+    renderAt("/tools/market-news");
+    expect((await link(/Sensex ends higher/)).closest("li")).toHaveAttribute("data-read", "true"); // remembered in this browser
+  });
+
+  it("a headline can be marked read and unread with its button, and the text of the button follows", async () => {
+    mockApi();
+    renderAt("/tools/market-news");
+    const mark = await screen.findByRole("button", { name: "Mark as read: Local fair opens" });
+    await userEvent.click(mark);
+    const li = screen.getByRole("link", { name: /Local fair opens/ }).closest("li")!;
+    expect(li).toHaveAttribute("data-read", "true");
+    const undo = within(li).getByRole("button", { name: "Mark as unread: Local fair opens" });
+    expect(undo).toHaveTextContent("Mark unread");
+    await userEvent.click(undo);
+    expect(li).toHaveAttribute("data-read", "false");
+    expect(stored()).toEqual({});
+  });
+
+  it("Mark all as read, Hide read, and an empty column that says why it is empty", async () => {
+    mockApi();
+    renderAt("/tools/market-news");
+    await link(/Sensex ends higher/);
+    await userEvent.click(screen.getByRole("button", { name: "Mark all as read" }));
+    expect(screen.getByText(/· 0 unread of 2/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mark all as read" })).toBeDisabled();
+    expect(Object.keys(stored()).sort()).toEqual(["i1", "i2"]);
+    await userEvent.click(screen.getByRole("checkbox", { name: "Hide read" }));
+    expect(screen.queryByRole("link", { name: /Sensex ends higher/ })).toBeNull();
+    expect(within(screen.getByRole("region", { name: "India" })).getByText("Nothing to show with these filters.")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Global" })).getByText("No headlines stored yet.")).toBeInTheDocument(); // genuinely empty, not filtered
+  });
+
+  it("read marks older than a week are dropped", async () => {
+    mockApi();
+    const old = Date.now() - 8 * 24 * 3_600_000;
+    localStorage.setItem("nse-universe.news-read", JSON.stringify({ gone: old, i2: Date.now() }));
+    renderAt("/tools/market-news");
+    expect((await link(/Local fair opens/)).closest("li")).toHaveAttribute("data-read", "true");
+    expect(screen.getByText(/· 1 unread of 2/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Mark as read: Sensex ends higher" }));
+    expect(Object.keys(stored()).sort()).toEqual(["i1", "i2"]); // the old one is gone from storage
   });
 });
