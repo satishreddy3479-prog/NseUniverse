@@ -24,8 +24,10 @@ _CATALYST = re.compile(
 
 
 def is_catalyst(row: dict[str, Any]) -> bool:
-    """India's releases (the calendar already limits them to the ones that matter) and the named US catalysts."""
+    """India's releases (the calendar already limits them to the ones that matter) and the named US catalysts; other countries get no reminder."""
     name = row["name"]
+    if row["country"] not in ("India", "US"):
+        return False  # the board follows India and the US; the calendar page still lists the other countries
     return row["country"] == "India" or (not name.lower().startswith("adp") and bool(_CATALYST.search(name)))  # ADP's private-payrolls estimate is a minor preview of the jobs report
 
 

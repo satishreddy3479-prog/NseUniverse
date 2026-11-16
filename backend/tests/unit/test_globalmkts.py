@@ -764,7 +764,7 @@ def test_reminder_phases_start_three_days_out_come_daily_then_every_four_hours_w
 
 def test_only_market_moving_catalysts_get_a_reminder() -> None:
     yes = [("US", "Nonfarm Payrolls"), ("US", "Fed Interest Rate Decision"), ("US", "CPI y/y"), ("US", "Core PCE Price Index m/m"), ("US", "GDP q/q"), ("India", "WPI y/y"), ("India", "RBI Interest Rate Decision"), ("US", "Retail Sales m/m"), ("US", "FOMC Press Conference")]
-    no = [("US", "EIA Crude Oil Stocks Change"), ("US", "Initial Jobless Claims"), ("US", "10-Year Note Auction"), ("US", "Philadelphia Fed Manufacturing Index"), ("US", "New Home Sales"), ("US", "ADP Nonfarm Employment Change")]
+    no = [("US", "EIA Crude Oil Stocks Change"), ("US", "Initial Jobless Claims"), ("US", "10-Year Note Auction"), ("US", "Philadelphia Fed Manufacturing Index"), ("US", "New Home Sales"), ("US", "ADP Nonfarm Employment Change"), ("Canada", "CPI m/m"), ("UK", "CPI y/y"), ("Euro area", "ECB Interest Rate Decision")]  # other countries: no reminder
     assert all(headsup.is_catalyst({"country": c, "name": n}) for c, n in yes)
     assert not any(headsup.is_catalyst({"country": c, "name": n}) for c, n in no)
 
