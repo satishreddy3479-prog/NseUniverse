@@ -847,6 +847,13 @@ async def intelligence_straddle(
     return await asyncio.to_thread(svc.summary, ex, day, as_of)
 
 
+@router.get("/intelligence/straddle/scores")
+async def intelligence_straddle_scores(request: Request) -> dict[str, Any]:
+    """The newest recorded seller and buyer scores (a small read for the top bar)."""
+    svc = _straddle(request)
+    return await asyncio.to_thread(svc.latest_scores)
+
+
 @router.get("/intelligence/straddle/alerts")
 async def intelligence_straddle_alerts(
     request: Request, session: date | None = None

@@ -13,6 +13,7 @@ import { SpotBadge } from "./SpotBadge";
 import { StatusPill } from "./StatusPill";
 import { AlertStrip } from "./AlertStrip";
 import { HeadsUpStrip } from "./HeadsUp";
+import { ScoreChips } from "./ScoreChips";
 import { ErrorBoundary } from "./ErrorBoundary";
 
 
@@ -55,7 +56,10 @@ export function AppShell() {
         <TopNav />
         {/* on a phone the price sits next to the logo and the status and theme button go to the far edge; from md up everything is pushed right */}
         <div className="flex min-w-0 flex-1 items-center justify-between gap-x-2 whitespace-nowrap md:ml-auto md:flex-none md:justify-end sm:gap-x-2.5">
-          <SpotBadge latest={spotSnapshot ?? latest} className="md:flex-nowrap" />
+          <div className="flex min-w-0 items-center gap-x-2.5">
+            <SpotBadge latest={spotSnapshot ?? latest} className="md:flex-nowrap" />
+            <ScoreChips />
+          </div>
           <div className="flex shrink-0 items-center gap-x-2 sm:gap-x-2.5">
             <StatusPill signals={signals} />
             <ThemeSwitch />

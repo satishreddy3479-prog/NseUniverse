@@ -145,6 +145,7 @@ export interface ForwardOverview {
   breakdown: { dimension: string; title: string; options: Record<string, string>; min_trades: number; rows: { bucket: string; n: number; cells: Record<string, ForwardCell> }[] };
   open: ForwardOpen[]; trades: ForwardTrade[];
 }
+export interface StraddleScores { available: boolean; session?: string; at?: string; age_s?: number; expiry?: string; seller?: number; buyer?: number; regime?: string | null; seller_15m?: number | null; buyer_15m?: number | null }
 export interface NewsItem { id: string; title: string; link: string; summary: string; source: string; section: string; published: string; age_min: number; fetched: string; topics: string[] }
 export interface NewsView {
   generated_at: string; india: NewsItem[]; global: NewsItem[];
@@ -155,6 +156,7 @@ export const api = {
   globalOverview: () => request<GlobalOverview>("/api/global/overview"),
   globalSeries: (symbol: string, hours: number) => request<GlobalSeries>(`/api/global/series?symbol=${encodeURIComponent(symbol)}&hours=${hours}`),
   calendar: () => request<CalendarView>("/api/calendar"),
+  straddleScores: () => request<StraddleScores>("/api/intelligence/straddle/scores"),
   forward: (structure: string, cohort: string, dim: string) => request<ForwardOverview>(`/api/forward/overview?structure=${structure}&cohort=${cohort}&dim=${dim}`),
   headsUp: () => request<HeadsUp>("/api/global/headsup"),
   news: () => request<NewsView>("/api/news"),

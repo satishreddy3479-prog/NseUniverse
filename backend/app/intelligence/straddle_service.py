@@ -250,6 +250,26 @@ class StraddleDecay:
             alerts = [a for a in alerts if datetime.fromisoformat(a["at"]) <= until][:30]
         return {"history": hist, "alerts": alerts, "environment_trend": trend, "storage": {"rows_today": len(rows), "bytes": self.store.size_bytes()}}
 
+    def latest_scores(self) -> dict[str, Any]:
+        """The newest recorded seller and buyer environment scores, with how old they are and where they were 15 minutes before: a small read for the top bar (no analysis)."""
+        if self.store is None or not self.enabled:
+            return {"available": False}
+        days = self.store.sessions(1)
+        if not days:
+            return {"available": False}
+        rows = self.store.rows(days[0], 40, newest_first=True)
+        if not rows or rows[0]["seller"] is None or rows[0]["buyer"] is None:
+            return {"available": False}
+        last = rows[0]
+        at = datetime.fromisoformat(last["at"])
+        cut = at - timedelta(minutes=15)
+        old = next((r for r in rows if datetime.fromisoformat(r["at"]) <= cut and datetime.fromisoformat(r["at"]) >= cut - timedelta(minutes=3)), None)
+        now = self._clock()
+        return {
+            "available": True, "session": days[0], "at": last["at"], "age_s": max(0, round((now - at).total_seconds())), "expiry": last["expiry"], "seller": last["seller"], "buyer": last["buyer"],
+            "regime": last["regime"], "seller_15m": None if old is None else old["seller"], "buyer_15m": None if old is None else old["buyer"],
+        }  # fmt: skip
+
     def alerts(self, session: str | None = None, limit: int = 60) -> dict[str, Any]:
         day = session or self._clock().astimezone(IST).date().isoformat()
         return {"session": day, "alerts": [] if self.store is None else self.store.alerts(day, limit), "thresholds": self.alert_cfg,
