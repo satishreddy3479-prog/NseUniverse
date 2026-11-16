@@ -125,6 +125,9 @@ export interface CalendarView {
   sections: { key: string; title: string; events: CalEvent[] }[];
   sources: { name: string; last_ok: string | null; last_error: unknown }[];
 }
+export interface HeadsUpReminder { key: string; event_id: string; phase: string; name: string; country: string; impact: string; time_ist: string; minutes_to: number; previous: string | null; forecast: string | null }
+export interface HeadsUpNews { key: string; title: string; link: string; source: string; topics: string[]; age_min: number }
+export interface HeadsUp { generated_at: string; reminders: HeadsUpReminder[]; news: HeadsUpNews[] }
 export interface NewsItem { id: string; title: string; link: string; summary: string; source: string; section: string; published: string; age_min: number; fetched: string; topics: string[] }
 export interface NewsView {
   generated_at: string; india: NewsItem[]; global: NewsItem[];
@@ -135,6 +138,7 @@ export const api = {
   globalOverview: () => request<GlobalOverview>("/api/global/overview"),
   globalSeries: (symbol: string, hours: number) => request<GlobalSeries>(`/api/global/series?symbol=${encodeURIComponent(symbol)}&hours=${hours}`),
   calendar: () => request<CalendarView>("/api/calendar"),
+  headsUp: () => request<HeadsUp>("/api/global/headsup"),
   news: () => request<NewsView>("/api/news"),
   holidays: () => request<HolidaysView>("/api/market/holidays"),
   putHolidays: (body: HolidaysUpdate) =>

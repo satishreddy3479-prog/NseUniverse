@@ -1379,6 +1379,12 @@ async def global_health(request: Request) -> dict[str, Any]:
     return await asyncio.to_thread(_globalmkts(request).health)
 
 
+@router.get("/global/headsup")
+async def global_headsup(request: Request) -> dict[str, Any]:
+    """Event reminders and fresh market-moving headlines for the heads-up strip."""
+    return await asyncio.to_thread(_globalmkts(request).headsup)
+
+
 @router.get("/global/series")
 async def global_series(
     request: Request, symbol: str, hours: Annotated[float, Query(ge=0, le=168)] = 24.0

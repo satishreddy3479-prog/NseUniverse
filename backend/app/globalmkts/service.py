@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from app.globalmkts import calendar_feed, news, nseix
+from app.globalmkts import calendar_feed, headsup, news, nseix
 from app.globalmkts.quotes import (
     Bar,
     Downloader,
@@ -335,19 +335,10 @@ class GlobalService:
             "times": [datetime.fromtimestamp(t / 1000, UTC).isoformat() for t, _ in pts], "prices": [p for _, p in pts],
         }  # fmt: skip
 
-    def calendar_view(self) -> dict[str, Any]:
-        now = self._clock()
-        today = now.astimezone(IST).date()
-        week_end = today + timedelta(days=6 - today.weekday())  # Sunday
-        next_end = week_end + timedelta(days=7)
-        month_end = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-        ahead_end = today + timedelta(days=45)  # "Coming up": past the end of this month, so the next RBI or Fed decision shows early
-        horizon = max(next_end, month_end, ahead_end)
-
-        def at(d: Any) -> int:
-            return ms(datetime(d.year, d.month, d.day, tzinfo=IST))
-
-        every = self.store.events_between(at(today), at(horizon + timedelta(days=1)))
+    def _visible_rows(self, start_ms: int, end_ms: int) -> list[dict[str, Any]]:
+        """The calendar rows the page shows between two times: three-star events plus India's two-star ones, one row per release (a release carried by several sources
+        appears once, from the highest-ranked source, with the highest importance any of them gave it)."""
+        every = self.store.events_between(start_ms, end_ms)
         rank = {calendar_feed.LOCAL_LABEL: 0, calendar_feed.BQ_LABEL: 1}  # a release in a higher source (the export, then biquote with exact times and readings) replaces the same one in the others
         level = {"low": 0, "medium": 1, "high": 2}
 
@@ -361,6 +352,21 @@ class GlobalService:
             return r | {"impact": best}
 
         rows = [x for x in (top(r) for r in every if not beaten(r)) if x["impact"] == "high" or (x["impact"] == "medium" and x["country"] == "India")]  # three-star events, plus India's two-star ones (MQL5 rates most Indian releases medium)
+        return rows
+
+    def calendar_view(self) -> dict[str, Any]:
+        now = self._clock()
+        today = now.astimezone(IST).date()
+        week_end = today + timedelta(days=6 - today.weekday())  # Sunday
+        next_end = week_end + timedelta(days=7)
+        month_end = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+        ahead_end = today + timedelta(days=45)  # "Coming up": past the end of this month, so the next RBI or Fed decision shows early
+        horizon = max(next_end, month_end, ahead_end)
+
+        def at(d: Any) -> int:
+            return ms(datetime(d.year, d.month, d.day, tzinfo=IST))
+
+        rows = self._visible_rows(at(today), at(horizon + timedelta(days=1)))
         nowms = ms(now)
 
         def shape(r: dict[str, Any]) -> dict[str, Any]:
@@ -396,6 +402,32 @@ class GlobalService:
             })  # fmt: skip
         return {"generated_at": now.isoformat(), "today": today.isoformat(), "sections": sections, "next": nxt, "sources": sources,
                 "note": "Three-star events, plus India's two-star releases (shown with two stars). Times are in IST. Official dates come from the central banks and statistics agencies named on each event; the feed is a third-party feed."}  # fmt: skip
+
+    def headsup(self) -> dict[str, Any]:
+        """What deserves a reminder now: upcoming catalysts in the next 3 days (see headsup.py for when each comes back) and fresh market-moving headlines."""
+        now = self._clock()
+        nowms = ms(now)
+        reminders: list[dict[str, Any]] = []
+        for r in self._visible_rows(nowms, nowms + int(headsup.LEAD_H * 3600_000) + 1):
+            hours = (r["ts"] - nowms) / 3600_000
+            if r["ts"] < nowms or r["all_day"] or not headsup.is_catalyst(r):
+                continue
+            phase = headsup.phase_of(hours)
+            reminders.append({
+                "key": f"{r['id']}:{phase}", "event_id": r["id"], "phase": phase, "name": r["name"], "country": r["country"], "impact": r["impact"],
+                "time_ist": datetime.fromtimestamp(r["ts"] / 1000, UTC).astimezone(IST).isoformat(), "minutes_to": round((r["ts"] - nowms) / 60000),
+                "previous": r["previous"], "forecast": r["forecast"],
+            })  # fmt: skip
+        fresh: list[dict[str, Any]] = []
+        for region in ("India", "Global"):
+            for r in self.store.news(region, 60):
+                age_h = (nowms - r["published"]) / 3600_000
+                fetched_min = (nowms - r["fetched"]) / 60_000
+                tags = news.topics(r["title"], r["summary"])
+                if tags and fetched_min <= headsup.NEWS_FRESH_MIN and 0 <= age_h <= headsup.NEWS_PUBLISHED_H:
+                    fresh.append({"key": r["id"], "title": r["title"], "link": r["link"], "source": r["source"], "topics": tags, "age_min": max(0, round(age_h * 60)), "published": r["published"]})
+        fresh.sort(key=lambda x: -x["published"])
+        return {"generated_at": now.isoformat(), "reminders": reminders[: headsup.EVENTS_MAX], "news": [{k: v for k, v in n.items() if k != "published"} for n in fresh[: headsup.NEWS_MAX]]}
 
     def news_view(self) -> dict[str, Any]:
         now = self._clock()

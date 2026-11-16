@@ -17,7 +17,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from app.globalmkts import calendar_feed, news, nseix
+from app.globalmkts import calendar_feed, headsup, news, nseix
 from app.globalmkts.quotes import Bar, bars_from_frame, build_quote
 from app.globalmkts.service import GlobalService
 from app.globalmkts.store import GlobalStore
@@ -749,3 +749,96 @@ def test_a_chart_series_carries_the_previous_close_the_source_link_and_stays_lig
     assert len(many["prices"]) <= 720 and len(many["times"]) == len(many["prices"])
     assert many["times"] == sorted(many["times"]) and many["prices"][-1] == 28000 + (4299 % 50)
     assert s.series("NOPE")["error"]
+
+
+# ------------------------------------------------------------------ heads-up: event reminders and fresh news
+def test_reminder_phases_start_three_days_out_come_daily_then_every_four_hours_with_a_final_one() -> None:
+    assert headsup.phase_of(71.9) == "d3" and headsup.phase_of(48.1) == "d3"
+    assert headsup.phase_of(47.9) == "d2" and headsup.phase_of(24.1) == "d2"
+    assert [headsup.phase_of(h) for h in (23.9, 20.1, 19.9, 16.1, 12.0, 8.0, 4.0, 3.9, 1.1)] == ["h5", "h5", "h4", "h4", "h3", "h2", "h1", "h0", "h0"]
+    assert headsup.phase_of(1.0) == "final" and headsup.phase_of(0.2) == "final"
+    # ordered through the last day the phase changes exactly every 4 hours: a closed reminder returns on each change
+    seen = [headsup.phase_of(h / 10) for h in range(240, 0, -1)]
+    assert [p for i, p in enumerate(seen) if i == 0 or seen[i - 1] != p] == ["h5", "h4", "h3", "h2", "h1", "h0", "final"]
+
+
+def test_only_market_moving_catalysts_get_a_reminder() -> None:
+    yes = [("US", "Nonfarm Payrolls"), ("US", "Fed Interest Rate Decision"), ("US", "CPI y/y"), ("US", "Core PCE Price Index m/m"), ("US", "GDP q/q"), ("India", "WPI y/y"), ("India", "RBI Interest Rate Decision"), ("US", "Retail Sales m/m"), ("US", "FOMC Press Conference")]
+    no = [("US", "EIA Crude Oil Stocks Change"), ("US", "Initial Jobless Claims"), ("US", "10-Year Note Auction"), ("US", "Philadelphia Fed Manufacturing Index"), ("US", "New Home Sales"), ("US", "ADP Nonfarm Employment Change")]
+    assert all(headsup.is_catalyst({"country": c, "name": n}) for c, n in yes)
+    assert not any(headsup.is_catalyst({"country": c, "name": n}) for c, n in no)
+
+
+def test_reminders_for_the_next_three_days_carry_the_phase_previous_and_forecast(tmp_path: Path) -> None:
+    # Tuesday 1 Dec 10:30 IST: the RBI decision (4 Dec 10:00 IST) is 71.5 hours away, the jobs report (4 Dec 19:00 IST) 80.5 hours: not yet
+    s, _ = service(tmp_path, now=datetime(2026, 12, 1, 5, 0, tzinfo=UTC))
+    s.poll_calendar()
+    h = s.headsup()
+    names = [(r["name"], r["phase"]) for r in h["reminders"]]
+    assert ("RBI Interest Rate Decision", "d3") in names and not any("Nonfarm Payrolls" in n for n, _ in names)
+    rbi = next(r for r in h["reminders"] if r["name"] == "RBI Interest Rate Decision")
+    assert rbi["key"] == f"{rbi['event_id']}:d3" and rbi["previous"] == "5.50%" and rbi["forecast"] is None and rbi["minutes_to"] == 4290 and rbi["time_ist"].startswith("2026-12-04T10:00")
+    assert not any("EIA" in n or "Jobless" in n for n, _ in names)  # three-star in the feed but not catalysts
+
+
+def test_the_same_event_moves_through_the_phases_as_time_passes(tmp_path: Path) -> None:
+    keys: list[str] = []
+    for now, phase in [
+        (datetime(2026, 12, 6, 19, 30, tzinfo=UTC), "d3"),   # Fed decision 9 Dec 19:00 UTC: 71.5 h
+        (datetime(2026, 12, 7, 19, 30, tzinfo=UTC), "d2"),   # 47.5 h
+        (datetime(2026, 12, 9, 2, 0, tzinfo=UTC), "h4"),     # 17 h
+        (datetime(2026, 12, 9, 14, 30, tzinfo=UTC), "h1"),   # 4.5 h...
+        (datetime(2026, 12, 9, 18, 30, tzinfo=UTC), "final"),  # 0.5 h
+    ]:
+        s, _ = service(tmp_path, now=now)
+        s.poll_calendar()
+        r = next(x for x in s.headsup()["reminders"] if x["name"] == "Fed Interest Rate Decision")
+        assert r["phase"] == phase, (now, r["phase"])
+        keys.append(r["key"])
+    assert len(set(keys)) == 5  # each phase is a new reminder
+    assert all(k.endswith(p) for k, p in zip(keys, ["d3", "d2", "h4", "h1", "final"], strict=True))
+
+
+def test_a_past_event_and_one_beyond_three_days_have_no_reminder(tmp_path: Path) -> None:
+    s, _ = service(tmp_path, now=datetime(2026, 12, 9, 19, 30, tzinfo=UTC))  # half an hour after the Fed decision
+    s.poll_calendar()
+    names = [r["name"] for r in s.headsup()["reminders"]]
+    assert "Fed Interest Rate Decision" not in names
+    s2, _ = service(tmp_path / "b", now=datetime(2026, 11, 20, 5, 0, tzinfo=UTC))  # 19 days before
+    s2.poll_calendar()
+    assert s2.headsup()["reminders"] == []
+
+
+def test_fresh_market_moving_headlines_are_listed_newest_first_and_stale_or_untagged_ones_are_not(tmp_path: Path) -> None:
+    now = datetime(2026, 11, 16, 5, 0, tzinfo=UTC)
+    s, _ = service(tmp_path, now=now)
+
+    def item(i: str, title: str, published_min_ago: int, fetched_min_ago: int) -> dict[str, Any]:
+        return {"id": i, "source": "Economic Times", "region": "India", "section": "Markets", "title": title, "link": f"https://x.test/{i}", "summary": "",
+                "published": int((now - timedelta(minutes=published_min_ago)).timestamp() * 1000), "_fetched": fetched_min_ago}
+
+    rows = [
+        item("a", "RBI keeps repo rate unchanged", 20, 10),  # fresh and tagged
+        item("b", "Sensex jumps 500 points", 5, 2),  # fresher and tagged: first
+        item("c", "Local fair opens", 5, 2),  # no topic
+        item("d", "Fed signals a pause", 200, 5),  # published more than 3 hours ago
+        item("e", "Crude falls on OPEC talk", 30, 60),  # stored more than 45 minutes ago
+        item("f", "Gold edges higher", 40, 20),
+        item("g", "Nifty ends flat", 50, 30),
+        item("h", "Rupee steady", 55, 31),  # fourth fresh one: beyond the cap of three
+    ]
+    for r in rows:
+        s.store.add_news([{k: v for k, v in r.items() if k != "_fetched"}], now - timedelta(minutes=r["_fetched"]))
+    h = s.headsup()
+    assert [n["key"] for n in h["news"]] == ["b", "a", "f"]
+    assert h["news"][0]["topics"] == ["NIFTY"] and h["news"][0]["age_min"] == 5 and h["news"][0]["link"] == "https://x.test/b"
+
+
+def test_the_api_serves_the_headsup(tmp_path: Path) -> None:
+    app = make_app(tmp_path)
+    with TestClient(app) as c:
+        svc, _ = service(tmp_path / "g", now=datetime(2026, 12, 1, 5, 0, tzinfo=UTC))
+        app.state.globalmkts = svc
+        svc.poll_calendar()
+        body = c.get("/api/global/headsup").json()
+        assert body["news"] == [] and any(r["name"] == "RBI Interest Rate Decision" and r["phase"] == "d3" for r in body["reminders"])
