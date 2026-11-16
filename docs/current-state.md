@@ -8,6 +8,9 @@ _Last updated: 2026-11-04_
 ## Global markets, economic calendar, news (16 Nov 2026)
 Built (D172), three pages in the Analyse menu fed by `app/globalmkts` (Yahoo one-minute bars, Forex Factory public feed plus the official event list, ET/BBC/CNBC RSS). Backend 19 new tests and frontend 3 new tests on real captured payloads; full suites pass. Moneycontrol is not used (blocked for honest clients). To verify after deploy: `/api/global/overview`, `/api/calendar`, `/api/news` on the server, the futures' real delay once CME reopens (Mon 04:30 IST), `global.sqlite3` growth. GIFT Nifty has no source yet.
 
+## Forward test (16 Nov 2026)
+Built (D173): paper short straddles and strangles opened when the seller score reaches 60, 11 exit rules tracked, dashboards by exit rule and market regime (Analyse > Forward Test). Backend 11 tests (exit rules hand-calculated on the real 16 Nov prices), frontend 4. To verify on the server: positions open when a score reaches 60 in 09:30-14:30, they settle at 15:20, `forward.sqlite3` grows by a few dozen rows a day; the monthly cohort reads the monthly expiry's own live analysis (about 2 s a minute).
+
 ## Global board additions (16 Nov 2026)
 GIFT Nifty from the NSE IX website feed, View chart links on every card, calendar country filter, biquote / MQL5 calendar (India and US), hourly clean-up of passed calendar days and news older than 48 h (D172 addenda). To verify: GIFT Nifty live while it trades, actuals filling in on release days, `cleanup` runs and `global.sqlite3` size.
 

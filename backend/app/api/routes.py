@@ -1385,6 +1385,15 @@ async def global_headsup(request: Request) -> dict[str, Any]:
     return await asyncio.to_thread(_globalmkts(request).headsup)
 
 
+@router.get("/forward/overview")
+async def forward_overview(
+    request: Request, structure: Annotated[str, Query(pattern="^(all|straddle|strangle)$")] = "all",
+    cohort: Annotated[str, Query(pattern="^(all|weekly|monthly)$")] = "all", dim: str = "regime",
+) -> dict[str, Any]:
+    """The forward test: exit variants of the paper short positions, equity, regime breakdowns."""
+    return await asyncio.to_thread(request.app.state.forward.overview, structure, cohort, dim)
+
+
 @router.get("/global/series")
 async def global_series(
     request: Request, symbol: str, hours: Annotated[float, Query(ge=0, le=168)] = 24.0

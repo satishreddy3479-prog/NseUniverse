@@ -165,3 +165,6 @@ Measured on the server: data 47-50 MB, growth about 7.5 MB/day, 12 GB free; at t
 
 ## Global board store (`global.sqlite3`, D172)
 Tables: one-minute price bars of 20 symbols (about 1,400 a day for futures, fewer for cash indices; deleted after 7 days by the hourly clean-up), latest quote per symbol, run log, calendar events and revisions (deleted when their day has passed), news (deleted after 48 hours). The hourly clean-up logs the database size in its run record (`cleanup`).
+
+## Forward test store (`forward.sqlite3`, D173)
+One row per simulated position and one per exit rule of each (11), the arming state and a run log (last 500). A trigger makes up to 4 positions (44 result rows): well under 1 MB a month. Kept, not deleted; deleting needs approval.

@@ -24,6 +24,7 @@ import { IvMomentumBody } from "../components/IvMomentum";
 import { IvSkewBody } from "../components/IvSkew";
 import { IvHvBody, IvIntradayBody } from "../components/IvTools";
 import { CalendarBody, GlobalBody, NewsBody } from "../components/GlobalPages";
+import { ForwardBody } from "../components/ForwardTest";
 import { fmtExpiry } from "../lib/format";
 import { useExpiries } from "../lib/hooks";
 import { toolById, toolPath } from "../lib/tools";
@@ -152,7 +153,8 @@ export default function ToolPage() {
         {tool.page === "global" && <GlobalBody />}
         {tool.page === "calendar" && <CalendarBody />}
         {tool.page === "news" && <NewsBody />}
-        {tool.page && tool.page !== "flows" && tool.page !== "cash" && tool.page !== "futflow" && tool.page !== "futsectors" && tool.page !== "futbuildup" && tool.page !== "ivhv" && tool.page !== "ivchart" && tool.page !== "ivskew" && tool.page !== "ivmomentum" && tool.page !== "strikepos" && tool.page !== "marketstructure" && tool.page !== "backtest" && tool.page !== "ivintraday" && tool.page !== "global" && tool.page !== "calendar" && tool.page !== "news" && <IndexToolBody page={tool.page} />}
+        {tool.page === "forward" && <ForwardBody />}
+        {tool.page && tool.page !== "flows" && tool.page !== "cash" && tool.page !== "futflow" && tool.page !== "futsectors" && tool.page !== "futbuildup" && tool.page !== "ivhv" && tool.page !== "ivchart" && tool.page !== "ivskew" && tool.page !== "ivmomentum" && tool.page !== "strikepos" && tool.page !== "marketstructure" && tool.page !== "backtest" && tool.page !== "ivintraday" && tool.page !== "global" && tool.page !== "calendar" && tool.page !== "news" && tool.page !== "forward" && <IndexToolBody page={tool.page} />}
       </div>
     </DashProvider>
     </ReplayProvider>

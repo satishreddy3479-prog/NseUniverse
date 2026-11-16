@@ -128,6 +128,23 @@ export interface CalendarView {
 export interface HeadsUpReminder { key: string; event_id: string; phase: string; name: string; country: string; impact: string; time_ist: string; minutes_to: number; previous: string | null; forecast: string | null }
 export interface HeadsUpNews { key: string; title: string; link: string; source: string; topics: string[]; age_min: number }
 export interface HeadsUp { generated_at: string; reminders: HeadsUpReminder[]; news: HeadsUpNews[] }
+export interface ForwardVariant { variant: string; label: string; n: number; wins?: number; win_rate?: number; total?: number; avg?: number; best?: number; worst?: number; max_drawdown?: number; profit_factor?: number | null; avg_intraday_worst?: number | null; stop_rate?: number }
+export interface ForwardCell { n: number; avg: number | null; win_rate: number | null; total: number }
+export interface ForwardTrade {
+  id: number; session: string; cohort: string; expiry: string; structure: string; n: number; trigger_at: string; spot0: number; ce_strike: number; pe_strike: number; ce0: number; pe0: number;
+  seller: number | null; buyer: number | null; regime: string | null; eod: { net_move_pts?: number | null } | null; nets: Record<string, number>; best: { variant: string; net: number } | null; worst: { variant: string; net: number } | null;
+}
+export interface ForwardOpen {
+  id: number; session: string; cohort: string; expiry: string; structure: string; n: number; trigger_at: string; ce_strike: number; pe_strike: number; ce0: number; pe0: number; spot0: number; spot: number | null;
+  seller: number | null; regime: string | null; variants: Record<string, { pnl: number | null; ce_open: boolean; pe_open: boolean; stopped_at: string | null }>;
+}
+export interface ForwardOverview {
+  generated_at: string; filters: { structure: string; cohort: string };
+  meta: { enabled: boolean; counts: { open: number; settled: number; days: number }; last_run: { at: string; ok: boolean } | null; last_tick: string | null; last_error: string | null; bytes: number; min_trades: number; rules: { trigger: string; rearm: string; entry_window: string; exit: string; lot: number } };
+  variants: ForwardVariant[]; equity: { times: string[]; curves: Record<string, number[]> };
+  breakdown: { dimension: string; title: string; options: Record<string, string>; min_trades: number; rows: { bucket: string; n: number; cells: Record<string, ForwardCell> }[] };
+  open: ForwardOpen[]; trades: ForwardTrade[];
+}
 export interface NewsItem { id: string; title: string; link: string; summary: string; source: string; section: string; published: string; age_min: number; fetched: string; topics: string[] }
 export interface NewsView {
   generated_at: string; india: NewsItem[]; global: NewsItem[];
@@ -138,6 +155,7 @@ export const api = {
   globalOverview: () => request<GlobalOverview>("/api/global/overview"),
   globalSeries: (symbol: string, hours: number) => request<GlobalSeries>(`/api/global/series?symbol=${encodeURIComponent(symbol)}&hours=${hours}`),
   calendar: () => request<CalendarView>("/api/calendar"),
+  forward: (structure: string, cohort: string, dim: string) => request<ForwardOverview>(`/api/forward/overview?structure=${structure}&cohort=${cohort}&dim=${dim}`),
   headsUp: () => request<HeadsUp>("/api/global/headsup"),
   news: () => request<NewsView>("/api/news"),
   holidays: () => request<HolidaysView>("/api/market/holidays"),

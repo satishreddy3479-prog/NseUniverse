@@ -80,6 +80,7 @@ class Settings(BaseSettings):
     backup_keep_monthly: int = 6
     swing_paper_enabled: bool = True  # after-close swing scan + paper trades (paper only)
     swing_live_enabled: bool = True  # live prices for the swing paper book (shadow decisions only)
+    forward_enabled: bool = True  # paper forward test of short straddles/strangles (paper only)
     intelligence_enabled: bool = True  # market-intelligence dashboard
     intelligence_volatility: str = ""  # JSON, e.g. {"mode": "context"}
     intelligence_weights: str = ""  # JSON object overriding engine weights, e.g. {"futures": 30}

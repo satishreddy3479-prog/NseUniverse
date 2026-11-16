@@ -20,6 +20,8 @@ from app.api.routes import router
 from app.api.ws import router as ws_router
 from app.broker.base import MarketDataBroker
 from app.config import Settings, get_settings
+from app.forward.service import ForwardService
+from app.forward.store import ForwardStore
 from app.globalmkts.service import GlobalService
 from app.globalmkts.store import GlobalStore
 from app.intelligence.straddle_service import StraddleDecay
@@ -304,6 +306,22 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             store=StraddleStore(settings.data_dir), mi=intelligence.summary,
         )
         app.state.straddle.start()
+        async def forward_expiries() -> tuple[str | None, str | None]:
+            sel = await snapshot_service.expiries()
+            weekly = None if sel.weekly is None else sel.weekly.isoformat()
+            return weekly, (None if sel.monthly is None else sel.monthly.isoformat())
+
+        forward = ForwardService(
+            observations=observations,
+            straddle=app.state.straddle,
+            store=ForwardStore(settings.data_dir),
+            underlying=settings.underlying,
+            expiries=forward_expiries,
+            lot=settings.cost_lot_size,
+            enabled=settings.forward_enabled and settings.intelligence_enabled,
+        )
+        app.state.forward = forward
+        forward.start()
         swing_paper = SwingPaperService(
             PaperStore(settings.data_dir), HttpFetcher(), enabled=settings.swing_paper_enabled,
             run_after=time(sh, sm),
@@ -378,6 +396,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             await history.stop()
             await flows.stop()
             await globalmkts.stop()
+            await forward.stop()
             flows_store.close()
             app.state.strategies.close()
             history_store.close()
