@@ -64,8 +64,10 @@ describe("leg timestamps", () => {
   it("a leg saved before it kept an entry time uses the strategy start and says so; with neither it says the time was not recorded; a moved stop is labelled as moved", () => {
     const old: Leg = { ...put, enteredAt: undefined, stopSetAt: undefined, targetSetAt: undefined, stopTrailed: true };
     const { rerender } = render(<LegTimes leg={old} startedAt={ENTERED} />);
-    expect(screen.getByTestId("leg-times")).toHaveTextContent("Entered 16 Nov, 10:25:50 (strategy start)");
+    expect(screen.getByTestId("leg-times")).toHaveTextContent("Entered 16 Nov, 10:25:50 (strategy last started)");
     expect(screen.getByTestId("leg-times")).toHaveTextContent("Stop moved 148.70 · 16 Nov, 10:25:50");
+    rerender(<LegTimes leg={{ ...old, exitPrice: 149.25, exitedAt: "2026-11-16T05:04:38.876Z" }} startedAt="2026-11-16T08:38:43.908Z" />);
+    expect(screen.getByTestId("leg-times")).toHaveTextContent("Entered time not recorded"); // the strategy was restarted after this leg exited: that cannot be its entry
     rerender(<LegTimes leg={old} />);
     expect(screen.getByTestId("leg-times")).toHaveTextContent("Entered time not recorded");
     rerender(<LegTimes leg={{ ...old, stop: null, target: null }} startedAt={ENTERED} />);

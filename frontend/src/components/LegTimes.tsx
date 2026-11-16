@@ -8,7 +8,9 @@ const Item = ({ label, children, cls = "" }: { label: string; children: React.Re
 /** The dates and times of one leg: when it was entered, when its stop and target were set or last moved (by you, the trailing stop, or "Move SL to cost"), when it exited,
  *  and its history lines, each with its own date and time (IST). `startedAt` is when the strategy was started on the server: used for a leg saved before its own entry time was kept. */
 export function LegTimes({ leg, startedAt }: { leg: Leg; startedAt?: string | null }) {
-  const entered = leg.enteredAt ?? startedAt ?? null;
+  // a leg saved before it kept its own entry time falls back to when the strategy was last started, unless that is after the leg exited (then it cannot be the entry)
+  const fallback = startedAt && (!leg.exitedAt || startedAt <= leg.exitedAt) ? startedAt : null;
+  const entered = leg.enteredAt ?? fallback;
   const exited = leg.exitPrice != null;
   const stopMoved = !!(leg.stopTrailed || leg.costMoved);
   const log = leg.log ?? [];
@@ -18,7 +20,7 @@ export function LegTimes({ leg, startedAt }: { leg: Leg; startedAt?: string | nu
   return (
     <div className="mt-1 text-[11px]" data-testid="leg-times">
       <div className="flex flex-wrap gap-x-4 gap-y-0.5">
-        <Item label="Entered">{entered ? fmtStamp(entered) : "time not recorded"}{!leg.enteredAt && entered ? <span className="text-muted"> (strategy start)</span> : null}</Item>
+        <Item label="Entered">{entered ? fmtStamp(entered) : "time not recorded"}{!leg.enteredAt && entered ? <span className="text-muted"> (strategy last started)</span> : null}</Item>
         {leg.stop != null
           ? <Item label={stopMoved ? "Stop moved" : "Stop set"} cls="text-down">{fmtPrice(leg.stop)} · {fmtStamp(leg.stopSetAt ?? entered)}</Item>
           : <Item label="Stop">none</Item>}
