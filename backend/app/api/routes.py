@@ -1401,6 +1401,33 @@ async def forward_overview(
     return await asyncio.to_thread(request.app.state.forward.overview, structure, cohort, dim)
 
 
+@router.get("/probe/chain", dependencies=[Depends(require_local_control)])
+async def probe_chain(
+    request: Request, underlying: str, expiry: str | None = None, count: int = 5
+) -> dict[str, Any]:
+    """Read-only look at what the broker returns for another underlying (expiries and one chain).
+
+    It uses the logged-in session and stores or subscribes nothing. The raw answer is written to
+    ``data/probe/`` so it can become a test fixture.
+    """
+    svc = _svc(request)
+    name = underlying.strip().upper()
+    try:
+        expiries_raw = await svc.broker.get_expiries(name)
+        pick = expiry or (str(expiries_raw[0]) if expiries_raw else None)
+        chain = await svc.broker.get_option_chain(name, pick, count) if pick else None
+    except BrokerError as e:
+        raise _broker_http_error(e) from None
+    out_dir = request.app.state.settings.data_dir / "probe"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    saved = out_dir / f"{name}_{pick}.json"
+    doc = {"expiries": expiries_raw, "expiry": pick, "chain": chain}
+    saved.write_text(json.dumps(doc, default=str, indent=1), encoding="utf-8")
+    keys = None if chain is None else list(chain.keys())
+    out = {"underlying": name, "expiries": expiries_raw, "expiry": pick}
+    return out | {"saved": str(saved), "chain_keys": keys}
+
+
 @router.get("/global/series")
 async def global_series(
     request: Request, symbol: str, hours: Annotated[float, Query(ge=0, le=168)] = 24.0
