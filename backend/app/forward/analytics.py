@@ -51,19 +51,20 @@ def variant_table(trades: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def equity(trades: list[dict[str, Any]]) -> dict[str, Any]:
-    """Cumulative net P&L after each position, in the order they were opened, per variant (the x axis is the position number with its time)."""
-    ordered = sorted(trades, key=lambda t: (t["trigger_at"], t["id"]))
-    curves: dict[str, list[float]] = {}
-    for v in VARIANT_IDS:
-        cum, pts = 0.0, []
-        for t in ordered:
-            r = t["variants"].get(v)
-            if r is not None:
-                cum += r["net"]
-            pts.append(round(cum, 2))
-        curves[v] = pts
-    return {"times": [t["trigger_at"] for t in ordered], "curves": curves}
+def portfolio(trades: list[dict[str, Any]], rule: str) -> list[dict[str, Any]]:
+    """The positions of one exit rule as a portfolio of closed trades, oldest first: what was sold, how it exited and what it made. A position the rule has no result for is left out."""
+    out = []
+    for t in sorted(trades, key=lambda t: (t["trigger_at"], t["id"])):
+        r = t["variants"].get(rule)
+        if r is None:
+            continue
+        out.append({
+            "id": t["id"], "session": t["session"], "cohort": t["cohort"], "structure": t["structure"], "n": t["n"], "expiry": t["expiry"], "trigger_at": t["trigger_at"],
+            "settled_at": t.get("settled_at"), "spot0": t["spot0"], "ce_strike": t["ce_strike"], "pe_strike": t["pe_strike"], "ce0": t["ce0"], "pe0": t["pe0"],
+            "ce_exit": r["ce_exit"], "pe_exit": r["pe_exit"], "gross": r["gross"], "cost": r["cost"], "net": r["net"], "worst": r["worst"], "reason": r["reason"],
+            "stopped_at": r.get("stopped_at"), "regime": t.get("regime"), "seller": t.get("seller"), "buyer": t.get("buyer"), "net_move": (t.get("eod") or {}).get("net_move_pts"),
+        })  # fmt: skip
+    return out
 
 
 def _time_bucket(t: dict[str, Any]) -> str:
@@ -97,29 +98,16 @@ DIMENSIONS: dict[str, tuple[str, Callable[[dict[str, Any]], str]]] = {
 }
 
 
-def breakdown(trades: list[dict[str, Any]], dim: str) -> dict[str, Any]:
-    """Average net P&L and win rate of every variant inside each bucket of one dimension."""
+def breakdown(trades: list[dict[str, Any]], dim: str, rule: str) -> dict[str, Any]:
+    """How one exit rule did inside each bucket of one dimension (regime, time of entry, days to expiry, ...)."""
     title, key = DIMENSIONS.get(dim, DIMENSIONS["regime"])
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for t in trades:
-        groups[key(t)].append(t)
+        if rule in t["variants"]:
+            groups[key(t)].append(t)
     rows = []
     for name in sorted(groups):
-        ts = groups[name]
-        cells = {}
-        for v in VARIANT_IDS:
-            nets = [t["variants"][v]["net"] for t in ts if v in t["variants"]]
-            cells[v] = {"n": len(nets), "avg": round(sum(nets) / len(nets), 2) if nets else None, "win_rate": round(sum(1 for x in nets if x > 0) / len(nets) * 100, 1) if nets else None, "total": round(sum(nets), 2)}
-        rows.append({"bucket": name, "n": len(ts), "cells": cells})
+        rs = [t["variants"][rule] for t in groups[name]]
+        nets = [r["net"] for r in rs]
+        rows.append({"bucket": name, **_stats(nets, [r["worst"] for r in rs if r["worst"] is not None], sum(1 for r in rs if r.get("stopped_at")))})
     return {"dimension": dim, "title": title, "options": {k: v[0] for k, v in DIMENSIONS.items()}, "rows": rows, "min_trades": MIN_TRADES}
-
-
-def trade_row(t: dict[str, Any]) -> dict[str, Any]:
-    nets = {v: r["net"] for v, r in t["variants"].items()}
-    best = max(nets.items(), key=lambda kv: kv[1], default=None)
-    worst = min(nets.items(), key=lambda kv: kv[1], default=None)
-    return {
-        "id": t["id"], "session": t["session"], "cohort": t["cohort"], "expiry": t["expiry"], "structure": t["structure"], "n": t["n"], "trigger_at": t["trigger_at"], "spot0": t["spot0"],
-        "ce_strike": t["ce_strike"], "pe_strike": t["pe_strike"], "ce0": t["ce0"], "pe0": t["pe0"], "seller": t["seller"], "buyer": t["buyer"], "regime": t["regime"], "eod": t.get("eod"),
-        "nets": nets, "best": None if best is None else {"variant": best[0], "net": best[1]}, "worst": None if worst is None else {"variant": worst[0], "net": worst[1]},
-    }  # fmt: skip

@@ -20,7 +20,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.forward import analytics
-from app.forward.engine import VARIANTS, CostCfg, is_done, new_state, settle, step
+from app.forward.engine import LABELS, VARIANTS, CostCfg, is_done, new_state, settle, step
 from app.forward.store import ForwardStore
 from app.storage.observations import CALL, PUT
 
@@ -179,7 +179,8 @@ class ForwardService:
         }  # fmt: skip
 
     # ------------------------------------------------------------------ views
-    def overview(self, structure: str = "all", cohort: str = "all", dim: str = "regime") -> dict[str, Any]:
+    def overview(self, structure: str = "all", cohort: str = "all", rule: str = "hold", dim: str = "regime") -> dict[str, Any]:
+        rule = rule if rule in LABELS else "hold"
         trades = analytics.filtered(self.store.settled(), structure, cohort)
         counts = self.store.counts()
         now = self._clock()
@@ -201,14 +202,13 @@ class ForwardService:
                 "regime": t["regime"], "variants": marks,
             })  # fmt: skip
         return {
-            "generated_at": now.isoformat(timespec="seconds"), "filters": {"structure": structure, "cohort": cohort},
+            "generated_at": now.isoformat(timespec="seconds"), "filters": {"structure": structure, "cohort": cohort, "rule": rule, "rule_label": LABELS[rule]},
             "meta": {
                 "enabled": self.enabled, "counts": counts, "last_run": last, "last_tick": None if self.last_tick is None else self.last_tick.isoformat(timespec="seconds"), "last_error": self.last_error,
                 "bytes": self.store.size_bytes(), "min_trades": analytics.MIN_TRADES,
-                "rules": {"trigger": f"seller score of the expiry reaches {THRESHOLD:g}", "rearm": f"after {REARM_MIN} minutes below {THRESHOLD:g}, at most {CAP_PER_DAY} a day per cohort", "entry_window": "09:30-14:30 IST", "exit": "15:20 IST the same day", "lot": self.lot},
+                "setup": {"trigger": f"seller score of the expiry reaches {THRESHOLD:g}", "rearm": f"after {REARM_MIN} minutes below {THRESHOLD:g}, at most {CAP_PER_DAY} a day per cohort", "entry_window": "09:30-14:30 IST", "exit": "15:20 IST the same day", "lot": self.lot},
             },
-            "variants": analytics.variant_table(trades), "equity": analytics.equity(trades), "breakdown": analytics.breakdown(trades, dim), "open": open_rows,
-            "trades": [analytics.trade_row(t) for t in reversed(trades[-60:])],
+            "rules": analytics.variant_table(trades), "portfolio": analytics.portfolio(trades, rule), "breakdown": analytics.breakdown(trades, dim, rule), "open": open_rows,
         }  # fmt: skip
 
     # ------------------------------------------------------------------ lifecycle

@@ -129,21 +129,22 @@ export interface HeadsUpReminder { key: string; event_id: string; phase: string;
 export interface HeadsUpNews { key: string; title: string; link: string; source: string; topics: string[]; age_min: number }
 export interface HeadsUp { generated_at: string; reminders: HeadsUpReminder[]; news: HeadsUpNews[] }
 export interface ForwardVariant { variant: string; label: string; n: number; wins?: number; win_rate?: number; total?: number; avg?: number; best?: number; worst?: number; max_drawdown?: number; profit_factor?: number | null; avg_intraday_worst?: number | null; stop_rate?: number }
-export interface ForwardCell { n: number; avg: number | null; win_rate: number | null; total: number }
-export interface ForwardTrade {
-  id: number; session: string; cohort: string; expiry: string; structure: string; n: number; trigger_at: string; spot0: number; ce_strike: number; pe_strike: number; ce0: number; pe0: number;
-  seller: number | null; buyer: number | null; regime: string | null; eod: { net_move_pts?: number | null } | null; nets: Record<string, number>; best: { variant: string; net: number } | null; worst: { variant: string; net: number } | null;
+export interface ForwardPortfolioTrade {
+  id: number; session: string; cohort: string; structure: string; n: number; expiry: string; trigger_at: string; settled_at: string | null; spot0: number; ce_strike: number; pe_strike: number;
+  ce0: number; pe0: number; ce_exit: number; pe_exit: number; gross: number; cost: number; net: number; worst: number | null; reason: string; stopped_at: string | null;
+  regime: string | null; seller: number | null; buyer: number | null; net_move: number | null;
 }
 export interface ForwardOpen {
   id: number; session: string; cohort: string; expiry: string; structure: string; n: number; trigger_at: string; ce_strike: number; pe_strike: number; ce0: number; pe0: number; spot0: number; spot: number | null;
   seller: number | null; regime: string | null; variants: Record<string, { pnl: number | null; ce_open: boolean; pe_open: boolean; stopped_at: string | null }>;
 }
+export interface ForwardBreakdownRow { bucket: string; n: number; win_rate?: number; avg?: number; total?: number; worst?: number; stop_rate?: number }
 export interface ForwardOverview {
-  generated_at: string; filters: { structure: string; cohort: string };
-  meta: { enabled: boolean; counts: { open: number; settled: number; days: number }; last_run: { at: string; ok: boolean } | null; last_tick: string | null; last_error: string | null; bytes: number; min_trades: number; rules: { trigger: string; rearm: string; entry_window: string; exit: string; lot: number } };
-  variants: ForwardVariant[]; equity: { times: string[]; curves: Record<string, number[]> };
-  breakdown: { dimension: string; title: string; options: Record<string, string>; min_trades: number; rows: { bucket: string; n: number; cells: Record<string, ForwardCell> }[] };
-  open: ForwardOpen[]; trades: ForwardTrade[];
+  generated_at: string; filters: { structure: string; cohort: string; rule: string; rule_label: string };
+  meta: { enabled: boolean; counts: { open: number; settled: number; days: number }; last_run: { at: string; ok: boolean } | null; last_tick: string | null; last_error: string | null; bytes: number; min_trades: number; setup: { trigger: string; rearm: string; entry_window: string; exit: string; lot: number } };
+  rules: ForwardVariant[]; portfolio: ForwardPortfolioTrade[];
+  breakdown: { dimension: string; title: string; options: Record<string, string>; min_trades: number; rows: ForwardBreakdownRow[] };
+  open: ForwardOpen[];
 }
 export interface StraddleScores { available: boolean; session?: string; at?: string; age_s?: number; expiry?: string; seller?: number; buyer?: number; regime?: string | null; seller_15m?: number | null; buyer_15m?: number | null }
 export interface NewsItem { id: string; title: string; link: string; summary: string; source: string; section: string; published: string; age_min: number; fetched: string; topics: string[] }
@@ -157,7 +158,7 @@ export const api = {
   globalSeries: (symbol: string, hours: number) => request<GlobalSeries>(`/api/global/series?symbol=${encodeURIComponent(symbol)}&hours=${hours}`),
   calendar: () => request<CalendarView>("/api/calendar"),
   straddleScores: () => request<StraddleScores>("/api/intelligence/straddle/scores"),
-  forward: (structure: string, cohort: string, dim: string) => request<ForwardOverview>(`/api/forward/overview?structure=${structure}&cohort=${cohort}&dim=${dim}`),
+  forward: (structure: string, cohort: string, rule: string, dim: string) => request<ForwardOverview>(`/api/forward/overview?structure=${structure}&cohort=${cohort}&rule=${rule}&dim=${dim}`),
   headsUp: () => request<HeadsUp>("/api/global/headsup"),
   news: () => request<NewsView>("/api/news"),
   holidays: () => request<HolidaysView>("/api/market/holidays"),

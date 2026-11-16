@@ -247,9 +247,9 @@ def test_a_minute_without_prices_keeps_the_trigger_armed(tmp_path: Path) -> None
 # ------------------------------------------------------------------ metrics
 def trade(i: int, regime: str, nets: dict[str, float], at: str = "2026-11-16T05:00:00+00:00", **extra: Any) -> dict[str, Any]:
     return {
-        "id": i, "session": "2026-11-16", "cohort": "weekly", "structure": extra.pop("structure", "straddle"), "n": 1, "trigger_at": at, "regime": regime, "seller": extra.pop("seller", 64.0),
+        "id": i, "session": "2026-11-16", "expiry": "2026-11-17", "spot0": 25250.0, "ce_strike": 25250.0, "pe_strike": 25250.0, "ce0": 90.0, "pe0": 85.0, "settled_at": "2026-11-16T09:50:00+00:00", "cohort": "weekly", "structure": extra.pop("structure", "straddle"), "n": 1, "trigger_at": at, "regime": regime, "seller": extra.pop("seller", 64.0),
         "buyer": 40.0, "context": extra.pop("context", {"dte": 1, "weekday": 0, "orderflow": -45.0, "rv_gap_15": 9.0, "path_eff_30": 0.28}), "eod": extra.pop("eod", {"trend_day": False}),
-        "variants": {v: {"net": n, "worst": -100.0, "stopped_at": "10:30" if v.startswith("leg") else None, "reason": "x"} for v, n in nets.items()},
+        "variants": {v: {"net": n, "gross": n, "cost": 0.0, "ce_exit": 50.0, "pe_exit": 60.0, "worst": -100.0, "stopped_at": "10:30" if v.startswith("leg") else None, "reason": "x"} for v, n in nets.items()},
     }  # fmt: skip
 
 
@@ -266,27 +266,29 @@ def test_variant_table_and_equity_by_hand() -> None:
     assert h["max_drawdown"] == -400.0  # equity 1000, 600, 1200: the dip from 1000 to 600
     assert (leg["total"], leg["max_drawdown"], leg["stop_rate"]) == (-1500.0, -2500.0, 100.0)  # equity 1000, -1000, -1500: peak 1000 to -1500
     assert tab["comb15"]["n"] == 0  # a variant with no result is empty, not zero
-    eq = analytics.equity(ts)
-    assert eq["curves"]["hold"] == [1000.0, 600.0, 1200.0] and eq["curves"]["leg40"] == [1000.0, -1000.0, -1500.0]
+    pf = analytics.portfolio(ts, "leg40")
+    assert [r["id"] for r in pf] == [1, 2, 3] and [r["net"] for r in pf] == [1000.0, -2000.0, -500.0]  # the closed trades of one rule, oldest first
+    assert analytics.portfolio(ts, "comb15") == []  # a rule with no result has no trades
+    assert pf[0]["reason"] == "x" and pf[0]["stopped_at"] == "10:30"
 
 
-def test_breakdown_by_regime_and_other_conditions() -> None:
+def test_breakdown_of_one_rule_by_regime_and_other_conditions() -> None:
     ts = [
-        trade(1, "volatility compression", {"hold": 1000.0}, seller=62.0),
+        trade(1, "volatility compression", {"hold": 1000.0, "leg40": -300.0}, seller=62.0),
         trade(2, "volatility compression", {"hold": 600.0}, seller=72.0, context={"dte": 0, "weekday": 1, "orderflow": 40.0, "rv_gap_15": 3.0, "path_eff_30": 0.5}, eod={"trend_day": True}),
-        trade(3, "volatility expansion", {"hold": -400.0}),
+        trade(3, "volatility expansion", {"hold": -400.0, "leg40": -900.0}),
     ]
-    b = analytics.breakdown(ts, "regime")
+    b = analytics.breakdown(ts, "regime", "hold")
     rows = {r["bucket"]: r for r in b["rows"]}
-    assert rows["volatility compression"]["n"] == 2 and rows["volatility compression"]["cells"]["hold"] == {"n": 2, "avg": 800.0, "win_rate": 100.0, "total": 1600.0}
-    assert rows["volatility expansion"]["cells"]["hold"]["avg"] == -400.0 and rows["volatility compression"]["cells"]["leg40"]["avg"] is None
-    assert b["min_trades"] == 20 and "seller" in b["options"]
-    seller = {r["bucket"] for r in analytics.breakdown(ts, "seller")["rows"]}
-    assert seller == {"60-65", "70-75"}
-    assert {r["bucket"] for r in analytics.breakdown(ts, "flow")["rows"]} == {"bearish (below -30)", "bullish (above +30)"}
-    assert {r["bucket"] for r in analytics.breakdown(ts, "dte")["rows"]} == {"expiry day", "1 day"}
-    assert {r["bucket"] for r in analytics.breakdown(ts, "day_type")["rows"]} == {"range day", "trend day"}
-    assert {r["bucket"] for r in analytics.breakdown(ts, "time")["rows"]} == {"10:30-11:30"}  # 05:00 UTC is 10:30 IST
+    assert (rows["volatility compression"]["n"], rows["volatility compression"]["avg"], rows["volatility compression"]["win_rate"], rows["volatility compression"]["total"]) == (2, 800.0, 100.0, 1600.0)
+    assert rows["volatility expansion"]["avg"] == -400.0 and b["min_trades"] == 20 and "seller" in b["options"]
+    only = {r["bucket"]: r for r in analytics.breakdown(ts, "regime", "leg40")["rows"]}
+    assert only["volatility compression"]["n"] == 1 and only["volatility compression"]["total"] == -300.0  # trade 2 has no leg40 result: not counted
+    assert {r["bucket"] for r in analytics.breakdown(ts, "seller", "hold")["rows"]} == {"60-65", "70-75"}
+    assert {r["bucket"] for r in analytics.breakdown(ts, "flow", "hold")["rows"]} == {"bearish (below -30)", "bullish (above +30)"}
+    assert {r["bucket"] for r in analytics.breakdown(ts, "dte", "hold")["rows"]} == {"expiry day", "1 day"}
+    assert {r["bucket"] for r in analytics.breakdown(ts, "day_type", "hold")["rows"]} == {"range day", "trend day"}
+    assert {r["bucket"] for r in analytics.breakdown(ts, "time", "hold")["rows"]} == {"10:30-11:30"}  # 05:00 UTC is 10:30 IST
     assert analytics.filtered(ts + [trade(4, "x", {"hold": 1.0}, structure="strangle")], "strangle")[0]["id"] == 4
 
 
@@ -295,14 +297,19 @@ def test_the_overview_of_a_settled_day_and_the_api(tmp_path: Path) -> None:
     svc, clock = make_service(tmp_path, [62.0] * 400)
     run_day(svc, clock, 360)
     o = svc.overview()
-    assert o["meta"]["counts"] == {"open": 0, "settled": 2, "days": 1} and o["meta"]["rules"]["exit"] == "15:20 IST the same day" and o["meta"]["min_trades"] == 20
-    assert {v["variant"] for v in o["variants"]} == {v for v, _, _ in VARIANTS} and all(v["n"] == 2 for v in o["variants"])
-    assert len(o["trades"]) == 2 and o["trades"][0]["nets"]["hold"] is not None and o["equity"]["times"]
+    assert o["meta"]["counts"] == {"open": 0, "settled": 2, "days": 1} and o["meta"]["setup"]["exit"] == "15:20 IST the same day" and o["meta"]["min_trades"] == 20
+    assert {v["variant"] for v in o["rules"]} == {v for v, _, _ in VARIANTS} and all(v["n"] == 2 for v in o["rules"])
+    assert o["filters"] == {"structure": "all", "cohort": "all", "rule": "hold", "rule_label": "No stop (hold to 15:20)"}
+    assert [t["structure"] for t in o["portfolio"]] == ["straddle", "strangle"] and o["portfolio"][0]["net"] is not None and o["portfolio"][0]["settled_at"]
+    assert o["portfolio"][0]["reason"] == "close 15:20" and o["portfolio"][0]["ce_exit"] is not None
+    leg30 = svc.overview(structure="straddle", rule="leg30")
+    assert [t["structure"] for t in leg30["portfolio"]] == ["straddle"] and leg30["portfolio"][0]["stopped_at"] is not None and leg30["filters"]["rule"] == "leg30"
+    assert svc.overview(rule="no-such-rule")["filters"]["rule"] == "hold"  # an unknown rule falls back to hold
     only = svc.overview(structure="strangle", cohort="weekly")
-    assert all(v["n"] == 1 for v in only["variants"]) and svc.overview(cohort="monthly")["variants"][0]["n"] == 0
+    assert all(v["n"] == 1 for v in only["rules"]) and svc.overview(cohort="monthly")["portfolio"] == []
     app = make_app(tmp_path / "app")
     with TestClient(app) as c:
         app.state.forward = svc
-        body = c.get("/api/forward/overview", params={"structure": "straddle", "dim": "time"}).json()
-        assert body["filters"] == {"structure": "straddle", "cohort": "all"} and body["breakdown"]["dimension"] == "time"
+        body = c.get("/api/forward/overview", params={"structure": "straddle", "rule": "leg40", "dim": "time"}).json()
+        assert body["filters"]["structure"] == "straddle" and body["filters"]["rule"] == "leg40" and body["breakdown"]["dimension"] == "time"
         assert c.get("/api/forward/overview", params={"structure": "bogus"}).status_code == 422
