@@ -5,6 +5,7 @@ Hand-calculated; the browser's ``moveStopsToCost`` is held to the same numbers b
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -42,7 +43,7 @@ def test_the_moved_stop_then_exits_at_cost_with_zero_pnl_and_says_so() -> None:
     legs, _ = run([leg("ce", "CE"), leg("pe", "PE")], {"ce": 130.0, "pe": 80.0})
     again, ev = run([legs["pe"]], {"pe": 100.0})  # the put premium climbs back to its entry
     assert again["pe"]["exitPrice"] == 100.0 and again["pe"]["realised"] == 0.0
-    assert any(e.split(" ", 1)[1].startswith("Stop at cost: SELL 25000 PE closed at 100.00 (entry 100.00)") for e in ev)
+    assert any(re.sub(r"^\d{2} [A-Za-z]{3}, \d{2}:\d{2}:\d{2} ", "", e).startswith("Stop at cost: SELL 25000 PE closed at 100.00 (entry 100.00)") for e in ev)
     below, ev2 = run([legs["pe"]], {"pe": 99.95})  # one tick short of the entry: still open
     assert below["pe"].get("exitPrice") is None and ev2 == []
 

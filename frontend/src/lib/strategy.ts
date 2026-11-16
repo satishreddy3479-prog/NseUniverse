@@ -51,6 +51,11 @@ export interface Leg {
   stopTrailed?: boolean;
   /** the stop was moved to this leg's own entry premium because another leg of the same side was stopped out ("Move SL to cost") */
   costMoved?: boolean;
+  /** when the entry was taken (the entry premium was set from the market or entered); a re-entry or a roll sets it again */
+  enteredAt?: string | null;
+  /** when the stop / target level was last set or moved (by you, by the trailing stop, by "Move SL to cost", or by a re-entry) */
+  stopSetAt?: string | null;
+  targetSetAt?: string | null;
   log?: { at: string; text: string }[];
 }
 
@@ -77,7 +82,17 @@ export function hitOf(l: { action: Action; premium?: number | null; target?: num
 }
 
 const tick = (v: number) => Math.max(0.05, Math.round(v * 20) / 20);
-const stamp = (at: string) => new Date(at).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata" });
+/** "16 Nov, 10:34:38" in IST: every time shown for a leg carries its date. */
+export const fmtStamp = (at: string | null | undefined): string => (at ? new Date(at).toLocaleString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) : "—");
+const stamp = (at: string) => fmtStamp(at);
+/** A log line without the time its text starts with (older lines have only a time, newer ones a date and time): the line's own `at` is shown instead. */
+export const stripStamp = (text: string): string => text.replace(/^(\d{1,2} [A-Za-z]{3},? )?\d{2}:\d{2}:\d{2}\s+/, "");
+
+/** A leg after the trailing stop moved its stop: the time and the move are written in its log. */
+function trailLogged(old: Leg, t: Leg, px: number, at: string): Leg {
+  if (t === old) return old;
+  return { ...t, stopSetAt: at, log: [...(t.log ?? []), { at, text: `${stamp(at)} Trailing stop: ${old.action} ${old.strike} ${old.type} stop ${old.stop!.toFixed(2)} → ${t.stop!.toFixed(2)} (price ${px.toFixed(2)})` }].slice(-20) };
+}
 
 /** The stop as the user set it: before any trailing, and nothing when the only stop is one the app moved to cost on a leg that had none. */
 const stopTyped = (l: Pick<Leg, "stop" | "stopBase" | "stopTrailed">): number | null => l.stopBase ?? (l.stopTrailed ? null : l.stop ?? null);
@@ -104,8 +119,8 @@ export function reenterLeg(l: Leg, price: number, at: string, viaBox: boolean): 
   const lvl = (pct: number | null | undefined, profitSide: boolean) => (pct == null ? null : tick(price * (profitSide === buy ? 1 + pct : 1 - pct)));
   const what = viaBox ? "Re-entry" : "Entered again";
   return {
-    ...l, premium: price, premiumSource: "market", exitPrice: null, exitReason: null, exitedAt: null, reentryLevel: null,
-    stop: lvl(l.stopPct, false), target: lvl(l.targetPct, true), stopBase: null, stopTrailed: false, costMoved: false,
+    ...l, premium: price, premiumSource: "market", exitPrice: null, exitReason: null, exitedAt: null, reentryLevel: null, enteredAt: at,
+    stop: lvl(l.stopPct, false), target: lvl(l.targetPct, true), stopBase: null, stopTrailed: false, costMoved: false, stopSetAt: l.stopPct == null ? null : at, targetSetAt: l.targetPct == null ? null : at,
     reentry: viaBox ? Math.max(0, (l.reentry ?? 0) - 1) : l.reentry, cycles: (l.cycles ?? 0) + 1,
     log: [...(l.log ?? []), { at, text: `${stamp(at)} ${what}: ${l.action} ${l.strike} ${l.type} at ${price.toFixed(2)}` }].slice(-20),
   };
@@ -126,6 +141,7 @@ export function rollLeg(l: Leg, newStrike: number, oldPrice: number, newPrice: n
   return {
     ...l, strike: newStrike, premium: newPrice, premiumSource: "market", realised: (l.realised ?? 0) + pnl, cycles: (l.cycles ?? 0) + 1,
     stop: lvl(pct(stopTyped(l)), false), target: lvl(pct(l.target), true), stopBase: null, stopTrailed: false, costMoved: false, exitPrice: null, exitReason: null, reentryLevel: null,
+    enteredAt: at, stopSetAt: stopTyped(l) == null ? null : at, targetSetAt: l.target == null ? null : at,
     log: [...(l.log ?? []), { at, text: `${stamp(at)} ${text}` }].slice(-20),
   };
 }
@@ -265,9 +281,9 @@ export function moveStopsToCost(legs: Leg[], stopped: Leg[], priceOf: (strike: n
     if (l.stop != null && (buy ? l.stop >= l.premium : l.stop <= l.premium)) return l; // already at the entry or tighter: never loosened
     const text = `${stamp(at)} Stop moved to cost: ${who} stop ${l.stop == null ? "none" : l.stop.toFixed(2)} → ${l.premium.toFixed(2)} because ${first.action} ${first.strike} ${first.type} was stopped out`;
     events.push(text);
-    const moved: Leg = { ...l, stopBase: l.stopBase ?? l.stop ?? null, stop: l.premium, stopTrailed: true, costMoved: true, log: [...(l.log ?? []), { at, text }].slice(-20) };
+    const moved: Leg = { ...l, stopBase: l.stopBase ?? l.stop ?? null, stop: l.premium, stopTrailed: true, costMoved: true, stopSetAt: at, log: [...(l.log ?? []), { at, text }].slice(-20) };
     // a leg that had no stop could not trail before; now that it has one the trail is applied in the same pass, so a repeat pass over the same prices changes nothing
-    const tr = trailLeg(moved, px);
+    const tr = trailLogged(moved, trailLeg(moved, px), px, at);
     if (tr !== moved) events.push(`Trailing stop ${who}: stop ${moved.stop!.toFixed(2)} → ${tr.stop!.toFixed(2)} (price ${px.toFixed(2)})`);
     return tr;
   });
@@ -286,7 +302,7 @@ export function applyAutomation(legs: Leg[], priceOf: (strike: number, type: Opt
       const t = trailLeg(l, px);
       if (t !== l) {
         events.push(`Trailing stop ${l.action} ${l.strike} ${l.type}: stop ${l.stop!.toFixed(2)} → ${t.stop!.toFixed(2)} (price ${px.toFixed(2)})`);
-        l = t;
+        l = trailLogged(l, t, px, at);
       }
       const kind = hitOf(l, "stop", px) ? "stop" : hitOf(l, "target", px) ? "target" : null;
       if (kind == null) return l;

@@ -12,6 +12,7 @@ import { PAYOFF_ZOOM, payoffOption, payoffView } from "../lib/chartOptions";
 import { api, ApiError, type RunningDoc } from "../lib/api";
 import { compactIN } from "../lib/analytics";
 import { fmtDateTimeIST, fmtInt, fmtPrice } from "../lib/format";
+import { LegTimes } from "../components/LegTimes";
 import { useExpiries, useThrottledValue } from "../lib/hooks";
 import { marketClockMs } from "../lib/session";
 import { buildBook, marketIvOf, type Book } from "../lib/strategyBook";
@@ -565,7 +566,19 @@ export default function StrategyBuilder() {
   }, [ready, lotSize, payExp, spot, payIv, tab, dte, snapMs, carry, carryBy, mAll, ivPts, r]);
   const rr = a?.defined && a.maxProfit != null && a.maxLoss != null && a.maxLoss < 0 ? a.maxProfit / -a.maxLoss : null;
 
-  const update = (id: string, patch: Partial<Leg>) => setLegs((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  /** A change to one leg. The time of the change is kept with it: when the entry premium is set from the market (or first entered), when a stop or target is set or changed. */
+  const update = (id: string, patch: Partial<Leg>) => setLegs((ls) => ls.map((l) => {
+    if (l.id !== id) return l;
+    const at = new Date().toISOString();
+    const t: Partial<Leg> = { ...patch };
+    if ("premium" in patch) {
+      if (patch.premium == null) t.enteredAt = null;
+      else if (l.premium == null || patch.premiumSource === "market") t.enteredAt = at; // a manual edit of an existing entry keeps its time
+    }
+    if ("stop" in patch && patch.stop !== l.stop) t.stopSetAt = patch.stop == null ? null : at;
+    if ("target" in patch && patch.target !== l.target) t.targetSetAt = patch.target == null ? null : at;
+    return { ...l, ...t };
+  }));
   const fromChain = (strike: number, type: OptionType, action: Action) => {
     if (!expiry) return;
     setNote(null);
@@ -574,7 +587,7 @@ export default function StrategyBuilder() {
       const same = ls.find((l) => l.expiry === expiry && l.strike === strike && l.type === type && l.action === action);
       if (same) return ls.map((l) => (l.id === same.id ? { ...l, lots: l.lots + 1 } : l));
       const m = ltp(strike, type);
-      return [...ls, { id: newLegId(), expiry, strike, type, action, lots: 1, premium: m, premiumSource: m == null ? null : "market" }];
+      return [...ls, { id: newLegId(), expiry, strike, type, action, lots: 1, premium: m, premiumSource: m == null ? null : "market", enteredAt: m == null ? null : new Date().toISOString() }];
     });
   };
   /** + / - on a held strike: one more lot in the direction already held, or one lot fewer (the leg goes when its last lot does). */
@@ -614,7 +627,8 @@ export default function StrategyBuilder() {
     const out = t.build({ strikes, atm, expiry, far, farStrikes: farRows?.map((x) => x.strike), premium: (e, k, ty) => (e === expiry ? ltp(k, ty) : farLtp(k, ty)) });
     if ("error" in out) { setNote(out.error); return; }
     setNote(null);
-    loadLegs(withIds(out));
+    const at = new Date().toISOString();
+    loadLegs(withIds(out).map((l) => (l.premium == null ? l : { ...l, enteredAt: at })));
     if (far) setPayPick(null);
   };
   const chooseStrike = (l: Leg, strike: number) => {
@@ -1232,7 +1246,7 @@ export default function StrategyBuilder() {
                                 )}
                                 {(l.cycles ?? 0) > 0 && !exited && <span className="text-muted">entry no. {(l.cycles ?? 0) + 1}</span>}
                               </div>
-                              {(l.log?.length ?? 0) > 0 && <div className="mt-1 text-[11px] text-muted" data-testid="leg-log">{l.log!.slice(-2).map((x, i) => <div key={i}>{x.text}</div>)}</div>}
+                              <LegTimes leg={l} startedAt={holdFrom} />
                             </td>
                           </tr>
                           </Fragment>

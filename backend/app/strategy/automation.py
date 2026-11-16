@@ -52,7 +52,7 @@ def hit_of(leg: Leg, kind: str, price: float) -> bool:
 
 
 def _stamp(at: datetime) -> str:
-    return at.astimezone(IST).strftime("%H:%M:%S")
+    return at.astimezone(IST).strftime("%d %b, %H:%M:%S")  # with the date: "16 Nov, 10:34:38"
 
 
 def _money(v: float) -> str:
@@ -97,13 +97,22 @@ def reenter_leg(leg: Leg, price: float, at: datetime) -> Leg:
 
     out = dict(leg)
     out.update(
-        premium=price, premiumSource="market", exitPrice=None, exitReason=None, exitedAt=None, reentryLevel=None,
+        premium=price, premiumSource="market", exitPrice=None, exitReason=None, exitedAt=None, reentryLevel=None, enteredAt=at.isoformat(),
         stop=lvl(leg.get("stopPct"), False), target=lvl(leg.get("targetPct"), True), stopBase=None, stopTrailed=False, costMoved=False,
+        stopSetAt=None if leg.get("stopPct") is None else at.isoformat(), targetSetAt=None if leg.get("targetPct") is None else at.isoformat(),
         reentry=max(0, (leg.get("reentry") or 0) - 1), cycles=(leg.get("cycles") or 0) + 1,
         log=[*(leg.get("log") or []),
              {"at": at.isoformat(), "text": f"{_stamp(at)} Re-entry: {leg['action']} {leg['strike']} {leg['type']} at {price:.2f} [server]"}][-20:],
     )  # fmt: skip
     return out
+
+
+def _trail_logged(old: Leg, new: Leg, px: float, at: datetime) -> Leg:
+    """A trailed leg with the move written in its log and the time the stop moved."""
+    if new is old:
+        return old
+    text = f"{_stamp(at)} Trailing stop: {old['action']} {old['strike']} {old['type']} stop {old['stop']:.2f} → {new['stop']:.2f} (price {px:.2f}) [server]"
+    return {**new, "stopSetAt": at.isoformat(), "log": [*(new.get("log") or []), {"at": at.isoformat(), "text": text}][-20:]}
 
 
 def trail_leg(leg: Leg, px: float) -> Leg:
@@ -328,11 +337,11 @@ def move_stops_to_cost(
         events.append(text)
         base = lg.get("stopBase")
         moved = {
-            **lg, "stopBase": base if base is not None else stop, "stop": prem, "stopTrailed": True, "costMoved": True,
+            **lg, "stopBase": base if base is not None else stop, "stop": prem, "stopTrailed": True, "costMoved": True, "stopSetAt": at.isoformat(),
             "log": [*(lg.get("log") or []), {"at": at.isoformat(), "text": text}][-20:],
         }
         # a leg that had no stop could not trail before; now that it has one the trail is applied in the same pass, so a repeat pass changes nothing
-        trailed = trail_leg(moved, px)
+        trailed = _trail_logged(moved, trail_leg(moved, px), px, at)
         if trailed is not moved:
             events.append(f"{_stamp(at)} Trailing stop {who}: stop {moved['stop']:.2f} → {trailed['stop']:.2f} (price {px:.2f}) [server]")
         out.append(trailed)
@@ -356,7 +365,7 @@ def apply_automation(
             if leg.get("premium") is None:
                 out.append(leg)
                 continue
-            trailed = trail_leg(leg, px)
+            trailed = _trail_logged(leg, trail_leg(leg, px), px, at)
             if trailed is not leg:
                 events.append(
                     f"{_stamp(at)} Trailing stop {leg['action']} {leg['strike']} {leg['type']}: "
