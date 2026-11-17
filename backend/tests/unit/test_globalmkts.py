@@ -720,9 +720,31 @@ def test_a_cash_index_that_is_trading_keeps_its_live_one_minute_quote(tmp_path: 
     q = build_quote(spx, bars_from_frame(yahoo_frame(), "^GSPC"), SUNDAY_EVENING)
     assert q is not None
     live = replace(q, status="live")
-    assert s._official_close(live, spx) is live  # noqa: SLF001
+    shown = s._official_close(live, spx)  # noqa: SLF001
+    assert shown.price == live.price  # the live one-minute quote is still the price
+    # the change is measured from the previous official close (11-12: 7592.40, what Yahoo's page shows), not from a one-minute bar of the previous session
+    assert shown.prev_close == pytest.approx(7592.39990234375) and shown.change == pytest.approx(live.price - 7592.39990234375)
     assert s._official_close(q, spx).price == pytest.approx(7561.669921875)  # noqa: SLF001
     assert s._official_close(replace(q, session="2026-11-20"), spx).price == q.price  # noqa: SLF001 - no official close for that date yet
+
+
+def test_a_reference_bar_found_minutes_before_the_close_does_not_replace_the_stored_one(tmp_path: Path) -> None:
+    """17 Nov 2026: the S&P 500 reference was 7420.19 (the 20:59 UTC bar, from the five-day poll), then 7414.21 an hour later (a stored bar from a gap before the close)."""
+    from dataclasses import replace
+
+    from app.globalmkts.service import _keep_reference
+
+    spx = BY_KEY["SPX"]
+    q = build_quote(spx, bars_from_frame(yahoo_frame(), "^GSPC"), SUNDAY_EVENING)
+    assert q is not None and q.prev_close is not None and q.prev_ts is not None
+    good = {"session": q.session, "prev_close": q.prev_close, "prev_ts": int(q.prev_ts.timestamp() * 1000)}
+    worse = replace(q, prev_close=q.prev_close - 6.0, prev_ts=q.prev_ts - timedelta(minutes=9), change=q.price - q.prev_close + 6.0)
+    kept = _keep_reference(worse, good)
+    assert kept.prev_close == q.prev_close and kept.prev_ts == q.prev_ts and kept.change == pytest.approx(q.price - q.prev_close)  # the later bar wins
+    assert _keep_reference(q, good) is q  # an equal reference is left as computed
+    better = {"session": q.session, "prev_close": q.prev_close - 6.0, "prev_ts": int((q.prev_ts - timedelta(minutes=9)).timestamp() * 1000)}
+    assert _keep_reference(q, better) is q  # the stored one is the worse: the new one stands
+    assert _keep_reference(q, {**good, "session": "2020-01-01"}) is q  # another session's reference is never used
 
 
 def test_a_failed_daily_download_leaves_the_one_minute_quotes_alone(tmp_path: Path) -> None:

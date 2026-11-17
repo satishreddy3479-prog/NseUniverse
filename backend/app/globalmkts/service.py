@@ -50,14 +50,17 @@ CondFetch = Callable[[str, news.Validators | None], tuple[bytes | None, news.Val
 
 
 def _keep_reference(q: Quote, row: dict[str, Any] | None) -> Quote:
-    """A poll of today's bars alone (a cash index on a weekend, a restart in mid-session) cannot see the previous session, so it finds no reference close. The stored quote of the
-    same session already has one, and it does not change within a session: keep it instead of replacing a change figure with nothing."""
-    if q.prev_close is not None or row is None or row["session"] != q.session or row["prev_close"] is None:
+    """The change reference of a session does not change within it, so the stored one is kept when a poll cannot see the previous session (a cash index on a weekend, a restart in
+    mid-session) and when the poll found a worse one: a one-day download finds the last stored bar of the previous session, and that can be a few minutes before its close when the poller
+    had a gap then (17 Nov 2026: the S&P 500 reference moved from 7420.19, the 20:59 UTC bar, to 7414.21 an hour later). The reference bar nearer the close wins."""
+    if row is None or row["session"] != q.session or row["prev_close"] is None:
+        return q
+    stored_ts = None if row["prev_ts"] is None else datetime.fromtimestamp(row["prev_ts"] / 1000, UTC)
+    if q.prev_close is not None and not (stored_ts is not None and q.prev_ts is not None and stored_ts > q.prev_ts):
         return q
     ref = float(row["prev_close"])
     change = q.price - ref
-    prev_ts = None if row["prev_ts"] is None else datetime.fromtimestamp(row["prev_ts"] / 1000, UTC)
-    return replace(q, prev_close=ref, prev_ts=prev_ts, change=change, change_pct=change / ref * 100 if ref > 0 else None)
+    return replace(q, prev_close=ref, prev_ts=stored_ts, change=change, change_pct=change / ref * 100 if ref > 0 else None)
 
 
 def _spark(points: list[tuple[int, float]]) -> list[float]:
@@ -159,11 +162,19 @@ class GlobalService:
             self._daily_at = _time.monotonic() - DAILY_S + 300  # try again in five minutes
 
     def _official_close(self, q: Quote, spec: GSymbol) -> Quote:
-        """Once a cash market is closed, its quote is the official closing value and the previous official close: the last one-minute bar is taken before the closing auction
-        and can differ from the close by a few points. While the market trades the one-minute quote stands."""
+        """The official closes of a cash index. Once its market is closed the quote is the official closing value against the previous official close: the last one-minute bar is
+        taken before the closing auction and can differ from the close by a few points. While the market trades the one-minute quote is the price, but the change is still measured
+        from the previous official close (what Yahoo's page shows), not from a one-minute bar of the previous session, which can sit minutes before its close."""
         closes = self._official.get(spec.key)
-        if spec.kind != "cash" or q.status != "closed" or not closes:
+        if spec.kind != "cash" or not closes:
             return q
+        if q.status != "closed":
+            prior = [c for d, c in closes if d.isoformat() < q.session]
+            if not prior or prior[-1] <= 0:
+                return q
+            previous = prior[-1]
+            delta = q.price - previous
+            return replace(q, prev_close=previous, change=delta, change_pct=delta / previous * 100)
         today = next((i for i, (d, _) in enumerate(closes) if d.isoformat() == q.session), None)
         if today is None:
             return q
