@@ -482,9 +482,11 @@ def analyse(
     if len(ok) < 2:
         return base | {"status": "unavailable", "message": "Fewer than two usable stored samples (spot, prices and enough time to expiry) for this expiry.", "interpretation": []}
     times = [s.at for s in snaps]
-    spot = [None if p is None else p.spot for p in pts]
+    # The model (forward, implied vol, Greeks) stops a few minutes before expiry, but the prices and the spot of the samples after that are plain stored values: they keep the premium
+    # series, the spot line and the ATM strike running to the close, with the vol columns left empty (never filled).
+    spot = [p.spot if p is not None else (s.spot if s.spot is not None and s.spot > 0 else None) for p, s in zip(pts, snaps, strict=True)]
     fwd = _series(pts, lambda p: p.f)
-    rolling_k = [None if p is None else nearest(p.strikes, p.spot) for p in pts]
+    rolling_k = [nearest(p.strikes, p.spot) if p is not None else (nearest(sorted({k for k, _ in s.prices}), sp) if sp is not None and s.prices else None) for p, s, sp in zip(pts, snaps, spot, strict=True)]
 
     def pair(p: Point | None, k: float | None) -> tuple[Leg | None, Leg | None]:
         return (None, None) if p is None or k is None else (p.leg(k, CALL), p.leg(k, PUT))
@@ -499,11 +501,17 @@ def analyse(
     def leg_series(held: Sequence[float | None]) -> dict[str, Any]:
         ce = [pair(p, held[i])[0] for i, p in enumerate(pts)]
         pe = [pair(p, held[i])[1] for i, p in enumerate(pts)]
-        sd = [None if c is None or d is None else c.price + d.price for c, d in zip(ce, pe, strict=True)]
+
+        def stored(i: int, side: int) -> float | None:  # a sample the model cannot form (too close to expiry): the stored last traded price
+            return None if pts[i] is not None or held[i] is None else snaps[i].prices.get((held[i], side))
+
+        cep = [c.price if c is not None else stored(i, CALL) for i, c in enumerate(ce)]
+        pep = [d.price if d is not None else stored(i, PUT) for i, d in enumerate(pe)]
+        sd = [None if c is None or d is None else c + d for c, d in zip(cep, pep, strict=True)]
         civ = [None if c is None else c.iv * 100 for c in ce]
         piv = [None if d is None else d.iv * 100 for d in pe]
         both = [None if a is None or b is None else (a + b) / 2 for a, b in zip(civ, piv, strict=True)]
-        return {"strike": list(held), "ce": [None if c is None else c.price for c in ce], "pe": [None if d is None else d.price for d in pe], "straddle": sd,
+        return {"strike": list(held), "ce": cep, "pe": pep, "straddle": sd,
                 "ce_iv": civ, "pe_iv": piv, "iv": both}  # fmt: skip
 
     roll, fix = leg_series(rolling_k), leg_series(fixed_held)
@@ -543,7 +551,8 @@ def analyse(
     }  # fmt: skip
     last_ok = max(i for i, p in enumerate(pts) if p is not None)
     adj_series = cumulative(steps_roll)["actual"]
-    tracker["atm_open"], tracker["atm_now"] = fixed_k, rolling_k[last_ok]
+    last_k = max(i for i, k in enumerate(rolling_k) if k is not None)
+    tracker["atm_open"], tracker["atm_now"] = fixed_k, rolling_k[last_k]
     tracker["moves"] = {"fixed": {"straddle": _moves(times, fix["straddle"]), "ce": _moves(times, fix["ce"]), "pe": _moves(times, fix["pe"])},
                         "rolling_adjusted": {"straddle": _moves(times, adj_series)}}  # fmt: skip
     f_now, r_now = s_fix["current"], s_roll["current"]
@@ -592,7 +601,7 @@ def analyse(
     rv = {str(m): realised(spots_t, spots_v, m) for m in WINDOWS} | {"open": realised(spots_t, spots_v, None)}
     iv_now = _stat(roll["iv"])["current"]
     last_p = [p for p in pts if p is not None][-1]
-    straddle_now = _stat(roll["straddle"])["current"]
+    straddle_now = _stat([v if pts[i] is not None else None for i, v in enumerate(roll["straddle"])])["current"]  # the model's reading, not the last stored price near expiry
     hi_lo = [v for v in spot if v is not None]
     daily_sd = None if iv_now is None else last_p.f * iv_now / 100 / math.sqrt(252)
     ro = rv["open"]

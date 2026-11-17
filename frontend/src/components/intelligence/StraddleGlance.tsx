@@ -163,6 +163,8 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
     return p == null ? "" : ` A seller who sold it at the open ${p >= 0 ? "is ahead by" : "is behind by"} about ${inr(Math.abs(p)).slice(1)} per lot, before costs.`;
   };
 
+  /** The time of the newest sample that has a price for the followed straddle: near expiry the model stops, the stored prices go on, and the card says which sample it shows. */
+  const asOf = (m: Mode): string | null => { const sd = d.series?.[m].straddle ?? []; const times = d.times ?? []; let i = sd.length - 1; while (i >= 0 && sd[i] == null) i--; return i < 0 || !times[i] ? null : fmtTimeIST(times[i]!); };
   return (
     <div className="mt-3 space-y-3" data-testid="sdi-glance">
       {part === "today" && (
@@ -192,7 +194,7 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
                 <p className="mt-0.5 text-xs leading-snug text-muted">{what}</p>
                 <dl className="mt-2 grid grid-cols-3 gap-2 text-center">
                   <div><dt className="text-[11px] text-muted">At the open</dt><dd className="num text-lg font-semibold text-paper">{open == null ? MISSING : open.toFixed(1)}</dd></div>
-                  <div><dt className="text-[11px] text-muted">Now</dt><dd className="num text-lg font-semibold text-paper">{now == null ? MISSING : now.toFixed(1)}</dd></div>
+                  <div><dt className="text-[11px] text-muted">Now{asOf(m) ? ` (${asOf(m)} IST)` : ""}</dt><dd className="num text-lg font-semibold text-paper">{now == null ? MISSING : now.toFixed(1)}</dd></div>
                   <div><dt className="text-[11px] text-muted">Change</dt><dd className={`num text-lg font-semibold ${chg == null ? "text-muted" : chg <= 0 ? "text-up" : "text-down"}`}>{sg(chg)}</dd></div>
                 </dl>
                 <p className="mt-1 text-[11px] leading-snug text-muted">{chg == null ? "Not enough data yet." : chg <= 0 ? "The premium has fallen (decayed)." : "The premium has risen."}{sellerNote(chg)}</p>

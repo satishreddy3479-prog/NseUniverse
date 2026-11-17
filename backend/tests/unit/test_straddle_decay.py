@@ -237,3 +237,25 @@ class TestValidation:
         v = sd.validate(sessions)
         assert v["sufficient"] is True and v["overall"]["windows"] == 150
         assert v["earlier_half"]["windows"] and v["later_half"]["windows"]
+
+
+class TestNearExpiry:
+    """The model stops a few minutes before expiry, but the stored prices keep the premium series running to the last sample; the vol columns stay empty."""
+
+    def test_premium_series_continues_after_the_model_stops(self) -> None:
+        day = datetime(2026, 11, 12, 9, 16, tzinfo=IST)
+        early = [chain(day + timedelta(minutes=i), 24000.0, 0.15) for i in range(0, 300, 5)]  # 09:16 to 14:11
+        base = chain(datetime(2026, 11, 12, 15, 20, tzinfo=IST), 24000.0, 0.15)
+        late = [sd.Snap(datetime(2026, 11, 12, 15, m, tzinfo=IST), 24000.0 + m, {k: (v if v is None else v * 0.5) for k, v in base.prices.items()}) for m in (30, 32, 35)]
+        assert sd.build_point(late[0], date(2026, 11, 12), R)[0] is None  # the model really refuses these samples
+        snaps = [*early, base, *late]
+        a = sd.analyse(snaps, [(s.at, s.spot) for s in snaps], date(2026, 11, 12), rate=R, now=late[-1].at, live=True)
+        assert a["status"] == "ok"
+        fx = a["series"]["fixed"]
+        k = fx["strike"][0]
+        want = base.prices[(k, CALL)] * 0.5, base.prices[(k, PUT)] * 0.5
+        assert fx["ce"][-1] == pytest.approx(want[0], abs=1e-3) and fx["pe"][-1] == pytest.approx(want[1], abs=1e-3)  # the stored last traded prices of the final sample
+        assert fx["straddle"][-1] == pytest.approx(sum(want), abs=2e-3)
+        assert fx["iv"][-1] is None and fx["ce_iv"][-1] is None  # no model value is invented
+        assert a["spot"][-1] == 24035.0
+        assert a["tracker"]["fixed"]["straddle"]["current"] == pytest.approx(sum(want), abs=0.01)
