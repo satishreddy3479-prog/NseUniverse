@@ -296,6 +296,12 @@ describe("environments and the twelve sections", () => {
 
 
 describe("audit fixes (12 Nov 2026)", () => {
+  itIn("today", "does not crash when the NIFTY series has missing minutes, at the start or at the end", async () => {
+    mount(full({ spot: [null, 25175, 25180, null, 25190, null, null] as unknown as number[] }));
+    const note = await screen.findByTestId("sdi-position-note");
+    expect(note).toHaveTextContent("NIFTY is now 25,190");
+  });
+
   itIn("today", "says what the Fixed position is: the strike that was ATM at the open, not today's ATM", async () => {
     mount(full({ spot: Array.from({ length: 90 }, (_, i) => 25175 + i), tracker: { ...full().tracker!, atm_open: 25200, atm_now: 25350, opening_at: "2026-11-11T03:45:04Z", fixed: { ...full().tracker!.fixed, strike: 25200 } } }));
     const btn = await screen.findByRole("button", { name: /^Fixed 25200 · ATM at open$/ });

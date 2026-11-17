@@ -12,6 +12,8 @@ import { StraddleGlance } from "./StraddleGlance";
 import { StraddleReadingCard } from "./StraddleReading";
 import { TabPanel, Tabs, type TabDef } from "../swing/shared";
 
+/** The newest NIFTY value of a series that can end with missing minutes (null), as text; undefined when there is none. */
+const lastSpot = (spot: (number | null)[] | null | undefined): string | undefined => { const v = [...(spot ?? [])].reverse().find((x) => x != null); return v == null ? undefined : v.toLocaleString("en-IN"); };
 const sg = (v: number | null | undefined, d = 1) => (v == null ? MISSING : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}`);
 const n1 = (v: number | null | undefined, d = 1) => (v == null ? MISSING : v.toFixed(d));
 const STATUS: Record<string, { text: string; tone: string }> = {
@@ -190,7 +192,7 @@ export function StraddleDecayPanel() {
       </div>
       <p className="mt-1 text-[11px] text-muted" data-testid="sdi-position-note">
         {mode === "fixed"
-          ? `Fixed position: the ${tr.fixed.strike} straddle, the strike nearest NIFTY at the first usable sample (${fmtTimeIST(tr.opening_at)}${d.spot?.[0] != null ? `, NIFTY ${d.spot[0].toLocaleString("en-IN")}` : ""}), held all session. NIFTY is now ${d.spot?.length ? (d.spot[d.spot.length - 1] as number).toLocaleString("en-IN") : MISSING} and the at-the-money strike is ${tr.atm_now ?? MISSING}; the rolling position follows that strike.`
+          ? `Fixed position: the ${tr.fixed.strike} straddle, the strike nearest NIFTY at the first usable sample (${fmtTimeIST(tr.opening_at)}${d.spot?.[0] != null ? `, NIFTY ${d.spot[0].toLocaleString("en-IN")}` : ""}), held all session. NIFTY is now ${lastSpot(d.spot) ?? MISSING} and the at-the-money strike is ${tr.atm_now ?? MISSING}; the rolling position follows that strike.`
           : `Rolling position: the strike nearest NIFTY at each sample (now ${tr.atm_now ?? MISSING}), with only same-contract changes added so a roll makes no jump.`}
       </p>
 
@@ -246,7 +248,7 @@ export function StraddleDecayPanel() {
       </div>
       <p className="mt-1 text-[11px] text-muted" data-testid="sdi-position-note">
         {mode === "fixed"
-          ? `Fixed position: the ${tr.fixed.strike} straddle, the strike nearest NIFTY at the first usable sample (${fmtTimeIST(tr.opening_at)}${d.spot?.[0] != null ? `, NIFTY ${d.spot[0].toLocaleString("en-IN")}` : ""}), held all session. NIFTY is now ${d.spot?.length ? (d.spot[d.spot.length - 1] as number).toLocaleString("en-IN") : MISSING} and the at-the-money strike is ${tr.atm_now ?? MISSING}; the rolling position follows that strike.`
+          ? `Fixed position: the ${tr.fixed.strike} straddle, the strike nearest NIFTY at the first usable sample (${fmtTimeIST(tr.opening_at)}${d.spot?.[0] != null ? `, NIFTY ${d.spot[0].toLocaleString("en-IN")}` : ""}), held all session. NIFTY is now ${lastSpot(d.spot) ?? MISSING} and the at-the-money strike is ${tr.atm_now ?? MISSING}; the rolling position follows that strike.`
           : `Rolling position: the strike nearest NIFTY at each sample (now ${tr.atm_now ?? MISSING}), with only same-contract changes added so a roll makes no jump.`}
       </p>
 

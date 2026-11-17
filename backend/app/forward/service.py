@@ -227,16 +227,20 @@ class ForwardService:
         }  # fmt: skip
 
     # ------------------------------------------------------------------ views
-    def overview(self, structure: str = "all", cohort: str = "all", rule: str | None = None, dim: str = "regime", family: str = "plain") -> dict[str, Any]:
+    def overview(self, structure: str = "all", cohort: str = "all", rule: str | None = None, dim: str = "regime", family: str = "plain", dte: str = "all") -> dict[str, Any]:
+        dte = dte if dte in analytics.DTE_FILTERS else "all"
         family = family if family in FAMILIES else "plain"
         rule = rule if rule in FAMILIES[family] else ("hold" if family == "plain" else "leg40_cost")  # a rule of the other test falls back to this test's default
-        trades = analytics.filtered(self.store.settled(), structure, cohort)
+        every = analytics.filtered(self.store.settled(), structure, cohort)
+        trades = analytics.filtered(every, dte=dte)
         counts = self.store.counts()
         now = self._clock()
         last = self.store.last_run()
         open_rows = []
         for t in self.store.open_trades():
             if (structure != "all" and t["structure"] != structure) or (cohort != "all" and t["cohort"] != cohort):
+                continue
+            if dte != "all" and analytics.dte_key(t["session"], t["expiry"]) != dte:
                 continue
             vs = self.store.variants_of(t["id"])
             marks = {}
@@ -269,7 +273,7 @@ class ForwardService:
             "cohorts": cohorts,
         }  # fmt: skip
         return {
-            "generated_at": now.isoformat(timespec="seconds"), "today": today, "filters": {"structure": structure, "cohort": cohort, "rule": rule, "rule_label": LABELS[rule], "family": family},
+            "generated_at": now.isoformat(timespec="seconds"), "today": today, "filters": {"structure": structure, "cohort": cohort, "rule": rule, "rule_label": LABELS[rule], "family": family, "dte": dte, "dte_counts": analytics.dte_counts(every)},
             "meta": {
                 "enabled": self.enabled, "counts": counts, "last_run": last, "last_tick": None if self.last_tick is None else self.last_tick.isoformat(timespec="seconds"), "last_error": self.last_error,
                 "bytes": self.store.size_bytes(), "min_trades": analytics.MIN_TRADES,

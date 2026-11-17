@@ -330,10 +330,23 @@ def test_breakdown_of_one_rule_by_regime_and_other_conditions() -> None:
     assert only["volatility compression"]["n"] == 1 and only["volatility compression"]["total"] == -300.0  # trade 2 has no leg40 result: not counted
     assert {r["bucket"] for r in analytics.breakdown(ts, "seller", "hold")["rows"]} == {"60-65", "70-75"}
     assert {r["bucket"] for r in analytics.breakdown(ts, "flow", "hold")["rows"]} == {"bearish (below -30)", "bullish (above +30)"}
-    assert {r["bucket"] for r in analytics.breakdown(ts, "dte", "hold")["rows"]} == {"expiry day", "1 day"}
+    assert {r["bucket"] for r in analytics.breakdown(ts, "dte", "hold")["rows"]} == {"1 DTE"}  # both entries are a Monday before the Tuesday expiry
     assert {r["bucket"] for r in analytics.breakdown(ts, "day_type", "hold")["rows"]} == {"range day", "trend day"}
     assert {r["bucket"] for r in analytics.breakdown(ts, "time", "hold")["rows"]} == {"10:30-11:30"}  # 05:00 UTC is 10:30 IST
     assert analytics.filtered(ts + [trade(4, "x", {"hold": 1.0}, structure="strangle")], "strangle")[0]["id"] == 4
+
+
+def test_trading_days_to_expiry_and_the_filter() -> None:
+    d = analytics.trading_dte
+    assert [d("2026-11-11", "2026-11-17"), d("2026-11-12", "2026-11-17"), d("2026-11-13", "2026-11-17"), d("2026-11-16", "2026-11-17"), d("2026-11-17", "2026-11-17")] == [4, 3, 2, 1, 0]  # Wed to Tue
+    assert d("2026-11-06", "2026-11-10") == 1  # 10 Nov is a market holiday: only Monday 9 Nov is left after Friday
+    assert analytics.dte_key("2026-11-03", "2026-11-24") == "5plus" and analytics.dte_label("5plus") == "5+ DTE"
+    ts = [trade(1, "a", {"hold": 1.0}), trade(2, "a", {"hold": 2.0}), trade(3, "a", {"hold": 3.0})]
+    ts[1]["session"] = "2026-11-11"
+    ts[2]["session"], ts[2]["expiry"] = "2026-11-03", "2026-11-24"
+    assert [t["id"] for t in analytics.filtered(ts, dte="1")] == [1] and [t["id"] for t in analytics.filtered(ts, dte="4")] == [2]
+    assert [t["id"] for t in analytics.filtered(ts, dte="5plus")] == [3] and len(analytics.filtered(ts)) == 3
+    assert analytics.dte_counts(ts) == {"0": 0, "1": 1, "2": 0, "3": 0, "4": 1, "5plus": 1}
 
 
 # ------------------------------------------------------------------ the API and the overview of a settled day
@@ -345,7 +358,7 @@ def test_the_overview_of_a_settled_day_and_the_api(tmp_path: Path) -> None:
     assert {v["variant"] for v in o["rules"]} == set(FAMILIES["plain"]) and all(v["n"] == 2 for v in o["rules"])
     cost = svc.overview(family="cost")
     assert [v["variant"] for v in cost["rules"]] == FAMILIES["cost"] and cost["filters"]["rule"] == "leg40_cost" and cost["filters"]["family"] == "cost"
-    assert o["filters"] == {"structure": "all", "cohort": "all", "rule": "hold", "rule_label": "No stop (hold to 15:20)", "family": "plain"}
+    assert o["filters"] == {"structure": "all", "cohort": "all", "rule": "hold", "rule_label": "No stop (hold to 15:20)", "family": "plain", "dte": "all", "dte_counts": {"0": 0, "1": 2, "2": 0, "3": 0, "4": 0, "5plus": 0}}
     assert [t["structure"] for t in o["portfolio"]] == ["straddle", "strangle"] and o["portfolio"][0]["net"] is not None and o["portfolio"][0]["settled_at"]
     assert o["portfolio"][0]["reason"] == "close 15:20" and o["portfolio"][0]["ce_exit"] is not None
     leg30 = svc.overview(structure="straddle", rule="leg30")
@@ -353,9 +366,12 @@ def test_the_overview_of_a_settled_day_and_the_api(tmp_path: Path) -> None:
     assert svc.overview(rule="no-such-rule")["filters"]["rule"] == "hold"  # an unknown rule falls back to hold
     only = svc.overview(structure="strangle", cohort="weekly")
     assert all(v["n"] == 1 for v in only["rules"]) and svc.overview(cohort="monthly")["portfolio"] == []
+    assert len(svc.overview(dte="1")["portfolio"]) == 2 and svc.overview(dte="1")["filters"]["dte"] == "1"  # Monday before the Tuesday expiry
+    assert svc.overview(dte="4")["portfolio"] == [] and svc.overview(dte="4")["open"] == [] and svc.overview(dte="bogus")["filters"]["dte"] == "all"
     app = make_app(tmp_path / "app")
     with TestClient(app) as c:
         app.state.forward = svc
+        assert c.get("/api/forward/overview", params={"dte": "7"}).status_code == 422
         body = c.get("/api/forward/overview", params={"structure": "straddle", "rule": "leg40", "dim": "time"}).json()
         assert body["filters"]["structure"] == "straddle" and body["filters"]["rule"] == "leg40" and body["breakdown"]["dimension"] == "time"
         assert c.get("/api/forward/overview", params={"structure": "bogus"}).status_code == 422

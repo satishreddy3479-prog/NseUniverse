@@ -23,7 +23,7 @@ const rule = (variant: string, label: string, twin: object, over: object = {}) =
 const overview = (family: string, r: string, over: object = {}) => ({
   generated_at: new Date().toISOString(),
   today: { session: "2026-11-17", in_window: true, cap: 3, threshold: 60, rearm_minutes: 30, cohorts: [] },
-  filters: { structure: "straddle", cohort: "all", rule: r, rule_label: r === "leg30_cost" ? "Stop 30% + SL to cost" : "Stop 40% + SL to cost", family },
+  filters: { structure: "straddle", cohort: "all", rule: r, rule_label: r === "leg30_cost" ? "Stop 30% + SL to cost" : "Stop 40% + SL to cost", family, dte: "all", dte_counts: { "0": 0, "1": 3, "2": 0, "3": 0, "4": 1, "5plus": 0 } },
   meta: { enabled: true, counts: { open: 1, settled: 4, days: 1 }, last_run: null, last_tick: "2026-11-17T04:30:00+00:00", last_error: null, bytes: 4096, min_trades: 20, setup: { trigger: "x", rearm: "y", entry_window: "09:30-14:30 IST", exit: "15:20 IST the same day", lot: 65 } },
   rules: [
     rule("leg30_cost", "Stop 30% + SL to cost", plain("leg30", "Leg stop 30%", { total: -3432 })),
@@ -77,8 +77,19 @@ describe("the Forward Test with SL to cost is a separate page", () => {
     expect(stops.queryByRole("button", { name: "Combined +15%" })).toBeNull();
     expect(stops.getByRole("button", { name: "Stop 40% + cost" })).toHaveAttribute("aria-pressed", "true");
     await userEvent.click(stops.getByRole("button", { name: "Stop 30% + cost" }));
-    await vi.waitFor(() => expect(screen.getByTestId("forward-selection")).toHaveTextContent("Showing: ATM straddle · weekly and monthly expiry · Stop 30% + SL to cost"));
+    await vi.waitFor(() => expect(screen.getByTestId("forward-selection")).toHaveTextContent("Showing: ATM straddle · weekly and monthly expiry · any days to expiry · Stop 30% + SL to cost"));
     expect(urls.some((u) => u.includes("family=cost") && u.includes("rule=leg30_cost"))).toBe(true);
+  });
+
+  it("filters by trading days to expiry, shows how many positions each value has and asks the server", async () => {
+    mockApi();
+    renderAt("/tools/forward-test-cost");
+    const g = within(await screen.findByRole("group", { name: "Days to expiry (trading days)" }));
+    for (const n of ["All", "0 DTE", "1 DTE (3)", "2 DTE", "3 DTE", "4 DTE (1)", "5+ DTE"]) expect(g.getByRole("button", { name: n })).toBeInTheDocument();
+    await userEvent.click(g.getByRole("button", { name: "4 DTE (1)" }));
+    await vi.waitFor(() => expect(urls.some((u) => u.includes("dte=4"))).toBe(true));
+    expect(urls.some((u) => u.includes("dte=all"))).toBe(true);
+    expect(screen.getByTestId("forward-selection")).toHaveTextContent("4 DTE");
   });
 
   it("puts each rule next to the plain stop of the same percentage and shows what moving the stop to cost changed", async () => {

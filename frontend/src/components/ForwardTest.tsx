@@ -274,7 +274,8 @@ export function ForwardBody({ family = "plain" }: { family?: "plain" | "cost" })
   const [cohort, setCohort] = useState<"all" | "weekly" | "monthly">("all");
   const [rule, setRule] = useState(family === "plain" ? "hold" : "leg40_cost");
   const [dim, setDim] = useState("regime");
-  const q = useQuery({ queryKey: ["forward", family, structure, cohort, rule, dim], queryFn: () => api.forward(structure, cohort, rule, dim, family), refetchInterval: 60_000, retry: false, placeholderData: (p) => p });
+  const [dte, setDte] = useState("all");
+  const q = useQuery({ queryKey: ["forward", family, structure, cohort, rule, dim, dte], queryFn: () => api.forward(structure, cohort, rule, dim, family, dte), refetchInterval: 60_000, retry: false, placeholderData: (p) => p });
   const rows = q.data?.portfolio ?? [];
   const stats = useMemo(() => portfolioStats(rows.map((r) => ({ id: String(r.id), name: `${r.cohort} ${r.structure} #${r.n}, ${when(r.trigger_at)}`, closedAt: r.settled_at ?? r.trigger_at, pnl: r.net })), null), [rows]);
   if (q.isLoading) return <Loading />;
@@ -284,6 +285,9 @@ export function ForwardBody({ family = "plain" }: { family?: "plain" | "cost" })
   const min = o.meta.min_trades;
   const structureText = structure === "all" ? "Straddle and strangle" : structure === "straddle" ? "ATM straddle" : "Strangle ±50";
   const cohortText = cohort === "all" ? "weekly and monthly expiry" : `${cohort} expiry`;
+  const dteText = dte === "all" ? "any days to expiry" : dte === "5plus" ? "5+ days to expiry" : `${dte} DTE`;
+  const dteCounts = o.filters.dte_counts;
+  const dteOptions: [string, string][] = [["all", "All"], ...(["0", "1", "2", "3", "4", "5plus"] as const).map((k): [string, string] => [k, `${k === "5plus" ? "5+" : k} DTE${dteCounts[k] ? ` (${dteCounts[k]})` : ""}`])];
   return (
     <div className="flex flex-col gap-3">
       <div role="note" className="rounded-sm border border-rule bg-slate p-3 text-sm">
@@ -300,8 +304,9 @@ export function ForwardBody({ family = "plain" }: { family?: "plain" | "cost" })
           <Chips label="Structure" value={structure} onChange={setStructure} options={[["straddle", "Straddle"], ["strangle", "Strangle ±50"], ["all", "Both"]]} />
           <Chips label="Expiry" value={cohort} onChange={setCohort} options={[["all", "All"], ["weekly", "Weekly"], ["monthly", "Monthly"]]} />
         </div>
+        <Chips label="Days to expiry (trading days)" value={dte} onChange={setDte} options={dteOptions} />
         <Chips label="Stop loss" value={rule} onChange={setRule} options={RULES} />
-        <p className="text-xs text-muted" data-testid="forward-selection">Showing: <b className="text-paper">{structureText}</b> · {cohortText} · <b className="text-paper">{o.filters.rule_label}</b></p>
+        <p className="text-xs text-muted" data-testid="forward-selection">Showing: <b className="text-paper">{structureText}</b> · {cohortText} · {dteText} · <b className="text-paper">{o.filters.rule_label}</b></p>
       </div>
 
       <Panel title="Today" hint="Is the test running: what each expiry is doing and the positions open now."><Today t={o.today} open={c.open} /></Panel>
@@ -309,7 +314,7 @@ export function ForwardBody({ family = "plain" }: { family?: "plain" | "cost" })
       {stats.count < min && (
         <p role="status" className="rounded-sm border border-warn/50 p-2 text-sm text-warn">{stats.count === 0 ? "No closed trade for this selection yet. " : `Only ${stats.count} closed trade${stats.count === 1 ? "" : "s"} in this selection: `}below about {min} the figures swing on single days and say little about a rule. It builds up by itself, up to 12 positions a day when the score reaches 60.</p>
       )}
-      <Panel title="Portfolio statistics" hint={`${structureText}, ${cohortText}, ${o.filters.rule_label}`}><Stats s={stats} rows={rows} /></Panel>
+      <Panel title="Portfolio statistics" hint={`${structureText}, ${cohortText}, ${dteText}, ${o.filters.rule_label}`}><Stats s={stats} rows={rows} /></Panel>
       <Panel title="Equity and drawdown" hint="Cumulative net P&L after each closed trade, the result of each trade, and the fall from the highest point."><Equity s={stats} /></Panel>
       <Panel title="Stop-loss rules compared" hint="Net of estimated charges, one lot."><Compare rules={o.rules} selected={o.filters.rule} onPick={setRule} min={min} /></Panel>
       <Panel title="By market regime and other conditions" hint="Where the selected rule works and where it does not."><Breakdown o={o} dim={dim} setDim={setDim} /></Panel>

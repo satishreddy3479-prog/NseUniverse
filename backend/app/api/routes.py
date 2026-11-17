@@ -1398,10 +1398,11 @@ async def forward_overview(
     cohort: Annotated[str, Query(pattern="^(all|weekly|monthly)$")] = "all",
     rule: str | None = None, dim: str = "regime",
     family: Annotated[str, Query(pattern="^(plain|cost)$")] = "plain",
+    dte: Annotated[str, Query(pattern="^(all|[0-4]|5plus)$")] = "all",
 ) -> dict[str, Any]:
     """The forward test as a portfolio of one exit rule: plain stops or stops with SL to cost."""
     forward = request.app.state.forward
-    return await asyncio.to_thread(forward.overview, structure, cohort, rule, dim, family)
+    return await asyncio.to_thread(forward.overview, structure, cohort, rule, dim, family, dte)
 
 
 @router.get("/probe/chain", dependencies=[Depends(require_local_control)])

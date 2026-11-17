@@ -7,6 +7,8 @@ decides what is too few to read (below ``MIN_TRADES``), and nothing here calls a
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import date, timedelta
+from functools import lru_cache
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
@@ -37,8 +39,46 @@ def _stats(nets: list[float], worst: list[float], stopped: int) -> dict[str, Any
     }  # fmt: skip
 
 
-def filtered(trades: list[dict[str, Any]], structure: str = "all", cohort: str = "all") -> list[dict[str, Any]]:
-    return [t for t in trades if (structure == "all" or t["structure"] == structure) and (cohort == "all" or t["cohort"] == cohort)]
+DTE_FILTERS = ["all", "0", "1", "2", "3", "4", "5plus"]
+
+
+@lru_cache(maxsize=2048)
+def trading_dte(session: str, expiry: str) -> int:
+    """Trading days to expiry: the sessions after ``session`` up to and including the expiry, so the weekly cycle reads 4 on Wednesday, 3 Thursday, 2 Friday, 1 Monday and 0 on the
+    expiry day. Holidays come from the project's trading calendar; a date outside its coverage is counted by weekdays."""
+    start, end = date.fromisoformat(session), date.fromisoformat(expiry)
+    if end <= start:
+        return 0
+    try:
+        from app.prediction.calendar import TradingCalendar
+
+        return len(TradingCalendar.load().sessions_between(start + timedelta(days=1), end))
+    except Exception:  # noqa: BLE001 - outside the verified coverage: weekdays only
+        return sum(1 for i in range(1, (end - start).days + 1) if (start + timedelta(days=i)).weekday() < 5)
+
+
+def dte_key(session: str, expiry: str) -> str:
+    n = trading_dte(session, expiry)
+    return "5plus" if n >= 5 else str(n)
+
+
+def dte_label(key: str) -> str:
+    return "5+ DTE" if key == "5plus" else f"{key} DTE"
+
+
+def filtered(trades: list[dict[str, Any]], structure: str = "all", cohort: str = "all", dte: str = "all") -> list[dict[str, Any]]:
+    return [
+        t for t in trades
+        if (structure == "all" or t["structure"] == structure) and (cohort == "all" or t["cohort"] == cohort) and (dte == "all" or dte_key(t["session"], t["expiry"]) == dte)
+    ]  # fmt: skip
+
+
+def dte_counts(trades: list[dict[str, Any]]) -> dict[str, int]:
+    """How many positions each days-to-expiry value has (for the chips of the filter)."""
+    out = dict.fromkeys(DTE_FILTERS[1:], 0)
+    for t in trades:
+        out[dte_key(t["session"], t["expiry"])] += 1
+    return out
 
 
 def _variant_stats(trades: list[dict[str, Any]], v: str) -> dict[str, Any]:
@@ -68,7 +108,7 @@ def portfolio(trades: list[dict[str, Any]], rule: str) -> list[dict[str, Any]]:
             "id": t["id"], "session": t["session"], "cohort": t["cohort"], "structure": t["structure"], "n": t["n"], "expiry": t["expiry"], "trigger_at": t["trigger_at"],
             "settled_at": t.get("settled_at"), "spot0": t["spot0"], "ce_strike": t["ce_strike"], "pe_strike": t["pe_strike"], "ce0": t["ce0"], "pe0": t["pe0"],
             "ce_exit": r["ce_exit"], "pe_exit": r["pe_exit"], "gross": r["gross"], "cost": r["cost"], "net": r["net"], "worst": r["worst"], "reason": r["reason"],
-            "stopped_at": r.get("stopped_at"), "ce_at": r.get("ce_at"), "pe_at": r.get("pe_at"), "regime": t.get("regime"), "seller": t.get("seller"), "buyer": t.get("buyer"), "net_move": (t.get("eod") or {}).get("net_move_pts"),
+            "stopped_at": r.get("stopped_at"), "ce_at": r.get("ce_at"), "pe_at": r.get("pe_at"), "dte": trading_dte(t["session"], t["expiry"]), "regime": t.get("regime"), "seller": t.get("seller"), "buyer": t.get("buyer"), "net_move": (t.get("eod") or {}).get("net_move_pts"),
         })  # fmt: skip
     return out
 
@@ -94,7 +134,7 @@ def _band(v: float | None, edges: list[float], labels: list[str]) -> str:
 DIMENSIONS: dict[str, tuple[str, Callable[[dict[str, Any]], str]]] = {
     "regime": ("Regime at entry", lambda t: t.get("regime") or "not recorded"),
     "time": ("Time of entry (IST)", _time_bucket),
-    "dte": ("Days to expiry", lambda t: _band(t["context"].get("dte"), [1, 2, 4, 8], ["expiry day", "1 day", "2-3 days", "4-7 days", "8+ days"])),
+    "dte": ("Trading days to expiry", lambda t: dte_label(dte_key(t["session"], t["expiry"]))),
     "weekday": ("Weekday", lambda t: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][t["context"].get("weekday", 0)] if t["context"].get("weekday") is not None else "not recorded"),
     "seller": ("Seller score at entry", lambda t: _band(t.get("seller"), [65, 70, 75], ["60-65", "65-70", "70-75", "75+"])),
     "flow": ("Futures order flow", lambda t: _band(t["context"].get("orderflow"), [-30, 30], ["bearish (below -30)", "neutral", "bullish (above +30)"])),

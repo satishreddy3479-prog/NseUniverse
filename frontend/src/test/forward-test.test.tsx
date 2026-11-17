@@ -36,7 +36,7 @@ const overview = (over: object = {}, filters: object = {}) => ({
     { cohort: "weekly", expiry: "2026-11-17", seller: 78.2, score_at: "2026-11-17T04:37:00+00:00", count: 1, armed: false, below_since: null, opened: ["2026-11-17T04:00:00+00:00"] },
     { cohort: "monthly", expiry: "2026-11-24", seller: 55, score_at: "2026-11-17T04:37:00+00:00", count: 1, armed: false, below_since: "2026-11-17T04:30:00+00:00", opened: ["2026-11-17T04:27:00+00:00"] },
   ] },
-  filters: { structure: "straddle", cohort: "all", rule: "hold", rule_label: "No stop (hold to 15:20)", family: "plain", ...filters },
+  filters: { structure: "straddle", cohort: "all", rule: "hold", rule_label: "No stop (hold to 15:20)", family: "plain", dte: "all", dte_counts: { "0": 0, "1": 0, "2": 0, "3": 0, "4": 0, "5plus": 0 }, ...filters },
   meta: { enabled: true, counts: { open: 1, settled: 6, days: 6 }, last_run: null, last_tick: "2026-11-16T08:10:00+00:00", last_error: null, bytes: 4096, min_trades: 20, setup: { trigger: "x", rearm: "y", entry_window: "09:30-14:30 IST", exit: "15:20 IST the same day", lot: 65 } },
   rules: [rule("hold", "No stop (hold to 15:20)"), rule("leg40", "Leg stop 40%", { total: -2000, avg: -333, win_rate: 33.3, max_drawdown: -2500 })],
   portfolio: NETS.map((_, i) => trade(i)),
@@ -80,7 +80,7 @@ describe("forward test portfolio page", () => {
     expect(stops.getByRole("button", { name: "No stop" })).toHaveAttribute("aria-pressed", "true");
     expect(stops.queryByRole("button", { name: /\+ cost/ })).toBeNull(); // the move-to-cost rules are a separate page
     for (const n of ["Stop 30%", "Stop 40%", "Stop 50%", "Stop 60%", "Stop 70%", "Stop 80%", "Combined +15%", "Combined +25%", "Combined +40%"]) expect(stops.getByRole("button", { name: n })).toBeInTheDocument();
-    expect(screen.getByTestId("forward-selection")).toHaveTextContent("Showing: ATM straddle · weekly and monthly expiry · No stop (hold to 15:20)");
+    expect(screen.getByTestId("forward-selection")).toHaveTextContent("Showing: ATM straddle · weekly and monthly expiry · any days to expiry · No stop (hold to 15:20)");
     expect(screen.getByText(/Paper portfolio, nothing is sent to a broker/)).toBeInTheDocument();
     expect(screen.getByText(/6 settled · 1 open · 6 days · last check 13:40 IST/)).toBeInTheDocument();
   });
@@ -122,7 +122,7 @@ describe("forward test portfolio page", () => {
     await userEvent.click(screen.getByRole("button", { name: "Weekly" }));
     await userEvent.click(screen.getByRole("button", { name: "Stop 40%" }));
     await vi.waitFor(() => expect(urls.some((u) => param(u, "structure") === "strangle" && param(u, "cohort") === "weekly" && param(u, "rule") === "leg40")).toBe(true));
-    await vi.waitFor(() => expect(screen.getByTestId("forward-selection")).toHaveTextContent("Showing: Strangle ±50 · weekly expiry · Leg stop 40%"));
+    await vi.waitFor(() => expect(screen.getByTestId("forward-selection")).toHaveTextContent("Showing: Strangle ±50 · weekly expiry · any days to expiry · Leg stop 40%"));
     expect(screen.getByRole("button", { name: "Stop 40%" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "No stop" })).toHaveAttribute("aria-pressed", "false");
     await userEvent.click(screen.getByRole("button", { name: "Both" }));

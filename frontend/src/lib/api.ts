@@ -144,7 +144,7 @@ export interface ForwardToday {
   cohorts: { cohort: string; expiry: string | null; seller: number | null; score_at: string | null; count: number; armed: boolean; below_since: string | null; opened: string[] }[];
 }
 export interface ForwardOverview {
-  generated_at: string; today: ForwardToday; filters: { structure: string; cohort: string; rule: string; rule_label: string; family: string };
+  generated_at: string; today: ForwardToday; filters: { structure: string; cohort: string; rule: string; rule_label: string; family: string; dte: string; dte_counts: Record<string, number> };
   meta: { enabled: boolean; counts: { open: number; settled: number; days: number }; last_run: { at: string; ok: boolean } | null; last_tick: string | null; last_error: string | null; bytes: number; min_trades: number; setup: { trigger: string; rearm: string; entry_window: string; exit: string; lot: number } };
   rules: ForwardVariant[]; portfolio: ForwardPortfolioTrade[];
   breakdown: { dimension: string; title: string; options: Record<string, string>; min_trades: number; rows: ForwardBreakdownRow[] };
@@ -162,7 +162,7 @@ export const api = {
   globalSeries: (symbol: string, hours: number) => request<GlobalSeries>(`/api/global/series?symbol=${encodeURIComponent(symbol)}&hours=${hours}`),
   calendar: () => request<CalendarView>("/api/calendar"),
   straddleScores: () => request<StraddleScores>("/api/intelligence/straddle/scores"),
-  forward: (structure: string, cohort: string, rule: string, dim: string, family: string) => request<ForwardOverview>(`/api/forward/overview?structure=${structure}&cohort=${cohort}&rule=${rule}&dim=${dim}&family=${family}`),
+  forward: (structure: string, cohort: string, rule: string, dim: string, family: string, dte = "all") => request<ForwardOverview>(`/api/forward/overview?structure=${structure}&cohort=${cohort}&rule=${rule}&dim=${dim}&family=${family}&dte=${dte}`),
   headsUp: () => request<HeadsUp>("/api/global/headsup"),
   news: () => request<NewsView>("/api/news"),
   holidays: () => request<HolidaysView>("/api/market/holidays"),
