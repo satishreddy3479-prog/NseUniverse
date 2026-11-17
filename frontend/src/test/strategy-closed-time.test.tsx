@@ -44,12 +44,12 @@ afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 describe("a strategy the server closed at 15:20 and the page files later", () => {
   it("is closed when its last leg closed, with the P&L its exits booked, and is not marked as closed at stale prices", async () => {
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter initialEntries={["/strategy"]}><AppRoutes /></MemoryRouter></QueryClientProvider>);
-    await waitFor(() => expect(calls.some((c) => c.url.startsWith("/api/strategies/closed") && c.method === "PUT")).toBe(true), { timeout: 4000 });
+    await waitFor(() => expect(calls.some((c) => c.url.startsWith("/api/strategies/closed") && c.method === "PUT")).toBe(true), { timeout: 15000 }); // generous: the full suites run at once on one laptop
     const put = calls.find((c) => c.url.startsWith("/api/strategies/closed") && c.method === "PUT")!;
     const doc = put.body!.doc!;
     expect(doc.closedAt).toBe("2026-11-05T09:50:00.917Z"); // 15:20:00 IST, the later of the two exits, not the 15:56 the page filed it
     expect(doc.snapshotAt).toBe("2026-11-05T09:50:00.917359+00:00");
     expect(doc.stale).toBe(false);
     expect(doc.pnl).toBeCloseTo(-691.99, 1); // -3,978.25 + 3,286.25 as the exits booked
-  });
+  }, 20000);
 });

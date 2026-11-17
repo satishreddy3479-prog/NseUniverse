@@ -35,6 +35,7 @@ from app.market import weights as wmod
 from app.market.flow import FlowTracker, last_cumulative, profile_fraction, volume_profile
 from app.market.futures import FoQuote
 from app.market.index_bars import IndexBarBuilder
+from app.market.index_check import flag_bars, minute_key
 from app.market.sources import (
     BHAV_URL,
     LIST_URL,
@@ -1221,7 +1222,10 @@ class MarketService:
             return {"day": None, "bars": [], "note": "No one-minute index bars are stored yet; they are recorded from the live index feed during the session."}
         day = rows[-1][0].astimezone(IST).date()
         bars = [{"at": a.isoformat(), "o": p["o"], "h": p["h"], "l": p["l"], "c": p["c"], "n": p.get("n")} for a, p in rows if a.astimezone(IST).date() == day]
-        return {"day": day.isoformat(), "bars": bars, "note": "Built from the live index feed, read about once a second: high and low are the extremes of those reads, not the exchange's tick tape."}
+        # cross-check against the NIFTY future, an independent feed: a bar far from the basis of its neighbours is flagged (``off``, points), never repaired
+        futs = {minute_key(datetime.fromisoformat(a)): float(p["ltp"]) for a, p in self.store.samples_since("fut", since) if p.get("ltp")}
+        flag_bars(bars, futs)
+        return {"day": day.isoformat(), "bars": bars, "note": "Built from the live index feed, read about once a second: high and low are the extremes of those reads, not the exchange's tick tape. A bar flagged `off` closed far from where the future says the index was."}
 
     async def _bars_loop(self) -> None:
         while True:

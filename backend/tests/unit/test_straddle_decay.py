@@ -259,3 +259,20 @@ class TestNearExpiry:
         assert fx["iv"][-1] is None and fx["ce_iv"][-1] is None  # no model value is invented
         assert a["spot"][-1] == 24035.0
         assert a["tracker"]["fixed"]["straddle"]["current"] == pytest.approx(sum(want), abs=0.01)
+
+
+class TestFrozenIndex:
+    """17 Nov 2026: the index quote froze at 25,413 while the options kept moving to about 25,455; the at-the-money strike must follow the options, not the frozen quote."""
+
+    def test_the_atm_strike_follows_put_call_parity_when_the_stored_spot_is_far_from_it(self) -> None:
+        at = datetime(2026, 11, 12, 11, 0, tzinfo=IST)
+        real = chain(at, 24060.0, 0.15)  # the options are priced at 24,060: parity says so
+        frozen = sd.Snap(at, 24000.0, real.prices)  # the stored index level is a frozen 24,000, 60 points behind
+        p, why = sd.build_point(frozen, EXPIRY, R)
+        assert p is not None, why
+        assert sd.nearest(p.strikes, p.spot) == 24000.0  # the frozen quote would pick 24,000
+        assert sd.atm_reference(p) == pytest.approx(24060.0, abs=2.0)
+        assert sd.nearest(p.strikes, sd.atm_reference(p)) == 24050.0  # the options say 24,050
+        ok = sd.Snap(at, 24030.0, real.prices)  # a quote 30 points behind is within the allowance: the quote is used
+        q, _ = sd.build_point(ok, EXPIRY, R)
+        assert q is not None and sd.atm_reference(q) == 24030.0

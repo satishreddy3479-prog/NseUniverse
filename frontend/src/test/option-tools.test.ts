@@ -375,6 +375,27 @@ describe("smartOiCandles: a stalled NIFTY feed (captured 11 Nov 2026, 15:12-15:3
   });
 });
 
+describe("smartOiCandles: bars the future disagrees with (captured 17 Nov 2026, 15:20-15:26 IST)", () => {
+  const z = (min: number) => new Date(Date.UTC(2026, 10, 17, 9, 30 + min)).toISOString(); // 15:00 IST + min
+  const mins = [18, 19, 20, 21, 22, 23];
+  const series = { times: mins.map(z), spot: [25420, 25440, 25450, 25498, 25475, 25430], ce_oi: mins.map((_, i) => 1000 + i), pe_oi: mins.map((_, i) => 2000 + i) };
+  // The real 15:21 bar closed 25,498.35 while the future traded about 25,434 (the stored check said -75.7 points); the 15:20 bar had a 25,580.2 high.
+  const bars = [
+    { at: z(18), o: 25415, h: 25425, l: 25412, c: 25420, n: 60 }, { at: z(20), o: 25284.35, h: 25580.2, l: 25284.35, c: 25450.85, n: 55, off: -153.2 },
+    { at: z(21), o: 25450.25, h: 25500.9, l: 25450.25, c: 25498.35, n: 57, off: -75.7 }, { at: z(23), o: 25428, h: 25435, l: 25425, c: 25430, n: 58 },
+  ];
+  const r = smartOiCandles(series, 1, { day: "2026-11-17", openMin: 9 * 60 + 15, closeMin: 15 * 60 + 40, bars });
+  it("leaves out the flagged bars, lists them, and keeps the others and the OI", () => {
+    expect(r.unconfirmedBars).toEqual([{ at: "15:20", off: -153.2 }, { at: "15:21", off: -75.7 }]);
+    const by = Object.fromEntries(r.candles.map((c) => [c.label, c]));
+    expect(by["15:18"]!.spot?.high).toBe(25425);
+    expect(by["15:23"]!.spot?.close).toBe(25430);
+    expect(by["15:20"]!.spotFromBars).toBe(false); // no bar to draw: the candle falls back to the stored samples, never to the wild high
+    expect(by["15:20"]!.spot?.high).not.toBe(25580.2);
+    expect(by["15:20"]!.ceOi).toBeGreaterThan(0);
+  });
+});
+
 describe("Smart OI lower chart: put and call volume, and their difference", () => {
   const t = (hm: string) => `2026-11-04T${hm}:00Z`;
   const series = { times: [t("03:45"), t("03:48"), t("03:51")], spot: [1, 2, 3], pe_oi: [10, 11, 12], ce_oi: [10, 11, 12], pe_volume: [100, 160, 250], ce_volume: [100, 140, 200] };

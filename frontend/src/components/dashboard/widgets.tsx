@@ -391,10 +391,11 @@ function SmartOiChartWidget() {
                 {" "}(ΔPut {fmtSigned(last.dPe)} · ΔCall {fmtSigned(last.dCe)})</span>
             )}
           </div>
-          {res && (res.stalls.length > 0 || res.jumps.length > 0 || res.thinBars > 0) && (
+          {res && (res.stalls.length > 0 || res.jumps.length > 0 || res.thinBars > 0 || res.unconfirmedBars.length > 0) && (
             <p role="note" data-testid="smart-oi-feed-note" className="rounded-sm border border-brass/40 bg-brass/10 px-2 py-1 text-xs text-paper">
               <b>NIFTY index feed problem today.</b>{" "}
               {res.stalls.map((t) => `The index quote repeated ${t.value.toLocaleString("en-IN", { minimumFractionDigits: 2 })} for ${t.samples} samples (${t.from}–${t.to}), so those minutes show no NIFTY candle. `).join("")}
+              {res.unconfirmedBars.length > 0 ? `${res.unconfirmedBars.length} one-minute bar(s) (${res.unconfirmedBars.map((b) => b.at).join(", ")}) closed or ranged ${Math.round(Math.min(...res.unconfirmedBars.map((b) => Math.abs(b.off))))} points or more away from where the NIFTY future says the index was, so the index feed was wrong and they are not drawn. ` : ""}
               {res.thinBars > 0 ? `${res.thinBars} one-minute bar(s) had almost no reads (feed silent) and are not drawn. ` : ""}
               {res.jumps.map((j) => `At ${j.at} the index reappeared ${j.pct > 0 ? "+" : "−"}${Math.abs(j.pct).toFixed(2)}% away (${fmtPrice(j.from)} → ${fmtPrice(j.to)}): shown as the feed sent it, not confirmed. `).join("")}
               The OI and volume bars are unaffected.
