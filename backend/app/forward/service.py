@@ -197,7 +197,10 @@ class ForwardService:
                 st = r["state"]
                 ce = st["ce_x"] if st["ce_x"] is not None else st["last_ce"]
                 pe = st["pe_x"] if st["pe_x"] is not None else st["last_pe"]
-                marks[v] = {"pnl": None if ce is None or pe is None else round(((t["ce0"] - ce) + (t["pe0"] - pe)) * t["lot"], 2), "ce_open": st["ce_open"], "pe_open": st["pe_open"], "stopped_at": st["stopped_at"]}
+                marks[v] = {
+                    "pnl": None if ce is None or pe is None else round(((t["ce0"] - ce) + (t["pe0"] - pe)) * t["lot"], 2), "ce_open": st["ce_open"], "pe_open": st["pe_open"], "stopped_at": st["stopped_at"],
+                    "ce_exit": st["ce_x"], "pe_exit": st["pe_x"], "ce_last": st["last_ce"], "pe_last": st["last_pe"],
+                }  # fmt: skip
             open_rows.append({
                 "id": t["id"], "session": t["session"], "cohort": t["cohort"], "expiry": t["expiry"], "structure": t["structure"], "n": t["n"], "trigger_at": t["trigger_at"],
                 "ce_strike": t["ce_strike"], "pe_strike": t["pe_strike"], "ce0": t["ce0"], "pe0": t["pe0"], "spot0": t["spot0"], "spot": t["track"].get("last"), "seller": t["seller"],

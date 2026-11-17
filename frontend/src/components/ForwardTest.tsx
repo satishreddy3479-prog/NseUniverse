@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type ForwardOverview, type ForwardPortfolioTrade, type ForwardToday, type ForwardVariant } from "../lib/api";
 import { fmtAge, MISSING } from "../lib/format";
 import { EQUITY_HEIGHT, portfolioEquityOption } from "../lib/portfolioCharts";
 import { portfolioStats, type PortfolioStats } from "../lib/portfolioStats";
+import { positionToBuilder, type PositionIn } from "../lib/forwardStrategy";
+import { WORKING_KEY } from "../pages/StrategyBuilder";
 import { EChart, useChartColors } from "./EChart";
 
 const IST = "Asia/Kolkata";
@@ -95,7 +98,8 @@ function Equity({ s }: { s: PortfolioStats }) {
   return <div className="w-full" style={{ height: EQUITY_HEIGHT }} data-testid="forward-equity"><EChart option={option} ariaLabel="Cumulative net P&L of the selected trades, the result of each trade and drawdown" /></div>;
 }
 
-function Log({ rows, s }: { rows: ForwardPortfolioTrade[]; s: PortfolioStats }) {
+function Log({ rows, s, rule, lot }: { rows: ForwardPortfolioTrade[]; s: PortfolioStats; rule: string; lot: number }) {
+  const openIn = useOpenInBuilder(lot);
   if (rows.length === 0) return <p className="p-3 text-sm text-muted">No closed trade for this selection yet.</p>;
   const cum = new Map(rows.map((r, i) => [r.id, s.curve[i]?.cum ?? null]));
   const shown = [...rows].reverse().slice(0, 200);
@@ -107,7 +111,9 @@ function Log({ rows, s }: { rows: ForwardPortfolioTrade[]; s: PortfolioStats }) 
         </thead>
         <tbody>
           {shown.map((r) => (
-            <tr key={r.id} className="border-t border-rule">
+            <tr key={r.id} className="cursor-pointer border-t border-rule hover:bg-slate-2/60" tabIndex={0} aria-label={`Open the trade of ${when(r.trigger_at)} in the Strategy builder`}
+              onClick={() => openIn(r, rule, { ce_exit: r.ce_exit, pe_exit: r.pe_exit, stopped_at: r.stopped_at, settled_at: r.settled_at })}
+              onKeyDown={(e) => { if (e.key === "Enter") openIn(r, rule, { ce_exit: r.ce_exit, pe_exit: r.pe_exit, stopped_at: r.stopped_at, settled_at: r.settled_at }); }}>
               <td className="whitespace-nowrap px-2 py-1.5">{when(r.trigger_at)}<div className="text-[11px] text-muted">seller {r.seller ?? MISSING} · {r.regime ?? "no regime"}</div></td>
               <td className="px-2 capitalize">{r.cohort} #{r.n}<div className="text-[11px] text-muted">{r.expiry}</div></td>
               <td className="px-2 tabular-nums">{r.ce_strike === r.pe_strike ? `${r.ce_strike} CE + PE` : `${r.ce_strike} CE + ${r.pe_strike} PE`}<div className="text-[11px] capitalize text-muted">{r.structure}</div></td>
@@ -214,7 +220,20 @@ function Today({ t, open }: { t: ForwardToday; open: number }) {
   );
 }
 
+/** Put a position into the Strategy builder as the strategy being worked on, then open the builder (the same hand-over the Strategy portfolio uses). */
+function useOpenInBuilder(lot: number) {
+  const navigate = useNavigate();
+  return (p: PositionIn, rule: string, exit?: { ce_exit: number | null; pe_exit: number | null; stopped_at: string | null; settled_at?: string | null }) => {
+    const d = positionToBuilder(p, rule, lot, exit);
+    try {
+      localStorage.setItem(WORKING_KEY, JSON.stringify({ legs: d.legs, expiry: d.expiry, name: d.name, loaded: null, baseline: d.legs, rules: d.rules, rstate: null, rearmAt: d.holdFrom, hold: undefined, holdFrom: d.holdFrom, moveToCost: d.moveToCost, at: Date.now() }));
+    } catch { /* the builder then opens as it was */ }
+    navigate("/strategy");
+  };
+}
+
 function OpenNow({ o }: { o: ForwardOverview }) {
+  const openIn = useOpenInBuilder(o.meta.setup.lot);
   const rule = o.filters.rule;
   if (o.open.length === 0) return <p className="p-3 text-sm text-muted">No open position. One opens the first time the seller score of the weekly or monthly expiry reaches 60 between 09:30 and 14:30; it closes at 15:20.</p>;
   return (
@@ -222,13 +241,17 @@ function OpenNow({ o }: { o: ForwardOverview }) {
       {o.open.map((t) => {
         const m = t.variants[rule];
         return (
-          <div key={t.id} className="rounded-sm border border-rule bg-slate-2 p-2 text-sm">
+          <div key={t.id} role="button" tabIndex={0} aria-label={`Open ${t.cohort} ${t.structure} #${t.n} in the Strategy builder`}
+            onClick={() => openIn({ ...t, session: t.session }, rule, m ? { ce_exit: m.ce_exit, pe_exit: m.pe_exit, stopped_at: m.stopped_at } : undefined)}
+            onKeyDown={(e) => { if (e.key === "Enter") openIn({ ...t, session: t.session }, rule, m ? { ce_exit: m.ce_exit, pe_exit: m.pe_exit, stopped_at: m.stopped_at } : undefined); }}
+            className="cursor-pointer rounded-sm border border-rule bg-slate-2 p-2 text-sm hover:border-brass">
             <div className="flex flex-wrap items-baseline justify-between gap-1">
               <span className="font-semibold capitalize">{t.structure} · {t.cohort} · #{t.n}</span>
               <span className={`num font-semibold ${tone(m?.pnl)}`}>{m?.stopped_at ? "✕ " : ""}{inr(m?.pnl)}</span>
             </div>
             <div className="text-xs text-muted">Sold {t.ce_strike === t.pe_strike ? `${t.ce_strike} CE + PE` : `${t.ce_strike} CE + ${t.pe_strike} PE`} at {t.ce0} + {t.pe0} = {(t.ce0 + t.pe0).toFixed(2)} · opened {clock(t.trigger_at)} · seller {t.seller ?? MISSING} · NIFTY {t.spot0.toFixed(0)} → {t.spot == null ? MISSING : t.spot.toFixed(0)}</div>
             {m?.stopped_at && <div className="text-xs text-warn">A stop fired at {m.stopped_at} ({m.ce_open ? "call" : "put"}{!m.ce_open && !m.pe_open ? " and put" : ""} closed).</div>}
+            <div className="mt-0.5 text-[11px] text-info">Click to open in the Strategy builder</div>
           </div>
         );
       })}
@@ -281,7 +304,7 @@ export function ForwardBody() {
       <Panel title="Equity and drawdown" hint="Cumulative net P&L after each closed trade, the result of each trade, and the fall from the highest point."><Equity s={stats} /></Panel>
       <Panel title="Stop-loss rules compared" hint="Net of estimated charges, one lot."><Compare rules={o.rules} selected={o.filters.rule} onPick={setRule} min={min} /></Panel>
       <Panel title="By market regime and other conditions" hint="Where the selected rule works and where it does not."><Breakdown o={o} dim={dim} setDim={setDim} /></Panel>
-      <Panel title="Closed trades" hint="Newest first."><Log rows={rows} s={stats} /></Panel>
+      <Panel title="Closed trades" hint="Newest first. Click a trade to open it in the Strategy builder."><Log rows={rows} s={stats} rule={o.filters.rule} lot={o.meta.setup.lot} /></Panel>
       <p className="text-xs text-muted">
         Prices are the last traded prices of the stored one-minute samples (no bid or ask), and a stop is checked on each sample, so a touch between two samples is not seen. Charges are an estimate. Trades are intraday: they say nothing about holding overnight, gaps or expiry-day gamma. Trades are listed in the order they were opened, and trades that open together (a straddle and a strangle, weekly and monthly) follow one another in the streaks. Generated {fmtAge((Date.now() - new Date(o.generated_at).getTime()) / 1000)}.
       </p>

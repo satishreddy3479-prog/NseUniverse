@@ -136,7 +136,7 @@ export interface ForwardPortfolioTrade {
 }
 export interface ForwardOpen {
   id: number; session: string; cohort: string; expiry: string; structure: string; n: number; trigger_at: string; ce_strike: number; pe_strike: number; ce0: number; pe0: number; spot0: number; spot: number | null;
-  seller: number | null; regime: string | null; variants: Record<string, { pnl: number | null; ce_open: boolean; pe_open: boolean; stopped_at: string | null }>;
+  seller: number | null; regime: string | null; variants: Record<string, { pnl: number | null; ce_open: boolean; pe_open: boolean; stopped_at: string | null; ce_exit: number | null; pe_exit: number | null; ce_last: number | null; pe_last: number | null }>;
 }
 export interface ForwardBreakdownRow { bucket: string; n: number; win_rate?: number; avg?: number; total?: number; worst?: number; stop_rate?: number }
 export interface ForwardToday {
