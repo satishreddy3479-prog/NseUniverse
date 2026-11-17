@@ -325,7 +325,7 @@ class MarketIntelligence:
             add(f"Strong {'bullish' if cs > 0 else 'bearish'} confirmation", "high", "bullish" if cs > 0 else "bearish", f"Score reached {cs:+.0f} with {agree:.0%} agreement", [e["name"] for e in s["engines"] if e["score"] is not None and e["score"] * cs > 0][:4], "agreement holds above 70%", "score falls under 35")
         pm, cm = prev["metrics"], cur["metrics"]
         if pm.get("flip_side") and cm.get("flip_side") and pm["flip_side"] != cm["flip_side"]:
-            add("Gamma flip crossing", "high", "bullish" if cm["flip_side"] > 0 else "bearish", f"NIFTY crossed the gamma flip {'upwards' if cm['flip_side'] > 0 else 'downwards'}", [f"flip {cm.get('flip')}"], "holds on the new side for 5 minutes", "spot returns across the flip (model-based level)")
+            add("Gamma flip crossing", "high", "bullish" if cm["flip_side"] > 0 else "bearish", f"NIFTY crossed the gamma flip {'upwards' if cm['flip_side'] > 0 else 'downwards'}", [f"flip {cm['flip']:.0f}" if cm.get('flip') is not None else "flip not available"], "holds on the new side for 5 minutes", "spot returns across the flip (model-based level)")
         if pm.get("flip") and cm.get("flip") and cur["spot"] and abs(cm["flip"] - pm["flip"]) / cur["spot"] * 100 >= 0.15:
             add("Significant GEX migration", "medium", "bullish" if cm["flip"] > pm["flip"] else "bearish", f"Gamma flip moved {cm['flip'] - pm['flip']:+.0f} points", [f"net GEX {cm.get('net_gex')}"], "the new level persists", "flip returns")
         po, co = prev["engines"].get("positioning"), cur["engines"].get("positioning")

@@ -72,7 +72,7 @@ def detect(prev: Sequence[Mapping[str, Any]], cur: Mapping[str, Any], cfg: Mappi
     # gamma flip crossing and significant GEX change
     f, pf = _g(cur, "gex", "side"), _g(p1, "gex", "side")
     if f is not None and pf is not None and f != pf:
-        add("Gamma flip crossing", "high", "bullish" if f > 0 else "bearish", f"NIFTY crossed the modelled gamma flip {'upwards' if f > 0 else 'downwards'}", [f"flip {_g(cur, 'gex', 'flip')}"])
+        add("Gamma flip crossing", "high", "bullish" if f > 0 else "bearish", f"NIFTY crossed the modelled gamma flip {'upwards' if f > 0 else 'downwards'}", [f"flip {_g(cur, 'gex', 'flip'):.0f}" if _g(cur, 'gex', 'flip') is not None else "flip not available"])
     n15, nn = _g(_ago(prev, 15), "gex", "net"), _g(cur, "gex", "net")
     if n15 is not None and nn is not None and max(abs(n15), abs(nn)) > 0 and abs(nn - n15) / max(abs(n15), abs(nn)) >= cfg["gex_change_share"] and not (
         _g(p1, "gex", "net") is not None and abs(_g(p1, "gex", "net") - n15) / max(abs(n15), abs(_g(p1, "gex", "net"))) >= cfg["gex_change_share"]):  # fmt: skip

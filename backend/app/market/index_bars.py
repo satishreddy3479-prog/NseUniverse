@@ -23,15 +23,25 @@ class MinuteBar:
     l: float  # noqa: E741 - open/high/low/close
     c: float
     n: int  # distinct ticks that moved into the bar
+    x: int = 0  # reads dropped as unconfirmed one-read spikes
 
     def payload(self) -> dict[str, float | int]:
-        return {"o": self.o, "h": self.h, "l": self.l, "c": self.c, "n": self.n}
+        return {"o": self.o, "h": self.h, "l": self.l, "c": self.c, "n": self.n} | ({"x": self.x} if self.x else {})
+
+
+JUMP = 0.0015  # a read this far (0.15 %, about 38 points) from the last accepted level must be confirmed by the next read before it counts
 
 
 class IndexBarBuilder:
+    """A lone read far from its neighbours is a feed glitch, not a price (on 17 Nov 2026 a read of 25,284 and one of 25,580 came within one minute of a market near 25,450, drawing a
+    300-point wick). Such a read is held back; if the next read agrees with it (within a third of the jump size) the move is real and counts, otherwise it is dropped and counted in ``x``.
+    Nothing is invented: a dropped read just leaves the bar to the reads that agree."""
+
     def __init__(self) -> None:
         self.cur: MinuteBar | None = None
         self._last_tick_at: datetime | None = None
+        self._level: float | None = None  # the last accepted level
+        self._held: float | None = None  # a far read waiting for confirmation
 
     def observe(self, now: datetime, price: float | None, tick_at: datetime | None) -> MinuteBar | None:
         """Feed one read. Returns the bar this read completed (the minute rolled over), else None.
@@ -46,6 +56,16 @@ class IndexBarBuilder:
             return done
         new_tick = tick_at is None or tick_at != self._last_tick_at
         self._last_tick_at = tick_at
+        if self._level is not None and abs(price / self._level - 1) > JUMP:
+            held, self._held = self._held, price
+            if held is None or abs(price - held) > abs(held - self._level) / 3:
+                if self.cur is not None:
+                    self.cur.x += 1
+                return done  # unconfirmed: wait for the next read
+            if self.cur is not None and self.cur.x > 0:
+                self.cur.x -= 1  # the read that waited was confirmed: it was a move, not a glitch
+        self._held = None
+        self._level = price
         if self.cur is None:
             self.cur = MinuteBar(key, price, price, price, price, 1)
         else:

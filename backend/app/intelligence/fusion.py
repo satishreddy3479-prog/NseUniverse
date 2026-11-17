@@ -246,7 +246,7 @@ def positioning_engine(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dic
     ce, pe = num(o.get("ce_oi_chg")), num(o.get("pe_oi_chg"))
     tot = (num(o.get("ce_oi")) or 0) + (num(o.get("pe_oi")) or 0)
     terms = [Term("OI added: puts minus calls", squash((pe - ce) / tot, 0.05) if ce is not None and pe is not None and tot else None,
-                  f"put OI {pe:+,.0f}, call OI {ce:+,.0f} (ATM ±10 strikes); PCR {o.get('pcr_oi')} ({'' if chg is None else f'{chg:+.3f}'} since open, shown not scored: same OI)" if ce is not None and pe is not None else "no OI change", family="options_oi")]
+                  f"put OI {pe:+,.0f}, call OI {ce:+,.0f} (ATM ±10 strikes); PCR {'n/a' if o.get('pcr_oi') is None else format(o.get('pcr_oi'), '.2f')} ({'' if chg is None else f'{chg:+.3f}'} since open, shown not scored: same OI)" if ce is not None and pe is not None else "no OI change", family="options_oi")]
     dem = g(inp.get("positioning"), "demand") or []
     bull = {("CE", "otm"): ("Upside speculation",), ("PE", "otm"): ("Put writing",)}
     bear = {("CE", "otm"): ("Call writing",), ("PE", "otm"): ("Downside speculation",)}
