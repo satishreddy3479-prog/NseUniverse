@@ -64,6 +64,7 @@ class ForwardService:
         self._task: asyncio.Task[None] | None = None
         self.last_tick: datetime | None = None
         self.last_error: str | None = None
+        self._seen: dict[str, dict[str, Any]] = {}  # per cohort: the expiry watched and the last seller score read, so the page can say what is happening
 
     # ------------------------------------------------------------------ one pass (blocking: run it in a thread)
     def run_once(self, now: datetime, weekly: str | None, monthly: str | None) -> dict[str, Any]:
@@ -90,6 +91,7 @@ class ForwardService:
             if a.get("status") != "ok" or a.get("session") != session or env is None or not (a.get("quality") or {}).get("live"):
                 continue
             score = (env.get("seller") or {}).get("score")
+            self._seen[cohort] = {"expiry": expiry, "score": score, "at": now.isoformat(timespec="seconds")}
             arm = self.store.arm_get(session, cohort)
             new, fire = next_arm(arm, score, now)
             if fire:
@@ -201,8 +203,23 @@ class ForwardService:
                 "ce_strike": t["ce_strike"], "pe_strike": t["pe_strike"], "ce0": t["ce0"], "pe0": t["pe0"], "spot0": t["spot0"], "spot": t["track"].get("last"), "seller": t["seller"],
                 "regime": t["regime"], "variants": marks,
             })  # fmt: skip
+        ist = now.astimezone(IST)
+        session = ist.date().isoformat()
+        triggers = self.store.session_triggers(session)
+        arms = self.store.arm_cohorts(session)
+        cohorts = []
+        for k in sorted(set(arms) | set(self._seen), reverse=True):  # weekly, then monthly
+            seen, arm = self._seen.get(k, {}), arms.get(k, {"count": 0, "armed": True, "below_since": None, "expiry": None})
+            cohorts.append({
+                "cohort": k, "expiry": seen.get("expiry") or arm.get("expiry"), "seller": seen.get("score"), "score_at": seen.get("at"), "count": arm["count"], "armed": arm["armed"],
+                "below_since": arm["below_since"], "opened": [t["at"] for t in triggers if t["cohort"] == k],
+            })  # fmt: skip
+        today = {
+            "session": session, "in_window": ist.weekday() < 5 and ENTRY_FROM <= ist.time() <= ENTRY_TO, "cap": CAP_PER_DAY, "threshold": THRESHOLD, "rearm_minutes": REARM_MIN,
+            "cohorts": cohorts,
+        }  # fmt: skip
         return {
-            "generated_at": now.isoformat(timespec="seconds"), "filters": {"structure": structure, "cohort": cohort, "rule": rule, "rule_label": LABELS[rule]},
+            "generated_at": now.isoformat(timespec="seconds"), "today": today, "filters": {"structure": structure, "cohort": cohort, "rule": rule, "rule_label": LABELS[rule]},
             "meta": {
                 "enabled": self.enabled, "counts": counts, "last_run": last, "last_tick": None if self.last_tick is None else self.last_tick.isoformat(timespec="seconds"), "last_error": self.last_error,
                 "bytes": self.store.size_bytes(), "min_trades": analytics.MIN_TRADES,

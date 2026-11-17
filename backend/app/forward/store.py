@@ -121,6 +121,20 @@ class ForwardStore:
             t["variants"] = res.get(t["id"], {})
         return trades
 
+    def arm_cohorts(self, session: str) -> dict[str, dict[str, Any]]:
+        """Every cohort with an arming row today, with the expiry of its latest position (the page can say what happened even after a restart)."""
+        with self._lock, closing(self._conn()) as c:
+            out = {r["cohort"]: {"count": r["count"], "armed": bool(r["armed"]), "below_since": r["below_since"], "expiry": None} for r in c.execute("SELECT * FROM arm WHERE session=?", (session,))}
+            for r in c.execute("SELECT cohort, expiry FROM trades WHERE session=? ORDER BY id", (session,)):
+                out.setdefault(r["cohort"], {"count": 0, "armed": True, "below_since": None, "expiry": None})["expiry"] = r["expiry"]
+        return out
+
+    def session_triggers(self, session: str) -> list[dict[str, Any]]:
+        """The triggers of one day: for each cohort and trigger number, when it opened (each trigger makes a straddle and a strangle)."""
+        with self._lock, closing(self._conn()) as c:
+            rows = c.execute("SELECT cohort, n, MIN(trigger_at) AS at, COUNT(*) AS positions FROM trades WHERE session=? GROUP BY cohort, n ORDER BY at", (session,)).fetchall()
+        return [dict(r) for r in rows]
+
     def counts(self) -> dict[str, int]:
         with self._lock, closing(self._conn()) as c:
             return {

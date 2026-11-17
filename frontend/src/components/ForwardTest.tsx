@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api, type ForwardOverview, type ForwardPortfolioTrade, type ForwardVariant } from "../lib/api";
+import { api, type ForwardOverview, type ForwardPortfolioTrade, type ForwardToday, type ForwardVariant } from "../lib/api";
 import { fmtAge, MISSING } from "../lib/format";
 import { EQUITY_HEIGHT, portfolioEquityOption } from "../lib/portfolioCharts";
 import { portfolioStats, type PortfolioStats } from "../lib/portfolioStats";
@@ -187,6 +187,33 @@ function Breakdown({ o, dim, setDim }: { o: ForwardOverview; dim: string; setDim
   );
 }
 
+/** In words, what a cohort is doing today: waiting for a trigger, open, or waiting to re-arm. */
+export function cohortStatus(t: ForwardToday, c: ForwardToday["cohorts"][number]): string {
+  if (c.count >= t.cap) return `all ${t.cap} trades of the day are open or done: no more today`;
+  if (!c.armed) return c.below_since ? `the score fell below ${t.threshold} at ${clock(c.below_since)}: the next trade opens if it stays there ${t.rearm_minutes} minutes and then reaches ${t.threshold} again` : `a trade is open: the next one needs the score to fall below ${t.threshold} for ${t.rearm_minutes} minutes and reach ${t.threshold} again`;
+  if (!t.in_window) return "ready, but the entry window (09:30 to 14:30 IST) is closed";
+  if (c.seller == null) return "waiting for a seller score";
+  return c.seller >= t.threshold ? `score is ${t.threshold} or more: a trade opens at the next stored price` : `waiting for the seller score to reach ${t.threshold}`;
+}
+
+function Today({ t, open }: { t: ForwardToday; open: number }) {
+  return (
+    <div className="flex flex-col gap-1.5" data-testid="forward-today">
+      <p className="text-sm"><b>{open}</b> position{open === 1 ? "" : "s"} open now{open > 0 ? ", closing at 15:20" : ""}.</p>
+      {t.cohorts.length === 0 && <p className="text-sm text-muted">No expiry has been watched yet today. The first check happens at 09:30 IST on a trading day.</p>}
+      {t.cohorts.map((c) => (
+        <div key={c.cohort} className="rounded-sm border border-rule bg-slate-2/60 p-2 text-sm">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+            <span className="font-semibold capitalize">{c.cohort} expiry{c.expiry ? ` ${c.expiry}` : ""}</span>
+            <span className="text-xs text-muted">{c.seller == null ? "no score read yet" : `seller ${Math.round(c.seller)}${c.score_at ? ` at ${clock(c.score_at)}` : ""}`} · {c.count} of {t.cap} trades today{c.opened.length ? ` (${c.opened.map(clock).join(", ")})` : ""}</span>
+          </div>
+          <div className="text-xs text-muted">{cohortStatus(t, c)}.</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function OpenNow({ o }: { o: ForwardOverview }) {
   const rule = o.filters.rule;
   if (o.open.length === 0) return <p className="p-3 text-sm text-muted">No open position. One opens the first time the seller score of the weekly or monthly expiry reaches 60 between 09:30 and 14:30; it closes at 15:20.</p>;
@@ -245,12 +272,13 @@ export function ForwardBody() {
         <p className="text-xs text-muted" data-testid="forward-selection">Showing: <b className="text-paper">{structureText}</b> · {cohortText} · <b className="text-paper">{o.filters.rule_label}</b></p>
       </div>
 
+      <Panel title="Today" hint="Is the test running: what each expiry is doing and the positions open now."><Today t={o.today} open={c.open} /></Panel>
+      <Panel title="Open now" hint="Marked at the last stored prices, before charges, for the selected stop-loss rule."><OpenNow o={o} /></Panel>
       {stats.count < min && (
         <p role="status" className="rounded-sm border border-warn/50 p-2 text-sm text-warn">{stats.count === 0 ? "No closed trade for this selection yet. " : `Only ${stats.count} closed trade${stats.count === 1 ? "" : "s"} in this selection: `}below about {min} the figures swing on single days and say little about a rule. It builds up by itself, up to 12 positions a day when the score reaches 60.</p>
       )}
       <Panel title="Portfolio statistics" hint={`${structureText}, ${cohortText}, ${o.filters.rule_label}`}><Stats s={stats} rows={rows} /></Panel>
       <Panel title="Equity and drawdown" hint="Cumulative net P&L after each closed trade, the result of each trade, and the fall from the highest point."><Equity s={stats} /></Panel>
-      <Panel title="Open now" hint="Marked at the last stored prices, before charges, for the selected stop-loss rule."><OpenNow o={o} /></Panel>
       <Panel title="Stop-loss rules compared" hint="Net of estimated charges, one lot."><Compare rules={o.rules} selected={o.filters.rule} onPick={setRule} min={min} /></Panel>
       <Panel title="By market regime and other conditions" hint="Where the selected rule works and where it does not."><Breakdown o={o} dim={dim} setDim={setDim} /></Panel>
       <Panel title="Closed trades" hint="Newest first."><Log rows={rows} s={stats} /></Panel>

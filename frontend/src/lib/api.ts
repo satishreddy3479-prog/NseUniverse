@@ -139,8 +139,12 @@ export interface ForwardOpen {
   seller: number | null; regime: string | null; variants: Record<string, { pnl: number | null; ce_open: boolean; pe_open: boolean; stopped_at: string | null }>;
 }
 export interface ForwardBreakdownRow { bucket: string; n: number; win_rate?: number; avg?: number; total?: number; worst?: number; stop_rate?: number }
+export interface ForwardToday {
+  session: string; in_window: boolean; cap: number; threshold: number; rearm_minutes: number;
+  cohorts: { cohort: string; expiry: string | null; seller: number | null; score_at: string | null; count: number; armed: boolean; below_since: string | null; opened: string[] }[];
+}
 export interface ForwardOverview {
-  generated_at: string; filters: { structure: string; cohort: string; rule: string; rule_label: string };
+  generated_at: string; today: ForwardToday; filters: { structure: string; cohort: string; rule: string; rule_label: string };
   meta: { enabled: boolean; counts: { open: number; settled: number; days: number }; last_run: { at: string; ok: boolean } | null; last_tick: string | null; last_error: string | null; bytes: number; min_trades: number; setup: { trigger: string; rearm: string; entry_window: string; exit: string; lot: number } };
   rules: ForwardVariant[]; portfolio: ForwardPortfolioTrade[];
   breakdown: { dimension: string; title: string; options: Record<string, string>; min_trades: number; rows: ForwardBreakdownRow[] };

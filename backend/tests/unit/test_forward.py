@@ -313,3 +313,20 @@ def test_the_overview_of_a_settled_day_and_the_api(tmp_path: Path) -> None:
         body = c.get("/api/forward/overview", params={"structure": "straddle", "rule": "leg40", "dim": "time"}).json()
         assert body["filters"]["structure"] == "straddle" and body["filters"]["rule"] == "leg40" and body["breakdown"]["dimension"] == "time"
         assert c.get("/api/forward/overview", params={"structure": "bogus"}).status_code == 422
+
+
+def test_the_today_block_says_what_each_expiry_is_doing(tmp_path: Path) -> None:
+    # weekly above 60 from 10:00, monthly never: after the trigger the weekly cohort has one trade today and is not armed; the monthly is watched but waiting
+    svc, clock = make_service(tmp_path, [55.0] * 30 + [62.0] * 400, [50.0] * 400)
+    run_day(svc, clock, 40)
+    t = svc.overview()["today"]
+    assert t["session"] == "2026-11-16" and t["in_window"] and (t["cap"], t["threshold"], t["rearm_minutes"]) == (3, 60.0, 30)
+    weekly, monthly = t["cohorts"]  # weekly first
+    assert weekly["cohort"] == "weekly" and weekly["expiry"] == "2026-11-17" and weekly["seller"] == 62.0 and weekly["count"] == 1 and not weekly["armed"]
+    assert [datetime.fromisoformat(x).astimezone(IST).strftime("%H:%M") for x in weekly["opened"]] == ["10:00"]  # one trigger (its straddle and strangle share it)
+    assert monthly["cohort"] == "monthly" and monthly["expiry"] == "2026-11-24" and monthly["seller"] == 50.0 and monthly["count"] == 0 and monthly["armed"] and monthly["opened"] == []
+    # a restarted service knows the day from the store alone: the trades, the arming and the expiry, without a score until its next check (a cohort never armed is not listed yet)
+    again, _ = make_service(tmp_path, [62.0] * 400)
+    (w2,) = again.overview()["today"]["cohorts"]
+    assert w2["cohort"] == "weekly" and w2["count"] == 1 and not w2["armed"] and w2["seller"] is None and w2["expiry"] == "2026-11-17"
+    assert svc.overview()["meta"]["counts"]["open"] == 2

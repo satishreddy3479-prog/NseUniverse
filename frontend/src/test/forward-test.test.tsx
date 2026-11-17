@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { cohortStatus } from "../components/ForwardTest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
 import { expiries, status, summary } from "./fixtures";
@@ -30,7 +31,12 @@ const trade = (i: number) => ({
 });
 const rule = (variant: string, label: string, over: object = {}) => ({ variant, label, n: 6, wins: 3, win_rate: 50, total: 900, avg: 150, best: 1500, worst: -900, max_drawdown: -1200, profit_factor: 1.56, avg_intraday_worst: -425, stop_rate: 50, ...over });
 const overview = (over: object = {}, filters: object = {}) => ({
-  generated_at: new Date().toISOString(), filters: { structure: "straddle", cohort: "all", rule: "hold", rule_label: "No stop (hold to 15:20)", ...filters },
+  generated_at: new Date().toISOString(),
+  today: { session: "2026-11-17", in_window: true, cap: 3, threshold: 60, rearm_minutes: 30, cohorts: [
+    { cohort: "weekly", expiry: "2026-11-17", seller: 78.2, score_at: "2026-11-17T04:37:00+00:00", count: 1, armed: false, below_since: null, opened: ["2026-11-17T04:00:00+00:00"] },
+    { cohort: "monthly", expiry: "2026-11-24", seller: 55, score_at: "2026-11-17T04:37:00+00:00", count: 1, armed: false, below_since: "2026-11-17T04:30:00+00:00", opened: ["2026-11-17T04:27:00+00:00"] },
+  ] },
+  filters: { structure: "straddle", cohort: "all", rule: "hold", rule_label: "No stop (hold to 15:20)", ...filters },
   meta: { enabled: true, counts: { open: 1, settled: 6, days: 6 }, last_run: null, last_tick: "2026-11-16T08:10:00+00:00", last_error: null, bytes: 4096, min_trades: 20, setup: { trigger: "x", rearm: "y", entry_window: "09:30-14:30 IST", exit: "15:20 IST the same day", lot: 65 } },
   rules: [rule("hold", "No stop (hold to 15:20)"), rule("leg40", "Leg stop 40%", { total: -2000, avg: -333, win_rate: 33.3, max_drawdown: -2500 })],
   portfolio: NETS.map((_, i) => trade(i)),
@@ -166,5 +172,30 @@ describe("forward test portfolio page", () => {
     expect(screen.getByText("Nothing to break down yet.")).toBeInTheDocument();
     expect(screen.getByText(/No open position\. One opens the first time the seller score/)).toBeInTheDocument();
     expect(screen.getByText(/last check not yet/)).toBeInTheDocument();
+  });
+});
+
+describe("forward test today panel", () => {
+  it("says whether the test is running: positions open now, each expiry's score, its trades today and what it waits for", async () => {
+    payload = () => overview();
+    mockApi();
+    renderAt("/tools/forward-test");
+    const today = within(await screen.findByTestId("forward-today"));
+    expect(today.getByText(/position open now, closing at 15:20/)).toBeInTheDocument();
+    expect(today.getByText(/weekly expiry 2026-11-17/)).toBeInTheDocument();
+    expect(today.getByText(/seller 78 at 10:07 · 1 of 3 trades today \(09:30\)/)).toBeInTheDocument();
+    expect(today.getByText(/seller 55 at 10:07 · 1 of 3 trades today \(09:57\)/)).toBeInTheDocument();
+    expect(today.getByText(/the score fell below 60 at 10:00: the next trade opens if it stays there 30 minutes and then reaches 60 again\./)).toBeInTheDocument();
+    expect(today.getByText(/a trade is open: the next one needs the score to fall below 60 for 30 minutes and reach 60 again\./)).toBeInTheDocument();
+  });
+
+  it("describes every state of an expiry in words", () => {
+    const t = { session: "2026-11-17", in_window: true, cap: 3, threshold: 60, rearm_minutes: 30, cohorts: [] };
+    const c = { cohort: "weekly", expiry: "2026-11-17", seller: 70, score_at: null, count: 0, armed: true, below_since: null, opened: [] };
+    expect(cohortStatus(t, c)).toBe("score is 60 or more: a trade opens at the next stored price");
+    expect(cohortStatus(t, { ...c, seller: 50 })).toBe("waiting for the seller score to reach 60");
+    expect(cohortStatus(t, { ...c, seller: null })).toBe("waiting for a seller score");
+    expect(cohortStatus({ ...t, in_window: false }, c)).toBe("ready, but the entry window (09:30 to 14:30 IST) is closed");
+    expect(cohortStatus(t, { ...c, count: 3, armed: false })).toBe("all 3 trades of the day are open or done: no more today");
   });
 });
