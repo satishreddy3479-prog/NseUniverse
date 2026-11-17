@@ -711,9 +711,12 @@ export default function StrategyBuilder() {
     const out: ClosedLeg[] = active.map((l) => ({ ...l, lots: l.lots * mult, exit: isExited(l) ? (l.exitPrice as number) : (ltp(l.strike, l.type, l.expiry) as number) }));
     // a leg closed earlier by its stop or target keeps its booked P&L; an open one is closed now; earlier cycles stay booked
     const pnl = out.reduce((t, l) => t + (isExited(l) ? 0 : sign(l.action) * (l.exit - (l.premium as number)) * l.lots * lotSize) + (l.realised ?? 0), 0);
-    const at = new Date();
+    // Every leg already out (a stop, a target or the clock close made on the server): the strategy closed when its last leg did, with the prices those exits booked, not when this page filed it
+    const allOut = active.every((l) => isExited(l));
+    const lastExit = allOut ? active.map((l) => l.exitedAt ?? "").filter(Boolean).sort().at(-1) : undefined;
+    const at = lastExit ? new Date(lastExit) : new Date();
     const closedName = name.trim() || loaded || opened?.name;
-    persistClosed([{ id: opened?.id ?? newLegId(), name: closedName || `Strategy ${at.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`, closedAt: at.toISOString(), snapshotAt: snap.retrieved_at, expiry: strategyExpiry ?? expiry, lotSize, pnl, legs: out, stale: !!chain.data?.stale }, ...closed.filter((x) => x.id !== opened?.id)]);
+    persistClosed([{ id: opened?.id ?? newLegId(), name: closedName || `Strategy ${at.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`, closedAt: at.toISOString(), snapshotAt: lastExit ?? snap.retrieved_at, expiry: strategyExpiry ?? expiry, lotSize, pnl, legs: out, stale: allOut ? false : !!chain.data?.stale }, ...closed.filter((x) => x.id !== opened?.id)]);
     if (loaded) persist(saved.filter((x) => x.name !== loaded)); // the strategy moves from Saved to Closed, it is not copied
     setLegs([]); setRearmAt(new Date().toISOString()); setHoldFrom(null); setNote(null); setSel(null); setMult(1); setDays(0); setName(""); setOpened(null); setLoaded(null);
   };
