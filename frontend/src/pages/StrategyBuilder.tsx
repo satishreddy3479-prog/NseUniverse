@@ -12,6 +12,7 @@ import { PAYOFF_ZOOM, payoffOption, payoffView } from "../lib/chartOptions";
 import { api, ApiError, type RunningDoc } from "../lib/api";
 import { compactIN } from "../lib/analytics";
 import { fmtDateTimeIST, fmtInt, fmtPrice } from "../lib/format";
+import { useSearchParams } from "react-router-dom";
 import { LegTimes } from "../components/LegTimes";
 import { useExpiries, useThrottledValue } from "../lib/hooks";
 import { marketClockMs } from "../lib/session";
@@ -27,6 +28,16 @@ export const WORKING_KEY = "nse.builder.working.v1";
 export const SAVE_KEY = "nse.strategies.v1";
 export interface Saved { name: string; savedAt: string; updatedAt?: string; expiry: string; legs: Leg[] }
 export const CLOSED_KEY = "nse.closed.v1";
+/** A strategy shown for a moment (a forward-test position): kept for this tab only, never the working copy and never sent to the server. */
+export const TEMP_KEY = "nse.builder.temp.v1";
+export interface TempDoc { name: string; expiry: string; legs: Leg[]; rules: StrategyRules; moveToCost: boolean; holdFrom: string | null }
+function readTemp(flag: string | null): TempDoc | null {
+  if (!flag) return null;
+  try {
+    const t = JSON.parse(sessionStorage.getItem(TEMP_KEY) ?? "null") as TempDoc | null;
+    return t && Array.isArray(t.legs) && t.legs.length > 0 && t.expiry ? t : null;
+  } catch { return null; }
+}
 export interface ClosedLeg extends Leg { exit: number }
 export interface Closed { id: string; name: string; closedAt: string; snapshotAt: string; expiry: string; lotSize: number; pnl: number; legs: ClosedLeg[]; /** the stored chain was stale when the exit prices were read */ stale?: boolean }
 /** Two lists of legs are the same trade when every enabled leg has the same side, type, strike, expiry, entry premium and exit price. */
@@ -113,6 +124,10 @@ function Stat({ label, value, sub, cls = "text-paper", hint, big = false }: { la
 
 export default function StrategyBuilder() {
   const colors = useChartColors();
+  // "?temp=..." opens the strategy handed over in TEMP_KEY as a temporary view: the legs come from it, the builder does not read the server's running strategy, does not send anything to it,
+  // does not touch the working copy kept in this browser and does not run the automatic stops, so the user's own strategy is exactly as it was
+  const [params] = useSearchParams();
+  const [temp] = useState<TempDoc | null>(() => readTemp(params.get("temp")));
   const ex = useExpiries();
   // Every expiry the exchange lists from today on. The weekly and the monthly are collected by the sampler (stored chains, streamed prices,
   // history); the others are fetched live when chosen and never stored.
@@ -124,7 +139,7 @@ export default function StrategyBuilder() {
   // repeat exits that already happened. Copies older than three days are ignored.
   const [work] = useState(() => {
     try {
-      const w = JSON.parse(localStorage.getItem(WORKING_KEY) ?? "null") as { legs?: Leg[]; expiry?: string | null; name?: string; loaded?: string | null; baseline?: Leg[]; at?: number; rules?: StrategyRules; rstate?: RulesState | null; rearmAt?: string | null; hold?: HoldRule; holdFrom?: string | null; moveToCost?: boolean } | null;
+      const w = (temp ? { legs: temp.legs, expiry: temp.expiry, name: temp.name, loaded: null, baseline: temp.legs, rules: temp.rules, rstate: null, rearmAt: temp.holdFrom, holdFrom: temp.holdFrom, moveToCost: temp.moveToCost, at: Date.now() } : JSON.parse(localStorage.getItem(WORKING_KEY) ?? "null")) as { legs?: Leg[]; expiry?: string | null; name?: string; loaded?: string | null; baseline?: Leg[]; at?: number; rules?: StrategyRules; rstate?: RulesState | null; rearmAt?: string | null; hold?: HoldRule; holdFrom?: string | null; moveToCost?: boolean } | null;
       return w && Array.isArray(w.legs) && w.at && Date.now() - w.at < 3 * 86_400_000 ? w : null;
     } catch { return null; }
   });
@@ -387,7 +402,7 @@ export default function StrategyBuilder() {
   // false until the server's copy has been fetched (or found unreachable): before that the legs are only the old copy kept in this
   // browser, which can be hours behind (a stop the server executed, a strategy closed since) and must not trade on live prices
   const [hydrated, setHydrated] = useState(false);
-  const autoActive = autoOn && liveMode === "fresh" && lotSize != null && hydrated && !serverAuto;
+  const autoActive = autoOn && liveMode === "fresh" && lotSize != null && hydrated && !serverAuto && !temp;
   // A target or stop that was just typed is not checked until the typing has settled: "30" passes through "3" on the way,
   // and that half-typed level must not close the leg.
   const lastExitEdit = useRef(-1e9);
@@ -411,6 +426,7 @@ export default function StrategyBuilder() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, legs, autoActive, mult, lotSize, settle, rules, hold, holdFrom, moveToCost]);
   useEffect(() => {
+    if (temp) return; // a temporary view is never the working copy
     try { localStorage.setItem(WORKING_KEY, JSON.stringify({ legs, expiry, name, loaded, baseline, rules, rstate, rearmAt, hold, holdFrom, moveToCost, at: Date.now() })); } catch { /* this visit only */ }
   }, [legs, expiry, name, loaded, baseline, rules, rstate, rearmAt, hold, holdFrom, moveToCost]);
 
@@ -442,6 +458,7 @@ export default function StrategyBuilder() {
     }
   };
   useEffect(() => {
+    if (temp) { setHydrated(true); return; } // the server's running strategy is the user's own: not read, not replaced
     let off = false;
     api.runningGet().then((r) => {
       if (off) return;
@@ -460,7 +477,7 @@ export default function StrategyBuilder() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
-    if (!hydrated || !serverAuto) return;
+    if (!hydrated || !serverAuto || temp) return;
     if (skipPush.current) { skipPush.current = false; sentRef.current = coreJson; return; }
     if (coreJson === sentRef.current) return;
     const baseRev = revRef.current; // the revision this payload was built on: if the server moves on before the send, the send is refused
@@ -477,7 +494,7 @@ export default function StrategyBuilder() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coreJson, hydrated, serverAuto]);
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || temp) return;
     const poll = async () => {
       try {
         const r = await api.runningGet();
@@ -511,7 +528,7 @@ export default function StrategyBuilder() {
   // (a copy stays in this browser) and the builder starts on the latest weekly expiry.
   const expiryChecked = useRef(false);
   useEffect(() => {
-    if (expiryChecked.current || !hydrated || available.length === 0) return;
+    if (expiryChecked.current || !hydrated || available.length === 0 || temp) return; // a past position keeps its expiry in a temporary view
     expiryChecked.current = true;
     if (picked && !available.includes(picked) && !opened) {
       try { localStorage.setItem("nse.builder.expired.v1", JSON.stringify({ expiry: picked, name, legs, at: Date.now() })); } catch { /* this visit only */ }
@@ -745,6 +762,13 @@ export default function StrategyBuilder() {
 
   return (
     <div className="mx-auto flex max-w-[1500px] flex-col gap-3">
+      {temp && (
+        <div role="status" data-testid="temp-banner" className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-sm border border-info/60 bg-info/10 px-3 py-2 text-sm">
+          <span className="min-w-0 flex-1"><b>Temporary view</b> of {temp.name}. It is not saved, the server is not watching it and your own strategy is exactly as you left it. Use Save to keep a copy.</span>
+          <button type="button" onClick={() => { try { sessionStorage.removeItem(TEMP_KEY); } catch { /* nothing to remove */ } window.location.assign("/strategy"); }}
+            className="min-h-9 rounded-sm border border-info/60 bg-slate px-3 text-info hover:bg-info/10">Back to my strategy</button>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="mr-2 w-full text-xl font-semibold sm:w-auto">Strategy builder</h1>
         <ChartInfoToggle />
@@ -753,7 +777,7 @@ export default function StrategyBuilder() {
         <Button variant="primary" disabled={!name.trim() || legs.length === 0 || !expiry} onClick={() => { persist([{ name: name.trim(), savedAt: new Date().toISOString(), expiry: strategyExpiry!, legs }, ...saved.filter((s) => s.name !== name.trim())]); setLoaded(name.trim()); setBaseline(legs); setName(""); }}>Save</Button>
         <span data-testid="sync-state" className={`text-[11px] ${sync === "browser" || syncProblem ? "text-warn" : "text-muted"}`}
           title={sync === "server" ? "Saved and closed strategies are stored on the server and kept in its nightly backups" : "The server could not be reached: strategies are held in this browser only and move to the server the next time it is reachable"}>
-          {syncProblem ? `Not saved on server: ${syncProblem}` : sync === "server" ? "Stored on server" : sync === "browser" ? "Browser only (server unreachable)" : "Checking server…"}
+          {temp ? "Temporary view: not saved" : syncProblem ? `Not saved on server: ${syncProblem}` : sync === "server" ? "Stored on server" : sync === "browser" ? "Browser only (server unreachable)" : "Checking server…"}
         </span>
         <details className="relative text-sm" data-testid="saved-menu">
           <summary className={`${field} flex cursor-pointer items-center`} aria-label="Saved strategies">Saved ({saved.length})</summary>

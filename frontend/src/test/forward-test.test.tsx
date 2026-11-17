@@ -201,19 +201,20 @@ describe("forward test today panel", () => {
 });
 
 describe("forward positions open in the strategy builder", () => {
-  it("clicking an open position hands it to the builder: its legs, strikes, entry prices, the selected stop rule and the entry time", async () => {
+  it("clicking an open position hands it to the builder as a temporary view: its legs, strikes, entry prices, the selected stop rule and the entry time, and leaves the user's own working copy alone", async () => {
+    localStorage.setItem("nse.builder.working.v1", JSON.stringify({ legs: [], marker: "mine" }));
     payload = (url) => overview({}, { rule: param(url, "rule"), rule_label: param(url, "rule") });
     mockApi();
     renderAt("/tools/forward-test");
     await userEvent.click(await screen.findByRole("button", { name: "Stop 40%" }));
     await vi.waitFor(() => expect(screen.getByRole("button", { name: "Stop 40%" })).toHaveAttribute("aria-pressed", "true"));
     await userEvent.click(await screen.findByRole("button", { name: "Open weekly straddle #2 in the Strategy builder" }));
-    const w = JSON.parse(localStorage.getItem("nse.builder.working.v1")!);
+    const w = JSON.parse(sessionStorage.getItem("nse.builder.temp.v1")!);
     expect(w.name).toBe("Forward weekly straddle #2, 16 Nov 13:00");
     expect(w.expiry).toBe("2026-11-17");
     expect(w.legs.map((l: { type: string; strike: number; premium: number; stop: number }) => [l.type, l.strike, l.premium, l.stop])).toEqual([["CE", 25300, 60.5, 84.7], ["PE", 25300, 71, 99.4]]); // 40 % above each entry
     expect(w.holdFrom).toBe("2026-11-16T07:30:00+00:00");
-    expect(w.loaded).toBeNull();
+    expect(JSON.parse(localStorage.getItem("nse.builder.working.v1")!).marker).toBe("mine"); // the user's own strategy in this browser is untouched
     expect(w.legs[0].exitPrice).toBeUndefined();
     expect(w.legs.every((l: { enteredAt: string }) => l.enteredAt === "2026-11-16T07:30:00+00:00")).toBe(true);
   });
@@ -224,7 +225,7 @@ describe("forward positions open in the strategy builder", () => {
     renderAt("/tools/forward-test");
     const row = (await screen.findAllByRole("row", { name: /^Open the trade of .* in the Strategy builder$/ }))[2]!; // the fourth trade (index 3), newest first: stopped, -900
     await userEvent.click(row);
-    const w = JSON.parse(localStorage.getItem("nse.builder.working.v1")!);
+    const w = JSON.parse(sessionStorage.getItem("nse.builder.temp.v1")!);
     expect(w.legs.map((l: { exitPrice: number }) => l.exitPrice)).toEqual([60.5, 70]);
     expect(w.legs[0].exitedAt).toBe("2026-11-13T09:50:00+00:00"); // hold: closed at the end of that day (13 Nov, 15:20 IST)
   });

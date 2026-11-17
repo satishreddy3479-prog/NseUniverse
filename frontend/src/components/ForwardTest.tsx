@@ -6,7 +6,7 @@ import { fmtAge, MISSING } from "../lib/format";
 import { EQUITY_HEIGHT, portfolioEquityOption } from "../lib/portfolioCharts";
 import { portfolioStats, type PortfolioStats } from "../lib/portfolioStats";
 import { positionToBuilder, type PositionIn } from "../lib/forwardStrategy";
-import { WORKING_KEY } from "../pages/StrategyBuilder";
+import { TEMP_KEY } from "../pages/StrategyBuilder";
 import { EChart, useChartColors } from "./EChart";
 
 const IST = "Asia/Kolkata";
@@ -220,15 +220,15 @@ function Today({ t, open }: { t: ForwardToday; open: number }) {
   );
 }
 
-/** Put a position into the Strategy builder as the strategy being worked on, then open the builder (the same hand-over the Strategy portfolio uses). */
+/** Show a position in the Strategy builder as a temporary view: it is kept for this tab only, so the user's own strategy (in this browser and on the server) is not replaced. */
 function useOpenInBuilder(lot: number) {
   const navigate = useNavigate();
   return (p: PositionIn, rule: string, exit?: { ce_exit: number | null; pe_exit: number | null; stopped_at: string | null; settled_at?: string | null }) => {
     const d = positionToBuilder(p, rule, lot, exit);
     try {
-      localStorage.setItem(WORKING_KEY, JSON.stringify({ legs: d.legs, expiry: d.expiry, name: d.name, loaded: null, baseline: d.legs, rules: d.rules, rstate: null, rearmAt: d.holdFrom, hold: undefined, holdFrom: d.holdFrom, moveToCost: d.moveToCost, at: Date.now() }));
-    } catch { /* the builder then opens as it was */ }
-    navigate("/strategy");
+      sessionStorage.setItem(TEMP_KEY, JSON.stringify({ name: d.name, expiry: d.expiry, legs: d.legs, rules: d.rules, moveToCost: d.moveToCost, holdFrom: d.holdFrom }));
+    } catch { /* storage unavailable: the builder then opens as it was */ }
+    navigate("/strategy?temp=forward");
   };
 }
 
