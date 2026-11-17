@@ -509,6 +509,26 @@ describe("Exit all and closed strategies", () => {
     expect(screen.getByRole("table", { name: "Strategy legs" })).toBeInTheDocument();
   });
 
+  it("a closed trade whose every leg was closed on the server opens as a booked result: no max profit in green for a loss, no -1.00 : 1, no 0 % chance, no stale-price warning", async () => {
+    // the 17 Nov 2026 trade: short 24050 straddle, the call stopped at 122.05 (entry 60.85), the put closed at 15:20 at 0.60 (entry 51.15); filed before the page knew its exits were booked (stale: true)
+    const leg = (type: "CE" | "PE", premium: number, exitPrice: number, realised: number) => ({ id: type, expiry: "2026-11-03", strike: 24050, type, action: "SELL", lots: 1, premium, premiumSource: "market", exitPrice, exitReason: "strategy", exitedAt: "2026-11-02T09:50:00.000Z", realised, reentry: 0, exit: exitPrice });
+    const closed = { id: "c1", name: "Straddle score 79", closedAt: "2026-11-02T10:26:00.000Z", snapshotAt: "2026-11-02T10:09:03.000Z", expiry: "2026-11-03", lotSize: 65, pnl: -691.99, stale: true, legs: [leg("CE", 60.85, 122.05, -3978.25), leg("PE", 51.15, 0.6, 3286.25)] };
+    localStorage.setItem("nse.closed.v1", JSON.stringify([closed]));
+    mount();
+    await loaded();
+    const menu = await screen.findByTestId("closed-menu");
+    await userEvent.click(within(menu).getByText(/Realised/));
+    const banner = await screen.findByTestId("opened-closed");
+    expect(banner).toHaveTextContent("Realised");
+    expect(banner).not.toHaveTextContent("stale stored prices"); // every leg has its exit: nothing is marked at a stored price
+    const stats = screen.getByTestId("risk-stats");
+    expect(stats).toHaveTextContent("Realised P&L (all legs closed)");
+    expect(stats).toHaveTextContent(/Max profit—/);
+    expect(stats).toHaveTextContent(/Max loss—/);
+    expect(stats).not.toHaveTextContent("-1.00");
+    expect(stats).not.toHaveTextContent("POP (model estimate)0%");
+  });
+
   it("will not exit a leg that has no stored price: missing stays missing", async () => {
     mount();
     await loaded();

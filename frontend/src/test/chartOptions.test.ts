@@ -244,6 +244,17 @@ describe("payoffOption", () => {
     expect(o.series[2]!.markLine.data.map((d) => d.name).filter(Boolean)).toEqual(["Spot", "BE"]);
   });
 
+  it("hides the SD labels when the expected-move lines sit a few points apart (expiry day), so they are not printed over the current-price tag", async () => {
+    const { payoffOption } = await import("../lib/chartOptions");
+    type Mark = { name?: string; label?: { show?: boolean } };
+    const marks = (bands: { m2: number; m1: number; p1: number; p2: number }) => {
+      const o = payoffOption({ expiry: [{ s: 25080, pnl: -692 }, { s: 25690, pnl: -692 }], spot: 25387.4, breakevens: [], target: null, targetLabel: "", bands, oi: null }, colors) as unknown as { series: { markLine: { data: Mark[] } }[] };
+      return o.series[o.series.length - 1]!.markLine.data.filter((d) => d.name === "SD");
+    };
+    expect(marks({ m2: 25384, m1: 25386, p1: 25389, p2: 25391 }).map((m) => m.label?.show)).toEqual([false, false, false, false]); // a 3-point 1-SD band on a 610-point axis
+    expect(marks({ m2: 25100, m1: 25240, p1: 25535, p2: 25675 }).map((m) => m.label?.show)).toEqual([true, true, true, true]); // a normal week
+  });
+
   it("open interest bars come from the chain strike by strike and the right axis shares the zero line with P&L", async () => {
     const { payoffOption } = await import("../lib/chartOptions");
     const oi = [{ strike: 23900, call: 100, put: 300 }, { strike: 24000, call: 500, put: null }];

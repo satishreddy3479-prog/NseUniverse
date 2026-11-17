@@ -574,12 +574,15 @@ export function payoffOption(p: PayoffSeries, c: ChartColors, view?: { lo: numbe
     label: { formatter: text, color, fontSize: 10, rotate: where === "top" ? 0 : 90, position: where === "top" ? "end" : where === "bottom" ? "insideEndTop" : "insideStartBottom",
       backgroundColor: where === "top" ? c.slate : undefined, padding: [1, 3], borderRadius: 2 },
   });
+  // near expiry the expected-move lines sit a few points apart: their labels (and the current price tag) would be printed on top of each other, so the labels go and the lines stay (the tooltip still says where you are)
+  const spanX = view ? view.hi - view.lo : (pts.length ? pts[pts.length - 1]!.s - pts[0]!.s : 0);
+  const sdCrowded = !!p.bands && spanX > 0 && p.bands.p1 - p.bands.m1 < spanX * 0.05;
   const marks = [
     { yAxis: 0, lineStyle: { color: c.muted, type: "solid", width: 1 }, label: { show: false } },
     { ...mk(p.spot, "Spot", c.brass, `Current price: ${fmtPrice(p.spot)}`, "dashed", "top", 1.6), label: { formatter: `Current price: ${fmtPrice(p.spot)}`, color: c.paper, fontSize: 11, position: "end", distance: 6, backgroundColor: c.slate, borderColor: c.rule, borderWidth: 1, padding: [3, 6], borderRadius: 3 } },
     ...p.breakevens.map((b) => mk(b, "BE", c.info, `BE ${fmtInt(Math.round(b))}`, "dotted", "bottom")),
     ...(p.bands ? ([["−2σ", p.bands.m2], ["−1σ", p.bands.m1], ["+1σ", p.bands.p1], ["+2σ", p.bands.p2]] as [string, number][]).map(([t, x]) => ({
-      ...mk(x, "SD", c.muted, t, "dotted", "mid"), label: { show: true, formatter: t.replace("σ", "SD"), color: c.muted, fontSize: 11, position: "end", distance: 6 } })) : []),
+      ...mk(x, "SD", c.muted, t, "dotted", "mid"), label: { show: !sdCrowded, formatter: t.replace("σ", "SD"), color: c.muted, fontSize: 11, position: "end", distance: 6 } })) : []),
     ...(p.levels ?? []).map((l) => mk(l.s, l.kind, l.kind === "target" ? c.up : l.kind === "stop" ? c.down : c.info, `${l.kind === "target" ? "Target" : l.kind === "stop" ? "Stop" : "What-if"} ${l.label} ${fmtInt(Math.round(l.s))}`.replace("  ", " "), "dashed", "bottom", 1.4)),
   ];
   const areas = p.bands ? [

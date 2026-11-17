@@ -380,6 +380,7 @@ export default function StrategyBuilder() {
     return mkt == null || l.premium == null ? null : sign(l.action) * (mkt - l.premium) * l.lots * mult * lotSize + (l.realised ?? 0);
   };
   const realisedTotal = live.reduce((t, l) => t + (l.realised ?? 0), 0);
+  const allClosed = live.length > 0 && open.length === 0; // every leg already exited: the result is booked, the payoff curve and its statistics describe nothing that can still happen
   const totalPnl = lotSize && live.length && live.every((l) => isExited(l) || (l.premium != null && ltp(l.strike, l.type, l.expiry) != null))
     ? live.reduce((s, l) => s + (unreal({ ...l, lots: l.lots / mult }, ltp(l.strike, l.type, l.expiry)) ?? 0), 0) : null;
   const [autoNote, setAutoNote] = useState<string | null>(null);
@@ -956,7 +957,7 @@ export default function StrategyBuilder() {
             {opened && (
               <div className="mx-3 mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-sm border border-info/50 bg-info/10 px-3 py-2 text-xs" data-testid="opened-closed">
                 <span className="text-paper">Opened closed trade <b>{opened.name}</b>, closed {new Date(opened.closedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST</span>
-                <span>Realised <span className={`num ${tone(opened.pnl)}`}>{money(opened.pnl)}</span>{opened.stale && <span className="ml-2 text-warn">at stale stored prices from {fmtDateTimeIST(opened.snapshotAt)}, not live fills</span>}</span>
+                <span>Realised <span className={`num ${tone(opened.pnl)}`}>{money(opened.pnl)}</span>{opened.stale && !opened.legs.every((l) => l.exit != null) && <span className="ml-2 text-warn">at stale stored prices from {fmtDateTimeIST(opened.snapshotAt)}, not live fills</span>}</span>
                 <span className="text-muted">Exits: {opened.legs.map((l) => `${l.action === "BUY" ? "B" : "S"} ${l.strike}${l.type} ${l.premium} → ${l.exit}`).join(" · ")}</span>
                 <button type="button" className="ml-auto text-info hover:underline" onClick={() => setOpened(null)}>Dismiss</button>
               </div>
@@ -994,14 +995,14 @@ export default function StrategyBuilder() {
               <div className="flex flex-col">
                 <div className="border-b border-rule" data-testid="risk-stats">
                   <dl className="flex flex-wrap gap-px bg-rule/60">
-                  <Stat big label="P&L now (vs entry)" value={money(totalPnl)} cls={tone(totalPnl)} sub={realisedTotal !== 0 && totalPnl != null ? `booked ${money(realisedTotal)} · open ${money(totalPnl - realisedTotal)}` : undefined} hint="Booked P&L of closed legs plus the open legs at their latest price against your entry premiums" />
-                  <Stat big label={`Max profit${a.estimate ? " (model)" : ""}`} value={a.profitUnlimited ? "Unlimited" : money(a.maxProfit)} cls="text-up" hint={a.estimate ? "Best P&L at the chosen date over a wide range of NIFTY levels; legs still alive then are model values" : "Best P&L at expiry over every NIFTY level from 0 upwards"} />
-                  <Stat big label={`Max loss${a.estimate ? " (model)" : ""}`} value={a.lossUnlimited ? "Unlimited" : money(a.maxLoss)} cls="text-down" hint={a.estimate ? "Worst P&L at the chosen date over a wide range of NIFTY levels; legs still alive then are model values" : "Worst P&L at expiry over every NIFTY level from 0 upwards"} />
-                  <Stat big label="Reward : Risk" value={rr == null ? "N/A" : `${rr.toFixed(2)} : 1`} />
-                  <Stat big label="POP (model estimate)" value={pop == null ? "—" : `${(pop * 100).toFixed(0)}%`} hint="Chance of ending in profit at expiry if NIFTY moves like a lognormal with the ATM implied volatility. A model, not a forecast." />
+                  <Stat big label={allClosed ? "Realised P&L (all legs closed)" : "P&L now (vs entry)"} value={money(totalPnl)} cls={tone(totalPnl)} sub={allClosed ? "the result is booked: nothing is left to move" : realisedTotal !== 0 && totalPnl != null ? `booked ${money(realisedTotal)} · open ${money(totalPnl - realisedTotal)}` : undefined} hint="Booked P&L of closed legs plus the open legs at their latest price against your entry premiums" />
+                  <Stat big label={`Max profit${a.estimate ? " (model)" : ""}`} value={allClosed ? "—" : a.profitUnlimited ? "Unlimited" : money(a.maxProfit)} cls={allClosed ? "" : tone(a.profitUnlimited ? 1 : a.maxProfit)} sub={allClosed ? "closed: no range of outcomes" : undefined} hint={a.estimate ? "Best P&L at the chosen date over a wide range of NIFTY levels; legs still alive then are model values" : "Best P&L at expiry over every NIFTY level from 0 upwards"} />
+                  <Stat big label={`Max loss${a.estimate ? " (model)" : ""}`} value={allClosed ? "—" : a.lossUnlimited ? "Unlimited" : money(a.maxLoss)} cls={allClosed ? "" : tone(a.lossUnlimited ? -1 : a.maxLoss)} sub={allClosed ? "closed: no range of outcomes" : undefined} hint={a.estimate ? "Worst P&L at the chosen date over a wide range of NIFTY levels; legs still alive then are model values" : "Worst P&L at expiry over every NIFTY level from 0 upwards"} />
+                  <Stat big label="Reward : Risk" value={allClosed || rr == null || rr <= 0 ? "N/A" : `${rr.toFixed(2)} : 1`} hint="Maximum profit over maximum loss; not defined when the best outcome is not a profit or when the strategy is closed" />
+                  <Stat big label="POP (model estimate)" value={allClosed || pop == null ? "—" : `${(pop * 100).toFixed(0)}%`} hint="Chance of ending in profit at expiry if NIFTY moves like a lognormal with the ATM implied volatility. A model, not a forecast." />
                                     </dl>
                   <dl className="flex flex-wrap gap-px border-t border-rule/60 bg-rule/60">
-                  <Stat label="Breakevens" value={a.breakevens.length ? a.breakevens.map((b) => fmtInt(Math.round(b * 100) / 100)).join(" · ") : "none"} sub={spot ? a.breakevens.map((b) => `${((b / spot - 1) * 100).toFixed(2)}%`).join(" · ") : undefined} />
+                  <Stat label="Breakevens" value={allClosed ? "—" : a.breakevens.length ? a.breakevens.map((b) => fmtInt(Math.round(b * 100) / 100)).join(" · ") : "none"} sub={spot ? a.breakevens.map((b) => `${((b / spot - 1) * 100).toFixed(2)}%`).join(" · ") : undefined} />
                   <Stat label="Net premium" value={netPremium == null ? "—" : `${money(netPremium)} ${netPremium >= 0 ? "credit" : "debit"}`} cls={tone(netPremium)} />
                   {greeks && greeks.unavailable.length === 0 && <Stat label="Net Δ (model)" value={greeks.delta.toFixed(1)} sub={`Θ ${money(greeks.thetaDay)}/day · Vega ${money(greeks.vegaPt)}`} hint="Position delta in NIFTY units; theta per calendar day; vega per volatility point. Black-76 model values." />}
                   {ifTarget && <Stat label="If targets hit" value={money(ifTarget.v)} cls={tone(ifTarget.v)} sub={`${ifTarget.n} of ${live.length} legs, at their target premium`} hint="Sum over the legs that have a target of (target premium - entry) x quantity. Exact arithmetic, not a forecast." />}
