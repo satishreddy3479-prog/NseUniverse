@@ -67,7 +67,7 @@ function renderAt(path: string) {
   return render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={[path]}><AppRoutes /></MemoryRouter></QueryClientProvider>);
 }
 beforeEach(() => localStorage.clear());
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("global markets page", () => {
   it("shows each quote with its change from the stored close, its status and age, and says when there is no price", async () => {
@@ -224,6 +224,7 @@ describe("global board charts", () => {
 
 describe("calendar country filter", () => {
   it("shows All, India or US events and the next-event card follows the filter", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-16T00:00:00Z") }); // the sample events are on 16 to 19 Nov 2026: the card needs a clock before them
     mockApi();
     renderAt("/tools/economic-calendar");
     expect((await screen.findAllByText("CPI m/m")).length).toBeGreaterThan(0);
@@ -240,6 +241,7 @@ describe("calendar country filter", () => {
     expect(screen.queryAllByText("WPI y/y")).toHaveLength(0);
     expect(within(screen.getByRole("region", { name: "Today" })).getByText("CPI m/m")).toBeInTheDocument();
     expect(screen.getByText("FOMC Meeting Minutes")).toBeInTheDocument();
+    vi.useRealTimers();
   });
 });
 
