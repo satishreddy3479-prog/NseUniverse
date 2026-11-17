@@ -17,7 +17,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.forward import analytics
-from app.forward.engine import VARIANTS, costs, is_done, new_state, settle, step
+from app.forward.engine import (
+    COST_RULE_VERSION,
+    FAMILIES,
+    VARIANTS,
+    costs,
+    is_done,
+    new_state,
+    settle,
+    step,
+)
 from app.forward.service import ForwardService, next_arm
 from app.forward.store import ForwardStore
 from app.storage.observations import CALL, PUT, Contract, Sample
@@ -61,6 +70,41 @@ def test_the_entry_of_16_nov_and_the_hand_calculated_results_of_each_exit() -> N
     # 60% = 171.68 and 80% were never reached today, nor was a combined premium of +15% (230.29, the high was 218.75): the same as holding
     for v in ("leg60", "leg70", "leg80", "comb15", "comb25", "comb40"):
         assert run_variant(v)["gross"] == pytest.approx(hold["gross"]), v
+
+
+def test_the_cost_rules_on_the_real_prices_of_16_nov() -> None:
+    # 30%: the put stops at 10:34 (143.00); the call is then 67.45, in profit against its entry 92.95, so its stop moves to 92.95 and it first shows 103.50 at 12:10
+    r30 = run_variant("leg30_cost")
+    assert (r30["pe_exit"], r30["ce_exit"], r30["stopped_at"], r30["reason"]) == (143.0, 103.5, "10:34", "stop, stop at cost")
+    assert (r30["pe_at"], r30["ce_at"]) == ("10:34", "12:10")  # each leg's own exit time: the put at its stop, the call when it came back to its cost
+    assert r30["gross"] == pytest.approx(((92.95 - 103.5) + (107.3 - 143.0)) * LOT)  # -46.25 points = -3,006.25
+    # 80% and 60% were never reached: nothing moved, the same as holding
+    for v in ("leg60_cost", "leg70_cost", "leg80_cost"):
+        assert run_variant(v)["gross"] == pytest.approx(run_variant("hold")["gross"]), v
+    # the plain twins keep their exits: the call stays open to the close
+    assert run_variant("leg30")["ce_exit"] == 70.45
+
+
+def test_sl_to_cost_only_moves_a_leg_that_is_in_profit_when_the_other_one_stops() -> None:
+    # sold CE 100 and PE 100, stop 30%: the put stops at 130 while the call is at 120, a loss of its own: the builder does not move that stop, so it stays at 130
+    st = new_state()
+    st = step("leg30_cost", 100, 100, st, 120, 130, "10:00")
+    assert st["pe_x"] == 130 and st["ce_open"] and not st["ce_cost"]
+    st = step("leg30_cost", 100, 100, st, 125, 125, "10:01")  # above its entry but below its stop: still open
+    assert st["ce_open"]
+    st = step("leg30_cost", 100, 100, st, 131, 125, "10:02")  # the original stop
+    assert st["ce_x"] == 131 and st["ce_why"] == "stop"
+    # the call at 80 (in profit) when the put stops: its stop moves to 100 and it closes when the price comes back to 100
+    st = step("leg30_cost", 100, 100, new_state(), 80, 130, "10:00")
+    assert st["ce_cost"] and st["ce_open"]
+    st = step("leg30_cost", 100, 100, st, 99.9, 120, "10:01")
+    assert st["ce_open"]
+    st = step("leg30_cost", 100, 100, st, 100.5, 120, "10:02")
+    assert st["ce_x"] == 100.5 and st["ce_why"] == "stop at cost" and st["stopped_at"] == "10:00"
+    # a leg with no price at that moment is not moved (not in a known profit); both stopped in one sample: nothing to move
+    assert not step("leg30_cost", 100, 100, new_state(), None, 130, "10:00")["ce_cost"]
+    both = step("leg30_cost", 100, 100, new_state(), 140, 140, "10:00")
+    assert not both["ce_open"] and not both["pe_open"]
 
 
 def test_moving_the_other_leg_to_cost_turned_a_recovery_into_a_second_stop() -> None:
@@ -201,7 +245,7 @@ def test_a_trigger_opens_a_straddle_and_a_strangle_with_every_variant_and_settle
     assert t["straddle"]["pe_strike"] == atm and t["strangle"]["ce_strike"] == atm + 50 and t["strangle"]["pe_strike"] == atm - 50
     assert t["straddle"]["cohort"] == "weekly" and t["straddle"]["expiry"] == "2026-11-17" and t["straddle"]["seller"] == 62.0 and t["straddle"]["regime"] == "volatility compression"
     assert t["straddle"]["context"]["dte"] == 1 and t["straddle"]["context"]["orderflow"] == -45.0 and t["straddle"]["context"]["rv_gap_15"] == 9.4
-    assert len(svc.store.variants_of(t["straddle"]["id"])) == len(VARIANTS) == 11
+    assert len(svc.store.variants_of(t["straddle"]["id"])) == len(VARIANTS) == 16
     run_day(svc, clock, 360)  # to 15:30
     assert svc.store.counts() == {"open": 0, "settled": 2, "days": 1}  # no second trigger: the score never dipped; the cap and re-arming are not touched
     settled = svc.store.settled()
@@ -298,8 +342,10 @@ def test_the_overview_of_a_settled_day_and_the_api(tmp_path: Path) -> None:
     run_day(svc, clock, 360)
     o = svc.overview()
     assert o["meta"]["counts"] == {"open": 0, "settled": 2, "days": 1} and o["meta"]["setup"]["exit"] == "15:20 IST the same day" and o["meta"]["min_trades"] == 20
-    assert {v["variant"] for v in o["rules"]} == {v for v, _, _ in VARIANTS} and all(v["n"] == 2 for v in o["rules"])
-    assert o["filters"] == {"structure": "all", "cohort": "all", "rule": "hold", "rule_label": "No stop (hold to 15:20)"}
+    assert {v["variant"] for v in o["rules"]} == set(FAMILIES["plain"]) and all(v["n"] == 2 for v in o["rules"])
+    cost = svc.overview(family="cost")
+    assert [v["variant"] for v in cost["rules"]] == FAMILIES["cost"] and cost["filters"]["rule"] == "leg40_cost" and cost["filters"]["family"] == "cost"
+    assert o["filters"] == {"structure": "all", "cohort": "all", "rule": "hold", "rule_label": "No stop (hold to 15:20)", "family": "plain"}
     assert [t["structure"] for t in o["portfolio"]] == ["straddle", "strangle"] and o["portfolio"][0]["net"] is not None and o["portfolio"][0]["settled_at"]
     assert o["portfolio"][0]["reason"] == "close 15:20" and o["portfolio"][0]["ce_exit"] is not None
     leg30 = svc.overview(structure="straddle", rule="leg30")
@@ -330,3 +376,22 @@ def test_the_today_block_says_what_each_expiry_is_doing(tmp_path: Path) -> None:
     (w2,) = again.overview()["today"]["cohorts"]
     assert w2["cohort"] == "weekly" and w2["count"] == 1 and not w2["armed"] and w2["seller"] is None and w2["expiry"] == "2026-11-17"
     assert svc.overview()["meta"]["counts"]["open"] == 2
+
+
+def test_the_cost_rules_are_added_to_positions_that_do_not_have_them_by_replaying_the_stored_prices(tmp_path: Path) -> None:
+    svc, clock = make_service(tmp_path, [62.0] * 400)
+    run_day(svc, clock, 360)
+    want = {(t["id"], v): (r["net"], r["reason"], r["stopped_at"]) for t in svc.store.settled() for v, r in t["variants"].items() if v.endswith("_cost")}
+    assert want and svc.store.get_meta("variants_version") == COST_RULE_VERSION
+    # a position stored before the cost rules existed: the five new rules and the old one are gone, and the version is not recorded
+    import sqlite3
+
+    with sqlite3.connect(svc.store.path) as c:
+        c.execute("DELETE FROM results WHERE variant LIKE '%_cost'")
+        c.execute("DELETE FROM meta")
+    assert all(not v.endswith("_cost") for t in svc.store.settled() for v in t["variants"])
+    again, _ = make_service(tmp_path, [62.0] * 400)
+    assert again.run_once(datetime(2026, 11, 16, 15, 40, tzinfo=IST).astimezone(UTC), "2026-11-17", "2026-11-24")["backfilled"] == len(want)
+    got = {(t["id"], v): (r["net"], r["reason"], r["stopped_at"]) for t in again.store.settled() for v, r in t["variants"].items() if v.endswith("_cost")}
+    assert got == want  # replaying the stored prices gives what the live pass gave
+    assert again.run_once(datetime(2026, 11, 16, 15, 41, tzinfo=IST).astimezone(UTC), "2026-11-17", "2026-11-24")["backfilled"] == 0  # once per version

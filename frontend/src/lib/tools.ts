@@ -23,7 +23,7 @@ export interface Tool {
   /** the page can replay a stored session on one shared clock (components/dashboard/ReplayBar.tsx) */
   replay?: boolean;
   /** a special page body (see pages/ToolPage.tsx) */
-  page?: "flows" | "cash" | "contributors" | "weightage" | "breadth" | "sectors" | "movers" | "futflow" | "futsectors" | "futbuildup" | "ivhv" | "ivchart" | "ivskew" | "ivmomentum" | "backtest" | "marketstructure" | "strikepos" | "ivintraday" | "global" | "calendar" | "news" | "forward";
+  page?: "flows" | "cash" | "contributors" | "weightage" | "breadth" | "sectors" | "movers" | "futflow" | "futsectors" | "futbuildup" | "ivhv" | "ivchart" | "ivskew" | "ivmomentum" | "backtest" | "marketstructure" | "strikepos" | "ivintraday" | "global" | "calendar" | "news" | "forward" | "forwardcost";
   /** why a planned tool is not available yet */
   needs?: string;
   isNew?: boolean;
@@ -74,7 +74,8 @@ export const TOOLS: Tool[] = [
   { id: "advance-decline", label: "Advance Decline", menu: "analyse", group: "Index", status: "ready", page: "breadth", blurb: "How many NIFTY 50 stocks are up and down." },
   { id: "index-weightage", label: "Index Weightage", menu: "analyse", group: "Index", status: "ready", page: "weightage", blurb: "NIFTY 50 weights, with their source and date." },
   { id: "sector-rotation", label: "Sector Rotation", menu: "analyse", group: "Index", status: "ready", isNew: true, page: "sectors", blurb: "Sector strength inside NIFTY 50 and its change in rank." },
-  { id: "forward-test", label: "Forward Test", menu: "analyse", group: "Testing", status: "ready", isNew: true, popular: true, page: "forward", blurb: "Paper short straddles and strangles opened whenever the seller score reaches 60, with 11 exit rules tracked side by side and broken down by market regime." },
+  { id: "forward-test", label: "Forward Test", menu: "analyse", group: "Testing", status: "ready", isNew: true, popular: true, page: "forward", blurb: "Paper short straddles and strangles opened whenever the seller score reaches 60, with plain stop losses of 30 to 80% and combined stops tracked side by side and broken down by market regime." },
+  { id: "forward-test-cost", label: "Forward Test · SL to cost", menu: "analyse", group: "Testing", status: "ready", isNew: true, page: "forwardcost", blurb: "The same paper positions with Move SL to cost: when one leg's stop fires, the other leg's stop moves to its entry price. A separate test, with each rule beside the plain stop of the same percentage." },
   { id: "global-markets", label: "Global Markets", menu: "analyse", group: "World", status: "ready", isNew: true, popular: true, page: "global", blurb: "US index futures and cash indices, VIX, the 10-year yield, dollar, gold, silver, Brent and the Asian indices, each with its age and status." },
   { id: "economic-calendar", label: "Economic Calendar", menu: "analyse", group: "World", status: "ready", isNew: true, page: "calendar", blurb: "The high-impact events ahead, in IST: today, tomorrow, the rest of the week, next week and later this month." },
   { id: "market-news", label: "News", menu: "analyse", group: "World", status: "ready", isNew: true, page: "news", blurb: "Latest Indian and global market headlines from Economic Times, BBC and CNBC, linked to the publisher." },

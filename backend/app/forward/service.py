@@ -20,7 +20,17 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.forward import analytics
-from app.forward.engine import LABELS, VARIANTS, CostCfg, is_done, new_state, settle, step
+from app.forward.engine import (
+    COST_RULE_VERSION,
+    FAMILIES,
+    LABELS,
+    VARIANTS,
+    CostCfg,
+    is_done,
+    new_state,
+    settle,
+    step,
+)
 from app.forward.store import ForwardStore
 from app.storage.observations import CALL, PUT
 
@@ -72,8 +82,44 @@ class ForwardService:
         out: dict[str, Any] = {"opened": 0, "settled": 0}
         if ist.weekday() < 5 and ENTRY_FROM <= ist.time() <= ENTRY_TO:
             out["opened"] = self._detect(now, [("weekly", weekly), ("monthly", monthly if monthly != weekly else None)])
+        out["backfilled"] = self._backfill(now)
         out["settled"] = self._advance(now)
         return out
+
+    def _backfill(self, now: datetime) -> int:
+        """Give every stored position the exit rules it does not have yet, and recompute the move-to-cost rules whose definition changed, by replaying the stored prices from the
+        position's entry (the same steps the live pass takes). Runs once per rule version; the positions already settled get their results, the open ones their running state."""
+        version = self.store.get_meta("variants_version")
+        if version == COST_RULE_VERSION:
+            return 0
+        made = 0
+        chains: dict[int, Any] = {}  # a stored chain is read once for all the positions of the same expiry
+        for t in self.store.all_trades():
+            have = self.store.variants_of(t["id"])
+            need = [v for v, _, _ in VARIANTS if v not in have or (v.endswith("_cost") and version != COST_RULE_VERSION)]
+            if not need:
+                continue
+            day = date.fromisoformat(t["session"])
+            close = datetime.combine(day, CLOSE_AT, IST)
+            until = min(now, close) if t["status"] == "open" else close
+            states = {v: new_state() for v in need}
+            for s in self.obs.samples(self.underlying, t["expiry"], since=datetime.fromisoformat(t["trigger_at"]), until=until):
+                if s.values_from not in chains:
+                    chains[s.values_from] = self.obs.contracts(s.values_from)
+                c = chains[s.values_from]
+                ce, pe = _price(c.get((t["ce_strike"], CALL))), _price(c.get((t["pe_strike"], PUT)))
+                at = s.received_at.astimezone(IST).strftime("%H:%M")
+                for v in need:
+                    if not is_done(states[v]):
+                        states[v] = step(v, t["ce0"], t["pe0"], states[v], ce, pe, at)
+            for v, st in states.items():
+                if t["status"] == "settled":
+                    self.store.put_variant(t["id"], v, st, settle(v, t["ce0"], t["pe0"], st, t["lot"], self.cost), True)
+                else:
+                    self.store.put_variant(t["id"], v, st)
+                made += 1
+        self.store.set_meta("variants_version", COST_RULE_VERSION)
+        return made
 
     def _latest_sample(self, expiry: str, now: datetime) -> Any:
         got = self.obs.samples(self.underlying, expiry, since=now - timedelta(minutes=10), until=now)
@@ -181,8 +227,9 @@ class ForwardService:
         }  # fmt: skip
 
     # ------------------------------------------------------------------ views
-    def overview(self, structure: str = "all", cohort: str = "all", rule: str = "hold", dim: str = "regime") -> dict[str, Any]:
-        rule = rule if rule in LABELS else "hold"
+    def overview(self, structure: str = "all", cohort: str = "all", rule: str | None = None, dim: str = "regime", family: str = "plain") -> dict[str, Any]:
+        family = family if family in FAMILIES else "plain"
+        rule = rule if rule in FAMILIES[family] else ("hold" if family == "plain" else "leg40_cost")  # a rule of the other test falls back to this test's default
         trades = analytics.filtered(self.store.settled(), structure, cohort)
         counts = self.store.counts()
         now = self._clock()
@@ -199,7 +246,7 @@ class ForwardService:
                 pe = st["pe_x"] if st["pe_x"] is not None else st["last_pe"]
                 marks[v] = {
                     "pnl": None if ce is None or pe is None else round(((t["ce0"] - ce) + (t["pe0"] - pe)) * t["lot"], 2), "ce_open": st["ce_open"], "pe_open": st["pe_open"], "stopped_at": st["stopped_at"],
-                    "ce_exit": st["ce_x"], "pe_exit": st["pe_x"], "ce_last": st["last_ce"], "pe_last": st["last_pe"],
+                    "ce_exit": st["ce_x"], "pe_exit": st["pe_x"], "ce_last": st["last_ce"], "pe_last": st["last_pe"], "ce_at": st.get("ce_at"), "pe_at": st.get("pe_at"),
                 }  # fmt: skip
             open_rows.append({
                 "id": t["id"], "session": t["session"], "cohort": t["cohort"], "expiry": t["expiry"], "structure": t["structure"], "n": t["n"], "trigger_at": t["trigger_at"],
@@ -222,13 +269,13 @@ class ForwardService:
             "cohorts": cohorts,
         }  # fmt: skip
         return {
-            "generated_at": now.isoformat(timespec="seconds"), "today": today, "filters": {"structure": structure, "cohort": cohort, "rule": rule, "rule_label": LABELS[rule]},
+            "generated_at": now.isoformat(timespec="seconds"), "today": today, "filters": {"structure": structure, "cohort": cohort, "rule": rule, "rule_label": LABELS[rule], "family": family},
             "meta": {
                 "enabled": self.enabled, "counts": counts, "last_run": last, "last_tick": None if self.last_tick is None else self.last_tick.isoformat(timespec="seconds"), "last_error": self.last_error,
                 "bytes": self.store.size_bytes(), "min_trades": analytics.MIN_TRADES,
                 "setup": {"trigger": f"seller score of the expiry reaches {THRESHOLD:g}", "rearm": f"after {REARM_MIN} minutes below {THRESHOLD:g}, at most {CAP_PER_DAY} a day per cohort", "entry_window": "09:30-14:30 IST", "exit": "15:20 IST the same day", "lot": self.lot},
             },
-            "rules": analytics.variant_table(trades), "portfolio": analytics.portfolio(trades, rule), "breakdown": analytics.breakdown(trades, dim, rule), "open": open_rows,
+            "rules": analytics.variant_table(trades, family), "portfolio": analytics.portfolio(trades, rule), "breakdown": analytics.breakdown(trades, dim, rule), "open": open_rows,
         }  # fmt: skip
 
     # ------------------------------------------------------------------ lifecycle

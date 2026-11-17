@@ -16,9 +16,13 @@ const when = (iso: string | null | undefined) => (iso ? new Intl.DateTimeFormat(
 const clock = (iso: string) => new Intl.DateTimeFormat("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: IST }).format(new Date(iso));
 
 /** The exit rules in the order of the filter, with the short text of their chip. */
-const RULES: [string, string][] = [
+const PLAIN_RULES: [string, string][] = [
   ["hold", "No stop"], ["leg30", "Stop 30%"], ["leg40", "Stop 40%"], ["leg50", "Stop 50%"], ["leg60", "Stop 60%"], ["leg70", "Stop 70%"], ["leg80", "Stop 80%"],
-  ["leg40_cost", "40% + cost"], ["comb15", "Combined +15%"], ["comb25", "Combined +25%"], ["comb40", "Combined +40%"],
+  ["comb15", "Combined +15%"], ["comb25", "Combined +25%"], ["comb40", "Combined +40%"],
+];
+/** The second test: the same leg stops with "Move SL to cost" (when one leg's stop fires, the other leg's stop moves to its own entry price). */
+const COST_RULES: [string, string][] = [
+  ["leg30_cost", "Stop 30% + cost"], ["leg40_cost", "Stop 40% + cost"], ["leg50_cost", "Stop 50% + cost"], ["leg60_cost", "Stop 60% + cost"], ["leg70_cost", "Stop 70% + cost"], ["leg80_cost", "Stop 80% + cost"],
 ];
 
 const Loading = () => <div className="h-40 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading" />;
@@ -112,8 +116,8 @@ function Log({ rows, s, rule, lot }: { rows: ForwardPortfolioTrade[]; s: Portfol
         <tbody>
           {shown.map((r) => (
             <tr key={r.id} className="cursor-pointer border-t border-rule hover:bg-slate-2/60" tabIndex={0} aria-label={`Open the trade of ${when(r.trigger_at)} in the Strategy builder`}
-              onClick={() => openIn(r, rule, { ce_exit: r.ce_exit, pe_exit: r.pe_exit, stopped_at: r.stopped_at, settled_at: r.settled_at })}
-              onKeyDown={(e) => { if (e.key === "Enter") openIn(r, rule, { ce_exit: r.ce_exit, pe_exit: r.pe_exit, stopped_at: r.stopped_at, settled_at: r.settled_at }); }}>
+              onClick={() => openIn(r, rule, { ce_exit: r.ce_exit, pe_exit: r.pe_exit, stopped_at: r.stopped_at, ce_at: r.ce_at, pe_at: r.pe_at, settled_at: r.settled_at })}
+              onKeyDown={(e) => { if (e.key === "Enter") openIn(r, rule, { ce_exit: r.ce_exit, pe_exit: r.pe_exit, stopped_at: r.stopped_at, ce_at: r.ce_at, pe_at: r.pe_at, settled_at: r.settled_at }); }}>
               <td className="whitespace-nowrap px-2 py-1.5">{when(r.trigger_at)}<div className="text-[11px] text-muted">seller {r.seller ?? MISSING} · {r.regime ?? "no regime"}</div></td>
               <td className="px-2 capitalize">{r.cohort} #{r.n}<div className="text-[11px] text-muted">{r.expiry}</div></td>
               <td className="px-2 tabular-nums">{r.ce_strike === r.pe_strike ? `${r.ce_strike} CE + PE` : `${r.ce_strike} CE + ${r.pe_strike} PE`}<div className="text-[11px] capitalize text-muted">{r.structure}</div></td>
@@ -133,10 +137,11 @@ function Log({ rows, s, rule, lot }: { rows: ForwardPortfolioTrade[]; s: Portfol
 }
 
 function Compare({ rules, selected, onPick, min }: { rules: ForwardVariant[]; selected: string; onPick: (r: string) => void; min: number }) {
+  const twins = rules.some((r) => r.twin);
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[680px] text-sm" aria-label="Stop-loss rules compared">
-        <thead className="text-left text-xs uppercase tracking-wide text-muted"><tr><th className="px-2 py-1.5">Rule</th><th className="px-2 text-right">Trades</th><th className="px-2 text-right">Win %</th><th className="px-2 text-right">Net P&L</th><th className="px-2 text-right">Average</th><th className="px-2 text-right">Max drawdown</th><th className="px-2 text-right">Profit factor</th></tr></thead>
+        <thead className="text-left text-xs uppercase tracking-wide text-muted"><tr><th className="px-2 py-1.5">Rule</th><th className="px-2 text-right">Trades</th><th className="px-2 text-right">Win %</th><th className="px-2 text-right">Net P&L</th><th className="px-2 text-right">Average</th><th className="px-2 text-right">Max drawdown</th><th className="px-2 text-right">Profit factor</th>{twins && <th className="px-2 text-right">Same stop, no move</th>}{twins && <th className="px-2 text-right">Gain from SL to cost</th>}</tr></thead>
         <tbody>
           {rules.map((r) => (
             <tr key={r.variant} className={`cursor-pointer border-t border-rule hover:bg-slate-2/60 ${selected === r.variant ? "bg-brass/10" : ""}`} onClick={() => onPick(r.variant)} tabIndex={0}
@@ -148,11 +153,13 @@ function Compare({ rules, selected, onPick, min }: { rules: ForwardVariant[]; se
               <td className={`px-2 text-right tabular-nums ${tone(r.avg)}`}>{inr(r.avg)}</td>
               <td className={`px-2 text-right tabular-nums ${tone(r.max_drawdown)}`}>{inr(r.max_drawdown, false)}</td>
               <td className="px-2 text-right tabular-nums">{r.profit_factor == null ? MISSING : r.profit_factor}</td>
+              {twins && <td className={`px-2 text-right tabular-nums ${tone(r.twin?.total)}`}>{r.twin && r.twin.n > 0 ? inr(r.twin.total) : MISSING}</td>}
+              {twins && <td className={`px-2 text-right font-semibold tabular-nums ${tone(r.twin && r.twin.n > 0 && r.n > 0 ? (r.total ?? 0) - (r.twin.total ?? 0) : null)}`}>{r.twin && r.twin.n > 0 && r.n > 0 ? inr((r.total ?? 0) - (r.twin.total ?? 0)) : MISSING}</td>}
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="px-2 pt-1 text-xs text-muted">Same entries, different stop-loss rules, for the structure and expiry chosen above. Click a row to see that rule's portfolio.</p>
+      <p className="px-2 pt-1 text-xs text-muted">Same entries, different stop-loss rules, for the structure and expiry chosen above. Click a row to see that rule's portfolio.{twins ? " The last two columns put each rule next to the plain stop of the same percentage on the same trades: the difference is what moving the other leg's stop to cost did." : ""}</p>
     </div>
   );
 }
@@ -223,7 +230,7 @@ function Today({ t, open }: { t: ForwardToday; open: number }) {
 /** Show a position in the Strategy builder as a temporary view: it is kept for this tab only, so the user's own strategy (in this browser and on the server) is not replaced. */
 function useOpenInBuilder(lot: number) {
   const navigate = useNavigate();
-  return (p: PositionIn, rule: string, exit?: { ce_exit: number | null; pe_exit: number | null; stopped_at: string | null; settled_at?: string | null }) => {
+  return (p: PositionIn, rule: string, exit?: { ce_exit: number | null; pe_exit: number | null; stopped_at: string | null; ce_at?: string | null; pe_at?: string | null; settled_at?: string | null }) => {
     const d = positionToBuilder(p, rule, lot, exit);
     try {
       sessionStorage.setItem(TEMP_KEY, JSON.stringify({ name: d.name, expiry: d.expiry, legs: d.legs, rules: d.rules, moveToCost: d.moveToCost, holdFrom: d.holdFrom }));
@@ -242,8 +249,8 @@ function OpenNow({ o }: { o: ForwardOverview }) {
         const m = t.variants[rule];
         return (
           <div key={t.id} role="button" tabIndex={0} aria-label={`Open ${t.cohort} ${t.structure} #${t.n} in the Strategy builder`}
-            onClick={() => openIn({ ...t, session: t.session }, rule, m ? { ce_exit: m.ce_exit, pe_exit: m.pe_exit, stopped_at: m.stopped_at } : undefined)}
-            onKeyDown={(e) => { if (e.key === "Enter") openIn({ ...t, session: t.session }, rule, m ? { ce_exit: m.ce_exit, pe_exit: m.pe_exit, stopped_at: m.stopped_at } : undefined); }}
+            onClick={() => openIn({ ...t, session: t.session }, rule, m ? { ce_exit: m.ce_exit, pe_exit: m.pe_exit, stopped_at: m.stopped_at, ce_at: m.ce_at, pe_at: m.pe_at } : undefined)}
+            onKeyDown={(e) => { if (e.key === "Enter") openIn({ ...t, session: t.session }, rule, m ? { ce_exit: m.ce_exit, pe_exit: m.pe_exit, stopped_at: m.stopped_at, ce_at: m.ce_at, pe_at: m.pe_at } : undefined); }}
             className="cursor-pointer rounded-sm border border-rule bg-slate-2 p-2 text-sm hover:border-brass">
             <div className="flex flex-wrap items-baseline justify-between gap-1">
               <span className="font-semibold capitalize">{t.structure} · {t.cohort} · #{t.n}</span>
@@ -261,12 +268,13 @@ function OpenNow({ o }: { o: ForwardOverview }) {
 
 /** The forward test as a portfolio: pick the structure, the expiry and one stop-loss rule, and the page shows that rule's closed trades as a portfolio (equity curve, win and loss rates,
  *  drawdown, best and worst trades, streaks) with the rules compared and a breakdown by regime. Paper only. */
-export function ForwardBody() {
+export function ForwardBody({ family = "plain" }: { family?: "plain" | "cost" }) {
+  const RULES = family === "plain" ? PLAIN_RULES : COST_RULES;
   const [structure, setStructure] = useState<"all" | "straddle" | "strangle">("straddle");
   const [cohort, setCohort] = useState<"all" | "weekly" | "monthly">("all");
-  const [rule, setRule] = useState("hold");
+  const [rule, setRule] = useState(family === "plain" ? "hold" : "leg40_cost");
   const [dim, setDim] = useState("regime");
-  const q = useQuery({ queryKey: ["forward", structure, cohort, rule, dim], queryFn: () => api.forward(structure, cohort, rule, dim), refetchInterval: 60_000, retry: false, placeholderData: (p) => p });
+  const q = useQuery({ queryKey: ["forward", family, structure, cohort, rule, dim], queryFn: () => api.forward(structure, cohort, rule, dim, family), refetchInterval: 60_000, retry: false, placeholderData: (p) => p });
   const rows = q.data?.portfolio ?? [];
   const stats = useMemo(() => portfolioStats(rows.map((r) => ({ id: String(r.id), name: `${r.cohort} ${r.structure} #${r.n}, ${when(r.trigger_at)}`, closedAt: r.settled_at ?? r.trigger_at, pnl: r.net })), null), [rows]);
   if (q.isLoading) return <Loading />;
@@ -279,7 +287,8 @@ export function ForwardBody() {
   return (
     <div className="flex flex-col gap-3">
       <div role="note" className="rounded-sm border border-rule bg-slate p-3 text-sm">
-        <div className="font-semibold">Paper portfolio, nothing is sent to a broker</div>
+        <div className="font-semibold">{family === "plain" ? "Paper portfolio, nothing is sent to a broker" : "Paper portfolio with Move SL to cost, nothing is sent to a broker"}</div>
+        {family === "cost" && <p className="mt-0.5 text-muted">A separate test from the plain stop-loss one, on the same entries. Each leg has a stop 30 to 80% above its entry premium. When one leg's stop fires, the stop of the other leg moves to that leg's own entry premium (as Move SL to cost does in the Strategy builder: only if that leg is in profit at that moment), so a trade that turns can end at no loss on that leg. The table below puts each rule next to the plain stop of the same percentage.</p>}
         <p className="mt-0.5 text-muted">Whenever the seller score of an expiry reaches 60 ({o.meta.setup.entry_window}), a short ATM straddle and a short strangle (call 50 above, put 50 below) are opened at the last traded prices of the newest stored sample, for the weekly and the monthly expiry; all close at 15:20 IST. After a trade the next one waits until the score has been below 60 for 30 minutes (at most 3 a day per expiry). Each stop-loss rule runs on the same entries. One lot of {o.meta.setup.lot}, after estimated charges.</p>
         <p className="mt-1 text-xs text-muted">
           {c.settled} settled · {c.open} open · {c.days} days · last check {o.meta.last_tick ? clock(o.meta.last_tick) + " IST" : "not yet"}{o.meta.last_error ? ` · last error: ${o.meta.last_error}` : ""}{!o.meta.enabled && " · switched off in the settings"}

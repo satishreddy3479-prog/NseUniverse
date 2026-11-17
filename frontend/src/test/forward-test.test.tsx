@@ -36,7 +36,7 @@ const overview = (over: object = {}, filters: object = {}) => ({
     { cohort: "weekly", expiry: "2026-11-17", seller: 78.2, score_at: "2026-11-17T04:37:00+00:00", count: 1, armed: false, below_since: null, opened: ["2026-11-17T04:00:00+00:00"] },
     { cohort: "monthly", expiry: "2026-11-24", seller: 55, score_at: "2026-11-17T04:37:00+00:00", count: 1, armed: false, below_since: "2026-11-17T04:30:00+00:00", opened: ["2026-11-17T04:27:00+00:00"] },
   ] },
-  filters: { structure: "straddle", cohort: "all", rule: "hold", rule_label: "No stop (hold to 15:20)", ...filters },
+  filters: { structure: "straddle", cohort: "all", rule: "hold", rule_label: "No stop (hold to 15:20)", family: "plain", ...filters },
   meta: { enabled: true, counts: { open: 1, settled: 6, days: 6 }, last_run: null, last_tick: "2026-11-16T08:10:00+00:00", last_error: null, bytes: 4096, min_trades: 20, setup: { trigger: "x", rearm: "y", entry_window: "09:30-14:30 IST", exit: "15:20 IST the same day", lot: 65 } },
   rules: [rule("hold", "No stop (hold to 15:20)"), rule("leg40", "Leg stop 40%", { total: -2000, avg: -333, win_rate: 33.3, max_drawdown: -2500 })],
   portfolio: NETS.map((_, i) => trade(i)),
@@ -78,7 +78,8 @@ describe("forward test portfolio page", () => {
     expect(within(filters.getByRole("group", { name: "Expiry" })).getByRole("button", { name: "All" })).toHaveAttribute("aria-pressed", "true");
     const stops = within(filters.getByRole("group", { name: "Stop loss" }));
     expect(stops.getByRole("button", { name: "No stop" })).toHaveAttribute("aria-pressed", "true");
-    for (const n of ["Stop 30%", "Stop 40%", "Stop 50%", "Stop 60%", "Stop 70%", "Stop 80%", "40% + cost", "Combined +15%", "Combined +25%", "Combined +40%"]) expect(stops.getByRole("button", { name: n })).toBeInTheDocument();
+    expect(stops.queryByRole("button", { name: /\+ cost/ })).toBeNull(); // the move-to-cost rules are a separate page
+    for (const n of ["Stop 30%", "Stop 40%", "Stop 50%", "Stop 60%", "Stop 70%", "Stop 80%", "Combined +15%", "Combined +25%", "Combined +40%"]) expect(stops.getByRole("button", { name: n })).toBeInTheDocument();
     expect(screen.getByTestId("forward-selection")).toHaveTextContent("Showing: ATM straddle · weekly and monthly expiry · No stop (hold to 15:20)");
     expect(screen.getByText(/Paper portfolio, nothing is sent to a broker/)).toBeInTheDocument();
     expect(screen.getByText(/6 settled · 1 open · 6 days · last check 13:40 IST/)).toBeInTheDocument();

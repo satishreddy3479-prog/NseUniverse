@@ -1396,10 +1396,12 @@ async def global_headsup(request: Request) -> dict[str, Any]:
 async def forward_overview(
     request: Request, structure: Annotated[str, Query(pattern="^(all|straddle|strangle)$")] = "all",
     cohort: Annotated[str, Query(pattern="^(all|weekly|monthly)$")] = "all",
-    rule: str = "hold", dim: str = "regime",
+    rule: str | None = None, dim: str = "regime",
+    family: Annotated[str, Query(pattern="^(plain|cost)$")] = "plain",
 ) -> dict[str, Any]:
-    """The forward test as a portfolio of one exit rule, the rules compared, and breakdowns."""
-    return await asyncio.to_thread(request.app.state.forward.overview, structure, cohort, rule, dim)
+    """The forward test as a portfolio of one exit rule: plain stops or stops with SL to cost."""
+    forward = request.app.state.forward
+    return await asyncio.to_thread(forward.overview, structure, cohort, rule, dim, family)
 
 
 @router.get("/probe/chain", dependencies=[Depends(require_local_control)])

@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS results (
   reason TEXT, stopped_at TEXT, PRIMARY KEY (trade_id, variant));
 CREATE TABLE IF NOT EXISTS arm (
   session TEXT NOT NULL, cohort TEXT NOT NULL, count INTEGER NOT NULL, armed INTEGER NOT NULL, below_since TEXT, PRIMARY KEY (session, cohort));
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS runs (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, ok INTEGER NOT NULL, detail TEXT NOT NULL);
 """
 
@@ -70,6 +71,32 @@ class ForwardStore:
                 c.execute("INSERT INTO results (trade_id, variant, state, done) VALUES (?,?,?,0)", (tid, v, json.dumps(st, separators=(",", ":"))))
             return tid
 
+    def get_meta(self, key: str) -> str | None:
+        with self._lock, closing(self._conn()) as c:
+            r = c.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        return None if r is None else str(r["value"])
+
+    def set_meta(self, key: str, value: str) -> None:
+        with self._lock, closing(self._conn()) as c, c:
+            c.execute("INSERT OR REPLACE INTO meta VALUES (?,?)", (key, value))
+
+    def all_trades(self) -> list[dict[str, Any]]:
+        with self._lock, closing(self._conn()) as c:
+            rows = c.execute("SELECT * FROM trades ORDER BY id").fetchall()
+        return [self._trade(r) for r in rows]
+
+    def put_variant(self, trade_id: int, variant: str, state: dict[str, Any], result: dict[str, Any] | None = None, done: bool = False) -> None:
+        """Insert or replace one variant of a position (its running state, and its result when the position is settled)."""
+        with self._lock, closing(self._conn()) as c, c:
+            c.execute("DELETE FROM results WHERE trade_id=? AND variant=?", (trade_id, variant))
+            if result is None:
+                c.execute("INSERT INTO results (trade_id, variant, state, done) VALUES (?,?,?,?)", (trade_id, variant, json.dumps(state, separators=(",", ":")), 1 if done else 0))
+            else:
+                c.execute(
+                    "INSERT INTO results (trade_id, variant, state, done, ce_exit, pe_exit, gross, cost, net, worst, reason, stopped_at) VALUES (?,?,?,1,?,?,?,?,?,?,?,?)",
+                    (trade_id, variant, json.dumps(state, separators=(",", ":")), result["ce_exit"], result["pe_exit"], result["gross"], result["cost"], result["net"], result["worst"], result["reason"], result["stopped_at"]),
+                )
+
     def open_trades(self) -> list[dict[str, Any]]:
         with self._lock, closing(self._conn()) as c:
             rows = c.execute("SELECT * FROM trades WHERE status='open' ORDER BY id").fetchall()
@@ -115,8 +142,11 @@ class ForwardStore:
         with self._lock, closing(self._conn()) as c:
             trades = [self._trade(r) for r in c.execute("SELECT * FROM trades WHERE status='settled' ORDER BY trigger_at, id")]
             res: dict[int, dict[str, dict[str, Any]]] = {}
-            for r in c.execute("SELECT trade_id, variant, ce_exit, pe_exit, gross, cost, net, worst, reason, stopped_at FROM results WHERE net IS NOT NULL"):
-                res.setdefault(r["trade_id"], {})[r["variant"]] = dict(r)
+            for r in c.execute("SELECT trade_id, variant, ce_exit, pe_exit, gross, cost, net, worst, reason, stopped_at, state FROM results WHERE net IS NOT NULL"):
+                row = dict(r)
+                st = json.loads(row.pop("state"))
+                row["ce_at"], row["pe_at"] = st.get("ce_at"), st.get("pe_at")  # when each leg closed (None: at the close)
+                res.setdefault(r["trade_id"], {})[r["variant"]] = row
         for t in trades:
             t["variants"] = res.get(t["id"], {})
         return trades

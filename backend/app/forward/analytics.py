@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from app.forward.engine import LABELS, VARIANTS
+from app.forward.engine import FAMILIES, LABELS, TWIN, VARIANTS
 
 IST = ZoneInfo("Asia/Kolkata")
 MIN_TRADES = 20  # below this a cell is shown but marked too few to read
@@ -41,13 +41,19 @@ def filtered(trades: list[dict[str, Any]], structure: str = "all", cohort: str =
     return [t for t in trades if (structure == "all" or t["structure"] == structure) and (cohort == "all" or t["cohort"] == cohort)]
 
 
-def variant_table(trades: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _variant_stats(trades: list[dict[str, Any]], v: str) -> dict[str, Any]:
+    rows = [t["variants"][v] for t in trades if v in t["variants"]]
+    return _stats([r["net"] for r in rows], [r["worst"] for r in rows if r["worst"] is not None], sum(1 for r in rows if r.get("stopped_at")))
+
+
+def variant_table(trades: list[dict[str, Any]], family: str = "plain") -> list[dict[str, Any]]:
+    """The exit rules of one test (plain stops, or stops with SL moved to cost). A cost rule also carries the result of the plain stop with the same percentage on the same trades."""
     out = []
-    for v in VARIANT_IDS:
-        rows = [t["variants"][v] for t in trades if v in t["variants"]]
-        nets = [r["net"] for r in rows]
-        stats = _stats(nets, [r["worst"] for r in rows if r["worst"] is not None], sum(1 for r in rows if r.get("stopped_at")))
-        out.append({"variant": v, "label": LABELS[v], **stats})
+    for v in FAMILIES.get(family, FAMILIES["plain"]):
+        row: dict[str, Any] = {"variant": v, "label": LABELS[v], **_variant_stats(trades, v)}
+        if v in TWIN:
+            row["twin"] = {"variant": TWIN[v], "label": LABELS[TWIN[v]], **_variant_stats(trades, TWIN[v])}
+        out.append(row)
     return out
 
 
@@ -62,7 +68,7 @@ def portfolio(trades: list[dict[str, Any]], rule: str) -> list[dict[str, Any]]:
             "id": t["id"], "session": t["session"], "cohort": t["cohort"], "structure": t["structure"], "n": t["n"], "expiry": t["expiry"], "trigger_at": t["trigger_at"],
             "settled_at": t.get("settled_at"), "spot0": t["spot0"], "ce_strike": t["ce_strike"], "pe_strike": t["pe_strike"], "ce0": t["ce0"], "pe0": t["pe0"],
             "ce_exit": r["ce_exit"], "pe_exit": r["pe_exit"], "gross": r["gross"], "cost": r["cost"], "net": r["net"], "worst": r["worst"], "reason": r["reason"],
-            "stopped_at": r.get("stopped_at"), "regime": t.get("regime"), "seller": t.get("seller"), "buyer": t.get("buyer"), "net_move": (t.get("eod") or {}).get("net_move_pts"),
+            "stopped_at": r.get("stopped_at"), "ce_at": r.get("ce_at"), "pe_at": r.get("pe_at"), "regime": t.get("regime"), "seller": t.get("seller"), "buyer": t.get("buyer"), "net_move": (t.get("eod") or {}).get("net_move_pts"),
         })  # fmt: skip
     return out
 

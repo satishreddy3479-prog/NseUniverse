@@ -21,7 +21,12 @@ VARIANTS: list[tuple[str, str, float]] = [
     ("leg60", "leg", 0.60),
     ("leg70", "leg", 0.70),
     ("leg80", "leg", 0.80),
+    ("leg30_cost", "legcost", 0.30),
     ("leg40_cost", "legcost", 0.40),
+    ("leg50_cost", "legcost", 0.50),
+    ("leg60_cost", "legcost", 0.60),
+    ("leg70_cost", "legcost", 0.70),
+    ("leg80_cost", "legcost", 0.80),
     ("comb15", "comb", 0.15),
     ("comb25", "comb", 0.25),
     ("comb40", "comb", 0.40),
@@ -29,10 +34,18 @@ VARIANTS: list[tuple[str, str, float]] = [
 LABELS = {
     "hold": "No stop (hold to 15:20)",
     "leg30": "Leg stop 30%", "leg40": "Leg stop 40%", "leg50": "Leg stop 50%", "leg60": "Leg stop 60%", "leg70": "Leg stop 70%", "leg80": "Leg stop 80%",
-    "leg40_cost": "Leg stop 40%, other leg to cost",
+    "leg30_cost": "Stop 30% + SL to cost", "leg40_cost": "Stop 40% + SL to cost", "leg50_cost": "Stop 50% + SL to cost", "leg60_cost": "Stop 60% + SL to cost",
+    "leg70_cost": "Stop 70% + SL to cost", "leg80_cost": "Stop 80% + SL to cost",
     "comb15": "Combined stop +15%", "comb25": "Combined stop +25%", "comb40": "Combined stop +40%",
 }  # fmt: skip
 KIND = {v: (k, x) for v, k, x in VARIANTS}
+# The two tests the pages show: plain stop losses, and the same stops with "Move SL to cost" (when one leg's stop fires, the other leg's stop moves to its entry price).
+FAMILIES: dict[str, list[str]] = {
+    "plain": ["hold", "leg30", "leg40", "leg50", "leg60", "leg70", "leg80", "comb15", "comb25", "comb40"],
+    "cost": ["leg30_cost", "leg40_cost", "leg50_cost", "leg60_cost", "leg70_cost", "leg80_cost"],
+}
+TWIN = {f"leg{p}_cost": f"leg{p}" for p in (30, 40, 50, 60, 70, 80)}  # the plain stop with the same percentage
+COST_RULE_VERSION = "2"  # the move-to-cost rule below; a stored result of an older version is recomputed from the stored prices
 
 
 @dataclass(frozen=True)
@@ -61,7 +74,7 @@ def costs(ce0: float, pe0: float, ce_exit: float, pe_exit: float, lot: int, cfg:
 
 
 def new_state() -> dict[str, Any]:
-    return {"ce_open": True, "pe_open": True, "ce_x": None, "pe_x": None, "ce_why": None, "pe_why": None, "stopped_at": None, "worst": 0.0, "last_ce": None, "last_pe": None, "n": 0}
+    return {"ce_open": True, "pe_open": True, "ce_x": None, "pe_x": None, "ce_why": None, "pe_why": None, "stopped_at": None, "worst": 0.0, "last_ce": None, "last_pe": None, "n": 0, "ce_cost": False, "pe_cost": False}
 
 
 def is_done(state: dict[str, Any]) -> bool:
@@ -83,15 +96,25 @@ def step(variant: str, ce0: float, pe0: float, state: dict[str, Any], ce: float 
             s.update(ce_open=False, ce_x=ce, ce_why="stop")
         if s["pe_open"] and pe is not None and pe >= pe0 * (1 + x):
             s.update(pe_open=False, pe_x=pe, pe_why="stop")
-        if kind == "legcost" and first_stop_before:  # after the first leg was stopped, the other leg's stop is its own entry price
-            if s["ce_open"] and ce is not None and ce >= ce0:
+        if kind == "legcost" and first_stop_before:  # the other leg's stop is now its own entry price (if it was moved): it closes when the price comes back to the entry
+            if s["ce_open"] and s.get("ce_cost") and ce is not None and ce >= ce0:
                 s.update(ce_open=False, ce_x=ce, ce_why="stop at cost")
-            if s["pe_open"] and pe is not None and pe >= pe0:
+            if s["pe_open"] and s.get("pe_cost") and pe is not None and pe >= pe0:
                 s.update(pe_open=False, pe_x=pe, pe_why="stop at cost")
         if s["stopped_at"] is None and (not s["ce_open"] or not s["pe_open"]):
             s["stopped_at"] = at
+            if kind == "legcost":  # "Move SL to cost", as the Strategy builder does it: only a leg that is in profit now (below its entry price, as it was sold) gets its stop moved
+                if s["ce_open"] and ce is not None and ce < ce0:
+                    s["ce_cost"] = True
+                if s["pe_open"] and pe is not None and pe < pe0:
+                    s["pe_cost"] = True
     elif kind == "comb" and ce is not None and pe is not None and ce + pe >= (ce0 + pe0) * (1 + x):
         s.update(ce_open=False, pe_open=False, ce_x=ce, pe_x=pe, ce_why="combined stop", pe_why="combined stop", stopped_at=at)
+    if at is not None:  # when each leg closed (the time of the sample that showed it)
+        if not s["ce_open"] and s.get("ce_at") is None:
+            s["ce_at"] = at
+        if not s["pe_open"] and s.get("pe_at") is None:
+            s["pe_at"] = at
     c = s["ce_x"] if s["ce_x"] is not None else ce
     p = s["pe_x"] if s["pe_x"] is not None else pe
     if c is not None and p is not None:
@@ -110,5 +133,5 @@ def settle(variant: str, ce0: float, pe0: float, state: dict[str, Any], lot: int
     why = [w for w in (state["ce_why"], state["pe_why"]) if w]
     return {
         "ce_exit": ce_x, "pe_exit": pe_x, "gross": round(gross, 2), "cost": cost, "net": round(gross - cost, 2), "worst": round(state["worst"] * lot, 2),
-        "reason": ", ".join(sorted(set(why))) if why else "close 15:20", "stopped_at": state["stopped_at"],
+        "reason": ", ".join(sorted(set(why))) if why else "close 15:20", "stopped_at": state["stopped_at"], "ce_at": state.get("ce_at"), "pe_at": state.get("pe_at"),
     }  # fmt: skip

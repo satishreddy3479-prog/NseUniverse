@@ -62,4 +62,17 @@ describe("a forward-test position as a strategy of the builder", () => {
     expect(d.name).toBe("Forward weekly strangle #1, 16 Nov 10:25");
     expect(d.legs.map((l) => [l.strike, l.exitReason, l.exitedAt])).toEqual([[25400, "strategy", "2026-11-16T11:05:00+05:30"], [25200, "strategy", "2026-11-16T11:05:00+05:30"]]);
   });
+
+  it("a stop-to-cost rule takes its stop percentage and turns on Move SL to cost; a leg that closed at its entry price after the move is a stop", () => {
+    const d = positionToBuilder(open, "leg30_cost", 65);
+    expect(d.moveToCost).toBe(true);
+    expect(d.legs[0]!.stop).toBe(96.7); // 74.40 x 1.3 = 96.72
+    expect(d.legs[1]!.stop).toBe(63.65); // 48.95 x 1.3 = 63.635
+    expect(positionToBuilder(open, "leg80_cost", 65).legs[0]!.stop).toBe(133.9); // 133.92
+    const closed = positionToBuilder(stopped, "leg30_cost", 65, { ce_exit: 103.5, pe_exit: 143, stopped_at: "10:34", ce_at: "12:10", pe_at: "10:34", settled_at: "2026-11-16T09:50:00+00:00" });
+    expect(closed.legs[1]!.exitReason).toBe("stop"); // 143.00 is above 107.30 x 1.3 = 139.49
+    expect(closed.legs[0]!.exitReason).toBe("stop"); // 103.50 is above its entry 92.95: the stop that was moved to cost
+    expect(closed.legs[0]!.exitedAt).toBe("2026-11-16T12:10:00+05:30"); // the call closed when it came back to its cost, not when the put stopped
+    expect(closed.legs[1]!.exitedAt).toBe("2026-11-16T10:34:00+05:30");
+  });
 });

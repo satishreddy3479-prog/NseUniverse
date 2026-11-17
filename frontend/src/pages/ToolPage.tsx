@@ -153,8 +153,9 @@ export default function ToolPage() {
         {tool.page === "global" && <GlobalBody />}
         {tool.page === "calendar" && <CalendarBody />}
         {tool.page === "news" && <NewsBody />}
-        {tool.page === "forward" && <ForwardBody />}
-        {tool.page && tool.page !== "flows" && tool.page !== "cash" && tool.page !== "futflow" && tool.page !== "futsectors" && tool.page !== "futbuildup" && tool.page !== "ivhv" && tool.page !== "ivchart" && tool.page !== "ivskew" && tool.page !== "ivmomentum" && tool.page !== "strikepos" && tool.page !== "marketstructure" && tool.page !== "backtest" && tool.page !== "ivintraday" && tool.page !== "global" && tool.page !== "calendar" && tool.page !== "news" && tool.page !== "forward" && <IndexToolBody page={tool.page} />}
+        {tool.page === "forward" && <ForwardBody family="plain" />}
+        {tool.page === "forwardcost" && <ForwardBody family="cost" />}
+        {tool.page && tool.page !== "flows" && tool.page !== "cash" && tool.page !== "futflow" && tool.page !== "futsectors" && tool.page !== "futbuildup" && tool.page !== "ivhv" && tool.page !== "ivchart" && tool.page !== "ivskew" && tool.page !== "ivmomentum" && tool.page !== "strikepos" && tool.page !== "marketstructure" && tool.page !== "backtest" && tool.page !== "ivintraday" && tool.page !== "global" && tool.page !== "calendar" && tool.page !== "news" && tool.page !== "forward" && tool.page !== "forwardcost" && <IndexToolBody page={tool.page} />}
       </div>
     </DashProvider>
     </ReplayProvider>
