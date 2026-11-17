@@ -73,14 +73,17 @@ def _sum(values: list[float | None]) -> float | None:
 def _universe(snap: OptionChainSnapshot, each_side: int) -> tuple[list[Any], Any]:
     """ATM +/- each_side rows of one snapshot and its ATM row (all rows when there is no ATM)."""
     rows = snap.rows
-    atm_idx = next(
-        (
-            i
-            for i, r in enumerate(rows)
-            if "ATM" in {r.call.moneyness if r.call else None, r.put.moneyness if r.put else None}
-        ),
-        None,
-    )
+    atm_idx = None
+    if snap.spot_note is None:  # a frozen broker quote makes its ATM label wrong
+        atm = {"ATM"}
+        atm_idx = next(
+            (
+                i
+                for i, r in enumerate(rows)
+                if atm & {r.call and r.call.moneyness, r.put and r.put.moneyness}
+            ),
+            None,
+        )
     if atm_idx is None and rows and snap.underlying_ltp is not None:
         atm_idx = min(range(len(rows)), key=lambda i: abs(rows[i].strike - snap.underlying_ltp))  # type: ignore[operator]
     if atm_idx is None:

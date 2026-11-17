@@ -187,6 +187,9 @@ export interface OptionChainSnapshot extends Omit<SnapshotSummary, "strikes" | "
   multiplier: number | null;
   underlying_ltp: number | null;
   underlying_prev_close: number | null;
+  /** Set when the broker's index quote was frozen and the level the option prices imply was used (`underlying_ltp`); the broker's own value, and what happened. */
+  underlying_ltp_broker?: number | null;
+  spot_note?: string | null;
   requested_strike_count: number;
   rows: OptionChainRow[];
   warnings: string[];

@@ -515,7 +515,8 @@ def analyse(
         pe = [pair(p, held[i])[1] for i, p in enumerate(pts)]
 
         def stored(i: int, side: int) -> float | None:  # a sample the model cannot form (too close to expiry): the stored last traded price
-            return None if pts[i] is not None or held[i] is None else snaps[i].prices.get((held[i], side))
+            k = held[i]
+            return None if pts[i] is not None or k is None else snaps[i].prices.get((k, side))
 
         cep = [c.price if c is not None else stored(i, CALL) for i, c in enumerate(ce)]
         pep = [d.price if d is not None else stored(i, PUT) for i, d in enumerate(pe)]

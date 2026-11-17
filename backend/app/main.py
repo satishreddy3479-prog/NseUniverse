@@ -134,6 +134,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             settings.option_chain_strike_count,
             settings.snapshot_stale_after_seconds,
             observations,
+            spot_check=settings.chain_spot_check,
         )
         app.state.snapshot_service = snapshot_service
         market_ref: dict[str, MarketService] = {}

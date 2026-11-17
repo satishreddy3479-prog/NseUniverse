@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     history_autofetch: bool = True
     flows_history_days: int = 10  # NSE files are collected from this many days back, then daily
     risk_free_rate: float = 0.06  # annual discount rate for the IV model; an assumption
+    # a frozen index quote in a chain snapshot is replaced by the level its option prices imply
+    chain_spot_check: bool = True
     # decision-support risk and cost assumptions (paper trading only; no orders are ever placed)
     risk_max_loss_per_trade_rs: float = 2000.0
     risk_max_daily_loss_rs: float = 5000.0

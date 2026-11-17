@@ -21,6 +21,7 @@ from app.domain.models import (
     SnapshotSummary,
 )
 from app.domain.normalize import ChainFormatError, normalize_option_chain
+from app.domain.spot_check import checked_spot
 from app.logging_setup import log_event
 from app.services.state import AppState
 from app.storage.observations import ObservationStore, fingerprint
@@ -52,7 +53,9 @@ class SnapshotService:
         strike_count: int,
         max_age_s: int = 300,
         observations: ObservationStore | None = None,
+        spot_check: bool = True,
     ) -> None:
+        self.spot_check = spot_check
         self.broker = broker
         self.store = store
         self.state = state
@@ -170,9 +173,33 @@ class SnapshotService:
                 retrieved_at=received,
                 requested_strike_count=self.strike_count,
             )
+            snap = self._checked(snap)
             self._on_demand[expiry] = (time.monotonic(), snap)
             log_event(logger, logging.INFO, "on_demand_chain", expiry=exp_s, strikes=len(snap.rows))
             return snap
+
+    def _checked(self, snap: OptionChainSnapshot) -> OptionChainSnapshot:
+        """A frozen index quote is replaced by the level the chain's own prices imply.
+
+        See app/domain/spot_check.py; the raw payload on disk is untouched."""
+        if not self.spot_check:
+            return snap
+        spot, broker, note = checked_spot(
+            snap.rows, snap.underlying_ltp, snap.expiry, snap.retrieved_at
+        )
+        if note is None:
+            return snap
+        log_event(
+            logger, logging.WARNING, "index_quote_replaced",
+            broker=broker, used=spot, expiry=snap.expiry.isoformat(),
+        )
+        update = {
+            "underlying_ltp": spot,
+            "underlying_ltp_broker": broker,
+            "spot_note": note,
+            "warnings": [*snap.warnings, note],
+        }
+        return snap.model_copy(update=update)
 
     async def capture(
         self, *, expiry: date | None = None, skip_unchanged: bool = False
@@ -242,6 +269,7 @@ class SnapshotService:
             retrieved_at=received,
             requested_strike_count=self.strike_count,
         )
+        snap = self._checked(snap)
         fp = fingerprint(snap)
         if skip_unchanged and self._last_fingerprint.get(exp) == fp:
             self.skipped_unchanged += 1

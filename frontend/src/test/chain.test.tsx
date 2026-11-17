@@ -74,6 +74,19 @@ describe("Live option chain page", () => {
     expect(screen.getByText(/Exchange timestamp is not provided/)).toBeInTheDocument();
   });
 
+  it("marks ATM at the level the option prices imply when the broker's index quote was frozen, and says so", async () => {
+    // 17 Nov 2026: the quote stayed at 25,413 while the options said about 25,454; the snapshot carries the implied level and the note. Here the broker label (24,050) is wrong.
+    const c = bigChain();
+    c.snapshot.underlying_ltp = 24102;
+    c.snapshot.underlying_ltp_broker = 24049;
+    c.snapshot.spot_note = "The broker's index level 24049 is 53 points below the level the option prices imply (24102): the option-implied level is used for the ATM strike.";
+    setup({ ...base, "/api/option-chain": ok(c) });
+    const table = await screen.findByRole("table", { name: /Option chain/ });
+    const atmRow = within(table).getByText("ATM").closest("tr")!;
+    expect(within(atmRow).getByText("24,100")).toBeInTheDocument(); // the strike nearest 24,102, not the broker's 24,050
+    expect(screen.getByTestId("chain-frozen-index")).toHaveTextContent("the option-implied level is used for the ATM strike");
+  });
+
   it("limits strikes around ATM and can show all", async () => {
     setup({ ...base, "/api/option-chain": ok(bigChain()) });
     const table = await screen.findByRole("table", { name: /Option chain/ });

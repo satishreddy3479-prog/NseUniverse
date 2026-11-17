@@ -42,11 +42,15 @@ def bar_offsets(bars: Sequence[Mapping[str, object]], futures: Mapping[str, floa
         if f is None or not isinstance(c, (int, float)) or not isinstance(x, (int, float)):
             out.append(None)
             continue
-        near = [basis[j] for j in range(len(bars)) if j != i and basis[j] is not None and abs(stamps[j] - stamps[i]) <= NEIGHBOURS * 60]
+        near = [
+            b
+            for j, b in enumerate(basis)
+            if j != i and b is not None and abs(stamps[j] - stamps[i]) <= NEIGHBOURS * 60
+        ]
         if len(near) < MIN_NEIGHBOURS:
             out.append(None)
             continue
-        out.append(float(f) - float(x) - statistics.median(near))  # type: ignore[type-var]
+        out.append(float(f) - float(x) - statistics.median(near))
     return out
 
 

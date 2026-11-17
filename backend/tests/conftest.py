@@ -26,6 +26,8 @@ def make_settings(tmp_path: Path, **overrides: Any) -> Settings:
         "data_dir": tmp_path / "data",
         "log_dir": tmp_path / "logs",
         "stream_autostart": False,
+        # tests replay captures at another wall-clock time; the parity check has its own tests
+        "chain_spot_check": False,
         "sampler_enabled": False,  # it starts itself in market hours: no wall-clock dependence
         "history_autofetch": False,
         "flows_autofetch": False,

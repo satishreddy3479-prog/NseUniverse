@@ -5,7 +5,7 @@ import { ageSeconds, fmtAge, fmtDateTimeIST, fmtExpiry, fmtInt, fmtPrice } from 
 import { useExpiries, useNow, useStatus } from "../lib/hooks";
 import { ChainTable, isAtm, type LiveMode } from "../components/ChainTable";
 import { StreamButtons } from "../components/LiveActivity";
-import { useLiveAtmStrike, useStreamStatus } from "../lib/useLive";
+import { nearestStrike, useLiveAtmStrike, useStreamStatus } from "../lib/useLive";
 import {
   Button, CompletenessText, EmptyState, ErrorNote, Panel, Skeleton, SourceTag,
 } from "../components/ui";
@@ -62,7 +62,9 @@ export function OptionChain() {
   const { rows, atmStrike, hidden } = useMemo(() => {
     const all = snap?.rows ?? [];
     const brokerAtm = all.find(isAtm)?.strike ?? null;
-    const atm = liveAtm ?? brokerAtm; // while streaming, ATM follows the live NIFTY price
+    // a frozen index quote (the snapshot says so): the strike nearest the level the option prices imply, not the live quote and not the broker's label
+    const impliedAtm = snap?.spot_note && snap.underlying_ltp != null ? nearestStrike(all.map((r) => r.strike), snap.underlying_ltp) : null;
+    const atm = impliedAtm ?? liveAtm ?? brokerAtm; // while streaming, ATM follows the live NIFTY price
     const atmIdx = atm == null ? -1 : all.findIndex((r) => r.strike === atm);
     let out = all;
     if (range !== "all" && atmIdx >= 0) out = all.slice(Math.max(0, atmIdx - range), atmIdx + range + 1);
@@ -70,6 +72,7 @@ export function OptionChain() {
     if (f) out = out.filter((r) => String(r.strike).includes(f));
     return { rows: out, atmStrike: atmIdx >= 0 ? atm : null, hidden: all.length - out.length };
   }, [snap, range, strikeFilter, liveAtm]);
+  const frozenIndex = !!snap?.spot_note;
 
   const modeBtn = (m: Mode, label: string, date?: string | null) => (
     <button
@@ -194,6 +197,7 @@ export function OptionChain() {
                   : `Stream is ${stream?.effective_state.replace("_", " ")}: live cells are dimmed and may be out of date. The ATM strike is from the snapshot.`}
               </p>
             )}
+            {frozenIndex && <p role="note" data-testid="chain-frozen-index" className="text-sm text-warn">{snap?.spot_note}</p>}
             {atmStrike == null && (
               <p className="text-sm text-warn">
                 No ATM strike is available (no broker label and no live NIFTY price), so the range filter is off and all strikes are shown.

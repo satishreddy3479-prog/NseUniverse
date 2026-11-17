@@ -26,14 +26,13 @@ def _atm_row_tokens(snap: OptionChainSnapshot) -> list[FeedToken]:
     rows = snap.rows
     if not rows:
         return []
-    row = next(
-        (
-            r
-            for r in rows
-            if "ATM" in {r.call.moneyness if r.call else None, r.put.moneyness if r.put else None}
-        ),
-        None,
-    )
+    row = None
+    if snap.spot_note is None:  # a frozen broker quote makes its ATM label wrong
+        atm = {"ATM"}
+        row = next(
+            (r for r in rows if atm & {r.call and r.call.moneyness, r.put and r.put.moneyness}),
+            None,
+        )
     if row is None and snap.underlying_ltp is not None:
         row = min(rows, key=lambda r: abs(r.strike - snap.underlying_ltp))  # type: ignore[operator]
     if row is None:

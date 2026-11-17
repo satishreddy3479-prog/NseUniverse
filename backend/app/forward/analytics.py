@@ -7,10 +7,9 @@ decides what is too few to read (below ``MIN_TRADES``), and nothing here calls a
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, timedelta
-from functools import lru_cache
 from collections.abc import Callable
-from datetime import datetime
+from datetime import date, datetime, timedelta
+from functools import lru_cache
 from typing import Any
 from zoneinfo import ZoneInfo
 

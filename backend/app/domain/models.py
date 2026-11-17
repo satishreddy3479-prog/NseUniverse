@@ -111,6 +111,11 @@ class OptionChainSnapshot(BaseModel):
         default=None, description="Index spot from the same response; a snapshot value, not live"
     )
     underlying_prev_close: float | None = None
+    underlying_ltp_broker: float | None = Field(
+        default=None,
+        description="The broker's own index level if it was replaced by the option-implied one",
+    )
+    spot_note: str | None = None
     requested_strike_count: int
     completeness: Completeness
     rows: list[OptionChainRow]
