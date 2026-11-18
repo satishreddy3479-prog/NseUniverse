@@ -273,6 +273,6 @@ class TestFrozenIndex:
         assert sd.nearest(p.strikes, p.spot) == 24000.0  # the frozen quote would pick 24,000
         assert sd.atm_reference(p) == pytest.approx(24060.0, abs=2.0)
         assert sd.nearest(p.strikes, sd.atm_reference(p)) == 24050.0  # the options say 24,050
-        ok = sd.Snap(at, 24030.0, real.prices)  # a quote 30 points behind is within the allowance: the quote is used
+        ok = sd.Snap(at, 24050.0, real.prices)  # a quote 10 points behind is within the allowance: the quote is used
         q, _ = sd.build_point(ok, EXPIRY, R)
-        assert q is not None and sd.atm_reference(q) == 24030.0
+        assert q is not None and sd.atm_reference(q) == 24050.0

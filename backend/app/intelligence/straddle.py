@@ -144,7 +144,7 @@ def build_point(snap: Snap, expiry_date: Any, rate: float = DEFAULT_RATE) -> tup
 _W = {0: 1 / 3, 1: 1 / 6, 2: 1 / 3}
 
 
-STALE_SPOT_POINTS = 30.0  # the stored index level may differ this much from the level the option prices imply before the options win for choosing the at-the-money strike
+STALE_SPOT_POINTS = 15.0  # the stored index level may differ this much from the level the option prices imply before the options win for choosing the at-the-money strike
 
 
 def atm_reference(p: Point) -> float:

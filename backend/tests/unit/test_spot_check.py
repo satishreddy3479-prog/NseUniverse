@@ -49,9 +49,11 @@ def test_a_frozen_quote_is_replaced_and_the_broker_value_kept() -> None:
     assert note is not None and "25413" in note and "41 points below" in note
 
 
-def test_a_quote_within_thirty_points_is_used_as_sent() -> None:
+def test_a_quote_within_fifteen_points_is_used_as_sent_and_one_further_off_is_replaced() -> None:
     chain = rows(25453.8, [25300.0, 25350.0, 25400.0, 25450.0, 25500.0])
-    assert checked_spot(chain, 25430.0, EXPIRY, AT) == (25430.0, None, None)  # 23.8 points apart
+    assert checked_spot(chain, 25440.0, EXPIRY, AT) == (25440.0, None, None)  # 13.8 points apart
+    spot, broker, _ = checked_spot(chain, 25430.0, EXPIRY, AT)  # 23.8 points apart: 18 Nov 15:20, the chain said 25,220.45 while its prices implied 25,247
+    assert broker == 25430.0 and spot is not None and abs(spot - 25453.8) < 0.05
 
 
 def test_nothing_is_judged_without_enough_prices_or_for_a_far_expiry() -> None:

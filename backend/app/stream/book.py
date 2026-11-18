@@ -22,9 +22,14 @@ class LiveBook:
         return a.model_dump(exclude=ignore) == b.model_dump(exclude=ignore)
 
     def update(self, tick: LiveTick) -> LiveTick | None:
-        """Store the tick; return it, or None if it is an exact repeat of the stored one."""
+        """Store the tick; return it, or None if it is an exact repeat of the stored one.
+
+        A repeat is not broadcast again, but it IS a message from the feed: the stored tick's receive time moves to it. Without that, an instrument whose value did not change looked silent
+        to everything that asks how old its tick is (the one-minute index bars, the minute samples), exactly as if the feed had stopped."""
         prev = self._ticks.get(tick.key)
         if prev is not None and self._same(prev, tick):
+            if tick.received_at > prev.received_at:
+                self._ticks[tick.key] = prev.model_copy(update={"received_at": tick.received_at})
             return None
         self._seq += 1
         tick = tick.model_copy(update={"seq": self._seq})
