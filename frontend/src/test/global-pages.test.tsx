@@ -222,6 +222,22 @@ describe("global board charts", () => {
   });
 });
 
+describe("the last two days of the calendar", () => {
+  it("lists yesterday's and the day before's events with their actual outcome, and says when an actual never came", async () => {
+    const withRecent = { ...calendar, sections: [...calendar.sections, { key: "recent", title: "Past 2 days: outcomes", events: [
+      ev("y1", "Core CPI m/m", "2026-11-15T19:00:00+05:30", "released", { forecast: "0.3%", previous: "0.4%", actual: "0.5%" }),
+      ev("y2", "Retail Sales m/m", "2026-11-14T19:00:00+05:30", "past", { forecast: "0.2%", previous: "0.1%" }),
+    ] }] };
+    mockApi({ "/api/calendar": withRecent });
+    renderAt("/tools/economic-calendar");
+    expect(await screen.findByText("Past 2 days: outcomes")).toBeInTheDocument();
+    const row = screen.getByText("Core CPI m/m").closest("li")!;
+    expect(row).toHaveTextContent("Released");
+    expect(row).toHaveTextContent("0.5%"); // the actual outcome
+    expect(screen.getByText("Retail Sales m/m").closest("li")).toHaveTextContent("no actual value in the feed"); // missing stays missing
+  });
+});
+
 describe("calendar country filter", () => {
   it("shows All, India or US events and the next-event card follows the filter", async () => {
     vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-16T00:00:00Z") }); // the sample events are on 16 to 19 Nov 2026: the card needs a clock before them

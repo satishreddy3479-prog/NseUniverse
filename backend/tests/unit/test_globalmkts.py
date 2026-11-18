@@ -246,7 +246,7 @@ def test_the_calendar_groups_high_impact_events_by_when_in_ist_with_countdowns(t
     v = s.calendar_view()
     assert v["today"] == "2026-11-16"
     keys = [x["key"] for x in v["sections"]]
-    assert keys == ["today", "tomorrow", "week", "nextweek", "month", "later"]
+    assert keys == ["today", "tomorrow", "week", "nextweek", "month", "later", "recent"]
     today = next(x for x in v["sections"] if x["key"] == "today")["events"]
     cpi = next(e for e in today if e["name"] == "CPI m/m" and e["country"] == "Canada")
     assert cpi["time_ist"].startswith("2026-11-16T19:00") and cpi["state"] == "upcoming"
@@ -297,7 +297,7 @@ def test_the_api_serves_the_board_the_calendar_and_the_news(tmp_path: Path) -> N
         ser = c.get("/api/global/series", params={"symbol": "ES", "hours": 3}).json()
         assert ser["prices"] and ser["name"] == "S&P 500 futures"
         assert c.get("/api/global/series", params={"symbol": "ES", "hours": 500}).status_code == 422  # at most 168 hours (7 days, the retention)
-        assert len(c.get("/api/calendar").json()["sections"]) == 6
+        assert len(c.get("/api/calendar").json()["sections"]) == 7
         assert c.get("/api/news").json()["india"]
 
 
@@ -435,7 +435,7 @@ def test_biquote_values_carry_k_and_m_for_thousands_and_millions_and_bad_rows_ar
 
 def test_the_request_asks_for_india_and_us_at_medium_and_above_over_the_next_sixty_days() -> None:
     url = calendar_feed.bq_url(datetime(2026, 11, 15, 19, 0, tzinfo=UTC))
-    assert url == "https://biquote.io/api/calendar?from=2026-11-16&to=2027-01-14&countries=IN,US&importance=medium&limit=500"  # importance is a minimum: "high,medium" is rejected by the API
+    assert url == "https://biquote.io/api/calendar?from=2026-11-14&to=2027-01-14&countries=IN,US&importance=medium&limit=500"  # importance is a minimum: "high,medium" is rejected by the API
 
 
 def test_biquote_events_replace_the_same_release_from_the_official_list_and_forex_factory(tmp_path: Path) -> None:
@@ -559,16 +559,16 @@ def test_events_of_past_days_and_old_news_are_not_stored_and_are_deleted_when_th
     s.poll_calendar()
     s.poll_news()
     all_events = s.store.events_between(0, 4_000_000_000_000)
-    assert all_events and min(e["date_ist"] for e in all_events) >= "2026-11-16"  # the official list's earlier dates and the feeds' earlier days were not stored
+    assert all_events and min(e["date_ist"] for e in all_events) >= "2026-11-14"  # older dates (the official list, the feeds) were not stored: the last two days are kept
     cutoff = int((now - timedelta(hours=48)).timestamp() * 1000)
     assert min(n["published"] for n in s.store.news("India", 500) + s.store.news("Global", 500)) >= cutoff
-    # the clock moves on two days: yesterday's events and news older than 48 hours go, today's stay
-    later = datetime(2026, 11, 17, 19, 0, tzinfo=UTC)  # Tuesday 18 Nov 00:30 IST
+    # the clock moves on two days: events older than two days and news older than 48 hours go, the last two days stay
+    later = datetime(2026, 11, 19, 19, 0, tzinfo=UTC)  # Friday 20 Nov 00:30 IST: the floor is 18 Nov
     s._clock = lambda: later  # noqa: SLF001
     before_ev, before_news = len(all_events), len(s.store.news("India", 500)) + len(s.store.news("Global", 500))
     res = s.cleanup()
     left = s.store.events_between(0, 4_000_000_000_000)
-    assert res["events"] > 0 and min(e["date_ist"] for e in left) >= "2026-11-18" and len(left) == before_ev - res["events"]
+    assert res["events"] > 0 and min(e["date_ist"] for e in left) >= "2026-11-18" and len(left) == before_ev - res["events"]  # 20 Nov keeps 18 and 19 Nov
     assert res["news"] > 0 and len(s.store.news("India", 500)) + len(s.store.news("Global", 500)) == before_news - res["news"]
     run = s.store.last_run("cleanup")
     assert run and run["ok"] and run["detail"]["events"] == res["events"] and run["detail"]["bytes"] > 0
@@ -576,6 +576,33 @@ def test_events_of_past_days_and_old_news_are_not_stored_and_are_deleted_when_th
     s.poll_news()  # the feeds still carry the old items: they do not come back
     assert min(e["date_ist"] for e in s.store.events_between(0, 4_000_000_000_000)) >= "2026-11-18"
     assert all(n["published"] >= int((later - timedelta(hours=48)).timestamp() * 1000) for n in s.store.news("India", 500) + s.store.news("Global", 500))  # all fixture items are older: none stored
+
+
+def test_the_last_two_days_keep_their_actual_outcomes_and_older_events_go(tmp_path: Path) -> None:
+    """An event keeps its outcome for two days after its date (IST), is shown in 'Past 2 days: outcomes' newest first, and is deleted on the third day."""
+    s, _ = service(tmp_path, now=datetime(2026, 11, 16, 10, 0, tzinfo=UTC))
+    base = {"source": "biquote", "all_day": False, "country": "India", "impact": "high", "forecast": "6.0%", "previous": "5.9%", "note": None}
+    day = lambda d, h: int(datetime(2026, 11, d, h, 0, tzinfo=UTC).timestamp() * 1000)  # noqa: E731
+    events = [
+        base | {"id": "e1", "name": "Old release", "ts": day(13, 6), "date_ist": "2026-11-13", "actual": "6.1%"},
+        base | {"id": "e2", "name": "Two days ago", "ts": day(14, 6), "date_ist": "2026-11-14", "actual": "6.2%"},
+        base | {"id": "e3", "name": "Yesterday", "ts": day(15, 6), "date_ist": "2026-11-15", "actual": "6.3%"},
+        base | {"id": "e4", "name": "This midday", "ts": day(16, 7), "date_ist": "2026-11-16", "actual": None},
+    ]
+    now = datetime(2026, 11, 16, 10, 0, tzinfo=UTC)  # 15:30 IST on 16 Nov
+    s.store.upsert_events(events, now)  # no floor given: everything is stored here, the floor is checked below
+    assert s._event_floor(now) == "2026-11-14"  # noqa: SLF001
+    res = s.cleanup()
+    assert res["events"] == 1 and {e["name"] for e in s.store.events_between(0, 4_000_000_000_000)} == {"Two days ago", "Yesterday", "This midday"}
+    recent = next(x for x in s.calendar_view()["sections"] if x["key"] == "recent")
+    assert [(e["name"], e["actual"], e["state"]) for e in recent["events"]] == [("Yesterday", "6.3%", "released"), ("Two days ago", "6.2%", "released")]  # newest first, with the outcome
+    today = next(x for x in s.calendar_view()["sections"] if x["key"] == "today")
+    assert [e["name"] for e in today["events"]] == ["This midday"]  # today's stays in Today
+    # the old release is not stored again, and a release that was due earlier today without an actual makes the calendar poll fast
+    assert s.store.upsert_events(events, now, s._event_floor(now))["new"] == 0  # noqa: SLF001
+    assert s.awaiting_actual() is True
+    s.store.upsert_events([events[3] | {"actual": "6.0%"}], now)
+    assert s.awaiting_actual() is False
 
 
 def test_prune_removes_the_revisions_of_deleted_events_and_leaves_bars_alone(tmp_path: Path) -> None:

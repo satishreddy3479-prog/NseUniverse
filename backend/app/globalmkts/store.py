@@ -168,7 +168,7 @@ class GlobalStore:
 
     # ------------------------------------------------------------------ clean-up
     def prune(self, today_ist: str, news_before_ms: int, bars_before_ms: int | None = None) -> dict[str, int]:
-        """Delete the calendar events of days before ``today_ist`` (with their revisions), the news published before ``news_before_ms`` and, when given, the price bars
+        """Delete the calendar events dated before ``today_ist`` (the caller passes the oldest date to keep; with their revisions), the news published before ``news_before_ms`` and, when given, the price bars
         older than ``bars_before_ms``; then give the freed space back when a lot was deleted. The latest quote of each symbol is never deleted."""
         with self._lock, closing(self._conn()) as c, c:
             ev = c.execute("DELETE FROM events WHERE date_ist < ?", (today_ist,)).rowcount

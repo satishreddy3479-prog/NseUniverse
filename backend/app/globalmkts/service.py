@@ -37,6 +37,9 @@ QUOTE_FAST_S, QUOTE_SLOW_S, QUOTE_RETRY_S = 60.0, 300.0, 120.0
 NEWS_S, NEWS_FAST_S, CAL_S, CAL_RETRY_S = 600.0, 120.0, 6 * 3600.0, 1800.0  # news: every 2 minutes in Indian market hours, every 10 otherwise
 FULL_REFRESH_S = 6 * 3600.0
 BQ_S = 900.0
+BQ_FAST_S = 120.0  # while a released-by-now event still has no actual, the biquote calendar is read this often
+EVENT_KEEP_D = 2  # calendar events stay (with their actual outcome) this many days after their date, then are deleted
+AWAIT_ACTUAL_H = 6  # an event is waited for this many hours after its time
 SERIES_FETCH, SERIES_MAX = 12000, 720  # bars read for a chart, and the most points sent
 DAILY_S = 1800.0  # official closes of the cash indices are re-read this often
 BARS_KEEP_D = 7  # one-minute price bars older than this are deleted (the change reference needs only the previous session)
@@ -208,7 +211,7 @@ class GlobalService:
         now = self._clock()
         out: dict[str, Any] = {}
         try:
-            out["official"] = self.store.upsert_events(calendar_feed.official_events(self.official_path), now, self._today(now))
+            out["official"] = self.store.upsert_events(calendar_feed.official_events(self.official_path), now, self._event_floor(now))
             self.store.add_run("calendar_official", now, True, out["official"])
         except Exception as e:  # noqa: BLE001
             out["official"] = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
@@ -219,7 +222,7 @@ class GlobalService:
             errors: list[str] = []
             for url in calendar_feed.FF_URLS:
                 try:
-                    r = self.store.upsert_events(calendar_feed.parse_ff(self._fetch(url)), now, self._today(now))
+                    r = self.store.upsert_events(calendar_feed.parse_ff(self._fetch(url)), now, self._event_floor(now))
                     for k in ("new", "changed", "same"):
                         res[k] += r[k]
                 except Exception as e:  # noqa: BLE001 - the feed rate-limits or is down: recorded, the stored events stay
@@ -233,7 +236,7 @@ class GlobalService:
         """India and US events with forecasts and actuals from the biquote calendar: one small request, repeated every 15 minutes because actuals appear through the day."""
         now = self._clock()
         try:
-            res: dict[str, Any] = dict(self.store.upsert_events(calendar_feed.parse_biquote(self._fetch(calendar_feed.bq_url(now))), now, self._today(now)))
+            res: dict[str, Any] = dict(self.store.upsert_events(calendar_feed.parse_biquote(self._fetch(calendar_feed.bq_url(now))), now, self._event_floor(now)))
             self.store.add_run("calendar_biquote", now, True, res)
         except Exception as e:  # noqa: BLE001 - recorded; the stored events stay
             res = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
@@ -243,6 +246,17 @@ class GlobalService:
     @staticmethod
     def _today(now: datetime) -> str:
         return now.astimezone(IST).date().isoformat()
+
+    @staticmethod
+    def _event_floor(now: datetime) -> str:
+        """The oldest event date (IST) that is kept: the last ``EVENT_KEEP_D`` days stay with their outcomes, older events are neither stored nor kept."""
+        return (now.astimezone(IST).date() - timedelta(days=EVENT_KEEP_D)).isoformat()
+
+    def awaiting_actual(self) -> bool:
+        """True while a shown event that was due in the last few hours has no actual yet: the calendar is then read every two minutes instead of every fifteen."""
+        now = self._clock()
+        nowms = ms(now)
+        return any(r["actual"] is None and not r["all_day"] for r in self._visible_rows(nowms - AWAIT_ACTUAL_H * 3600_000, nowms))
 
     def poll_gift(self) -> dict[str, Any]:
         """GIFT Nifty (the near-month NIFTY future at NSE IX): one small request; the quote and its bar are stored like the others."""
@@ -264,9 +278,9 @@ class GlobalService:
         return res
 
     def cleanup(self) -> dict[str, int]:
-        """Delete calendar events of days that have passed and news older than the retention (the page only shows what is current); the numbers go in the run log."""
+        """Delete calendar events older than ``EVENT_KEEP_D`` days (the last two days stay with their outcomes) and news older than the retention; the numbers go in the run log."""
         now = self._clock()
-        res = self.store.prune(self._today(now), ms(now - timedelta(hours=NEWS_KEEP_H)), ms(now - timedelta(days=BARS_KEEP_D)))
+        res = self.store.prune(self._event_floor(now), ms(now - timedelta(hours=NEWS_KEEP_H)), ms(now - timedelta(days=BARS_KEEP_D)))
         self.store.add_run("cleanup", now, True, res | {"bytes": self.store.size_bytes()})
         return res
 
@@ -282,7 +296,7 @@ class GlobalService:
         now = self._clock()
         self._local_mtime = mtime
         try:
-            res: dict[str, Any] = dict(self.store.upsert_events(calendar_feed.parse_local(path.read_bytes()), now, self._today(now)))
+            res: dict[str, Any] = dict(self.store.upsert_events(calendar_feed.parse_local(path.read_bytes()), now, self._event_floor(now)))
             self.store.add_run("calendar_local", now, True, res)
         except Exception as e:  # noqa: BLE001 - a bad file is reported and the other sources carry on
             res = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
@@ -377,7 +391,7 @@ class GlobalService:
         def at(d: Any) -> int:
             return ms(datetime(d.year, d.month, d.day, tzinfo=IST))
 
-        rows = self._visible_rows(at(today), at(horizon + timedelta(days=1)))
+        rows = self._visible_rows(at(today - timedelta(days=EVENT_KEEP_D)), at(horizon + timedelta(days=1)))  # the last two days stay: their outcomes are the point
         nowms = ms(now)
 
         def shape(r: dict[str, Any]) -> dict[str, Any]:
@@ -401,6 +415,8 @@ class GlobalService:
             ("later", "Coming up", lambda d: max(next_end, month_end) < d <= ahead_end),
         ]
         sections = [{"key": k, "title": title, "events": [shape(r) for r in rows if match(day(r))]} for k, title, match in spec]
+        # the last two days with what actually came out, newest first (an event of the last hours today with no actual yet stays in Today)
+        sections.append({"key": "recent", "title": f"Past {EVENT_KEEP_D} days: outcomes", "events": [shape(r) for r in reversed(rows) if day(r) < today]})
         nxt = next((shape(r) for r in rows if r["ts"] >= nowms), None)
         sources = []
         for kind, label in (("calendar_official", calendar_feed.OFFICIAL_LABEL), ("calendar_feed", calendar_feed.FF_LABEL), ("calendar_biquote", calendar_feed.BQ_LABEL), ("calendar_local", calendar_feed.LOCAL_LABEL)):
@@ -412,7 +428,7 @@ class GlobalService:
                 "last_error": None if last is None or last["ok"] else last["detail"],
             })  # fmt: skip
         return {"generated_at": now.isoformat(), "today": today.isoformat(), "sections": sections, "next": nxt, "sources": sources,
-                "note": "Three-star events, plus India's two-star releases (shown with two stars). Times are in IST. Official dates come from the central banks and statistics agencies named on each event; the feed is a third-party feed."}  # fmt: skip
+                "note": "Three-star events, plus India's two-star releases (shown with two stars). Times are in IST. Official dates come from the central banks and statistics agencies named on each event; the feed is a third-party feed. Each event keeps its outcome for two days after its date and is then deleted automatically."}  # fmt: skip
 
     def headsup(self) -> dict[str, Any]:
         """What deserves a reminder now: upcoming catalysts in the next 3 days (see headsup.py for when each comes back) and fresh market-moving headlines."""
@@ -478,7 +494,7 @@ class GlobalService:
             _Task("gift", "gift", self.poll_gift, lambda r: (QUOTE_FAST_S if expected_open(BY_KEY["GIFT"], self._clock()) else QUOTE_SLOW_S) if r.get("ok") else QUOTE_RETRY_S, 3.0, 20 * 60, enabled=gift_on),
             _Task("news", "news", self.poll_news, lambda r: self._news_interval(self._clock()) if r.get("ok") else QUOTE_RETRY_S, 6.0, 40 * 60),
             _Task("calendar", "calendar_feed", self.poll_calendar, lambda r: CAL_S if "feed" in r and "errors" not in r["feed"] else CAL_RETRY_S, 9.0, 13 * 3600),
-            _Task("biquote", "calendar_biquote", self.poll_biquote, lambda r: BQ_S if "error" not in r else CAL_RETRY_S, 12.0, 45 * 60),
+            _Task("biquote", "calendar_biquote", self.poll_biquote, lambda r: CAL_RETRY_S if "error" in r else (BQ_FAST_S if self.awaiting_actual() else BQ_S), 12.0, 45 * 60),
             _Task("local", "calendar_local", lambda: self.poll_local_calendar() or {}, lambda r: 300.0, 15.0, None),
             _Task("cleanup", "cleanup", self.cleanup, lambda r: CLEAN_S, 30.0, 3 * 3600),
         ]
