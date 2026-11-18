@@ -186,7 +186,7 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
           <div className="mt-2 grid gap-3 md:grid-cols-2">
             {([
               ["fixed", `Fixed ${tr.fixed.strike}`, `The ${tr.fixed.strike} straddle that was at the money when the session opened${tr.opening_at ? ` (${fmtTimeIST(tr.opening_at)})` : ""}, held all day.`, tr.fixed.straddle.open, tr.fixed.straddle.current, fixedChg, "text-brass"],
-              ["rolling", `Rolling ATM (now ${tr.atm_now ?? MISSING})`, `Always the straddle at the money right now; it has moved ${tr.rolling.rolls} time${tr.rolling.rolls === 1 ? "" : "s"} today. Changes are added only for the same contract, so a move makes no jump.`, tr.rolling.straddle.open, tr.rolling.straddle.current, rollChg, "text-info"],
+              ["rolling", `Rolling ATM (now ${tr.atm_now ?? MISSING})`, `Always the straddle at the money right now; it has moved ${tr.rolling.rolls} time${tr.rolling.rolls === 1 ? "" : "s"} today. Changes are added only for the same contract, so a move makes no jump. Its Change is roll-adjusted: each re-centring books what the strike it leaves gained or lost, so a market that keeps swinging holds it near zero while a fixed strike decays.`, tr.rolling.straddle.open, tr.rolling.straddle.current, rollChg, "text-info"],
             ] as const).map(([m, title, what, open, now, chg, col]) => (
               <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)} data-testid={`sdi-compare-${m}`}
                 className={`rounded-lg border p-3 text-left transition-colors ${mode === m ? "border-brass bg-brass/5 ring-1 ring-brass/40" : "border-rule hover:border-muted"}`}>
