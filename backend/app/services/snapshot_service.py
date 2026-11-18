@@ -12,6 +12,7 @@ from typing import TypeVar
 from zoneinfo import ZoneInfo
 
 from app.broker.base import BrokerError, MarketDataBroker
+from app.domain.chain_quality import core_holes
 from app.domain.expiry import parse_expiry_dates, select_expiries
 from app.domain.models import (
     DataSource,
@@ -31,6 +32,8 @@ IST = ZoneInfo("Asia/Kolkata")
 EXPIRY_CACHE_TTL_S = 600
 ON_DEMAND_TTL_S = 10  # a chain fetched for the Strategy builder is reused this long
 ON_DEMAND_MAX_CONCURRENT = 2  # broker calls in flight for such requests
+CORE_RETRIES = 2  # a chain missing OI, volume or price near ATM is asked for again this often
+CORE_RETRY_S = 1.5  # seconds between those asks
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
@@ -254,21 +257,34 @@ class SnapshotService:
         self, exp: date, kinds: list[ExpiryKind], skip_unchanged: bool = False
     ) -> SnapshotSummary | None:
         exp_s = exp.isoformat()
-        raw = await self._with_relogin(
-            lambda: self.broker.get_option_chain(self.underlying, exp_s, self.strike_count)
-        )
-        received = datetime.now(UTC)
-        snap = normalize_option_chain(
-            raw,
-            snapshot_id=new_snapshot_id(self.underlying, exp, received),
-            session_id=self.state.session_id,
-            underlying=self.underlying,
-            expiry=exp,
-            expiry_kinds=kinds,
-            source=self.snapshot_source,
-            retrieved_at=received,
-            requested_strike_count=self.strike_count,
-        )
+        raw, snap, holes = None, None, 0
+        for attempt in range(1 + CORE_RETRIES):
+            got = await self._with_relogin(
+                lambda: self.broker.get_option_chain(self.underlying, exp_s, self.strike_count)
+            )
+            received = datetime.now(UTC)
+            one = normalize_option_chain(
+                got,
+                snapshot_id=new_snapshot_id(self.underlying, exp, received),
+                session_id=self.state.session_id,
+                underlying=self.underlying,
+                expiry=exp,
+                expiry_kinds=kinds,
+                source=self.snapshot_source,
+                retrieved_at=received,
+                requested_strike_count=self.strike_count,
+            )
+            n = core_holes(one)
+            if snap is None or n < holes:  # keep the more complete answer
+                raw, snap, holes = got, one, n
+            if holes == 0:
+                break
+            log_event(
+                logger, logging.WARNING, "snapshot_core_holes",
+                expiry=exp_s, holes=n, attempt=attempt + 1,
+            )
+            await asyncio.sleep(CORE_RETRY_S)
+        assert snap is not None and raw is not None
         snap = self._checked(snap)
         fp = fingerprint(snap)
         if skip_unchanged and self._last_fingerprint.get(exp) == fp:

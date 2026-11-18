@@ -139,14 +139,48 @@ class TestSampling:
         assert await s.tick() is True
         st = s.status()
         assert st.state == "error" and st.last_error and "rate limited" in st.last_error
-        assert st.next_due_at == IN_SESSION + timedelta(seconds=120)  # interval doubled
-        clock.advance(60)
-        assert await s.tick() is False  # still backing off
+        assert st.next_due_at == IN_SESSION + timedelta(seconds=10)  # a quick first retry
+        clock.advance(5)
+        assert await s.tick() is False  # not yet
+        clock.advance(6)
+        assert await s.tick() is True  # retried after 10 s; fails again
+        assert s.status().next_due_at == IN_SESSION + timedelta(seconds=11 + 20)  # then it backs off: 20 s
         broker.get_option_chain = real  # type: ignore[method-assign]
-        clock.advance(61)  # a failed sample keeps its back-off (120 s)
+        clock.advance(20)
         assert await s.tick() is True
         st = s.status()
         assert st.state == "waiting" and st.last_error is None and st.samples_this_run == 1
+
+    async def test_a_chain_missing_oi_near_atm_is_asked_for_again_and_the_complete_one_is_kept(
+        self, tmp_path: Path
+    ) -> None:
+        """18 Nov 2026, 10:27: a near-ATM contract had no OI and every total dipped."""
+        import copy
+
+        clock = Clock(IN_SESSION)
+        s, broker, store = make_sampler(tmp_path, clock)
+        real = broker.get_option_chain
+        stripped_once = {"n": 0}
+
+        async def holey(underlying: str, expiry: str, n: int) -> dict[str, object]:
+            raw = copy.deepcopy(await real(underlying, expiry, n))
+            if stripped_once["n"] < 1:  # the first answer only: the call nearest the index has no OI
+                stripped_once["n"] += 1
+                spot = float(raw["spot"]["ltp"])  # type: ignore[index]
+                calls = raw["call"]  # type: ignore[index]
+                near = min(calls, key=lambda it: abs(float(it["inst"]["strkPrc"]) - spot))
+                near["oi"] = {}
+            return raw
+
+        broker.get_option_chain = holey  # type: ignore[method-assign]
+        assert await s.tick() is True
+        from app.domain.chain_quality import core_holes
+
+        weekly = store.list(underlying="NIFTY", expiry="2026-11-03", limit=5)
+        assert len(weekly) == 1  # one sample is stored
+        assert len(broker.chain_calls) >= 3  # the first expiry was asked for twice, the second once
+        loaded = store.load(weekly[0].snapshot_id)
+        assert loaded is not None and core_holes(loaded) == 0  # the complete answer
 
     async def test_disabled_sampler_never_captures(self, tmp_path: Path) -> None:
         s, broker, _ = make_sampler(tmp_path, Clock(IN_SESSION))

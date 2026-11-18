@@ -186,7 +186,8 @@ class SnapshotSampler:
             ok = False
             self._failures += 1
             self.last_error = f"{type(e).__name__}: {getattr(e, 'message', str(e))}"[:200]
-            delay = min(MAX_BACKOFF_S, self.interval_s * (2 ** min(self._failures, 4)))
+            # first retry after 10 s: a missing minute is a gap
+            delay = min(MAX_BACKOFF_S, 5.0 * (2 ** min(self._failures, 6)))
             obs = self.service.observations
             if obs is not None:
                 obs.record_event("sample_failed", self.last_error)
