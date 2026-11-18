@@ -35,7 +35,7 @@ from app.market import weights as wmod
 from app.market.flow import FlowTracker, last_cumulative, profile_fraction, volume_profile
 from app.market.futures import FoQuote
 from app.market.index_bars import IndexBarBuilder
-from app.market.index_check import flag_bars, minute_key
+from app.market.index_check import flag_bars, minute_key, proxy_bars
 from app.market.sources import (
     BHAV_URL,
     LIST_URL,
@@ -1225,6 +1225,7 @@ class MarketService:
         # cross-check against the NIFTY future, an independent feed: a bar far from the basis of its neighbours is flagged (``off``, points), never repaired
         futs = {minute_key(datetime.fromisoformat(a)): float(p["ltp"]) for a, p in self.store.samples_since("fut", since) if p.get("ltp")}
         flag_bars(bars, futs)
+        bars = sorted([*bars, *proxy_bars(bars, futs)], key=lambda b: str(b["at"]))  # the closing session, in which the index is not published: the future minus its basis, marked proxy
         return {"day": day.isoformat(), "bars": bars, "note": "Built from the live index feed, read about once a second: high and low are the extremes of those reads, not the exchange's tick tape. A bar flagged `off` closed far from where the future says the index was."}
 
     async def _bars_loop(self) -> None:

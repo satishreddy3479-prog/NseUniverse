@@ -392,16 +392,34 @@ function SmartOiChartWidget() {
                 {" "}(ΔPut {fmtSigned(last.dPe)} · ΔCall {fmtSigned(last.dCe)})</span>
             )}
           </div>
-          {res && (res.stalls.length > 0 || res.jumps.length > 0 || res.thinBars > 0 || res.unconfirmedBars.length > 0) && (
-            <p role="note" data-testid="smart-oi-feed-note" className="rounded-sm border border-brass/40 bg-brass/10 px-2 py-1 text-xs text-paper">
-              <b>NIFTY index feed problem today.</b>{" "}
-              {res.stalls.map((t) => `The index quote repeated ${t.value.toLocaleString("en-IN", { minimumFractionDigits: 2 })} for ${t.samples} samples (${t.from}–${t.to}), so those minutes show no NIFTY candle. `).join("")}
-              {res.unconfirmedBars.length > 0 ? `${res.unconfirmedBars.length} one-minute bar(s) (${res.unconfirmedBars.map((b) => b.at).join(", ")}) closed or ranged ${Math.round(Math.min(...res.unconfirmedBars.map((b) => Math.abs(b.off))))} points or more away from where the NIFTY future says the index was, so the index feed was wrong and they are not drawn. ` : ""}
-              {res.thinBars > 0 ? `${res.thinBars} one-minute bar(s) had almost no reads (feed silent) and are not drawn. ` : ""}
-              {res.jumps.map((j) => `At ${j.at} the index reappeared ${j.pct > 0 ? "+" : "−"}${Math.abs(j.pct).toFixed(2)}% away (${fmtPrice(j.from)} → ${fmtPrice(j.to)}): shown as the feed sent it, not confirmed. `).join("")}
-              The OI and volume bars are unaffected.
-            </p>
-          )}
+          {res && (() => {
+            // 15:15-15:30: the exchange does not publish the index (the quote freezes, then jumps), every day; that is not a fault of the feed and is shown as its own note
+            const isClosing = (hm: string) => hm >= "15:14";
+            const closing = res.proxyMinutes > 0 || res.stalls.some((t) => isClosing(t.from));
+            const stalls = res.stalls.filter((t) => !isClosing(t.from));
+            const jumps = res.jumps.filter((j) => !isClosing(j.at));
+            const off = res.unconfirmedBars.filter((b) => b.at < "15:15");
+            const thin = closing ? 0 : res.thinBars;
+            return (
+              <>
+                {closing && (
+                  <p role="note" data-testid="smart-oi-closing-note" className="rounded-sm border border-rule bg-slate-2 px-2 py-1 text-xs text-paper">
+                    <b>Closing session (15:15–15:30).</b> The exchange does not publish the NIFTY index in these minutes: its quote freezes and then jumps. {res.proxyMinutes > 0 ? `${res.proxyMinutes} minute(s) are drawn as grey outlined candles from the NIFTY future minus the basis it had before 15:15, so they are a stand-in, not the index. ` : ""}Minutes with neither are left empty. The OI and volume bars are unaffected.
+                  </p>
+                )}
+                {(stalls.length > 0 || jumps.length > 0 || thin > 0 || off.length > 0) && (
+                  <p role="note" data-testid="smart-oi-feed-note" className="rounded-sm border border-brass/40 bg-brass/10 px-2 py-1 text-xs text-paper">
+                    <b>NIFTY index feed problem today.</b>{" "}
+                    {stalls.map((t) => `The index quote repeated ${t.value.toLocaleString("en-IN", { minimumFractionDigits: 2 })} for ${t.samples} samples (${t.from}–${t.to}), so those minutes show no NIFTY candle. `).join("")}
+                    {off.length > 0 ? `${off.length} one-minute bar(s) (${off.map((b) => b.at).join(", ")}) closed or ranged ${Math.round(Math.min(...off.map((b) => Math.abs(b.off))))} points or more away from where the NIFTY future says the index was, so the index feed was wrong and they are not drawn. ` : ""}
+                    {thin > 0 ? `${thin} one-minute bar(s) had almost no reads (feed silent) and are not drawn. ` : ""}
+                    {jumps.map((j) => `At ${j.at} the index reappeared ${j.pct > 0 ? "+" : "−"}${Math.abs(j.pct).toFixed(2)}% away (${fmtPrice(j.from)} → ${fmtPrice(j.to)}): shown as the feed sent it, not confirmed. `).join("")}
+                    The OI and volume bars are unaffected.
+                  </p>
+                )}
+              </>
+            );
+          })()}
           {d.history.isPending || q.isPending ? (
             <p className="p-3 text-sm text-muted">Loading stored samples…</p>
           ) : q.error ? (

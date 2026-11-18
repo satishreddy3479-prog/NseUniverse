@@ -119,6 +119,8 @@ export interface SmartOiCandle {
   spot: { open: number; high: number; low: number; close: number } | null;
   /** True when the spot candle comes from one-minute index bars (real highs and lows), false when it is cut from the stored samples. */
   spotFromBars: boolean;
+  /** True when part of the spot candle is the NIFTY future minus its usual basis (the closing session, 15:15-15:30, in which the exchange does not publish the index): a stand-in, drawn outlined. */
+  spotProxy: boolean;
   ceOi: number;
   peOi: number;
   /** Interval change against the previous candle with data; null on the first candle (the baseline). */
@@ -168,6 +170,8 @@ export interface SmartOiResult {
   thinBars: number;
   /** One-minute bars that closed, or touched a high or low, far from where the NIFTY future (a separate feed) says the index was: the index feed was wrong, so they are not drawn. */
   unconfirmedBars: { at: string; off: number }[];
+  /** Minutes drawn from the NIFTY future (minus its basis) because the index is not published in the closing session. */
+  proxyMinutes: number;
   /** A drawn candle opened far from the previous drawn candle's close right after a stall or silence: the move is real feed output but unconfirmed. */
   jumps: { at: string; from: number; to: number; pct: number }[];
 }
@@ -194,9 +198,9 @@ const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${St
  * no bar. Candles with no stored sample are left out, never filled in; the next change then spans the gap (`span` > 1)
  * and is counted in `gapCandles`. Only the newest day with data is used so no change ever crosses a night.
  */
-export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?: string; openMin?: number; closeMin?: number; bars?: { at: string; o: number; h: number; l: number; c: number; n?: number | null; off?: number | null }[] } = {}): SmartOiResult {
+export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?: string; openMin?: number; closeMin?: number; bars?: { at: string; o: number; h: number; l: number; c: number; n?: number | null; off?: number | null; proxy?: boolean }[] } = {}): SmartOiResult {
   const day = opts.day, openMin = opts.openMin ?? OPEN_MIN, closeMin = opts.closeMin ?? CLOSE_MIN;
-  const empty: SmartOiResult = { day: null, timeframe, candles: [], baselineAt: null, gapCandles: 0, skippedSamples: 0, strikeChangeCandles: 0, stalls: [], thinBars: 0, unconfirmedBars: [], jumps: [] };
+  const empty: SmartOiResult = { day: null, timeframe, candles: [], baselineAt: null, gapCandles: 0, skippedSamples: 0, strikeChangeCandles: 0, stalls: [], thinBars: 0, unconfirmedBars: [], proxyMinutes: 0, jumps: [] };
   const n = Math.min(s.times.length, s.ce_oi.length, s.pe_oi.length, s.spot.length);
   const istOf = (iso: string) => new Date(new Date(iso).getTime() + IST_MS);
   let useDay = day ?? null;
@@ -215,7 +219,7 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
         for (let k = i; k <= j; k++) stale.add(k);
         const hm = (k: number) => istOf(s.times[k]!).toISOString().slice(11, 16);
         const startMin = istOf(s.times[i]!).getUTCHours() * 60 + istOf(s.times[i]!).getUTCMinutes();
-        if (startMin < 15 * 60 + 30) stalls.push({ from: hm(i), to: hm(j), value: s.spot[i]!, samples: j - i + 1 }); // a constant after the 15:30 close is the closing value, not a stall
+        if (startMin < 15 * 60 + 29) stalls.push({ from: hm(i), to: hm(j), value: s.spot[i]!, samples: j - i + 1 }); // a constant from 15:29 on is the closing value (the close is printed at 15:29 to 15:30), not a stall
       }
       i = j + 1;
     }
@@ -237,7 +241,8 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
     buckets.set(slot, b);
   }
   // One-minute index bars of the same day, grouped into the same candle slots: they carry the real highs and lows.
-  const barSlots = new Map<number, { at: string; o: number; h: number; l: number; c: number }[]>();
+  const barSlots = new Map<number, { at: string; o: number; h: number; l: number; c: number; proxy?: boolean }[]>();
+  let proxyMinutes = 0;
   let thinBars = 0;
   const unconfirmedBars: { at: string; off: number }[] = [];
   for (const bar of opts.bars ?? []) {
@@ -245,6 +250,7 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
     if (Number.isNaN(t.getTime()) || t.toISOString().slice(0, 10) !== useDay) continue;
     const m = t.getUTCHours() * 60 + t.getUTCMinutes();
     if (m < openMin || m > closeMin) continue;
+    if (bar.proxy) { proxyMinutes++; barSlots.set(Math.floor((m - openMin) / timeframe), [...(barSlots.get(Math.floor((m - openMin) / timeframe)) ?? []), bar]); continue; }
     if (bar.n != null && bar.n < THIN_BAR_READS) { thinBars++; continue; }
     if (bar.off != null) { unconfirmedBars.push({ at: hhmm(m), off: bar.off }); continue; } // the future disagrees: shown as missing, never repaired
     const slot = Math.floor((m - openMin) / timeframe);
@@ -282,6 +288,7 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
         ? { open: barSlots.get(k)![0]!.o, high: Math.max(...barSlots.get(k)!.map((x) => x.h)), low: Math.min(...barSlots.get(k)!.map((x) => x.l)), close: barSlots.get(k)![barSlots.get(k)!.length - 1]!.c }
         : b.spots.length ? { open: b.spots[0]!, high: Math.max(...b.spots), low: Math.min(...b.spots), close: b.spots[b.spots.length - 1]! } : null,
       spotFromBars: !!barSlots.get(k)?.length,
+      spotProxy: !!barSlots.get(k)?.some((x) => x.proxy),
       ceOi: ce, peOi: pe, dPe, dCe, p, bullish: p == null ? null : p >= 0, span,
       // day change: against yesterday's close when stored, else against the first candle (starts at 0)
       peDay: hasChg ? chPe : baseline ? pe - baseline.peOi : 0, ceDay: hasChg ? chCe : baseline ? ce - baseline.ceOi : 0,
@@ -307,7 +314,7 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
     }
     lastDrawn = c;
   }
-  return { day: useDay, timeframe, candles, baselineAt: baseline ? s.times[slots.length ? buckets.get(slots[0]!)!.lastOi : 0]! : null, gapCandles: gaps, skippedSamples: skipped, strikeChangeCandles: strikeChanges, stalls, thinBars, unconfirmedBars, jumps };
+  return { day: useDay, timeframe, candles, baselineAt: baseline ? s.times[slots.length ? buckets.get(slots[0]!)!.lastOi : 0]! : null, gapCandles: gaps, skippedSamples: skipped, strikeChangeCandles: strikeChanges, stalls, thinBars, unconfirmedBars, proxyMinutes, jumps };
 }
 
 // ---------------------------------------------------------------- Price vs OI (one strike through the session)

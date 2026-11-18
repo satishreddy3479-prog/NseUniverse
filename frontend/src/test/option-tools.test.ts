@@ -396,6 +396,38 @@ describe("smartOiCandles: bars the future disagrees with (captured 17 Nov 2026, 
   });
 });
 
+describe("smartOiCandles: the closing session (captured 18 Nov 2026, 15:15-15:30 IST)", () => {
+  const z = (min: number) => new Date(Date.UTC(2026, 10, 18, 9, 30 + min)).toISOString(); // 15:00 IST + min
+  const mins = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
+  const series = { times: mins.map(z), spot: [25230, 25231, 25229, 25220.45, 25220.45, 25220.45, 25220.45, 25220.45, 25220.45, 25220.45, 25220.45, 25220.45], ce_oi: mins.map((_, i) => 1000 + i), pe_oi: mins.map((_, i) => 2000 + i) };
+  // minutes 15 and 18-19 are stand-ins (the future minus its basis), minute 20 is the real bar the server flagged (off), the earlier ones are real index bars
+  const bars = [
+    { at: z(12), o: 25229, h: 25232, l: 25228, c: 25230, n: 60 }, { at: z(13), o: 25230, h: 25233, l: 25229, c: 25231, n: 60 }, { at: z(14), o: 25231, h: 25232, l: 25228, c: 25229, n: 60 },
+    { at: z(15), o: 25220.45, h: 25220.45, l: 25220.45, c: 25220.45, n: 1 }, { at: z(15), o: 25226, h: 25226, l: 25226, c: 25226, n: 0, proxy: true },
+    { at: z(18), o: 25226, h: 25228, l: 25225, c: 25228, n: 0, proxy: true }, { at: z(19), o: 25228, h: 25229, l: 25227, c: 25227, n: 0, proxy: true },
+    { at: z(20), o: 25284.35, h: 25580.2, l: 25284.35, c: 25450.85, n: 55, off: -153.2 },
+  ];
+  const r = smartOiCandles(series, 1, { day: "2026-11-18", openMin: 9 * 60 + 15, closeMin: 15 * 60 + 40, bars });
+  it("draws the stand-in minutes (marked) and leaves out the frozen one-read bar and the flagged one", () => {
+    const by = Object.fromEntries(r.candles.map((c) => [c.label, c]));
+    expect(by["15:15"]!.spot).toEqual({ open: 25226, high: 25226, low: 25226, close: 25226 }); // the stand-in, not the frozen 25,220.45
+    expect(by["15:15"]!.spotProxy).toBe(true);
+    expect(by["15:12"]!.spotProxy).toBe(false); // a real index candle
+    expect(by["15:19"]!.spot?.close).toBe(25227);
+    expect(by["15:20"]!.spot?.high).not.toBe(25580.2); // the wild bar is not drawn
+    expect(r.proxyMinutes).toBe(3);
+    expect(r.unconfirmedBars).toEqual([{ at: "15:20", off: -153.2 }]);
+  });
+  it("a constant that starts at 15:29 is the closing value, not a stall; one that starts at 15:26 still is", () => {
+    const run = (from: number) => {
+      const m = Array.from({ length: 8 }, (_, i) => from + i);
+      return smartOiCandles({ times: m.map(z), spot: m.map(() => 25227.95), ce_oi: m.map((_, i) => i + 1), pe_oi: m.map((_, i) => i + 1) }, 1, { day: "2026-11-18" }).stalls;
+    };
+    expect(run(29)).toEqual([]);
+    expect(run(26)).toHaveLength(1);
+  });
+});
+
 describe("Smart OI lower chart: put and call volume, and their difference", () => {
   const t = (hm: string) => `2026-11-04T${hm}:00Z`;
   const series = { times: [t("03:45"), t("03:48"), t("03:51")], spot: [1, 2, 3], pe_oi: [10, 11, 12], ce_oi: [10, 11, 12], pe_volume: [100, 160, 250], ce_volume: [100, 140, 200] };

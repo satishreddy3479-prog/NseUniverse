@@ -791,7 +791,8 @@ export function smartOiOption(r: SmartOiResult, c: ChartColors): EChartsCoreOpti
     series: [
       {
         name: "NIFTY", type: "candlestick", xAxisIndex: 0, yAxisIndex: 0,
-        data: cs.map((k) => (k.spot ? [k.spot.open, k.spot.close, k.spot.low, k.spot.high] : "-")),
+        // a candle that is partly the future minus its basis (the closing session, when the index is not published) is outlined in grey, not filled: it is not the index
+        data: cs.map((k) => (k.spot ? (k.spotProxy ? { value: [k.spot.open, k.spot.close, k.spot.low, k.spot.high], itemStyle: { color: "transparent", color0: "transparent", borderColor: c.muted, borderColor0: c.muted } } : [k.spot.open, k.spot.close, k.spot.low, k.spot.high]) : "-")),
         itemStyle: { color: c.up, color0: c.down, borderColor: c.up, borderColor0: c.down },
       },
       {
