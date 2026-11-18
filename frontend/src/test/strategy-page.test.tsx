@@ -527,6 +527,7 @@ describe("Exit all and closed strategies", () => {
     expect(stats).toHaveTextContent(/Max loss—/);
     expect(stats).not.toHaveTextContent("-1.00");
     expect(stats).not.toHaveTextContent("POP (model estimate)0%");
+    expect(screen.getByRole("img", { name: "Strategy payoff" })).toBeInTheDocument(); // the payoff chart stays for a closed trade
   });
 
   it("will not exit a leg that has no stored price: missing stays missing", async () => {
