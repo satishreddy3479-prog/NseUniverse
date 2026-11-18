@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
+import { minuteAligned } from "../../lib/refresh";
 import { EChart, useChartColors } from "../EChart";
 import { ChainTable } from "../ChainTable";
 import { Button, EmptyState, SourceTag } from "../ui";
@@ -272,7 +273,7 @@ export function DecayWidget() {
   const q = useQuery({
     queryKey: ["premiumDecay", d.expiry, strikes, since],
     queryFn: () => api.premiumDecay(d.expiry!, strikesParam(strikes), since),
-    enabled: !!d.expiry && !!since, refetchInterval: 30_000, retry: false,
+    enabled: !!d.expiry && !!since, refetchInterval: minuteAligned, retry: false,
   });
   const res = q.data;
   const build = useMemo(
@@ -296,7 +297,7 @@ function useOiSeries(strikes: number | "all") {
   const q = useQuery({
     queryKey: ["oiSeries", d.expiry, strikes, since],
     queryFn: () => api.oiSeries(d.expiry!, strikesParam(strikes), since),
-    enabled: !!d.expiry && !!since, refetchInterval: 30_000, retry: false,
+    enabled: !!d.expiry && !!since, refetchInterval: minuteAligned, retry: false,
   });
   const data = useClipped(q.data); // during a replay: only what was stored up to the replay time
   return { ...q, data } as typeof q;
@@ -340,10 +341,10 @@ function SmartOiChartWidget() {
   const q = useQuery({
     queryKey: ["smartOiSeries", d.expiry, strikes, since],
     queryFn: () => api.oiSeries(d.expiry!, strikesParam(strikes), since, 1000),
-    enabled: !!d.expiry && !!since, refetchInterval: 30_000, retry: false,
+    enabled: !!d.expiry && !!since, refetchInterval: minuteAligned, retry: false,
   });
   // One-minute index bars (real highs and lows). Not essential: without them the candles are cut from the stored samples.
-  const bars = useQuery({ queryKey: ["indexBars"], queryFn: () => api.indexBars(), refetchInterval: 30_000, retry: false });
+  const bars = useQuery({ queryKey: ["indexBars"], queryFn: () => api.indexBars(), refetchInterval: minuteAligned, retry: false });
   // during a replay: only what was stored up to the replay time, and the index bars of the replayed day up to that time
   const rp = useReplay();
   const series = useClipped(q.data);
@@ -435,7 +436,7 @@ function FuturesWidget({ kind, label }: { kind: FuturesKind; label: string }) {
   const d = useDash();
   const all = d.history.data?.observations;
   const since = useMemo(() => rangeObservations(all ?? [], d.tsRange).rows[0]?.retrieved_at, [all, d.tsRange]);
-  const q = useQuery({ queryKey: ["futSeries", since ?? null], queryFn: () => api.futuresSeries(since), refetchInterval: 30_000, retry: false });
+  const q = useQuery({ queryKey: ["futSeries", since ?? null], queryFn: () => api.futuresSeries(since), refetchInterval: minuteAligned, retry: false });
   const res = q.data;
   const build = useMemo(() => (_o: Observation[], c: ReturnType<typeof useChartColors>) => (res && res.times.length ? futuresOption(res, kind, c) : { animation: false, series: [] }), [res, kind]);
   const what = kind === "oi" ? "open interest of the future (units)"
@@ -648,7 +649,7 @@ function useOiChange(kind: BaselineKind, at: string) {
     queryKey: ["oi", d.expiry, kind, at, d.range],
     queryFn: () => api.oiChange(d.expiry!, kind, strikesParam(d.range), istToIso(at)),
     enabled: !!d.expiry && (kind !== "at" || !!at),
-    refetchInterval: 30_000,
+    refetchInterval: minuteAligned,
     retry: false,
   });
   return q;
@@ -733,7 +734,7 @@ export function OiHeatmapWidget() {
     queryKey: ["oi-heatmap", d.expiry, side, kind, d.range],
     queryFn: () => api.oiHeatmap(d.expiry!, side, kind, strikesParam(d.range)),
     enabled: !!d.expiry,
-    refetchInterval: 30_000,
+    refetchInterval: minuteAligned,
     retry: false,
   });
   const h = q.data;
@@ -958,7 +959,7 @@ function OiExplorerBody({ large, mode, setMode, win, setWin, action }: {
   const q = useQuery({
     queryKey: ["oiWindow", d.expiry, win, at, newest, d.range],
     queryFn: () => api.oiChange(d.expiry!, w.minutes == null ? "session_open" : "at", strikesParam(d.range), at, newest ?? undefined),
-    enabled: !!d.expiry && !!newest, refetchInterval: 30_000, retry: false,
+    enabled: !!d.expiry && !!newest, refetchInterval: minuteAligned, retry: false,
   });
   const res = q.data;
   const opt = useMemo(() => (res ? oiExplorerOption(res, mode, d.showCalls, d.showPuts, d.selected, colors, !large) : null), [res, mode, d.showCalls, d.showPuts, d.selected, colors, large]);

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
+import { minuteAligned } from "../../lib/refresh";
 import { computeTotals, universeRows, type Totals, type TsRange } from "../../lib/analytics";
 import { liveStore } from "../../lib/liveStore";
 import { useThrottledValue } from "../../lib/hooks";
@@ -92,15 +93,15 @@ export function DashProvider({ expiry, range, showCalls, showPuts, children }: {
     queryKey: ["chain", expiry],
     queryFn: () => api.optionChain(expiry!),
     enabled: !!expiry,
-    // the sampler stores a new snapshot every minute in market hours; pick it up so the page is never minutes behind
-    refetchInterval: 15_000,
+    // the sampler stores a new snapshot every minute in market hours (a few seconds into the minute): fetch right after it, so the page is never a minute behind
+    refetchInterval: minuteAligned,
     retry: false,
   });
   const historyRaw = useQuery({
     queryKey: ["history", expiry, range === "all" ? 100 : range],
     queryFn: () => api.history(expiry!, range === "all" ? 100 : range),
     enabled: !!expiry,
-    refetchInterval: 15_000,
+    refetchInterval: minuteAligned,
     retry: false,
   });
 

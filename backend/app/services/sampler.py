@@ -30,7 +30,8 @@ logger = logging.getLogger(__name__)
 SESSION_OPEN = _SESSION_OPEN
 FEED_TRUST_FROM = time(9, 0)  # earlier "closed" messages are treated as stale
 MAX_BACKOFF_S = 300
-POLL_S = 5.0
+POLL_S = 1.0
+MINUTE_OFFSET_S = 3.0  # a one-minute sampler fires this many seconds into each wall-clock minute
 
 SamplerState = Literal["off", "waiting", "sampling", "error"]
 
@@ -162,12 +163,27 @@ class SnapshotSampler:
         await self._sample(now)
         return True
 
+    def _due_after(self, now: datetime, delay: float, ok: bool) -> datetime:
+        """When the next sample is due.
+
+        A one-minute sampler is tied to the wall clock (3 s into every minute): one sample per
+        minute, taken right after the minute starts, which the pages fetch a few seconds later.
+        Counting 60 s from the end of each capture drifted, sometimes skipped a minute and left
+        the sample half a minute old when its minute ended (09:36:29 for the 09:36 candle).
+        A failed sample keeps its back-off delay."""
+        if not ok or self.interval_s != 60:
+            return now + timedelta(seconds=delay)
+        start = now.replace(second=0, microsecond=0)
+        return start + timedelta(seconds=60 + MINUTE_OFFSET_S)
+
     async def _sample(self, now: datetime) -> None:
         self._sampling = True
         self.last_attempt_at = now
+        ok = True
         try:
             await self.service.capture(skip_unchanged=True)
         except Exception as e:  # keep the loop alive whatever the broker does
+            ok = False
             self._failures += 1
             self.last_error = f"{type(e).__name__}: {getattr(e, 'message', str(e))}"[:200]
             delay = min(MAX_BACKOFF_S, self.interval_s * (2 ** min(self._failures, 4)))
@@ -185,7 +201,7 @@ class SnapshotSampler:
             delay = self.interval_s
         finally:
             self._sampling = False
-        self._next_due = self._clock() + timedelta(seconds=delay)
+        self._next_due = self._due_after(self._clock(), delay, ok)
 
     async def _run(self) -> None:
         while True:

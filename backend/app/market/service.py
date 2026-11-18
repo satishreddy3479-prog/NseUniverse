@@ -1248,7 +1248,7 @@ class MarketService:
             except Exception as e:  # noqa: BLE001 - the loop must survive
                 self.last_sample_note = f"error: {type(e).__name__}"
                 log_event(logger, logging.WARNING, "market_loop_error", error=type(e).__name__)
-            await asyncio.sleep(20)
+            await asyncio.sleep(5)  # the minute's futures sample is taken within 5 s of the minute starting (it was 20 s)
 
     def start(self) -> None:
         if self._task is None and self.enabled:

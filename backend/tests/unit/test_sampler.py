@@ -82,6 +82,21 @@ class TestSessionClock:
 
 
 class TestSampling:
+    async def test_samples_are_tied_to_the_wall_clock_minute_not_to_the_end_of_the_last_capture(
+        self, tmp_path: Path
+    ) -> None:
+        """A sample at 09:36:41 (a slow capture) is followed by one at 09:37:03, not 09:37:41:
+        each minute gets one sample, right after the minute starts."""
+        clock = Clock(IN_SESSION + timedelta(seconds=41))
+        s, _, _ = make_sampler(tmp_path, clock)
+        assert await s.tick() is True
+        assert s.status().next_due_at == IN_SESSION + timedelta(seconds=63)  # 05:01:03
+        clock.advance(21)  # 05:01:02
+        assert await s.tick() is False
+        clock.advance(2)  # 05:01:04
+        assert await s.tick() is True
+        assert s.status().next_due_at == IN_SESSION + timedelta(seconds=123)  # 05:02:03
+
     async def test_samples_weekly_and_monthly_then_waits_for_the_interval(
         self, tmp_path: Path
     ) -> None:
@@ -93,7 +108,7 @@ class TestSampling:
         clock.advance(30)
         assert await s.tick() is False  # not due yet
         assert len(broker.chain_calls) == 2
-        clock.advance(31)
+        clock.advance(34)  # next sample due at 05:01:03
         assert await s.tick() is True
         assert len(broker.chain_calls) == 4
         assert s.status().samples_this_run == 2
@@ -128,7 +143,7 @@ class TestSampling:
         clock.advance(60)
         assert await s.tick() is False  # still backing off
         broker.get_option_chain = real  # type: ignore[method-assign]
-        clock.advance(61)
+        clock.advance(61)  # a failed sample keeps its back-off (120 s)
         assert await s.tick() is True
         st = s.status()
         assert st.state == "waiting" and st.last_error is None and st.samples_this_run == 1
@@ -145,7 +160,7 @@ class TestSampling:
         s, _, store = make_sampler(tmp_path, clock)
         for _ in range(3):
             await s.tick()
-            clock.advance(61)
+            clock.advance(63)
         h = build_history(store, "NIFTY", "2026-11-03", 10, 1000)
         # the replayed payload never changes, so only the first sample is stored
         assert len(h.observations) == 1
@@ -165,7 +180,7 @@ class TestSampling:
             return data
 
         broker.get_option_chain = moved  # type: ignore[method-assign]
-        clock.advance(61)
+        clock.advance(63)
         await s.tick()
         assert len(store.list(underlying="NIFTY", expiry="2026-11-03", limit=10)) == 2
 
