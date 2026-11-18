@@ -24,8 +24,10 @@ class LiveBook:
     def update(self, tick: LiveTick) -> LiveTick | None:
         """Store the tick; return it, or None if it is an exact repeat of the stored one.
 
-        A repeat is not broadcast again, but it IS a message from the feed: the stored tick's receive time moves to it. Without that, an instrument whose value did not change looked silent
-        to everything that asks how old its tick is (the one-minute index bars, the minute samples), exactly as if the feed had stopped."""
+        A repeat is not broadcast again, but it is a message from the feed: the stored tick's
+        receive time moves to it. Without that, an instrument whose value did not change looked
+        silent to everything that asks how old its tick is (the one-minute index bars, the minute
+        samples), exactly as if the feed had stopped."""
         prev = self._ticks.get(tick.key)
         if prev is not None and self._same(prev, tick):
             if tick.received_at > prev.received_at:
