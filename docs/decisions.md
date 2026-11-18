@@ -871,3 +871,6 @@ Owner's request: the Heads up strip should also tell what happens to the trades 
 
 ## D196 (18 Nov 2026): today's high and low under each strategy leg's LTP
 The Strategy builder's leg table shows "H x · L y" under the LTP: today's high and low of that contract, from the same stored quote as the LTP (each leg in its own expiry's chain). A value the quote does not carry shows a dash (never zero). It is the day's range, not the range since the leg was taken; a since-entry range would need the stored minute history of each contract and is not built.
+
+## D197 (18 Nov 2026): FII / DII cash page as cards on a phone
+On screens under 640 px the cash table (seven columns, numbers running into each other) is replaced by one card per session: date and total net in the header, then FII net, DII net, FPI equity (NSDL), FII buy and FII sell in a three-column grid. Same figures and tones as the table (the table stays from 640 px up); a missing value is a dash and a total needs both FII and DII.

@@ -7,6 +7,8 @@ import { EChart, useChartColors } from "./EChart";
 import { Button, Panel } from "./ui";
 import { FlowsUpdateLoader } from "./FlowsUpdate";
 
+/** "Wed 18 Nov" from a session date (YYYY-MM-DD), read as a calendar date so no timezone shifts it. */
+const dayLabel = (d: string) => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T12:00:00Z`).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }) : d);
 const tone = (v: number) => (v > 0 ? "text-up" : v < 0 ? "text-down" : "");
 
 /** FII/DII cash-market activity: the newest 7 sessions only. The app reads NSE's feed itself every evening until
@@ -47,7 +49,7 @@ export function CashPanel() {
                 { name: "DII net", color: colors.brass, values: [...days].sort().map((d) => get(d, "DII")?.net ?? null) },
               ], colors, (v) => `₹${fmtInt(v)} cr`)} /></div>
             </div>
-            <div className="overflow-x-auto">
+            <div className="hidden overflow-x-auto sm:block">
               <table className="w-full text-sm" aria-label="FII DII cash">
                 <thead className="text-xs text-muted"><tr><th className="text-left font-normal">Session</th><th className="text-right font-normal">FII buy</th><th className="text-right font-normal">FII sell</th><th className="text-right font-normal">FII net</th><th className="text-right font-normal">DII net</th><th className="text-right font-normal">Total net</th><th className="text-right font-normal">FPI equity net (NSDL)</th></tr></thead>
                 <tbody>
@@ -66,6 +68,27 @@ export function CashPanel() {
                 </tbody>
               </table>
             </div>
+            <ul className="space-y-2 sm:hidden" aria-label="FII DII cash by session" data-testid="cash-cards">
+              {days.map((d) => {
+                const f = get(d, "FII"), di = get(d, "DII"), ns = nsdl(d);
+                const tot = f && di ? f.net + di.net : null;
+                const cell = (label: string, v: number | null, signed: boolean) => (
+                  <div className="min-w-0"><dt className="text-[11px] text-muted">{label}</dt><dd className={`num text-sm ${signed && v != null ? tone(v) : ""}`}>{v == null ? "—" : fmtInt(v)}</dd></div>
+                );
+                return (
+                  <li key={d} className="rounded-xl border border-rule bg-ink/40 p-3" data-testid={`cash-card-${d}`}>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="num font-semibold">{dayLabel(d)}</span>
+                      {!f && !di ? <span className="text-[11px] text-warn">not collected</span> : <span className={`num text-sm font-semibold ${tot == null ? "" : tone(tot)}`}>Total {tot == null ? "—" : fmtInt(tot)}</span>}
+                    </div>
+                    <dl className="mt-2 grid grid-cols-3 gap-x-3 gap-y-2">
+                      {cell("FII net", f?.net ?? null, true)}{cell("DII net", di?.net ?? null, true)}{cell("FPI equity (NSDL)", ns?.net ?? null, true)}
+                      {cell("FII buy", f?.buy ?? null, false)}{cell("FII sell", f?.sell ?? null, false)}
+                    </dl>
+                  </li>
+                );
+              })}
+            </ul>
             </>
           )}
         <details>
