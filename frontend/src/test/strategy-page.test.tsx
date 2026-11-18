@@ -65,6 +65,17 @@ describe("Strategy builder page", () => {
     expect(screen.getByRole("img", { name: "Strategy payoff" }).getAttribute("data-series")).toMatch(/Profit\|Loss.*Markers/);
   });
 
+  it("each leg shows today's high and low from its stored quote, and a missing one stays a dash", async () => {
+    mount();
+    await loaded();
+    await pick("long_straddle");
+    const table = await screen.findByRole("table", { name: "Strategy legs" });
+    const ranges = within(table).getAllByTestId(/^leg-range-/).map((e) => e.textContent);
+    expect(ranges).toHaveLength(2);
+    expect(ranges).toContain("H 112.50 · L 91.00"); // the ATM call: high 112.5, low 91 in the stored quote
+    expect(ranges).toContain("H — · L —"); // the ATM put's quote carries neither
+  });
+
   it("every leg is editable: lots, duplicate, remove; bad input is explained", async () => {
     mount();
     await waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"));

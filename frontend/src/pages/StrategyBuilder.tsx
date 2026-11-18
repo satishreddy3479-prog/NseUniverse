@@ -280,6 +280,12 @@ export default function StrategyBuilder() {
     const q = t === "CE" ? row?.call : row?.put;
     return q?.ltp != null && q.ltp > 0 ? q.ltp : null;
   };
+  /** Today's high and low of a contract from the same stored quote as its LTP; a value the quote does not carry stays missing. */
+  const dayRange = (k: number, t: OptionType, e: string | null = expiry): { high: number | null; low: number | null } => {
+    const row = (e ? books.get(e)?.rows : undefined)?.find((x) => x.strike === k);
+    const q = t === "CE" ? row?.call : row?.put;
+    return { high: q?.high != null && q.high > 0 ? q.high : null, low: q?.low != null && q.low > 0 ? q.low : null };
+  };
   const main = expiry ? books.get(expiry) : undefined;
   const fwd = main?.fwd ?? null;
   const carry = main?.carry ?? r;
@@ -1217,7 +1223,8 @@ export default function StrategyBuilder() {
                             </div><div className="num mt-0.5 text-[10px] text-muted">{lotSize ? `${fmtInt(l.lots * mult * lotSize)} qty` : ""}</div></td>
                             <td data-label="Entry ₹" className="px-1 py-1.5"><input className={`${field} w-[4.6rem] !px-1.5`} type="number" min={0} step="0.05" aria-label="Entry premium" value={l.premium ?? ""} placeholder="enter" title={l.premiumSource === "market" ? "Stored quote" : l.premiumSource === "manual" ? "You entered this" : "Missing"} onChange={(e) => update(l.id, { premium: e.target.value === "" ? null : Number(e.target.value), premiumSource: e.target.value === "" ? null : "manual" })} />
                               <div className="text-[10px] text-muted">{l.premiumSource === "market" ? "stored quote" : l.premiumSource === "manual" ? "you entered" : "missing"}</div></td>
-                            <td data-label="LTP" className="num px-1 py-2">{mk == null ? <span className="text-muted" title="No quote in the stored chain for this contract">—</span> : fmtPrice(mk)}</td>
+                            <td data-label="LTP" className="num px-1 py-2">{mk == null ? <span className="text-muted" title="No quote in the stored chain for this contract">—</span> : fmtPrice(mk)}
+                              {(() => { const r = dayRange(l.strike, l.type, l.expiry); return <div className="mt-0.5 whitespace-nowrap text-[10px] text-muted" title="Today's high and low of this contract, from the stored quote" data-testid={`leg-range-${l.id}`}>H {r.high == null ? "—" : fmtPrice(r.high)} · L {r.low == null ? "—" : fmtPrice(r.low)}</div>; })()}</td>
                             <td data-label="P&L" className={`num whitespace-nowrap px-1 py-2 ${tone(pl)}`}>{money(pl)}</td>
                             <td data-label="Δ · Θ/day" className="num px-1 py-2 text-xs">{lg ? <><div className="whitespace-nowrap"><span className="text-muted">Δ </span><span className="text-paper">{lg.delta.toFixed(1)}</span></div><div className="whitespace-nowrap"><span className="text-muted">Θ </span><span className={tone(lg.thetaDay)}>{money(lg.thetaDay)}</span></div></> : <span className="text-muted" title="No volatility fits this leg's stored price">—</span>}</td>
                             <td data-label="Target ₹" className="px-1 py-1">{exitCell(l, "target")}</td>

@@ -83,7 +83,7 @@ export function bigChain(): ChainResponse {
       ...base.snapshot,
       rows: strikes.map((k) => ({
         strike: k,
-        call: q("CE", k, k === 24000 ? { ltp: null, prev_close: null } : {}),
+        call: q("CE", k, k === 24000 ? { ltp: null, prev_close: null } : k === 24050 ? { high: 112.5, low: 91 } : {}),
         put: q("PE", k),
       })),
     },
