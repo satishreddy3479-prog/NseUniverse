@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
 import { TEMPLATE_BIAS, TEMPLATES } from "../lib/strategy";
+import { OPEN_CLOSED_KEY } from "../pages/StrategyBuilder";
 import { bigChain, expiries, status, summary } from "./fixtures";
 
 vi.mock("../components/EChart", async () => {
@@ -72,8 +73,11 @@ describe("Exit all", () => {
     await build("short_straddle");
     await userEvent.click(screen.getByRole("button", { name: "Exit all" }));
     await waitFor(() => expect(screen.getByTestId("closed-menu")).toHaveTextContent("Closed (1)"));
-    await userEvent.click(within(screen.getByTestId("closed-menu")).getByText(/Strategy/));
-    await userEvent.click(await screen.findByRole("button", { name: "Exit all" }));
+    const id = String((store.closed[0] as { id: string }).id);
+    cleanup(); // the Strategy portfolio page hands the closed trade over; the builder opens it
+    sessionStorage.setItem(OPEN_CLOSED_KEY, id);
+    mount();
+    await userEvent.click(await screen.findByRole("button", { name: "Exit all" }, { timeout: 15000 }));
     await waitFor(() => expect(store.closed).toHaveLength(1));
     expect(screen.getByTestId("closed-menu")).toHaveTextContent("Closed (1)");
   });
@@ -105,6 +109,43 @@ describe("Adjusting a running strategy", () => {
     const table = within(screen.getByRole("table", { name: "Strategy legs" }));
     await userEvent.click(table.getAllByLabelText("Remove leg").at(-1)!); // remove the hedge again
     await waitFor(() => expect(screen.getByTestId("risk-stats")).toHaveTextContent("Max lossUnlimited"));
+  });
+});
+
+describe("Strategy portfolio: closed strategies", () => {
+  const closedDoc = (id: string, name: string, pnl: number) => ({ id, name, closedAt: "2026-10-30T10:00:00Z", snapshotAt: "2026-10-30T10:00:00Z", expiry: "2026-11-03", lotSize: 75, pnl, stale: false,
+    legs: [{ id: `${id}a`, expiry: "2026-11-03", strike: 24050, type: "CE", action: "SELL", lots: 1, premium: 130, premiumSource: "market", exit: 100, exitPrice: 100, exitReason: "manual", exitedAt: "2026-10-30T10:00:00Z", realised: 2250 }] });
+  it("deletes one closed trade (declined once, then confirmed) from the server and this browser, and the builder does not bring it back", async () => {
+    store.closed = [closedDoc("c1", "first", 2250), closedDoc("c2", "second", -500)];
+    localStorage.setItem("nse.closed.v1", JSON.stringify(store.closed));
+    mount("/portfolio");
+    const first = await screen.findByRole("button", { name: "Delete closed trade first" });
+    vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValue(true);
+    await userEvent.click(first);
+    expect(screen.getByTestId("portfolio-closed")).toHaveTextContent("first"); // declined
+    await userEvent.click(first);
+    await waitFor(() => expect(store.closed.map((c) => c.id)).toEqual(["c2"]));
+    expect(JSON.parse(localStorage.getItem("nse.closed.v1") ?? "[]").map((c: { id: string }) => c.id)).toEqual(["c2"]); // not left in the browser copy, or the builder would upload it again
+    await waitFor(() => expect(screen.getByTestId("portfolio-closed")).not.toHaveTextContent("first"));
+  });
+
+  it("Delete all closed asks twice", async () => {
+    store.closed = [closedDoc("c1", "first", 2250), closedDoc("c2", "second", -500)];
+    mount("/portfolio");
+    const all = await screen.findByRole("button", { name: "Delete all closed" });
+    await userEvent.click(all);
+    expect(store.closed).toHaveLength(2); // the first click only asks
+    await userEvent.click(screen.getByRole("button", { name: "Click again to delete all closed" }));
+    await waitFor(() => expect(store.closed).toHaveLength(0));
+  });
+
+  it("Open hands the closed trade to the builder, which opens it as a closed trade", async () => {
+    store.closed = [closedDoc("c1", "first", 2250)];
+    localStorage.setItem("nse.closed.v1", JSON.stringify(store.closed));
+    mount("/portfolio");
+    await userEvent.click(await screen.findByRole("button", { name: "Open closed trade first in the strategy builder" }));
+    expect(await screen.findByTestId("opened-closed", {}, { timeout: 15000 })).toHaveTextContent("first");
+    expect(sessionStorage.getItem(OPEN_CLOSED_KEY)).toBeNull(); // read once
   });
 });
 

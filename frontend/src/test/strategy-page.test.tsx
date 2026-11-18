@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -527,9 +527,15 @@ describe("Exit all and closed strategies", () => {
     expect(await screen.findByTestId("gallery")).toBeInTheDocument();
     const menu = screen.getByTestId("closed-menu");
     expect(menu).toHaveTextContent("Closed (1)");
-    expect(menu).toHaveTextContent("Realised +₹2,250");
-    await userEvent.click(within(menu).getByText(/Realised/));
-    expect(await screen.findByTestId("opened-closed")).toHaveTextContent("S 24100CE 130 → 100");
+    expect(menu).toHaveAttribute("href", "/portfolio#closed"); // closed strategies live on the Strategy portfolio page
+    const filed = JSON.parse(localStorage.getItem("nse.closed.v1") ?? "[]") as { id: string; pnl: number }[];
+    expect(filed).toHaveLength(1);
+    expect(filed[0]!.pnl).toBeCloseTo(2250, 2);
+    // the portfolio page hands the record over by id: a fresh builder opens it as a closed trade
+    cleanup();
+    sessionStorage.setItem("nse.builder.open-closed.v1", filed[0]!.id);
+    mount();
+    expect(await screen.findByTestId("opened-closed", {}, { timeout: 15000 })).toHaveTextContent("S 24100CE 130 → 100");
     expect(screen.getByRole("table", { name: "Strategy legs" })).toBeInTheDocument();
   });
 
@@ -538,10 +544,9 @@ describe("Exit all and closed strategies", () => {
     const leg = (type: "CE" | "PE", premium: number, exitPrice: number, realised: number) => ({ id: type, expiry: "2026-11-03", strike: 24050, type, action: "SELL", lots: 1, premium, premiumSource: "market", exitPrice, exitReason: "strategy", exitedAt: "2026-11-02T09:50:00.000Z", realised, reentry: 0, exit: exitPrice });
     const closed = { id: "c1", name: "Straddle score 79", closedAt: "2026-11-02T10:26:00.000Z", snapshotAt: "2026-11-02T10:09:03.000Z", expiry: "2026-11-03", lotSize: 65, pnl: -691.99, stale: true, legs: [leg("CE", 60.85, 122.05, -3978.25), leg("PE", 51.15, 0.6, 3286.25)] };
     localStorage.setItem("nse.closed.v1", JSON.stringify([closed]));
+    sessionStorage.setItem("nse.builder.open-closed.v1", "c1");
     mount();
     await loaded();
-    const menu = await screen.findByTestId("closed-menu");
-    await userEvent.click(within(menu).getByText(/Realised/));
     const banner = await screen.findByTestId("opened-closed");
     expect(banner).toHaveTextContent("Realised");
     expect(banner).not.toHaveTextContent("stale stored prices"); // every leg has its exit: nothing is marked at a stored price
@@ -551,7 +556,7 @@ describe("Exit all and closed strategies", () => {
     expect(stats).toHaveTextContent(/Max loss—/);
     expect(stats).not.toHaveTextContent("-1.00");
     expect(stats).not.toHaveTextContent("POP (model estimate)0%");
-    expect(screen.getByRole("img", { name: "Strategy payoff" })).toBeInTheDocument(); // the payoff chart stays for a closed trade
+    expect(await screen.findByRole("img", { name: "Strategy payoff" })).toBeInTheDocument(); // the payoff chart stays for a closed trade
   });
 
   it("Exit all on the same position twice files one closed record, not two (the page restored the legs after the first click on 18 Nov 2026)", async () => {
@@ -614,18 +619,15 @@ describe("Deleting saved and closed strategies", () => {
     expect(menu).toHaveTextContent("Saved (0)");
   });
 
-  it("deletes a closed trade", async () => {
+  it("the builder only links to the closed trades; deleting them is on the Strategy portfolio page", async () => {
     mount();
     await loaded();
     await userEvent.click(await screen.findByRole("button", { name: "Sell CE 24100" }));
     await userEvent.click(screen.getByRole("button", { name: "Exit all" }));
-    const menu = await screen.findByTestId("closed-menu");
-    expect(menu).toHaveTextContent("Closed (1)");
-    vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValue(true);
-    await userEvent.click(within(menu).getByRole("button", { name: /Delete closed trade/ }));
-    expect(menu).toHaveTextContent("Closed (1)"); // declined
-    await userEvent.click(within(menu).getByRole("button", { name: /Delete closed trade/ }));
-    expect(menu).toHaveTextContent("Closed (0)");
+    const link = await screen.findByTestId("closed-menu");
+    expect(link).toHaveTextContent("Closed (1)");
+    expect(link.tagName).toBe("A"); // a link to /portfolio#closed, no pop-up list that can run off a phone screen
+    expect(screen.queryByRole("button", { name: /Delete closed trade/ })).toBeNull();
   });
 });
 

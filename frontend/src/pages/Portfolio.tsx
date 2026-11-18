@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { mergeRows, type LiveMode } from "../components/ChainTable";
 import { useThrottledVersion } from "../components/dashboard/DashContext";
 import { EChart, useChartColors } from "../components/EChart";
@@ -13,7 +13,7 @@ import { portfolioStats, type PortfolioStats } from "../lib/portfolioStats";
 import { EQUITY_HEIGHT, portfolioEquityOption } from "../lib/portfolioCharts";
 import { isExited, strategyPnl, type Leg, type OptionType } from "../lib/strategy";
 import { useStreamStatus } from "../lib/useLive";
-import { CLOSED_KEY, SAVE_KEY, WORKING_KEY, type Closed, type Saved } from "./StrategyBuilder";
+import { CLOSED_KEY, OPEN_CLOSED_KEY, SAVE_KEY, WORKING_KEY, type Closed, type Saved } from "./StrategyBuilder";
 
 const money = (v: number | null, signed = true) => (v == null ? "—" : `${v < 0 ? "−" : v > 0 && signed ? "+" : ""}₹${fmtInt(Math.round(Math.abs(v)))}`);
 const tone = (v: number | null) => (v == null || v === 0 ? "text-paper" : v > 0 ? "text-up" : "text-down");
@@ -25,6 +25,8 @@ function readWorking(): Working | null { try { const w = JSON.parse(localStorage
 /** The strategy builder's positions in one place: live mark-to-market of every running strategy and the booked P&L of closed ones. */
 export function Portfolio() {
   const navigate = useNavigate();
+  const { hash } = useLocation();
+  useEffect(() => { if (hash === "#closed") document.getElementById("closed")?.scrollIntoView?.({ block: "start" }); }, [hash]); // the builder's Closed link lands on the closed list
   const server = useQuery({ queryKey: ["portfolio-strategies"], queryFn: api.strategies, refetchInterval: 15_000, retry: false });
   // the server's list when it answers, otherwise this browser's copy (the builder keeps both in step)
   const saved = (server.data?.saved as unknown as Saved[] | undefined) ?? readLocal<Saved>(SAVE_KEY);
@@ -68,6 +70,16 @@ export function Portfolio() {
   const runningTotal = knownTotals.reduce((t, r) => t + (r.total as number), 0);
   const closedTotal = closed.reduce((t, c) => t + c.pnl, 0);
   const [confirm, setConfirm] = useState<string | null>(null);
+  const [confirmAllClosed, setConfirmAllClosed] = useState(false);
+  const [deleteProblem, setDeleteProblem] = useState<string | null>(null);
+  /** Delete closed records: from the server (the builder would otherwise upload this browser's copy again) and from this browser, then read the list again. */
+  const deleteClosed = async (ids: string[]) => {
+    setDeleteProblem(null);
+    try { localStorage.setItem(CLOSED_KEY, JSON.stringify(readLocal<Closed>(CLOSED_KEY).filter((c) => !ids.includes(c.id)))); } catch { /* storage unavailable */ }
+    try { await Promise.all(ids.map((id) => api.deleteStrategy("closed", id))); } catch (e) { setDeleteProblem(e instanceof Error ? e.message : "the server did not accept the delete"); }
+    await server.refetch();
+  };
+  const openClosed = (id: string) => { try { sessionStorage.setItem(OPEN_CLOSED_KEY, id); } catch { /* the builder opens without it */ } navigate("/strategy"); };
   const [capital, setCapital] = useState<number | null>(() => { try { const v = Number(localStorage.getItem("nse.portfolio.capital.v1")); return v > 0 ? v : null; } catch { return null; } });
   const stats = useMemo(() => portfolioStats(closed.map((c) => ({ id: c.id, name: c.name, closedAt: c.closedAt, pnl: c.pnl })), capital), [closed, capital]);
   const cumulative = useMemo(() => new Map(stats.curve.map((p, i) => [stats.curve[i]!.label + p.name, p.cum])), [stats]);
@@ -126,7 +138,7 @@ export function Portfolio() {
         {stats.count === 0 ? <p className="text-sm text-muted" data-testid="portfolio-stats-empty">No closed strategy yet. These figures are computed only from strategies you have closed (their booked P&L); nothing is estimated.</p> : <PerformancePanel stats={stats} capital={capital} runningTotal={knownTotals.length ? runningTotal : null} />}
       </Panel>
 
-      <Panel title="Closed strategies">
+      <Panel title="Closed strategies" id="closed">
         {closed.length === 0 ? <p className="text-sm text-muted">Nothing closed yet. Exit all in the strategy builder moves a strategy here.</p> : (
           <div className="overflow-x-auto" data-testid="portfolio-closed">
             <table className="w-full text-sm" aria-label="Closed strategies">
@@ -134,7 +146,13 @@ export function Portfolio() {
               <tbody>
                 {closed.map((c) => (
                   <tr key={c.id} className="border-t border-rule/50">
-                    <td className="py-2 pr-2 text-paper">{c.name}</td>
+                    <td className="py-2 pr-2 text-paper">
+                      {c.name}
+                      <div className="mt-1 flex gap-2">
+                        <button type="button" className="min-h-9 rounded-sm border border-rule bg-slate-2 px-3 text-xs text-paper hover:border-info" aria-label={`Open closed trade ${c.name} in the strategy builder`} onClick={() => openClosed(c.id)}>Open</button>
+                        <button type="button" className="min-h-9 rounded-sm border border-rule bg-slate-2 px-3 text-xs text-down hover:border-down" aria-label={`Delete closed trade ${c.name}`} onClick={() => { if (window.confirm(`Delete the closed trade "${c.name}"? This cannot be undone.`)) void deleteClosed([c.id]); }}>Delete</button>
+                      </div>
+                    </td>
                     <td className="num px-2 text-xs">{fmtDateTimeIST(c.closedAt)}</td>
                     <td className="num px-2">{c.legs.length}</td>
                     <td className={`num px-2 font-semibold ${tone(c.pnl)}`}>{money(c.pnl)}{c.stale && <span className="ml-2 text-xs font-normal text-warn" title="Exit prices were stored prices, not live">stale prices</span>}</td>
@@ -144,6 +162,12 @@ export function Portfolio() {
                 <tr className="border-t border-rule"><td colSpan={3} className="py-2 text-right text-xs text-muted">Total</td><td className={`num px-2 font-semibold ${tone(closedTotal)}`}>{money(closedTotal)}</td><td /></tr>
               </tbody>
             </table>
+          </div>
+        )}
+        {closed.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <button type="button" className="min-h-9 rounded-sm border border-rule bg-slate-2 px-3 text-xs text-muted hover:border-down hover:text-down" onClick={() => { if (confirmAllClosed) { void deleteClosed(closed.map((c) => c.id)); setConfirmAllClosed(false); } else setConfirmAllClosed(true); }}>{confirmAllClosed ? "Click again to delete all closed" : "Delete all closed"}</button>
+            {deleteProblem && <span role="alert" className="text-xs text-warn">Not deleted on the server: {deleteProblem}</span>}
           </div>
         )}
       </Panel>

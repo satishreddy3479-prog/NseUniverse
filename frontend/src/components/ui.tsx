@@ -2,11 +2,12 @@ import { Info } from "./Info";
 import type { ReactNode } from "react";
 import type { Completeness, DataSource } from "../lib/types";
 
-export function Panel({ title, actions, children, className = "" }: {
-  title: string; actions?: ReactNode; children: ReactNode; className?: string;
+export function Panel({ title, actions, children, className = "", id }: {
+  title: string; actions?: ReactNode; children: ReactNode; className?: string; id?: string;
 }) {
   return (
     <section
+      id={id}
       aria-label={title}
       className={`rounded-[var(--radius-panel)] border border-rule bg-slate ${className}`}
     >

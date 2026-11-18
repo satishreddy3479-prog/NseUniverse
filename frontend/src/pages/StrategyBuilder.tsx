@@ -12,7 +12,7 @@ import { PAYOFF_ZOOM, payoffOption, payoffView } from "../lib/chartOptions";
 import { api, ApiError, type RunningDoc } from "../lib/api";
 import { compactIN } from "../lib/analytics";
 import { fmtDateTimeIST, fmtInt, fmtPrice } from "../lib/format";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { LegTimes } from "../components/LegTimes";
 import { useExpiries, useThrottledValue } from "../lib/hooks";
 import { marketClockMs } from "../lib/session";
@@ -28,6 +28,8 @@ export const WORKING_KEY = "nse.builder.working.v1";
 export const SAVE_KEY = "nse.strategies.v1";
 export interface Saved { name: string; savedAt: string; updatedAt?: string; expiry: string; legs: Leg[] }
 export const CLOSED_KEY = "nse.closed.v1";
+/** The Strategy portfolio page asks the builder to open a closed trade by leaving its id here (read once, then removed). */
+export const OPEN_CLOSED_KEY = "nse.builder.open-closed.v1";
 /** A strategy shown for a moment (a forward-test position): kept for this tab only, never the working copy and never sent to the server. */
 export const TEMP_KEY = "nse.builder.temp.v1";
 export interface TempDoc { name: string; expiry: string; legs: Leg[]; rules: StrategyRules; moveToCost: boolean; holdFrom: string | null }
@@ -544,6 +546,17 @@ export default function StrategyBuilder() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, available]);
+  useEffect(() => {
+    if (!hydrated || temp) return;
+    let id: string | null = null;
+    try { id = sessionStorage.getItem(OPEN_CLOSED_KEY); } catch { /* no session storage: nothing was handed over */ }
+    if (!id) return;
+    const c = closed.find((x) => x.id === id);
+    if (!c) return; // the closed list may still be loading from the server: tried again when it arrives
+    try { sessionStorage.removeItem(OPEN_CLOSED_KEY); } catch { /* ignore */ }
+    openClosed(c);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, closed]);
   const exitNow = (l: Leg) => {
     if (!lotSize) return;
     const typed = exitDraft[l.id];
@@ -810,28 +823,7 @@ export default function StrategyBuilder() {
             )}
           </div>
         </details>
-        <details className="relative text-sm" data-testid="closed-menu">
-          <summary className={`${field} flex cursor-pointer items-center`} aria-label="Closed strategies">Closed ({closed.length})</summary>
-          <div className="absolute left-0 z-20 mt-1 w-80 max-w-[90vw] rounded-sm border border-rule bg-slate p-1 shadow-lg">
-            {closed.length === 0 ? <p className="p-2 text-xs text-muted">No closed trades yet. Exit all in the positions card saves one here.</p> : (
-              <>
-              <ul className="max-h-72 overflow-auto">
-                {closed.map((c) => (
-                  <li key={c.id} className="flex items-center gap-1 border-b border-rule/40 last:border-0">
-                    <button type="button" className="flex-1 rounded-sm p-2 text-left hover:bg-slate-2" onClick={(e) => { openClosed(c); (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open"); }}>
-                      <div className="text-paper">{c.name}</div>
-                      <div className="text-[11px] text-muted">{c.legs.length} legs · expiry {c.expiry} · closed {new Date(c.closedAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}</div>
-                      <div className={`num text-xs ${tone(c.pnl)}`}>Realised {money(c.pnl)}{c.stale && <span className="ml-2 text-warn" title={`Exit prices were the stored prices from ${fmtDateTimeIST(c.snapshotAt)}, which were stale (not live)`}>at stale prices</span>}</div>
-                    </button>
-                    <button type="button" aria-label={`Delete closed trade ${c.name}`} title="Remove from the closed list" className="px-2 text-xs text-muted hover:text-down" onClick={() => { if (window.confirm(`Delete the closed trade "${c.name}"? This cannot be undone.`)) persistClosed(closed.filter((x) => x.id !== c.id)); }}>✕</button>
-                  </li>
-                ))}
-              </ul>
-              <button type="button" className="w-full border-t border-rule/40 p-2 text-left text-xs text-muted hover:text-down" onClick={() => (confirmAll === "closed" ? (persistClosed([]), setConfirmAll(null)) : setConfirmAll("closed"))}>{confirmAll === "closed" ? "Click again to delete all closed trades" : "Delete all closed"}</button>
-              </>
-            )}
-          </div>
-        </details>
+        <Link to="/portfolio#closed" data-testid="closed-menu" aria-label="Closed strategies" className={`${field} flex items-center`} title="Closed strategies are listed, opened and deleted on the Strategy portfolio page">Closed ({closed.length})</Link>
         <Button ariaLabel="Reset strategy" onClick={resetStrategy} disabled={!canReset} title="Undo your edits: back to the strategy as it was built or loaded (legs, strikes, lots, targets, stops, what-if, date and IV shift)">Reset</Button>
         <Button ariaLabel="New strategy" onClick={newStrategy} disabled={!canNew} title="Start a blank strategy: clears the legs and the name">New</Button>
         <span className="text-xs text-muted sm:ml-auto" title={liveMode === "fresh" ? "Streamed last traded prices overlay the stored snapshot, as on the Option chain page" : "Premiums are the last traded prices in this stored snapshot, not live quotes"}>{liveMode === "fresh" ? <span className="mr-2 rounded-sm border border-up/60 px-1 text-up">LIVE</span> : null}Snapshot <span className={`num ${chain.data?.stale ? "text-warn" : "text-paper"}`}>{snap ? fmtDateTimeIST(snap.retrieved_at) : "—"}</span>{chain.data?.stale ? " · stale" : ""}</span>
