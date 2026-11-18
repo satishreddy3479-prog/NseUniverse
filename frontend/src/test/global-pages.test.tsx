@@ -232,9 +232,46 @@ describe("the last two days of the calendar", () => {
     renderAt("/tools/economic-calendar");
     expect(await screen.findByText("Past 2 days: outcomes")).toBeInTheDocument();
     const row = screen.getByText("Core CPI m/m").closest("li")!;
-    expect(row).toHaveTextContent("Released");
+    expect(row).toHaveTextContent("Reported");
     expect(row).toHaveTextContent("0.5%"); // the actual outcome
     expect(screen.getByText("Retail Sales m/m").closest("li")).toHaveTextContent("no actual value in the feed"); // missing stays missing
+  });
+});
+
+describe("the outcome of a release against its forecast", () => {
+  const withOutcomes = () => ({ ...calendar, sections: [...calendar.sections, { key: "recent", title: "Past 2 days: outcomes", events: [
+    ev("g", "GDP q/q", "2026-11-15T19:00:00+05:30", "released", { forecast: "2.1%", previous: "1.9%", actual: "2.5%", outcome: { status: "BEAT", label: "Beat", tone: "up", diff: 0.4, diff_text: "+0.4%" } }),
+    ev("c", "PPI y/y", "2026-11-15T18:00:00+05:30", "released", { country: "India", forecast: "5.1%", previous: "5.0%", actual: "5.4%", outcome: { status: "HOT", label: "Hot", tone: "down", diff: 0.3, diff_text: "+0.3%" } }),
+    ev("r", "Retail Sales m/m", "2026-11-14T19:00:00+05:30", "released", { forecast: "0.4%", actual: "0.1%", outcome: { status: "MISS", label: "Miss", tone: "down", diff: -0.3, diff_text: "-0.3%" } }),
+    ev("n", "Fed Chair Speech", "2026-11-14T10:00:00+05:30", "released", { actual: "1" }),
+  ] }] });
+  it("shows Beat, Hot (inflation above forecast is not a beat) and Miss as badges with the difference, colours the actual, and says Reported when there is no forecast", async () => {
+    mockApi({ "/api/calendar": withOutcomes() });
+    renderAt("/tools/economic-calendar");
+    const badge = (name: string) => within(screen.getByText(name).closest("li")!).queryByTestId("outcome-badge");
+    expect(await screen.findByText("Past 2 days: outcomes")).toBeInTheDocument();
+    expect(badge("GDP q/q")).toHaveTextContent("Beat +0.4%");
+    expect(badge("PPI y/y")).toHaveTextContent("Hot +0.3%");
+    expect(badge("Retail Sales m/m")).toHaveTextContent("Miss -0.3%");
+    expect(badge("PPI y/y")!.className).toContain("text-down"); // hot inflation is red
+    expect(within(screen.getByText("GDP q/q").closest("li")!).getByText("2.5%").className).toContain("text-up");
+    expect(badge("Fed Chair Speech")).toBeNull();
+    expect(screen.getByText("Fed Chair Speech").closest("li")).toHaveTextContent("Reported");
+  });
+  it("Reported outcomes shows only released events, Upcoming only the ones still to come, and the country buttons combine with them", async () => {
+    mockApi({ "/api/calendar": withOutcomes() });
+    renderAt("/tools/economic-calendar");
+    await screen.findByText("Past 2 days: outcomes");
+    const view = within(screen.getByRole("group", { name: "Which events" }));
+    await userEvent.click(view.getByRole("button", { name: "Reported outcomes" }));
+    expect(screen.getByText("GDP q/q")).toBeInTheDocument();
+    expect(screen.queryByText("WPI y/y")).toBeNull(); // upcoming
+    await userEvent.click(within(screen.getByRole("group", { name: "Country" })).getByRole("button", { name: "India" }));
+    expect(screen.getByText("PPI y/y")).toBeInTheDocument();
+    expect(screen.queryByText("GDP q/q")).toBeNull(); // a US release
+    await userEvent.click(view.getByRole("button", { name: "Upcoming" }));
+    expect(screen.getByText("WPI y/y")).toBeInTheDocument(); // India, upcoming
+    expect(screen.queryByText("PPI y/y")).toBeNull();
   });
 });
 

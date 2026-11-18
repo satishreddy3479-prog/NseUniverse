@@ -119,6 +119,8 @@ export interface GlobalSeries { key: string; name?: string; unit?: string; decim
 export interface CalEvent {
   id: string; time_ist: string; all_day: boolean; country: string; name: string; impact: string; actual: string | null; forecast: string | null; previous: string | null;
   source: string; note: string | null; state: "upcoming" | "released" | "past"; minutes_to: number | null;
+  /** how the actual came out against the forecast (null: nothing to compare yet, or the two readings cannot be compared) */
+  outcome?: { status: "BEAT" | "MISS" | "HOT" | "COOLING" | "INLINE" | "ABOVE" | "BELOW"; label: string; tone: "up" | "down" | "flat"; diff: number; diff_text: string } | null;
 }
 export interface CalendarView {
   generated_at: string; today: string; note: string; next: CalEvent | null;

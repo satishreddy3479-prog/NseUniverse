@@ -922,3 +922,21 @@ def test_the_nasdaq_100_index_is_on_the_board_and_vix_is_given_its_measured_dela
     old = Bar(datetime(2026, 11, 16, 14, 24, tzinfo=UTC), 20.47)  # VIX's newest bar at that moment, 17 minutes complete
     assert build_quote(vix, [old], now).status == "live"  # type: ignore[union-attr]  # inside 15 + 8 minutes
     assert build_quote(ndx, [old], now).status == "stale"  # type: ignore[union-attr]  # a real-time index with a bar that old is stale
+
+
+def test_the_surprise_compares_actual_with_forecast_and_knows_which_way_is_good() -> None:
+    s = calendar_feed.surprise
+    assert s("GDP q/q", "2.5%", "2.1%") == {"status": "BEAT", "label": "Beat", "tone": "up", "diff": pytest.approx(0.4), "diff_text": "+0.4%"}
+    assert s("Retail Sales m/m", "0.1%", "0.4%")["status"] == "MISS"
+    assert s("Core PMI", "50.0", "50.0")["status"] == "INLINE" and s("Core PMI", "50.0", "50.0")["diff_text"] == "0"
+    assert s("Initial Jobless Claims", "210K", "230K")["diff_text"] == "-20K" and s("Nonfarm Payrolls", "-1.2M", "-0.8M")["diff_text"] == "-0.4M"
+    assert s("CPI y/y", "5.4%", "5.1%") == {"status": "HOT", "label": "Hot", "tone": "down", "diff": pytest.approx(0.3), "diff_text": "+0.3%"}  # inflation: higher than forecast is hot, not a beat
+    assert s("WPI y/y", "11.0%", "11.4%")["status"] == "COOLING" and s("WPI y/y", "11.0%", "11.4%")["tone"] == "up"
+    assert s("Unemployment Rate", "4.3%", "4.1%")["status"] == "MISS"  # more unemployment than expected is bad
+    assert s("Initial Jobless Claims", "210K", "230K")["status"] == "BEAT"  # fewer claims than expected
+    assert s("RBI Interest Rate Decision", "5.75%", "5.50%")["status"] == "ABOVE" and s("RBI Interest Rate Decision", "5.75%", "5.50%")["tone"] == "flat"  # neither good nor bad
+    assert s("Nonfarm Payrolls", "-1.2M", "-0.8M")["status"] == "MISS"  # units are read: -1.2 million is below -0.8 million
+    # nothing is said when there is nothing to compare
+    assert s("GDP q/q", None, "2.1%") is None and s("GDP q/q", "2.5%", None) is None
+    assert s("GDP q/q", "2.5%", "223K") is None  # a percentage against a count
+    assert s("GDP q/q", "n/a", "2.1%") is None

@@ -401,6 +401,7 @@ class GlobalService:
                 "id": r["id"], "time_ist": when.astimezone(IST).isoformat(), "all_day": bool(r["all_day"]), "country": r["country"], "name": r["name"], "impact": r["impact"],
                 "actual": r["actual"], "forecast": r["forecast"], "previous": r["previous"], "source": r["source"], "note": r["note"],
                 "state": "upcoming" if upcoming else ("released" if r["actual"] else "past"), "minutes_to": round((r["ts"] - nowms) / 60000) if upcoming else None,
+                "outcome": calendar_feed.surprise(r["name"], r["actual"], r["forecast"]),
             }  # fmt: skip
 
         def day(r: dict[str, Any]) -> Any:

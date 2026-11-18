@@ -198,3 +198,55 @@ def parse_biquote(data: bytes) -> list[dict[str, Any]]:
             "note": None if exact else "time not set by the source",
         })  # fmt: skip
     return out
+
+
+# ------------------------------------------------------------------ the surprise: how the actual came out against the forecast
+HIGHER_IS_HOT = ("cpi", "wpi", "ppi", "pce", "inflation", "import price", "price index", "deflator")  # a higher reading than forecast is hot (hawkish), a lower one cooling
+LOWER_IS_BETTER = ("unemployment", "jobless", "claims", "deficit")  # a higher reading than forecast is worse
+NO_VERDICT = ("interest rate", "rate decision", "repo", "fed funds", "minutes", "speech", "speaks", "testifies", "press conference", "auction", "holiday")  # above or below, but not good or bad
+_SCALE = {"K": 1e3, "M": 1e6, "B": 1e9, "T": 1e12}
+
+
+def reading_value(text: str | None) -> tuple[float, str, str] | None:
+    """(number in plain units, its unit, its scale letter) of a reading such as "5.4%", "-1.2M" or "223K"; None when it is missing or not a number. The unit keeps a % apart from a count."""
+    if text is None:
+        return None
+    t = text.strip().replace(",", "")
+    if not t:
+        return None
+    unit = "%" if t.endswith("%") else ""
+    t = t.rstrip("%")
+    mult, scale = 1.0, ""
+    if t and t[-1].upper() in _SCALE:
+        scale = t[-1].upper()
+        mult, t = _SCALE[scale], t[:-1]
+    try:
+        return float(t) * mult, unit, scale
+    except ValueError:
+        return None
+
+
+def surprise(name: str, actual: str | None, forecast: str | None) -> dict[str, Any] | None:
+    """The outcome of a release against its forecast, or None when it has none yet or the two readings cannot be compared (a missing one, or a % against a count).
+
+    status: BEAT or MISS (higher is better), HOT or COOLING (inflation: higher is hot), INLINE, and for releases that are neither good nor bad (a rate decision, a speech) ABOVE or BELOW.
+    ``diff`` is actual minus forecast in the units of the reading, ``tone`` is up (green), down (red) or flat for the page. A plain comparison of the two numbers: it says how far the
+    release was from what was expected, not what it does to the market."""
+    a, f = reading_value(actual), reading_value(forecast)
+    if a is None or f is None or a[1] != f[1]:
+        return None
+    diff = a[0] - f[0]
+    shown = diff / _SCALE.get(f[2], 1.0)  # in the unit the forecast is written in: 0.3%, 20K, -0.4M
+    text = f"{shown:+.2f}".rstrip("0").rstrip(".") + (f[2] or "") + f[1] if abs(diff) >= 1e-9 * max(1.0, abs(f[0])) else "0"
+    if abs(diff) < 1e-9 * max(1.0, abs(f[0])):
+        return {"status": "INLINE", "label": "In line", "tone": "flat", "diff": 0.0, "diff_text": "0"}
+    n = name.lower()
+    up = diff > 0
+    if any(k in n for k in NO_VERDICT):
+        return {"status": "ABOVE" if up else "BELOW", "label": "Above forecast" if up else "Below forecast", "tone": "flat", "diff": diff, "diff_text": text}
+    if any(k in n for k in HIGHER_IS_HOT):
+        return {"status": "HOT" if up else "COOLING", "label": "Hot" if up else "Cooling", "tone": "down" if up else "up", "diff": diff, "diff_text": text}
+    if any(k in n for k in LOWER_IS_BETTER):
+        return {"status": "MISS" if up else "BEAT", "label": "Miss" if up else "Beat", "tone": "down" if up else "up", "diff": diff, "diff_text": text}
+    return {"status": "BEAT" if up else "MISS", "label": "Beat" if up else "Miss", "tone": "up" if up else "down", "diff": diff, "diff_text": text}
+

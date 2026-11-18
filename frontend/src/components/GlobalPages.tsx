@@ -191,11 +191,11 @@ function verdict(actual: string | null, forecast: string | null): string | null 
   if (a == null || f == null) return null;
   return a > f ? "above forecast" : a < f ? "below forecast" : "in line with forecast";
 }
-function Reading({ label, value, pending, verdict: v }: { label: string; value: string | null; pending?: boolean; verdict?: string | null }) {
+function Reading({ label, value, pending, verdict: v, tone }: { label: string; value: string | null; pending?: boolean; verdict?: string | null; tone?: "up" | "down" | "flat" }) {
   return (
     <div className="rounded-sm bg-slate-2 px-2 py-1">
       <dt className="text-[11px] uppercase tracking-wide text-muted">{label}</dt>
-      <dd className={`tabular-nums ${value ? "font-semibold text-paper" : "text-muted"}`} title={value ? undefined : pending ? "Not released yet" : "Not published by the source"}>{value ?? (pending ? "Pending" : MISSING)}</dd>
+      <dd className={`tabular-nums ${value ? `font-semibold ${tone === "up" ? "text-up" : tone === "down" ? "text-down" : "text-paper"}` : "text-muted"}`} title={value ? undefined : pending ? "Not released yet" : "Not published by the source"}>{value ?? (pending ? "Pending" : MISSING)}</dd>
       {v && <dd className="text-[11px] text-muted">{v}</dd>}
     </div>
   );
@@ -216,13 +216,14 @@ function EventRow({ e, now }: { e: CalEvent; now: number }) {
           <span className="text-sm font-semibold">{e.name}</span>
           <span className="rounded-full border border-rule px-2 py-0.5 text-[11px] text-muted">{e.country || "Global"}</span>
           {state === "upcoming" && <span className="text-xs text-info">{countdown(Math.max(0, mins))}</span>}
-          {state === "released" && <span className="text-xs text-up">Released</span>}
+          {state === "released" && e.outcome && <span data-testid="outcome-badge" className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${e.outcome.tone === "up" ? "border-up/60 bg-up/10 text-up" : e.outcome.tone === "down" ? "border-down/60 bg-down/10 text-down" : "border-warn/60 bg-warn/10 text-warn"}`} title="The actual against the forecast: a plain comparison of the two numbers, not what it does to the market">{e.outcome.label}{e.outcome.status !== "INLINE" ? ` ${e.outcome.diff_text}` : ""}</span>}
+          {state === "released" && !e.outcome && <span className="text-xs text-up">Reported</span>}
           {state === "past" && <span className="text-xs text-muted">Time passed, no actual value in the feed</span>}
         </div>
         <dl className="mt-1.5 grid max-w-[460px] grid-cols-3 gap-2 text-sm" aria-label="Readings">
           <Reading label="Previous" value={e.previous} />
           <Reading label="Forecast" value={e.forecast} />
-          <Reading label="Actual" value={e.actual} pending={state === "upcoming"} verdict={verdict(e.actual, e.forecast)} />
+          <Reading label="Actual" value={e.actual} pending={state === "upcoming"} verdict={verdict(e.actual, e.forecast)} tone={e.outcome?.tone} />
         </dl>
         {e.note && <p className="mt-0.5 text-[11px] text-muted">{e.note}</p>}
       </div>
@@ -234,17 +235,25 @@ function EventRow({ e, now }: { e: CalEvent; now: number }) {
 export function CalendarBody() {
   const q = useQuery({ queryKey: ["calendar"], queryFn: api.calendar, refetchInterval: 60_000, retry: false });
   const [who, setWho] = useState<"all" | "India" | "US">("all");
+  const [view, setView] = useState<"all" | "reported" | "upcoming">("all");
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t); }, []);
   if (q.isLoading) return <Loading />;
   if (q.isError || !q.data) return <Problem what="The calendar" e={q.error} />;
   const c = q.data;
-  const sections = c.sections.map((s) => ({ ...s, events: who === "all" ? s.events : s.events.filter((e) => e.country === who) }));
+  const shownByView = (e: CalEvent) => view === "all" || (view === "reported" ? e.state === "released" : e.state === "upcoming");
+  const sections = c.sections.map((s) => ({ ...s, events: s.events.filter((e) => (who === "all" || e.country === who) && shownByView(e)) }));
   const total = sections.reduce((n, s) => n + s.events.length, 0);
   const nx = sections.flatMap((s) => s.events).find((e) => e.state === "upcoming" && new Date(e.time_ist).getTime() >= now - 60_000) ?? null;
   return (
     <div className="flex flex-col gap-3">
       <QuickLinks />
+      <div role="group" aria-label="Which events" className="flex flex-wrap items-center gap-2">
+        {([["all", "All events"], ["reported", "Reported outcomes"], ["upcoming", "Upcoming"]] as const).map(([v, label]) => (
+          <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}
+            className={`min-h-9 rounded-sm border px-3 text-sm ${view === v ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{label}</button>
+        ))}
+      </div>
       <div role="group" aria-label="Country" className="flex flex-wrap items-center gap-2">
         {([["all", "All"], ["India", "India"], ["US", "US"]] as const).map(([v, label]) => (
           <button key={v} type="button" aria-pressed={who === v} onClick={() => setWho(v)}
@@ -265,7 +274,7 @@ export function CalendarBody() {
       {sections.map((s) => (
         <section key={s.key} aria-label={s.title} className="overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate">
           <h2 className="flex items-center justify-between border-b border-rule bg-slate-2 px-3 py-2 text-sm font-semibold">{s.title}<span className="text-xs font-normal text-muted">{s.events.length} {s.events.length === 1 ? "event" : "events"}</span></h2>
-          {s.events.length === 0 ? <p className="px-3 py-3 text-sm text-muted">Nothing scheduled.</p> : (
+          {s.events.length === 0 ? <p className="px-3 py-3 text-sm text-muted">{view === "all" ? "Nothing scheduled." : view === "reported" ? "No reported outcome here." : "Nothing upcoming here."}</p> : (
             <>
               {s.events.map((e, i) => {
                 const day = istDay(e.time_ist);
