@@ -171,6 +171,30 @@ describe("Updating a saved strategy", () => {
   });
 });
 
+describe("Update for every strategy, one leg or several, saved or not", () => {
+  it.each([["short_call", 1], ["bull_call_spread", 2]])("%s (%i leg(s)) has Update before it is saved; Update saves it, and an edited stop then flags unsaved changes", async (id, n) => {
+    mount();
+    await waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"));
+    await pick(id);
+    expect(within(await screen.findByRole("table", { name: "Strategy legs" })).getAllByLabelText("Strike")).toHaveLength(n);
+    const update = await screen.findByTestId("update-saved"); // the strategy was never saved: there is still an Update
+    expect(update).toBeEnabled();
+    await userEvent.click(update); // saves it under a dated name
+    const saved = JSON.parse(localStorage.getItem("nse.strategies.v1") ?? "[]") as { name: string; legs: unknown[] }[];
+    expect(saved).toHaveLength(1);
+    expect(saved[0]!.name).toMatch(/^Strategy /);
+    expect(saved[0]!.legs).toHaveLength(n);
+    const again = await screen.findByTestId("update-saved");
+    expect(again).toBeDisabled(); // now it matches the saved copy
+    await userEvent.type(screen.getAllByLabelText("Stop percent of entry premium")[0]!, "30");
+    expect(again).toBeEnabled();
+    expect(again).toHaveTextContent("●");
+    await userEvent.click(again);
+    expect((JSON.parse(localStorage.getItem("nse.strategies.v1") ?? "[]") as { legs: { stop?: number | null }[] }[])[0]!.legs.some((l) => l.stop != null)).toBe(true);
+    expect(JSON.parse(localStorage.getItem("nse.strategies.v1") ?? "[]")).toHaveLength(1); // the same entry, no copy
+  });
+});
+
 describe("Strategies kept on the server", () => {
   const sv = (name: string) => ({ name, savedAt: "2026-10-30T04:00:00Z", expiry: "2026-11-03", legs: [] });
   function serverFake(initial: unknown[]) {

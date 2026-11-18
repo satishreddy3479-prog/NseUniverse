@@ -1077,12 +1077,19 @@ export default function StrategyBuilder() {
                   <span>Multiplier <button type="button" aria-label="Decrease multiplier" className="mx-1 rounded-sm border border-rule px-2" onClick={() => setMult((m) => Math.max(1, m - 1))}>−</button><span className="num text-paper" data-testid="mult">{mult}</span><button type="button" aria-label="Increase multiplier" className="mx-1 rounded-sm border border-rule px-2" onClick={() => setMult((m) => m + 1)}>+</button></span>
                   <span>Qty per lot <span className="num text-paper">{lotSize ?? "—"}</span></span>
                   <span>Total P&L <span className={`num ${tone(totalPnl)}`}>{money(totalPnl)}</span></span>
-                  {loaded && savedEntry && (
+                  {!temp && !opened && (savedEntry ? (
                     <button type="button" disabled={!dirty || legs.length === 0 || !expiry} data-testid="update-saved"
                       title={dirty ? `Overwrite the saved strategy “${loaded}” with what is shown now` : `“${loaded}” already matches what is shown`}
                       onClick={() => { persist(saved.map((x) => (x.name === loaded ? { ...x, updatedAt: new Date().toISOString(), expiry: strategyExpiry!, legs } : x))); setBaseline(legs); }}
                       className="rounded-sm border border-brass bg-brass/15 px-3 py-1 text-paper hover:bg-brass/25 disabled:opacity-40">Update{dirty && <span className="ml-1 text-warn" aria-label="unsaved changes">●</span>}</button>
-                  )}
+                  ) : (
+                    // a strategy that is not in the Saved list (a running one, one built from the chain, one the server opened) gets the same Update: it saves the strategy as it is shown, under the name typed
+                    // above or a dated one, and from then on Update overwrites that entry. Same button, same place, for one leg or ten.
+                    <button type="button" disabled={legs.length === 0 || !expiry} data-testid="update-saved"
+                      title="This strategy is not saved yet: Update saves what is shown now (under the name typed above, or a dated name), and later edits are saved to it with Update"
+                      onClick={() => { const nm = name.trim() || loaded || `Strategy ${new Date().toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`; persist([{ name: nm, savedAt: new Date().toISOString(), expiry: strategyExpiry!, legs }, ...saved.filter((x) => x.name !== nm)]); setLoaded(nm); setBaseline(legs); setName(""); }}
+                      className="rounded-sm border border-brass bg-brass/15 px-3 py-1 text-paper hover:bg-brass/25 disabled:opacity-40">Update<span className="ml-1 text-warn" aria-label="not saved yet">●</span></button>
+                  ))}
                   <button type="button" onClick={exitAll} disabled={!lotSize || legs.every((l) => l.enabled === false)} title="Exit every ticked leg at its stored price and save the result to Closed. Nothing is sent to a broker." className="rounded-sm border border-down bg-down/15 px-3 py-1 font-semibold text-down hover:bg-down/25 disabled:opacity-40">Exit all</button>
                 </div>
               </div>
