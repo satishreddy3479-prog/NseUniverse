@@ -554,6 +554,32 @@ describe("Exit all and closed strategies", () => {
     expect(screen.getByRole("img", { name: "Strategy payoff" })).toBeInTheDocument(); // the payoff chart stays for a closed trade
   });
 
+  it("Exit all on the same position twice files one closed record, not two (the page restored the legs after the first click on 18 Nov 2026)", async () => {
+    mount();
+    await loaded();
+    const sellAt130 = async () => {
+      await userEvent.click(await screen.findByRole("button", { name: "Sell CE 24100" }));
+      await userEvent.clear(screen.getByLabelText("Entry premium"));
+      await userEvent.type(screen.getByLabelText("Entry premium"), "130");
+    };
+    await sellAt130();
+    await userEvent.click(screen.getByRole("button", { name: "Exit all" }));
+    expect(await screen.findByTestId("gallery")).toBeInTheDocument();
+    expect(screen.getByTestId("closed-menu")).toHaveTextContent("Closed (1)");
+    await sellAt130(); // the same position is back (what the server's copy did) and is exited again
+    await userEvent.click(screen.getByRole("button", { name: "Exit all" }));
+    expect(await screen.findByTestId("gallery")).toBeInTheDocument();
+    expect(screen.getByTestId("closed-menu")).toHaveTextContent("Closed (1)"); // replaced, not copied
+    expect(JSON.parse(localStorage.getItem("nse.closed.v1") ?? "[]")).toHaveLength(1);
+    // a different position is a second record
+    await userEvent.click(await screen.findByRole("button", { name: "Sell CE 24150" }));
+    await userEvent.clear(screen.getByLabelText("Entry premium"));
+    await userEvent.type(screen.getByLabelText("Entry premium"), "130");
+    await userEvent.click(screen.getByRole("button", { name: "Exit all" }));
+    expect(await screen.findByTestId("gallery")).toBeInTheDocument();
+    expect(screen.getByTestId("closed-menu")).toHaveTextContent("Closed (2)");
+  });
+
   it("will not exit a leg that has no stored price: missing stays missing", async () => {
     mount();
     await loaded();

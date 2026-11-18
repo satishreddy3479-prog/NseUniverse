@@ -483,7 +483,9 @@ class StrategyAutomation:
         with self._lock:
             cur = self.get()
             cur_rev = int(cur.get("rev", 0)) if cur else 0
-            if cur is not None and base_rev != cur_rev:
+            # Refused only when the LEGS changed on the server since the browser's revision (a stop, target, hold or re-entry it executed). A change of the rule state alone (a
+            # trailing profit floor moves the revision every few seconds) is not a conflict: it used to refuse the page's Exit all, which then took the server's open legs back.
+            if cur is not None and (base_rev is None or int(cur.get("legsRev", cur_rev)) > base_rev):
                 raise RunningConflict(cur)
             # the state of the strategy rules (profit floor, which rule fired) belongs to the server; a browser edit only
             # replaces it when it asks for a re-arm (a new ``rearmAt``)
@@ -497,7 +499,8 @@ class StrategyAutomation:
             # when the holding rule started counting: the browser's value, else the one kept while the rule is unchanged, else now
             same_hold = cur is not None and doc.get("hold") == cur.get("hold") and doc.get("rearmAt") == cur.get("rearmAt")
             hold_from = doc.get("holdFrom") or ((cur or {}).get("holdFrom") if same_hold else None) or self._now().isoformat()
-            doc = {**doc, "rev": cur_rev + 1, "serverEvents": events, "rstate": keep, "holdFrom": hold_from}
+            legs_rev = cur_rev + 1 if cur is None or doc.get("legs") != cur.get("legs") else int(cur.get("legsRev", cur_rev))
+            doc = {**doc, "rev": cur_rev + 1, "legsRev": legs_rev, "serverEvents": events, "rstate": keep, "holdFrom": hold_from}
             self.store.put(RUNNING_KIND, RUNNING_KEY, doc)
             return doc
 
@@ -527,7 +530,10 @@ class StrategyAutomation:
             ev = [*(doc.get("serverEvents") or []), *({"at": at.isoformat(), "text": t} for t in events)][-50:]
             self.store.put(
                 RUNNING_KIND, RUNNING_KEY,
-                {**doc, "legs": legs, "rstate": new_state, "rev": int(doc.get("rev", 0)) + 1, "serverEvents": ev},
+                {
+                    **doc, "legs": legs, "rstate": new_state, "rev": int(doc.get("rev", 0)) + 1, "serverEvents": ev,
+                    "legsRev": int(doc.get("rev", 0)) + 1 if legs != doc["legs"] else int(doc.get("legsRev", doc.get("rev", 0))),
+                },
             )
             self._write_back_saved(doc.get("loaded"), legs, doc.get("expiry"), at)
             logger.info("strategy_automation", extra={"fields": {"events": events}})

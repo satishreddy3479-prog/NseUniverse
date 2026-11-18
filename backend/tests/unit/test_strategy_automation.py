@@ -280,3 +280,18 @@ def test_a_stop_the_server_executes_is_written_back_to_the_saved_strategy(tmp_pa
     saved = store.get("saved", "Expiry straddle")
     assert saved is not None and saved["legs"][0]["exitPrice"] == 131.0 and saved["updatedAt"]
     store.close()
+
+
+def test_a_rule_state_change_on_the_server_is_not_a_conflict_but_a_leg_change_is(tmp_path: Path) -> None:
+    """A trailing profit floor moves the revision every few seconds; the page's Exit all (its PUT built on the older revision) must still be accepted, otherwise the page took the
+    server's open legs back after the first click (18 Nov 2026). A stop executed on the server since the page's revision still refuses the write."""
+    auto, store = make(tmp_path, None)
+    first = auto.put(doc(), None)
+    assert first["rev"] == 1
+    store.put(RUNNING_KIND, RUNNING_KEY, {**auto.get(), "rev": 2, "rstate": {"floor": 500.0}})  # type: ignore[dict-item]  # the server trailed its floor: rev 2, legs untouched
+    closed = auto.put(doc(legs=[], rearmAt="2026-11-18T04:20:00Z"), 1)  # built on revision 1: accepted
+    assert closed["rev"] == 3 and closed["legs"] == []
+    store.put(RUNNING_KIND, RUNNING_KEY, {**auto.get(), "rev": 4, "legsRev": 4, "legs": [{**sold(), "exitPrice": 131.0, "exitReason": "stop"}]})  # type: ignore[dict-item]
+    with pytest.raises(RunningConflict):  # a stop was executed after revision 3: refused
+        auto.put(doc(), 3)
+    assert auto.put(doc(), 4)["rev"] == 5  # a page that has seen it is accepted

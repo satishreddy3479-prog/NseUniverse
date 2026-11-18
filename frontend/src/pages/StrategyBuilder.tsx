@@ -45,6 +45,12 @@ export const sameTrade = (a: Leg[], b: Leg[]): boolean => {
   const sig = (ls: Leg[]) => ls.filter((l) => l.enabled !== false).map((l) => JSON.stringify([l.action, l.type, l.strike, l.expiry, l.premium, l.exitPrice ?? (l as { exit?: number }).exit ?? null])).sort().join("|");
   return a.length > 0 && sig(a) === sig(b);
 };
+/** Two lists of legs are the same position when every enabled leg has the same side, type, strike, expiry and entry premium, whatever the exit prices. */
+export const sameEntries = (a: Leg[], b: Leg[]): boolean => {
+  const sig = (ls: Leg[]) => ls.filter((l) => l.enabled !== false).map((l) => JSON.stringify([l.action, l.type, l.strike, l.expiry, l.premium])).sort().join("|");
+  return a.length > 0 && sig(a) === sig(b);
+};
+const DUPLICATE_WINDOW_MS = 15 * 60_000; // the same position filed again within this long is the same exit clicked twice, not a second trade
 const loadClosed = (): Closed[] => { try { return JSON.parse(localStorage.getItem(CLOSED_KEY) ?? "[]") as Closed[]; } catch { return []; } };
 /** A number box that commits on blur or Enter, so a half-typed "2" on the way to "2000" never arms a rule. Empty clears it. */
 function NumBox({ value, onCommit, className, ariaLabel }: { value: number | null | undefined; onCommit: (v: number | null) => void; className: string; ariaLabel: string }) {
@@ -717,7 +723,7 @@ export default function StrategyBuilder() {
     const lastExit = allOut ? active.map((l) => l.exitedAt ?? "").filter(Boolean).sort().at(-1) : undefined;
     const at = lastExit ? new Date(lastExit) : new Date();
     const closedName = name.trim() || loaded || opened?.name;
-    persistClosed([{ id: opened?.id ?? newLegId(), name: closedName || `Strategy ${at.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`, closedAt: at.toISOString(), snapshotAt: lastExit ?? snap.retrieved_at, expiry: strategyExpiry ?? expiry, lotSize, pnl, legs: out, stale: allOut ? false : !!chain.data?.stale }, ...closed.filter((x) => x.id !== opened?.id)]);
+    persistClosed([{ id: opened?.id ?? newLegId(), name: closedName || `Strategy ${at.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`, closedAt: at.toISOString(), snapshotAt: lastExit ?? snap.retrieved_at, expiry: strategyExpiry ?? expiry, lotSize, pnl, legs: out, stale: allOut ? false : !!chain.data?.stale }, ...closed.filter((x) => x.id !== opened?.id && !(sameEntries(x.legs, out) && Math.abs(new Date(x.closedAt).getTime() - at.getTime()) < DUPLICATE_WINDOW_MS))]); // a second Exit all on the same position replaces the first record instead of adding a copy
     if (loaded) persist(saved.filter((x) => x.name !== loaded)); // the strategy moves from Saved to Closed, it is not copied
     setLegs([]); setRearmAt(new Date().toISOString()); setHoldFrom(null); setNote(null); setSel(null); setMult(1); setDays(0); setName(""); setOpened(null); setLoaded(null);
   };
