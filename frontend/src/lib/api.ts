@@ -129,6 +129,8 @@ export interface CalendarView {
 }
 export interface HeadsUpReminder { key: string; event_id: string; phase: string; name: string; country: string; impact: string; time_ist: string; minutes_to: number; previous: string | null; forecast: string | null }
 export interface HeadsUpNews { key: string; title: string; link: string; source: string; topics: string[]; age_min: number }
+export interface HeadsUpTradeAlert { key: string; source: "strategy" | "swing"; kind: string; level: "good" | "bad" | "warn" | "info"; title: string; text: string; at: string; link: string }
+export interface HeadsUpTrades { generated_at: string; alerts: HeadsUpTradeAlert[] }
 export interface HeadsUp { generated_at: string; reminders: HeadsUpReminder[]; news: HeadsUpNews[] }
 export interface ForwardVariant { variant: string; label: string; n: number; wins?: number; win_rate?: number; total?: number; avg?: number; best?: number; worst?: number; max_drawdown?: number; profit_factor?: number | null; avg_intraday_worst?: number | null; stop_rate?: number; twin?: ForwardVariant }
 export interface ForwardPortfolioTrade {
@@ -166,6 +168,7 @@ export const api = {
   straddleScores: () => request<StraddleScores>("/api/intelligence/straddle/scores"),
   forward: (structure: string, cohort: string, rule: string, dim: string, family: string, dte = "all") => request<ForwardOverview>(`/api/forward/overview?structure=${structure}&cohort=${cohort}&rule=${rule}&dim=${dim}&family=${family}&dte=${dte}`),
   headsUp: () => request<HeadsUp>("/api/global/headsup"),
+  headsUpTrades: () => request<HeadsUpTrades>("/api/headsup/trades"),
   news: () => request<NewsView>("/api/news"),
   holidays: () => request<HolidaysView>("/api/market/holidays"),
   putHolidays: (body: HolidaysUpdate) =>

@@ -81,4 +81,20 @@ describe("heads up strip", () => {
     await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
     expect(screen.queryByRole("region", { name: "Heads up" })).toBeNull();
   });
+
+  it("shows the managed-trade messages (stop, entry, waiting for volume) with their page link, even with no calendar or news, and closing hides them", async () => {
+    const alerts = [
+      { key: "strategy:a:1", source: "strategy", kind: "stop", level: "bad", title: "Stop loss hit", text: "10:17:15 Stop: SELL 25300 CE closed at 122.05", at: "2026-12-01T04:47:15+00:00", link: "/strategy" },
+      { key: "swing-min:7", source: "swing", kind: "waiting_volume", level: "warn", title: "ABC: triggered, waiting for volume", text: "Volume 40% of the pace needed.", at: "2026-12-01T04:50:00+00:00", link: "/swing" },
+    ];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(String(url).includes("headsup/trades") ? { generated_at: "x", alerts } : { generated_at: "x", reminders: [], news: [] }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc}><MemoryRouter><HeadsUpStrip /></MemoryRouter></QueryClientProvider>);
+    const strip = await screen.findByRole("region", { name: "Heads up" });
+    expect(within(strip).getByRole("link", { name: "Stop loss hit" })).toHaveAttribute("href", "/strategy");
+    expect(within(strip).getByRole("link", { name: "ABC: triggered, waiting for volume" })).toHaveAttribute("href", "/swing");
+    expect(within(strip).getByText(/Strategy · 10:17 IST · 10:17:15 Stop: SELL 25300 CE closed at 122.05/)).toBeInTheDocument();
+    await userEvent.click(within(strip).getByRole("button", { name: "Close heads up" }));
+    expect(screen.queryByRole("region", { name: "Heads up" })).toBeNull();
+  });
 });

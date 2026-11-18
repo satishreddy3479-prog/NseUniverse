@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { api, type HeadsUpReminder } from "../lib/api";
+import { api, type HeadsUpReminder, type HeadsUpTradeAlert } from "../lib/api";
 import { MISSING } from "../lib/format";
 
 const KEY = "nse-universe.dismissed-headsup";
@@ -41,21 +41,37 @@ function Reminder({ r, now }: { r: HeadsUpReminder; now: number }) {
   );
 }
 
+const LEVEL = { good: ["●", "text-up"], bad: ["●", "text-down"], warn: ["▲", "text-brass"], info: ["●", "text-info"] } as const;
+const clock = (iso: string) => new Intl.DateTimeFormat("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: IST }).format(new Date(iso));
+
+function TradeAlert({ a }: { a: HeadsUpTradeAlert }) {
+  const [icon, tone] = LEVEL[a.level] ?? LEVEL.info;
+  return (
+    <li className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5" data-testid="headsup-trade">
+      <span aria-hidden className={tone}>{icon}</span>
+      <Link to={a.link} className="font-semibold hover:text-brass hover:underline">{a.title}</Link>
+      <span className="text-xs text-muted">{a.source === "strategy" ? "Strategy" : "Swing"} · {clock(a.at)} IST · {a.text}</span>
+    </li>
+  );
+}
+
 /** Reminders for the catalysts of the next three days (daily, then every four hours in the last day) and fresh market-moving headlines, above every page. Closing it hides
  *  what is shown now; the next reminder phase of an event, or a new headline, shows again. Nothing renders when there is nothing to say or the feed is unavailable. */
 export function HeadsUpStrip() {
   const q = useQuery({ queryKey: ["headsup"], queryFn: api.headsUp, refetchInterval: 60_000, retry: false });
+  const tq = useQuery({ queryKey: ["headsup-trades"], queryFn: api.headsUpTrades, refetchInterval: 20_000, retry: false });
   const [hidden, setHidden] = useState<Record<string, number>>(() => loadHidden());
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t); }, []);
   const d = q.data;
-  if (!d) return null;
-  const reminders = (d.reminders ?? []).filter((r) => !(hidden[r.key] && hidden[r.key]! > now) && new Date(r.time_ist).getTime() > now - 60_000);
-  const news = (d.news ?? []).filter((n) => !(hidden[n.key] && hidden[n.key]! > now));
-  if (reminders.length === 0 && news.length === 0) return null;
+  const trades = (tq.data?.alerts ?? []).filter((a) => !(hidden[a.key] && hidden[a.key]! > now));
+  if (!d && trades.length === 0) return null;
+  const reminders = (d?.reminders ?? []).filter((r) => !(hidden[r.key] && hidden[r.key]! > now) && new Date(r.time_ist).getTime() > now - 60_000);
+  const news = (d?.news ?? []).filter((n) => !(hidden[n.key] && hidden[n.key]! > now));
+  if (reminders.length === 0 && news.length === 0 && trades.length === 0) return null;
   const close = () => {
     const next = { ...loadHidden(), ...hidden };
-    for (const k of [...reminders.map((r) => r.key), ...news.map((n) => n.key)]) next[k] = Date.now() + KEEP_MS;
+    for (const k of [...reminders.map((r) => r.key), ...news.map((n) => n.key), ...trades.map((a) => a.key)]) next[k] = Date.now() + KEEP_MS;
     try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* storage unavailable: closed for this visit only */ }
     setHidden(next);
   };
@@ -65,6 +81,7 @@ export function HeadsUpStrip() {
         <div className="min-w-0 flex-1">
           <span className="font-semibold text-brass">Heads up</span>
           <ul className="mt-1 space-y-1.5 break-words">
+            {trades.map((a) => <TradeAlert key={a.key} a={a} />)}
             {reminders.map((r) => <Reminder key={r.key} r={r} now={now} />)}
             {news.map((n) => (
               <li key={n.key} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">

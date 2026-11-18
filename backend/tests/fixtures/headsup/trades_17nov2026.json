@@ -1,0 +1,292 @@
+{
+ "captured": "17 Nov 2026 from the server",
+ "minute_events": [
+  {
+   "id": 277,
+   "session": "2026-11-17",
+   "at": "2026-11-17T09:50:01+00:00",
+   "symbol": "RPEL",
+   "kind": "exit",
+   "price": 1961.0,
+   "detail": {
+    "reason": "D1_FAIL_CLOSE",
+    "notes": [
+     "day-1 close 1961.00 below the pivot 1987.90"
+    ],
+    "decision_close": 1961.0,
+    "basis": "next open",
+    "stop_in_force": 1868.4539538574218
+   }
+  },
+  {
+   "id": 276,
+   "session": "2026-11-17",
+   "at": "2026-11-17T09:50:01+00:00",
+   "symbol": "KPRMILL",
+   "kind": "exit",
+   "price": 1216.1,
+   "detail": {
+    "reason": "D1_REJECT_WICK",
+    "notes": [
+     "day-1 close in the bottom 34% of the day's range"
+    ],
+    "decision_close": 1216.0,
+    "basis": "next open",
+    "stop_in_force": 1144.7415595113227
+   }
+  },
+  {
+   "id": 266,
+   "session": "2026-11-17",
+   "at": "2026-11-17T09:30:02+00:00",
+   "symbol": "TIPSMUSIC",
+   "kind": "entry_state",
+   "price": 831.85,
+   "detail": {
+    "state": "above_cap",
+    "note": "candle close 831.85 is more than 1% above the trigger 822.46: not chased",
+    "pace": null,
+    "candle_close": 831.85
+   }
+  },
+  {
+   "id": 264,
+   "session": "2026-11-17",
+   "at": "2026-11-17T08:08:00+00:00",
+   "symbol": "GCSL",
+   "kind": "entry_state",
+   "price": 827.15,
+   "detail": {
+    "state": "volume_short",
+    "note": "volume is 28% of the pace needed (profile)",
+    "pace": 0.280780846048661,
+    "candle_close": 827.15
+   }
+  },
+  {
+   "id": 262,
+   "session": "2026-11-17",
+   "at": "2026-11-17T08:05:01+00:00",
+   "symbol": "GCSL",
+   "kind": "entry_state",
+   "price": 826.6,
+   "detail": {
+    "state": "volume_short",
+    "note": "volume is 28% of the pace needed (profile)",
+    "pace": 0.2783444593807229,
+    "candle_close": 826.6
+   }
+  },
+  {
+   "id": 252,
+   "session": "2026-11-17",
+   "at": "2026-11-17T07:28:01+00:00",
+   "symbol": "AEROENTER",
+   "kind": "entry_state",
+   "price": 135.65,
+   "detail": {
+    "state": "above_cap",
+    "note": "candle close 135.65 is more than 1% above the trigger 134.30: not chased",
+    "pace": null,
+    "candle_close": 135.65
+   }
+  },
+  {
+   "id": 249,
+   "session": "2026-11-17",
+   "at": "2026-11-17T07:07:01+00:00",
+   "symbol": "MOTILALOFS",
+   "kind": "entry_fill",
+   "price": 1251.55,
+   "detail": {
+    "shares": 160,
+    "trigger": 1241.714,
+    "stop": 1168.3883402746546,
+    "decision_close": 1252.2,
+    "pace": 1.1213828909823969
+   }
+  },
+  {
+   "id": 248,
+   "session": "2026-11-17",
+   "at": "2026-11-17T07:07:01+00:00",
+   "symbol": "MOTILALOFS",
+   "kind": "entry_state",
+   "price": 1252.2,
+   "detail": {
+    "state": "signal",
+    "note": "close 1252.20 at or above the trigger 1241.71 on volume 112% of the pace needed (profile)",
+    "pace": 1.1213828909823969,
+    "candle_close": 1252.2
+   }
+  },
+  {
+   "id": 229,
+   "session": "2026-11-17",
+   "at": "2026-11-17T05:58:00+00:00",
+   "symbol": "KPRMILL",
+   "kind": "entry_fill",
+   "price": 1222.0,
+   "detail": {
+    "shares": 164,
+    "trigger": 1210.1194999999998,
+    "stop": 1144.7415595113227,
+    "decision_close": 1222.0,
+    "pace": 1.0829011151787893
+   }
+  },
+  {
+   "id": 228,
+   "session": "2026-11-17",
+   "at": "2026-11-17T05:58:00+00:00",
+   "symbol": "KPRMILL",
+   "kind": "entry_state",
+   "price": 1222.0,
+   "detail": {
+    "state": "signal",
+    "note": "close 1222.00 at or above the trigger 1210.12 on volume 108% of the pace needed (profile)",
+    "pace": 1.0829011151787893,
+    "candle_close": 1222.0
+   }
+  }
+ ],
+ "live_events": [
+  {
+   "at": "2026-11-17T04:15:01+00:00",
+   "kind": "entry_trigger",
+   "symbol": "RPEL",
+   "price": 1996.3,
+   "volume": 39714,
+   "detail": {
+    "note": "price through the trigger and volume on pace (the full-day volume is judged at the close)",
+    "pace": 2.33133285060069,
+    "ltp": 1996.3,
+    "trigger": 1993.8637244873046,
+    "order_session": "2026-11-16"
+   }
+  },
+  {
+   "at": "2026-11-17T04:15:01+00:00",
+   "kind": "entry_trigger",
+   "symbol": "BSE",
+   "price": 3971.5,
+   "volume": 1322635,
+   "detail": {
+    "note": "price through the trigger and volume on pace (the full-day volume is judged at the close)",
+    "pace": 2.3142284328011575,
+    "ltp": 3971.5,
+    "trigger": 3966.865,
+    "order_session": "2026-11-16"
+   }
+  }
+ ],
+ "positions": [
+  {
+   "symbol": "KRISHANA",
+   "has_token": true,
+   "ltp": null,
+   "prev_close": null,
+   "volume": null,
+   "day_open": null,
+   "day_high": null,
+   "day_low": null,
+   "tick_age_s": null,
+   "stale": true,
+   "change_pct": null,
+   "kind": "position",
+   "state": "stale",
+   "note": "",
+   "fill": 237.13928265380858,
+   "shares": 843,
+   "stop": 223.08132202475213,
+   "r_now": null,
+   "level_1_8r": 262.4436117861102,
+   "level_2_5r": 272.2841842264497,
+   "reached_1_8r": false,
+   "reached_2_5r": false,
+   "unrealized_pnl": null
+  }
+ ],
+ "strategy_events": [
+  {
+   "at": "2026-11-05T07:31:51.857162+00:00",
+   "text": "13:01:51 Stop: SELL 24300 CE closed at 238.95 (entry 170.30), \u2212\u20b94,462 [server]"
+  },
+  {
+   "at": "2026-11-06T04:20:12.566619+00:00",
+   "text": "09:50:12 Stop: SELL 24550 CE closed at 209.10 (entry 160.70), \u2212\u20b93,146 [server]"
+  },
+  {
+   "at": "2026-11-06T04:37:50.513252+00:00",
+   "text": "10:07:50 Stop: SELL 24550 CE closed at 209.05 (entry 160.70), \u2212\u20b93,143 [server]"
+  },
+  {
+   "at": "2026-11-06T06:43:02.703004+00:00",
+   "text": "12:13:02 Stop: SELL 24550 CE closed at 208.95 (entry 160.70), \u2212\u20b93,136 [server]"
+  },
+  {
+   "at": "2026-11-06T06:43:16.886199+00:00",
+   "text": "12:13:16 Stop: SELL 24550 CE closed at 210.70 (entry 160.70), \u2212\u20b93,250 [server]"
+  },
+  {
+   "at": "2026-11-06T07:39:44.647974+00:00",
+   "text": "13:09:44 Stop: SELL 24550 CE closed at 226.00 (entry 160.70), \u2212\u20b94,245 [server]"
+  },
+  {
+   "at": "2026-11-06T08:34:24.551172+00:00",
+   "text": "14:04:24 Stop: SELL 24550 CE closed at 367.00 (entry 160.70), \u2212\u20b913,410 [server]"
+  },
+  {
+   "at": "2026-11-06T10:04:44.312988+00:00",
+   "text": "15:34:44 Stop: SELL 24550 CE closed at 474.75 (entry 160.70), \u2212\u20b920,413 [server]"
+  },
+  {
+   "at": "2026-11-09T04:11:06.597906+00:00",
+   "text": "09:41:06 Stop: SELL 24900 PE closed at 107.25 (entry 81.55), \u2212\u20b91,671 [server]"
+  },
+  {
+   "at": "2026-11-09T05:12:28.490682+00:00",
+   "text": "10:42:28 Stop: SELL 24900 PE closed at 106.20 (entry 81.55), \u2212\u20b91,602 [server]"
+  },
+  {
+   "at": "2026-11-11T08:01:49.716736+00:00",
+   "text": "13:31:49 Stop: SELL 25350 PE closed at 287.95 (entry 205.60), \u2212\u20b95,353 [server]"
+  },
+  {
+   "at": "2026-11-12T09:50:00.011242+00:00",
+   "text": "15:20:00 Auto close (intraday 15:20): SELL 25350 CE closed at 154.35 (entry 217.00), +\u20b94,072 [server]"
+  },
+  {
+   "at": "2026-11-12T09:50:00.011242+00:00",
+   "text": "15:20:00 Auto close (intraday 15:20): SELL 25350 PE closed at 214.50 (entry 198.30), \u2212\u20b91,053 [server]"
+  },
+  {
+   "at": "2026-11-13T09:50:00.908954+00:00",
+   "text": "15:20:00 Auto close (intraday 15:20): SELL 25200 CE closed at 112.55 (entry 170.05), +\u20b93,738 [server]"
+  },
+  {
+   "at": "2026-11-13T09:50:00.908954+00:00",
+   "text": "15:20:00 Auto close (intraday 15:20): SELL 25200 PE closed at 159.00 (entry 157.80), \u2212\u20b978 [server]"
+  },
+  {
+   "at": "2026-11-16T05:04:38.876101+00:00",
+   "text": "10:34:38 Stop: SELL 25300 PE closed at 149.25 (entry 106.20), \u2212\u20b92,798 [server]"
+  },
+  {
+   "at": "2026-11-16T09:50:00.630176+00:00",
+   "text": "16 Nov, 15:20:00 Auto close (intraday 15:20): SELL 25300 CE closed at 64.05 (entry 94.70), +\u20b91,992 [server]"
+  },
+  {
+   "at": "2026-11-17T04:47:15.042774+00:00",
+   "text": "17 Nov, 10:17:15 Stop: SELL 25300 CE closed at 122.05 (entry 60.85), \u2212\u20b93,978 [server]"
+  },
+  {
+   "at": "2026-11-17T04:47:15.042774+00:00",
+   "text": "17 Nov, 10:17:15 Stop moved to cost: SELL 25300 PE stop 102.30 \u2192 51.15 because SELL 25300 CE was stopped out [server]"
+  },
+  {
+   "at": "2026-11-17T09:50:00.917359+00:00",
+   "text": "17 Nov, 15:20:00 Auto close (intraday 15:20): SELL 25300 PE closed at 0.60 (entry 51.15), +\u20b93,286 [server]"
+  }
+ ]
+}

@@ -1392,6 +1392,33 @@ async def global_headsup(request: Request) -> dict[str, Any]:
     return await asyncio.to_thread(_globalmkts(request).headsup)
 
 
+@router.get("/headsup/trades")
+async def headsup_trades(request: Request) -> dict[str, Any]:
+    """Heads-up messages for the managed trades: the running strategy's stops, targets and trails, and the swing book's entries, exits and levels (today, last six hours)."""  # noqa: E501
+    from app import headsup_trades as ht
+
+    now = datetime.now(UTC)
+    session = now.astimezone(ht.IST).date().isoformat()
+
+    def collect() -> dict[str, Any]:
+        strategy = ht.strategy_alerts(_automation(request).get(), now)
+        swing: list[dict[str, Any]] = []
+        live = getattr(request.app.state, "swing_live", None)
+        minute = getattr(request.app.state, "swing_minute", None)
+        try:
+            view = live.view() if live is not None else {}
+            live_events = live.store.live_events(session) if live is not None else []
+            minute_events = minute.store.events(session, 200) if minute is not None else []
+            positions = [r for r in (view.get("watching") or []) if r.get("kind") == "position"]
+            swing = ht.swing_alerts(live_events, minute_events, positions, now, session)
+        except Exception:  # noqa: BLE001 - the strategy messages must still be served
+            swing = []
+        generated = now.isoformat(timespec="seconds")
+        return {"generated_at": generated, "alerts": ht.build(strategy, swing)}
+
+    return await asyncio.to_thread(collect)
+
+
 @router.get("/forward/overview")
 async def forward_overview(
     request: Request, structure: Annotated[str, Query(pattern="^(all|straddle|strangle)$")] = "all",
