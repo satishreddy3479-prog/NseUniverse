@@ -133,12 +133,13 @@ def parse_local(data: bytes) -> list[dict[str, Any]]:
     return out
 
 
+_SAME_WORD = {"inflation": "cpi"}  # the sources name one release differently: Forex Factory "CPI y/y", biquote "Inflation Rate YoY"
 _STOP = {"the", "and", "yoy", "mom", "qoq", "y/y", "m/m", "q/q", "data", "index", "final", "prelim", "flash", "rate"}
 
 
 def _words(name: str) -> set[str]:
     clean = name.lower().replace("(", " ").replace(")", " ").replace(".", " ")
-    return {w for w in clean.split() if len(w) >= 3 and w not in _STOP}
+    return {_SAME_WORD.get(w, w) for w in clean.split() if len(w) >= 3 and w not in _STOP}
 
 
 def same_event(a: dict[str, Any], b: dict[str, Any]) -> bool:
@@ -148,7 +149,8 @@ def same_event(a: dict[str, Any], b: dict[str, Any]) -> bool:
     return bool(_words(a["name"]) & _words(b["name"]))
 
 
-BQ_COUNTRIES = {"IN": "India", "US": "US"}
+BQ_COUNTRIES = {"IN": "India", "US": "US", "GB": "UK", "EU": "Euro area", "JP": "Japan", "CN": "China", "AU": "Australia", "CA": "Canada", "CH": "Switzerland", "NZ": "New Zealand"}
+BQ_HOME = ("IN", "US")  # asked for at medium importance and up (India's two-star releases are shown); the other countries only at high importance
 _BQ_SCALE = {"thousands": "K", "millions": "M", "billions": "B", "trillions": "T"}
 
 
@@ -157,6 +159,14 @@ def bq_url(now: datetime) -> str:
     being refreshed and a late actual is still caught) to 60 days ahead."""
     start, end = now.astimezone(IST).date() - timedelta(days=2), (now + timedelta(days=60)).date()
     return f"{BQ_URL}?from={start}&to={end}&countries=IN,US&importance=medium&limit=500"
+
+
+def bq_url_world(now: datetime) -> str:
+    """The same request for the other countries the page shows (UK, Euro area, Japan, China, ...), at high importance only and 30 days ahead: Forex Factory lists them but its public
+    feed carries no actual values, so a release like the UK CPI never got its outcome (18 Nov 2026)."""
+    start, end = now.astimezone(IST).date() - timedelta(days=2), (now + timedelta(days=30)).date()
+    others = ",".join(c for c in BQ_COUNTRIES if c not in BQ_HOME)
+    return f"{BQ_URL}?from={start}&to={end}&countries={others}&importance=high&limit=500"
 
 
 def _bq_value(v: Any, e: dict[str, Any]) -> str | None:

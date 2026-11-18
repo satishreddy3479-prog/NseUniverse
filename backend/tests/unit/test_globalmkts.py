@@ -940,3 +940,32 @@ def test_the_surprise_compares_actual_with_forecast_and_knows_which_way_is_good(
     assert s("GDP q/q", None, "2.1%") is None and s("GDP q/q", "2.5%", None) is None
     assert s("GDP q/q", "2.5%", "223K") is None  # a percentage against a count
     assert s("GDP q/q", "n/a", "2.1%") is None
+
+
+def test_the_uk_cpi_gets_its_actual_from_biquote_which_is_asked_for_the_other_countries_too(tmp_path: Path) -> None:
+    """18 Nov 2026: the UK CPI (12:30 IST) stayed without an actual: Forex Factory's public feed has no actuals and biquote was only asked for India and the US.
+    The fixture is the real biquote response for the UK, Euro area, Canada, Australia and New Zealand of that day (the UK 'Inflation Rate YoY': actual 3.6, forecast 3.7, previous 3.5)."""
+    now = datetime(2026, 11, 18, 9, 0, tzinfo=UTC)  # 14:30 IST: two hours after the release
+    url = calendar_feed.bq_url_world(now)
+    assert "countries=GB,EU,JP,CN,AU,CA,CH,NZ" in url and "importance=high" in url and "from=2026-11-16" in url
+    ff = [{"title": "CPI y/y", "country": "GBP", "date": "2026-11-18T07:00:00-00:00", "impact": "High", "forecast": "3.6%", "previous": "3.5%", "actual": ""}]
+
+    def http(u: str) -> bytes:
+        if "faireconomy" in u:
+            return json.dumps(ff).encode()
+        if "biquote" in u and "countries=IN,US" in u:
+            return b"[]"
+        if "biquote" in u:
+            return (FIX / "biquote_world_18nov2026.json").read_bytes()
+        raise OSError("not in the fixtures: " + u)
+
+    s, _ = service(tmp_path, fetch=http, now=now)
+    s.poll_calendar()
+    rows = [e for x in s.calendar_view()["sections"] for e in x["events"] if e["country"] == "UK"]
+    at_1230 = [e for e in rows if e["time_ist"].startswith("2026-11-18T12:30")]
+    assert not any(e["source"].startswith("Forex Factory") for e in at_1230)  # the feed's "CPI y/y" row is replaced, not shown beside biquote's
+    cpi = [e for e in at_1230 if e["name"] == "Inflation Rate YoY"]
+    assert len(cpi) == 1
+    assert (cpi[0]["actual"], cpi[0]["forecast"], cpi[0]["previous"]) == ("3.6%", "3.7%", "3.5%")  # biquote's readings
+    assert cpi[0]["outcome"]["status"] == "COOLING" and cpi[0]["outcome"]["diff_text"] == "-0.1%"  # inflation below forecast
+    assert s.awaiting_actual() is False  # nothing is still being waited for

@@ -237,6 +237,12 @@ class GlobalService:
         now = self._clock()
         try:
             res: dict[str, Any] = dict(self.store.upsert_events(calendar_feed.parse_biquote(self._fetch(calendar_feed.bq_url(now))), now, self._event_floor(now)))
+            try:  # the other countries, high importance only: a failure here must not hide the India and US result
+                world = self.store.upsert_events(calendar_feed.parse_biquote(self._fetch(calendar_feed.bq_url_world(now))), now, self._event_floor(now))
+                for k in ("new", "changed", "same"):
+                    res[k] = res.get(k, 0) + world.get(k, 0)
+            except Exception as e:  # noqa: BLE001 - recorded in the result; the India and US events are stored
+                res["world_error"] = f"{type(e).__name__}: {str(e)[:100]}"
             self.store.add_run("calendar_biquote", now, True, res)
         except Exception as e:  # noqa: BLE001 - recorded; the stored events stay
             res = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
