@@ -20,6 +20,7 @@ from app.logging_setup import log_event
 from app.stream.book import LiveBook
 from app.stream.feed import FeedSession
 from app.stream.hub import Hub
+from app.stream.index_watch import IndexWatch
 from app.stream.models import (
     FeedEvent,
     FeedToken,
@@ -94,6 +95,7 @@ class StreamManager:
         self.hub = hub if hub is not None else Hub()
         self._relogin = relogin
         self._now = clock
+        self._index_watch = IndexWatch()
         self._sleep = sleep
         self._on_event = on_event
         self.book = LiveBook()
@@ -456,6 +458,10 @@ class StreamManager:
         now = self._now()
         if ev.kind == "tick" and ev.tick is not None and ev.tick.kind == "index":
             ev = ev.model_copy(update={"tick": self._internal_alias(ev.tick)})
+            if ev.tick is not None and ev.tick.key == "nse_cm|Nifty 50":
+                account = self._index_watch.observe(now, ev.tick.ltp)
+                if account is not None:
+                    log_event(logger, logging.INFO, "index_ticks_minute", **account)
         if ev.kind == "tick" and ev.tick is not None and ev.tick.key in self.book.internal_keys:
             self.book.update_internal(ev.tick)
             self.market_message_count += 1
