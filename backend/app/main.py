@@ -24,6 +24,9 @@ from app.forward.service import ForwardService
 from app.forward.store import ForwardStore
 from app.globalmkts.service import GlobalService
 from app.globalmkts.store import GlobalStore
+from app.intelligence.entry_lab_service import MIN_SAMPLES as ENTRY_LAB_MIN_SAMPLES
+from app.intelligence.entry_lab_service import EntryLabService
+from app.intelligence.entry_lab_service import compact as entry_lab_compact
 from app.intelligence.straddle_service import StraddleDecay
 from app.intelligence.straddle_store import StraddleStore
 from app.intelligence.wiring import create as create_intelligence
@@ -307,6 +310,20 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             store=StraddleStore(settings.data_dir), mi=intelligence.summary,
         )
         app.state.straddle.start()
+
+        def entry_lab_days() -> list[date]:
+            counts = observations.session_sample_counts(settings.underlying)
+            return [date.fromisoformat(k) for k, n in counts.items() if n >= ENTRY_LAB_MIN_SAMPLES]
+
+        def entry_lab_load(d: date) -> Any:
+            sd = app.state.straddle
+            expiries = sd._expiries(d)
+            if not expiries:
+                return None
+            snaps, _ = sd._read(expiries[0], d, max_points=None)
+            return entry_lab_compact(d, date.fromisoformat(expiries[0]), snaps, None)
+
+        app.state.entry_lab = EntryLabService(entry_lab_days, entry_lab_load)
         async def forward_expiries() -> tuple[str | None, str | None]:
             sel = await snapshot_service.expiries()
             weekly = None if sel.weekly is None else sel.weekly.isoformat()

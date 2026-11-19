@@ -21,7 +21,7 @@ export function StraddleIntelligence() {
     <div className="mx-auto flex max-w-[1500px] flex-col gap-3" data-testid="straddle-page">
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div>
-        <p className="text-xs text-muted"><Link to="/market-intelligence" className="text-info hover:underline">← Market Intelligence</Link></p>
+        <p className="text-xs text-muted"><Link to="/market-intelligence" className="text-info hover:underline">← Market Intelligence</Link> · <Link to="/market-intelligence/entry-lab" className="text-info hover:underline" data-testid="to-entry-lab">Entry Lab: what a short straddle entry would have made on the recorded days →</Link></p>
         <h1 className="text-xl font-semibold md:text-2xl">NIFTY Straddle Decay Intelligence</h1>
         <p className="text-xs text-muted">Why straddle premiums decay or hold their value, and whether conditions favour option sellers or buyers. Reads stored option-chain samples and the Market Intelligence engines; independent of the sentiment score.</p>
         </div>

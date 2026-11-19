@@ -1,3 +1,4 @@
+import { entryLabQuery } from "./entryLab";
 import type {
   ForwardCheck,
   PaperReport,
@@ -277,6 +278,8 @@ export const api = {
     request<import("./straddleDecay").StraddleDecay>(
       "/api/intelligence/straddle" + (o.session || o.asOf ? `?${[o.session ? `session=${encodeURIComponent(o.session)}` : "", o.asOf ? `as_of=${encodeURIComponent(o.asOf)}` : ""].filter(Boolean).join("&")}` : ""),
     ),
+  /** The Entry Lab: a short-straddle rule replayed on the recorded sessions (past days, in-sample). */
+  entryLab: (p: import("./entryLab").EntryLabParams) => request<import("./entryLab").EntryLab>(`/api/intelligence/entry-lab?${entryLabQuery(p)}`),
   straddleValidation: () => request<import("./straddleDecay").StraddleValidation>("/api/intelligence/straddle/validation"),
   intelligenceSummary: (expiry?: string) => request<import("./intelligence").Intelligence>(`/api/intelligence/summary${expiry ? `?expiry=${encodeURIComponent(expiry)}` : ""}`),
   intelligenceTimeline: (session?: string) => request<import("./intelligence").Timeline>(`/api/intelligence/timeline${session ? `?session=${encodeURIComponent(session)}` : ""}`),

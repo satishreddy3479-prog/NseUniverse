@@ -882,6 +882,48 @@ async def intelligence_straddle_validation(request: Request, sessions: int = 20)
     return await asyncio.to_thread(_cached, key, 300.0, lambda: svc.validation(n))
 
 
+@router.get("/intelligence/entry-lab")
+async def intelligence_entry_lab(
+    request: Request,
+    entry: Annotated[str, Query(pattern=r"^\d\d:\d\d$")] = "09:45",
+    exit: Annotated[str, Query(pattern=r"^\d\d:\d\d$")] = "15:15",
+    stop: Annotated[float | None, Query(ge=1, le=300)] = None,
+    target: Annotated[float | None, Query(ge=1, le=100)] = None,
+    roll: Annotated[float | None, Query(ge=20, le=500)] = None,
+    cost: Annotated[float, Query(ge=0, le=20)] = 2.0,
+    roll_cost: Annotated[float, Query(ge=0, le=20)] = 2.0,
+    presets: bool = False,
+) -> dict[str, Any]:
+    """The Entry Lab: what a short ATM straddle rule would have made on the recorded sessions.
+
+    Read-only, past days, in-sample."""
+    from app.intelligence.entry_lab import Rule
+    from app.intelligence.entry_lab_service import parse_hm
+
+    svc = getattr(request.app.state, "entry_lab", None)
+    if svc is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            {"code": "entry_lab_unavailable", "message": "the Entry Lab is not running"},
+        )
+    try:
+        rule = Rule(
+            entry=parse_hm(entry), exit=parse_hm(exit), stop_pct=stop, target_pct=target,
+            roll_pts=roll, cost=cost, roll_cost=roll_cost,
+        )  # fmt: skip
+    except ValueError as e:
+        detail = {"code": "bad_time", "message": "times are HH:MM"}
+        raise HTTPException(422, detail) from e
+    from app.domain.session import SESSION_OPEN, session_close
+
+    close = session_close()
+    if not (SESSION_OPEN <= rule.entry < rule.exit <= close):
+        message = f"entry must be before exit, inside {SESSION_OPEN:%H:%M}-{close:%H:%M}"
+        detail = {"code": "bad_window", "message": message}
+        raise HTTPException(422, detail)
+    return await asyncio.to_thread(svc.result, rule, presets)
+
+
 @router.get("/swing/minute")
 async def swing_minute(request: Request) -> dict[str, Any]:
     """The 1-minute shadow book: live-style swing rules, beside the official book. Shadow only."""
@@ -1149,7 +1191,7 @@ async def flows_cash_import(request: Request, body: CashImport) -> dict[str, Any
         return await asyncio.to_thread(request.app.state.flows.import_cash_csv, body.csv)
     except NseParseError as e:
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, {"code": "invalid_file", "message": str(e)}
+            422, {"code": "invalid_file", "message": str(e)}
         ) from e
 
 
