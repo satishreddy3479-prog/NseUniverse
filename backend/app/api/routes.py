@@ -984,6 +984,43 @@ async def intelligence_entry_lab(
     return await asyncio.to_thread(svc.result, rule, presets)
 
 
+@router.get("/intelligence/decay-probability")
+async def intelligence_decay_probability(
+    request: Request,
+    stop: Annotated[float | None, Query(ge=1, le=300)] = None,
+    target: Annotated[float | None, Query(ge=1, le=95)] = None,
+    exit: Annotated[str, Query(pattern=r"^\d\d:\d\d$")] = "15:15",
+    cost: Annotated[float, Query(ge=0, le=20)] = 2.0,
+    vol_scale: Annotated[float, Query(ge=0.5, le=1.5)] = 1.0,
+) -> dict[str, Any]:
+    """The model's odds that selling the at-the-money straddle now pays, with the typical and the
+    bad outcome and the odds of a stop or a target. Read-only; see decay_probability.py."""
+    from app.intelligence.entry_lab_service import parse_hm
+
+    svc = _straddle(request)
+    try:
+        exit_at = parse_hm(exit)
+    except ValueError as e:
+        raise HTTPException(422, {"code": "bad_time", "message": "times are HH:MM"}) from e
+    key = f"decay-prob|{id(svc)}|{stop}|{target}|{exit}|{cost}|{vol_scale}"
+    return await asyncio.to_thread(
+        _cached, key, 15.0, lambda: svc.decay_probability(stop, target, exit_at, cost, vol_scale)
+    )
+
+
+@router.get("/intelligence/decay-calibration")
+async def intelligence_decay_calibration(request: Request) -> dict[str, Any]:
+    """The decay-probability engine against the recorded sessions: reliability, Brier score,
+    quantile coverage, per volatility scale. Computed in the background."""
+    svc = getattr(request.app.state, "entry_lab", None)
+    if svc is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            {"code": "entry_lab_unavailable", "message": "the Entry Lab is not running"},
+        )
+    return await asyncio.to_thread(svc.calibration)
+
+
 @router.get("/intelligence/entry-lab/reference")
 async def intelligence_entry_lab_reference(request: Request) -> dict[str, Any]:
     """The recorded sessions beside the live decision: a short ATM straddle opened at the current

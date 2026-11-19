@@ -267,6 +267,39 @@ class StraddleDecay:
             prev = next((s.prev_close for s in early if s.prev_close), None)
         return rs.from_analysis(a, prev)
 
+    def decay_probability(self, stop_pct: float | None = None, target_pct: float | None = None, exit_at: time | None = None, cost: float = 2.0, vol_scale: float = 1.0) -> dict[str, Any]:
+        """The model's odds for the at-the-money short straddle in the newest stored chain, sold now and left at ``exit_at`` (default: 15:15), a stop or a target: see decay_probability.py.
+        Only while the newest sample is before the exit time; the answer says how old the chain is."""
+        from app.domain.session import default_close
+        from app.intelligence import decay_probability as dpb
+
+        if not self.enabled or self.obs is None:
+            return {"available": False, "reason": "straddle analysis is off"}
+        lat = self.latest()
+        if lat is None:
+            return {"available": False, "reason": "no stored chain yet"}
+        day, expiry = lat
+        lo, hi = datetime.combine(day, OPEN_T, IST), datetime.combine(day, session_close(), IST)
+        newest = self.obs.samples(self.underlying, expiry, since=lo, until=hi, limit=1)
+        if not newest or newest[-1].spot is None:
+            return {"available": False, "reason": "no stored chain for the newest session"}
+        s = newest[-1]
+        c = self.obs.contracts(s.values_from)
+        snap = straddle.Snap(s.received_at, s.spot, {k: (q.ltp if q.ltp is not None and q.ltp > 0 else None) for k, q in c.items()}, {k: q.oi for k, q in c.items()})
+        exp_day = date.fromisoformat(expiry)
+        point, why = straddle.build_point(snap, exp_day, self.rate)
+        if point is None:
+            return {"available": False, "reason": f"the chain cannot be priced: {why}"}
+        exit_dt = datetime.combine(day, exit_at or time(15, 15), IST)
+        out = dpb.for_point(point, datetime.combine(exp_day, default_close(exp_day), IST), exit_dt, stop_pct=stop_pct, target_pct=target_pct, cost=cost, vol_scale=vol_scale)
+        now = self._clock()
+        age = (now - s.received_at).total_seconds() / 60
+        out |= {"session": day.isoformat(), "expiry": expiry, "as_of": s.received_at.isoformat(), "age_minutes": round(age, 1), "stale": age > 10, "exit": f"{exit_dt:%H:%M}",
+                "stop_pct": stop_pct, "target_pct": target_pct, "cost": cost, "vol_scale": vol_scale}  # fmt: skip
+        if out.get("available"):
+            out["lines"] = dpb.explain(out)
+        return out
+
     def latest_scores(self) -> dict[str, Any]:
         """The seller and buyer environment scores for the top bar: the LIVE calculation on the newest stored sample (the page's own 20 s analysis, so the bar and the page show the
         same numbers and both move as soon as a new sample is stored, not at the next recorded minute). Only when no live calculation exists does it fall back to the newest

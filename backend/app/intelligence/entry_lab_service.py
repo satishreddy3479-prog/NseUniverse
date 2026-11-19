@@ -58,6 +58,9 @@ class EntryLabService:
         self._loaded: dict[str, Day] = {}
         self._failed: dict[str, str] = {}
         self._thread: threading.Thread | None = None
+        self._cal: dict[str, Any] | None = None
+        self._cal_n = -1
+        self._cal_thread: threading.Thread | None = None
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------------ which days exist
@@ -111,6 +114,32 @@ class EntryLabService:
     def days(self) -> list[Day]:
         with self._lock:
             return [self._loaded[k] for k in sorted(self._loaded)]
+
+    # ------------------------------------------------------------------ the decay engine's calibration
+    def calibration(self) -> dict[str, Any]:
+        """The decay-probability engine against the recorded days (a minute or so of work: computed in the background, kept until the number of loaded days changes)."""
+        from app.intelligence.decay_calibration import calibrate
+
+        self.start()
+        days = self.days()
+        with self._lock:
+            if self._cal is not None and self._cal_n == len(days):
+                return {"status": "ready", **self._cal}
+            busy = self._cal_thread is not None and self._cal_thread.is_alive()
+            if days and not busy:
+                def work(snapshot: list[Day] = days) -> None:
+                    try:
+                        res = calibrate(snapshot)
+                    except Exception:  # noqa: BLE001 - reported in the log, the next request tries again
+                        logger.exception("decay_calibration_failed")
+                        return
+                    with self._lock:
+                        self._cal, self._cal_n = res, len(snapshot)
+
+                self._cal_thread = threading.Thread(target=work, name="decay-calibration", daemon=True)
+                self._cal_thread.start()
+            have = None if self._cal is None else {"stale_for_days": self._cal_n, **self._cal}
+        return {"status": "computing", "days_loaded": len(days), "previous": have}
 
     # ------------------------------------------------------------------ answers
     def result(self, rule: Rule, with_presets: bool = False) -> dict[str, Any]:
