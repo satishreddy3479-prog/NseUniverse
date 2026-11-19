@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from app.domain.models import OptionChainSnapshot, OptionQuote
+from app.domain.session import session_close
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS samples (
@@ -381,7 +382,7 @@ class ObservationStore:
         return int(row[0]) if row else None
 
     def session_sample_counts(self, underlying: str) -> dict[str, int]:
-        """IST date -> in-session samples (09:15-15:40 IST) of the best-covered expiry that day.
+        """IST date -> in-session samples (09:15 to the session close, 15:40 IST; 15:45 from 7 Dec 2026) of the best-covered expiry that day.
 
         Only samples whose chain changed count: on an exchange holiday the sampler still runs and stores a few
         samples (then the same chain flagged unchanged), which must not make the holiday look like a session.
@@ -392,9 +393,9 @@ class ObservationStore:
             rows = self._db.execute(
                 "SELECT date(received_ms/1000 + 19800, 'unixepoch') AS d, expiry, COUNT(*) FROM samples"
                 " WHERE underlying=? AND unchanged=0"
-                " AND time(received_ms/1000 + 19800, 'unixepoch') BETWEEN '09:15:00' AND '15:40:59'"
+                " AND time(received_ms/1000 + 19800, 'unixepoch') BETWEEN '09:15:00' AND ?"
                 " GROUP BY d, expiry",
-                (underlying,),
+                (underlying, f"{session_close():%H:%M}:59"),
             ).fetchall()
         out: dict[str, int] = {}
         for d, _, n in rows:
@@ -402,15 +403,15 @@ class ObservationStore:
         return out
 
     def last_session_by_expiry(self, underlying: str, min_samples: int = 10) -> dict[str, str]:
-        """expiry -> IST date of the latest session (09:15-15:40) with at least ``min_samples`` stored samples of that expiry.
+        """expiry -> IST date of the latest session (09:15 to the close) with at least ``min_samples`` stored samples of that expiry.
         An expiry that was only ever sampled after hours is absent: it has no session to show (read-only)."""
         with self._lock:
             rows = self._db.execute(
                 "SELECT expiry, date(received_ms/1000 + 19800, 'unixepoch') AS d, COUNT(*) FROM samples"
                 " WHERE underlying=? AND unchanged=0"
-                " AND time(received_ms/1000 + 19800, 'unixepoch') BETWEEN '09:15:00' AND '15:40:59'"
+                " AND time(received_ms/1000 + 19800, 'unixepoch') BETWEEN '09:15:00' AND ?"
                 " GROUP BY expiry, d",
-                (underlying,),
+                (underlying, f"{session_close():%H:%M}:59"),
             ).fetchall()
         out: dict[str, str] = {}
         for e, d, n in rows:

@@ -15,7 +15,7 @@ import { fmtDateTimeIST, fmtInt, fmtPrice } from "../lib/format";
 import { Link, useSearchParams } from "react-router-dom";
 import { LegTimes } from "../components/LegTimes";
 import { useExpiries, useThrottledValue } from "../lib/hooks";
-import { marketClockMs } from "../lib/session";
+import { marketClockMs, sessionCloseHHMM } from "../lib/session";
 import { buildBook, marketIvOf, type Book } from "../lib/strategyBook";
 import { analyzeCurve, curveOf, isEstimateAt, legExpiries, pnlAtExpiry } from "../lib/multiExpiry";
 import { expiryEnd, legGreeks, sdLevel, netGreeks, probabilityOfProfit, probabilityOfProfitFn, scenarioGrid, sdBands, spotAtPremium, theoreticalPnl, type ContractGreeks, type Valuation } from "../lib/optionModel";
@@ -1146,7 +1146,7 @@ export default function StrategyBuilder() {
                             className={`min-h-7 rounded-sm border px-2 ${hold.mode === m.key ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate text-muted hover:text-paper"}`}>{m.label}</button>)}
                         </div>
                         {hold.mode !== "manual" && <label className="flex items-center gap-1">Auto-close at
-                          <input type="time" aria-label="Auto-close time" className={`${field} w-24`} min="09:16" max="15:40" value={hold.closeAt} onChange={(e) => e.target.value && change({ closeAt: e.target.value })} /> IST</label>}
+                          <input type="time" aria-label="Auto-close time" className={`${field} w-24`} min="09:16" max={sessionCloseHHMM()} value={hold.closeAt} onChange={(e) => e.target.value && change({ closeAt: e.target.value })} /> IST</label>}
                         <span data-testid="hold-note">{bad ?? note}{!autoOn && hold.mode !== "manual" ? " Auto stop & target is off, so nothing will close." : ""} You can always close a leg or the whole strategy yourself.</span>
                       </div>
                     );

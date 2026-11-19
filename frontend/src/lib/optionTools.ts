@@ -5,6 +5,7 @@
 import { RISK_FREE_RATE } from "./assumptions";
 import { carryFromForward, contractGreeks, impliedForward, type ContractGreeks } from "./optionModel";
 import { isSessionMs } from "./analytics";
+import { closingSchedule, sessionCloseMin } from "./session";
 import type { OptionChainRow, OptionQuote, StrikeSeries } from "./types";
 
 // ---------------------------------------------------------------- Smart OI
@@ -189,7 +190,6 @@ export const JUMP_FRACTION = 0.005;
 
 const IST_MS = 5.5 * 3600_000;
 const OPEN_MIN = 9 * 60 + 15;
-const CLOSE_MIN = 15 * 60 + 40;
 const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
 /**
@@ -201,13 +201,15 @@ const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${St
  * and is counted in `gapCandles`. Only the newest day with data is used so no change ever crosses a night.
  */
 export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?: string; openMin?: number; closeMin?: number; bars?: { at: string; o: number; h: number; l: number; c: number; n?: number | null; off?: number | null; proxy?: boolean; ind?: boolean }[] } = {}): SmartOiResult {
-  const day = opts.day, openMin = opts.openMin ?? OPEN_MIN, closeMin = opts.closeMin ?? CLOSE_MIN;
+  const day = opts.day, openMin = opts.openMin ?? OPEN_MIN, closeMin = opts.closeMin ?? sessionCloseMin();
   const empty: SmartOiResult = { day: null, timeframe, candles: [], baselineAt: null, gapCandles: 0, skippedSamples: 0, strikeChangeCandles: 0, stalls: [], thinBars: 0, unconfirmedBars: [], proxyMinutes: 0, indicativeMinutes: 0, jumps: [] };
   const n = Math.min(s.times.length, s.ce_oi.length, s.pe_oi.length, s.spot.length);
   const istOf = (iso: string) => new Date(new Date(iso).getTime() + IST_MS);
   let useDay = day ?? null;
   if (!useDay) for (let i = n - 1; i >= 0; i--) { const t = new Date(s.times[i]!).getTime(); if (!Number.isNaN(t)) { useDay = istOf(s.times[i]!).toISOString().slice(0, 10); break; } }
   if (!useDay || timeframe < 1) return empty;
+  // the minute the index prints its closing value (15:29 until 4 Dec 2026, 15:39 from 7 Dec): a constant from then on is the close, not a stall
+  const closeValueMin = Number(closingSchedule(useDay).indexEnd.slice(0, 2)) * 60 + Number(closingSchedule(useDay).indexEnd.slice(3, 5));
   type B = { last: number; lastOi: number; spots: number[]; volIdx: number };
   // Stalled quote: the same spot value in a long run of consecutive samples of the day. Those samples keep their OI but carry no usable price.
   const stale = new Set<number>();
@@ -221,7 +223,7 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
         for (let k = i; k <= j; k++) stale.add(k);
         const hm = (k: number) => istOf(s.times[k]!).toISOString().slice(11, 16);
         const startMin = istOf(s.times[i]!).getUTCHours() * 60 + istOf(s.times[i]!).getUTCMinutes();
-        if (startMin < 15 * 60 + 29) stalls.push({ from: hm(i), to: hm(j), value: s.spot[i]!, samples: j - i + 1 }); // a constant from 15:29 on is the closing value (the close is printed at 15:29 to 15:30), not a stall
+        if (startMin < closeValueMin - 1) stalls.push({ from: hm(i), to: hm(j), value: s.spot[i]!, samples: j - i + 1 }); // a constant from 15:29 on is the closing value (the close is printed at 15:29 to 15:30), not a stall
       }
       i = j + 1;
     }

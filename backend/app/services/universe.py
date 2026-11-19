@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from app.broker.base import BrokerError
 from app.domain.models import OptionChainSnapshot, OptionQuote
+from app.domain.session import session_close
 from app.services.snapshot_service import SnapshotService
 from app.stream.manager import Universe
 from app.stream.models import FeedToken
@@ -66,12 +67,15 @@ def tokens_from_snapshots(snaps: list[OptionChainSnapshot], underlying: str) -> 
 
 
 def market_hours(now: datetime) -> bool:
-    """Weekday 09:00-15:45 IST: when a fresh option chain is worth fetching before streaming.
+    """Weekday 09:00 to five minutes after the session close IST (15:45; 15:50 from 7 Dec 2026).
+
+    When a fresh option chain is worth fetching before streaming.
 
     Outside it the exchange is closed, so the latest stored chain is as good as a new one.
     """
     t_ = now.astimezone(IST)
-    return t_.weekday() < 5 and time(9, 0) <= t_.time() < time(15, 45)
+    limit = (datetime.combine(t_.date(), session_close()) + timedelta(minutes=5)).time()
+    return t_.weekday() < 5 and time(9, 0) <= t_.time() < limit
 
 
 def stored_targets(svc: SnapshotService, today: date) -> list[date]:

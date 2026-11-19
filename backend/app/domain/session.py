@@ -1,53 +1,104 @@
 """The NSE regular session the intraday analysis covers (IST).
 
-Since 3 Aug 2026 equity derivatives (NIFTY futures and options) trade 09:15-15:40, ten minutes
-longer than before, to line up with the cash market's Closing Auction Session (15:15-15:35 for
-F&O stocks). Every sampler, feature, label and chart reads the close from here, so if NSE changes
-the timing back, nothing needs changing: the close is read from the exchange feed (see ``session_close``).
+Three schedules, by date (NSE circulars as reported by Kotak Neo, 19 Nov 2026; to be confirmed against NSE's own circular):
+  before 3 Aug 2026     cash and F&O trade to 15:30 (no closing auction);
+  3 Aug - 4 Dec 2026    continuous cash trading ends at 15:15 and the Closing Auction Session (CAS) runs 15:15-15:35 for F&O stocks;
+                        index and stock F&O trade to 15:40. The cash segment's index is silent 15:15-15:20, then indicative values;
+  from 7 Dec 2026       continuous cash trading runs to 15:30, CAS 15:30-15:40 (reference price 15:30-15:31, order entry 15:31-15:40,
+                        matching 15:40-15:45); index and stock F&O trade to 15:45 (index contracts expiring that day stop at 15:30);
+                        expiry settlement is back to the 15:00-15:30 VWAP.
+Every sampler, feature, label and chart reads the close from here, and the close is confirmed from the exchange feed (see ``session_close``).
+``closing_schedule`` gives the auction windows of a day; nothing else in the code carries a closing clock time.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 _IST = ZoneInfo("Asia/Kolkata")
 
 SESSION_OPEN = time(9, 15)
-#: the close that applies until the exchange feed shows otherwise (CAS alignment since 3 Aug 2026); 15:30 before that
+#: the close that applies from 3 Aug 2026 until the exchange feed shows otherwise (CAS alignment); 15:30 before that
 DEFAULT_CLOSE = time(15, 40)
-KNOWN_CLOSES = (time(15, 30), time(15, 40))
+DEFAULT_CLOSE_DEC = time(15, 45)  # from 7 Dec 2026
+KNOWN_CLOSES = (time(15, 30), time(15, 40), time(15, 45))
+CAS_START_DAY = date(2026, 8, 3)
+CAS_SECOND_DAY = date(2026, 12, 7)
+
+
+def regime(day: date) -> int:
+    """0 before 3 Aug 2026, 1 from 3 Aug (cash trading ends 15:15, F&O to 15:40), 2 from 7 Dec 2026 (cash to 15:30, F&O to 15:45)."""
+    return 2 if day >= CAS_SECOND_DAY else 1 if day >= CAS_START_DAY else 0
+
+
+def default_close(day: date) -> time:
+    """The F&O session close the schedule gives for ``day``, until the exchange feed confirms or contradicts it."""
+    return {0: time(15, 30), 1: DEFAULT_CLOSE, 2: DEFAULT_CLOSE_DEC}[regime(day)]
+
+
+@dataclass(frozen=True)
+class ClosingSchedule:
+    """The closing auction of one day, in IST. The index is silent from ``cash_end`` (continuous cash trading has ended, last traded prices pause), shows the exchange's indicative closing
+    values from ``indicative_from`` to ``index_end``, and the tick account is kept from ``watch_from`` to ``watch_to``; the broker is asked for the index on request until ``snapshot_to``."""
+
+    cash_end: time
+    indicative_from: time
+    index_end: time
+    watch_from: time
+    watch_to: time
+    snapshot_to: time
+
+
+_SCHEDULE_FIRST = ClosingSchedule(time(15, 15), time(15, 20), time(15, 30), time(15, 10), time(15, 35), time(15, 21))
+_SCHEDULE_SECOND = ClosingSchedule(time(15, 30), time(15, 31), time(15, 40), time(15, 25), time(15, 45), time(15, 32))
+
+
+def closing_schedule(day: date) -> ClosingSchedule:
+    """From 7 Dec 2026 the auction moves from 15:15 to 15:30 (reference price 15:30-15:31, order entry to 15:40). The first schedule is the one observed on 19 Nov 2026."""
+    return _SCHEDULE_SECOND if regime(day) == 2 else _SCHEDULE_FIRST
 
 
 class _Clock:
-    """The session close in force. Set from the exchange's own market-status messages (see app/lifecycle/session_close.py),
-    never guessed: when NSE removes the CAS extension the feed's 'closed' message moves from 15:40 to 15:30 and the
-    close here follows without a code change."""
+    """The session close the exchange feed has confirmed (see app/lifecycle/session_close.py), and the schedule regime it was seen in. Never guessed: with no confirmation for
+    today's regime the schedule's default for today is used, so the close also moves on 7 Dec without a code change or a restart."""
 
     def __init__(self) -> None:
-        self.close = DEFAULT_CLOSE
+        self.close: time | None = None
+        self.regime = 1
         self.source = "default (Closing Auction Session alignment)"
 
 
 _CLOCK = _Clock()
 
 
+def _today() -> date:
+    return datetime.now(_IST).date()
+
+
 def session_close() -> time:
     """The regular session's last minute (IST) as of now. Call it where the close is used; do not copy it at import."""
-    return _CLOCK.close
+    today = _today()
+    if _CLOCK.close is not None and _CLOCK.regime == regime(today):
+        return _CLOCK.close
+    return default_close(today)
 
 
 def session_source() -> str:
-    return _CLOCK.source
+    today = _today()
+    if _CLOCK.close is not None and _CLOCK.regime == regime(today):
+        return _CLOCK.source
+    return f"schedule default for {today.isoformat()} (not yet confirmed by the exchange feed)"
 
 
 def set_session_close(close: time, source: str) -> None:
-    _CLOCK.close, _CLOCK.source = close, source
+    _CLOCK.close, _CLOCK.source, _CLOCK.regime = close, source, regime(_today())
 
 
 def session_label() -> str:
-    return f"{SESSION_OPEN:%H:%M}–{_CLOCK.close:%H:%M} IST"
+    return f"{SESSION_OPEN:%H:%M}–{session_close():%H:%M} IST"
 
 
 def market_time(at: datetime, is_trading_day: Callable[[date], bool | None] | None = None) -> datetime:

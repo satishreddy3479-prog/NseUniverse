@@ -45,7 +45,7 @@ from app.storage.observations import ObservationStore
 
 logger = logging.getLogger(__name__)
 VERSION = "eod-1"
-RUN_AFTER = time(15, 50)  # the sampler stops at 15:40 (derivatives close); everything is final by 15:50
+RUN_AFTER = time(15, 55)  # the sampler stops at the session close (15:40; 15:45 from 7 Dec 2026); everything is final by 15:55
 BACKUP_AFTER = time(19, 0)  # after the 18:30 price run and the 18:45 flow run
 COMPLETE_SAMPLES = 300  # in-session samples of one expiry for a day to count as a complete session
 RETRY_AFTER = timedelta(minutes=30)

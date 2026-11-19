@@ -10,16 +10,20 @@ from __future__ import annotations
 
 import statistics
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
+
+from app.domain.session import closing_schedule
 
 TOLERANCE = 40.0  # points: the basis of a bar's close may differ this much from its neighbours' median before it is flagged
 EXTREME_TOLERANCE = 80.0  # the same for a bar's high or low (a minute can range widely, so the allowance is wider)
 CLOSING_TOLERANCE, CLOSING_EXTREME_TOLERANCE = 25.0, 40.0  # points, inside the closing session (15:15-15:30)
-# NSE's closing auction session: continuous trading in the cash segment ends at 15:15 and the last traded prices pause until 15:20; from 15:20 the exchange sends INDICATIVE CLOSING values of the
+# NSE's closing auction session (times by date: ``app.domain.session.closing_schedule``; 15:15 / 15:20 / 15:30 until 4 Dec 2026, 15:30 / 15:31 / 15:40 from 7 Dec): continuous trading in the cash
+# segment ends and the last traded prices pause until the order-entry window opens; from then the exchange sends INDICATIVE CLOSING values of the
 # index (Kotak Neo's closing-auction explainer: "index values keep updating with an indicative closing price throughout CAS"). Those reads are real exchange output but can sit far from the future
 # while the order book is thin (19 Nov 2026: 25,560-25,596 against a future-implied 25,517 at 15:20-15:22). They are marked ``ind`` and kept, not called suspect.
-AUCTION_START, AUCTION_END = (15, 20), (15, 30)
+def _hm(t: time) -> tuple[int, int]:
+    return (t.hour, t.minute)
 FIRST_MINUTE = (9, 17)  # IST: the opening minutes are left out, the future and the index open apart
 NEIGHBOURS = 15  # minutes on each side
 MIN_NEIGHBOURS = 5
@@ -68,18 +72,17 @@ def flag_bars(bars: list[dict[str, object]], futures: Mapping[str, float]) -> No
         if (at.hour, at.minute) < FIRST_MINUTE:
             continue
         n = b.get("n")
-        if AUCTION_START <= (at.hour, at.minute) < AUCTION_END and not (isinstance(n, int) and n < THIN_READS):
+        sch = closing_schedule(at.date())
+        if _hm(sch.indicative_from) <= (at.hour, at.minute) < _hm(sch.index_end) and not (isinstance(n, int) and n < THIN_READS):
             b["ind"] = True  # an indicative closing value of the index: shown as its own kind of candle, never called an error
             continue
-        tight = CLOSING_START <= (at.hour, at.minute) < CLOSING_END  # in the closing session the index quote is not to be trusted: a narrower allowance
+        tight = _hm(sch.cash_end) <= (at.hour, at.minute) < _hm(sch.index_end)  # in the closing session the index quote is not to be trusted: a narrower allowance
         tol_c, tol_x = (CLOSING_TOLERANCE, CLOSING_EXTREME_TOLERANCE) if tight else (TOLERANCE, EXTREME_TOLERANCE)
         worst = max(((abs(v) / tol, v) for v, tol in ((oc, tol_c), (oh, tol_x), (ol, tol_x)) if v is not None), default=None)
         if worst is not None and worst[0] > 1:
             b["off"] = round(worst[1], 1)
 
 
-CLOSING_START = (15, 15)  # IST: from here to the close the exchange's cash market is in its closing session and the index quote stops moving, every day (seen 11, 17 and 18 Nov 2026)
-CLOSING_END = (15, 30)
 BASIS_MINUTES = 15  # the basis (future minus index) is taken from the trusted bars of this many minutes before the closing session starts
 
 
@@ -92,8 +95,9 @@ def proxy_bars(bars: Sequence[Mapping[str, object]], futures: Mapping[str, float
     day_first = next((datetime.fromisoformat(str(b["at"])).astimezone(IST) for b in bars), None)
     if day_first is None:
         return []
-    start = day_first.replace(hour=CLOSING_START[0], minute=CLOSING_START[1], second=0, microsecond=0)
-    end = day_first.replace(hour=CLOSING_END[0], minute=CLOSING_END[1], second=0, microsecond=0)
+    sch = closing_schedule(day_first.date())  # the cash segment's closing auction of that day
+    start = day_first.replace(hour=sch.cash_end.hour, minute=sch.cash_end.minute, second=0, microsecond=0)
+    end = day_first.replace(hour=sch.index_end.hour, minute=sch.index_end.minute, second=0, microsecond=0)
     def trusted(b: Mapping[str, object]) -> bool:
         n = b.get("n")
         return "off" not in b and not (isinstance(n, int) and n < THIN_READS)

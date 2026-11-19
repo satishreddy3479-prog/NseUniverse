@@ -16,6 +16,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from app.domain.session import session_close
 from app.intelligence import fusion as fz
 from app.intelligence import straddle, straddle_env, straddle_validation, straddle_watch
 from app.intelligence.straddle_store import StraddleStore
@@ -26,7 +27,7 @@ IST = ZoneInfo("Asia/Kolkata")
 MAX_POINTS = 400  # a full session is about 385 one-minute samples: nothing is thinned
 CACHE_S = 20.0
 ASOF_KEEP = 48  # replay answers kept (each is a few hundred KB)
-OPEN_T, CLOSE_T = time(9, 15), time(15, 40)
+OPEN_T = time(9, 15)  # the close is ``session_close()``: it moves from 15:40 to 15:45 on 7 Dec 2026
 
 
 def _ladder(snap: straddle.Snap) -> dict[str, Any] | None:
@@ -138,7 +139,7 @@ class StraddleDecay:
         return None
 
     def _read(self, expiry: str, day: date, max_points: int | None = MAX_POINTS, until: datetime | None = None) -> tuple[list[straddle.Snap], list[tuple[datetime, float | None]]]:
-        lo, hi = datetime.combine(day, OPEN_T, IST), datetime.combine(day, CLOSE_T, IST)
+        lo, hi = datetime.combine(day, OPEN_T, IST), datetime.combine(day, session_close(), IST)
         if until is not None:
             hi = min(hi, until)  # a replay: only what had been stored by then
         samples = [s for s in self.obs.samples(self.underlying, expiry, since=lo, until=hi) if s.spot is not None]
@@ -298,7 +299,7 @@ class StraddleDecay:
             return False
         now = (now or self._clock()).replace(second=0, microsecond=0)
         ist = now.astimezone(IST)
-        if ist.weekday() >= 5 or not (OPEN_T <= ist.time() <= CLOSE_T):
+        if ist.weekday() >= 5 or not (OPEN_T <= ist.time() <= session_close()):
             return False
         with self._lock:
             self._cache.clear()  # the minute's reading must be fresh, not the 20 s cache of the page
@@ -329,7 +330,7 @@ class StraddleDecay:
                 break
             day = now.date() - timedelta(days=back)
             ex = self._expiries(day)
-            if not ex or (back == 0 and now.time() < CLOSE_T):
+            if not ex or (back == 0 and now.time() < session_close()):
                 continue  # today's session is still running: not yet a chronological history
             snaps, _ = self._read(ex[0], day, None)
             out.append({"session": day.isoformat(), "expiry": ex[0], "windows": straddle.window_pairs(snaps, date.fromisoformat(ex[0]), minutes, self.rate)})

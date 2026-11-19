@@ -13,13 +13,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.domain.session import (
     DEFAULT_CLOSE,
     KNOWN_CLOSES,
+    regime,
     session_close,
     session_source,
     set_session_close,
@@ -64,6 +65,11 @@ def observed_closes(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def same_regime(observed: list[dict[str, Any]], today: date) -> list[dict[str, Any]]:
+    """Observations from days under the same schedule as ``today``: a close seen before the schedule changed (7 Dec 2026: 15:40 to 15:45) says nothing about the new one."""
+    return [o for o in observed if regime(date.fromisoformat(str(o["day"]))) == regime(today)]
+
+
 def decide(observed: list[dict[str, Any]], configured: str, current: time = DEFAULT_CLOSE) -> dict[str, Any]:
     """The close to use, why, and whether the exchange is showing something different from what is in force."""
     if configured != "auto":
@@ -102,7 +108,8 @@ class SessionCloseTracker:
         try:
             since = datetime.now(UTC) - timedelta(days=LOOKBACK_DAYS)
             observed = observed_closes(self.obs.events_of("market_status", since))
-            d = decide(observed, self.configured, session_close())
+            today = datetime.now(IST).date()
+            d = decide(same_regime(observed, today), self.configured, session_close())
             before = session_close()
             set_session_close(d["close"], d["source"])
             if d["close"] != before:

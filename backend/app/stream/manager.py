@@ -43,7 +43,7 @@ ACTIVE_STATES = {
     StreamState.RECONNECTING,
 }
 SUBSCRIBE_CHUNK = 200
-# in the closing auction's silent minutes only (index_watch.SNAPSHOT_WINDOW)
+# in the closing auction's silent minutes only (index_watch.in_snapshot_window)
 INDEX_SNAPSHOT_EVERY_S = 20.0
 
 

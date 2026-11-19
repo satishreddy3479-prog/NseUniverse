@@ -3,6 +3,8 @@
  * Pure functions, no UI and no network. Everything here is exact arithmetic on the legs; no price is modelled.
  */
 
+import { sessionCloseHHMM } from "./session"; // the auto-close time may not be after the session close (15:40; 15:45 from 7 Dec 2026)
+
 export type OptionType = "CE" | "PE";
 export type Action = "BUY" | "SELL";
 
@@ -560,7 +562,7 @@ export const DEFAULT_HOLD: HoldRule = { mode: "overnight", closeAt: "15:20" };
 
 export function holdProblem(h: HoldRule): string | null {
   if (!["intraday", "overnight", "manual"].includes(h.mode)) return "Choose intraday, overnight or manual.";
-  if (!/^\d\d:\d\d$/.test(h.closeAt) || h.closeAt <= "09:15" || h.closeAt > "15:40" || Number(h.closeAt.slice(3)) > 59) return "The close time has to be a time inside the session (09:15-15:40), for example 15:20.";
+  if (!/^\d\d:\d\d$/.test(h.closeAt) || h.closeAt <= "09:15" || h.closeAt > sessionCloseHHMM() || Number(h.closeAt.slice(3)) > 59) return `The close time has to be a time inside the session (09:15-${sessionCloseHHMM()}), for example 15:20.`;
   return null;
 }
 

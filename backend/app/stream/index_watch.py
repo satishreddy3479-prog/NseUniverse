@@ -10,14 +10,16 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from app.domain.session import closing_schedule
+
 IST = ZoneInfo("Asia/Kolkata")
-WINDOW = ((15, 10), (15, 35))
-SNAPSHOT_WINDOW = ((15, 15), (15, 21))  # the minutes in which the pushed index is silent in the closing auction (19 Nov 2026): the broker is asked for it on request
 
 
 def in_snapshot_window(now: datetime) -> bool:
+    """The minutes in which the pushed index is silent in the closing auction (15:15-15:21 until 4 Dec 2026, 15:30-15:32 from 7 Dec): the broker is asked for it on request."""
     t = now.astimezone(IST)
-    return SNAPSHOT_WINDOW[0] <= (t.hour, t.minute) < SNAPSHOT_WINDOW[1]
+    sch = closing_schedule(t.date())
+    return sch.cash_end <= t.time().replace(second=0, microsecond=0) < sch.snapshot_to
 
 
 class IndexWatch:
@@ -33,7 +35,8 @@ class IndexWatch:
         """Count one index tick. Returns the accounts of the minutes finished by this tick: the minute that was counting, and a ``ticks: 0`` account for every minute with no tick
         between it and this one (19 Nov 2026: 15:16-15:19 left no line at all, so the silence could only be inferred)."""
         t = now.astimezone(IST)
-        if not (WINDOW[0] <= (t.hour, t.minute) < WINDOW[1]):
+        sch = closing_schedule(t.date())
+        if not (sch.watch_from <= t.time().replace(second=0, microsecond=0) < sch.watch_to):
             return []
         t = t.replace(second=0, microsecond=0)
         minute = t.strftime("%H:%M")

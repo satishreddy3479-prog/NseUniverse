@@ -16,6 +16,7 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from typing import Any
 
+from app.domain.session import session_close
 from app.storage.strategies import StrategyStore
 
 logger = logging.getLogger(__name__)
@@ -233,13 +234,13 @@ def _hhmm(text: Any) -> time | None:
 
 
 def hold_problem(hold: dict[str, Any] | None) -> str | None:
-    """Why a holding rule cannot be used, or None. The close time has to lie inside the 09:15-15:40 session."""
+    """Why a holding rule cannot be used, or None. The close time has to lie inside the session (09:15 to the close: 15:40, 15:45 from 7 Dec 2026)."""
     h = hold or DEFAULT_HOLD
     if h.get("mode") not in ("intraday", "overnight", "manual"):
         return "Choose intraday, overnight or manual."
     t = _hhmm(h.get("closeAt", "15:20"))
-    if t is None or not time(9, 15) < t <= time(15, 40):
-        return "The close time has to be a time inside the session (09:15-15:40), for example 15:20."
+    if t is None or not time(9, 15) < t <= session_close():
+        return f"The close time has to be a time inside the session (09:15-{session_close():%H:%M}), for example 15:20."
     return None
 
 
