@@ -194,6 +194,14 @@ async def ops_alerts(request: Request) -> dict[str, Any]:
             })
     except Exception:  # noqa: BLE001, S110 - a failed check must not break the alert list
         pass
+    try:  # where the app overrode a source this hour, and what the last audits found
+        from app.domain.overrides import ledger
+        from app.lifecycle.day_audit import audit_alerts
+
+        alerts.extend(ledger.warnings())
+        alerts.extend(audit_alerts(request.app.state.eod.manifest, datetime.now(UTC)))
+    except Exception:  # noqa: BLE001, S110 - a failed check must not break the alert list
+        pass
     try:  # the global board, calendar and news jobs
         h = await asyncio.to_thread(request.app.state.globalmkts.health)
         for x in h["tasks"]:

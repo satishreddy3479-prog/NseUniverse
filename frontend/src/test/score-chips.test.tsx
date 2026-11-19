@@ -31,6 +31,7 @@ describe("buyer and seller scores beside the NIFTY price", () => {
     expect(title).toContain("Buyer environment 38, down 0 in 15 min");
     expect(title).toContain("expiry 2026-11-17");
     expect(title).toContain("not a trade signal");
+    expect(title).toContain("Reads: the rolling at-the-money straddle (re-centred, last 60 min)"); // which straddle and window the scores read
   });
 
   it("leaves the top bar as it was when there is no recent score", async () => {

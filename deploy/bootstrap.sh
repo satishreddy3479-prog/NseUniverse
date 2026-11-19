@@ -172,6 +172,7 @@ say "Installing the deploy tools"
 git clone --depth 1 --branch "$BRANCH" "$REPO_URL" "$ROOT/repo.bootstrap" >/dev/null 2>&1 || die "cannot clone $REPO_URL"
 src="$ROOT/repo.bootstrap/deploy"
 install -m 755 "$src/update.sh" /usr/local/sbin/nse-universe-update
+install -m 755 "$src/deploy-guard.sh" /usr/local/sbin/nse-universe-deploy-guard
 install -m 755 "$src/backup.sh" /usr/local/sbin/nse-universe-backup
 install -m 755 "$src/monitor.sh" /usr/local/sbin/nse-universe-monitor
 install -m 755 "$src/watchdog.sh" /usr/local/sbin/nse-universe-watchdog

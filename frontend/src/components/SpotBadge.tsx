@@ -2,6 +2,7 @@ import { fmtPct, fmtPrice, fmtSigned, fmtTimeIST } from "../lib/format";
 import { INDEX_KEY } from "../lib/liveStore";
 import { useSpotDisplay } from "../lib/useLive";
 import type { SnapshotSummary } from "../lib/types";
+import { Info } from "./Info";
 import { SourceTag } from "./ui";
 
 export { INDEX_KEY };
@@ -23,7 +24,7 @@ export function SpotBadge({ latest, className = "" }: { latest: SnapshotSummary 
   return (
     <div className={`flex shrink-0 items-center gap-x-3 whitespace-nowrap leading-tight ${className}`} title={useLive ? "Live from the exchange feed" : held ? `Held: the last price from the exchange feed, ${spot.at ? fmtTimeIST(new Date(spot.at).toISOString()) : ""}. Live prices resume when the market opens.` : "From the latest snapshot, not live"}>
       <div className="hidden flex-col items-start gap-0.5 min-[520px]:flex">
-        <span className="flex items-center gap-1.5 text-xs text-muted">NIFTY 50 {held ? <span className="inline-flex items-center rounded-sm border border-warn/50 px-1.5 py-px text-xs font-medium text-warn" data-testid="spot-held">Held {spot.at ? fmtTimeIST(new Date(spot.at).toISOString()) : ""}</span> : <SourceTag source={source} />}</span>
+        <span className="flex items-center gap-1.5 text-xs text-muted">NIFTY 50 {held ? <><span className="inline-flex items-center rounded-sm border border-warn/50 px-1.5 py-px text-xs font-medium text-warn" data-testid="spot-held">Held {spot.at ? fmtTimeIST(new Date(spot.at).toISOString()) : ""}</span> <Info term="held price" /></> : <SourceTag source={source} />}</span>
         {spot.kind === "snapshot" && latest && <span className="num text-[11px] text-muted" title={`Stored snapshot of the ${latest.expiry} expiry; each expiry reads the index on its own, so the other expiry can differ by a point or so`}>{fmtTimeIST(latest.retrieved_at)} · {latest.expiry.slice(5)}</span>}
       </div>
       <div className="flex flex-col items-start gap-px leading-none min-[520px]:items-end min-[520px]:gap-0.5 min-[520px]:leading-tight">

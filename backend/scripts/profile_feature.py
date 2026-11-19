@@ -12,12 +12,11 @@ from datetime import UTC, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.bench_backtest import seed  # noqa: E402
-
 from app.intraday.service import IntradayService  # noqa: E402
 from app.intraday.store import IntradayStore  # noqa: E402
 from app.prediction.flows_store import FlowsStore  # noqa: E402
 from app.prediction.history_store import HistoryStore  # noqa: E402
+from scripts.bench_backtest import seed  # noqa: E402
 from tests.unit.test_intraday import EXP  # noqa: E402
 
 tmp = Path(tempfile.mkdtemp(prefix="prof_"))

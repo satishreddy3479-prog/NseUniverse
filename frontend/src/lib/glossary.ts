@@ -9,6 +9,34 @@ export interface GlossaryEntry { what: string; read: string; caution?: string }
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9+% ]+/g, " ").replace(/\s+/g, " ").trim();
 
 const E: Record<string, GlossaryEntry> = {
+  // ---------------------------------------------------------------- how a price is labelled (one vocabulary for the whole app)
+  "live price": {
+    what: "A level taken from the exchange feed within the last few seconds, while the stream is moving.",
+    read: "It is the number to act on. The other labels (held, stored snapshot, stand-in, indicative) all mean it is NOT this.",
+  },
+  "held price": {
+    what: "The last live price, kept on screen because the feed is quiet and nothing newer exists: the pre-open session ends about 09:08 and the live market opens at 09:15, and after the close.",
+    read: "It is the real last price from the exchange feed, with the time it was taken; it is not updated until a fresh tick arrives (09:15 for the market open).",
+    caution: "Before the open it is a pre-open (indicative equilibrium) price, not a traded price. The change shown is still against the previous close.",
+  },
+  "stored snapshot": {
+    what: "A value from the option chain the app stored about once a minute during the session, shown when there is no live or held price newer than it.",
+    read: "Its time is shown. After the close it is the closing capture; before the open it is the previous session's last one.",
+    caution: "It can be minutes old, and each expiry reads the index on its own, so two expiries can differ by a point or so.",
+  },
+  "stand in candle": {
+    what: "A grey outlined candle for a minute in which the index sent nothing (the first five minutes of the closing auction): the NIFTY future minus the gap it had to the index before the auction.",
+    read: "It shows where the index would be if it followed the future. It is an estimate drawn so the chart has no hole, never an index price.",
+  },
+  "indicative closing value": {
+    what: "During the closing auction session the exchange's index updates with an indicative closing price built from the auction order book, not from traded prices.",
+    read: "These candles are real exchange output. Early in the auction (a thin order book) they can sit well away from the future, and they settle as orders come in.",
+    caution: "They are not prices anyone traded at, and the final close can differ.",
+  },
+  "closing auction": {
+    what: "NSE's closing auction session (CAS) for the cash market: continuous trading ends, a reference price is calculated, orders are entered, then matched at one closing price. 15:15-15:35 until Friday 4 Dec 2026; 15:30-15:40 from Monday 7 Dec 2026.",
+    read: "The cash segment (the NIFTY index and the 50 stocks) does not update normally at the start; the NIFTY future and the options keep trading to 15:40 (15:45 from 7 Dec).",
+  },
   // ---------------------------------------------------------------- Options Lab and Analyse tools
   "smart oi": {
     what: "How much more put OI than call OI was added inside each candle (1, 3, 5 or 15 minutes): (put OI now − put OI one candle ago) − (call OI now − call OI one candle ago). It is drawn as a bar from the zero line beside NIFTY's own candles.",

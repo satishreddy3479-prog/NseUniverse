@@ -17,6 +17,7 @@ export function ScoreChips() {
     `Straddle engine, expiry ${d.expiry ?? "—"}, recorded ${fmtTimeIST(d.at)}`,
     `Seller environment ${Math.round(d.seller)}${move(d.seller, d.seller_15m)}`,
     `Buyer environment ${Math.round(d.buyer)}${move(d.buyer, d.buyer_15m)}`,
+    `Reads: the rolling at-the-money straddle (re-centred, last 60 min), volatility, flow and positioning; the opening strike is not scored`,
     `${d.regime ?? "no regime"} · 60 or more is favourable for that side's premium behaviour; not a trade signal`,
   ].join("\n");
   const row = (label: string, v: number) => (

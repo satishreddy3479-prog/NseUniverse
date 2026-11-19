@@ -37,6 +37,19 @@ if [ -f "$STATE/failed_sha" ] && [ "$(cat "$STATE/failed_sha")" = "$remote" ]; t
   if [ "$age" -lt "$RETRY_AFTER_S" ]; then exit 0; fi   # do not rebuild a failing commit every minute
 fi
 
+# A deploy restarts the live stream, so a new commit waits for the close (deploy/deploy-guard.sh); the owner can let one through
+GUARD_BIN=${NSE_GUARD_BIN:-/usr/local/sbin/nse-universe-deploy-guard}
+if [ -x "$GUARD_BIN" ]; then
+  verdict=$(NSE_STATE="$STATE" "$GUARD_BIN" || echo "go (guard failed)")
+  case "$verdict" in
+    hold*)
+      [ "$(cat "$STATE/held_sha" 2>/dev/null || true)" = "$remote" ] || { log "$remote held: $verdict"; echo "$remote" > "$STATE/held_sha"; }
+      exit 0 ;;
+    "go (the owner allowed"*) rm -f "$STATE/allow-market-hours-deploy"; log "market-hours deploy allowed by the owner" ;;
+  esac
+fi
+rm -f "$STATE/held_sha"
+
 free_mb=$(df -Pm "$ROOT" | awk 'NR==2{print $4}')
 if [ "$free_mb" -lt "$MIN_FREE_MB" ]; then
   log "only ${free_mb} MB free (need ${MIN_FREE_MB}); update skipped, running version kept"
@@ -127,7 +140,7 @@ echo "$sha" > "$STATE/deployed_sha"
 rm -f "$STATE/failed_sha"
 # the scripts the timers run are refreshed from the release that just proved healthy
 if [ "$TEST_MODE" != 1 ]; then
-  for pair in update:nse-universe-update backup:nse-universe-backup monitor:nse-universe-monitor watchdog:nse-universe-watchdog; do
+  for pair in update:nse-universe-update deploy-guard:nse-universe-deploy-guard backup:nse-universe-backup monitor:nse-universe-monitor watchdog:nse-universe-watchdog; do
     src="$rel/deploy/${pair%%:*}.sh"; dst="/usr/local/sbin/${pair##*:}"
     [ -f "$src" ] && install -m 755 "$src" "$dst.new" && mv -f "$dst.new" "$dst"
   done

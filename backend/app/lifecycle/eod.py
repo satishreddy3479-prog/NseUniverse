@@ -39,6 +39,7 @@ from app.intraday.store import IntradayStore
 from app.lifecycle import storage
 from app.lifecycle.archive import archive_day, day_window, verify_archive
 from app.lifecycle.backup import backup_databases
+from app.lifecycle.day_audit import audit_day, minute_key
 from app.logging_setup import log_event
 from app.prediction.history_store import HistoryStore
 from app.storage.observations import ObservationStore
@@ -164,6 +165,24 @@ class EodService:
             ])  # fmt: skip
         return rows
 
+    def audit(self, day: date) -> dict[str, Any]:
+        """Cross-check the day's stored spot against the live index bars (lifecycle/day_audit.py). Read-only; a failure is reported, never raised."""
+        try:
+            if self.market is None:
+                return {"day": day.isoformat(), "findings": [], "skipped": "no market store"}
+            start, end = day_window(day)
+            lo, hi = datetime.fromtimestamp(start / 1000, UTC), datetime.fromtimestamp((end - 1) / 1000, UTC)
+            counts = self.obs.day_counts(self.underlying, start, end)
+            if not counts:
+                return {"day": day.isoformat(), "findings": [], "skipped": "no samples"}
+            expiry = max(counts, key=lambda c: c[1])[0]
+            spots = [(s.received_at, float(s.spot)) for s in self.obs.samples(self.underlying, expiry, since=lo, until=hi, limit=5000) if s.spot is not None and s.spot > 0 and not s.unchanged]
+            bars = {minute_key(datetime.fromisoformat(a)): p for a, p in self.market.samples_since("index1m", lo.isoformat()) if lo <= datetime.fromisoformat(a) <= hi}
+            return audit_day(day, spots, bars)
+        except Exception as e:  # noqa: BLE001 - the audit never blocks the end-of-day run
+            logger.warning("day_audit_failed: %s", e)
+            return {"day": day.isoformat(), "findings": [], "skipped": f"audit failed: {type(e).__name__}"}
+
     def summarise(self, day: date, status: str) -> int:
         """One immutable summary row per expiry (price path, options state, scores, regime)."""
         start, end = day_window(day)
@@ -213,9 +232,14 @@ class EodService:
             res["state"] = f"archive not verified: {arch.problem}"
             return res
         res["summaries_stored"] = self.summarise(day, v["status"])
+        audit = self.audit(day)
+        res["audit"] = audit
+        for f in audit.get("findings", []):
+            if f.get("level") == "warning":
+                log_event(logger, logging.WARNING, "day_audit_finding", day=day.isoformat(), id=f.get("id"), text=f.get("text"))
         self.manifests.mkdir(parents=True, exist_ok=True)
         doc = {"schema": 1, "version": VERSION, "day": day.isoformat(), "underlying": self.underlying, "status": v["status"], "created_utc": self._clock().isoformat(),
-               "validation": v, "archive": arch.public(), "summaries": {"table": "intraday.sqlite3:daily_summaries", "version": VERSION},
+               "validation": v, "audit": audit, "archive": arch.public(), "summaries": {"table": "intraday.sqlite3:daily_summaries", "version": VERSION},
                "notes": "the database remains the primary store; the archive is a verified copy"}  # fmt: skip
         tmp = self.manifest_path(day).with_suffix(".json.tmp")
         tmp.write_text(json.dumps(doc, indent=1), "utf-8")

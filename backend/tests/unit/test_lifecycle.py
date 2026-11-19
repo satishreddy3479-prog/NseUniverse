@@ -128,6 +128,31 @@ class TestEod:
         # idempotent: nothing pending, the second run writes nothing new
         assert svc.pending_days() == [] and len(IntradayStore(tmp_path).summaries()) == 1
 
+    def test_the_manifest_carries_the_after_close_audit_and_a_wrong_spot_becomes_a_warning(self, tmp_path: Path) -> None:
+        """The stored spot is cross-checked against the live index bars (lifecycle/day_audit.py); bars far from the stored spot are a warning in the manifest and the alert list."""
+        from app.lifecycle.day_audit import audit_alerts
+        from app.market.store import MarketStore
+
+        obs = fill(tmp_path, 320)
+        spot = obs.samples("NIFTY", EXP, limit=1)[0].spot
+        assert spot is not None
+        market = MarketStore(tmp_path / "m")
+        t0 = ist(9, 15).astimezone(UTC)
+        for i in range(320):  # a live index that sat 200 points above the stored spot all session
+            market.record_sample("index1m", (t0 + timedelta(minutes=i)).isoformat(), {"o": spot + 200, "h": spot + 205, "l": spot + 198, "c": spot + 201, "n": 59})
+        svc = service(tmp_path, obs, ist(*(RUN_AFTER.hour, RUN_AFTER.minute)), market=market)
+        assert svc.run()["state"] == "ok"
+        m = svc.manifest(DAY)
+        assert m is not None and m["audit"]["findings"][0]["id"] == "spot_vs_index" and m["audit"]["spot_vs_index"]["outside"] > 100
+        alerts = audit_alerts(svc.manifest, ist(16, 30))
+        assert alerts[0]["key"] == "audit-2026-10-29-spot_vs_index" and alerts[0]["level"] == "warning"
+
+    def test_without_a_market_store_the_audit_says_it_was_skipped(self, tmp_path: Path) -> None:
+        svc = service(tmp_path, fill(tmp_path, 320), ist(*(RUN_AFTER.hour, RUN_AFTER.minute)))
+        assert svc.run()["state"] == "ok"
+        m = svc.manifest(DAY)
+        assert m is not None and m["audit"]["findings"] == [] and m["audit"]["skipped"] == "no market store"
+
     def test_a_short_session_is_partial_not_ml_ready_and_still_archived(self, tmp_path: Path) -> None:
         svc = service(tmp_path, fill(tmp_path, 40), ist(16, 0))
         svc.run()

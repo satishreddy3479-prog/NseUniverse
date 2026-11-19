@@ -124,3 +124,31 @@ def test_a_quote_counts_as_frozen_after_three_identical_captures_ninety_seconds_
     svc._broker_levels = {}
     assert [cap(0, 25503.7), cap(5, 25503.7), cap(10, 25503.7)] == [False, False, False]  # captures a few seconds apart count once
     assert svc._quote_frozen(SimpleNamespace(expiry=EXPIRY, retrieved_at=t0, underlying_ltp=None)) is False  # missing stays missing
+
+
+def test_every_replacement_is_written_to_the_override_ledger() -> None:
+    """17 Nov 2026 frozen quote: the third identical capture is replaced and the ledger counts it (the 19 Nov false positives were only a log line)."""
+    from datetime import timedelta
+
+    from app.domain.models import Completeness, DataSource, OptionChainSnapshot
+    from app.domain.overrides import ledger
+    from app.services.snapshot_service import SnapshotService
+
+    ledger.reset()
+    svc = object.__new__(SnapshotService)
+    svc.spot_check = True
+    svc._broker_levels = {}
+    chain = rows(25453.8, [25300.0, 25350.0, 25400.0, 25450.0, 25500.0])
+    out = []
+    for i in range(3):
+        at = AT + timedelta(seconds=60 * i)
+        snap = OptionChainSnapshot(
+            snapshot_id=f"s{i}", session_id="x", underlying="NIFTY", expiry=EXPIRY, expiry_kinds=[],
+            source=DataSource.SNAPSHOT, retrieved_at=at, lot_size=65, multiplier=1, underlying_ltp=25413.0,
+            requested_strike_count=5, completeness=Completeness.COMPLETE, rows=chain, ce_count=5, pe_count=5,
+        )  # fmt: skip
+        out.append(svc._checked(snap))
+    assert [s.underlying_ltp_broker for s in out] == [None, None, 25413.0]  # only the third, frozen capture is replaced
+    assert ledger.counts(AT + timedelta(minutes=5))["index_quote_replaced"] == {"today": 1, "last_hour": 1}
+    assert "25413" in ledger.recent(1)[0]["detail"]
+    ledger.reset()

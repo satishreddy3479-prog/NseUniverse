@@ -74,6 +74,7 @@ describe("spot badge: the pre-open price is held until the market opens", () => 
     expect(screen.getByText("25,396.50")).toBeInTheDocument();
     expect(screen.queryByText("25,227.95")).toBeNull(); // yesterday's close is not shown as the price
     expect(screen.getByTestId("spot-held")).toHaveTextContent(/Held 09:08/);
+    expect(screen.getByRole("button", { name: "Help: how to read this" })).toBeInTheDocument(); // the Held label explains itself
     expect(screen.queryByText("Live")).toBeNull();
     expect(screen.getByText("+169 (+0.67%)")).toBeInTheDocument(); // the change is still against the previous close: 25,396.50 - 25,227.95 = 168.55, shown rounded
   });

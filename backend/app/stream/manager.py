@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
 
+from app.domain.overrides import ledger
 from app.logging_setup import log_event
 from app.stream.book import LiveBook
 from app.stream.feed import FeedSession
@@ -462,6 +463,7 @@ class StreamManager:
                 raise
             except Exception as e:  # noqa: BLE001 - a snapshot request must never disturb the stream
                 log_event(logger, logging.WARNING, "index_snapshot_failed", error=type(e).__name__)
+                ledger.record("index_snapshot_failed", type(e).__name__)
 
     async def _subscribe_market(self, feed: FeedSession, universe: Universe) -> None:
         """Breadth stocks. Best effort: a failure is recorded and the option feed carries on."""

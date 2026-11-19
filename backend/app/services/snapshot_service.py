@@ -22,6 +22,7 @@ from app.domain.models import (
     SnapshotSummary,
 )
 from app.domain.normalize import ChainFormatError, normalize_option_chain
+from app.domain.overrides import ledger
 from app.domain.spot_check import checked_spot
 from app.logging_setup import log_event
 from app.services.state import AppState
@@ -214,6 +215,8 @@ class SnapshotService:
             logger, logging.WARNING, "index_quote_replaced",
             broker=broker, used=spot, expiry=snap.expiry.isoformat(),
         )
+        detail = f"broker {broker} -> {spot} ({snap.expiry.isoformat()})"
+        ledger.record("index_quote_replaced", detail, snap.retrieved_at)
         update = {
             "underlying_ltp": spot,
             "underlying_ltp_broker": broker,
