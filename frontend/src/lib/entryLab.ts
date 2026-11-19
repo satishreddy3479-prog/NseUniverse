@@ -12,20 +12,36 @@ export interface EntryLabParams {
   maxRange: number | null;
   maxEff: number | null;
   skipBreak: boolean;
+  /** gates made of the overnight context and the calendar: GIFT Nifty's overnight move, high-importance events in the hold or overnight */
+  maxGift: number | null;
+  skipEventsHold: boolean;
+  skipEventsOvernight: boolean;
 }
 
-export const DEFAULT_RULE: EntryLabParams = { entry: "09:45", exit: "15:15", stop: null, target: null, roll: null, cost: 2, maxGap: null, maxRange: null, maxEff: null, skipBreak: false };
+export const DEFAULT_RULE: EntryLabParams = { entry: "09:45", exit: "15:15", stop: null, target: null, roll: null, cost: 2, maxGap: null, maxRange: null, maxEff: null, skipBreak: false, maxGift: null, skipEventsHold: false, skipEventsOvernight: false };
 
 /** What was known at the entry minute (null = could not be formed from the stored minutes). */
 export interface Signals {
   minutes: number | null; gap_pts: number | null; gap_pct: number | null; gap_ratio: number | null; range_so_far: number | null; range_ratio: number | null;
   or_break: "up" | "down" | null; eff30: number | null; acc: number | null; premium_pct: number | null;
+  /** overnight context and calendar (absent when nothing was recorded for the day; null = unknown, never zero) */
+  gift_move_pct?: number | null; es_move_pct?: number | null; nq_move_pct?: number | null; brent_move_pct?: number | null; dxy_move_pct?: number | null; usdinr_move_pct?: number | null;
+  gap_surprise_pts?: number | null; events_overnight?: number | null; events_hold?: number | null; events_overnight_names?: string[]; events_hold_names?: string[];
+}
+
+/** Today's overnight context from the ledger, next to the range signals. */
+export interface TodayContext {
+  recorded: boolean;
+  moves: Record<"gift" | "es" | "nq" | "brent" | "dxy" | "usdinr", number | null>;
+  events_known: boolean;
+  events_today: { time: string; country: string; name: string; forecast: string | null; actual: string | null }[];
+  events_overnight: string[] | null;
 }
 
 /** `/api/intelligence/range-signals`: the signals now, for the newest session. */
 export type RangeSignals =
-  | { available: false; reason: string }
-  | ({ available: true; session: string; as_of: string; live: boolean; stale: boolean; spot: number; premium: number; prev_close: number | null; note: string } & Signals);
+  | { available: false; reason: string; context?: TodayContext | null }
+  | ({ available: true; session: string; as_of: string; live: boolean; stale: boolean; spot: number; premium: number; prev_close: number | null; note: string; context?: TodayContext | null } & Signals);
 
 export interface DayResult {
   day: string;
@@ -100,7 +116,7 @@ export interface EntryLab {
   presets?: {
     entry_time: LabSummary[]; re_strike: LabSummary[]; stop: LabSummary[]; variants_tried: number; note: string;
     signal_study: { rule: string; days: number; signals: SignalRow[]; sufficient: boolean; note: string };
-    gates: { gap: LabSummary[]; range_so_far: LabSummary[]; efficiency: LabSummary[]; opening_range_break: LabSummary[]; variants_tried: number };
+    gates: { gap: LabSummary[]; range_so_far: LabSummary[]; efficiency: LabSummary[]; opening_range_break: LabSummary[]; gift_move: LabSummary[]; events_hold: LabSummary[]; events_overnight: LabSummary[]; variants_tried: number };
   };
   assumptions: string[];
 }
@@ -115,5 +131,8 @@ export function entryLabQuery(p: EntryLabParams): string {
   if (p.maxRange != null) q.set("max_range", String(p.maxRange));
   if (p.maxEff != null) q.set("max_eff", String(p.maxEff));
   if (p.skipBreak) q.set("skip_break", "true");
+  if (p.maxGift != null) q.set("max_gift", String(p.maxGift));
+  if (p.skipEventsHold) q.set("skip_events_hold", "true");
+  if (p.skipEventsOvernight) q.set("skip_events_overnight", "true");
   return q.toString();
 }

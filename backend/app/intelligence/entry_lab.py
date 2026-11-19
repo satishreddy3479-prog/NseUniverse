@@ -21,10 +21,11 @@ import random
 import statistics
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime, time
+from datetime import date, datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from app.intelligence import context_signals
 from app.intelligence.range_signals import compute as signals_at
 from app.intraday.volatility import CALL, PUT
 
@@ -50,6 +51,9 @@ class Rule:
     max_range_ratio: float | None = None  # gate: skip when the range so far is above this multiple of the premium
     max_eff30: float | None = None  # gate: skip when the last 30 minutes were this straight a line or straighter (0-1)
     skip_break: bool = False  # gate: skip when the index has broken out of its opening 30-minute range
+    skip_events_hold: bool = False  # gate: skip when a high-importance event falls between the entry and the exit
+    skip_events_overnight: bool = False  # gate: skip when a high-importance event fell between the previous close and the open
+    max_gift_pct: float | None = None  # gate: skip when GIFT Nifty moved more than this many percent overnight (either way)
 
     def label(self) -> str:
         parts = [f"entry {self.entry:%H:%M}", f"exit {self.exit:%H:%M}"]
@@ -67,13 +71,19 @@ class Rule:
             parts.append(f"skip if 30-min efficiency > {self.max_eff30:g}")
         if self.skip_break:
             parts.append("skip if the opening range is broken")
+        if self.skip_events_hold:
+            parts.append("skip if a high-importance event is inside the hold")
+        if self.skip_events_overnight:
+            parts.append("skip if a high-importance event came overnight")
+        if self.max_gift_pct is not None:
+            parts.append(f"skip if GIFT moved > {self.max_gift_pct:g}% overnight")
         return ", ".join(parts)
 
     def gated(self) -> bool:
-        return any(x is not None for x in (self.max_gap_pct, self.max_range_ratio, self.max_eff30)) or self.skip_break
+        return any(x is not None for x in (self.max_gap_pct, self.max_range_ratio, self.max_eff30, self.max_gift_pct)) or self.skip_break or self.skip_events_hold or self.skip_events_overnight
 
     def ungated(self) -> Rule:
-        return replace(self, max_gap_pct=None, max_range_ratio=None, max_eff30=None, skip_break=False)
+        return replace(self, max_gap_pct=None, max_range_ratio=None, max_eff30=None, skip_break=False, skip_events_hold=False, skip_events_overnight=False, max_gift_pct=None)
 
 
 @dataclass(frozen=True)
@@ -87,6 +97,9 @@ class Day:
     prices: Sequence[Mapping[tuple[float, int], float]]
     prev_close: float | None = None  # the previous session's close (from the broker's own quote), for the opening gap
     spot_source: str = "stored chain level"  # where the index level of each minute came from
+    context: Mapping[str, Any] | None = None  # the overnight moves recorded before the open (context_signals.compute_context); None = not recorded that day
+    events: Sequence[Mapping[str, Any]] | None = None  # the high-importance calendar events around the day
+    events_known: bool = False  # True only when the event ledger covered this day (otherwise the event features are unknown, not zero)
 
 
 def premium(prices: Mapping[tuple[float, int], float], strike: float) -> float | None:
@@ -113,6 +126,13 @@ def gate_failure(rule: Rule, sig: Mapping[str, Any]) -> str | None:
         return f"30-minute efficiency {e:.2f} is above {rule.max_eff30:g}"
     if rule.skip_break and sig.get("or_break"):
         return f"the opening range is broken {sig['or_break']}wards"
+    gift = sig.get("gift_move_pct")
+    if rule.max_gift_pct is not None and gift is not None and abs(gift) > rule.max_gift_pct:
+        return f"GIFT Nifty moved {gift:+.2f}% overnight, beyond {rule.max_gift_pct:g}%"
+    if rule.skip_events_hold and sig.get("events_hold"):
+        return f"high-importance event in the hold: {'; '.join(sig.get('events_hold_names') or [])}"
+    if rule.skip_events_overnight and sig.get("events_overnight"):
+        return f"high-importance event overnight: {'; '.join(sig.get('events_overnight_names') or [])}"
     return None
 
 
@@ -131,6 +151,8 @@ def simulate(rule: Rule, day: Day) -> dict[str, Any]:
         return base | {"skipped": "no price for the strike at the entry minute"}
     first_premium, strike0 = entry, k
     sig = signals_at(day.times, day.spots, i0, first_premium, day.prev_close)
+    if day.context is not None or day.events_known:
+        sig |= context_signals.features(date.fromisoformat(day.day), day.context, day.events, day.events_known, rule.entry, rule.exit, sig.get("gap_pts"), day.prev_close)
     why = gate_failure(rule, sig)
     if why is not None:
         return base | {"skipped": f"gate: {why}", "gated": True, "signals": sig}
@@ -251,7 +273,8 @@ def _ranks(vals: Sequence[float]) -> list[float]:
     return ranks
 
 
-SIGNALS = ("gap_pct_abs", "gap_ratio", "range_ratio", "range_so_far", "eff30", "acc", "premium_pct")
+SIGNALS = ("gap_pct_abs", "gap_ratio", "range_ratio", "range_so_far", "eff30", "acc", "premium_pct", "gift_move_pct_abs", "es_move_pct_abs", "gap_surprise_abs", "events_overnight", "events_hold")
+ABS_OF = {"gap_pct_abs": "gap_pct", "gift_move_pct_abs": "gift_move_pct", "es_move_pct_abs": "es_move_pct", "gap_surprise_abs": "gap_surprise_pts"}
 
 
 def signal_study(rule: Rule, days: Sequence[Day]) -> dict[str, Any]:
@@ -265,8 +288,8 @@ def signal_study(rule: Rule, days: Sequence[Day]) -> dict[str, Any]:
         pairs = []
         for r in used:
             sg = r["signals"]
-            if name == "gap_pct_abs":
-                g = sg.get("gap_pct")
+            if name in ABS_OF:
+                g = sg.get(ABS_OF[name])
                 v = None if g is None else abs(g)
             else:
                 v = sg.get(name)
@@ -290,7 +313,8 @@ def gate_sweeps(base: Rule, days: Sequence[Day]) -> dict[str, Any]:
     plain = [simulate(base.ungated(), d) for d in days]
     by_day = {r["day"]: r for r in plain}
     out: dict[str, Any] = {}
-    for key, field, values in (("gap", "max_gap_pct", [0.2, 0.3, 0.5, 0.75]), ("range_so_far", "max_range_ratio", [0.3, 0.4, 0.5, 0.6, 0.8]), ("efficiency", "max_eff30", [0.3, 0.5, 0.7])):
+    for key, field, values in (("gap", "max_gap_pct", [0.2, 0.3, 0.5, 0.75]), ("range_so_far", "max_range_ratio", [0.3, 0.4, 0.5, 0.6, 0.8]), ("efficiency", "max_eff30", [0.3, 0.5, 0.7]),
+                               ("gift_move", "max_gift_pct", [0.3, 0.5, 0.75])):  # fmt: skip
         rows = []
         for v in values:
             r = replace(base.ungated(), **{field: v})  # type: ignore[arg-type]
@@ -310,6 +334,14 @@ def gate_sweeps(base: Rule, days: Sequence[Day]) -> dict[str, Any]:
     s["value"] = "skip if broken"
     s["gated_days"], s["avoided_mean"], s["avoided_worst"] = len(avoided), (round(statistics.mean(avoided), 2) if avoided else None), (round(min(avoided), 2) if avoided else None)
     out["opening_range_break"] = [s]
+    for key, field in (("events_hold", "skip_events_hold"), ("events_overnight", "skip_events_overnight")):
+        r = replace(base.ungated(), **{field: True})  # type: ignore[arg-type]
+        res = [simulate(r, d) for d in days]
+        s = summarise(r, res)
+        avoided = [float(by_day[x["day"]]["net"]) for x in res if x.get("gated") and not by_day[x["day"]].get("skipped")]
+        s["value"] = "skip if event"
+        s["gated_days"], s["avoided_mean"], s["avoided_worst"] = len(avoided), (round(statistics.mean(avoided), 2) if avoided else None), (round(min(avoided), 2) if avoided else None)
+        out[key] = [s]
     out["variants_tried"] = sum(len(v) for v in out.values())
     return out
 

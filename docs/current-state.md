@@ -5,6 +5,9 @@ _Last updated: 2026-11-04_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Overnight context and event ledger (19 Nov 2026, D212)
+Built, tested offline, not yet live: a permanent ledger of high-importance calendar events and of the overnight moves (GIFT Nifty, US futures, Brent, dollar index, USD/INR), joined to the Entry Lab as point-in-time features, gates and study rows, and shown on the range card. Too few days exist for any conclusion (about 6 with context, 15 with events after the backfill); nothing enters a score. After the deploy run `python -m app.intelligence.context_backfill --data-dir <data> --from 2026-10-28 --to 2026-11-17` once on the server.
+
 ## Global markets, economic calendar, news (16 Nov 2026)
 Built (D172), three pages in the Analyse menu fed by `app/globalmkts` (Yahoo one-minute bars, Forex Factory public feed plus the official event list, ET/BBC/CNBC RSS). Backend 19 new tests and frontend 3 new tests on real captured payloads; full suites pass. Moneycontrol is not used (blocked for honest clients). To verify after deploy: `/api/global/overview`, `/api/calendar`, `/api/news` on the server, the futures' real delay once CME reopens (Mon 04:30 IST), `global.sqlite3` growth. GIFT Nifty has no source yet.
 

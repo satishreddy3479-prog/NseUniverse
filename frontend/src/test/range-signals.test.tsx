@@ -32,6 +32,17 @@ describe("range so far today", () => {
     expect(screen.getByTestId("range-prem")).toHaveTextContent("1.20% of NIFTY");
   });
 
+  it("shows what was known before the open and the calendar, and says when either is not recorded (unknown, not empty)", async () => {
+    const ctx = { recorded: true, moves: { gift: 0.4, es: -1, nq: null, brent: 0.2, dxy: null, usdinr: -0.1 }, events_known: true, events_today: [{ time: "13:30", country: "Euro area", name: "Flash PMI", forecast: "49.0", actual: null }], events_overnight: ["US: Retail Sales"] };
+    const { unmount } = mount({ ...live, context: ctx });
+    expect(await screen.findByTestId("range-context-moves")).toHaveTextContent("GIFT Nifty +0.40% · S&P 500 fut. −1.00% · Nasdaq fut. — · Brent +0.20%");
+    expect(screen.getByTestId("range-context-events")).toHaveTextContent("Today: 13:30 Euro area Flash PMI. Overnight: US: Retail Sales.");
+    unmount();
+    mount({ ...live, context: { ...ctx, recorded: false, events_known: false, events_today: [], events_overnight: null } });
+    expect(await screen.findByTestId("range-context-none")).toHaveTextContent("nothing is recorded for today yet");
+    expect(screen.getByTestId("range-context-events-unknown")).toHaveTextContent("unknown here, not empty");
+  });
+
   it("says Forming before 30 minutes, names a break, and shows dashes for what cannot be formed", async () => {
     mount({ ...live, minutes: 12, or_break: null, eff30: null, acc: null, gap_pts: null, gap_pct: null });
     expect(await screen.findByTestId("range-break")).toHaveTextContent("Forming");

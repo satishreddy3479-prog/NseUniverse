@@ -26,7 +26,8 @@ STRIKE_MARGIN = 400.0  # points beyond the day's range kept on each side
 MIN_BAR_READS = 10  # an index bar made from fewer reads is not used
 
 
-def compact(day: date, expiry: date, snaps: list[Any], tz: Any, prev_close: float | None = None, bars: Mapping[str, Mapping[str, Any]] | None = None) -> Day | None:
+def compact(day: date, expiry: date, snaps: list[Any], tz: Any, prev_close: float | None = None, bars: Mapping[str, Mapping[str, Any]] | None = None,
+            context: Mapping[str, Any] | None = None, events: list[Mapping[str, Any]] | None = None, events_known: bool = False) -> Day | None:  # fmt: skip
     """The stored samples of one session as a ``Day``: only minutes with a level and prices, and only the strikes the index could have reached.
 
     The index level of a minute is the OPEN of the live index feed's one-minute bar when there is one (a capture is taken within seconds of the minute's start, so the bar's open is the
@@ -47,7 +48,8 @@ def compact(day: date, expiry: date, snaps: list[Any], tz: Any, prev_close: floa
     lo, hi = min(r[1] for r in rows) - STRIKE_MARGIN, max(r[1] for r in rows) + STRIKE_MARGIN
     prices = [{key: float(v) for key, v in p.items() if v is not None and lo <= key[0] <= hi} for _, _, p in rows]
     source = "index feed bars" if from_bars >= 0.9 * len(rows) else "mixed: index bars and stored chain level" if from_bars else "stored chain level"
-    return Day(day=day.isoformat(), dte=(expiry - day).days, times=[r[0] for r in rows], spots=[r[1] for r in rows], prices=prices, prev_close=prev_close, spot_source=source)
+    return Day(day=day.isoformat(), dte=(expiry - day).days, times=[r[0] for r in rows], spots=[r[1] for r in rows], prices=prices, prev_close=prev_close, spot_source=source,
+               context=context, events=events, events_known=events_known)  # fmt: skip
 
 
 class EntryLabService:

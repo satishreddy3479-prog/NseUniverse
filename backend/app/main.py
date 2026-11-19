@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from pathlib import Path
@@ -24,6 +24,7 @@ from app.forward.service import ForwardService
 from app.forward.store import ForwardStore
 from app.globalmkts.service import GlobalService
 from app.globalmkts.store import GlobalStore
+from app.intelligence.context_ledger import ContextLedger
 from app.intelligence.entry_lab_service import MIN_SAMPLES as ENTRY_LAB_MIN_SAMPLES
 from app.intelligence.entry_lab_service import EntryLabService
 from app.intelligence.entry_lab_service import compact as entry_lab_compact
@@ -206,6 +207,9 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         globalmkts = GlobalService(
             GlobalStore(settings.data_dir), enabled=settings.globalmkts_enabled
         )
+        context_ledger = ContextLedger(settings.data_dir)
+        globalmkts.ledger = context_ledger
+        app.state.context_ledger = context_ledger
         app.state.globalmkts = globalmkts
         globalmkts.start()
         intraday_store = IntradayStore(settings.data_dir)
@@ -335,7 +339,19 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
                     t = datetime.fromisoformat(at)
                     if since <= t <= since + timedelta(hours=8):
                         bars[minute_key(t)] = payload
-            return entry_lab_compact(d, date.fromisoformat(expiries[0]), snaps, None, prev, bars)
+            ist = timezone(timedelta(hours=5, minutes=30))
+            cover = context_ledger.coverage()
+            day_ms = int(datetime.combine(d, time(0, 0), ist).timestamp() * 1000)
+            prev_day = (d - timedelta(days=1)).isoformat()
+            known = cover is not None and cover[0] <= prev_day and d.isoformat() <= cover[1]
+            near = 4 * 86_400_000
+            events: list[Mapping[str, Any]] | None = None
+            if known:
+                events = list(context_ledger.events_between(day_ms - near, day_ms + 86_400_000))
+            return entry_lab_compact(
+                d, date.fromisoformat(expiries[0]), snaps, None, prev, bars,
+                context_ledger.context(d.isoformat()), events, known,
+            )
 
         app.state.entry_lab = EntryLabService(entry_lab_days, entry_lab_load)
         async def forward_expiries() -> tuple[str | None, str | None]:
@@ -415,6 +431,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
                 login_task.cancel()
             await market.stop()
             market_store.close()
+            context_ledger.close()
             await close_tracker.stop()
             await strategy_automation.stop()
             await eod.stop()

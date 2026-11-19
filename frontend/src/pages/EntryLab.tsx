@@ -14,7 +14,8 @@ const ROLLS = [null, 50, 75, 100, 150];
 const GAPS = [null, 0.2, 0.3, 0.5, 0.75];
 const RANGES = [null, 0.3, 0.4, 0.5, 0.6, 0.8];
 const EFFS = [null, 0.3, 0.5, 0.7];
-const SIGNAL_NAME: Record<string, string> = { gap_pct_abs: "Opening gap (%, size)", gap_ratio: "Opening gap / premium", range_ratio: "Range so far / premium", range_so_far: "Range so far (points)", eff30: "30-minute efficiency (straightness)", acc: "Acceleration (last 15 min / the 15 before)", premium_pct: "Premium (% of the index)" };
+const GIFTS = [null, 0.3, 0.5, 0.75];
+const SIGNAL_NAME: Record<string, string> = { gap_pct_abs: "Opening gap (%, size)", gap_ratio: "Opening gap / premium", range_ratio: "Range so far / premium", range_so_far: "Range so far (points)", eff30: "30-minute efficiency (straightness)", acc: "Acceleration (last 15 min / the 15 before)", premium_pct: "Premium (% of the index)", gift_move_pct_abs: "GIFT Nifty overnight move (%, size)", es_move_pct_abs: "S&P 500 futures overnight move (%, size)", gap_surprise_abs: "Gap GIFT did not foresee (points, size)", events_overnight: "High-importance events overnight (count)", events_hold: "High-importance events in the hold (count)" };
 
 const sg = (v: number | null | undefined, d = 1) => (v == null ? MISSING : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}`);
 const tone = (v: number | null | undefined) => (v == null || v === 0 ? "text-paper" : v > 0 ? "text-up" : "text-down");
@@ -136,6 +137,12 @@ export function EntryLab() {
           <Select label="30-min efficiency above" value={p.maxEff} options={EFFS} onChange={(v) => set({ maxEff: v })} fmt={(v) => (v == null ? "Do not skip" : `${v}`)} />
           <label className="flex items-end gap-1.5 pb-1.5 text-xs text-paper"><input type="checkbox" aria-label="Skip when the opening range is broken" checked={p.skipBreak} onChange={(e) => set({ skipBreak: e.target.checked })} />Opening range broken</label>
         </div>
+        <h3 className="mt-3 text-xs font-semibold text-paper">Skip the day when (overnight context and calendar, known before the open)</h3>
+        <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid="lab-context-gates">
+          <Select label="GIFT Nifty moved more than" value={p.maxGift} options={GIFTS} onChange={(v) => set({ maxGift: v })} fmt={(v) => (v == null ? "Do not skip" : `${v}% overnight`)} />
+          <label className="flex items-end gap-1.5 pb-1.5 text-xs text-paper"><input type="checkbox" aria-label="Skip when a high-importance event is inside the hold" checked={p.skipEventsHold} onChange={(e) => set({ skipEventsHold: e.target.checked })} />Event inside the hold</label>
+          <label className="flex items-end gap-1.5 pb-1.5 text-xs text-paper"><input type="checkbox" aria-label="Skip when a high-importance event came overnight" checked={p.skipEventsOvernight} onChange={(e) => set({ skipEventsOvernight: e.target.checked })} />Event overnight</label>
+        </div>
         <p className="mt-2 text-[11px] text-muted" data-testid="lab-rule-label">{d.rule.label}. After a stop or a target the day is flat (no re-entry); a re-strike costs {d.rule.roll_cost} points.</p>
       </Card>
 
@@ -166,15 +173,17 @@ export function EntryLab() {
           <Card title="Day by day" id="lab-days">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[40rem] text-xs">
-                <thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Day</th><th className="text-right font-normal">Days to expiry</th><th className="text-right font-normal">Strike</th><th className="text-right font-normal">Premium sold</th><th className="text-right font-normal">NIFTY move</th><th className="text-right font-normal">Worst dip</th><th className="text-right font-normal">Gap %</th><th className="text-right font-normal">Range / premium</th><th className="text-right font-normal">Efficiency</th><th className="text-right font-normal">Net</th><th className="text-right font-normal">Exit</th><th className="text-right font-normal">Re-strikes</th></tr></thead>
+                <thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Day</th><th className="text-right font-normal">Days to expiry</th><th className="text-right font-normal">Strike</th><th className="text-right font-normal">Premium sold</th><th className="text-right font-normal">NIFTY move</th><th className="text-right font-normal">Worst dip</th><th className="text-right font-normal">Gap %</th><th className="text-right font-normal">Range / premium</th><th className="text-right font-normal">Efficiency</th><th className="text-right font-normal">GIFT move %</th><th className="text-right font-normal">Events (night / hold)</th><th className="text-right font-normal">Net</th><th className="text-right font-normal">Exit</th><th className="text-right font-normal">Re-strikes</th></tr></thead>
                 <tbody>
                   {d.days.map((r: DayResult) => r.skipped ? (
-                    <tr key={r.day} className="border-t border-rule/50 text-muted"><td className="py-1">{r.day}</td><td className="num text-right">{r.dte}</td><td colSpan={10} className="text-right">{r.skipped.startsWith("gate:") ? "not traded" : "skipped"}: {r.skipped.replace(/^gate: /, "")}{r.signals ? ` (gap ${r.signals.gap_pct == null ? MISSING : r.signals.gap_pct.toFixed(2)}%, range ${r.signals.range_ratio == null ? MISSING : r.signals.range_ratio.toFixed(2)} × premium)` : ""}</td></tr>
+                    <tr key={r.day} className="border-t border-rule/50 text-muted"><td className="py-1">{r.day}</td><td className="num text-right">{r.dte}</td><td colSpan={12} className="text-right">{r.skipped.startsWith("gate:") ? "not traded" : "skipped"}: {r.skipped.replace(/^gate: /, "")}{r.signals ? ` (gap ${r.signals.gap_pct == null ? MISSING : r.signals.gap_pct.toFixed(2)}%, range ${r.signals.range_ratio == null ? MISSING : r.signals.range_ratio.toFixed(2)} × premium)` : ""}</td></tr>
                   ) : (
                     <tr key={r.day} className="border-t border-rule/50">
                       <td className="py-1 text-paper">{r.day}</td><td className="num text-right">{r.dte}</td><td className="num text-right">{r.strike}</td><td className="num text-right">{r.entry_premium?.toFixed(1)}</td>
                       <td className="num text-right">{sg(r.spot_move, 0)}</td><td className="num text-right text-down">{sg(r.max_adverse == null ? null : -r.max_adverse, 0)}</td>
                       <td className="num text-right">{r.signals?.gap_pct == null ? MISSING : sg(r.signals.gap_pct, 2)}</td><td className="num text-right">{r.signals?.range_ratio == null ? MISSING : r.signals.range_ratio.toFixed(2)}</td><td className="num text-right">{r.signals?.eff30 == null ? MISSING : r.signals.eff30.toFixed(2)}</td>
+                      <td className="num text-right" data-testid="lab-gift-cell">{r.signals?.gift_move_pct == null ? MISSING : sg(r.signals.gift_move_pct, 2)}</td>
+                      <td className="num text-right" title={[...(r.signals?.events_overnight_names ?? []), ...(r.signals?.events_hold_names ?? [])].join("; ")}>{r.signals?.events_overnight == null ? MISSING : `${r.signals.events_overnight} / ${r.signals.events_hold ?? 0}`}</td>
                       <td className={`num text-right font-semibold ${tone(r.net)}`}>{sg(r.net)}</td><td className="num text-right">{r.exit_at} {r.exit_reason === "time" ? "" : `(${r.exit_reason})`}</td><td className="num text-right">{r.restrikes}</td>
                     </tr>
                   ))}
@@ -218,6 +227,9 @@ export function EntryLab() {
               <GateSweep title="Skip when the range so far is large" rows={d.presets.gates.range_so_far} unit=" × premium" apply={(v) => set({ maxRange: Number(v) })} />
               <GateSweep title="Skip when the last 30 minutes were a straight line" rows={d.presets.gates.efficiency} unit="" apply={(v) => set({ maxEff: Number(v) })} />
               <GateSweep title="Skip when the opening range is broken" rows={d.presets.gates.opening_range_break} unit="" apply={() => set({ skipBreak: true })} />
+              <GateSweep title="Skip when GIFT Nifty moved a lot overnight" rows={d.presets.gates.gift_move} unit="%" apply={(v) => set({ maxGift: Number(v) })} />
+              <GateSweep title="Skip when an event falls inside the hold" rows={d.presets.gates.events_hold} unit="" apply={() => set({ skipEventsHold: true })} />
+              <GateSweep title="Skip when an event came overnight" rows={d.presets.gates.events_overnight} unit="" apply={() => set({ skipEventsOvernight: true })} />
             </div>
           )}
           {d.presets && <p className="text-xs text-muted" data-testid="lab-variants">{d.presets.variants_tried} variants are compared above on the same days. {d.presets.note} Click a row to apply it to the rule.</p>}

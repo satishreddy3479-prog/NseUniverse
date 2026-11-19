@@ -20,6 +20,7 @@ BASELINE: dict[str, int] = {
     "domain/spot_check.py": 1,  # EXPIRY_CLOSE: the expiring index contracts stop at 15:30 in both schedules
     "forward/service.py": 1,  # the paper trader's 15:20 exit
     "intelligence/entry_lab.py": 1,  # the default exit time of a replayed rule (a parameter of the experiment, not the session schedule)
+    "intelligence/context_signals.py": 1,  # the previous NIFTY close (15:30) the overnight move is measured from
     "globalmkts/service.py": 1,  # polling cadence window
     "globalmkts/symbols.py": 3,  # other exchanges' hours (GIFT Nifty, Nikkei, KOSPI)
     "intraday/price_structure.py": 1,  # opening-range minutes (15, 30), not a clock time

@@ -33,6 +33,8 @@ from app.prediction.events import REFERENCE
 
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
+CONTEXT_EVERY_S = 300.0  # the overnight context is taken once a day before the open; this is how often the job looks
+CONTEXT_LOOKBACK_D = 8  # days with bars still held (BARS_KEEP_D) that get a context when one is missing
 QUOTE_FAST_S, QUOTE_SLOW_S, QUOTE_RETRY_S = 60.0, 300.0, 120.0
 NEWS_S, NEWS_FAST_S, CAL_S, CAL_RETRY_S = 600.0, 120.0, 6 * 3600.0, 1800.0  # news: every 2 minutes in Indian market hours, every 10 otherwise
 FULL_REFRESH_S = 6 * 3600.0
@@ -115,6 +117,8 @@ class GlobalService:
         self._started_at: float | None = None
         self._tasks_running: list[asyncio.Task[None]] = []
         self._full_at: float | None = None  # monotonic time of the last five-day download
+        self.ledger: Any = None  # app.intelligence.context_ledger.ContextLedger: what the lab needs to remember (set by the application; None = nothing is kept)
+        self._ctx_tried: set[str] = set()
 
     # ------------------------------------------------------------------ polls (blocking: run them in a thread)
     def poll_quotes(self) -> dict[str, Any]:
@@ -212,7 +216,9 @@ class GlobalService:
         now = self._clock()
         out: dict[str, Any] = {}
         try:
-            out["official"] = self.store.upsert_events(calendar_feed.official_events(self.official_path), now, self._event_floor(now))
+            official = calendar_feed.official_events(self.official_path)
+            out["official"] = self.store.upsert_events(official, now, self._event_floor(now))
+            self._ledger_add(official, now)
             self.store.add_run("calendar_official", now, True, out["official"])
         except Exception as e:  # noqa: BLE001
             out["official"] = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
@@ -223,7 +229,9 @@ class GlobalService:
             errors: list[str] = []
             for url in calendar_feed.FF_URLS:
                 try:
-                    r = self.store.upsert_events(calendar_feed.parse_ff(self._fetch(url)), now, self._event_floor(now))
+                    ff = calendar_feed.parse_ff(self._fetch(url))
+                    self._ledger_add(ff, now)
+                    r = self.store.upsert_events(ff, now, self._event_floor(now))
                     for k in ("new", "changed", "same"):
                         res[k] += r[k]
                 except Exception as e:  # noqa: BLE001 - the feed rate-limits or is down: recorded, the stored events stay
@@ -237,12 +245,16 @@ class GlobalService:
         """India and US events with forecasts and actuals from the biquote calendar: one small request, repeated every 15 minutes because actuals appear through the day."""
         now = self._clock()
         try:
-            res: dict[str, Any] = dict(self.store.upsert_events(calendar_feed.parse_biquote(self._fetch(calendar_feed.bq_url(now))), now, self._event_floor(now)))
+            india_us = calendar_feed.parse_biquote(self._fetch(calendar_feed.bq_url(now)))
+            self._ledger_add(india_us, now)
+            res: dict[str, Any] = dict(self.store.upsert_events(india_us, now, self._event_floor(now)))
             try:  # the other countries, high importance only: a failure here must not hide the India and US result
                 floor = self._event_floor(now)
                 parsed = calendar_feed.parse_biquote(self._fetch(calendar_feed.bq_url_world(now)))
                 stored = self.store.events_between(ms(now - timedelta(days=3)), ms(now + timedelta(days=31)))
-                world = self.store.upsert_events(calendar_feed.keep_matched_medium(parsed, stored), now, floor)
+                world_rows = calendar_feed.keep_matched_medium(parsed, stored)
+                self._ledger_add(world_rows, now)
+                world = self.store.upsert_events(world_rows, now, floor)
                 for k in ("new", "changed", "same"):
                     res[k] = res.get(k, 0) + world.get(k, 0)
             except Exception as e:  # noqa: BLE001 - recorded in the result; the India and US events are stored
@@ -252,6 +264,46 @@ class GlobalService:
             res = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
             self.store.add_run("calendar_biquote", now, False, res)
         return res
+
+    def _ledger_add(self, events: list[dict[str, Any]], now: datetime) -> None:
+        """Keep the high-importance events in the permanent ledger. Never raises: the calendar must not depend on it."""
+        if self.ledger is None:
+            return
+        try:
+            self.ledger.add_events(events, now)
+        except Exception as e:  # noqa: BLE001 - recorded in the log only
+            logger.warning("event_ledger_failed: %s", e)
+
+    def record_context(self) -> dict[str, Any]:
+        """Once a day, before the open, keep the overnight moves of GIFT Nifty and a few world markets (and fill in a recent day that has none while its bars are still held)."""
+        from app.intelligence.context_signals import (
+            CONTEXT_SYMBOLS,
+            PRE_OPEN,
+            compute_context,
+            prev_weekday,
+        )
+
+        if self.ledger is None:
+            return {"ok": True, "skipped": "no ledger"}
+        now = self._clock()
+        ist = now.astimezone(IST)
+        written: list[str] = []
+        have = set(self.ledger.context_days())
+        for back in range(CONTEXT_LOOKBACK_D, -1, -1):
+            day = ist.date() - timedelta(days=back)
+            key = day.isoformat()
+            if day.weekday() >= 5 or key in have or key in self._ctx_tried:
+                continue
+            if day == ist.date() and ist.time() < PRE_OPEN:
+                continue  # the pre-open price does not exist yet
+            self._ctx_tried.add(key)
+            since = ms(datetime.combine(prev_weekday(day), time(0, 0), IST))
+            series = {s: self.store.series(s, since, limit=30000) for s in CONTEXT_SYMBOLS}
+            ctx = compute_context(series, day)
+            if ctx["moves"] and self.ledger.put_context(key, ctx, now):
+                written.append(key)
+        self.store.add_run("day_context", now, True, {"written": written})
+        return {"ok": True, "written": written}
 
     @staticmethod
     def _today(now: datetime) -> str:
@@ -510,6 +562,7 @@ class GlobalService:
             _Task("calendar", "calendar_feed", self.poll_calendar, lambda r: CAL_S if "feed" in r and "errors" not in r["feed"] else CAL_RETRY_S, 9.0, 13 * 3600),
             _Task("biquote", "calendar_biquote", self.poll_biquote, lambda r: CAL_RETRY_S if "error" in r else (BQ_FAST_S if self.awaiting_actual() else BQ_S), 12.0, 45 * 60),
             _Task("local", "calendar_local", lambda: self.poll_local_calendar() or {}, lambda r: 300.0, 15.0, None),
+            _Task("context", "day_context", self.record_context, lambda r: CONTEXT_EVERY_S, 20.0, None, enabled=self.ledger is not None),
             _Task("cleanup", "cleanup", self.cleanup, lambda r: CLEAN_S, 30.0, 3 * 3600),
         ]
 

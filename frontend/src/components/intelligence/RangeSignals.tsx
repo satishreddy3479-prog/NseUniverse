@@ -1,12 +1,39 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../../lib/api";
+import type { TodayContext } from "../../lib/entryLab";
 import { fmtTimeIST, MISSING } from "../../lib/format";
 
 const sg = (v: number | null | undefined, d = 1) => (v == null ? MISSING : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}`);
 
 function Item({ label, value, sub, testid }: { label: string; value: string; sub?: string; testid: string }) {
   return <div className="rounded-sm border border-rule/60 bg-slate-2 px-2 py-1.5" data-testid={testid}><div className="text-[11px] text-muted">{label}</div><div className="num text-sm font-semibold text-paper">{value}</div>{sub && <div className="text-[11px] text-muted">{sub}</div>}</div>;
+}
+
+const MOVE_NAME: Record<keyof TodayContext["moves"], string> = { gift: "GIFT Nifty", es: "S&P 500 fut.", nq: "Nasdaq fut.", brent: "Brent", dxy: "Dollar index", usdinr: "USD/INR" };
+
+/** What was known before the open: the overnight moves taken at 09:14 and the high-importance events of the night and the day. Context, not a forecast: the Entry Lab tests whether it has mattered. */
+function ContextRow({ c }: { c: TodayContext | null | undefined }) {
+  if (!c) return null;
+  const keys = Object.keys(MOVE_NAME) as (keyof TodayContext["moves"])[];
+  return (
+    <div className="mt-2" data-testid="range-context">
+      <h3 className="text-xs font-semibold text-paper">Before the open and the calendar</h3>
+      {c.recorded ? (
+        <p className="mt-1 text-[11px] text-muted" data-testid="range-context-moves">Overnight, 15:30 to 09:14: {keys.map((k) => `${MOVE_NAME[k]} ${c.moves[k] == null ? MISSING : `${sg(c.moves[k], 2)}%`}`).join(" · ")}</p>
+      ) : (
+        <p className="mt-1 text-[11px] text-muted" data-testid="range-context-none">The overnight moves are recorded at 09:14; nothing is recorded for today yet.</p>
+      )}
+      {c.events_known ? (
+        <p className="mt-1 text-[11px] text-muted" data-testid="range-context-events">
+          {c.events_today.length === 0 ? "No high-importance event with a set time today." : `Today: ${c.events_today.map((e) => `${e.time} ${e.country} ${e.name}`).join("; ")}.`}
+          {c.events_overnight && c.events_overnight.length > 0 ? ` Overnight: ${c.events_overnight.join("; ")}.` : ""}
+        </p>
+      ) : (
+        <p className="mt-1 text-[11px] text-muted" data-testid="range-context-events-unknown">The event record does not cover today yet: the calendar is unknown here, not empty.</p>
+      )}
+    </div>
+  );
 }
 
 /** How far NIFTY has moved today and whether the move is speeding up. A description of the day so far, not a forecast; the Entry Lab tests whether these numbers have mattered. */
@@ -33,6 +60,7 @@ export function RangeSignalsCard() {
         <Item testid="range-acc" label="Speeding up?" value={d.acc == null ? MISSING : `${d.acc.toFixed(2)}×`} sub="range of the last 15 min against the 15 before" />
         <Item testid="range-prem" label="Straddle premium" value={`${d.premium.toFixed(0)} pts`} sub={d.premium_pct == null ? undefined : `${d.premium_pct.toFixed(2)}% of NIFTY`} />
       </div>
+      <ContextRow c={d.context} />
       <p className="mt-2 text-[11px] text-muted"><Link to="/market-intelligence/entry-lab" className="text-info hover:underline">Entry Lab: do these signals separate good entry days from bad ones? →</Link></p>
     </>,
   );

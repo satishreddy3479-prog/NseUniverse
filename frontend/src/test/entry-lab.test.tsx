@@ -21,10 +21,10 @@ const payload = (over: Partial<EntryLab> = {}): EntryLab => ({
   summary: sum(),
   days: [day("2026-11-06", 3, -184.6), day("2026-11-17", 0, 17), day("2026-11-19", 4, -108.6), { day: "2026-11-18", dte: 5, skipped: "no price for the strike at the entry minute" }],
   presets: {
-    entry_time: [sum({ value: "09:30" }), sum({ value: "09:45" })], re_strike: [sum({ value: null }), sum({ value: 100, mean: 9.9 })], stop: [sum({ value: null }), sum({ value: 20 })], variants_tried: 35, note: "The more variants are tried, the more likely one looks good by luck.",
+    entry_time: [sum({ value: "09:30" }), sum({ value: "09:45" })], re_strike: [sum({ value: null }), sum({ value: 100, mean: 9.9 })], stop: [sum({ value: null }), sum({ value: 20 })], variants_tried: 40, note: "The more variants are tried, the more likely one looks good by luck.",
     signal_study: { rule: "entry 09:45", days: 3, sufficient: false, note: "Each signal is read at the entry minute and compared with that day's net result. A signal that helps a short straddle shows a NEGATIVE value.", signals: [
       { signal: "range_ratio", days: 3 }, { signal: "gap_pct_abs", days: 6, median_value: 0.3, pearson: -0.6, spearman: -0.7, at_or_below_median: { days: 3, mean: 12.5, median: 10, win_pct: 66.7, worst: -20 }, above_median: { days: 3, mean: -30, median: -25, win_pct: 33.3, worst: -90 }, split_gap: 42.5 } ] },
-    gates: { gap: [sum({ value: 0.3, days: 2, gated_days: 1, avoided_mean: -184.6, avoided_worst: -184.6 })], range_so_far: [sum({ value: 0.5, days: 2, gated_days: 1, avoided_mean: -108.6, avoided_worst: -108.6 })], efficiency: [sum({ value: 0.5, days: 3, gated_days: 0, avoided_mean: null, avoided_worst: null })], opening_range_break: [sum({ value: "skip if broken", days: 2, gated_days: 1, avoided_mean: -184.6, avoided_worst: -184.6 })], variants_tried: 13 },
+    gates: { gap: [sum({ value: 0.3, days: 2, gated_days: 1, avoided_mean: -184.6, avoided_worst: -184.6 })], range_so_far: [sum({ value: 0.5, days: 2, gated_days: 1, avoided_mean: -108.6, avoided_worst: -108.6 })], efficiency: [sum({ value: 0.5, days: 3, gated_days: 0, avoided_mean: null, avoided_worst: null })], opening_range_break: [sum({ value: "skip if broken", days: 2, gated_days: 1, avoided_mean: -184.6, avoided_worst: -184.6 })], gift_move: [sum({ value: 0.5, days: 2, gated_days: 1, avoided_mean: -108.6, avoided_worst: -108.6 })], events_hold: [sum({ value: "skip if event", days: 3, gated_days: 0, avoided_mean: null, avoided_worst: null })], events_overnight: [sum({ value: "skip if event", days: 3, gated_days: 0, avoided_mean: null, avoided_worst: null })], variants_tried: 18 },
   },
   assumptions: ["A short ATM straddle booked from the stored last traded prices.", "Past days, in-sample: a description, not a forecast."], ...over,
 });
@@ -52,7 +52,7 @@ describe("the Entry Lab page", () => {
     const days = screen.getByTestId("lab-days");
     expect(within(days).getByText("2026-11-17")).toBeTruthy();
     expect(days).toHaveTextContent("skipped: no price for the strike at the entry minute");
-    expect(screen.getByTestId("lab-variants")).toHaveTextContent("35 variants are compared above");
+    expect(screen.getByTestId("lab-variants")).toHaveTextContent("40 variants are compared above");
     expect(screen.getByTestId("lab-assumptions")).toHaveTextContent("Past days, in-sample");
   });
 
@@ -86,6 +86,21 @@ describe("the Entry Lab page", () => {
     await waitFor(() => expect(urls.some((u) => u.includes("max_gap=0.3"))).toBe(true));
     fireEvent.click(screen.getByRole("checkbox", { name: "Skip when the opening range is broken" }));
     await waitFor(() => expect(urls.some((u) => u.includes("skip_break=true"))).toBe(true));
+  });
+
+  it("has context and calendar gates that set the rule, and shows the overnight move and the events beside each day (a dash when unknown)", async () => {
+    const sig = { minutes: 30, gap_pts: 60, gap_pct: 0.24, gap_ratio: 0.2, range_so_far: 50, range_ratio: 0.2, or_break: null, eff30: 0.3, acc: 1, premium_pct: 1.1 };
+    const withCtx = { ...day("2026-11-19", 4, -108.6), signals: { ...sig, gift_move_pct: 0.4, events_overnight: 1, events_hold: 2, events_overnight_names: ["US: Retail Sales"], events_hold_names: ["EU: Flash PMI"] } };
+    mount(() => payload({ days: [withCtx, { ...day("2026-11-17", 0, 17), signals: sig }] }));
+    const days = await screen.findByTestId("lab-days");
+    expect(within(days).getAllByTestId("lab-gift-cell").map((c) => c.textContent)).toEqual(["+0.40", "—"]);
+    expect(days).toHaveTextContent("1 / 2");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Skip when a high-importance event is inside the hold" }));
+    await waitFor(() => expect(urls.some((u) => u.includes("skip_events_hold=true"))).toBe(true));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Skip when a high-importance event came overnight" }));
+    await waitFor(() => expect(urls.some((u) => u.includes("skip_events_overnight=true"))).toBe(true));
+    fireEvent.click(within(screen.getByTestId("lab-gate-skip-when-gift-nifty-moved-a-lot-overnight")).getByText("0.5%"));
+    await waitFor(() => expect(urls.some((u) => u.includes("max_gift=0.5"))).toBe(true));
   });
 
   it("lists a day the gate kept out with the reason and its signals", async () => {

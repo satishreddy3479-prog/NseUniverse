@@ -162,7 +162,7 @@ def test_twenty_days_are_enough_to_drop_the_not_evidence_warning_but_not_the_cau
 def test_the_standard_sweeps_count_the_variants_tried() -> None:
     days = [REAL["2026-11-06"], REAL["2026-11-17"], REAL["2026-11-19"]]
     p = el.presets(el.Rule(), days)
-    assert p["variants_tried"] == 13 + 5 + 4 + 13 == 35  # entry times, re-strike distances, stops, and the gate limits (4 gap + 5 range + 3 efficiency + 1 break)
+    assert p["variants_tried"] == 13 + 5 + 4 + 18 == 40  # entry times, re-strike distances, stops, and the gate limits (4 gap + 5 range + 3 efficiency + 3 GIFT + 1 break + 2 events)
     assert len(p["entry_time"]) + len(p["re_strike"]) + len(p["stop"]) == 22
     assert [r["value"] for r in p["entry_time"]][:3] == ["09:20", "09:30", "09:45"] and [r["value"] for r in p["re_strike"]] == [None, 50.0, 75.0, 100.0, 150.0]
     at_930 = next(r for r in p["entry_time"] if r["value"] == "09:30")
@@ -192,7 +192,7 @@ def test_the_service_loads_finished_days_in_the_background_and_reports_progress(
     assert (st["days_total"], st["days_loaded"], st["loading"], st["failed"]) == (3, 3, False, {}) and st["first"] == "2026-11-06" and st["last"] == "2026-11-19"
     assert svc.start() is False and len(calls) == 3  # nothing missing: no second load
     out = svc.result(el.Rule(entry=time(9, 30)), with_presets=True)
-    assert out["summary"]["days"] == 3 and len(out["days"]) == 3 and out["presets"]["variants_tried"] == 35 and out["rule"]["entry"] == "09:30"
+    assert out["summary"]["days"] == 3 and len(out["days"]) == 3 and out["presets"]["variants_tried"] == 40 and out["rule"]["entry"] == "09:30"
     after = stub_service(list(REAL.values()), datetime(2026, 11, 20, 16, 30, tzinfo=IST))  # after the close the 20th counts as finished (no stored data for it: a failed day)
     assert date(2026, 11, 20) in after.finished_days()
 
@@ -219,7 +219,7 @@ def test_the_endpoint_serves_a_rule_and_rejects_bad_input(tmp_path: Path) -> Non
         app.state.entry_lab.start()
         app.state.entry_lab._thread.join(timeout=10)
         body = c.get("/api/intelligence/entry-lab", params={"entry": "09:30", "stop": 20, "presets": "true"}).json()
-        assert body["rule"]["stop_pct"] == 20 and body["rule"]["entry"] == "09:30" and body["summary"]["days"] == 3 and body["presets"]["variants_tried"] == 35
+        assert body["rule"]["stop_pct"] == 20 and body["rule"]["entry"] == "09:30" and body["summary"]["days"] == 3 and body["presets"]["variants_tried"] == 40
         assert body["status"]["days_loaded"] == 3 and len(body["assumptions"]) == 3
         assert c.get("/api/intelligence/entry-lab", params={"entry": "9:30"}).status_code == 422  # not HH:MM
         assert c.get("/api/intelligence/entry-lab", params={"entry": "15:00", "exit": "14:00"}).status_code == 422  # entry after exit
@@ -336,7 +336,7 @@ def test_a_gate_sweep_shows_what_the_gate_avoided() -> None:
     # range ratio at 09:45 is 30 s / (200 + 15 s) = 0.140, 0.261, 0.367, 0.462, 0.545, 0.621 for s = 1..6: a 0.5 limit trades the first four and skips the last two (-75 and -90)
     assert row["days"] == 4 and row["gated_days"] == 2 and row["avoided_mean"] == pytest.approx(-82.5, abs=0.01) and row["avoided_worst"] == pytest.approx(-90.0, abs=0.01)
     assert row["mean"] == pytest.approx(-37.5, abs=0.01)  # what it kept: (-15 - 30 - 45 - 60) / 4
-    assert sweeps["variants_tried"] == 4 + 5 + 3 + 1 and sweeps["opening_range_break"][0]["value"] == "skip if broken"
+    assert sweeps["variants_tried"] == 4 + 5 + 3 + 3 + 1 + 2 and sweeps["opening_range_break"][0]["value"] == "skip if broken"
 
 
 def test_the_live_signals_read_the_analysis_of_the_session_and_say_when_there_is_nothing() -> None:
@@ -361,7 +361,11 @@ def test_the_range_signals_endpoint_serves_the_straddle_service_answer(tmp_path:
     with TestClient(app) as c:
         real = app.state.straddle  # put back before the app shuts down (its lifespan stops it)
         app.state.straddle = SimpleNamespace(enabled=True, range_signals=lambda: {"available": True, "range_ratio": 0.42, "note": "n"})
-        assert c.get("/api/intelligence/range-signals").json() == {"available": True, "range_ratio": 0.42, "note": "n"}
+        body = c.get("/api/intelligence/range-signals").json()
+        ctx = body.pop("context")  # today's overnight context from the ledger: nothing recorded in a fresh data dir
+        assert body == {"available": True, "range_ratio": 0.42, "note": "n"}
+        assert ctx["recorded"] is False and ctx["events_known"] is False and ctx["events_today"] == []
+        assert ctx["moves"]["gift"] is None and ctx["events_overnight"] is None  # missing stays missing
         app.state.straddle = SimpleNamespace(enabled=False, range_signals=lambda: {})
         assert c.get("/api/intelligence/range-signals").status_code == 404  # straddle analysis switched off
         app.state.straddle = real

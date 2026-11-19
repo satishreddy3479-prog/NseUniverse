@@ -868,7 +868,48 @@ async def intelligence_range_signals(request: Request) -> dict[str, Any]:
 
     Opening gap, range so far, break of the opening range, straightness, acceleration. Read-only."""
     svc = _straddle(request)
-    return await asyncio.to_thread(_cached, f"range-signals|{id(svc)}", 15.0, svc.range_signals)
+    key = f"range-signals|{id(svc)}"
+    out = dict(await asyncio.to_thread(_cached, key, 15.0, svc.range_signals))
+    ledger = getattr(request.app.state, "context_ledger", None)
+    out["context"] = None if ledger is None else await asyncio.to_thread(_today_context, ledger)
+    return out
+
+
+def _today_context(ledger: Any) -> dict[str, Any]:
+    """Today's overnight moves (taken before the open) and the high-importance events of the
+    overnight window and of today: what the Entry Lab tests, shown as a description of the day."""
+    from datetime import datetime as _dt
+    from datetime import time as _t
+
+    from app.domain.session import session_close
+    from app.intelligence import context_signals as cs
+
+    now = _dt.now(cs.IST)
+    day, close = now.date(), session_close()
+    prev = cs.prev_weekday(day)
+    ctx = ledger.context(day.isoformat())
+    cover = ledger.coverage()
+    known = cover is not None and cover[0] <= prev.isoformat()
+    evs = None
+    if known:
+        evs = ledger.events_between(cs.ist_ms(prev, cs.NIFTY_CLOSE), cs.ist_ms(day, close))
+    entry = now.time().replace(second=0, microsecond=0)
+    f = cs.features(day, ctx, evs, known, entry, close, None, None)
+    keys = ("gift", "es", "nq", "brent", "dxy", "usdinr")
+    today = []
+    for e in cs.event_window(evs or [], cs.ist_ms(day, _t(0, 0)), cs.ist_ms(day, close)):
+        at = _dt.fromtimestamp(e["ts"] / 1000, cs.IST).strftime("%H:%M")
+        today.append(
+            {"time": at, "country": e["country"], "name": e["name"],
+             "forecast": e["forecast"], "actual": e["actual"]}
+        )  # fmt: skip
+    return {
+        "recorded": ctx is not None,
+        "moves": {k: f[f"{k}_move_pct"] for k in keys},
+        "events_known": known,
+        "events_today": today,
+        "events_overnight": f["events_overnight_names"] if known else None,
+    }
 
 
 @router.get("/intelligence/straddle/alerts")
@@ -905,6 +946,9 @@ async def intelligence_entry_lab(
     max_range: Annotated[float | None, Query(ge=0.05, le=5)] = None,
     max_eff: Annotated[float | None, Query(ge=0.05, le=1)] = None,
     skip_break: bool = False,
+    skip_events_hold: bool = False,
+    skip_events_overnight: bool = False,
+    max_gift: Annotated[float | None, Query(ge=0.05, le=5)] = None,
     presets: bool = False,
 ) -> dict[str, Any]:
     """The Entry Lab: what a short ATM straddle rule would have made on the recorded sessions.
@@ -924,6 +968,8 @@ async def intelligence_entry_lab(
             entry=parse_hm(entry), exit=parse_hm(exit), stop_pct=stop, target_pct=target,
             roll_pts=roll, cost=cost, roll_cost=roll_cost, max_gap_pct=max_gap,
             max_range_ratio=max_range, max_eff30=max_eff, skip_break=skip_break,
+            skip_events_hold=skip_events_hold, max_gift_pct=max_gift,
+            skip_events_overnight=skip_events_overnight,
         )  # fmt: skip
     except ValueError as e:
         detail = {"code": "bad_time", "message": "times are HH:MM"}
