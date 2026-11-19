@@ -877,3 +877,6 @@ On screens under 640 px the cash table (seven columns, numbers running into each
 
 ## D198 (19 Nov 2026): phone top bar, NIFTY label above the price
 On a phone the label "NIFTY" sat in front of the price and pushed the figures wide. It now stands above the price in a small column (label, level, change), left-aligned, with a slightly larger level; from 520 px up the layout is unchanged. Pushed during market hours at the owner's explicit instruction (frontend only; the deploy restart costs about a minute of samples).
+
+## D199 (19 Nov 2026): the top-bar scores are the live calculation
+The top-bar chip (B/S) showed the last RECORDED minute while the Market Intelligence card showed the live calculation, so they differed (09:19 IST: chip 56/43, card 53/45, and the live read 59/43 a minute later). `latest_scores` now returns the live calculation on the newest stored sample, the same 20 s analysis the page uses (`source: "live"`), and falls back to the newest recorded minute (`source: "recorded"`) only when no live calculation exists; chip and card poll every 15 s. Limit: the engine reads stored samples (one per minute, about 3 s into the minute), so the scores move when a sample is stored, not on every index tick.

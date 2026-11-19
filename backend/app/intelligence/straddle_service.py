@@ -251,22 +251,37 @@ class StraddleDecay:
         return {"history": hist, "alerts": alerts, "environment_trend": trend, "storage": {"rows_today": len(rows), "bytes": self.store.size_bytes()}}
 
     def latest_scores(self) -> dict[str, Any]:
-        """The newest recorded seller and buyer environment scores, with how old they are and where they were 15 minutes before: a small read for the top bar (no analysis)."""
+        """The seller and buyer environment scores for the top bar: the LIVE calculation on the newest stored sample (the page's own 20 s analysis, so the bar and the page show the
+        same numbers and both move as soon as a new sample is stored, not at the next recorded minute). Only when no live calculation exists does it fall back to the newest
+        recorded minute, as such (``source`` says which). Also where the scores were 15 minutes before, from the record."""
         if self.store is None or not self.enabled:
             return {"available": False}
         days = self.store.sessions(1)
         if not days:
             return {"available": False}
         rows = self.store.rows(days[0], 40, newest_first=True)
+        now = self._clock()
+        a = self.summary() if self.obs is not None else {}
+        env, q = a.get("environment"), a.get("quality") or {}
+        sell, buy = straddle_env.g(env, "seller", "score"), straddle_env.g(env, "buyer", "score")
+        if a.get("status") == "ok" and q.get("live") and sell is not None and buy is not None and q.get("last_sample_at"):
+            at = datetime.fromisoformat(q["last_sample_at"])
+            ref = rows[0] if rows else None
+            ref_at = datetime.fromisoformat(ref["at"]) if ref else at
+            cut = ref_at - timedelta(minutes=15)
+            old = next((r for r in rows if cut - timedelta(minutes=3) <= datetime.fromisoformat(r["at"]) <= cut), None)
+            return {
+                "available": True, "source": "live", "session": a.get("session"), "at": q["last_sample_at"], "age_s": max(0, round((now - at).total_seconds())), "expiry": a.get("expiry"),
+                "seller": sell, "buyer": buy, "regime": straddle_env.g(a, "regime", "label"), "seller_15m": None if old is None else old["seller"], "buyer_15m": None if old is None else old["buyer"],
+            }  # fmt: skip
         if not rows or rows[0]["seller"] is None or rows[0]["buyer"] is None:
             return {"available": False}
         last = rows[0]
         at = datetime.fromisoformat(last["at"])
         cut = at - timedelta(minutes=15)
         old = next((r for r in rows if datetime.fromisoformat(r["at"]) <= cut and datetime.fromisoformat(r["at"]) >= cut - timedelta(minutes=3)), None)
-        now = self._clock()
         return {
-            "available": True, "session": days[0], "at": last["at"], "age_s": max(0, round((now - at).total_seconds())), "expiry": last["expiry"], "seller": last["seller"], "buyer": last["buyer"],
+            "available": True, "source": "recorded", "session": days[0], "at": last["at"], "age_s": max(0, round((now - at).total_seconds())), "expiry": last["expiry"], "seller": last["seller"], "buyer": last["buyer"],
             "regime": last["regime"], "seller_15m": None if old is None else old["seller"], "buyer_15m": None if old is None else old["buyer"],
         }  # fmt: skip
 

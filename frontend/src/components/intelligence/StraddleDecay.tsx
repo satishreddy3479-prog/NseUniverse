@@ -74,7 +74,7 @@ const fmtSrc = (d: StraddleDecay) => `Source: stored chain samples and Market In
 
 /** Compact card for the Market Intelligence page: the two scores and the verdict, with a link to the full page. */
 export function StraddleSummaryCard() {
-  const q = useQuery({ queryKey: ["straddle-decay"], queryFn: () => api.straddleDecay(), refetchInterval: 30_000, retry: false });
+  const q = useQuery({ queryKey: ["straddle-decay"], queryFn: () => api.straddleDecay(), refetchInterval: 15_000, retry: false });
   const d = q.data;
   const e = d?.environment;
   return (

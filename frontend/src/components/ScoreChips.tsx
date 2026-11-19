@@ -10,7 +10,7 @@ const move = (now: number, before: number | null | undefined) => (before == null
 /** The straddle engine's buyer and seller environment scores, stacked (buyer above seller) next to the NIFTY price. Nothing renders when the engine has not recorded a minute
  *  in the last 15 minutes or is switched off, so the bar stays as it was. A green number means 60 or more: favourable for that side's premium behaviour, not a trade signal. */
 export function ScoreChips() {
-  const q = useQuery({ queryKey: ["straddleScores"], queryFn: api.straddleScores, refetchInterval: 30_000, retry: false });
+  const q = useQuery({ queryKey: ["straddleScores"], queryFn: api.straddleScores, refetchInterval: 15_000, retry: false });
   const d = q.data;
   if (!d?.available || d.seller == null || d.buyer == null || d.age_s == null || d.age_s > STALE_S) return null;
   const title = [

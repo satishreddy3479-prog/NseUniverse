@@ -47,3 +47,19 @@ def test_the_api_serves_the_scores(tmp_path: Path) -> None:
         app.state.straddle = service(tmp_path / "s", T0 + timedelta(minutes=1), [(T0, 64.3, 38.8)])
         body = c.get("/api/intelligence/straddle/scores").json()
         assert body["available"] and body["seller"] == 64.3 and body["buyer"] == 38.8 and body["age_s"] == 60
+
+
+def test_the_scores_are_the_live_calculation_not_the_last_recorded_minute(tmp_path: Path) -> None:
+    # 19 Nov 2026: at 09:20:26 IST the recorded minute (09:20) said seller 44.8 / buyer 53.5 while the live calculation on the 09:20:04 sample said 42.9 / 59.1
+    now = datetime(2026, 11, 19, 3, 50, 26, tzinfo=UTC)
+    store = StraddleStore(tmp_path)
+    store.record("2026-11-19", datetime(2026, 11, 19, 3, 50, tzinfo=UTC), "2026-11-23", {"spot": 25200.0, "seller": 44.8, "buyer": 53.5, "regime": "undetermined"})
+    s = StraddleDecay(observations=object(), underlying="NIFTY", gex=None, rate=0.06, clock=lambda: now, store=store)  # type: ignore[arg-type]
+    live = {"status": "ok", "session": "2026-11-19", "expiry": "2026-11-23", "quality": {"live": True, "last_sample_at": "2026-11-19T03:50:04.655000+00:00"},
+            "environment": {"seller": {"score": 42.9}, "buyer": {"score": 59.1}}, "regime": {"label": "undetermined"}}
+    s.summary = lambda *a, **k: live  # type: ignore[method-assign]
+    d = s.latest_scores()
+    assert d["source"] == "live" and d["seller"] == 42.9 and d["buyer"] == 59.1 and d["age_s"] == 21
+    live["quality"] = {"live": False, "last_sample_at": "2026-11-19T03:50:04.655000+00:00"}  # no live calculation: the recorded minute, labelled as such
+    d = s.latest_scores()
+    assert d["source"] == "recorded" and d["seller"] == 44.8 and d["buyer"] == 53.5
