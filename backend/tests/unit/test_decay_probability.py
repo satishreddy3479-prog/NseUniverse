@@ -336,3 +336,43 @@ def test_the_study_keeps_nothing_on_few_days_and_says_how_many_it_tried() -> Non
     assert g["entries_changed"] == 0 and g["entries_unreadable"] == 27 and g["kept"] is False  # the real days carry no open interest
     r = out["candidates"]["range_expanding"]
     assert r["kept"] is False and r["verdict"] in ("no improvement on both halves", "improves both halves, but too few days to keep")
+
+
+def test_the_open_interest_is_found_when_the_day_carries_utc_times(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The server stores sample times in UTC while the open-interest slots are keyed by IST clock time: the first structure study read none of it for that reason (all 135 entries unreadable)."""
+    from dataclasses import replace
+    from datetime import UTC
+
+    from app.intelligence import decay_structure as ds
+    from tests.unit.test_entry_lab import session
+
+    base = session("2026-11-19", [24000.0] * 120, [200.0] * 120, dte=4)
+    day = replace(base, times=[t.astimezone(UTC) for t in base.times], oi={"09:30": {(24000.0, CALL): 1000, (24000.0, PUT): 1000}})
+    at = datetime(2026, 11, 19, 9, 30, tzinfo=IST)
+    point = chain_point(at, date(2026, 11, 23))
+    i = 15  # 09:15 + 15 minutes
+    feat = ds.features(day, i, point, 200.0, 0.15, at.time(), at.replace(hour=15, minute=15).time(), 1500.0)
+    assert feat["wall_ratio"] == pytest.approx(abs(24000.0 - point.f) / 200.0) and feat["gex_share"] == pytest.approx(0.0, abs=1e-9)  # equal calls and puts at one strike
+    assert ds.features(day, 16, point, 200.0, 0.15, at.time(), at.time(), 1500.0)["wall_ratio"] is None  # 09:31 has no slot
+
+
+def test_the_realised_to_implied_ratio_puts_both_on_the_trading_minute_clock(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The implied volatility is per calendar year to expiry, the realised one per trading-minute year. Four days out (1,500 trading minutes) a 15% implied volatility is 15% x sqrt((4/365) x 94,500 / 1,500)
+    = 12.46% on the trading clock; a realised 12.46% is a ratio of 1. On the expiry day (375 trading minutes, 375 calendar minutes left) it is 15% x sqrt((375/525,600) x 94,500 / 375) = 6.36%."""
+    from datetime import time
+    from types import SimpleNamespace
+
+    from app.intelligence import decay_structure as ds
+    from tests.unit.test_entry_lab import session
+
+    day = session("2026-11-19", [24000.0] * 60, [200.0] * 60, dte=4)
+    monkeypatch.setattr(ds.sd, "realised", lambda *a, **k: {"vol_pct": 12.4642})
+    four = SimpleNamespace(t=4 / 365, f=24000.0)
+    f4 = ds.features(day, 30, four, 200.0, 0.15, time(9, 45), time(15, 15), 1500.0)
+    assert f4["rv_ratio"] == pytest.approx(1.0, abs=1e-3)
+    monkeypatch.setattr(ds.sd, "realised", lambda *a, **k: {"vol_pct": 6.36})
+    zero = SimpleNamespace(t=375 / 525_600, f=24000.0)
+    f0 = ds.features(day, 30, zero, 200.0, 0.15, time(9, 45), time(15, 15), 375.0)
+    assert f0["rv_ratio"] == pytest.approx(1.0, abs=2e-3)
+    assert ds.features(day, 30, four, 200.0, 0.15, time(9, 45), time(15, 15))["rv_ratio"] is None  # no expiry clock: not formed, not guessed
+    assert ds.CANDIDATES["rv_blend"](f4) == pytest.approx(1.0, abs=1e-3)  # a realised volatility equal to the expected one changes nothing

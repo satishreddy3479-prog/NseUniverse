@@ -65,7 +65,8 @@ def outcome_rows(day: Day, entries: Sequence[time], exit_: time, scale: float, c
             continue
         affected = False
         if structure:
-            feat = ds.features(day, i, point, float(out["premium"]), float(out["implied_vol_pct"]) / 100, t, exit_)
+            m_exp = dp.trading_minutes(day.times[i], expiry_close)
+            feat = ds.features(day, i, point, float(out["premium"]), float(out["implied_vol_pct"]) / 100, t, exit_, m_exp)
             m = ds.multiplier(structure, feat)
             affected = any(ds.has_input(nm, feat) for nm in structure)
             if m != 1.0:

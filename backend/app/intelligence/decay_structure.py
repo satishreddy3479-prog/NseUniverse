@@ -18,15 +18,18 @@ Not testable: VWAP (the index has no volume in the stored data; the futures' VWA
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Mapping
 from datetime import date, time
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.intelligence import context_signals, range_signals
 from app.intelligence import straddle as sd
 from app.intelligence.entry_lab import Day
-from app.intraday.volatility import CALL, PUT
+from app.intraday.volatility import CALL, PUT, TRADING_MINUTES_PER_YEAR
 
+IST = ZoneInfo("Asia/Kolkata")
 LOT = 65
 WALL_BAND = 0.03  # the open-interest wall is looked for within this share of the index
 KEPT: tuple[str, ...] = ()
@@ -64,14 +67,19 @@ def oi_features(oi: Mapping[tuple[float, int], int | None] | None, point: Any, p
     return out
 
 
-def features(day: Day, i: int, point: Any, premium: float, iv: float, entry: time, exit_: time) -> dict[str, Any]:
-    """Everything the candidates read, at sample ``i`` of ``day``."""
+def features(day: Day, i: int, point: Any, premium: float, iv: float, entry: time, exit_: time, minutes_to_expiry: float | None = None) -> dict[str, Any]:
+    """Everything the candidates read, at sample ``i`` of ``day``.
+
+    ``rv_ratio`` is the last 30 minutes' realised volatility over the volatility the engine expects per trading minute. The two are on different clocks: realised volatility is annualised on
+    trading minutes (``TRADING_MINUTES_PER_YEAR``), the implied volatility on calendar years to expiry, so the implied volatility is first put on the trading-minute clock:
+    iv x sqrt(t0 x TRADING_MINUTES_PER_YEAR / minutes_to_expiry), the same variance spread over the trading minutes left (see decay_probability.py). Without ``minutes_to_expiry`` it is not formed."""
     sig = range_signals.compute(day.times, day.spots, i, premium, day.prev_close)
     rv = sd.realised(day.times, day.spots, 30, end=day.times[i]).get("vol_pct")
-    sig["rv_ratio"] = None if rv is None or iv <= 0 else rv / (iv * 100)
+    iv_trading = None if not minutes_to_expiry or iv <= 0 else iv * math.sqrt(point.t * TRADING_MINUTES_PER_YEAR / minutes_to_expiry)
+    sig["rv_ratio"] = None if rv is None or iv_trading is None else rv / (iv_trading * 100)
     if day.context is not None or day.events_known:
         sig |= context_signals.features(date.fromisoformat(day.day), day.context, day.events, day.events_known, entry, exit_, sig.get("gap_pts"), day.prev_close)
-    stamp = day.times[i].strftime("%H:%M")
+    stamp = day.times[i].astimezone(IST).strftime("%H:%M")  # the open-interest slots are keyed by IST clock time
     sig |= oi_features((day.oi or {}).get(stamp), point, premium)
     return sig
 
