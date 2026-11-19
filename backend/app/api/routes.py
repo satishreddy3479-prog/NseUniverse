@@ -984,6 +984,25 @@ async def intelligence_entry_lab(
     return await asyncio.to_thread(svc.result, rule, presets)
 
 
+@router.get("/intelligence/entry-lab/reference")
+async def intelligence_entry_lab_reference(request: Request) -> dict[str, Any]:
+    """The recorded sessions beside the live decision: a short ATM straddle opened at the current
+    time of day and held to the close, plain and with a 20% stop. Read-only, past days."""
+    from datetime import datetime as _dt
+
+    from app.intelligence import context_signals as cs
+
+    svc = getattr(request.app.state, "entry_lab", None)
+    if svc is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            {"code": "entry_lab_unavailable", "message": "the Entry Lab is not running"},
+        )
+    at = _dt.now(cs.IST).time()
+    key = "lab-reference|" + at.strftime("%H%M")
+    return await asyncio.to_thread(_cached, key, 60.0, lambda: svc.reference(at))
+
+
 @router.get("/swing/minute")
 async def swing_minute(request: Request) -> dict[str, Any]:
     """The 1-minute shadow book: live-style swing rules, beside the official book. Shadow only."""

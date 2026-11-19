@@ -369,3 +369,47 @@ def test_the_range_signals_endpoint_serves_the_straddle_service_answer(tmp_path:
         app.state.straddle = SimpleNamespace(enabled=False, range_signals=lambda: {})
         assert c.get("/api/intelligence/range-signals").status_code == 404  # straddle analysis switched off
         app.state.straddle = real
+
+
+# ------------------------------------------------------------------ history beside the live decision, and the demoted pressure reading
+def test_the_reference_for_the_time_of_day_uses_the_latest_lab_entry_time_by_hand() -> None:
+    svc = stub_service(list(REAL.values()), datetime(2026, 11, 20, 16, 30, tzinfo=IST))
+    svc.start()
+    assert svc._thread is not None
+    svc._thread.join(timeout=10)
+    ref = svc.reference(time(9, 50))  # between 09:45 and 10:00: the 09:45 slot
+    assert ref["entry"] == "09:45" and ref["lot"] == 65
+    # 09:45 entries held to 15:15 net of 2 points: 6 Nov -184.6, 17 Nov +17.0, 19 Nov -75.85
+    p = ref["plain"]
+    assert p["days"] == 3 and p["sufficient"] is False and p["worst"] == pytest.approx(-184.6, abs=0.06) and p["median"] == pytest.approx(-75.85, abs=0.06)
+    assert p["mean"] == pytest.approx((-184.6 + 17.0 - 75.85) / 3, abs=0.06) and p["win_pct"] == pytest.approx(33.3, abs=0.1)
+    assert ref["stop20"]["days"] == 3 and "not a forecast" in ref["caution"]
+    assert svc.reference(time(8, 0))["entry"] == "09:20" and svc.reference(time(16, 0))["entry"] == "14:30"  # before the first and after the last slot
+
+
+def test_the_reference_endpoint_is_read_only_and_503_without_the_lab(tmp_path: Path) -> None:
+    app = make_app(tmp_path)
+    with TestClient(app) as c:
+        real = app.state.entry_lab
+        app.state.entry_lab = None
+        assert c.get("/api/intelligence/entry-lab/reference").status_code == 503
+        app.state.entry_lab = stub_service(list(REAL.values()), datetime(2026, 11, 20, 12, 0, tzinfo=IST))
+        body = c.get("/api/intelligence/entry-lab/reference").json()
+        assert set(body) >= {"entry", "plain", "stop20", "caution", "status"}
+        app.state.entry_lab = real
+
+
+def test_the_pressure_reading_is_shown_as_context_and_does_not_move_the_side_risk() -> None:
+    from app.intelligence.straddle_env import side_risk
+
+    ev = {"dce30": 0.5, "dpe30": 0.0, "accel": 1.3, "config": [], "skew25": None, "ce25": None}
+    # call IV +0.5 vol points -> 0.5, acceleration 1.3x -> (1.3-1)/0.6 = 0.5: risk 50 + 50 x 0.5 = 75, whatever the pressure says
+    for value in (None, 0.9, -0.9):
+        r = side_risk(ev, {"value": value, "label": "x"}, +1)
+        assert r["risk"] == 75.0 and r["label"] == "High" and len(r["reasons"]) == 2
+    up = side_risk(ev, {"value": 0.9, "label": "upward pressure"}, +1)["context"]
+    assert up["value"] == 0.9 and "unvalidated" in up["name"] and "not part of the risk score" in up["text"]
+    assert side_risk(ev, {"value": 0.9, "label": "upward pressure"}, -1)["context"]["value"] == -0.9  # against the put side
+    assert side_risk(ev, {"value": None, "label": "unavailable"}, +1)["context"] is None
+    only = side_risk({**ev, "dce30": None, "accel": None}, {"value": 0.9, "label": "u"}, +1)
+    assert only["risk"] is None and only["context"]["value"] == 0.9  # pressure alone never makes a risk score

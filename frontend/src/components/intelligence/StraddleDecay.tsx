@@ -303,8 +303,8 @@ export function StraddleDecayPanel() {
               <div className="grid grid-cols-2 gap-2">
                 <Tile label="Short straddle" value={env.seller.short_straddle.score == null ? MISSING : `${env.seller.short_straddle.score.toFixed(0)} · ${env.seller.short_straddle.class}`} />
                 <Tile label="Short strangle" value={env.seller.short_strangle.score == null ? MISSING : `${env.seller.short_strangle.score.toFixed(0)} · ${env.seller.short_strangle.class}`} />
-                <Tile label="Call-side selling risk" value={env.seller.call_side_risk.risk == null ? MISSING : `${env.seller.call_side_risk.risk.toFixed(0)} · ${env.seller.call_side_risk.label}`} sub={env.seller.call_side_risk.reasons[0]?.text} />
-                <Tile label="Put-side selling risk" value={env.seller.put_side_risk.risk == null ? MISSING : `${env.seller.put_side_risk.risk.toFixed(0)} · ${env.seller.put_side_risk.label}`} sub={env.seller.put_side_risk.reasons[0]?.text} />
+                <Tile label="Call-side selling risk" value={env.seller.call_side_risk.risk == null ? MISSING : `${env.seller.call_side_risk.risk.toFixed(0)} · ${env.seller.call_side_risk.label}`} sub={[env.seller.call_side_risk.reasons[0]?.text, env.seller.call_side_risk.context?.text].filter(Boolean).join(" · ")} />
+                <Tile label="Put-side selling risk" value={env.seller.put_side_risk.risk == null ? MISSING : `${env.seller.put_side_risk.risk.toFixed(0)} · ${env.seller.put_side_risk.label}`} sub={[env.seller.put_side_risk.reasons[0]?.text, env.seller.put_side_risk.context?.text].filter(Boolean).join(" · ")} />
               </div>
             </>
           ) : <p className="text-sm text-muted">{d.environment_note}</p>}

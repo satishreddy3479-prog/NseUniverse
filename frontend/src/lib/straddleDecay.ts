@@ -18,7 +18,7 @@ export interface IvRegime { tags: string[]; text: string; ce_change_pts?: number
 export interface Component {
   id: string; name: string; weight: number; value: number | null; contribution: number | null; text: string; source: string; proxy: boolean; status: "AVAILABLE" | "UNAVAILABLE";
 }
-export interface SideRisk { risk: number | null; label: string; reasons: { name: string; value: number; text: string }[] }
+export interface SideRisk { risk: number | null; label: string; reasons: { name: string; value: number; text: string }[]; context?: { name: string; value: number; text: string } | null }
 export interface SubScore { score: number | null; class?: string; state?: string; uses: string[]; name?: string; direction?: string; note?: string }
 export interface Seller {
   score: number | null; class: string; capped_by_flags: string | null; coverage: number; components: Component[]; flags: { id: string; text: string }[];

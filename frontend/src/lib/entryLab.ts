@@ -121,6 +121,13 @@ export interface EntryLab {
   assumptions: string[];
 }
 
+/** `/api/intelligence/entry-lab/reference`: the recorded days for the plain rule and the same with a 20% stop, at the current time of day. */
+export interface LabReference {
+  entry: string; exit: string; lot: number; status: LabStatus; caution: string;
+  plain: Pick<LabSummary, "days" | "sufficient" | "min_days" | "mean" | "median" | "win_pct" | "worst" | "best" | "mean_range95" | "message">;
+  stop20: LabReference["plain"];
+}
+
 /** The query string of a rule (null = the rule does not use that part). */
 export function entryLabQuery(p: EntryLabParams): string {
   const q = new URLSearchParams({ entry: p.entry, exit: p.exit, cost: String(p.cost), presets: "true" });

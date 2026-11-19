@@ -15,7 +15,7 @@ from datetime import date, datetime, time
 from typing import Any
 
 from app.domain.session import session_close
-from app.intelligence.entry_lab import Day, Rule, presets, run
+from app.intelligence.entry_lab import ENTRY_TIMES, LOT, Day, Rule, presets, run
 from app.market.index_check import minute_key
 
 logger = logging.getLogger(__name__)
@@ -125,6 +125,22 @@ class EntryLabService:
                               "The day's first minute at or after the entry time opens it; the last stored minute at or before the exit time closes it; a stop or target ends the day (no re-entry).",
                               "Past days, in-sample: a description, not a forecast. The recorded days are few."]  # fmt: skip
         return out
+
+    def reference(self, at: time) -> dict[str, Any]:
+        """What the recorded sessions say about opening a short ATM straddle around ``at`` (IST): the latest lab entry time at or before it, the plain rule held to the close and the same with
+        a 20% premium stop, as median, mean, worst and win rate with the number of days. A description of past days beside the live reading, not a forecast."""
+        from dataclasses import replace
+
+        self.start()
+        days = self.days()
+        slots = [t for t in ENTRY_TIMES if t <= at]
+        entry = slots[-1] if slots else ENTRY_TIMES[0]
+        base = Rule(entry=entry)
+        plain = run(base, days)["summary"]
+        stop = run(replace(base, stop_pct=20.0), days)["summary"]
+        keep = ("days", "sufficient", "min_days", "mean", "median", "win_pct", "worst", "best", "mean_range95", "message")
+        return {"entry": f"{entry:%H:%M}", "exit": f"{base.exit:%H:%M}", "lot": LOT, "status": self.status(), "plain": {k: plain.get(k) for k in keep}, "stop20": {k: stop.get(k) for k in keep},
+                "caution": "Recorded sessions only, net of 2 points, last traded prices, before bid/ask and taxes. A description of those days, not a forecast and not an edge."}  # fmt: skip
 
 
 def parse_hm(text: str) -> time:

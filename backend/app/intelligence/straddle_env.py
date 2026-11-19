@@ -265,9 +265,6 @@ def seller(ev: Mapping[str, Any], dirn: Mapping[str, Any], recent: Sequence[floa
 def side_risk(ev: Mapping[str, Any], dirn: Mapping[str, Any], sign: int) -> dict[str, Any]:
     """Risk to premium sold on one side (sign +1 = calls, -1 = puts), 0-100 (higher = riskier), from pressure toward that strike side and that side's vol."""
     parts: list[tuple[str, float, str]] = []
-    d = dirn.get("value")
-    if d is not None:
-        parts.append(("directional pressure toward the sold strikes", clip(sign * d), f"evidence leans {dirn['label']} ({d:+.2f})"))
     leg = ev["dce30"] if sign > 0 else ev["dpe30"]
     if leg is not None:
         parts.append((f"{'call' if sign > 0 else 'put'} IV change, 30 min", clip(leg / 1.0), f"{leg:+.2f} vol points"))
@@ -279,10 +276,18 @@ def side_risk(ev: Mapping[str, Any], dirn: Mapping[str, Any], sign: int) -> dict
     if sign < 0 and ev["skew25"] is not None and ev["ce25"] is not None:
         sk = ev["skew25"] - ev["ce25"]
         parts.append(("put-skew richness (downside tail priced)", clip(sk / 6), f"25-delta put IV minus call IV {sk:+.1f}"))
+    # The pressure reading (futures CVD proxy, VWAP, heavyweights, last 30 minutes) has no validated skill
+    # (the fused direction score hit 52-53% on 7 sessions): it is shown as context and is not averaged in.
+    d = dirn.get("value")
+    context = None
+    if d is not None:
+        context = {"name": "directional pressure toward the sold strikes (unvalidated)", "value": round(clip(sign * d), 2),
+                   "text": f"evidence leans {dirn['label']} ({d:+.2f}); not part of the risk score"}  # fmt: skip
     if not parts:
-        return {"risk": None, "label": "Insufficient evidence", "reasons": []}
+        return {"risk": None, "label": "Insufficient evidence", "reasons": [], "context": context}
     r = round(50 + 50 * sum(x for _, x, _ in parts) / len(parts), 1)
-    return {"risk": r, "label": "Low" if r < 35 else "Moderate" if r < 55 else "Elevated" if r < 75 else "High", "reasons": [{"name": n, "value": round(x, 2), "text": t} for n, x, t in parts]}
+    label = "Low" if r < 35 else "Moderate" if r < 55 else "Elevated" if r < 75 else "High"
+    return {"risk": r, "label": label, "reasons": [{"name": n, "value": round(x, 2), "text": t} for n, x, t in parts], "context": context}
 
 
 # ------------------------------------------------------------------ buyer
