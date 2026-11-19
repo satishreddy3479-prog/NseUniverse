@@ -201,6 +201,8 @@ function Reading({ label, value, pending, verdict: v, tone }: { label: string; v
   );
 }
 
+/** Releases that are a statement or a speech: they never carry an actual figure, so a missing one is not a gap in the feed. */
+const TEXT_RELEASE = /minutes|speech|speaks|testifies|press conference|meeting|statement/i;
 function EventRow({ e, now }: { e: CalEvent; now: number }) {
   const mins = Math.round((new Date(e.time_ist).getTime() - now) / 60000);
   const state = e.state === "upcoming" && mins < 0 ? "past" : e.state;
@@ -218,7 +220,7 @@ function EventRow({ e, now }: { e: CalEvent; now: number }) {
           {state === "upcoming" && <span className="text-xs text-info">{countdown(Math.max(0, mins))}</span>}
           {state === "released" && e.outcome && <span data-testid="outcome-badge" className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${e.outcome.tone === "up" ? "border-up/60 bg-up/10 text-up" : e.outcome.tone === "down" ? "border-down/60 bg-down/10 text-down" : "border-warn/60 bg-warn/10 text-warn"}`} title="The actual against the forecast: a plain comparison of the two numbers, not what it does to the market">{e.outcome.label}{e.outcome.status !== "INLINE" ? ` ${e.outcome.diff_text}` : ""}</span>}
           {state === "released" && !e.outcome && <span className="text-xs text-up">Reported</span>}
-          {state === "past" && <span className="text-xs text-muted">Time passed, no actual value in the feed</span>}
+          {state === "past" && <span className="text-xs text-muted">{TEXT_RELEASE.test(e.name) ? "Time passed: a statement, not a figure" : "Time passed, no actual value in the feed"}</span>}
         </div>
         <dl className="mt-1.5 grid max-w-[460px] grid-cols-3 gap-2 text-sm" aria-label="Readings">
           <Reading label="Previous" value={e.previous} />

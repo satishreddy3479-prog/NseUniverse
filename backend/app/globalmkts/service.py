@@ -238,7 +238,10 @@ class GlobalService:
         try:
             res: dict[str, Any] = dict(self.store.upsert_events(calendar_feed.parse_biquote(self._fetch(calendar_feed.bq_url(now))), now, self._event_floor(now)))
             try:  # the other countries, high importance only: a failure here must not hide the India and US result
-                world = self.store.upsert_events(calendar_feed.parse_biquote(self._fetch(calendar_feed.bq_url_world(now))), now, self._event_floor(now))
+                floor = self._event_floor(now)
+                parsed = calendar_feed.parse_biquote(self._fetch(calendar_feed.bq_url_world(now)))
+                stored = self.store.events_between(ms(now - timedelta(days=3)), ms(now + timedelta(days=31)))
+                world = self.store.upsert_events(calendar_feed.keep_matched_medium(parsed, stored), now, floor)
                 for k in ("new", "changed", "same"):
                     res[k] = res.get(k, 0) + world.get(k, 0)
             except Exception as e:  # noqa: BLE001 - recorded in the result; the India and US events are stored

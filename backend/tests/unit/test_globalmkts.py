@@ -947,7 +947,7 @@ def test_the_uk_cpi_gets_its_actual_from_biquote_which_is_asked_for_the_other_co
     The fixture is the real biquote response for the UK, Euro area, Canada, Australia and New Zealand of that day (the UK 'Inflation Rate YoY': actual 3.6, forecast 3.7, previous 3.5)."""
     now = datetime(2026, 11, 18, 9, 0, tzinfo=UTC)  # 14:30 IST: two hours after the release
     url = calendar_feed.bq_url_world(now)
-    assert "countries=GB,EU,JP,CN,AU,CA,CH,NZ" in url and "importance=high" in url and "from=2026-11-16" in url
+    assert "countries=GB,EU,JP,CN,AU,CA,CH,NZ" in url and "importance=medium" in url and "from=2026-11-16" in url
     ff = [{"title": "CPI y/y", "country": "GBP", "date": "2026-11-18T07:00:00-00:00", "impact": "High", "forecast": "3.6%", "previous": "3.5%", "actual": ""}]
 
     def http(u: str) -> bytes:
@@ -969,3 +969,33 @@ def test_the_uk_cpi_gets_its_actual_from_biquote_which_is_asked_for_the_other_co
     assert (cpi[0]["actual"], cpi[0]["forecast"], cpi[0]["previous"]) == ("3.6%", "3.7%", "3.5%")  # biquote's readings
     assert cpi[0]["outcome"]["status"] == "COOLING" and cpi[0]["outcome"]["diff_text"] == "-0.1%"  # inflation below forecast
     assert s.awaiting_actual() is False  # nothing is still being waited for
+
+
+def test_the_australian_jobs_release_gets_its_actual_though_biquote_rates_it_medium(tmp_path: Path) -> None:
+    """19 Nov 2026: Australia's Employment Change and Unemployment Rate (06:00 IST) stayed without an actual: Forex Factory rates them high but has no actuals, and biquote (MQL5) rates
+    them medium, below the high-only request. The fixture is biquote's real answer for 06:00 IST: Employment Change -43.5K (forecast 19, previous -39.3), Full-Time Employment Change
+    (medium, not on Forex Factory's list), Participation Rate (low) and Unemployment Rate 4.9% (forecast 4.8, previous 4.7)."""
+    now = datetime(2026, 11, 19, 4, 40, tzinfo=UTC)  # 10:10 IST
+    ff = [
+        {"title": "Employment Change", "country": "AUD", "date": "2026-11-19T00:30:00+00:00", "impact": "High", "forecast": "25.5K", "previous": "-39.3K", "actual": ""},
+        {"title": "Unemployment Rate", "country": "AUD", "date": "2026-11-19T00:30:00+00:00", "impact": "High", "forecast": "4.7%", "previous": "4.7%", "actual": ""},
+    ]
+
+    def http(u: str) -> bytes:
+        if "faireconomy" in u:
+            return json.dumps(ff).encode()
+        if "biquote" in u and "countries=IN,US" in u:
+            return b"[]"
+        if "biquote" in u:
+            return (FIX / "biquote_au_19nov2026.json").read_bytes()
+        raise OSError("not in the fixtures: " + u)
+
+    s, _ = service(tmp_path, fetch=http, now=now)
+    s.poll_calendar()
+    s.poll_biquote()
+    rows = {e["name"]: e for x in s.calendar_view()["sections"] for e in x["events"] if e["country"] == "Australia" and e["time_ist"].startswith("2026-11-19T06:00")}
+    assert set(rows) == {"Employment Change", "Unemployment Rate"}  # no Full-Time Employment Change, no Participation Rate: the page gains no release it did not show
+    assert rows["Employment Change"]["impact"] == "high" and rows["Unemployment Rate"]["impact"] == "high"
+    emp, un = rows["Employment Change"], rows["Unemployment Rate"]
+    assert (emp["actual"], emp["previous"]) == ("-43.5K", "-39.3K") and (un["actual"], un["forecast"], un["previous"]) == ("4.9%", "4.8%", "4.7%")
+    assert un["outcome"]["status"] == "MISS" and un["outcome"]["diff_text"] == "+0.1%"  # unemployment above the forecast is the bad side

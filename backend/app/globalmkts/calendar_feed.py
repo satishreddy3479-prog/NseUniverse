@@ -162,11 +162,12 @@ def bq_url(now: datetime) -> str:
 
 
 def bq_url_world(now: datetime) -> str:
-    """The same request for the other countries the page shows (UK, Euro area, Japan, China, ...), at high importance only and 30 days ahead: Forex Factory lists them but its public
-    feed carries no actual values, so a release like the UK CPI never got its outcome (18 Nov 2026)."""
+    """The same request for the other countries the page shows (UK, Euro area, Japan, China, ...), 30 days ahead: Forex Factory lists them but its public feed carries no actual
+    values, so a release like the UK CPI never got its outcome (18 Nov 2026). Asked at medium importance and up because MQL5 rates some releases Forex Factory calls high at medium
+    (Australia's Employment Change and Unemployment Rate, 19 Nov 2026); ``keep_matched_medium`` then keeps only the medium rows that carry the actual of such a release."""
     start, end = now.astimezone(IST).date() - timedelta(days=2), (now + timedelta(days=30)).date()
     others = ",".join(c for c in BQ_COUNTRIES if c not in BQ_HOME)
-    return f"{BQ_URL}?from={start}&to={end}&countries={others}&importance=high&limit=500"
+    return f"{BQ_URL}?from={start}&to={end}&countries={others}&importance=medium&limit=500"
 
 
 def _bq_value(v: Any, e: dict[str, Any]) -> str | None:
@@ -208,6 +209,22 @@ def parse_biquote(data: bytes) -> list[dict[str, Any]]:
             "note": None if exact else "time not set by the source",
         })  # fmt: skip
     return out
+
+
+def keep_matched_medium(rows: list[dict[str, Any]], stored: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The high-importance rows as they are, and of the medium ones only those that are the single best match (most shared name words, then nearest in time) of a high row another
+    source already stores: they give that release its actual. A medium row that matches nothing (or only worse than another row, like "Full-Time Employment Change" beside "Employment
+    Change") is dropped, so the page does not gain releases it did not show before."""
+    keep = [r for r in rows if r["impact"] == "high"]
+    medium = [r for r in rows if r["impact"] == "medium"]
+    chosen: set[str] = set()
+    for h in (x for x in stored if x["impact"] == "high" and x["source"] != BQ_LABEL):
+        cands = [m for m in medium if same_event(m, h)]
+        if cands:
+            wh = _words(h["name"])
+            best = max(cands, key=lambda m: (len(wh & _words(m["name"])) / len(wh | _words(m["name"])), -abs(m["ts"] - h["ts"])))
+            chosen.add(best["id"])
+    return keep + [m for m in medium if m["id"] in chosen]
 
 
 # ------------------------------------------------------------------ the surprise: how the actual came out against the forecast
