@@ -428,6 +428,27 @@ describe("smartOiCandles: the closing session (captured 18 Nov 2026, 15:15-15:30
   });
 });
 
+describe("smartOiCandles: the closing auction's indicative index values (captured 19 Nov 2026, 15:20-15:21 IST)", () => {
+  const z = (min: number) => new Date(Date.UTC(2026, 10, 19, 9, 30 + min)).toISOString(); // 15:00 IST + min
+  const mins = [18, 19, 20, 21];
+  const series = { times: mins.map(z), spot: [25503.7, 25503.7, 25503.7, 25503.7], ce_oi: mins.map((_, i) => 1000 + i), pe_oi: mins.map((_, i) => 2000 + i) };
+  const bars = [
+    { at: z(18), o: 25520, h: 25520, l: 25520, c: 25520, n: 0, proxy: true },
+    { at: z(20), o: 25591.9, h: 25596.45, l: 25560.95, c: 25560.95, n: 49, ind: true }, // the first auction minute: 56 points above the future-implied level
+    { at: z(21), o: 25561, h: 25589.95, l: 25538.9, c: 25573.4, n: 59, ind: true },
+  ];
+  const r = smartOiCandles(series, 1, { day: "2026-11-19", openMin: 9 * 60 + 15, closeMin: 15 * 60 + 40, bars });
+  it("draws the indicative minutes as real candles and counts them, with no unconfirmed bar", () => {
+    const by = Object.fromEntries(r.candles.map((c) => [c.label, c]));
+    expect(by["15:20"]!.spot).toEqual({ open: 25591.9, high: 25596.45, low: 25560.95, close: 25560.95 });
+    expect(by["15:20"]!.spotProxy).toBe(false);
+    expect(by["15:21"]!.spot?.close).toBe(25573.4);
+    expect(by["15:18"]!.spotProxy).toBe(true); // the silent minutes before the auction values keep their stand-in
+    expect(r.indicativeMinutes).toBe(2);
+    expect(r.unconfirmedBars).toEqual([]);
+  });
+});
+
 describe("Smart OI lower chart: put and call volume, and their difference", () => {
   const t = (hm: string) => `2026-11-04T${hm}:00Z`;
   const series = { times: [t("03:45"), t("03:48"), t("03:51")], spot: [1, 2, 3], pe_oi: [10, 11, 12], ce_oi: [10, 11, 12], pe_volume: [100, 160, 250], ce_volume: [100, 140, 200] };

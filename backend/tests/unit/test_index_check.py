@@ -44,8 +44,9 @@ def test_the_opening_minutes_a_thin_bar_and_a_missing_future_are_not_judged() ->
 
 
 def test_the_closing_session_gets_stand_in_bars_from_the_future_minus_its_basis() -> None:
-    """18 Nov 2026: from 15:15 the index quote froze (25,220.45), then jumped (a 15:20 bar from 25,284 to 25,580). The future kept trading; its price less the basis it had before 15:15
-    stands in for the index in the minutes the index bars are missing, silent or contradicted."""
+    """18 Nov 2026: from 15:15 the index quote froze (25,220.45), then came back at 15:20 with auction values (a bar from 25,284 to 25,580). The future kept trading; its price less the
+    basis it had before 15:15 stands in for the index in the minutes the index bars are missing or silent (15:15-15:19). The 15:20 bar is an indicative closing value of the closing auction
+    (D205): it is kept and marked ``ind``, not replaced by a stand-in."""
     from datetime import timedelta as td
 
     from app.market.index_check import proxy_bars
@@ -66,10 +67,46 @@ def test_the_closing_session_gets_stand_in_bars_from_the_future_minus_its_basis(
     flag_bars(bars, futs)
     stand_in = {b["at"]: b for b in proxy_bars(bars, futs)}
     at1520 = (open_ + td(minutes=50)).isoformat()
-    assert at1520 in stand_in and stand_in[at1520]["proxy"] is True and stand_in[at1520]["n"] == 0
-    # the future of minute 50 is 25,230 + 50 % 4 + 8 = 25,240; the basis before 15:15 was +8: the stand-in close is 25,232
-    assert stand_in[at1520]["c"] == 25232.0
-    assert (open_ + td(minutes=45)).isoformat() in stand_in  # the frozen 15:15 bar (one read) is replaced
+    assert at1520 not in stand_in  # the auction's indicative bar stands as it is...
+    bar1520 = next(b for b in bars if b["at"] == at1520)
+    assert bar1520["ind"] is True and "off" not in bar1520  # ...marked as an indicative value, not as an error
+    at1517 = (open_ + td(minutes=47)).isoformat()
+    # the future of minute 47 is 25,230 + 47 % 4 + 8 = 25,241; the basis before 15:15 was +8: the stand-in close is 25,233
+    assert stand_in[at1517]["proxy"] is True and stand_in[at1517]["n"] == 0 and stand_in[at1517]["c"] == 25233.0
+    assert {(open_ + td(minutes=i)).isoformat() for i in (46, 47, 48, 49)} <= set(stand_in)  # 15:16-15:19: no index reads at all    assert (open_ + td(minutes=45)).isoformat() in stand_in  # the frozen 15:15 bar (one read) is replaced
     assert all(b["at"] >= (open_ + td(minutes=45)).isoformat() for b in stand_in.values())  # nothing is made before 15:15
     # without a basis (no trusted bars in the quarter of an hour before 15:15) nothing is made
     assert proxy_bars([b for b in bars if b["at"] >= (open_ + td(minutes=44)).isoformat()], futs) == []
+
+
+def test_auction_bars_of_19_nov_are_indicative_values_not_errors() -> None:
+    """19 Nov 2026 (real): the index sent no reads 15:16-15:19, then about 100 ticks a minute from 15:20 whose bars closed 25,560.95, 25,573.4 and 25,525.65 while the future traded 25,536.0,
+    25,533.0 and 25,533.5 (the future minus the index: -25, -40, +8 against a basis of +17 before 15:15). Before D205 the first three were flagged ``off`` (-79.5, -59.7, -56.8) and replaced."""
+    from datetime import timedelta as td
+
+    from app.market.index_check import proxy_bars
+
+    t0 = datetime(2026, 11, 19, 9, 35, tzinfo=UTC)  # 15:05 IST
+    bars: list[dict[str, object]] = []
+    futs: dict[str, float] = {}
+    for i in range(10):  # 15:05-15:14: future 17 points above the index
+        at = t0 + td(minutes=i)
+        idx = 25500.0 + i
+        futs[minute_key(at)] = idx + 17.0
+        bars.append({"at": at.isoformat(), "o": idx, "h": idx + 2, "l": idx - 2, "c": idx, "n": 59})
+    real = {15: (25591.9, 25596.45, 25560.95, 25560.95, 49, 25536.0), 16: (25561.0, 25589.95, 25538.9, 25573.4, 59, 25533.0), 17: (25569.15, 25571.25, 25524.3, 25525.65, 57, 25533.5)}
+    for i, (o, h, low, c, n, fut) in real.items():  # 15:20, 15:21, 15:22
+        at = t0 + td(minutes=i)
+        futs[minute_key(at)] = fut
+        bars.append({"at": at.isoformat(), "o": o, "h": h, "l": low, "c": c, "n": n})
+    for i, fut in zip(range(10, 15), (25525.1, 25534.9, 25535.0, 25538.7, 25533.3), strict=True):  # the future kept trading through 15:15-15:19
+        futs[minute_key(t0 + td(minutes=i))] = fut
+    flag_bars(bars, futs)
+    auction = [b for b in bars if b["at"] >= (t0 + td(minutes=15)).isoformat()]
+    assert all(b.get("ind") is True and "off" not in b for b in auction)  # kept as exchange output
+    stand_in = proxy_bars(bars, futs)
+    assert not any(p["at"] in {b["at"] for b in auction} for p in stand_in)  # no stand-in over the minutes the exchange did send
+    assert len(stand_in) == 5 and stand_in[0]["at"] == (t0 + td(minutes=10)).isoformat()  # 15:15-15:19 only
+    thin = {"at": (t0 + td(minutes=18)).isoformat(), "o": 25540.0, "h": 25540.0, "l": 25540.0, "c": 25540.0, "n": 3}  # 15:23 with three reads
+    flag_bars([thin], futs)
+    assert "ind" not in thin  # a bar made from a handful of reads is not vouched for

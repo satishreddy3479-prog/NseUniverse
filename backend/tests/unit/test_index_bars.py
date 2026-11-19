@@ -114,3 +114,25 @@ def test_a_lone_far_read_is_dropped_and_a_confirmed_jump_is_kept() -> None:
     for i, p in enumerate([25450.0, 25300.0, 25301.0, 25302.0]):
         c.observe(T0 + timedelta(seconds=i + 1), p, T0 + timedelta(seconds=i + 1))
     assert c.cur is not None and (c.cur.l, c.cur.c, c.cur.x) == (25301.0, 25302.0, 0)  # 25,300 was held, 25,301 agreed with it, so the move is real: 25,300 itself is not in the bar (it waited), nothing is counted as dropped
+
+
+def test_the_first_read_after_minutes_of_silence_starts_a_new_stretch_instead_of_being_held() -> None:
+    """19 Nov 2026: reads of 25,504 until 15:14:59, silence to 15:20:02, then 25,666.75, 25,561.0, 25,560.5 (the closing auction's first indicative values). A far read is held back for
+    confirmation only while its neighbours are fresh; after 120+ seconds of silence the old level is stale and the first read opens the stretch."""
+    from datetime import timedelta
+
+    b = IndexBarBuilder()
+    t = datetime(2026, 11, 19, 9, 44, 59, tzinfo=UTC)
+    b.observe(t, 25504.3, t)
+    t2 = datetime(2026, 11, 19, 9, 50, 2, tzinfo=UTC)  # 15:20:02 IST, 303 s later
+    b.observe(t2, 25666.75, t2)
+    b.observe(t2 + timedelta(seconds=1), 25561.0, t2 + timedelta(seconds=1))  # 105 points on: held for confirmation
+    b.observe(t2 + timedelta(seconds=2), 25560.5, t2 + timedelta(seconds=2))  # confirms it
+    done = b.observe(t2 + timedelta(seconds=60), 25560.0, t2 + timedelta(seconds=60))
+    assert done is not None and done.o == 25666.75 and done.h == 25666.75 and done.c == 25560.5  # the first auction value is in the bar
+    c = IndexBarBuilder()
+    t_c = datetime(2026, 11, 19, 9, 44, 20, tzinfo=UTC)
+    c.observe(t_c, 25504.3, t_c)
+    t3 = t_c + timedelta(seconds=30)  # only 30 s of silence: the neighbour is fresh and a far lone read is a glitch
+    c.observe(t3, 25666.75, t3)
+    assert c.cur is not None and c.cur.h == 25504.3 and c.cur.x == 1  # held back and counted

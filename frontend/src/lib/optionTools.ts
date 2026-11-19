@@ -172,6 +172,8 @@ export interface SmartOiResult {
   unconfirmedBars: { at: string; off: number }[];
   /** Minutes drawn from the NIFTY future (minus its basis) because the index is not published in the closing session. */
   proxyMinutes: number;
+  /** minutes drawn from the closing auction's indicative closing values of the index (15:20-15:30): real exchange output, not traded prices */
+  indicativeMinutes: number;
   /** A drawn candle opened far from the previous drawn candle's close right after a stall or silence: the move is real feed output but unconfirmed. */
   jumps: { at: string; from: number; to: number; pct: number }[];
 }
@@ -198,9 +200,9 @@ const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${St
  * no bar. Candles with no stored sample are left out, never filled in; the next change then spans the gap (`span` > 1)
  * and is counted in `gapCandles`. Only the newest day with data is used so no change ever crosses a night.
  */
-export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?: string; openMin?: number; closeMin?: number; bars?: { at: string; o: number; h: number; l: number; c: number; n?: number | null; off?: number | null; proxy?: boolean }[] } = {}): SmartOiResult {
+export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?: string; openMin?: number; closeMin?: number; bars?: { at: string; o: number; h: number; l: number; c: number; n?: number | null; off?: number | null; proxy?: boolean; ind?: boolean }[] } = {}): SmartOiResult {
   const day = opts.day, openMin = opts.openMin ?? OPEN_MIN, closeMin = opts.closeMin ?? CLOSE_MIN;
-  const empty: SmartOiResult = { day: null, timeframe, candles: [], baselineAt: null, gapCandles: 0, skippedSamples: 0, strikeChangeCandles: 0, stalls: [], thinBars: 0, unconfirmedBars: [], proxyMinutes: 0, jumps: [] };
+  const empty: SmartOiResult = { day: null, timeframe, candles: [], baselineAt: null, gapCandles: 0, skippedSamples: 0, strikeChangeCandles: 0, stalls: [], thinBars: 0, unconfirmedBars: [], proxyMinutes: 0, indicativeMinutes: 0, jumps: [] };
   const n = Math.min(s.times.length, s.ce_oi.length, s.pe_oi.length, s.spot.length);
   const istOf = (iso: string) => new Date(new Date(iso).getTime() + IST_MS);
   let useDay = day ?? null;
@@ -243,6 +245,7 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
   // One-minute index bars of the same day, grouped into the same candle slots: they carry the real highs and lows.
   const barSlots = new Map<number, { at: string; o: number; h: number; l: number; c: number; proxy?: boolean }[]>();
   let proxyMinutes = 0;
+  let indicativeMinutes = 0;
   let thinBars = 0;
   const unconfirmedBars: { at: string; off: number }[] = [];
   for (const bar of opts.bars ?? []) {
@@ -253,6 +256,7 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
     if (bar.proxy) { proxyMinutes++; barSlots.set(Math.floor((m - openMin) / timeframe), [...(barSlots.get(Math.floor((m - openMin) / timeframe)) ?? []), bar]); continue; }
     if (bar.n != null && bar.n < THIN_BAR_READS) { thinBars++; continue; }
     if (bar.off != null) { unconfirmedBars.push({ at: hhmm(m), off: bar.off }); continue; } // the future disagrees: shown as missing, never repaired
+    if (bar.ind) indicativeMinutes++; // an indicative closing value of the closing auction: kept, and said so
     const slot = Math.floor((m - openMin) / timeframe);
     barSlots.set(slot, [...(barSlots.get(slot) ?? []), bar]);
   }
@@ -314,7 +318,7 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
     }
     lastDrawn = c;
   }
-  return { day: useDay, timeframe, candles, baselineAt: baseline ? s.times[slots.length ? buckets.get(slots[0]!)!.lastOi : 0]! : null, gapCandles: gaps, skippedSamples: skipped, strikeChangeCandles: strikeChanges, stalls, thinBars, unconfirmedBars, proxyMinutes, jumps };
+  return { day: useDay, timeframe, candles, baselineAt: baseline ? s.times[slots.length ? buckets.get(slots[0]!)!.lastOi : 0]! : null, gapCandles: gaps, skippedSamples: skipped, strikeChangeCandles: strikeChanges, stalls, thinBars, unconfirmedBars, proxyMinutes, indicativeMinutes, jumps };
 }
 
 // ---------------------------------------------------------------- Price vs OI (one strike through the session)

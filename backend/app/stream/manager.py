@@ -20,7 +20,7 @@ from app.logging_setup import log_event
 from app.stream.book import LiveBook
 from app.stream.feed import FeedSession
 from app.stream.hub import Hub
-from app.stream.index_watch import IndexWatch
+from app.stream.index_watch import IndexWatch, in_snapshot_window
 from app.stream.models import (
     AUCTION_PHASES,
     ClosingAuction,
@@ -43,6 +43,8 @@ ACTIVE_STATES = {
     StreamState.RECONNECTING,
 }
 SUBSCRIBE_CHUNK = 200
+# in the closing auction's silent minutes only (index_watch.SNAPSHOT_WINDOW)
+INDEX_SNAPSHOT_EVERY_S = 20.0
 
 
 @dataclass
@@ -98,6 +100,7 @@ class StreamManager:
         self._relogin = relogin
         self._now = clock
         self._index_watch = IndexWatch()
+        self.index_snapshots_asked = 0
         self._sleep = sleep
         self._on_event = on_event
         self.book = LiveBook()
@@ -424,12 +427,41 @@ class StreamManager:
                 acknowledged=self.acknowledged_tokens,
                 test=self.test_result,
             )
-            await consumer
+            snapshots = asyncio.create_task(self._index_snapshots(feed, universe))
+            try:
+                await consumer
+            finally:
+                snapshots.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await snapshots
         finally:
             if not consumer.done():
                 consumer.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await consumer
+
+    async def _index_snapshots(self, feed: FeedSession, universe: Universe) -> None:
+        """While the pushed index is silent (15:15-15:21, closing-auction transition) ask for it.
+
+        The snapshot reply is a normal index message and goes through the usual path. Whether the
+        broker answers with a moving value is not known; each request is counted in the
+        per-minute account (``snapshots_asked``). A failure is logged by type only and never
+        reaches the option feed."""
+        ask = getattr(feed, "snapshot_index", None)
+        index = [t for t in universe.test_tokens if t.kind == "index"][:1]
+        if ask is None or not index:
+            return
+        while True:
+            await asyncio.sleep(INDEX_SNAPSHOT_EVERY_S)
+            if not in_snapshot_window(self._now()):
+                continue
+            try:
+                await ask(index)
+                self.index_snapshots_asked += 1
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001 - a snapshot request must never disturb the stream
+                log_event(logger, logging.WARNING, "index_snapshot_failed", error=type(e).__name__)
 
     async def _subscribe_market(self, feed: FeedSession, universe: Universe) -> None:
         """Breadth stocks. Best effort: a failure is recorded and the option feed carries on."""
@@ -480,7 +512,8 @@ class StreamManager:
                 dropped = dict(getattr(feed, "dropped_by_kind", None) or {})
                 for account in self._index_watch.observe(now, ev.tick.ltp):
                     log_event(
-                        logger, logging.INFO, "index_ticks_minute", **account, feed_dropped=dropped
+                        logger, logging.INFO, "index_ticks_minute", **account, feed_dropped=dropped,
+                        snapshots_asked=self.index_snapshots_asked,
                     )
         if ev.kind == "tick" and ev.tick is not None and ev.tick.key in self.book.internal_keys:
             self.book.update_internal(ev.tick)

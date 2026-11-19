@@ -232,6 +232,18 @@ class KotakFeed:
     async def subscribe_market_status(self) -> None:
         await self._ws.subscribe_exchange()
 
+    async def snapshot_index(self, tokens: list[FeedToken]) -> None:
+        """Ask the broker for the current index value once (``snapshotIndices``).
+
+        The reply comes back on the live feed as a normal index message. Kotak's developer
+        guide: "Snapshot requests the current full state once. Its reply uses the same binary
+        message types as the live feed"."""
+        from neo_api_client.websocket.feed import WsToken
+
+        idx = [WsToken(t.exchange_segment, t.instrument_token) for t in tokens if t.kind == "index"]
+        if idx:
+            await self._ws.snapshot(idx, "index")
+
     async def events(self) -> AsyncIterator[FeedEvent]:
         while True:
             ev = await self._queue.get()

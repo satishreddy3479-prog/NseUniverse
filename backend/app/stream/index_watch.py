@@ -12,6 +12,12 @@ from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")
 WINDOW = ((15, 10), (15, 35))
+SNAPSHOT_WINDOW = ((15, 15), (15, 21))  # the minutes in which the pushed index is silent in the closing auction (19 Nov 2026): the broker is asked for it on request
+
+
+def in_snapshot_window(now: datetime) -> bool:
+    t = now.astimezone(IST)
+    return SNAPSHOT_WINDOW[0] <= (t.hour, t.minute) < SNAPSHOT_WINDOW[1]
 
 
 class IndexWatch:

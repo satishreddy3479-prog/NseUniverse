@@ -16,6 +16,10 @@ from zoneinfo import ZoneInfo
 TOLERANCE = 40.0  # points: the basis of a bar's close may differ this much from its neighbours' median before it is flagged
 EXTREME_TOLERANCE = 80.0  # the same for a bar's high or low (a minute can range widely, so the allowance is wider)
 CLOSING_TOLERANCE, CLOSING_EXTREME_TOLERANCE = 25.0, 40.0  # points, inside the closing session (15:15-15:30)
+# NSE's closing auction session: continuous trading in the cash segment ends at 15:15 and the last traded prices pause until 15:20; from 15:20 the exchange sends INDICATIVE CLOSING values of the
+# index (Kotak Neo's closing-auction explainer: "index values keep updating with an indicative closing price throughout CAS"). Those reads are real exchange output but can sit far from the future
+# while the order book is thin (19 Nov 2026: 25,560-25,596 against a future-implied 25,517 at 15:20-15:22). They are marked ``ind`` and kept, not called suspect.
+AUCTION_START, AUCTION_END = (15, 20), (15, 30)
 FIRST_MINUTE = (9, 17)  # IST: the opening minutes are left out, the future and the index open apart
 NEIGHBOURS = 15  # minutes on each side
 MIN_NEIGHBOURS = 5
@@ -56,11 +60,16 @@ def bar_offsets(bars: Sequence[Mapping[str, object]], futures: Mapping[str, floa
 
 
 def flag_bars(bars: list[dict[str, object]], futures: Mapping[str, float]) -> None:
-    """Set ``off`` (points, signed) on each bar whose close, high or low is further from the future-implied level than the tolerances allow. Bars are not changed otherwise."""
+    """Set ``off`` (points, signed) on each bar whose close, high or low is further from the future-implied level than the tolerances allow. Bars are not changed otherwise.
+    Bars of 15:20-15:30 with enough reads get ``ind`` (indicative closing values of the closing auction) instead and are never flagged ``off``."""
     close, high, low = bar_offsets(bars, futures, "c"), bar_offsets(bars, futures, "h"), bar_offsets(bars, futures, "l")
     for b, oc, oh, ol in zip(bars, close, high, low, strict=True):
         at = datetime.fromisoformat(str(b["at"])).astimezone(IST)
         if (at.hour, at.minute) < FIRST_MINUTE:
+            continue
+        n = b.get("n")
+        if AUCTION_START <= (at.hour, at.minute) < AUCTION_END and not (isinstance(n, int) and n < THIN_READS):
+            b["ind"] = True  # an indicative closing value of the index: shown as its own kind of candle, never called an error
             continue
         tight = CLOSING_START <= (at.hour, at.minute) < CLOSING_END  # in the closing session the index quote is not to be trusted: a narrower allowance
         tol_c, tol_x = (CLOSING_TOLERANCE, CLOSING_EXTREME_TOLERANCE) if tight else (TOLERANCE, EXTREME_TOLERANCE)

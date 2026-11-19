@@ -30,6 +30,7 @@ class MinuteBar:
 
 
 JUMP = 0.0015  # a read this far (0.15 %, about 38 points) from the last accepted level must be confirmed by the next read before it counts
+SILENCE_S = 120.0  # after this long without an accepted read the old level is stale: the next read starts over (19 Nov 2026: the index was silent 15:15-15:19, the closing auction)
 
 
 class IndexBarBuilder:
@@ -41,6 +42,7 @@ class IndexBarBuilder:
         self.cur: MinuteBar | None = None
         self._last_tick_at: datetime | None = None
         self._level: float | None = None  # the last accepted level
+        self._level_at: datetime | None = None
         self._held: float | None = None  # a far read waiting for confirmation
 
     def observe(self, now: datetime, price: float | None, tick_at: datetime | None) -> MinuteBar | None:
@@ -56,6 +58,8 @@ class IndexBarBuilder:
             return done
         new_tick = tick_at is None or tick_at != self._last_tick_at
         self._last_tick_at = tick_at
+        if self._level_at is not None and (now - self._level_at).total_seconds() > SILENCE_S:
+            self._level, self._held = None, None  # silent for minutes: a far read is not a glitch against a stale neighbour, it is the first read of a new stretch
         if self._level is not None and abs(price / self._level - 1) > JUMP:
             held, self._held = self._held, price
             if held is None or abs(price - held) > abs(held - self._level) / 3:
@@ -66,6 +70,7 @@ class IndexBarBuilder:
                 self.cur.x -= 1  # the read that waited was confirmed: it was a move, not a glitch
         self._held = None
         self._level = price
+        self._level_at = now
         if self.cur is None:
             self.cur = MinuteBar(key, price, price, price, price, 1)
         else:

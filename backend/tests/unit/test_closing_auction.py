@@ -41,3 +41,55 @@ def test_no_auction_outside_it_and_without_a_cash_message() -> None:
     assert manager_with({"nse_cm": (2, T1520)})._closing_auction() is None  # closed at 15:30
     assert manager_with({"nse_fo": (12, T1515)})._closing_auction() is None  # another segment
     assert manager_with({})._closing_auction() is None
+
+
+def test_the_index_is_requested_only_in_the_silent_minutes(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Kotak's guide: a snapshot request returns the current state on the live feed.
+
+    Asked at 15:15-15:21 IST every 20 s (here 10 ms); never at 15:10 or 15:25, and a failing
+    request is survived."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from app.stream import manager as mgr
+    from app.stream.models import FeedToken
+
+    monkeypatch.setattr(mgr, "INDEX_SNAPSHOT_EVERY_S", 0.01)
+    calls: list[list[FeedToken]] = []
+
+    class Feed:
+        fail = False
+
+        async def snapshot_index(self, tokens: list[FeedToken]) -> None:
+            if self.fail:
+                raise RuntimeError("socket gone")
+            calls.append(tokens)
+
+    index = FeedToken(exchange_segment="nse_cm", instrument_token="Nifty 50", kind="index")
+    other = FeedToken(exchange_segment="nse_fo", instrument_token="1")
+    universe = SimpleNamespace(test_tokens=[index, other])
+
+    def run(at: datetime, feed: Feed) -> StreamManager:
+        m = object.__new__(StreamManager)
+        m._now = lambda: at  # type: ignore[method-assign]
+        m.index_snapshots_asked = 0
+
+        async def go() -> None:
+            task = asyncio.create_task(m._index_snapshots(feed, universe))  # type: ignore[arg-type]
+            await asyncio.sleep(0.1)
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+        asyncio.run(go())
+        return m
+
+    quiet = run(datetime(2026, 11, 19, 9, 40, 0, tzinfo=UTC), Feed())  # 15:10 IST: pushing
+    assert quiet.index_snapshots_asked == 0 and calls == []
+    inside = run(datetime(2026, 11, 19, 9, 46, 0, tzinfo=UTC), Feed())  # 15:16 IST
+    assert inside.index_snapshots_asked >= 3 and all(c == [index] for c in calls)  # index only
+    after = run(datetime(2026, 11, 19, 9, 56, 0, tzinfo=UTC), Feed())  # 15:26 IST: pushing again
+    assert after.index_snapshots_asked == 0
+    broken = Feed()
+    broken.fail = True
+    survived = run(datetime(2026, 11, 19, 9, 46, 0, tzinfo=UTC), broken)  # logged, loop carries on
+    assert survived.index_snapshots_asked == 0
