@@ -37,6 +37,7 @@ class GSymbol:
 
 GROUPS: list[tuple[str, str]] = [
     ("india", "India pre-market"),
+    ("india_adr", "India ADRs and ETF (US-listed)"),
     ("us_futures", "US index futures"),
     ("us_cash", "US cash indices"),
     ("rates_fx", "Rates and the dollar"),
@@ -47,6 +48,15 @@ GROUPS: list[tuple[str, str]] = [
 _US = (time(9, 30), time(16, 0))
 SYMBOLS: list[GSymbol] = [
     GSymbol("GIFT", "", "GIFT Nifty futures", "india", "gift", "Asia/Kolkata", core=True, source="nseix", view_url="https://www.nseix.com/get-quotes"),
+    # US-listed Indian companies and the India ETF: they trade in the US session (20:00-02:30 IST in winter), so by the next morning they say how Indian stocks were priced overnight.
+    # The change is against the previous US close, in dollars; an ADR is not the NSE price (its ratio to the share and the rupee move it too).
+    GSymbol("HDB", "HDB", "HDFC Bank ADR", "india_adr", "cash", "America/New_York", unit="$", hours=_US),
+    GSymbol("IBN", "IBN", "ICICI Bank ADR", "india_adr", "cash", "America/New_York", unit="$", hours=_US),
+    GSymbol("INFY", "INFY", "Infosys ADR", "india_adr", "cash", "America/New_York", unit="$", hours=_US),
+    GSymbol("WIT", "WIT", "Wipro ADR", "india_adr", "cash", "America/New_York", unit="$", decimals=3, hours=_US),
+    GSymbol("RDY", "RDY", "Dr. Reddy's ADR", "india_adr", "cash", "America/New_York", unit="$", hours=_US),
+    GSymbol("MMYT", "MMYT", "MakeMyTrip", "india_adr", "cash", "America/New_York", unit="$", hours=_US),
+    GSymbol("INDA", "INDA", "iShares MSCI India ETF", "india_adr", "cash", "America/New_York", unit="$", hours=_US),
     GSymbol("ES", "ES=F", "S&P 500 futures", "us_futures", "futures", "America/New_York", core=True, ref_close=time(16, 0), delay_min=10),
     GSymbol("NQ", "NQ=F", "Nasdaq 100 futures", "us_futures", "futures", "America/New_York", core=True, ref_close=time(16, 0), delay_min=10),
     GSymbol("YM", "YM=F", "Dow futures", "us_futures", "futures", "America/New_York", core=True, ref_close=time(16, 0), delay_min=10),

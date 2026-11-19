@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -999,3 +999,53 @@ def test_the_australian_jobs_release_gets_its_actual_though_biquote_rates_it_med
     emp, un = rows["Employment Change"], rows["Unemployment Rate"]
     assert (emp["actual"], emp["previous"]) == ("-43.5K", "-39.3K") and (un["actual"], un["forecast"], un["previous"]) == ("4.9%", "4.8%", "4.7%")
     assert un["outcome"]["status"] == "MISS" and un["outcome"]["diff_text"] == "+0.1%"  # unemployment above the forecast is the bad side
+
+
+# ------------------------------------------------------------------ the India ADRs
+ADRS = ["HDB", "IBN", "INFY", "WIT", "RDY", "MMYT", "INDA"]
+
+
+def adr_frames() -> tuple[Any, Any]:
+    """Real Yahoo bars of the 18 Nov 2026 US session (09:30-15:59 New York) of the seven US-listed Indian tickers, and their daily closes."""
+    raw = json.loads((FIX / "yahoo_adr_1m_18nov2026.json").read_text())
+    one = pd.concat({y: pd.DataFrame({"Close": [p for _, p in r], "Open": [p for _, p in r]}, index=pd.DatetimeIndex([datetime.fromisoformat(t) for t, _ in r])) for y, r in raw.items()}, axis=1)
+    day = json.loads((FIX / "yahoo_adr_daily_18nov2026.json").read_text())
+    daily = pd.concat({y: pd.DataFrame({"Close": [c for _, c in r]}, index=pd.DatetimeIndex([pd.Timestamp(d) for d, _ in r])) for y, r in day.items()}, axis=1)
+    return one, daily
+
+
+def test_the_india_adrs_are_a_group_of_us_hours_stocks_with_the_dollar_sign() -> None:
+    from app.globalmkts.symbols import GROUPS
+
+    assert ("india_adr", "India ADRs and ETF (US-listed)") in GROUPS
+    for k in ADRS:
+        s = BY_KEY[k]
+        assert s.group == "india_adr" and s.kind == "cash" and s.unit == "$" and s.hours == (time(9, 30), time(16, 0)) and s.yahoo == k
+    nyse = datetime(2026, 11, 18, 15, 0, tzinfo=UTC)  # 10:00 New York (EST), 20:30 IST
+    assert all(expected_open(BY_KEY[k], nyse) for k in ADRS)
+    assert not any(expected_open(BY_KEY[k], datetime(2026, 11, 19, 4, 40, tzinfo=UTC)) for k in ADRS)  # 10:10 IST the next morning: the US market is closed
+
+
+def test_the_adrs_show_the_official_close_of_the_us_session_against_the_previous_close(tmp_path: Path) -> None:
+    """The next morning in India (10:10 IST, 19 Nov) the ADRs say how Indian stocks closed in New York: Infosys 11.78 against 12.07 is -0.29 (-2.40%); HDFC Bank 26.22 against 26.26."""
+    s, _ = service(tmp_path, now=datetime(2026, 11, 19, 4, 40, tzinfo=UTC))
+    one, daily = adr_frames()
+    s.symbols = [BY_KEY[k] for k in ADRS]  # noqa: SLF001
+    s._download = lambda tickers, period: one  # type: ignore[method-assign]  # noqa: SLF001
+    s._daily_dl = lambda tickers, period: daily  # type: ignore[method-assign]  # noqa: SLF001
+    out = s.poll_quotes()
+    assert not any(k in out["missing"] for k in ADRS)
+    latest = s.store.latest_all()
+    assert latest["INFY"]["price"] == pytest.approx(11.78) and latest["INFY"]["prev_close"] == pytest.approx(12.07)
+    assert latest["INFY"]["change"] == pytest.approx(-0.29) and latest["INFY"]["change_pct"] == pytest.approx(-0.29 / 12.07 * 100)  # -2.40%
+    assert latest["HDB"]["change"] == pytest.approx(26.22 - 26.26) and latest["RDY"]["change"] == pytest.approx(14.98 - 14.79)
+    grp = next(g for g in s.overview()["groups"] if g["key"] == "india_adr")
+    assert [i["key"] for i in grp["items"]] == ADRS and next(i for i in grp["items"] if i["key"] == "INFY")["status"] == "closed"
+
+
+def test_the_quotes_are_read_every_minute_in_the_us_session_too(tmp_path: Path) -> None:
+    s, _ = service(tmp_path)
+    assert s._quote_interval(datetime(2026, 11, 18, 4, 0, tzinfo=UTC)) == 60.0  # 09:30 IST: the NSE window  # noqa: SLF001
+    assert s._quote_interval(datetime(2026, 11, 18, 15, 0, tzinfo=UTC)) == 60.0  # 10:00 New York: the ADRs trade  # noqa: SLF001
+    assert s._quote_interval(datetime(2026, 11, 18, 22, 0, tzinfo=UTC)) == 300.0  # 17:00 New York, 03:30 IST: neither  # noqa: SLF001
+    assert s._quote_interval(datetime(2026, 11, 21, 15, 0, tzinfo=UTC)) == 300.0  # Saturday  # noqa: SLF001

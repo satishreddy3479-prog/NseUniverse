@@ -157,10 +157,11 @@ export function GlobalBody() {
           {o.meta.last_poll_ok ? `The last successful update was ${fmtAge(o.meta.last_poll_age_s)}.` : "No successful update yet."} {o.meta.last_error ? `Last error: ${o.meta.last_error}.` : ""} Prices below keep their own age.
         </p>
       )}
-      {nothing && <p className="rounded-sm border border-rule bg-slate p-3 text-sm text-muted">No global prices have been stored yet. The server fetches them every minute during Indian market hours and every five minutes otherwise.</p>}
+      {nothing && <p className="rounded-sm border border-rule bg-slate p-3 text-sm text-muted">No global prices have been stored yet. The server fetches them every minute during Indian market hours and the US session, and every five minutes otherwise.</p>}
       {o.groups.filter((g) => g.items.length > 0).map((g) => (
         <section key={g.key} aria-label={g.title}>
           <h2 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">{g.title}</h2>
+          {g.key === "india_adr" && <p className="mb-1.5 text-xs text-muted" data-testid="adr-note">US-listed Indian companies, in dollars, against the previous US close. They trade 20:00 to 02:30 IST (winter), so in the morning they show how Indian stocks were priced overnight. An ADR is not the NSE price: its ratio to the share and the rupee move it too.</p>}
           <div className="grid grid-cols-1 gap-2 min-[480px]:grid-cols-2 lg:grid-cols-4">
             {g.items.map((it) => <Card key={it.key} it={it} onOpen={() => setOpen(it.key)} />)}
           </div>

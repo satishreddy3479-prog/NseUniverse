@@ -28,7 +28,7 @@ from app.globalmkts.quotes import (
     yahoo_download,
 )
 from app.globalmkts.store import GlobalStore, ms
-from app.globalmkts.symbols import BY_KEY, GROUPS, SYMBOLS, GSymbol, chart_url, expected_open
+from app.globalmkts.symbols import BY_KEY, GROUPS, NY, SYMBOLS, GSymbol, chart_url, expected_open
 from app.prediction.events import REFERENCE
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,7 @@ BARS_KEEP_D = 7  # one-minute price bars older than this are deleted (the change
 TASK_TIMEOUT_S, MAX_BACKOFF_S = 300.0, 900.0
 NEWS_KEEP_H = 48  # news older than this is deleted; calendar events are deleted when their day (IST) has passed
 CLEAN_S = 3600.0
+_US_OPEN, _US_CLOSE = time(9, 30), time(16, 0)  # New York
 NSE_WINDOW = (time(9, 0), time(15, 45))  # IST: polled every minute then, every five minutes otherwise
 SPARK_POINTS = 48
 Fetch = Callable[[str], bytes]
@@ -488,7 +489,10 @@ class GlobalService:
     # ------------------------------------------------------------------ the loop
     def _quote_interval(self, now: datetime) -> float:
         t = now.astimezone(IST)
-        return QUOTE_FAST_S if t.weekday() < 5 and NSE_WINDOW[0] <= t.time() < NSE_WINDOW[1] else QUOTE_SLOW_S
+        if t.weekday() < 5 and NSE_WINDOW[0] <= t.time() < NSE_WINDOW[1]:
+            return QUOTE_FAST_S
+        us = now.astimezone(NY)  # the US stocks (the India ADRs) and indices trade 09:30-16:00 New York time: every minute then too, five minutes otherwise
+        return QUOTE_FAST_S if us.weekday() < 5 and _US_OPEN <= us.time() < _US_CLOSE else QUOTE_SLOW_S
 
     def _news_interval(self, now: datetime) -> float:
         t = now.astimezone(IST)

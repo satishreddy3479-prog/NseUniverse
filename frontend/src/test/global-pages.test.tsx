@@ -310,6 +310,20 @@ describe("delayed feeds", () => {
   });
 });
 
+describe("India ADRs", () => {
+  it("shows the US-listed Indian stocks with their dollar change and says what an ADR is not", async () => {
+    // Infosys ADR on 18 Nov 2026: 11.78 against 12.07, -0.29 (-2.40%)
+    const adr = { ...overview, groups: [{ key: "india_adr", title: "India ADRs and ETF (US-listed)", items: [{ key: "INFY", name: "Infosys ADR", unit: "$", decimals: 2, kind: "cash", core: false, yield: false, price: 11.78, change: -0.29, change_pct: -2.4026, prev_close: 12.07, status: "closed", age_s: 40000, spark: [12.0, 11.78], chart_url: "https://finance.yahoo.com/quote/INFY/" }] }] };
+    mockApi({ "/api/global/overview": adr });
+    renderAt("/tools/global-markets");
+    const sec = await screen.findByRole("region", { name: "India ADRs and ETF (US-listed)" });
+    expect(within(sec).getByText("Infosys ADR")).toBeInTheDocument();
+    expect(within(sec).getByText(/11\.78/)).toBeInTheDocument();
+    expect(within(sec).getByText(/−2\.40%|-2\.40%/)).toBeInTheDocument();
+    expect(within(sec).getByTestId("adr-note")).toHaveTextContent("An ADR is not the NSE price");
+  });
+});
+
 describe("news read marks", () => {
   const link = (name: RegExp) => screen.findByRole("link", { name });
   const stored = () => JSON.parse(localStorage.getItem("nse-universe.news-read") ?? "{}") as Record<string, number>;
