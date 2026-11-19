@@ -148,10 +148,22 @@ _W = {0: 1 / 3, 1: 1 / 6, 2: 1 / 3}
 STALE_SPOT_POINTS = 30.0  # the stored index level may differ this much from the level the option prices imply before the options win for choosing the at-the-money strike
 
 
-def atm_reference(p: Point) -> float:
-    """The level used to pick the at-the-money strike. Normally the stored index level. When the index feed froze (17 Nov 2026: 25,413 repeated from 15:15 to 15:27 while put-call parity
-    said about 25,455) the level the option prices themselves imply, the parity forward discounted back, is used instead whenever it is more than ``STALE_SPOT_POINTS`` away."""
-    if p.f_src.startswith("spot x carry"):
+FROZEN_SAMPLES = 3  # the same stored index level in this many consecutive samples counts as a frozen quote
+
+
+def spot_frozen(points: Sequence[Point | None], i: int) -> bool:
+    """The stored index level at sample ``i`` is the same as in the two samples before it."""
+    if i < FROZEN_SAMPLES - 1:
+        return False
+    win = points[i - FROZEN_SAMPLES + 1 : i + 1]
+    return all(q is not None for q in win) and len({q.spot for q in win if q is not None}) == 1
+
+
+def atm_reference(p: Point, frozen: bool = False) -> float:
+    """The level used to pick the at-the-money strike. The stored index level, unless it is frozen (17 Nov 2026: 25,413 repeated from 15:15 to 15:27 while put-call parity said about
+    25,455): then the level the option prices themselves imply, the parity forward discounted back, is used whenever it is more than ``STALE_SPOT_POINTS`` away. A level that keeps moving is
+    never replaced (19 Nov 2026, 09:15-09:47: the options' forward sat 10 to 66 points below the live index, so the options-implied level picked the wrong strike)."""
+    if not frozen or p.f_src.startswith("spot x carry"):
         return p.spot
     implied = p.f * math.exp(-p.rate * p.t)
     return implied if abs(implied - p.spot) > STALE_SPOT_POINTS else p.spot
@@ -551,7 +563,7 @@ def analyse(
     # series, the spot line and the ATM strike running to the close, with the vol columns left empty (never filled).
     spot = [p.spot if p is not None else (s.spot if s.spot is not None and s.spot > 0 else None) for p, s in zip(pts, snaps, strict=True)]
     fwd = _series(pts, lambda p: p.f)
-    rolling_k = [nearest(p.strikes, atm_reference(p)) if p is not None else (nearest(sorted({k for k, _ in s.prices}), sp) if sp is not None and s.prices else None) for p, s, sp in zip(pts, snaps, spot, strict=True)]
+    rolling_k = [nearest(p.strikes, atm_reference(p, spot_frozen(pts, i))) if p is not None else (nearest(sorted({k for k, _ in s.prices}), sp) if sp is not None and s.prices else None) for i, (p, s, sp) in enumerate(zip(pts, snaps, spot, strict=True))]
 
     def pair(p: Point | None, k: float | None) -> tuple[Leg | None, Leg | None]:
         return (None, None) if p is None or k is None else (p.leg(k, CALL), p.leg(k, PUT))
@@ -707,7 +719,7 @@ def analyse(
     rvs["iv_state"] = "expanding" if (ivm["rolling_atm"]["30"] or 0) >= 0.5 else "contracting" if (ivm["rolling_atm"]["30"] or 0) <= -0.5 else "stable" if ivm["rolling_atm"]["30"] is not None else "unavailable"
     regime = vol_regime(ivm["rolling_atm"], rv, accel, eff30)
     # --- module 6: gamma and structure
-    now_legs = [(last_p.leg(k, CALL), last_p.leg(k, PUT)) for k in [nearest(last_p.strikes, atm_reference(last_p))] if k is not None]
+    now_legs = [(last_p.leg(k, CALL), last_p.leg(k, PUT)) for k in [nearest(last_p.strikes, atm_reference(last_p, spot_frozen(pts, last_ok)))] if k is not None]
     theta_day = gamma_pt = None
     if now_legs and all(now_legs[0]):
         c_, p_ = now_legs[0]
@@ -875,8 +887,10 @@ def window_pairs(snaps: Sequence[Snap], expiry_date: Any, minutes: int = 30, rat
     if len(pts_ok) < 2:
         return []
     k = None
-    for p in pts_ok:
-        kk = nearest(p.strikes, atm_reference(p))
+    for i, p in enumerate(pts):
+        if p is None:
+            continue
+        kk = nearest(p.strikes, atm_reference(p, spot_frozen(pts, i)))
         if kk is not None and p.leg(kk, CALL) and p.leg(kk, PUT):
             k = kk
             break

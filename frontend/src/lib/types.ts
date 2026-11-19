@@ -62,6 +62,8 @@ export interface StreamStatus {
   stale_after_seconds: number;
   expiries: string[];
   market: MarketStatus;
+  /** set while the cash segment is in NSE's closing auction session (from the exchange feed's status codes 8, 10, 11, 12), not from the clock */
+  closing_auction?: { phase: "transition" | "order_entry" | "orders_restricted" | "ended"; code: number; text: string | null; since: string | null } | null;
   recent_errors: StreamError[];
   note: string;
 }

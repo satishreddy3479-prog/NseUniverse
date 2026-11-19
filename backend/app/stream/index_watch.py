@@ -7,7 +7,7 @@ logs, once a minute between 15:10 and 15:35 IST, how many index ticks arrived (r
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -17,22 +17,30 @@ WINDOW = ((15, 10), (15, 35))
 class IndexWatch:
     def __init__(self) -> None:
         self._minute: str | None = None
+        self._minute_at: datetime | None = None
         self._count = 0
         self._values: set[float] = set()
         self._first: float | None = None
         self._last: float | None = None
 
-    def observe(self, now: datetime, ltp: float | None) -> dict[str, object] | None:
-        """Count one index tick. Returns the finished minute's account when the minute rolls over inside the window, else None."""
+    def observe(self, now: datetime, ltp: float | None) -> list[dict[str, object]]:
+        """Count one index tick. Returns the accounts of the minutes finished by this tick: the minute that was counting, and a ``ticks: 0`` account for every minute with no tick
+        between it and this one (19 Nov 2026: 15:16-15:19 left no line at all, so the silence could only be inferred)."""
         t = now.astimezone(IST)
         if not (WINDOW[0] <= (t.hour, t.minute) < WINDOW[1]):
-            return None
+            return []
+        t = t.replace(second=0, microsecond=0)
         minute = t.strftime("%H:%M")
-        done: dict[str, object] | None = None
+        done: list[dict[str, object]] = []
         if self._minute is not None and minute != self._minute:
-            done = {"minute": self._minute, "ticks": self._count, "distinct": len(self._values), "first": self._first, "last": self._last}
+            done.append({"minute": self._minute, "ticks": self._count, "distinct": len(self._values), "first": self._first, "last": self._last})
             self._count, self._values, self._first, self._last = 0, set(), None, None
+            m = (self._minute_at or t) + timedelta(minutes=1)
+            while m < t:
+                done.append({"minute": m.strftime("%H:%M"), "ticks": 0, "distinct": 0, "first": None, "last": None})
+                m += timedelta(minutes=1)
         self._minute = minute
+        self._minute_at = t
         self._count += 1
         if ltp is not None:
             self._values.add(ltp)

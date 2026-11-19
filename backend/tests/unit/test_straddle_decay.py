@@ -271,8 +271,12 @@ class TestFrozenIndex:
         p, why = sd.build_point(frozen, EXPIRY, R)
         assert p is not None, why
         assert sd.nearest(p.strikes, p.spot) == 24000.0  # the frozen quote would pick 24,000
-        assert sd.atm_reference(p) == pytest.approx(24060.0, abs=2.0)
-        assert sd.nearest(p.strikes, sd.atm_reference(p)) == 24050.0  # the options say 24,050
+        assert sd.atm_reference(p) == 24000.0  # a quote that is not known to be frozen is used as stored
+        assert sd.atm_reference(p, frozen=True) == pytest.approx(24060.0, abs=2.0)
+        assert sd.nearest(p.strikes, sd.atm_reference(p, frozen=True)) == 24050.0  # the options say 24,050
+        assert sd.spot_frozen([p, p, p], 2) is True and sd.spot_frozen([p, p, p], 1) is False and sd.spot_frozen([p, None, p], 2) is False
         ok = sd.Snap(at, 24030.0, real.prices)  # a quote 30 points behind is within the allowance: the quote is used
         q, _ = sd.build_point(ok, EXPIRY, R)
-        assert q is not None and sd.atm_reference(q) == 24030.0
+        assert q is not None and sd.atm_reference(q, frozen=True) == 24030.0
+        moved, _ = sd.build_point(sd.Snap(at + timedelta(minutes=1), 24005.0, real.prices), EXPIRY, R)
+        assert moved is not None and sd.spot_frozen([p, moved, p], 2) is False  # three different levels: not frozen

@@ -393,7 +393,7 @@ function SmartOiChartWidget() {
             )}
           </div>
           {res && (() => {
-            // 15:15-15:30: the exchange does not publish the index (the quote freezes, then jumps), every day; that is not a fault of the feed and is shown as its own note
+            // 15:15-15:30: NSE's closing auction session. The cash segment stops continuous trading at 15:15, so the index (and the 50 stocks) do not update until the auction values come in at 15:20; not a fault of the feed, shown as its own note
             const isClosing = (hm: string) => hm >= "15:14";
             const closing = res.proxyMinutes > 0 || res.stalls.some((t) => isClosing(t.from));
             const stalls = res.stalls.filter((t) => !isClosing(t.from));
@@ -404,7 +404,7 @@ function SmartOiChartWidget() {
               <>
                 {closing && (
                   <p role="note" data-testid="smart-oi-closing-note" className="rounded-sm border border-rule bg-slate-2 px-2 py-1 text-xs text-paper">
-                    <b>Closing session (15:15–15:30).</b> The exchange does not publish the NIFTY index in these minutes: its quote freezes and then jumps. {res.proxyMinutes > 0 ? `${res.proxyMinutes} minute(s) are drawn as grey outlined candles from the NIFTY future minus the basis it had before 15:15, so they are a stand-in, not the index. ` : ""}Minutes with neither are left empty. The OI and volume bars are unaffected.
+                    <b>Closing auction session (from 15:15).</b> NSE's cash market stops continuous trading at 15:15, so the NIFTY index and the 50 stocks do not update until 15:20, then show auction-session values until the close. The NIFTY future and the options keep trading. {res.proxyMinutes > 0 ? `${res.proxyMinutes} minute(s) are drawn as grey outlined candles from the NIFTY future minus the basis it had before 15:15, so they are a stand-in, not the index. ` : ""}Minutes with neither are left empty. The OI and volume bars are unaffected.
                   </p>
                 )}
                 {(stalls.length > 0 || jumps.length > 0 || thin > 0 || off.length > 0) && (

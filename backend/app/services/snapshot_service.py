@@ -73,6 +73,7 @@ class SnapshotService:
         self._on_demand_slots = asyncio.Semaphore(ON_DEMAND_MAX_CONCURRENT)
         self._capture_lock = asyncio.Lock()
         self._last_fingerprint: dict[date, str] = {}
+        self._broker_levels: dict[date, list[tuple[datetime, float]]] = {}
         self.skipped_unchanged = 0
 
     @property
@@ -181,14 +182,31 @@ class SnapshotService:
             log_event(logger, logging.INFO, "on_demand_chain", expiry=exp_s, strikes=len(snap.rows))
             return snap
 
+    def _quote_frozen(self, snap: OptionChainSnapshot) -> bool:
+        """The broker's index quote is the same in three captures at least 90 s apart.
+
+        Captures closer than 20 s count once."""
+        level = snap.underlying_ltp
+        if level is None:
+            return False
+        seen = self._broker_levels.setdefault(snap.expiry, [])
+        if not seen or (snap.retrieved_at - seen[-1][0]).total_seconds() >= 20:
+            seen.append((snap.retrieved_at, level))
+            del seen[:-4]
+        last3 = seen[-3:]
+        span = (last3[-1][0] - last3[0][0]).total_seconds()
+        return len(last3) == 3 and all(v == level for _, v in last3) and span >= 90
+
     def _checked(self, snap: OptionChainSnapshot) -> OptionChainSnapshot:
         """A frozen index quote is replaced by the level the chain's own prices imply.
+
+        A quote that is moving is never replaced.
 
         See app/domain/spot_check.py; the raw payload on disk is untouched."""
         if not self.spot_check:
             return snap
         spot, broker, note = checked_spot(
-            snap.rows, snap.underlying_ltp, snap.expiry, snap.retrieved_at
+            snap.rows, snap.underlying_ltp, snap.expiry, snap.retrieved_at, self._quote_frozen(snap)
         )
         if note is None:
             return snap

@@ -8,9 +8,15 @@ capture: for a strike K, F = K + call - put, and the index is F discounted by e^
 over the strikes nearest the quote is used.
 
 Only near expiries are checked (up to 8 days): further out the dividends missing from the model
-move the forward by more than the allowance. When the two readings differ by more than
-``TOLERANCE`` points the parity level replaces the quote, the broker's own value is kept in
+move the forward by more than the allowance. The parity level replaces the quote only when the quote
+is FROZEN (the same value in three captures at least 90 seconds apart, the caller decides) and the
+two readings differ by more than ``TOLERANCE`` points; the broker's own value is kept in
 ``underlying_ltp_broker`` and ``spot_note`` says so. The raw payload on disk is not touched.
+
+A quote that keeps moving is not replaced: on 19 Nov 2026 the options' forward sat 10 to 66
+points below the live index for the first 33 minutes (09:15-09:47 IST), the broker's quote followed
+the live index within about 25 points, and replacing it 32 times put the opening strike on 25,150
+instead of 25,200.
 """
 
 from __future__ import annotations
@@ -57,17 +63,24 @@ def parity_spot(
 
 
 def checked_spot(
-    rows: Sequence[OptionChainRow], spot: float | None, expiry: date, at: datetime
+    rows: Sequence[OptionChainRow],
+    spot: float | None,
+    expiry: date,
+    at: datetime,
+    frozen: bool = False,
 ) -> tuple[float | None, float | None, str | None]:
-    """(level to use, the broker's level if it was replaced, a note if it was)."""
-    if spot is None or spot <= 0:
+    """(level to use, the broker's level if it was replaced, a note if it was).
+
+    A quote that is not ``frozen`` is always used as sent."""
+    if spot is None or spot <= 0 or not frozen:
         return spot, None, None
     implied = parity_spot(rows, spot, expiry, at)
     if implied is None or abs(implied - spot) <= TOLERANCE:
         return spot, None, None
     side = "below" if implied > spot else "above"
     note = (
-        f"The broker's index level {spot:g} is {abs(implied - spot):.0f} points {side} "
+        f"The broker's index level {spot:g} has not moved for several captures and is "
+        f"{abs(implied - spot):.0f} points {side} "
         "the level the "
         f"option prices imply ({implied:.0f}): the option-implied level is used for the ATM strike."
     )

@@ -38,6 +38,28 @@ class MarketStatus(BaseModel):
     source: Literal["exchange_feed", "none"] = "none"
 
 
+# Market-status codes of the cash segment in NSE's closing auction session (Kotak SDK
+# MarketStatusCode 8, 10, 11, 12), seen on 19 Nov 2026 at 15:15, 15:20 and 15:25.
+AUCTION_PHASES: dict[int, str] = {
+    8: "transition",
+    10: "order_entry",
+    11: "orders_restricted",
+    12: "ended",
+}
+
+
+class ClosingAuction(BaseModel):
+    """The cash segment is in the closing auction session.
+
+    Continuous trading has ended, so the index and the stocks do not update normally while the
+    futures and options keep trading."""
+
+    phase: Literal["transition", "order_entry", "orders_restricted", "ended"]
+    code: int
+    text: str | None = None
+    since: datetime | None = None
+
+
 class LiveTick(BaseModel):
     """Latest values for one instrument from the stream.
 
@@ -126,5 +148,6 @@ class StreamStatusModel(BaseModel):
     expiries: list[str] = []
     market: MarketStatus
     market_segments: dict[str, MarketStatus] = {}
+    closing_auction: ClosingAuction | None = None
     recent_errors: list[StreamError] = []
     note: str = ""

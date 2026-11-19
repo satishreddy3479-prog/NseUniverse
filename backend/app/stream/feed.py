@@ -168,6 +168,10 @@ class KotakFeed:
         self._now = now
         self._queue: asyncio.Queue[FeedEvent] = asyncio.Queue(maxsize=20000)
         self._pump: asyncio.Task[None] | None = None
+        # SDK messages that became no event, by message type (e.g. "cas_change", the
+        # closing-auction messages), and events discarded because the queue was full.
+        self.dropped_by_kind: dict[str, int] = {}
+        self.queue_overflow = 0
         self._ws.on_connect = lambda: self._emit(FeedEvent(kind="connected"))
         self._ws.on_disconnect = lambda: self._emit(FeedEvent(kind="disconnected"))
         self._ws.on_error = self._on_error
@@ -177,6 +181,7 @@ class KotakFeed:
             self._queue.put_nowait(ev)
         except asyncio.QueueFull:
             # Keep newest: drop the oldest (feed is a latest-value stream).
+            self.queue_overflow += 1
             with contextlib.suppress(asyncio.QueueEmpty):
                 self._queue.get_nowait()
             self._queue.put_nowait(ev)
@@ -195,6 +200,9 @@ class KotakFeed:
                 ev = convert_sdk_message(msg, self._now())
                 if ev is not None:
                     self._emit(ev)
+                else:
+                    kind = str(getattr(msg, "type", None) or type(msg).__name__)
+                    self.dropped_by_kind[kind] = self.dropped_by_kind.get(kind, 0) + 1
         except Exception as exc:  # noqa: BLE001 - report type only
             self._emit(FeedEvent(kind="error", detail=type(exc).__name__))
         finally:

@@ -22,6 +22,8 @@ from app.stream.feed import FeedSession
 from app.stream.hub import Hub
 from app.stream.index_watch import IndexWatch
 from app.stream.models import (
+    AUCTION_PHASES,
+    ClosingAuction,
     FeedEvent,
     FeedToken,
     Freshness,
@@ -223,8 +225,24 @@ class StreamManager:
             expiries=self.expiries,
             market=self.market,
             market_segments=dict(self.market_segments),
+            closing_auction=self._closing_auction(),
             recent_errors=list(self.errors),
             note=note,
+        )
+
+    def _closing_auction(self) -> ClosingAuction | None:
+        """From the cash segment's own status messages, not from the clock.
+
+        Code 8 continuous trading closed, 10 auction order entry, 11 market orders restricted,
+        12 auction ended."""
+        seg = self.market_segments.get("nse_cm")
+        if seg is None or seg.code not in AUCTION_PHASES:
+            return None
+        return ClosingAuction(
+            phase=AUCTION_PHASES[seg.code],  # type: ignore[arg-type]
+            code=seg.code,
+            text=seg.text,
+            since=seg.received_at,
         )
 
     # ---------------------------------------------------------------- control
@@ -459,9 +477,11 @@ class StreamManager:
         if ev.kind == "tick" and ev.tick is not None and ev.tick.kind == "index":
             ev = ev.model_copy(update={"tick": self._internal_alias(ev.tick)})
             if ev.tick is not None and ev.tick.key == "nse_cm|Nifty 50":
-                account = self._index_watch.observe(now, ev.tick.ltp)
-                if account is not None:
-                    log_event(logger, logging.INFO, "index_ticks_minute", **account)
+                dropped = dict(getattr(feed, "dropped_by_kind", None) or {})
+                for account in self._index_watch.observe(now, ev.tick.ltp):
+                    log_event(
+                        logger, logging.INFO, "index_ticks_minute", **account, feed_dropped=dropped
+                    )
         if ev.kind == "tick" and ev.tick is not None and ev.tick.key in self.book.internal_keys:
             self.book.update_internal(ev.tick)
             self.market_message_count += 1
