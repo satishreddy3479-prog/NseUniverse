@@ -52,6 +52,7 @@ SIDES = (("CE", CALL), ("PE", PUT))
 COMPONENTS = ("theta", "vega", "delta", "gamma", "vanna", "volga", "residual")
 KEYS = (*COMPONENTS, "actual", "vega_skew")  # vega_skew is a part of vega, not an extra term
 LOT_SIZE = 65  # NIFTY contract multiplier (units per lot)
+RESTRIKE_POINTS = 100.0  # the managed straddle is re-struck, and the opening strike called stale, when spot is this many points from the held strike (provisional working value)
 EFFICIENT_PCT = 75.0  # actual decay at least this share of the theta decay
 MEANINGFUL_PCT = 20.0  # below this share (and above EXPANSION_PCT) the premium has not decayed in any meaningful way
 EXPANSION_PCT = -10.0  # premium rose by more than a tenth of the theta decay
@@ -233,6 +234,58 @@ def window_sum(steps: Sequence[dict[str, Any] | None], since: datetime | None) -
     if not use:
         return None
     return {"ce": _sum([s["ce"] for s in use]), "pe": _sum([s["pe"] for s in use]), "both": _sum([s["both"] for s in use]), "steps": len(use)}
+
+
+# ------------------------------------------------------------------ opening strike status and the managed straddle
+def reference_status(spot: float | None, strike: float, premium: float | None, delta: float | None, threshold: float = RESTRIKE_POINTS) -> dict[str, Any]:
+    """Whether the strike held since the open is still at the money. Far from spot its change is mostly direction (delta), not decay, so it is a reference only."""
+    if spot is None:
+        return {"distance": None, "distance_pct_of_premium": None, "net_delta": None if delta is None else rd(delta, 2), "stale": False, "threshold": threshold}
+    dist = spot - strike
+    return {"distance": rd(dist, 1), "distance_pct_of_premium": None if not premium else rd(abs(dist) / premium * 100, 1), "net_delta": None if delta is None else rd(delta, 2),
+            "stale": abs(dist) >= threshold, "threshold": threshold}  # fmt: skip
+
+
+def managed_held(spot: Sequence[float | None], rolling_k: Sequence[float | None], start: float, threshold: float = RESTRIKE_POINTS) -> list[float]:
+    """The strike a seller who adjusts holds at each sample: the opening strike until spot is ``threshold`` points away, then the strike nearest spot, and so on."""
+    held: list[float] = []
+    cur = start
+    for sp, rk in zip(spot, rolling_k, strict=True):
+        if sp is not None and rk is not None and abs(sp - cur) >= threshold:
+            cur = rk
+        held.append(cur)
+    return held
+
+
+def managed_book(times: Sequence[datetime], held: Sequence[float], straddle: Sequence[float | None], close_price: Any) -> dict[str, Any]:
+    """Profit and loss of a short straddle that is closed and re-opened whenever the held strike changes (before costs, stored last traded prices).
+    ``straddle[i]`` is the held pair's price at sample i; ``close_price(i, k)`` the price of strike k's pair at sample i (the exit at a re-strike). Seller profit = entry - exit."""
+    segs: list[dict[str, Any]] = []
+    realised = 0.0
+    cur: float | None = None
+    entry = 0.0
+    start = 0
+    last_px: float | None = None
+    pnl: list[float | None] = []
+    for i, (k, px) in enumerate(zip(held, straddle, strict=True)):
+        if cur is None:
+            if px is not None:
+                cur, entry, start = k, px, i
+        elif k != cur:
+            ex = close_price(i, cur)
+            exit_px = ex if ex is not None else last_px
+            if exit_px is not None:
+                segs.append({"strike": cur, "from": times[start].isoformat(), "to": times[i].isoformat(), "entry": rd(entry, 2), "exit": rd(exit_px, 2), "pnl": rd(entry - exit_px, 2), "exit_carried": ex is None})
+                realised += entry - exit_px
+            cur, entry, start = (k, px, i) if px is not None else (None, 0.0, i)
+        if px is not None:
+            last_px = px
+        pnl.append(None if cur is None or px is None else rd(realised + entry - px, 2))
+    open_pnl = None if cur is None or last_px is None else entry - last_px
+    total = None if open_pnl is None else realised + open_pnl
+    return {"threshold": RESTRIKE_POINTS, "restrikes": len(segs), "segments": segs, "strike_now": cur, "realised": rd(realised, 2), "open_pnl": None if open_pnl is None else rd(open_pnl, 2), "total": None if total is None else rd(total, 2),
+            "total_rupees": None if total is None else rd(total * LOT_SIZE, 0), "lot_size": LOT_SIZE, "pnl": pnl,
+            "note": f"A seller who re-strikes to the nearest strike when spot is {RESTRIKE_POINTS:g} points from the held one. Stored last traded prices, before costs and slippage; profit = entry minus exit."}  # fmt: skip
 
 
 # ------------------------------------------------------------------ decay efficiency
@@ -508,6 +561,8 @@ def analyse(
     if open_i is None:
         return base | {"status": "unavailable", "message": "No stored sample has both the call and the put price (and a solvable vol) at the strike nearest spot.", "interpretation": []}
     fixed_k = rolling_k[open_i]
+    if fixed_k is None:  # the opening sample was chosen because its pair exists, so this is only a type guard
+        return base | {"status": "unavailable", "message": "No stored sample has both the call and the put price (and a solvable vol) at the strike nearest spot.", "interpretation": []}
     fixed_held = [fixed_k] * len(pts)
 
     def leg_series(held: Sequence[float | None]) -> dict[str, Any]:
@@ -528,6 +583,13 @@ def analyse(
                 "ce_iv": civ, "pe_iv": piv, "iv": both}  # fmt: skip
 
     roll, fix = leg_series(rolling_k), leg_series(fixed_held)
+    managed_k = managed_held(spot, rolling_k, fixed_k)
+    man = leg_series(managed_k)
+
+    def pair_price(i: int, k: float) -> float | None:
+        c, d = snaps[i].prices.get((k, CALL)), snaps[i].prices.get((k, PUT))
+        return None if c is None or d is None else c + d
+
     steps_roll, skip_roll = attribute_steps(pts, rolling_k)
     steps_fix, skip_fix = attribute_steps(pts, fixed_held)
     last_t = times[max(i for i, p in enumerate(pts) if p is not None)]
@@ -566,6 +628,10 @@ def analyse(
     adj_series = cumulative(steps_roll)["actual"]
     last_k = max(i for i, k in enumerate(rolling_k) if k is not None)
     tracker["atm_open"], tracker["atm_now"] = fixed_k, rolling_k[last_k]
+    lp = pts[last_ok]
+    f_ce, f_pe = (None, None) if lp is None else (lp.leg(fixed_k, CALL), lp.leg(fixed_k, PUT))
+    tracker["fixed"]["reference"] = reference_status(spot[last_ok], fixed_k, s_fix["open"], None if f_ce is None or f_pe is None else f_ce.g.delta + f_pe.g.delta)
+    tracker["managed"] = managed_book(times, managed_k, man["straddle"], pair_price)
     tracker["moves"] = {"fixed": {"straddle": _moves(times, fix["straddle"]), "ce": _moves(times, fix["ce"]), "pe": _moves(times, fix["pe"])},
                         "rolling_adjusted": {"straddle": _moves(times, adj_series)}}  # fmt: skip
     f_now, r_now = s_fix["current"], s_roll["current"]
@@ -677,10 +743,11 @@ def analyse(
     }  # fmt: skip
     out = base | {
         "status": "ok", "times": [t.isoformat() for t in times], "spot": [rd(v) for v in spot], "forward": [rd(v) for v in fwd], "tracker": tracker,
-        "series": {"rolling": {k: [rd(x, 3) for x in v] if k != "strike" else v for k, v in roll.items()}, "fixed": {k: [rd(x, 3) for x in v] if k != "strike" else v for k, v in fix.items()},
+        "series": {"managed": {"strike": managed_k, "straddle": [rd(x, 3) for x in man["straddle"]], "pnl": tracker["managed"]["pnl"]}, "rolling": {k: [rd(x, 3) for x in v] if k != "strike" else v for k, v in roll.items()}, "fixed": {k: [rd(x, 3) for x in v] if k != "strike" else v for k, v in fix.items()},
                    "skew25": [rd(x, 3) for x in skew25], "skew10": [rd(x, 3) for x in skew10], "rr25": [rd(x, 3) for x in rr25], "rr10": [rd(x, 3) for x in rr10]},
         "iv": iv, "regime": regime, "retention": retention(tracker["fixed"], attribution["fixed"]["open"]), "attribution": attribution, "cumulative": {"fixed": cumulative(steps_fix), "rolling": cumulative(steps_roll)}, "realised_vs_implied": rvs, "structure": structure, "quality": quality,
     }  # fmt: skip
+    tracker["managed"] = {k: v for k, v in tracker["managed"].items() if k != "pnl"}
     out["interpretation"], out["climate"] = interpret(out)
     return out
 
@@ -723,20 +790,20 @@ def _concentration(s: Mapping[str, Any], p: Point) -> dict[str, Any] | None:
 # ------------------------------------------------------------------ module 7: reading and climate
 def interpret(a: Mapping[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     att, tr, iv, rv, st = a["attribution"], a["tracker"], a["iv"], a["realised_vs_implied"], a["structure"]
-    main = att["fixed"]["open"]
+    main = att["rolling"]["open"]  # the at-the-money straddle, roll-adjusted: the opening strike goes stale once spot has moved away
     recent = att["rolling"]["60"] or att["rolling"]["open"]
     out: list[dict[str, Any]] = []
     eff_m = None if main is None else main["efficiency"]
     names = {"efficient": "efficiently", "slower": "slower than theta alone would give", "none": "with no meaningful decay", "expansion": "not at all: the premium has expanded", "unavailable": "(not computable)"}
     if eff_m and eff_m["efficiency_pct"] is not None:
-        out.append({"q": "Is the straddle decaying normally?", "a": f"Since the open the {tr['fixed']['strike']:g} straddle has decayed {names[eff_m['status']]}: {eff_m['actual_decay']:.1f} points actual against {eff_m['expected_decay']:.1f} expected from time alone ({eff_m['efficiency_pct']:.0f}%). {eff_m['reason'] or ''}".strip()})
+        out.append({"q": "Is the straddle decaying normally?", "a": f"Since the open the at-the-money straddle (re-centred, {tr['atm_now']:g} now) has decayed {names[eff_m['status']]}: {eff_m['actual_decay']:.1f} points actual against {eff_m['expected_decay']:.1f} expected from time alone ({eff_m['efficiency_pct']:.0f}%). {eff_m['reason'] or ''}".strip()})
     elif eff_m and eff_m["status"] == "low_signal":
         out.append({"q": "Is the straddle decaying normally?", "a": f"Too early to say. {eff_m['reason']}"})
     else:
         out.append({"q": "Is the straddle decaying normally?", "a": "Not computable yet: the model needs at least two samples with both prices and solvable vols."})
     if main is not None:
         v, g, d = main["both"]["vega"], main["both"]["gamma"], main["both"]["delta"]
-        out.append({"q": "Is IV contraction helping decay?", "a": f"Vega contributed {v:+.1f} points to the straddle since the open (call IV {fmt_pts(iv['fixed']['ce']['change'])}, put IV {fmt_pts(iv['fixed']['pe']['change'])})." + (" IV has fallen and is adding to the decay." if v < -0.3 else " It is not adding materially to the decay.")})
+        out.append({"q": "Is IV contraction helping decay?", "a": f"Vega contributed {v:+.1f} points to the straddle since the open (call IV {fmt_pts(iv['rolling']['ce']['change'])}, put IV {fmt_pts(iv['rolling']['pe']['change'])})." + (" IV has fallen and is adding to the decay." if v < -0.3 else " It is not adding materially to the decay.")})
         out.append({"q": "Is IV expansion supporting premiums?", "a": iv["support"]["text"] + (f" Vega added {v:+.1f} points." if v > 0.3 else "")})
         th = -main["both"]["theta"]
         out.append({"q": "Is spot movement and gamma offsetting theta?", "a": f"Gamma added {g:+.1f} and net delta {d:+.1f} points against {th:.1f} points of theta" + (f" (gamma = {g / th * 100:.0f}% of the theta decay)." if th > 0 else ".") + (" Realised movement is paying for part of the decay." if th > 0 and g > 0.25 * th else " Movement is small against the decay.")})
@@ -744,7 +811,7 @@ def interpret(a: Mapping[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any
     if f_ce["open"] and f_pe["open"] and f_ce["current"] is not None and f_pe["current"] is not None:
         rc, rp = f_ce["current"] / f_ce["open"] * 100, f_pe["current"] / f_pe["open"] * 100
         side = "CE" if rc > rp + 2 else "PE" if rp > rc + 2 else "neither"
-        out.append({"q": "Which side, CE or PE, is retaining more premium?", "a": (f"The {side} is retaining more: " if side != "neither" else "Both sides retain about the same: ") + f"CE at {rc:.0f}% and PE at {rp:.0f}% of their opening price (fixed {tr['fixed']['strike']:g} strike)."})
+        out.append({"q": "Which side, CE or PE, is retaining more premium?", "a": (f"The {side} is retaining more: " if side != "neither" else "Both sides retain about the same: ") + f"CE at {rc:.0f}% and PE at {rp:.0f}% of their opening price (opening {tr['fixed']['strike']:g} strike" + (f", now {abs(tr['fixed']['reference']['distance']):.0f} points from spot: mostly direction, not decay)." if tr["fixed"]["reference"]["stale"] else ").")})
     gap60 = rv["gap"].get("60") if rv["gap"].get("60") is not None else rv["gap"].get("open")
     tally, why = 0, []
     use = recent
@@ -788,6 +855,7 @@ DEFINITIONS = {
     "straddle": "Call price + put price of one strike (last traded). Decay = opening premium minus premium.",
     "fixed": "The strike nearest spot at the first usable sample, held all session.",
     "rolling": "The strike nearest spot at the start of each step; steps add only same-contract changes.",
+    "managed": "The opening strike, re-struck to the nearest strike whenever spot is 100 points away from it; each re-strike books the old pair's profit or loss (stored last traded prices, before costs).",
     "theta": "Shapley effect of the passage of time (calendar time to the expiry close) on the Black-76 price, carry included.",
     "vega": "Shapley effect of the change in the leg's own implied vol.",
     "delta": "Delta at the start of the step x the change in the forward.",

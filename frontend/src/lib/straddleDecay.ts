@@ -72,7 +72,9 @@ export interface StraddleDecay {
   times?: string[];
   spot?: (number | null)[];
   tracker?: {
-    fixed: { strike: number; ce: Stat; pe: Stat; straddle: Stat };
+    fixed: { strike: number; ce: Stat; pe: Stat; straddle: Stat; reference?: { distance: number | null; distance_pct_of_premium: number | null; net_delta: number | null; stale: boolean; threshold: number } };
+    /** a short straddle re-struck to the nearest strike when spot is `threshold` points from the held one; profit = entry minus exit, before costs */
+    managed?: { threshold: number; restrikes: number; segments: { strike: number; from: string; to: string; entry: number; exit: number; pnl: number; exit_carried: boolean }[]; strike_now: number | null; realised: number | null; open_pnl: number | null; total: number | null; total_rupees: number | null; lot_size: number; note: string };
     rolling: { ce: Stat; pe: Stat; straddle: Stat; rolls: number; adjusted_change: number | null };
     opening_at: string;
     atm_open?: number | null; atm_now?: number | null;
@@ -80,6 +82,7 @@ export interface StraddleDecay {
     difference?: { fixed_minus_rolling_now: number | null; fixed_change: number | null; rolling_adjusted_change: number | null; note: string };
   };
   series?: {
+    managed?: { strike: (number | null)[]; straddle: (number | null)[]; pnl: (number | null)[] };
     rolling: Record<"ce" | "pe" | "straddle" | "ce_iv" | "pe_iv" | "iv", (number | null)[]> & { strike: (number | null)[] };
     fixed: Record<"ce" | "pe" | "straddle" | "ce_iv" | "pe_iv" | "iv", (number | null)[]> & { strike: (number | null)[] };
     skew25: (number | null)[]; skew10: (number | null)[]; rr25: (number | null)[]; rr10: (number | null)[];

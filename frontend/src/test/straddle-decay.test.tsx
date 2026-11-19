@@ -47,11 +47,14 @@ function mount(body: unknown, validation?: StraddleValidation, status = 200) {
 
 // The page is five tabs; a test opens the tab that holds what it checks (the address hash picks the first one) and, when it checks two places, clicks to the other.
 const itIn = (tab: string, name: string, fn: () => Promise<void> | void) => it(name, async () => { window.location.hash = `#${tab}`; try { await fn(); } finally { window.location.hash = ""; } });
+// The page now follows the rolling ATM straddle first (the opening strike goes stale once NIFTY has moved away); a test about the opening strike switches to it.
+const showFixed = async () => fireEvent.click((await screen.findAllByRole("button", { name: /^Fixed \d+/ }))[0]!);
 const openTab = async (name: RegExp) => fireEvent.click(await screen.findByRole("tab", { name }));
 
 describe("straddle decay panel", () => {
   itIn("today", "shows the opening and current premiums, the attribution table and the efficiency class", async () => {
     mount(full());
+    await showFixed();
     const trk = await screen.findByTestId("sdi-tracker");
     expect(within(trk).getByText("Opening CE").nextSibling?.textContent).toBe("90.0");
     expect(within(trk).getByText("Opening straddle").nextSibling?.textContent).toBe("170.0");
@@ -214,6 +217,7 @@ describe("environments and the twelve sections", () => {
 
   itIn("today", "attribution includes vanna, volga, residual, rupee shortfall, causes and the skew part of vega", async () => {
     mount(rich());
+    await showFixed();
     const a = await screen.findByTestId("sdi-attribution");
     expect(within(a).getByText("Vanna")).toBeTruthy();
     expect(within(a).getByText("Volga")).toBeTruthy();
@@ -228,6 +232,7 @@ describe("environments and the twelve sections", () => {
     const w0 = r.attribution!.fixed.open!;
     r.attribution!.fixed.open = { ...w0, efficiency: { ...w0.efficiency, status: "efficient", efficiency_pct: 113, shortfall: -1.2, shortfall_rupees: -77, shortfall_pct: -13 } };
     mount(r);
+    await showFixed();
     const t = (await screen.findByTestId("sdi-shortfall")).textContent ?? "";
     expect(t).toContain("No shortfall");
     expect(t).toContain("₹77");
@@ -298,12 +303,14 @@ describe("environments and the twelve sections", () => {
 describe("audit fixes (12 Nov 2026)", () => {
   itIn("today", "does not crash when the NIFTY series has missing minutes, at the start or at the end", async () => {
     mount(full({ spot: [null, 25175, 25180, null, 25190, null, null] as unknown as number[] }));
+    await showFixed();
     const note = await screen.findByTestId("sdi-position-note");
     expect(note).toHaveTextContent("NIFTY is now 25,190");
   });
 
   itIn("today", "says what the Fixed position is: the strike that was ATM at the open, not today's ATM", async () => {
     mount(full({ spot: Array.from({ length: 90 }, (_, i) => 25175 + i), tracker: { ...full().tracker!, atm_open: 25200, atm_now: 25350, opening_at: "2026-11-11T03:45:04Z", fixed: { ...full().tracker!.fixed, strike: 25200 } } }));
+    await showFixed();
     const btn = await screen.findByRole("button", { name: /^Fixed 25200 · ATM at open$/ });
     expect(btn).toHaveTextContent("ATM at open");
     expect(btn.getAttribute("title")).toContain("not the current ATM strike");
@@ -319,6 +326,7 @@ describe("audit fixes (12 Nov 2026)", () => {
     const e = { status: "low_signal" as const, efficiency_pct: null, actual_decay: 3.7, expected_decay: 0.7, reason: "Too early to judge: time alone is expected to take only 0.7 points", confidence: 0 };
     const f = full();
     mount(full({ attribution: { ...f.attribution!, fixed: { ...f.attribution!.fixed, open: { ...f.attribution!.fixed.open!, efficiency: e } } } }));
+    await showFixed();
     const att = await screen.findByTestId("sdi-attribution");
     expect(within(att).getAllByText("Too early to judge").length).toBeGreaterThan(0);
     expect(att).toHaveTextContent("expected decay only 0.7 pts: too small to judge");
@@ -374,6 +382,7 @@ describe("the glance (12 Nov 2026)", () => {
     const f = full();
     mount(full({ spot: Array.from({ length: 90 }, (_, i) => 24000 + i), tracker: { ...f.tracker!, atm_now: 24050, fixed: { ...f.tracker!.fixed, straddle: stat(170, 163) }, rolling: { ...f.tracker!.rolling, adjusted_change: -5.5, straddle: stat(170, 160), rolls: 3 } },
       attribution: { ...f.attribution!, fixed: { ...f.attribution!.fixed, open: { ...f.attribution!.fixed.open!, efficiency: { ...f.attribution!.fixed.open!.efficiency, lot_size: 65 } } } } }));
+    await showFixed();
     const fx = await screen.findByTestId("sdi-compare-fixed");
     const rl = screen.getByTestId("sdi-compare-rolling");
     expect(fx).toHaveTextContent("Fixed 24000");
@@ -415,9 +424,32 @@ describe("the seller card shows the premium-path flag", () => {
 });
 
 
+describe("the opening strike goes stale and the managed straddle is shown", () => {
+  itIn("today", "follows the rolling ATM first, marks the far opening strike reference-only and shows what a seller who adjusts made", async () => {
+    const f = full();
+    const managed = { threshold: 100, restrikes: 1, segments: [{ strike: 24000, from: "2026-11-19T04:00:00+00:00", to: "2026-11-19T04:02:00+00:00", entry: 300, exit: 330, pnl: -30, exit_carried: false }], strike_now: 24100, realised: -30, open_pnl: 20, total: -10, total_rupees: -650, lot_size: 65, note: "n" };
+    mount(full({ tracker: { ...f.tracker!, fixed: { ...f.tracker!.fixed, reference: { distance: 235, distance_pct_of_premium: 76, net_delta: 0.74, stale: true, threshold: 100 } }, managed } }));
+    const stale = await screen.findByTestId("sdi-fixed-stale");
+    expect(stale).toHaveTextContent("Reference only: NIFTY is 235 points from this strike (76% of the premium), net delta +0.74");
+    expect(screen.getByTestId("sdi-compare-rolling").className).toContain("ring-brass"); // the rolling ATM is the followed position until the user chooses the other
+    expect(screen.getByTestId("sdi-managed-total")).toHaveTextContent("−10.0");
+    expect(screen.getByTestId("sdi-managed")).toHaveTextContent("1 · 24100");
+    expect(screen.getByTestId("sdi-managed")).toHaveTextContent("about −₹650 per lot of 65");
+  });
+
+  itIn("today", "says nothing about a stale strike while the opening strike is still at the money", async () => {
+    const f = full();
+    mount(full({ tracker: { ...f.tracker!, fixed: { ...f.tracker!.fixed, reference: { distance: 30, distance_pct_of_premium: 9, net_delta: 0.1, stale: false, threshold: 100 } } } }));
+    await screen.findByTestId("sdi-compare-fixed");
+    expect(screen.queryByTestId("sdi-fixed-stale")).toBeNull();
+    expect(screen.queryByTestId("sdi-managed")).toBeNull(); // no managed book in this answer: nothing is invented
+  });
+});
+
 describe("choosing a position changes the glance charts", () => {
   itIn("today", "both lines are equally thick; the followed one is solid and the other faded, in both directions", async () => {
     mount(full({ spot: Array.from({ length: 90 }, (_, i) => 24000 + i) }));
+    await showFixed();
     const chart = () => screen.getByRole("img", { name: /Change in straddle premium since the open/ });
     const widths = () => JSON.parse(chart().getAttribute("data-widths") ?? "[]") as (number | null)[]; // [fixed, rolling, NIFTY]
     await screen.findByTestId("sdi-follow");

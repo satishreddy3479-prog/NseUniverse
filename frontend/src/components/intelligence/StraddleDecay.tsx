@@ -124,7 +124,7 @@ export function StraddleDecayPanel() {
     if (!rp.on) { if (asked != null) setAsked(null); return; }
     if (asked == null || (rp.cutMs != null && rp.cutMs !== asked && !q.isFetching)) setAsked(rp.cutMs);
   }, [rp.on, rp.cutMs, asked, q.isFetching]);
-  const [mode, setMode] = useState<"fixed" | "rolling">("fixed");
+  const [mode, setMode] = useState<"fixed" | "rolling">("rolling");
   const [tab, setTab] = useState<SdTab>(startTab);
   const go = (t: SdTab) => { setTab(t); try { window.history.replaceState(null, "", `#${t}`); } catch { /* the tab still changes without the address */ } };
   const [win, setWin] = useState<keyof Windows>("open");

@@ -11,6 +11,7 @@ type Mode = "fixed" | "rolling";
 
 const sg = (v: number | null | undefined, d = 1) => (v == null ? MISSING : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}`);
 const inr = (v: number) => `${v < 0 ? "−" : "+"}₹${Math.abs(Math.round(v)).toLocaleString("en-IN")}`;
+const pnlTone = (v: number | null | undefined) => (v == null ? "text-muted" : v >= 0 ? "text-up" : "text-down"); // a seller's profit: above zero is good
 
 /** Score bands (lower bound, label) as the backend classifies them: worst first so the bar reads bad → good. */
 export const SELLER_ZONES: [number, string][] = [[0, "High risk"], [25, "Unfavourable"], [40, "Neutral"], [60, "Favourable"], [80, "Highly favourable"]];
@@ -89,6 +90,9 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
       { name: "Fixed", color: c.brass, data: fx.map((v) => (v == null ? null : Math.round((v - base) * 100) / 100)), fmt: (v) => sg(v) },
       { name: "Rolling ATM", color: c.info, data: d.cumulative.rolling.actual, fmt: (v) => sg(v) },
     ];
+    // the managed straddle in the same convention as the others (premium change: above zero = the seller is behind), so its profit is plotted with the sign turned round
+    const mp = d.series.managed?.pnl;
+    if (mp) lines.push({ name: "Managed (re-struck)", color: c.up, data: mp.map((v) => (v == null ? null : -v)), fmt: (v) => sg(v) });
     if (d.spot) lines.push({ name: "NIFTY (right)", color: c.muted, data: d.spot, axis: 1, dotted: true, fmt: (v) => v.toLocaleString("en-IN") });
     const o = timeLinesOption(times, lines, c, null, { leftFmt: (v) => sg(v, 0), rightFmt: (v) => v.toLocaleString("en-IN"), zeroLine: true }) as unknown as { grid: Record<string, unknown>; legend: Record<string, unknown>; series: { name: string; lineStyle?: Record<string, unknown>; z?: number }[] };
     o.grid = { ...o.grid, top: 40 };
@@ -192,6 +196,11 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
                 className={`rounded-lg border p-3 text-left transition-colors ${mode === m ? "border-brass bg-brass/5 ring-1 ring-brass/40" : "border-rule hover:border-muted"}`}>
                 <div className={`text-sm font-semibold ${col}`}>{title}{mode === m && <span className="ml-2 rounded-full bg-brass/15 px-2 py-0.5 text-[10px] font-normal text-paper">shown in the sections below</span>}</div>
                 <p className="mt-0.5 text-xs leading-snug text-muted">{what}</p>
+                {m === "fixed" && tr.fixed.reference?.stale && (
+                  <p className="mt-1 rounded bg-warn/10 px-2 py-1 text-xs leading-snug text-warn" data-testid="sdi-fixed-stale">
+                    Reference only: NIFTY is {Math.abs(tr.fixed.reference.distance ?? 0).toFixed(0)} points from this strike{tr.fixed.reference.distance_pct_of_premium == null ? "" : ` (${tr.fixed.reference.distance_pct_of_premium.toFixed(0)}% of the premium)`}, net delta {tr.fixed.reference.net_delta == null ? MISSING : sg(tr.fixed.reference.net_delta, 2)}. Its line now mostly follows NIFTY, not time decay; read the rolling ATM line for decay.
+                  </p>
+                )}
                 <dl className="mt-2 grid grid-cols-3 gap-2 text-center">
                   <div><dt className="text-[11px] text-muted">At the open</dt><dd className="num text-lg font-semibold text-paper">{open == null ? MISSING : open.toFixed(1)}</dd></div>
                   <div><dt className="text-[11px] text-muted">Now{asOf(m) ? ` (${asOf(m)})` : ""}</dt><dd className="num text-lg font-semibold text-paper">{now == null ? MISSING : now.toFixed(1)}</dd></div>
@@ -201,6 +210,19 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
               </button>
             ))}
           </div>
+          {tr.managed && (
+            <div className="mt-3 rounded-lg border border-rule p-3" data-testid="sdi-managed">
+              <div className="text-sm font-semibold text-up">Managed straddle: re-struck when NIFTY is {tr.managed.threshold} points away</div>
+              <p className="mt-0.5 text-xs leading-snug text-muted">What a seller who sold the opening straddle and moved it to the new at-the-money strike each time NIFTY ran {tr.managed.threshold} points would have made. Each move books the old pair's profit or loss. Last traded prices, before costs.</p>
+              <dl className="mt-2 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+                <div><dt className="text-[11px] text-muted">Booked</dt><dd className={`num text-lg font-semibold ${pnlTone(tr.managed.realised)}`}>{sg(tr.managed.realised)}</dd></div>
+                <div><dt className="text-[11px] text-muted">Open position</dt><dd className={`num text-lg font-semibold ${pnlTone(tr.managed.open_pnl)}`}>{sg(tr.managed.open_pnl)}</dd></div>
+                <div><dt className="text-[11px] text-muted">Total (points)</dt><dd className={`num text-lg font-semibold ${pnlTone(tr.managed.total)}`} data-testid="sdi-managed-total">{sg(tr.managed.total)}</dd></div>
+                <div><dt className="text-[11px] text-muted">Re-strikes · now at</dt><dd className="num text-lg font-semibold text-paper">{tr.managed.restrikes} · {tr.managed.strike_now ?? MISSING}</dd></div>
+              </dl>
+              <p className="mt-1 text-[11px] text-muted">{tr.managed.total_rupees == null ? "Not enough data yet." : `Profit (+) or loss (−): about ${tr.managed.total_rupees >= 0 ? "+" : "−"}${inr(Math.abs(tr.managed.total_rupees)).slice(1)} per lot of ${tr.managed.lot_size}, before costs.`}</p>
+            </div>
+          )}
           {change && <div className="mt-3"><div className="mb-1 text-xs text-muted">Change in premium since the open, in points (below zero = premium has decayed; NIFTY on the right axis)</div><div className="h-[250px]"><EChart group="sdi" option={change} ariaLabel="Change in straddle premium since the open: fixed against rolling" /></div></div>}
           {kept && <div className="mt-3"><div className="mb-1 text-xs text-muted">{mode === "fixed" ? `Call and put price of the fixed ${tr.fixed.strike} straddle: at the open and now (points)` : `Call and put price of the at-the-money strike: at the first sample (${tr.fixed.strike}) and now (${tr.atm_now ?? MISSING}). They are different strikes, so compare the level, not the decay`}</div><div className="h-[170px]"><EChart option={kept} ariaLabel="Call and put premium at the open and now for the followed position" /></div></div>}
         </section>
@@ -240,6 +262,7 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
           <li><b className="text-paper">Data:</b> the option-chain samples stored about once a minute during the session (last traded prices, not bid/ask), plus the Market Intelligence engines for the score evidence.</li>
           <li><b className="text-paper">Fixed line:</b> call price + put price of the one strike chosen at the open ({tr?.fixed.strike ?? MISSING}), minus its opening value. It is the profit or loss, in premium points, of a straddle sold at the open and never adjusted.</li>
           <li><b className="text-paper">Rolling line:</b> at every minute the straddle at the strike nearest NIFTY is used, and only the change of the same contract between two minutes is added up. When the at-the-money strike moves, the new contract starts from its own price, so the line has no jump from switching strikes.</li>
+          <li><b className="text-paper">Managed line:</b> the opening straddle, moved to the strike nearest NIFTY whenever NIFTY is 100 points from the held strike; each move closes the old pair at its stored price and books the result. It shows what a seller who adjusts would actually have made, and is drawn as premium change (above zero = the seller is behind) like the other lines.</li>
           <li><b className="text-paper">Why they differ:</b> as NIFTY rises, the fixed strike goes in the money and its call gains while its put loses, so the fixed line mostly follows NIFTY. The rolling line keeps resetting to at the money, so it shows the decay and volatility change of an always-ATM straddle.</li>
           <li><b className="text-paper">Scores:</b> are computed once on the server from all the evidence and do not depend on which position you follow.</li>
         </ul>

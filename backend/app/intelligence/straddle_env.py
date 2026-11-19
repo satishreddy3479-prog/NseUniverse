@@ -69,7 +69,7 @@ def premium_path(a: Mapping[str, Any], kind: str) -> dict[str, Any] | None:
     """Roll-adjusted straddle premium change as a percent of the opening premium: since the open and over the last 60/30/15 minutes.
     Works from the cumulative attribution series (stored minutes), so it does not depend on the theta floor that switches the decay ratio off."""
     cum = g(a, "cumulative", kind, "actual")
-    base = num(g(a, "tracker", "fixed", "straddle", "open"))
+    base = num(g(a, "tracker", kind, "straddle", "open"))
     if not cum or not base or base <= 0:
         return None
     last = next((x for x in reversed(cum) if x is not None), None)
@@ -120,7 +120,7 @@ def evidence(a: Mapping[str, Any], mi: Mapping[str, Any]) -> dict[str, Any]:
         "skew25": g(iv, "levels", "pe25", "current"), "ce25": g(iv, "levels", "ce25", "current"),
         "accel": g(rvs, "acceleration", "ratio"), "regime": (a.get("regime") or {}).get("label"), "eff30": g(a, "regime", "path_efficiency_30m"), "move30": rvs.get("move_30m_pts"),
         "move_vs_sd": rvs.get("move_vs_daily_sd"),
-        "prem_fixed": premium_path(a, "fixed"), "prem_rolling": premium_path(a, "rolling"),
+        "prem_rolling": premium_path(a, "rolling"),
         "orderflow": num(eng.get("orderflow")), "positioning": num(eng.get("positioning")), "heavy15": num(hw), "cvd": num(pulse.get("futures_cvd_pct")),
         "vwap_pct": num(g(pulse, "vwap", "distance_pct")), "vwap_side": g(pulse, "vwap", "side"), "opt": opt, "spot": num(pulse.get("spot")) or num(a.get("spot", [None])[-1] if a.get("spot") else None),
     }  # fmt: skip
@@ -170,11 +170,9 @@ def seller_components(ev: Mapping[str, Any]) -> list[dict[str, Any]]:
     c: list[dict[str, Any]] = []
     conf = _conf(eff)
     c.append(comp("decay", "Theta decay efficiency", 8, None if e is None else (e - 50) / 50 * conf, f"recent decay {e:.0f}% of theta ({eff.get('status')}); {eff.get('reason')}{_conf_note(eff)}" if e is not None else (eff.get("reason") or "no computable efficiency"), "straddle attribution"))
-    pf, pr = ev.get("prem_fixed"), ev.get("prem_rolling")
-    pfv = None if pf is None else _prem_value(pf)
-    c.append(comp("prem_fixed", "Fixed-strike premium path", 14, None if pfv is None else -pfv, _prem_text("Fixed straddle", pf) + " (a seller who sold the opening strike)" if pf is not None else "no premium series yet", "straddle series (stored minutes)"))
+    pr = ev.get("prem_rolling")
     prv = None if pr is None else _prem_value(pr)
-    c.append(comp("prem_rolling", "Rolling ATM premium path", 8, None if prv is None else -prv, _prem_text("Rolling ATM (roll-adjusted)", pr) + " (a seller who re-centres)" if pr is not None else "no premium series yet", "straddle series (stored minutes)"))
+    c.append(comp("prem_rolling", "ATM straddle premium path", 14, None if prv is None else -prv, _prem_text("At-the-money straddle (roll-adjusted)", pr) + " (a seller who re-centres; the opening strike is not scored once spot has moved away)" if pr is not None else "no premium series yet", "straddle series (stored minutes)"))
     i30 = ev["iv_atm_30"]
     c.append(comp("iv_trend", "ATM IV trend", 12, None if i30 is None else -i30 / 1.0, f"ATM IV {i30:+.2f} vol points over the recent window (falling helps a seller)" if i30 is not None else "no IV change window", "straddle IV"))
     tags = ev["reg30"]
@@ -217,11 +215,11 @@ def flags(ev: Mapping[str, Any]) -> list[dict[str, str]]:
         out.append({"id": "rv_up", "text": f"Realised volatility is rising: the last 15 minutes are {ev['accel']:.2f}x the 15 before"})
     if ev["regime"] == "directional acceleration":
         out.append({"id": "directional", "text": "Directional acceleration: the recent move is one-way and realised vol is rising"})
-    pf = ev.get("prem_fixed")
-    pct = None if pf is None else pf["pct"].get("open")
+    pr = ev.get("prem_rolling")
+    pct = None if pr is None else pr["pct"].get("open")
     if pct is not None and pct >= PREM_STOP_PCT:
         hard = pct >= PREM_STOP_HARD_PCT
-        out.append({"id": "premium_up", "text": f"The fixed straddle premium is {pct:+.1f}% above its open (stop zone from +{PREM_STOP_PCT:g}%): a seller of the opening strike is behind", **({"cap": "Unfavourable"} if hard else {})})
+        out.append({"id": "premium_up", "text": f"The at-the-money straddle premium (roll-adjusted) is {pct:+.1f}% above its open (stop zone from +{PREM_STOP_PCT:g}%): a seller who re-centres is behind", **({"cap": "Unfavourable"} if hard else {})})
     d1, d2 = ev["dce30"], ev["dpe30"]
     sk = ev["skew25"]
     if (d1 is not None and d2 is not None and abs(d2 - d1) >= 1.0) or (sk is not None and ev["ce25"] is not None and abs(sk - ev["ce25"]) >= 4):
@@ -255,7 +253,7 @@ def seller(ev: Mapping[str, Any], dirn: Mapping[str, Any], recent: Sequence[floa
         r = score(cs)
         return {"score": r["score"], "class": _band(r["score"], SELLER_CLASSES), "uses": [by[i]["name"] for i in ids]}
 
-    straddle = sub(["decay", "prem_fixed", "prem_rolling", "rv_gap", "movement", "gamma", "iv_trend", "flow"])
+    straddle = sub(["decay", "prem_rolling", "rv_gap", "movement", "gamma", "iv_trend", "flow"])
     strangle = sub(["iv_trend", "rv_gap", "movement", "gex_stable", "positioning", "skew", "flow"], {"positioning": 12, "movement": 6})
     if "directional" in {f["id"] for f in fl} and straddle["score"] is not None:
         straddle["score"] = round(min(straddle["score"], 40), 1)
@@ -315,8 +313,8 @@ def buyer_components(ev: Mapping[str, Any], dirn: Mapping[str, Any]) -> list[dic
     c.append(comp("smart_oi", "Smart OI / positioning", 5, None if pos is None else abs(pos) / 60 - 0.2, f"positioning group score {pos:+.0f} (OI does not say who is long or short)" if pos is not None else "no positioning", "Market Intelligence positioning engine", proxy=True))
     sk = ev["skew_change"]
     c.append(comp("skew", "Skew movement", 4, None if sk is None else abs(sk) / 2 - 0.2, f"25-delta skew changed {sk:+.2f} vol points" if sk is not None else "no skew history", "straddle IV"))
-    pf = ev.get("prem_fixed")
-    c.append(comp("prem_path", "Fixed-strike premium path", 8, None if pf is None else _prem_value(pf), _prem_text("Fixed straddle", pf) + " (a rising premium is what a buyer is paid for)" if pf is not None else "no premium series yet", "straddle series (stored minutes)"))
+    pr = ev.get("prem_rolling")
+    c.append(comp("prem_path", "ATM straddle premium path", 8, None if pr is None else _prem_value(pr), _prem_text("At-the-money straddle (roll-adjusted)", pr) + " (a rising premium is what a buyer is paid for)" if pr is not None else "no premium series yet", "straddle series (stored minutes)"))
     ed = ev["eff"] or {}
     eff = ed.get("efficiency_pct")
     c.append(comp("prem_exp", "Premium expansion", 8, None if eff is None else (50 - eff) / 50 * _conf(ed), f"recent decay efficiency {eff:.0f}% (low or negative means premium is holding or expanding){_conf_note(ed)}" if eff is not None else (ed.get("reason") or "no efficiency"), "straddle attribution"))

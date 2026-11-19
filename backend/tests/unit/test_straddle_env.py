@@ -330,44 +330,84 @@ class TestRecordingEndToEnd:
 
 
 class TestPremiumPath:
-    """The premium-path evidence on the real 19 Nov 2026 13:43 server read: the fixed 25150 straddle was +49.95 points above its 309.35 open while the decay ratio was switched off."""
+    """The premium-path evidence on the real 19 Nov 2026 13:43 server read. The fixed 25150 straddle was +49.95 points above its open (mostly direction: NIFTY had risen about 140 points),
+    while the at-the-money straddle, roll-adjusted, was +6.45. Only the second is scored."""
 
     A = json.loads((Path(__file__).parent.parent / "fixtures" / "straddle" / "straddle_19nov2026_1343.json").read_text(encoding="utf-8"))
 
     def test_the_premium_path_is_in_percent_of_the_opening_premium(self) -> None:
-        pf = env.premium_path(self.A, "fixed")
         pr = env.premium_path(self.A, "rolling")
-        assert pf is not None and pr is not None and pf["base"] == 309.35
-        assert pf["pts"]["open"] == 49.95 and pf["pts"]["60"] == pytest.approx(7.1, abs=0.01)  # 49.95 - 42.85 stored minutes ago
-        assert pf["pct"]["open"] == pytest.approx(49.95 / 309.35 * 100, abs=0.01)  # +16.15 %
-        assert pr["pts"]["open"] == 6.45 and pr["pts"]["60"] == pytest.approx(-3.9, abs=0.01)  # roll-adjusted: the re-centred seller is about flat
-        assert env.premium_path({}, "fixed") is None
+        assert pr is not None and pr["base"] == 309.35
+        assert pr["pts"]["open"] == 6.45 and pr["pts"]["60"] == pytest.approx(-3.9, abs=0.01)  # 6.45 - 10.35 stored minutes ago
+        assert pr["pct"]["open"] == pytest.approx(6.45 / 309.35 * 100, abs=0.01)  # +2.09 %
+        fx = env.premium_path(self.A, "fixed")
+        assert fx is not None and fx["pct"]["open"] == pytest.approx(49.95 / 309.35 * 100, abs=0.01)  # +16.15 %: still computable, but not used by the score
+        assert env.premium_path({}, "rolling") is None
 
-    def test_the_seller_is_marked_down_for_a_fixed_straddle_that_rose_even_when_theta_is_unusable(self) -> None:
-        ev = {**env.evidence({}, {}), "prem_fixed": env.premium_path(self.A, "fixed"), "prem_rolling": env.premium_path(self.A, "rolling"),
+    def test_the_score_reads_the_atm_straddle_and_not_the_stale_opening_strike(self) -> None:
+        ev = {**env.evidence({}, {}), "prem_rolling": env.premium_path(self.A, "rolling"), "prem_fixed": env.premium_path(self.A, "fixed"),
               "eff": {"efficiency_pct": None, "status": "low_signal", "reason": "Too early to judge: x", "confidence": 0.0}}
         by = {c["id"]: c for c in env.seller_components(ev)}
-        assert by["decay"]["value"] is None  # the ratio is still off (1.4 points of theta in the hour)...
-        fixed_pct, fixed_60 = 49.95 / 309.35 * 100, 7.1 / 309.35 * 100
-        assert by["prem_fixed"]["value"] == pytest.approx(-(0.6 * fixed_pct + 0.4 * fixed_60) / 12, abs=0.002)  # about -0.884: hand calculation
+        assert by["decay"]["value"] is None and "prem_fixed" not in by  # the theta ratio is off (1.4 points of theta in the hour); the opening strike is not a component
         rolling = (0.6 * 6.45 + 0.4 * -3.9) / 309.35 * 100 / 12
-        assert by["prem_rolling"]["value"] == pytest.approx(-rolling, abs=0.002)  # about -0.062
-        assert "since open +16.1%" in by["prem_fixed"]["text"] and "opening 309.4" in by["prem_fixed"]["text"]
-        fl = {f["id"]: f for f in env.flags(ev)}
-        assert "premium_up" in fl and "cap" not in fl["premium_up"]  # +16 %: past the 15 % stop zone, short of the 30 % one
+        assert by["prem_rolling"]["value"] == pytest.approx(-rolling, abs=0.002)  # about -0.062: the re-centred seller is about flat
+        assert "since open +2.1%" in by["prem_rolling"]["text"] and "opening 309.4" in by["prem_rolling"]["text"]
+        assert "premium_up" not in {f["id"] for f in env.flags(ev)}  # +2.1 %: nowhere near the stop zone
 
-    def test_a_flag_caps_the_class_and_the_hard_zone_caps_it_lower(self) -> None:
+    def test_a_rise_of_the_atm_straddle_flags_and_caps_the_class(self) -> None:
         base = env.evidence({}, {})
         rose = {"base": 300.0, "pts": {"open": 100.0}, "pct": {"open": 33.3}}
-        ev = {**base, "prem_fixed": rose, "rv_gap": 6.0, "ratio": 0.6, "iv_atm_30": -0.5, "orderflow": 0.0, "skew_change": 0.0}  # enough other evidence that coverage is not the reason for a missing class
+        ev = {**base, "prem_rolling": rose, "rv_gap": 6.0, "ratio": 0.6, "iv_atm_30": -0.5, "orderflow": 0.0, "skew_change": 0.0}  # enough other evidence that coverage is not the reason for a missing class
         s = env.seller(ev, {"value": None, "label": "unavailable", "parts": []})
-        assert s["flags"][0]["cap"] == "Unfavourable" and s["class"] in ("Unfavourable", "High risk")
-        # a buyer reads the same rise the other way round
+        assert s["flags"][0]["id"] == "premium_up" and s["flags"][0]["cap"] == "Unfavourable" and s["class"] in ("Unfavourable", "High risk")
+        mid = {"base": 300.0, "pts": {"open": 50.0}, "pct": {"open": 16.7}}
+        assert "cap" not in env.flags({**base, "prem_rolling": mid})[0]  # +16.7 %: flag, capped at Neutral only
         b = {c["id"]: c for c in env.buyer_components(ev, {"value": 0.0, "label": "mixed", "parts": []})}
-        assert b["prem_path"]["value"] == 1.0
+        assert b["prem_path"]["value"] == 1.0  # a buyer reads the same rise the other way round
 
     def test_the_class_label_is_the_median_of_three_minutes(self) -> None:
         assert env.damped_score(61.0, [59.0, 58.0]) == 59.0  # one minute over the line does not flip the label
         assert env.damped_score(61.0, [62.0, 58.0]) == 61.0
         assert env.damped_score(61.0, [62.0]) == 61.0  # fewer than two recorded minutes: raw
         assert env.damped_score(None, [60.0, 60.0]) is None
+
+
+class TestStaleOpeningStrikeAndManagedStraddle:
+    def test_the_opening_strike_goes_stale_at_100_points(self) -> None:
+        far = sd.reference_status(25385.0, 25150.0, 309.35, 0.74)  # 19 Nov 13:57: spot 235 points above the opening strike
+        assert far["distance"] == 235.0 and far["stale"] is True and far["distance_pct_of_premium"] == pytest.approx(235 / 309.35 * 100, abs=0.05) and far["net_delta"] == 0.74
+        near = sd.reference_status(25190.0, 25150.0, 309.35, 0.1)
+        assert near["distance"] == 40.0 and near["stale"] is False
+        assert sd.reference_status(25150.0 - 100.0, 25150.0, 309.35, None)["stale"] is True  # exactly 100 points either side
+        assert sd.reference_status(None, 25150.0, 309.35, None)["stale"] is False  # no spot: not claimed
+
+    def test_the_managed_strike_moves_only_when_spot_is_100_points_away(self) -> None:
+        held = sd.managed_held([24000, 24050, 24100, 24090, 24160], [24000, 24050, 24100, 24100, 24150], 24000.0)
+        assert held == [24000, 24000, 24100, 24100, 24100]  # 24100 is exactly 100 away: re-struck; 24160 is only 60 from 24100: held
+
+    def test_the_managed_book_books_each_re_strike_and_adds_to_the_open_position(self) -> None:
+        t0 = OPEN
+        times = [t0 + timedelta(minutes=i) for i in range(5)]
+        held = [24000.0, 24000.0, 24100.0, 24100.0, 24100.0]
+        straddle: list[float | None] = [300.0, 310.0, 280.0, 270.0, 260.0]
+        book = sd.managed_book(times, held, straddle, lambda i, k: 330.0 if (i, k) == (2, 24000.0) else None)  # the old pair is closed at 330 when it is re-struck
+        assert book["restrikes"] == 1 and book["segments"][0]["pnl"] == -30.0  # sold 300, bought back 330
+        assert book["realised"] == -30.0 and book["open_pnl"] == 20.0 and book["total"] == -10.0  # new pair sold 280, now 260
+        assert book["total_rupees"] == -650.0 and book["strike_now"] == 24100.0
+        assert book["pnl"] == [0.0, -10.0, -30.0, -20.0, -10.0]
+        assert book["segments"][0]["exit_carried"] is False
+
+    def test_a_missing_exit_price_carries_the_last_price_and_says_so(self) -> None:
+        times = [OPEN + timedelta(minutes=i) for i in range(3)]
+        book = sd.managed_book(times, [24000.0, 24000.0, 24100.0], [300.0, 310.0, 280.0], lambda i, k: None)
+        assert book["segments"][0]["exit"] == 310.0 and book["segments"][0]["exit_carried"] is True
+
+    def test_a_session_that_trends_away_marks_the_opening_strike_stale_and_re_strikes(self) -> None:
+        n = 60
+        a = make(n, [24000.0 + 4.0 * i for i in range(n)])  # 236 points up in an hour
+        ref = a["tracker"]["fixed"]["reference"]
+        assert ref["stale"] is True and ref["distance"] > 100
+        mg = a["tracker"]["managed"]
+        assert mg["restrikes"] >= 1 and mg["total"] is not None and "pnl" not in mg  # the per-minute list lives in series.managed
+        assert len(a["series"]["managed"]["pnl"]) == len(a["times"])
+        assert a["tracker"]["managed"]["strike_now"] == a["series"]["managed"]["strike"][-1]
