@@ -7,7 +7,7 @@ import { api } from "../lib/api";
 import { compactIN } from "../lib/analytics";
 import { divergingBarOption, ivSmileOption, sentimentHistoryOption } from "../lib/chartOptions";
 import { fmtDateTimeIST, fmtPct, fmtPrice, fmtTimeIST, MISSING } from "../lib/format";
-import { useLiveSpot } from "../lib/useLive";
+import { useSpotDisplay } from "../lib/useLive";
 import type { BreadthBlock, BreakoutState, FlowStats, IntradayComponent, IntradaySummary, MarketSummary, SetupCandidate, SideClass } from "../lib/types";
 import { EChart, useChartColors } from "./EChart";
 import { Info } from "./Info";
@@ -103,17 +103,18 @@ function Stat({ label, value, sub, cls = "text-paper" }: { label: string; value:
 }
 
 function Header({ d }: { d: IntradaySummary }) {
-  const ls = useLiveSpot();
-  const live = ls.live && ls.ltp != null;
-  const spot = live ? ls.ltp : d.price.last;
-  const prev = d.price.prev_close;
+  const sd = useSpotDisplay({ ltp: d.price.last, prevClose: d.price.prev_close, at: d.price.last_at });
+  const live = sd.kind === "live" && sd.ltp != null;
+  const held = sd.kind === "held";
+  const spot = live || held ? sd.ltp : d.price.last;
+  const prev = d.price.prev_close ?? sd.prevClose;
   const chg = spot != null && prev ? spot - prev : null;
   const m = MODE[d.market.mode] ?? MODE.unavailable!;
   return (
     <div className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-[var(--radius-panel)] border border-rule bg-slate p-3 sm:grid-cols-4 lg:grid-cols-8" data-testid="cc-header">
       <div className="col-span-2 min-w-0">
         <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-muted">
-          NIFTY 50 <Chip cls={live ? "border-up/60 text-up" : m.cls}>{live ? "Live stream" : m.text}</Chip>
+          NIFTY 50 <Chip cls={live ? "border-up/60 text-up" : held ? "border-warn/50 text-warn" : m.cls}>{live ? "Live stream" : held ? "Held (last live price)" : m.text}</Chip>
         </div>
         <div className="flex flex-wrap items-baseline gap-2">
           <span className="num text-2xl font-semibold text-paper">{fmtPrice(spot)}</span>
@@ -122,7 +123,7 @@ function Header({ d }: { d: IntradaySummary }) {
           </span>
         </div>
         <div className="text-[11px] text-muted">
-          {live ? "Kotak live tick" : d.price.last_at ? `Sampled ${fmtTimeIST(d.price.last_at)}` : "No sample today"} · prev close {fmtPrice(prev)}
+          {live ? "Kotak live tick" : held ? `Held from the live feed ${sd.at ? fmtTimeIST(new Date(sd.at).toISOString()) : ""}` : d.price.last_at ? `Sampled ${fmtTimeIST(d.price.last_at)}` : "No sample today"} · prev close {fmtPrice(prev)}
         </div>
       </div>
       <Stat label="First sample" value={fmtPrice(d.price.first)} sub={d.price.first_at ? `${fmtTimeIST(d.price.first_at)} (not official open)` : "—"} />

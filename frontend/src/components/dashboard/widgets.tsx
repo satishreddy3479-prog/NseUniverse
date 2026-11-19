@@ -16,7 +16,7 @@ import {
   oiExplorerOption, futuresOption, sessionize, totalsBarOption, type FuturesKind, type StrikeMetric } from "../../lib/chartOptions";
 import { ageSeconds, fmtDateTimeIST, fmtExpiry, fmtTimeIST, fmtInt, fmtPct, fmtPrice, fmtSigned } from "../../lib/format";
 import { smartOiCandles } from "../../lib/optionTools";
-import { useLiveSpot } from "../../lib/useLive";
+import { useSpotDisplay } from "../../lib/useLive";
 import type { BaselineKind, Observation, OiChange, OptionChainRow } from "../../lib/types";
 
 /** Age in seconds of the newest stored sample, re-evaluated every 15 s so the label cannot go stale. */
@@ -530,11 +530,11 @@ function Stat({ label, value, hint, tone }: { label: string; value: ReactNode; h
 
 export function LevelsWidget() {
   const d = useDash();
-  const ls = useLiveSpot();
-  const liveSpot = ls.live ? ls : null;
   const snap = d.snapshot;
-  const spot = liveSpot?.ltp ?? snap?.underlying_ltp ?? null;
-  const prev = liveSpot?.prevClose ?? snap?.underlying_prev_close ?? null;
+  const sd = useSpotDisplay({ ltp: snap?.underlying_ltp ?? null, prevClose: snap?.underlying_prev_close ?? null, at: snap?.retrieved_at ?? null });
+  const liveSpot = sd.kind === "live" ? sd : null;
+  const spot = sd.ltp;
+  const prev = sd.prevClose;
   const chg = spot != null && prev != null && prev > 0 ? spot - prev : null;
   const defs = d.history.data?.definitions ?? {};
   const mp = useMemo(() => maxPain(d.view), [d.view]);
@@ -546,7 +546,7 @@ export function LevelsWidget() {
     <ChainGuard>
       <Body footer={<Meta kind="chain" />}>
         <dl className="grid h-full grid-cols-2 content-start gap-x-4 overflow-auto sm:grid-cols-3">
-          <Stat label="NIFTY 50" value={fmtPrice(spot)} hint={liveSpot ? "Live" : "From the snapshot"} />
+          <Stat label="NIFTY 50" value={fmtPrice(spot)} hint={liveSpot ? "Live" : sd.kind === "held" ? "Last live price, held until the market opens" : "From the snapshot"} />
           <Stat label="Change vs prev close" tone={tone}
             value={chg == null ? "—" : `${fmtSigned(Math.round(chg * 100) / 100)} (${fmtPct((chg / (prev as number)) * 100)})`} />
           <Stat label="Previous close" value={fmtPrice(prev)} />

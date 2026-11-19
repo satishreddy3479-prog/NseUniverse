@@ -55,6 +55,31 @@ export function useLiveSpot(): { ltp: number | null; prevClose: number | null; l
   return live ? { ltp: tick!.ltp, prevClose: tick!.prev_close, live: true } : { ltp: null, prevClose: null, live: false };
 }
 
+/** The NIFTY level a screen shows, and what it is. */
+export interface SpotDisplay {
+  ltp: number | null;
+  prevClose: number | null;
+  /** live: the stream is moving; held: the last live tick, kept because it is newer than the fallback; snapshot: the fallback (a stored value) */
+  kind: "live" | "held" | "snapshot";
+  /** when the value was taken (epoch ms): the tick's receipt for live and held, the fallback's time for a snapshot */
+  at: number | null;
+}
+
+/**
+ * The level to show for NIFTY. While the stream is moving it is the live tick. When the stream is quiet (the pre-open session ends at 09:08 and the live market opens at 09:15; the evening;
+ * a dropped link) the last live tick is HELD for as long as it is newer than the stored fallback, instead of the app falling back to a stored value from an earlier moment: before the
+ * open the stored snapshot is yesterday's close, so the price would jump back to it when pre-open ended. A held value is never called live.
+ */
+export function useSpotDisplay(fallback: { ltp: number | null; prevClose: number | null; at: string | null }): SpotDisplay {
+  const tick = useLiveTick(INDEX_KEY);
+  const { stream } = useStreamStatus();
+  const tickMs = tick?.ltp != null ? Date.parse(tick.received_at) : Number.NaN;
+  if (stream?.effective_state === "streaming" && tick?.ltp != null) return { ltp: tick.ltp, prevClose: tick.prev_close, kind: "live", at: Number.isFinite(tickMs) ? tickMs : null };
+  const fbMs = fallback.at ? Date.parse(fallback.at) : Number.NaN;
+  if (tick?.ltp != null && Number.isFinite(tickMs) && (!Number.isFinite(fbMs) || tickMs > fbMs)) return { ltp: tick.ltp, prevClose: tick.prev_close ?? fallback.prevClose, kind: "held", at: tickMs };
+  return { ltp: fallback.ltp, prevClose: fallback.prevClose, kind: "snapshot", at: Number.isFinite(fbMs) ? fbMs : null };
+}
+
 /** Mount once near the root: owns the single browser WebSocket. */
 export function useLiveConnection(): void {
   useEffect(() => startLiveSocket(liveStore), []);

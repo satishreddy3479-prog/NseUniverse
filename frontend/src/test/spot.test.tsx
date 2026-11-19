@@ -50,3 +50,46 @@ describe("spot badge: live only when the stream is genuinely fresh", () => {
     },
   );
 });
+
+describe("spot badge: the pre-open price is held until the market opens", () => {
+  // 19 Nov style morning: yesterday's last stored snapshot is the previous close; the pre-open session prints a level until 09:08 IST, then the index is quiet until 09:15.
+  const yesterdayClose = summary({ underlying_ltp: 25227.95, underlying_prev_close: 25100.0, retrieved_at: "2026-11-18T10:09:00Z" });
+  const preOpenTick = (received_at: string) => liveTick({ key: INDEX_KEY, kind: "index", ltp: 25396.5, prev_close: 25227.95, received_at, seq: 5 });
+
+  function showWith(latestSnap: ReturnType<typeof summary>) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(status()), { status: 200 })));
+    return render(<QueryClientProvider client={qc}><SpotBadge latest={latestSnap} /></QueryClientProvider>);
+  }
+  function feedTick(effective: string, tick: ReturnType<typeof liveTick>) {
+    act(() => {
+      liveStore.setConn("open");
+      liveStore.apply({ type: "hello", status: streamStatus({ state: "streaming", effective_state: effective }), ticks: [tick] });
+    });
+  }
+
+  it("keeps the last live price, labelled Held, when the stream goes quiet after pre-open (09:08-09:15)", () => {
+    showWith(yesterdayClose);
+    feedTick("stale", preOpenTick("2026-11-19T03:38:00Z")); // 09:08 IST
+    expect(screen.getByText("25,396.50")).toBeInTheDocument();
+    expect(screen.queryByText("25,227.95")).toBeNull(); // yesterday's close is not shown as the price
+    expect(screen.getByTestId("spot-held")).toHaveTextContent(/Held 09:08/);
+    expect(screen.queryByText("Live")).toBeNull();
+    expect(screen.getByText("+169 (+0.67%)")).toBeInTheDocument(); // the change is still against the previous close: 25,396.50 - 25,227.95 = 168.55, shown rounded
+  });
+
+  it("is live again as soon as the market opens, and the held label goes", () => {
+    showWith(yesterdayClose);
+    feedTick("stale", preOpenTick("2026-11-19T03:38:00Z"));
+    feedTick("streaming", preOpenTick("2026-11-19T03:45:02Z")); // 09:15:02 IST
+    expect(screen.queryByTestId("spot-held")).toBeNull();
+    expect(screen.getByText("Live")).toBeInTheDocument();
+  });
+
+  it("does not hold a price older than the stored snapshot: the snapshot is the newer value", () => {
+    showWith(summary({ underlying_ltp: 25500.0, underlying_prev_close: 25227.95, retrieved_at: "2026-11-19T04:00:00Z" })); // 09:30 IST
+    feedTick("stale", preOpenTick("2026-11-19T03:38:00Z"));
+    expect(screen.getByText("25,500.00")).toBeInTheDocument();
+    expect(screen.queryByTestId("spot-held")).toBeNull();
+  });
+});

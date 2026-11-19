@@ -16,7 +16,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { fmtTimeIST } from "../lib/format";
 import { useExpiries } from "../lib/hooks";
-import { useLiveSpot } from "../lib/useLive";
+import { useSpotDisplay } from "../lib/useLive";
 
 const STORAGE_KEY = "nse.analysis.layout.v1";
 const SEEN_KEY = "nse.analysis.seen.v1";
@@ -87,14 +87,15 @@ function Frame({ def, onClose, chartH }: { def: WidgetDef; onClose: () => void; 
 
 function SpotBox() {
   const d = useDash();
-  const ls = useLiveSpot();
-  const live = ls.live;
-  const spot = live ? ls.ltp : (d.snapshot?.underlying_ltp ?? null);
-  const prev = live ? ls.prevClose : (d.snapshot?.underlying_prev_close ?? null);
+  const sd = useSpotDisplay({ ltp: d.snapshot?.underlying_ltp ?? null, prevClose: d.snapshot?.underlying_prev_close ?? null, at: d.snapshot?.retrieved_at ?? null });
+  const live = sd.kind === "live";
+  const held = sd.kind === "held";
+  const spot = sd.ltp;
+  const prev = sd.prevClose;
   const chg = spot != null && prev != null && prev > 0 ? spot - prev : null;
   return (
     <div className="flex items-baseline gap-2 rounded-sm border border-rule bg-slate-2 px-3 py-1.5" aria-label="Spot price">
-      <span className="text-xs text-muted" title={live ? "From the live stream" : "From the latest stored snapshot"}>Spot {live ? "(live)" : d.snapshot ? `(snapshot ${fmtTimeIST(d.snapshot.retrieved_at)} · ${d.snapshot.expiry.slice(5)})` : "(snapshot)"}</span>
+      <span className="text-xs text-muted" title={live ? "From the live stream" : held ? "The last live price, held until the market opens" : "From the latest stored snapshot"}>Spot {live ? "(live)" : held ? `(held ${sd.at ? fmtTimeIST(new Date(sd.at).toISOString()) : ""})` : d.snapshot ? `(snapshot ${fmtTimeIST(d.snapshot.retrieved_at)} · ${d.snapshot.expiry.slice(5)})` : "(snapshot)"}</span>
       <span className="num text-base font-semibold text-paper">{fmtPrice(spot)}</span>
       {chg != null && (
         <span className={`num text-xs font-medium ${chg >= 0 ? "text-up" : "text-down"}`}>
