@@ -7,7 +7,7 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +37,7 @@ from app.intraday.store import IntradayStore
 from app.lifecycle.eod import EodService
 from app.lifecycle.session_close import SessionCloseTracker
 from app.logging_setup import log_event, setup_logging
+from app.market.index_check import minute_key
 from app.market.service import INDEX_KEY, MarketService
 from app.market.store import MarketStore
 from app.prediction.flows_service import FlowsService
@@ -321,7 +322,20 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             if not expiries:
                 return None
             snaps, _ = sd._read(expiries[0], d, max_points=None)
-            return entry_lab_compact(d, date.fromisoformat(expiries[0]), snaps, None)
+            lo = datetime.combine(d, time(9, 0), timezone(timedelta(hours=5, minutes=30)))
+            until = lo + timedelta(minutes=40)
+            und, exp = settings.underlying, expiries[0]
+            early = observations.samples(und, exp, since=lo, until=until, limit=20)
+            # the broker's own previous close, for the opening gap
+            prev = next((s.prev_close for s in early if s.prev_close), None)
+            bars: dict[str, Any] = {}
+            if market_store is not None:
+                since = lo.astimezone(UTC)
+                for at, payload in market_store.samples_since("index1m", since.isoformat()):
+                    t = datetime.fromisoformat(at)
+                    if since <= t <= since + timedelta(hours=8):
+                        bars[minute_key(t)] = payload
+            return entry_lab_compact(d, date.fromisoformat(expiries[0]), snaps, None, prev, bars)
 
         app.state.entry_lab = EntryLabService(entry_lab_days, entry_lab_load)
         async def forward_expiries() -> tuple[str | None, str | None]:

@@ -862,6 +862,15 @@ async def intelligence_straddle_scores(request: Request) -> dict[str, Any]:
     return await asyncio.to_thread(svc.latest_scores)
 
 
+@router.get("/intelligence/range-signals")
+async def intelligence_range_signals(request: Request) -> dict[str, Any]:
+    """How far NIFTY has moved today and whether the move is speeding up.
+
+    Opening gap, range so far, break of the opening range, straightness, acceleration. Read-only."""
+    svc = _straddle(request)
+    return await asyncio.to_thread(_cached, f"range-signals|{id(svc)}", 15.0, svc.range_signals)
+
+
 @router.get("/intelligence/straddle/alerts")
 async def intelligence_straddle_alerts(
     request: Request, session: date | None = None
@@ -892,6 +901,10 @@ async def intelligence_entry_lab(
     roll: Annotated[float | None, Query(ge=20, le=500)] = None,
     cost: Annotated[float, Query(ge=0, le=20)] = 2.0,
     roll_cost: Annotated[float, Query(ge=0, le=20)] = 2.0,
+    max_gap: Annotated[float | None, Query(ge=0.05, le=10)] = None,
+    max_range: Annotated[float | None, Query(ge=0.05, le=5)] = None,
+    max_eff: Annotated[float | None, Query(ge=0.05, le=1)] = None,
+    skip_break: bool = False,
     presets: bool = False,
 ) -> dict[str, Any]:
     """The Entry Lab: what a short ATM straddle rule would have made on the recorded sessions.
@@ -909,7 +922,8 @@ async def intelligence_entry_lab(
     try:
         rule = Rule(
             entry=parse_hm(entry), exit=parse_hm(exit), stop_pct=stop, target_pct=target,
-            roll_pts=roll, cost=cost, roll_cost=roll_cost,
+            roll_pts=roll, cost=cost, roll_cost=roll_cost, max_gap_pct=max_gap,
+            max_range_ratio=max_range, max_eff30=max_eff, skip_break=skip_break,
         )  # fmt: skip
     except ValueError as e:
         detail = {"code": "bad_time", "message": "times are HH:MM"}

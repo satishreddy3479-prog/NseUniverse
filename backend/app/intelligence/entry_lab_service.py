@@ -10,26 +10,44 @@ from __future__ import annotations
 import logging
 import threading
 import time as _time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import date, datetime, time
 from typing import Any
 
 from app.domain.session import session_close
 from app.intelligence.entry_lab import Day, Rule, presets, run
+from app.market.index_check import minute_key
 
 logger = logging.getLogger(__name__)
 MIN_SAMPLES = 250  # stored in-session minutes for a day to count as a session
 STRIKE_MARGIN = 400.0  # points beyond the day's range kept on each side
 
 
-def compact(day: date, expiry: date, snaps: list[Any], tz: Any) -> Day | None:
-    """The stored samples of one session as a ``Day``: only minutes with a level and prices, and only the strikes the index could have reached."""
-    rows = [(s.at, float(s.spot), s.prices) for s in snaps if s.spot is not None and s.spot > 0 and s.prices]
+MIN_BAR_READS = 10  # an index bar made from fewer reads is not used
+
+
+def compact(day: date, expiry: date, snaps: list[Any], tz: Any, prev_close: float | None = None, bars: Mapping[str, Mapping[str, Any]] | None = None) -> Day | None:
+    """The stored samples of one session as a ``Day``: only minutes with a level and prices, and only the strikes the index could have reached.
+
+    The index level of a minute is the OPEN of the live index feed's one-minute bar when there is one (a capture is taken within seconds of the minute's start, so the bar's open is the
+    index at the same moment as its prices): the chain's stored level was replaced by an option-implied level on the mornings of 18 and 19 Nov 2026 (10 to 66 points off), which would
+    have put the wrong strike and the wrong range into the replay. Without a bar the stored level is used."""
+    rows = []
+    from_bars = 0
+    for s in snaps:
+        if s.spot is None or s.spot <= 0 or not s.prices:
+            continue
+        bar = (bars or {}).get(minute_key(s.at))
+        level = float(s.spot)
+        if bar is not None and isinstance(bar.get("o"), (int, float)) and bar["o"] > 0 and (not isinstance(bar.get("n"), int) or bar["n"] >= MIN_BAR_READS):
+            level, from_bars = float(bar["o"]), from_bars + 1
+        rows.append((s.at, level, s.prices))
     if len(rows) < MIN_SAMPLES - 50:
         return None
     lo, hi = min(r[1] for r in rows) - STRIKE_MARGIN, max(r[1] for r in rows) + STRIKE_MARGIN
     prices = [{key: float(v) for key, v in p.items() if v is not None and lo <= key[0] <= hi} for _, _, p in rows]
-    return Day(day=day.isoformat(), dte=(expiry - day).days, times=[r[0] for r in rows], spots=[r[1] for r in rows], prices=prices)
+    source = "index feed bars" if from_bars >= 0.9 * len(rows) else "mixed: index bars and stored chain level" if from_bars else "stored chain level"
+    return Day(day=day.isoformat(), dte=(expiry - day).days, times=[r[0] for r in rows], spots=[r[1] for r in rows], prices=prices, prev_close=prev_close, spot_source=source)
 
 
 class EntryLabService:
@@ -97,7 +115,8 @@ class EntryLabService:
         self.start()
         days = self.days()
         out: dict[str, Any] = {"status": self.status(), "rule": {"label": rule.label(), "entry": f"{rule.entry:%H:%M}", "exit": f"{rule.exit:%H:%M}", "stop_pct": rule.stop_pct, "target_pct": rule.target_pct,
-                                                               "roll_pts": rule.roll_pts, "cost": rule.cost, "roll_cost": rule.roll_cost}, **run(rule, days)}  # fmt: skip
+                                                               "roll_pts": rule.roll_pts, "cost": rule.cost, "roll_cost": rule.roll_cost, "max_gap_pct": rule.max_gap_pct,
+                                                               "max_range_ratio": rule.max_range_ratio, "max_eff30": rule.max_eff30, "skip_break": rule.skip_break}, **run(rule, days)}  # fmt: skip
         if with_presets:
             out["presets"] = presets(rule, days)
         out["assumptions"] = ["A short ATM straddle (call and put of the strike nearest the index when opened), booked from the stored last traded prices: no bid/ask, no slippage beyond the cost shown, no taxes.",

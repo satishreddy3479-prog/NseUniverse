@@ -252,6 +252,21 @@ class StraddleDecay:
             alerts = [a for a in alerts if datetime.fromisoformat(a["at"]) <= until][:30]
         return {"history": hist, "alerts": alerts, "environment_trend": trend, "storage": {"rows_today": len(rows), "bytes": self.store.size_bytes()}}
 
+    def range_signals(self) -> dict[str, Any]:
+        """Range-expansion signals for the newest session, from the analysis the page already computes (cached 20 s): read-only, see range_signals.py."""
+        from app.intelligence import range_signals as rs
+
+        if not self.enabled or self.obs is None:
+            return {"available": False, "reason": "straddle analysis is off"}
+        a = self.summary()
+        prev: float | None = None
+        if a.get("status") == "ok" and a.get("session") and a.get("expiry"):
+            day = date.fromisoformat(a["session"])
+            lo = datetime.combine(day, time(9, 0), IST)
+            early = self.obs.samples(self.underlying, a["expiry"], since=lo, until=lo + timedelta(minutes=40), limit=20)
+            prev = next((s.prev_close for s in early if s.prev_close), None)
+        return rs.from_analysis(a, prev)
+
     def latest_scores(self) -> dict[str, Any]:
         """The seller and buyer environment scores for the top bar: the LIVE calculation on the newest stored sample (the page's own 20 s analysis, so the bar and the page show the
         same numbers and both move as soon as a new sample is stored, not at the next recorded minute). Only when no live calculation exists does it fall back to the newest
