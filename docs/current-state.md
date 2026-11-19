@@ -34,7 +34,7 @@ Every listed expiry is selectable (dropdown beyond the first four); non-collecte
 The built strategy as a price/P&L through the day against spot, future, Future VWAP, averages, bands and a spot-driven/other split (D126). Checked on the server's real strike prices with a sample short straddle; no backend change. Strategy VWAP now built from the stored per-contract volume (D127).
 
 ## Smart OI chart: index-feed stall flagged (11 Nov 2026)
-The NIFTY index quote froze at 25,130.00 for 15:15-15:29 on 11 Nov and the live bars resumed 1.6% away; the chart now omits stalled/silent minutes and shows a banner (D125). Root cause is upstream and not fixed; open question: what the index really did 15:15-15:30.
+The NIFTY index quote freezes every day from 15:15: NSE's closing auction session pauses the whole cash segment (index, the 50 stocks) for 15:15-15:20 while the F&O segment keeps trading; the exchange feed says so with status codes 8, 10, 11 (D205, from the 19 Nov live watch). The chart omits stalled/silent minutes and shows a banner (D125). A moving index quote is no longer replaced by the options' level (it put the 19 Nov opening strike on 25150 instead of 25200); only a frozen one is.
 
 ## Participant-flow analysis (11 Nov 2026)
 FII/DII Summary page has an analysis board (readout, group cards, per-group table, comparison vs previous session / 1 week / 2 weeks, legs and option-bias charts) built on the stored participant rows (D124). Checked on the server's real 7 sessions; no backend change.
