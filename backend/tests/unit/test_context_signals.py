@@ -76,7 +76,10 @@ def test_the_ledger_keeps_high_events_the_latest_outcome_and_the_first_context(t
     led.add_events([{**ev, "actual": "48.1", "forecast": None}])  # the outcome arrives later; the forecast stays
     rows = led.events_between(at("2026-11-19", "00:00"), at("2026-11-20", "00:00"))
     assert len(rows) == 1 and rows[0]["actual"] == "48.1" and rows[0]["forecast"] == "49.0"
-    assert led.coverage() == ("2026-11-19", "2026-11-19")
+    assert led.coverage() is None  # events alone say nothing about where the record begins (the calendar lists far dates)
+    led.mark_covered("2026-11-17")
+    led.mark_covered("2026-11-18")  # the earliest stands
+    assert led.coverage() == ("2026-11-17", "2026-11-19")
     assert led.put_context("2026-11-19", {"moves": {"GIFT": {"pct": 0.4}}}) is True
     assert led.put_context("2026-11-19", {"moves": {"GIFT": {"pct": 9.9}}}) is False  # the pre-open record stands
     assert led.context("2026-11-19")["moves"]["GIFT"]["pct"] == 0.4 and led.context_days() == ["2026-11-19"]
@@ -147,6 +150,7 @@ def test_the_backfill_asks_week_by_week_for_high_importance_and_stores_only_thos
 
     led = ContextLedger(tmp_path)
     n = backfill(led, date(2026, 10, 28), date(2026, 11, 17), fetch)
+    assert led.coverage() is not None and led.coverage()[0] == "2026-10-28"  # the backfill states where the record begins
     assert len(asked) == 3 and asked[0] == url(date(2026, 10, 28), date(2026, 11, 3)) and asked[2].endswith("to=2026-11-17&countries=" + asked[2].split("countries=")[1])
     assert "importance=high" in asked[0] and "IN" in asked[0] and "JP" in asked[0]
     assert n > 0 and led.counts()["events"] * 3 == n  # the same rows asked three times are stored once

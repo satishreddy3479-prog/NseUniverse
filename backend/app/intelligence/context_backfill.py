@@ -23,6 +23,7 @@ def url(start: date, end: date) -> str:
 def backfill(ledger: ContextLedger, start: date, end: date, fetch: Callable[[str], bytes] = news.http_get) -> int:
     """Events of ``start``..``end`` into the ledger, week by week (the API caps a response at 500 rows). Returns the high-importance rows written."""
     n, day = 0, start
+    ledger.mark_covered(start.isoformat())
     while day <= end:
         stop = min(end, date.fromordinal(day.toordinal() + 6))
         n += ledger.add_events(calendar_feed.parse_biquote(fetch(url(day, stop))), datetime.now(UTC))

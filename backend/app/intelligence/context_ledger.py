@@ -19,6 +19,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, ts INTEGER NOT NULL, date_ist TEXT NOT NULL, country TEXT, name TEXT NOT NULL, impact TEXT NOT NULL, all_day INTEGER NOT NULL DEFAULT 0,
   actual TEXT, forecast TEXT, previous TEXT, first_seen INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS events_ts ON events (ts);
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS day_context (day TEXT PRIMARY KEY, at_ms INTEGER NOT NULL, data TEXT NOT NULL);
 """
 KEEP_IMPACT = ("high",)
@@ -63,11 +64,19 @@ class ContextLedger:
             rows = self._db.execute("SELECT ts, date_ist, country, name, impact, all_day, actual, forecast FROM events WHERE ts>? AND ts<=? ORDER BY ts", (start_ms, end_ms)).fetchall()
         return [{"ts": r[0], "date_ist": r[1], "country": r[2], "name": r[3], "impact": r[4], "all_day": bool(r[5]), "actual": r[6], "forecast": r[7]} for r in rows]
 
-    def coverage(self) -> tuple[str, str] | None:
-        """The first and the last event date held (a day outside it has no event record: its features are unknown, not zero)."""
+    def mark_covered(self, day: str) -> None:
+        """Say that the events of every day from ``day`` on are recorded (a backfill of a past range, or the first live calendar poll). The earliest such day stands."""
         with self._lock:
-            r = self._db.execute("SELECT MIN(date_ist), MAX(date_ist) FROM events").fetchone()
-        return None if not r or r[0] is None else (str(r[0]), str(r[1]))
+            self._db.execute("INSERT INTO meta (key, value) VALUES ('covered_from', ?) ON CONFLICT(key) DO UPDATE SET value=MIN(value, excluded.value)", (day,))
+            self._db.commit()
+
+    def coverage(self) -> tuple[str, str] | None:
+        """From which day the event record is complete, and the last event date held. The calendar also lists far dates (central-bank meetings months ahead), so the earliest event
+        is NOT where the record begins: a day before ``covered_from`` has unknown event features, not zero."""
+        with self._lock:
+            c = self._db.execute("SELECT value FROM meta WHERE key='covered_from'").fetchone()
+            r = self._db.execute("SELECT MAX(date_ist) FROM events").fetchone()
+        return None if c is None or not r or r[0] is None else (str(c[0]), str(r[0]))
 
     # ------------------------------------------------------------------ day context
     def put_context(self, day: str, data: Mapping[str, Any], now: datetime | None = None) -> bool:

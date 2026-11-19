@@ -271,6 +271,7 @@ class GlobalService:
             return
         try:
             self.ledger.add_events(events, now)
+            self.ledger.mark_covered((now.astimezone(IST).date() - timedelta(days=2)).isoformat())  # the calendar polls ask from two days back
         except Exception as e:  # noqa: BLE001 - recorded in the log only
             logger.warning("event_ledger_failed: %s", e)
 
