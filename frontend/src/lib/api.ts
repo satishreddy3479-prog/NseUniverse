@@ -1,5 +1,3 @@
-import { decayQuery } from "./decayProbability";
-import { entryLabQuery } from "./entryLab";
 import type {
   ForwardCheck,
   PaperReport,
@@ -280,12 +278,7 @@ export const api = {
       "/api/intelligence/straddle" + (o.session || o.asOf ? `?${[o.session ? `session=${encodeURIComponent(o.session)}` : "", o.asOf ? `as_of=${encodeURIComponent(o.asOf)}` : ""].filter(Boolean).join("&")}` : ""),
     ),
   /** The Entry Lab: a short-straddle rule replayed on the recorded sessions (past days, in-sample). */
-  entryLab: (p: import("./entryLab").EntryLabParams) => request<import("./entryLab").EntryLab>(`/api/intelligence/entry-lab?${entryLabQuery(p)}`),
   /** How far NIFTY has moved today and whether the move is speeding up (read-only description of the day so far). */
-  decayProbability: (p: import("./decayProbability").DecayParams) => request<import("./decayProbability").DecayAnswer>(`/api/intelligence/decay-probability?${decayQuery(p)}`),
-  decayCalibration: () => request<import("./decayProbability").DecayCalibration>("/api/intelligence/decay-calibration"),
-  labReference: () => request<import("./entryLab").LabReference>("/api/intelligence/entry-lab/reference"),
-  rangeSignals: () => request<import("./entryLab").RangeSignals>("/api/intelligence/range-signals"),
   straddleValidation: () => request<import("./straddleDecay").StraddleValidation>("/api/intelligence/straddle/validation"),
   intelligenceSummary: (expiry?: string) => request<import("./intelligence").Intelligence>(`/api/intelligence/summary${expiry ? `?expiry=${encodeURIComponent(expiry)}` : ""}`),
   intelligenceTimeline: (session?: string) => request<import("./intelligence").Timeline>(`/api/intelligence/timeline${session ? `?session=${encodeURIComponent(session)}` : ""}`),

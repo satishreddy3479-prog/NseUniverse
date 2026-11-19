@@ -19,7 +19,6 @@ const ToolPage = lazy(() => import("./pages/ToolPage"));
 const named = <T extends Record<string, React.ComponentType>>(load: () => Promise<T>, key: keyof T & string) => lazy(() => load().then((m) => ({ default: m[key] as React.ComponentType })));
 const MarketIntelligence = named(() => import("./pages/MarketIntelligence"), "MarketIntelligence");
 const StraddleIntelligence = named(() => import("./pages/StraddleIntelligence"), "StraddleIntelligence");
-const EntryLab = named(() => import("./pages/EntryLab"), "EntryLab");
 const DataCleanup = named(() => import("./pages/DataCleanup"), "DataCleanup");
 const ServerManagement = named(() => import("./pages/ServerManagement"), "ServerManagement");
 const Portfolio = named(() => import("./pages/Portfolio"), "Portfolio");
@@ -28,7 +27,7 @@ const Settings = named(() => import("./pages/Settings"), "Settings");
 /** The pages that load on demand, most used first. Fetched quietly once the first screen is up (see prefetchPages), so a click on a menu item does not wait for the network. */
 const PAGE_LOADERS: (() => Promise<unknown>)[] = [
   () => import("./pages/MarketIntelligence"), () => import("./pages/StrategyBuilder"), () => import("./pages/ToolPage"), () => import("./pages/Analysis"),
-  () => import("./pages/StraddleIntelligence"), () => import("./pages/EntryLab"), () => import("./pages/Swing"), () => import("./pages/Settings"), () => import("./pages/Portfolio"),
+  () => import("./pages/StraddleIntelligence"), () => import("./pages/Swing"), () => import("./pages/Settings"), () => import("./pages/Portfolio"),
   () => import("./pages/Diagnostics"), () => import("./pages/ServerManagement"), () => import("./pages/DataCleanup"),
 ];
 
@@ -62,7 +61,6 @@ export function AppRoutes() {
         <Route index element={<Home />} />
         <Route path="market-intelligence" element={wait("market intelligence", <MarketIntelligence />)} />
         <Route path="market-intelligence/straddle" element={wait("straddle intelligence", <StraddleIntelligence />)} />
-        <Route path="market-intelligence/entry-lab" element={wait("entry lab", <EntryLab />)} />
         <Route path="overview" element={<Overview />} />
         <Route path="tools/:id" element={
           <Suspense fallback={<p className="text-muted">Loading tool…</p>}><ToolPage /></Suspense>} />
