@@ -194,7 +194,7 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
                 <p className="mt-0.5 text-xs leading-snug text-muted">{what}</p>
                 <dl className="mt-2 grid grid-cols-3 gap-2 text-center">
                   <div><dt className="text-[11px] text-muted">At the open</dt><dd className="num text-lg font-semibold text-paper">{open == null ? MISSING : open.toFixed(1)}</dd></div>
-                  <div><dt className="text-[11px] text-muted">Now{asOf(m) ? ` (${asOf(m)} IST)` : ""}</dt><dd className="num text-lg font-semibold text-paper">{now == null ? MISSING : now.toFixed(1)}</dd></div>
+                  <div><dt className="text-[11px] text-muted">Now{asOf(m) ? ` (${asOf(m)})` : ""}</dt><dd className="num text-lg font-semibold text-paper">{now == null ? MISSING : now.toFixed(1)}</dd></div>
                   <div><dt className="text-[11px] text-muted">Change</dt><dd className={`num text-lg font-semibold ${chg == null ? "text-muted" : chg <= 0 ? "text-up" : "text-down"}`}>{sg(chg)}</dd></div>
                 </dl>
                 <p className="mt-1 text-[11px] leading-snug text-muted">{chg == null ? "Not enough data yet." : chg <= 0 ? "The premium has fallen (decayed)." : "The premium has risen."}{sellerNote(chg)}</p>
@@ -229,7 +229,7 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
         <section aria-label="Score history" className="rounded-xl border border-rule bg-ink/40 p-3">
           <h4 className="text-sm font-semibold text-paper">How the scores moved today</h4>
           <div className="mt-1 h-[190px]"><EChart group="sdi" option={hist} ariaLabel="Seller and buyer environment score history" /></div>
-          <p className="text-[11px] text-muted" data-testid="sdi-hist-note">{histLive ? "One recorded reading per minute; the last point is the current reading shown in the gauges above." : `One recorded reading per minute. The market is closed: the chart ends at the last recorded minute${histEnd ? ` (${fmtTimeIST(histEnd)} IST)` : ""}.`}</p>
+          <p className="text-[11px] text-muted" data-testid="sdi-hist-note">{histLive ? "One recorded reading per minute; the last point is the current reading shown in the gauges above." : `One recorded reading per minute. The market is closed: the chart ends at the last recorded minute${histEnd ? ` (${fmtTimeIST(histEnd)})` : ""}.`}</p>
         </section>
       )}
 

@@ -75,7 +75,7 @@ export function PulseCards({ d }: { d: Intelligence }) {
       <Pulse label="ATM IV" value={p.atm_iv == null ? MISSING : `${p.atm_iv.toFixed(2)}%`} sub={`expiry ${p.expiry ?? MISSING}`} />
       {live ? (
         <Pulse label="India VIX (live)" value={live.value!.toFixed(2)} tone={col(live.change)}
-          sub={`${live.change == null ? "" : `${sgn(live.change)} (${sgn(live.change_pct)}%) · `}${live.received_at ? `${fmtTimeIST(live.received_at)} IST` : ""}`}
+          sub={`${live.change == null ? "" : `${sgn(live.change)} (${sgn(live.change_pct)}%) · `}${live.received_at ? `${fmtTimeIST(live.received_at)}` : ""}`}
           tip={`NSE India VIX from the broker's live index feed${live.prev_close == null ? "" : `, measured from the previous close ${live.prev_close.toFixed(2)}`}. It is NSE's 30-day implied volatility, not one expiry's ATM IV, and it is context: the intraday score does not use it.`} />
       ) : (
         <Pulse label={VIX_LABEL} value={p.india_vix.value == null ? MISSING : p.india_vix.value.toFixed(2)} sub={p.india_vix.as_of ? `observed ${p.india_vix.as_of} (not live)` : "daily close, date unknown"} tip="A daily close with its observation date. The live VIX shows here when the broker feed delivers it; it is not used as an intraday volatility signal: live ATM IV and the expiry-specific skew are." />

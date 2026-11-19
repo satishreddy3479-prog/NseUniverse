@@ -38,7 +38,7 @@ function Source({ s }: { s: MarketSummary }) {
   const w = s.nifty50.weights;
   return (
     <p className="text-xs text-muted">
-      Prices from the live feed at {fmtTimeIST(s.generated_at)} IST · {s.nifty50.breadth.covered} of {s.nifty50.breadth.total} stocks have a current price
+      Prices from the live feed at {fmtTimeIST(s.generated_at)} · {s.nifty50.breadth.covered} of {s.nifty50.breadth.total} stocks have a current price
       {w ? ` · weights ${w.approximate ? "approximated" : "official"}, as of ${w.as_of}${w.rolled_to ? ` (rolled to ${w.rolled_to} closes)` : ""}, source ${w.source}` : " · no weights loaded"}
     </p>
   );

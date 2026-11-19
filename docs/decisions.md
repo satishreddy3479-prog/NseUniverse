@@ -880,3 +880,6 @@ On a phone the label "NIFTY" sat in front of the price and pushed the figures wi
 
 ## D199 (19 Nov 2026): the top-bar scores are the live calculation
 The top-bar chip (B/S) showed the last RECORDED minute while the Market Intelligence card showed the live calculation, so they differed (09:19 IST: chip 56/43, card 53/45, and the live read 59/43 a minute later). `latest_scores` now returns the live calculation on the newest stored sample, the same 20 s analysis the page uses (`source: "live"`), and falls back to the newest recorded minute (`source: "recorded"`) only when no live calculation exists; chip and card poll every 15 s. Limit: the engine reads stored samples (one per minute, about 3 s into the minute), so the scores move when a sample is stored, not on every index tick.
+
+## D200 (19 Nov 2026): "IST IST" removed
+`fmtTimeIST` already ends in " IST"; six places added it again ("Now (10:03:04 IST IST)" on the straddle page, the India VIX time, the futures, index, IV and snapshot lines). The duplicate is removed; the formatter is the one place that adds the zone.

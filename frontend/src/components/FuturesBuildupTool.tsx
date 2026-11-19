@@ -67,7 +67,7 @@ export function FuturesBuildupBody() {
         <div className="flex flex-wrap items-center gap-1 text-xs text-muted" role="group" aria-label="Timeframe"><span className="mr-1">Timeframe</span>
           {FRAMES.map((m) => <button key={m} type="button" aria-pressed={tf === m} className={btn(tf === m)} onClick={() => setTf(m)}>{m} minute{m > 1 ? "s" : ""}</button>)}
         </div>
-        <div className="mt-2 text-xs text-muted">{s.contract ?? "NIFTY future"} · {s.day} · last stored sample {fmtTimeIST(last)} IST · {s.times.length} samples</div>
+        <div className="mt-2 text-xs text-muted">{s.contract ?? "NIFTY future"} · {s.day} · last stored sample {fmtTimeIST(last)} · {s.times.length} samples</div>
         {stale && <p className="mt-1 text-xs text-warn" data-testid="buildup-stale">The newest sample is more than 5 minutes old: the feed or sampler may have stopped.</p>}
         <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm" data-testid="buildup-counts">
           {(["long buildup", "short covering", "short buildup", "long unwinding"] as Buildup[]).map((k) => (
