@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -164,7 +165,7 @@ class TestEnvironments:
     def test_flat_decaying_market_favours_sellers_and_explains_why(self) -> None:
         e = env.assess(make(), MI)
         s, b = e["seller"], e["buyer"]
-        assert s["score"] >= 75 and b["score"] <= 40 and e["comparison"]["verdict"] == "favours sellers"
+        assert s["score"] >= 70 and b["score"] <= 40 and e["comparison"]["verdict"] == "favours sellers"  # 70, not 75: the premium paths (-2.1% here, hand check below) add a modest +0.18 each
         assert s["class"] in ("Highly favourable", "Favourable")
         top = e["comparison"]["top_seller"][0]
         assert top["name"] and top["text"]
@@ -326,3 +327,47 @@ class TestRecordingEndToEnd:
         assert len(str(snap)) < 3000
         assert snap["ladder"]["k0"] == 24000.0 and len(snap["ladder"]["ce"]) == 5
         assert FakeObs  # the same fake store as the service tests
+
+
+class TestPremiumPath:
+    """The premium-path evidence on the real 19 Nov 2026 13:43 server read: the fixed 25150 straddle was +49.95 points above its 309.35 open while the decay ratio was switched off."""
+
+    A = json.loads((Path(__file__).parent.parent / "fixtures" / "straddle" / "straddle_19nov2026_1343.json").read_text(encoding="utf-8"))
+
+    def test_the_premium_path_is_in_percent_of_the_opening_premium(self) -> None:
+        pf = env.premium_path(self.A, "fixed")
+        pr = env.premium_path(self.A, "rolling")
+        assert pf is not None and pr is not None and pf["base"] == 309.35
+        assert pf["pts"]["open"] == 49.95 and pf["pts"]["60"] == pytest.approx(7.1, abs=0.01)  # 49.95 - 42.85 stored minutes ago
+        assert pf["pct"]["open"] == pytest.approx(49.95 / 309.35 * 100, abs=0.01)  # +16.15 %
+        assert pr["pts"]["open"] == 6.45 and pr["pts"]["60"] == pytest.approx(-3.9, abs=0.01)  # roll-adjusted: the re-centred seller is about flat
+        assert env.premium_path({}, "fixed") is None
+
+    def test_the_seller_is_marked_down_for_a_fixed_straddle_that_rose_even_when_theta_is_unusable(self) -> None:
+        ev = {**env.evidence({}, {}), "prem_fixed": env.premium_path(self.A, "fixed"), "prem_rolling": env.premium_path(self.A, "rolling"),
+              "eff": {"efficiency_pct": None, "status": "low_signal", "reason": "Too early to judge: x", "confidence": 0.0}}
+        by = {c["id"]: c for c in env.seller_components(ev)}
+        assert by["decay"]["value"] is None  # the ratio is still off (1.4 points of theta in the hour)...
+        fixed_pct, fixed_60 = 49.95 / 309.35 * 100, 7.1 / 309.35 * 100
+        assert by["prem_fixed"]["value"] == pytest.approx(-(0.6 * fixed_pct + 0.4 * fixed_60) / 12, abs=0.002)  # about -0.884: hand calculation
+        rolling = (0.6 * 6.45 + 0.4 * -3.9) / 309.35 * 100 / 12
+        assert by["prem_rolling"]["value"] == pytest.approx(-rolling, abs=0.002)  # about -0.062
+        assert "since open +16.1%" in by["prem_fixed"]["text"] and "opening 309.4" in by["prem_fixed"]["text"]
+        fl = {f["id"]: f for f in env.flags(ev)}
+        assert "premium_up" in fl and "cap" not in fl["premium_up"]  # +16 %: past the 15 % stop zone, short of the 30 % one
+
+    def test_a_flag_caps_the_class_and_the_hard_zone_caps_it_lower(self) -> None:
+        base = env.evidence({}, {})
+        rose = {"base": 300.0, "pts": {"open": 100.0}, "pct": {"open": 33.3}}
+        ev = {**base, "prem_fixed": rose, "rv_gap": 6.0, "ratio": 0.6, "iv_atm_30": -0.5, "orderflow": 0.0, "skew_change": 0.0}  # enough other evidence that coverage is not the reason for a missing class
+        s = env.seller(ev, {"value": None, "label": "unavailable", "parts": []})
+        assert s["flags"][0]["cap"] == "Unfavourable" and s["class"] in ("Unfavourable", "High risk")
+        # a buyer reads the same rise the other way round
+        b = {c["id"]: c for c in env.buyer_components(ev, {"value": 0.0, "label": "mixed", "parts": []})}
+        assert b["prem_path"]["value"] == 1.0
+
+    def test_the_class_label_is_the_median_of_three_minutes(self) -> None:
+        assert env.damped_score(61.0, [59.0, 58.0]) == 59.0  # one minute over the line does not flip the label
+        assert env.damped_score(61.0, [62.0, 58.0]) == 61.0
+        assert env.damped_score(61.0, [62.0]) == 61.0  # fewer than two recorded minutes: raw
+        assert env.damped_score(None, [60.0, 60.0]) is None

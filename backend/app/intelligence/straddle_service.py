@@ -208,7 +208,8 @@ class StraddleDecay:
                     except Exception:  # noqa: BLE001 - one failing input must not hide the straddle analysis
                         mi = {}
                 if live:
-                    env = straddle_env.assess(out, mi)
+                    recent = [r["seller"] for r in self.store.rows(day.isoformat(), 2, newest_first=True)][::-1] if self.store is not None else []
+                    env = straddle_env.assess(out, mi, recent)
                     out["environment"], out["context"], out["sources"] = env, mi_context(mi), sources(mi, out)
                 else:
                     out["environment"], out["context"] = None, None

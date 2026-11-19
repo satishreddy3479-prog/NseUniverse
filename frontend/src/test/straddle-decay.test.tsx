@@ -405,6 +405,16 @@ describe("the glance: a label held down by a risk flag", () => {
 });
 
 
+describe("the seller card shows the premium-path flag", () => {
+  itIn("why", "lists the stop-zone message from the engine next to the other risk flags", async () => {
+    const d = rich();
+    const text = "The fixed straddle premium is +16.1% above its open (stop zone from +15%): a seller of the opening strike is behind";
+    mount({ ...d, environment: { ...d.environment!, seller: { ...d.environment!.seller, flags: [{ id: "premium_up", text }], capped_by_flags: "Neutral", class: "Neutral" } } });
+    expect(await screen.findByTestId("sdi-flags")).toHaveTextContent("above its open (stop zone from +15%)");
+  });
+});
+
+
 describe("choosing a position changes the glance charts", () => {
   itIn("today", "both lines are equally thick; the followed one is solid and the other faded, in both directions", async () => {
     mount(full({ spot: Array.from({ length: 90 }, (_, i) => 24000 + i) }));

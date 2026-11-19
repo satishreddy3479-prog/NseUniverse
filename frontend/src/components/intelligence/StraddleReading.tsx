@@ -23,7 +23,7 @@ export function StraddleReadingCard({ d, mode }: { d: StraddleDecay; mode: Mode 
 
       {env && (
         <div className="mt-3 grid gap-3 md:grid-cols-2">
-          <Gauge testid="sdi-gauge-seller" title="Seller environment" subtitle="Is it a good time to SELL option premium (straddles, strangles)?" score={env.seller.score} cls={env.seller.class} zones={SELLER_ZONES} capped={env.seller.capped_by_flags} trend={d.environment_trend?.seller} coverage={env.seller.coverage} />
+          <Gauge testid="sdi-gauge-seller" title="Seller environment" subtitle="Is it a good time to SELL option premium? Reads the fixed strike since the open and the rolling ATM over 60 min." score={env.seller.score} cls={env.seller.class} zones={SELLER_ZONES} capped={env.seller.capped_by_flags} trend={d.environment_trend?.seller} coverage={env.seller.coverage} />
           <Gauge testid="sdi-gauge-buyer" title="Buyer environment" subtitle="Is it a good time to BUY options (calls, puts, long straddles)?" score={env.buyer.score} cls={env.buyer.class} zones={BUYER_ZONES} trend={d.environment_trend?.buyer} coverage={env.buyer.coverage} />
         </div>
       )}

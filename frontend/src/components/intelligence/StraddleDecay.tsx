@@ -296,7 +296,7 @@ export function StraddleDecayPanel() {
             </>
           ) : <p className="text-sm text-muted">{d.environment_note}</p>}
         </Box>
-        <Box title="Seller environment" plain="In one line: are conditions good for someone SELLING options? Higher is better for sellers; the flags below can cap it." note={env ? `${env.seller.class}${env.seller.capped_by_flags ? `, capped by ${env.seller.flags.length} risk flag(s)` : ""}` : "live session only"} id="sdi-seller" foot={env ? `Inputs: ${env.sources.seller_inputs.join("; ")}. A favourable environment is not a guarantee of profit.` : undefined}>
+        <Box title="Seller environment" plain="In one line: are conditions good for someone SELLING options? It reads what the premium did (the fixed strike since the open and the re-centred ATM over the last hour), then volatility and flow. Higher is better for sellers; the flags below can cap it." note={env ? `${env.seller.class}${env.seller.capped_by_flags ? `, capped by ${env.seller.flags.length} risk flag(s)` : ""}` : "live session only"} id="sdi-seller" foot={env ? `Inputs: ${env.sources.seller_inputs.join("; ")}. A favourable environment is not a guarantee of profit.` : undefined}>
           {env ? (
             <>
               {env.seller.flags.length > 0 && <ul className="mb-2 list-disc pl-5 text-xs text-down" data-testid="sdi-flags">{env.seller.flags.map((f) => <li key={f.id}>{f.text}</li>)}</ul>}
