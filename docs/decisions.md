@@ -874,3 +874,6 @@ The Strategy builder's leg table shows "H x · L y" under the LTP: today's high 
 
 ## D197 (18 Nov 2026): FII / DII cash page as cards on a phone
 On screens under 640 px the cash table (seven columns, numbers running into each other) is replaced by one card per session: date and total net in the header, then FII net, DII net, FPI equity (NSDL), FII buy and FII sell in a three-column grid. Same figures and tones as the table (the table stays from 640 px up); a missing value is a dash and a total needs both FII and DII.
+
+## D198 (19 Nov 2026): phone top bar, NIFTY label above the price
+On a phone the label "NIFTY" sat in front of the price and pushed the figures wide. It now stands above the price in a small column (label, level, change), left-aligned, with a slightly larger level; from 520 px up the layout is unchanged. Pushed during market hours at the owner's explicit instruction (frontend only; the deploy restart costs about a minute of samples).
