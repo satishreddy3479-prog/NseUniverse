@@ -258,6 +258,7 @@ def test_the_calibration_runs_in_the_background_and_is_kept_until_the_days_chang
         return {"days": len(days), "scales": {}, "variants_tried": 0}
 
     monkeypatch.setattr(dc, "calibrate", fake_calibrate)
+    monkeypatch.setattr(dc, "structure_study", lambda days, scale: {"base_scale": scale})
     svc = stub_service(list(REAL.values()), datetime(2026, 11, 20, 16, 30, tzinfo=IST))
     svc.start()
     assert svc._thread is not None
@@ -268,3 +269,70 @@ def test_the_calibration_runs_in_the_background_and_is_kept_until_the_days_chang
     svc._cal_thread.join(timeout=10)
     again = svc.calibration()
     assert again["status"] == "ready" and again["days"] == 3 and calls == [3]  # kept: not computed twice
+
+
+# ------------------------------------------------------------------ the structure candidates (D215)
+def test_each_candidate_by_hand_and_an_unreadable_input_changes_nothing() -> None:
+    from app.intelligence import decay_structure as ds
+
+    c = ds.CANDIDATES
+    assert c["rv_blend"]({"rv_ratio": 1.5}) == pytest.approx(1.25) and c["rv_blend"]({"rv_ratio": 0.2}) == 0.7 and c["rv_blend"]({"rv_ratio": 5.0}) == 1.3  # clipped
+    assert c["range_expanding"]({"range_ratio": 0.6}) == 1.15 and c["range_expanding"]({"range_ratio": 0.4}) == 1.0
+    assert c["trending"]({"eff30": 0.6}) == 1.15 and c["trending"]({"eff30": 0.5}) == 1.0  # the limit itself is not above it
+    assert c["accelerating"]({"acc": 1.4}) == 1.1 and c["accelerating"]({"acc": 1.0}) == 1.0
+    assert c["event_in_hold"]({"events_hold": 2}) == 1.1 and c["event_in_hold"]({"events_hold": 0}) == 1.0
+    assert c["gift_gap"]({"gift_move_pct": -0.5}) == 1.1 and c["gift_gap"]({"gift_move_pct": 0.2}) == 1.0
+    assert c["pinned_by_wall"]({"wall_ratio": 0.3}) == 0.9 and c["pinned_by_wall"]({"wall_ratio": 0.8}) == 1.0
+    assert c["gex_pinning"]({"gex_share": 0.2}) == 0.9 and c["gex_pinning"]({"gex_share": -0.2}) == 1.1 and c["gex_pinning"]({"gex_share": 0.0}) == 1.0
+    for name, fn in c.items():
+        assert fn({}) is None, name  # missing stays missing: no multiplier is made up
+    assert ds.multiplier(("range_expanding", "trending"), {"range_ratio": 0.6, "eff30": 0.7}) == pytest.approx(1.15 * 1.15)
+    assert ds.multiplier(("range_expanding", "gex_pinning"), {"range_ratio": 0.6}) == 1.15  # the unreadable one counts as 1
+    assert ds.KEPT == ()  # nothing is applied live until the study keeps it
+
+
+def test_the_open_interest_features_by_hand() -> None:
+    from app.intelligence import decay_structure as ds
+
+    at = datetime(2026, 11, 11, 9, 45, tzinfo=IST)
+    p = chain_point(at, date(2026, 11, 12))
+    prem = 200.0
+    only_calls = {(24000.0, CALL): 1000, (24050.0, CALL): 400}
+    only_puts = {(24000.0, PUT): 1000, (23950.0, PUT): 400}
+    assert ds.oi_features(only_calls, p, prem)["gex_share"] == pytest.approx(1.0)  # calls only: all positive
+    assert ds.oi_features(only_puts, p, prem)["gex_share"] == pytest.approx(-1.0)
+    wall = ds.oi_features({(24000.0, CALL): 1000, (24000.0, PUT): 3000, (24100.0, CALL): 500}, p, prem)
+    assert wall["wall_ratio"] == pytest.approx(abs(24000.0 - p.f) / prem)  # the 24,000 strike carries 4,000 against 500
+    assert wall["gex_share"] is not None and -1.0 < wall["gex_share"] < 0.0  # puts outweigh calls there
+    assert ds.oi_features(None, p, prem) == {"wall_ratio": None, "gex_share": None}
+    far = ds.oi_features({(26000.0, CALL): 5000}, p, prem)  # outside the 3% band: not a wall
+    assert far == {"wall_ratio": None, "gex_share": None}
+
+
+def test_a_candidate_that_applies_moves_the_probability_and_one_that_does_not_leaves_it() -> None:
+    from datetime import time
+
+    from app.intelligence import decay_calibration as dc
+    from tests.unit.test_entry_lab import session
+
+    prem = [200.0 - 0.1 * i for i in range(400)]
+    swing = session("2026-11-19", [25000.0 + (150.0 if i % 2 else 0.0) for i in range(400)], prem, dte=4)  # a 150-point range in the first minutes: 0.75 of the premium
+    calm = session("2026-11-19", [25000.0] * 400, prem, dte=4)
+    base = dc.outcome_rows(swing, [time(9, 30)], time(15, 15), 1.0)[0]
+    wide = dc.outcome_rows(swing, [time(9, 30)], time(15, 15), 1.0, structure=("range_expanding",))[0]
+    assert wide["affected"] is True and wide["p_profit"] < base["p_profit"] and wide["actual"] == base["actual"]  # more volatility assumed: a lower chance, the same outcome
+    still = dc.outcome_rows(calm, [time(9, 30)], time(15, 15), 1.0, structure=("range_expanding",))[0]
+    assert still["p_profit"] == dc.outcome_rows(calm, [time(9, 30)], time(15, 15), 1.0)[0]["p_profit"] and still["affected"] is True  # readable, but below the limit
+    none = dc.outcome_rows(calm, [time(9, 30)], time(15, 15), 1.0, structure=("gex_pinning",))[0]
+    assert none["affected"] is False  # no open interest in this day: nothing to read
+
+
+def test_the_study_keeps_nothing_on_few_days_and_says_how_many_it_tried() -> None:
+    from app.intelligence import decay_calibration as dc
+
+    out = dc.structure_study(list(REAL.values()), 1.0, candidates=("range_expanding", "gex_pinning"))
+    assert out["days"] == 3 and out["variants_tried"] == 2 and out["live"] == [] and "Only 3 days" in out["note"]
+    g = out["candidates"]["gex_pinning"]
+    assert g["entries_changed"] == 0 and g["entries_unreadable"] == 27 and g["kept"] is False  # the real days carry no open interest
+    r = out["candidates"]["range_expanding"]
+    assert r["kept"] is False and r["verdict"] in ("no improvement on both halves", "improves both halves, but too few days to keep")

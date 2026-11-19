@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 from app.domain.session import default_close
 from app.intelligence import decay_probability as dp
+from app.intelligence import decay_structure as ds
 from app.intelligence import straddle as sd
 from app.intelligence.entry_lab import Day
 from app.intraday.volatility import CALL, DEFAULT_RATE, PUT
@@ -42,8 +43,9 @@ def _prices_at(day: Day, i: int, k: float) -> float | None:
     return None if ce is None or pe is None else float(ce) + float(pe)
 
 
-def outcome_rows(day: Day, entries: Sequence[time], exit_: time, scale: float, cost: float = 2.0, rate: float = DEFAULT_RATE) -> list[dict[str, Any]]:
-    """The engine's prediction at each entry time of ``day`` and the actual net result of the straddle it priced."""
+def outcome_rows(day: Day, entries: Sequence[time], exit_: time, scale: float, cost: float = 2.0, rate: float = DEFAULT_RATE, structure: tuple[str, ...] = ()) -> list[dict[str, Any]]:
+    """The engine's prediction at each entry time of ``day`` and the actual net result of the straddle it priced. ``structure`` names the decay_structure candidates that multiply the
+    volatility scale (an input that cannot be formed leaves it alone); ``affected`` says whether any of them changed it."""
     d0 = date.fromisoformat(day.day)
     expiry = d0 + timedelta(days=day.dte)
     expiry_close = datetime.combine(expiry, default_close(expiry), IST)
@@ -61,6 +63,13 @@ def outcome_rows(day: Day, entries: Sequence[time], exit_: time, scale: float, c
         out = dp.for_point(point, expiry_close, exit_at, cost=cost, vol_scale=scale)
         if not out.get("available"):
             continue
+        affected = False
+        if structure:
+            feat = ds.features(day, i, point, float(out["premium"]), float(out["implied_vol_pct"]) / 100, t, exit_)
+            m = ds.multiplier(structure, feat)
+            affected = any(ds.has_input(nm, feat) for nm in structure)
+            if m != 1.0:
+                out = dp.for_point(point, expiry_close, exit_at, cost=cost, vol_scale=scale * m)
         k = float(out["strike"])
         exit_prem = next((p for j in range(ie_all, max(i, ie_all - LOOKBACK) - 1, -1) if (p := _prices_at(day, j, k)) is not None), None)
         if exit_prem is None:
@@ -68,7 +77,7 @@ def outcome_rows(day: Day, entries: Sequence[time], exit_: time, scale: float, c
         actual = float(out["premium"]) - exit_prem - cost
         q = out["quantiles"]
         rows.append({"day": day.day, "entry": f"{t:%H:%M}", "p_profit": out["p_profit"], "mean": out["mean"], "p5": q["p5"], "p50": q["p50"], "p95": q["p95"], "actual": round(actual, 2),
-                     "win": actual > 0, "implied_vol_pct": out["implied_vol_pct"]})  # fmt: skip
+                     "win": actual > 0, "implied_vol_pct": out["implied_vol_pct"], "affected": affected})  # fmt: skip
     return rows
 
 
@@ -112,3 +121,45 @@ def calibrate(days: Sequence[Day], entries: Sequence[time] = DEFAULT_ENTRIES, ex
         "note": (f"{ndays} days: a description, not a verdict (at least {MIN_DAYS} days are needed). " if ndays < MIN_DAYS else "") + "The entries of one day share its trend, so the evidence is nearer the number of days "
         "than the number of entries. Volatility scale 1 is the market's own volatility; a scale that fits better only says the market's volatility was too high or too low on these days.",
     }  # fmt: skip
+
+
+def _brier(rows: Sequence[Mapping[str, Any]]) -> float | None:
+    return None if not rows else sum((float(r["p_profit"]) - (1.0 if r["win"] else 0.0)) ** 2 for r in rows) / len(rows)
+
+
+def structure_study(days: Sequence[Day], base_scale: float = 1.0, entries: Sequence[time] = DEFAULT_ENTRIES, exit_: time = time(15, 15), cost: float = 2.0,
+                    candidates: Sequence[str] | None = None) -> dict[str, Any]:  # fmt: skip
+    """Does a structure input help? Each candidate of decay_structure (thresholds and multipliers fixed in advance) is run on every recorded day, on top of ``base_scale`` (the constant volatility
+    scale that fit best, so a candidate has to add something beyond the average level), and compared with that baseline: the change in Brier score overall and on each half of the days (the first
+    half and the second half in date order), how many entries it changed, how many it could not read, and the change in the mean error of the predicted result.
+
+    A candidate is KEPT only when the Brier score improves on BOTH halves AND at least ``MIN_DAYS`` days stand behind it; with fewer days it is reported as a description, whatever it shows.
+    The number of candidates tried is reported next to the result: the more are tried, the likelier one looks good by luck."""
+    names = list(candidates or ds.CANDIDATES)
+    ordered = sorted({d.day for d in days})
+    first_half = set(ordered[: (len(ordered) + 1) // 2])
+    base_rows = [r for d in days for r in outcome_rows(d, entries, exit_, base_scale, cost)]
+    base_b = _brier(base_rows)
+    out: dict[str, Any] = {"base_scale": base_scale, "days": len(ordered), "entries": len(base_rows), "base_brier": None if base_b is None else round(base_b, 4), "candidates": {}}
+
+    def delta(rows: Sequence[Mapping[str, Any]], base: Sequence[Mapping[str, Any]], pick: Any) -> float | None:
+        a, b = _brier([r for r in rows if pick(r["day"])]), _brier([r for r in base if pick(r["day"])])
+        return None if a is None or b is None else round(a - b, 4)
+
+    for nm in names:
+        rows = [r for d in days for r in outcome_rows(d, entries, exit_, base_scale, cost, structure=(nm,))]
+        total = delta(rows, base_rows, lambda _d: True)
+        h1, h2 = delta(rows, base_rows, lambda d: d in first_half), delta(rows, base_rows, lambda d: d not in first_half)
+        changed = sum(1 for r, b in zip(rows, base_rows, strict=True) if abs(float(r["p_profit"]) - float(b["p_profit"])) > 1e-9)
+        err = None if not rows else round(abs(statistics.mean(float(r["mean"]) - float(r["actual"]) for r in rows)) - abs(statistics.mean(float(b["mean"]) - float(b["actual"]) for b in base_rows)), 2)
+        both = h1 is not None and h2 is not None and h1 < 0 and h2 < 0
+        sufficient = len(ordered) >= MIN_DAYS
+        out["candidates"][nm] = {"entries_changed": changed, "entries_unreadable": sum(1 for r in rows if not r["affected"]), "brier_change": total, "first_half_change": h1, "second_half_change": h2,
+                                 "mean_error_change": err, "improves_both_halves": both, "kept": bool(both and sufficient and changed >= 0.1 * len(rows)),
+                                 "verdict": ("kept" if both and sufficient and changed >= 0.1 * len(rows) else "improves both halves, but too few days to keep" if both and not sufficient
+                                             else "no improvement on both halves")}  # fmt: skip
+    out["variants_tried"] = len(names)
+    out["live"] = list(ds.KEPT)
+    out["note"] = ("A negative change is an improvement. " + (f"Only {len(ordered)} days: nothing is kept below {MIN_DAYS}. " if len(ordered) < MIN_DAYS else "")
+                   + "Thresholds and multipliers were fixed before looking at the days. VWAP is not tested (the index has no volume in the stored data).")  # fmt: skip
+    return out

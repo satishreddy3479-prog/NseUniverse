@@ -1,3 +1,4 @@
+import { decayQuery } from "./decayProbability";
 import { entryLabQuery } from "./entryLab";
 import type {
   ForwardCheck,
@@ -281,6 +282,8 @@ export const api = {
   /** The Entry Lab: a short-straddle rule replayed on the recorded sessions (past days, in-sample). */
   entryLab: (p: import("./entryLab").EntryLabParams) => request<import("./entryLab").EntryLab>(`/api/intelligence/entry-lab?${entryLabQuery(p)}`),
   /** How far NIFTY has moved today and whether the move is speeding up (read-only description of the day so far). */
+  decayProbability: (p: import("./decayProbability").DecayParams) => request<import("./decayProbability").DecayAnswer>(`/api/intelligence/decay-probability?${decayQuery(p)}`),
+  decayCalibration: () => request<import("./decayProbability").DecayCalibration>("/api/intelligence/decay-calibration"),
   labReference: () => request<import("./entryLab").LabReference>("/api/intelligence/entry-lab/reference"),
   rangeSignals: () => request<import("./entryLab").RangeSignals>("/api/intelligence/range-signals"),
   straddleValidation: () => request<import("./straddleDecay").StraddleValidation>("/api/intelligence/straddle/validation"),

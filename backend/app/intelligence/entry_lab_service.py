@@ -14,7 +14,7 @@ from collections.abc import Callable, Mapping
 from datetime import date, datetime, time
 from typing import Any
 
-from app.domain.session import session_close
+from app.domain.session import _IST, session_close
 from app.intelligence.entry_lab import ENTRY_TIMES, LOT, Day, Rule, presets, run
 from app.market.index_check import minute_key
 
@@ -26,6 +26,9 @@ STRIKE_MARGIN = 400.0  # points beyond the day's range kept on each side
 MIN_BAR_READS = 10  # an index bar made from fewer reads is not used
 
 
+OI_EVERY_MIN = 15
+
+
 def compact(day: date, expiry: date, snaps: list[Any], tz: Any, prev_close: float | None = None, bars: Mapping[str, Mapping[str, Any]] | None = None,
             context: Mapping[str, Any] | None = None, events: list[Mapping[str, Any]] | None = None, events_known: bool = False) -> Day | None:  # fmt: skip
     """The stored samples of one session as a ``Day``: only minutes with a level and prices, and only the strikes the index could have reached.
@@ -35,6 +38,7 @@ def compact(day: date, expiry: date, snaps: list[Any], tz: Any, prev_close: floa
     have put the wrong strike and the wrong range into the replay. Without a bar the stored level is used."""
     rows = []
     from_bars = 0
+    oi_slots: dict[str, dict[tuple[float, int], int | None]] = {}  # the open interest of the first sample at each quarter hour (the decay engine's structure study)
     for s in snaps:
         if s.spot is None or s.spot <= 0 or not s.prices:
             continue
@@ -43,13 +47,16 @@ def compact(day: date, expiry: date, snaps: list[Any], tz: Any, prev_close: floa
         if bar is not None and isinstance(bar.get("o"), (int, float)) and bar["o"] > 0 and (not isinstance(bar.get("n"), int) or bar["n"] >= MIN_BAR_READS):
             level, from_bars = float(bar["o"]), from_bars + 1
         rows.append((s.at, level, s.prices))
+        stamp = s.at.astimezone(_IST).strftime("%H:%M")
+        if int(stamp[3:]) % OI_EVERY_MIN == 0 and stamp not in oi_slots and getattr(s, "oi", None):
+            oi_slots[stamp] = {k: v for k, v in s.oi.items() if v}
     if len(rows) < MIN_SAMPLES - 50:
         return None
     lo, hi = min(r[1] for r in rows) - STRIKE_MARGIN, max(r[1] for r in rows) + STRIKE_MARGIN
     prices = [{key: float(v) for key, v in p.items() if v is not None and lo <= key[0] <= hi} for _, _, p in rows]
     source = "index feed bars" if from_bars >= 0.9 * len(rows) else "mixed: index bars and stored chain level" if from_bars else "stored chain level"
     return Day(day=day.isoformat(), dte=(expiry - day).days, times=[r[0] for r in rows], spots=[r[1] for r in rows], prices=prices, prev_close=prev_close, spot_source=source,
-               context=context, events=events, events_known=events_known)  # fmt: skip
+               context=context, events=events, events_known=events_known, oi=oi_slots or None)  # fmt: skip
 
 
 class EntryLabService:
@@ -118,7 +125,7 @@ class EntryLabService:
     # ------------------------------------------------------------------ the decay engine's calibration
     def calibration(self) -> dict[str, Any]:
         """The decay-probability engine against the recorded days (a minute or so of work: computed in the background, kept until the number of loaded days changes)."""
-        from app.intelligence.decay_calibration import calibrate
+        from app.intelligence import decay_calibration as dcal
 
         self.start()
         days = self.days()
@@ -129,7 +136,10 @@ class EntryLabService:
             if days and not busy:
                 def work(snapshot: list[Day] = days) -> None:
                     try:
-                        res = calibrate(snapshot)
+                        res = dcal.calibrate(snapshot)
+                        fits = {k: v["brier"] for k, v in res["scales"].items() if v.get("entries")}
+                        best = float(min(fits, key=lambda k: fits[k])) if fits else 1.0
+                        res["structure"] = dcal.structure_study(snapshot, best)
                     except Exception:  # noqa: BLE001 - reported in the log, the next request tries again
                         logger.exception("decay_calibration_failed")
                         return

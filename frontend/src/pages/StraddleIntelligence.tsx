@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { ReplayBarView } from "../components/dashboard/ReplayBar";
 import { ReplayProvider } from "../components/dashboard/ReplayContext";
+import { DecayOddsCard } from "../components/intelligence/DecayOdds";
 import { LabReferenceCard } from "../components/intelligence/LabReference";
 import { RangeSignalsCard } from "../components/intelligence/RangeSignals";
 import { StraddleDecayPanel, STRADDLE_KEY } from "../components/intelligence/StraddleDecay";
@@ -30,6 +31,7 @@ export function StraddleIntelligence() {
         <ChartInfoToggle />
       </header>
       <StraddleReplay />
+      <DecayOddsCard />
       <LabReferenceCard />
       <RangeSignalsCard />
       <StraddleDecayPanel />

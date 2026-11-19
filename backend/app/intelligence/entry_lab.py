@@ -100,6 +100,7 @@ class Day:
     context: Mapping[str, Any] | None = None  # the overnight moves recorded before the open (context_signals.compute_context); None = not recorded that day
     events: Sequence[Mapping[str, Any]] | None = None  # the high-importance calendar events around the day
     events_known: bool = False  # True only when the event ledger covered this day (otherwise the event features are unknown, not zero)
+    oi: Mapping[str, Mapping[tuple[float, int], int | None]] | None = None  # open interest of the samples at HH:MM marks every 15 minutes (the decay engine's structure study)
 
 
 def premium(prices: Mapping[tuple[float, int], float], strike: float) -> float | None:
