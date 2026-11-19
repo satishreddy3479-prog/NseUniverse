@@ -411,3 +411,20 @@ class TestStaleOpeningStrikeAndManagedStraddle:
         assert mg["restrikes"] >= 1 and mg["total"] is not None and "pnl" not in mg  # the per-minute list lives in series.managed
         assert len(a["series"]["managed"]["pnl"]) == len(a["times"])
         assert a["tracker"]["managed"]["strike_now"] == a["series"]["managed"]["strike"][-1]
+
+
+def test_the_pressure_reading_is_shown_as_context_and_does_not_move_the_side_risk() -> None:
+    """The directional pressure (futures CVD proxy, VWAP, heavyweights, last 30 minutes) has no validated skill: it is context on the tile and is not averaged into the risk (D213)."""
+    from app.intelligence.straddle_env import side_risk
+
+    ev = {"dce30": 0.5, "dpe30": 0.0, "accel": 1.3, "config": [], "skew25": None, "ce25": None}
+    # call IV +0.5 vol points -> 0.5, acceleration 1.3x -> (1.3-1)/0.6 = 0.5: risk 50 + 50 x 0.5 = 75, whatever the pressure says
+    for value in (None, 0.9, -0.9):
+        r = side_risk(ev, {"value": value, "label": "x"}, +1)
+        assert r["risk"] == 75.0 and r["label"] == "High" and len(r["reasons"]) == 2
+    up = side_risk(ev, {"value": 0.9, "label": "upward pressure"}, +1)["context"]
+    assert up["value"] == 0.9 and "unvalidated" in up["name"] and "not part of the risk score" in up["text"]
+    assert side_risk(ev, {"value": 0.9, "label": "upward pressure"}, -1)["context"]["value"] == -0.9  # against the put side
+    assert side_risk(ev, {"value": None, "label": "unavailable"}, +1)["context"] is None
+    only = side_risk({**ev, "dce30": None, "accel": None}, {"value": 0.9, "label": "u"}, +1)
+    assert only["risk"] is None and only["context"]["value"] == 0.9  # pressure alone never makes a risk score

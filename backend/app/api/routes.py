@@ -862,56 +862,6 @@ async def intelligence_straddle_scores(request: Request) -> dict[str, Any]:
     return await asyncio.to_thread(svc.latest_scores)
 
 
-@router.get("/intelligence/range-signals")
-async def intelligence_range_signals(request: Request) -> dict[str, Any]:
-    """How far NIFTY has moved today and whether the move is speeding up.
-
-    Opening gap, range so far, break of the opening range, straightness, acceleration. Read-only."""
-    svc = _straddle(request)
-    key = f"range-signals|{id(svc)}"
-    out = dict(await asyncio.to_thread(_cached, key, 15.0, svc.range_signals))
-    ledger = getattr(request.app.state, "context_ledger", None)
-    out["context"] = None if ledger is None else await asyncio.to_thread(_today_context, ledger)
-    return out
-
-
-def _today_context(ledger: Any) -> dict[str, Any]:
-    """Today's overnight moves (taken before the open) and the high-importance events of the
-    overnight window and of today: what the Entry Lab tests, shown as a description of the day."""
-    from datetime import datetime as _dt
-    from datetime import time as _t
-
-    from app.domain.session import session_close
-    from app.intelligence import context_signals as cs
-
-    now = _dt.now(cs.IST)
-    day, close = now.date(), session_close()
-    prev = cs.prev_weekday(day)
-    ctx = ledger.context(day.isoformat())
-    cover = ledger.coverage()
-    known = cover is not None and cover[0] <= prev.isoformat()
-    evs = None
-    if known:
-        evs = ledger.events_between(cs.ist_ms(prev, cs.NIFTY_CLOSE), cs.ist_ms(day, close))
-    entry = now.time().replace(second=0, microsecond=0)
-    f = cs.features(day, ctx, evs, known, entry, close, None, None)
-    keys = ("gift", "es", "nq", "brent", "dxy", "usdinr")
-    today = []
-    for e in cs.event_window(evs or [], cs.ist_ms(day, _t(0, 0)), cs.ist_ms(day, close)):
-        at = _dt.fromtimestamp(e["ts"] / 1000, cs.IST).strftime("%H:%M")
-        today.append(
-            {"time": at, "country": e["country"], "name": e["name"],
-             "forecast": e["forecast"], "actual": e["actual"]}
-        )  # fmt: skip
-    return {
-        "recorded": ctx is not None,
-        "moves": {k: f[f"{k}_move_pct"] for k in keys},
-        "events_known": known,
-        "events_today": today,
-        "events_overnight": f["events_overnight_names"] if known else None,
-    }
-
-
 @router.get("/intelligence/straddle/alerts")
 async def intelligence_straddle_alerts(
     request: Request, session: date | None = None
@@ -930,114 +880,6 @@ async def intelligence_straddle_validation(request: Request, sessions: int = 20)
     # minute to minute: reused for five minutes
     key = f"straddle-validation|{id(svc)}|{n}"
     return await asyncio.to_thread(_cached, key, 300.0, lambda: svc.validation(n))
-
-
-@router.get("/intelligence/entry-lab")
-async def intelligence_entry_lab(
-    request: Request,
-    entry: Annotated[str, Query(pattern=r"^\d\d:\d\d$")] = "09:45",
-    exit: Annotated[str, Query(pattern=r"^\d\d:\d\d$")] = "15:15",
-    stop: Annotated[float | None, Query(ge=1, le=300)] = None,
-    target: Annotated[float | None, Query(ge=1, le=100)] = None,
-    roll: Annotated[float | None, Query(ge=20, le=500)] = None,
-    cost: Annotated[float, Query(ge=0, le=20)] = 2.0,
-    roll_cost: Annotated[float, Query(ge=0, le=20)] = 2.0,
-    max_gap: Annotated[float | None, Query(ge=0.05, le=10)] = None,
-    max_range: Annotated[float | None, Query(ge=0.05, le=5)] = None,
-    max_eff: Annotated[float | None, Query(ge=0.05, le=1)] = None,
-    skip_break: bool = False,
-    skip_events_hold: bool = False,
-    skip_events_overnight: bool = False,
-    max_gift: Annotated[float | None, Query(ge=0.05, le=5)] = None,
-    presets: bool = False,
-) -> dict[str, Any]:
-    """The Entry Lab: what a short ATM straddle rule would have made on the recorded sessions.
-
-    Read-only, past days, in-sample."""
-    from app.intelligence.entry_lab import Rule
-    from app.intelligence.entry_lab_service import parse_hm
-
-    svc = getattr(request.app.state, "entry_lab", None)
-    if svc is None:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            {"code": "entry_lab_unavailable", "message": "the Entry Lab is not running"},
-        )
-    try:
-        rule = Rule(
-            entry=parse_hm(entry), exit=parse_hm(exit), stop_pct=stop, target_pct=target,
-            roll_pts=roll, cost=cost, roll_cost=roll_cost, max_gap_pct=max_gap,
-            max_range_ratio=max_range, max_eff30=max_eff, skip_break=skip_break,
-            skip_events_hold=skip_events_hold, max_gift_pct=max_gift,
-            skip_events_overnight=skip_events_overnight,
-        )  # fmt: skip
-    except ValueError as e:
-        detail = {"code": "bad_time", "message": "times are HH:MM"}
-        raise HTTPException(422, detail) from e
-    from app.domain.session import SESSION_OPEN, session_close
-
-    close = session_close()
-    if not (SESSION_OPEN <= rule.entry < rule.exit <= close):
-        message = f"entry must be before exit, inside {SESSION_OPEN:%H:%M}-{close:%H:%M}"
-        detail = {"code": "bad_window", "message": message}
-        raise HTTPException(422, detail)
-    return await asyncio.to_thread(svc.result, rule, presets)
-
-
-@router.get("/intelligence/decay-probability")
-async def intelligence_decay_probability(
-    request: Request,
-    stop: Annotated[float | None, Query(ge=1, le=300)] = None,
-    target: Annotated[float | None, Query(ge=1, le=95)] = None,
-    exit: Annotated[str, Query(pattern=r"^\d\d:\d\d$")] = "15:15",
-    cost: Annotated[float, Query(ge=0, le=20)] = 2.0,
-    vol_scale: Annotated[float, Query(ge=0.5, le=1.5)] = 1.0,
-) -> dict[str, Any]:
-    """The model's odds that selling the at-the-money straddle now pays, with the typical and the
-    bad outcome and the odds of a stop or a target. Read-only; see decay_probability.py."""
-    from app.intelligence.entry_lab_service import parse_hm
-
-    svc = _straddle(request)
-    try:
-        exit_at = parse_hm(exit)
-    except ValueError as e:
-        raise HTTPException(422, {"code": "bad_time", "message": "times are HH:MM"}) from e
-    key = f"decay-prob|{id(svc)}|{stop}|{target}|{exit}|{cost}|{vol_scale}"
-    return await asyncio.to_thread(
-        _cached, key, 15.0, lambda: svc.decay_probability(stop, target, exit_at, cost, vol_scale)
-    )
-
-
-@router.get("/intelligence/decay-calibration")
-async def intelligence_decay_calibration(request: Request) -> dict[str, Any]:
-    """The decay-probability engine against the recorded sessions: reliability, Brier score,
-    quantile coverage, per volatility scale. Computed in the background."""
-    svc = getattr(request.app.state, "entry_lab", None)
-    if svc is None:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            {"code": "entry_lab_unavailable", "message": "the Entry Lab is not running"},
-        )
-    return await asyncio.to_thread(svc.calibration)
-
-
-@router.get("/intelligence/entry-lab/reference")
-async def intelligence_entry_lab_reference(request: Request) -> dict[str, Any]:
-    """The recorded sessions beside the live decision: a short ATM straddle opened at the current
-    time of day and held to the close, plain and with a 20% stop. Read-only, past days."""
-    from datetime import datetime as _dt
-
-    from app.intelligence import context_signals as cs
-
-    svc = getattr(request.app.state, "entry_lab", None)
-    if svc is None:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            {"code": "entry_lab_unavailable", "message": "the Entry Lab is not running"},
-        )
-    at = _dt.now(cs.IST).time()
-    key = "lab-reference|" + at.strftime("%H%M")
-    return await asyncio.to_thread(_cached, key, 60.0, lambda: svc.reference(at))
 
 
 @router.get("/swing/minute")
@@ -1307,7 +1149,7 @@ async def flows_cash_import(request: Request, body: CashImport) -> dict[str, Any
         return await asyncio.to_thread(request.app.state.flows.import_cash_csv, body.csv)
     except NseParseError as e:
         raise HTTPException(
-            422, {"code": "invalid_file", "message": str(e)}
+            status.HTTP_422_UNPROCESSABLE_ENTITY, {"code": "invalid_file", "message": str(e)}
         ) from e
 
 

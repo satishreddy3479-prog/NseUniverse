@@ -15,14 +15,9 @@ PATTERN = re.compile(r"""\btime\(\s*15\s*,\s*(?:15|20|25|30|31|35|40|45|50|55)\b
 
 # literals that exist today; domain/session.py is the schedule itself
 BASELINE: dict[str, int] = {
-    "api/routes.py": 2,  # the default exit time of a replayed or modelled straddle (a parameter of the experiment, not the session schedule): the Entry Lab and the decay-probability routes
     "domain/session.py": 15,
     "domain/spot_check.py": 1,  # EXPIRY_CLOSE: the expiring index contracts stop at 15:30 in both schedules
     "forward/service.py": 1,  # the paper trader's 15:20 exit
-    "intelligence/entry_lab.py": 1,  # the default exit time of a replayed rule (a parameter of the experiment, not the session schedule)
-    "intelligence/context_signals.py": 1,  # the previous NIFTY close (15:30) the overnight move is measured from
-    "intelligence/decay_calibration.py": 2,  # the default exit time of the replay and of the structure study (a parameter of the experiment, not the session schedule)
-    "intelligence/straddle_service.py": 1,  # the default exit time of the decay-probability question (a parameter, not the session schedule)
     "globalmkts/service.py": 1,  # polling cadence window
     "globalmkts/symbols.py": 3,  # other exchanges' hours (GIFT Nifty, Nikkei, KOSPI)
     "intraday/price_structure.py": 1,  # opening-range minutes (15, 30), not a clock time
