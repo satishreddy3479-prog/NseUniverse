@@ -60,6 +60,7 @@ def _band(v: float | None, bands: Sequence[tuple[int, str]]) -> str:
     return next(n for lo, n in bands if v >= lo)
 
 
+CONVEXITY_RATIO = 1.5  # provisional: realised gamma cost above this multiple of the expected theta decay hard-caps the seller class
 PREM_SCALE_PCT = 12.0  # provisional: a straddle premium move of this many percent of its opening value is a full-strength reading
 PREM_STOP_PCT, PREM_STOP_HARD_PCT = 15.0, 30.0  # provisional stop zones for a short straddle: premium up this much from the open caps the class
 WINDOWS = (("open", None), ("60", 60), ("30", 30), ("15", 15))
@@ -220,6 +221,15 @@ def flags(ev: Mapping[str, Any]) -> list[dict[str, str]]:
     if pct is not None and pct >= PREM_STOP_PCT:
         hard = pct >= PREM_STOP_HARD_PCT
         out.append({"id": "premium_up", "text": f"The at-the-money straddle premium (roll-adjusted) is {pct:+.1f}% above its open (stop zone from +{PREM_STOP_PCT:g}%): a seller who re-centres is behind", **({"cap": "Unfavourable"} if hard else {})})
+    eff = ev.get("eff") or {}
+    gamma_pts = (eff.get("causes") or {}).get("gamma exposure (realised convexity)")
+    theta_pts = eff.get("expected_decay")
+    if gamma_pts is not None and theta_pts is not None and theta_pts > 0 and gamma_pts > CONVEXITY_RATIO * theta_pts:
+        out.append({"id": "convexity_blowout", "cap": "High risk",
+                    "text": f"Realised convexity (+{gamma_pts:.1f} pts) is overwhelming theta ({theta_pts:.1f} pts): gamma risk is dominating decay"})  # fmt: skip
+    eff_pct = eff.get("efficiency_pct")
+    if eff_pct is not None and eff_pct < 0:
+        out.append({"id": "premium_expansion", "cap": "Unfavourable", "text": f"Premium expansion (decay efficiency {eff_pct:.0f}%): the straddle premium is rising, not decaying"})
     d1, d2 = ev["dce30"], ev["dpe30"]
     sk = ev["skew25"]
     if (d1 is not None and d2 is not None and abs(d2 - d1) >= 1.0) or (sk is not None and ev["ce25"] is not None and abs(sk - ev["ce25"]) >= 4):
@@ -243,7 +253,7 @@ def seller(ev: Mapping[str, Any], dirn: Mapping[str, Any], recent: Sequence[floa
     cls = _band(damped_score(base["score"], recent), SELLER_CLASSES)
     cap = None
     if base["score"] is not None and fl:
-        limit = "Unfavourable" if len(fl) >= 2 or any(f.get("cap") == "Unfavourable" for f in fl) else "Neutral"
+        limit = "High risk" if any(f.get("cap") == "High risk" for f in fl) else "Unfavourable" if len(fl) >= 2 or any(f.get("cap") == "Unfavourable" for f in fl) else "Neutral"
         if _ORDER_S.index(cls) > _ORDER_S.index(limit):
             cap, cls = limit, limit
     by = {c["id"]: c for c in base["components"]}
@@ -255,7 +265,7 @@ def seller(ev: Mapping[str, Any], dirn: Mapping[str, Any], recent: Sequence[floa
 
     straddle = sub(["decay", "prem_rolling", "rv_gap", "movement", "gamma", "iv_trend", "flow"])
     strangle = sub(["iv_trend", "rv_gap", "movement", "gex_stable", "positioning", "skew", "flow"], {"positioning": 12, "movement": 6})
-    if "directional" in {f["id"] for f in fl} and straddle["score"] is not None:
+    if {"directional", "convexity_blowout"} & {f["id"] for f in fl} and straddle["score"] is not None:
         straddle["score"] = round(min(straddle["score"], 40), 1)
         straddle["class"] = _band(straddle["score"], SELLER_CLASSES)
     return {"score": base["score"], "class": cls, "capped_by_flags": cap, "coverage": base["coverage"], "components": base["components"], "flags": fl,
@@ -427,3 +437,128 @@ def assess(a: Mapping[str, Any], mi: Mapping[str, Any], recent_seller: Sequence[
     return {"evidence": {k: ev[k] for k in keep}, "positioning": positioning_read(ev), "seller": sell, "buyer": buy, "comparison": cmp, "invalidation": invalidation(sell, buy, ev, cmp), "direction": dirn,
             "sources": {"seller_inputs": sorted({c["source"] for c in sell["components"]}), "buyer_inputs": sorted({c["source"] for c in buy["components"]})},
             "proxies": ["CVD (quote and tick rule estimate, no trade tape)", "GEX (modelled exposure, assumed dealer sign)", "OI changes (do not identify who bought or sold)"], "weights_note": PROVISIONAL}  # fmt: skip
+
+
+# ------------------------------------------------------------------ the pre-flight radar
+RADAR_PREM_MAX_PTS = 0.0  # provisional: the roll-adjusted at-the-money premium must not have risen over the last 15 minutes (any rise fails the gate)
+RADAR_IV_MAX_PTS = 0.1  # provisional: the at-the-money IV may not have risen by more than this many vol points in 15 minutes
+RADAR_FLIP_BUFFER_PTS = 15.0  # provisional: spot within this many points below the modelled gamma flip still counts as calm
+RADAR_STOP_PCT = 18.0  # provisional reference stop: premium this percent above the premium sold
+RADAR_RESTRIKE_PTS = 35.0  # provisional reference re-strike distance (points from the strike)
+RADAR_NOTE = "Thresholds are provisional working values, not validated on enough recorded days; the gamma flip is a modelled level. A description of the straddle right now, not a trade signal."
+_CONVEXITY_KEY = "gamma exposure (realised convexity)"
+_REASON_NAMES = {"ACTIVE_SHORT_SQUEEZE": "SHORT SQUEEZE", "VWAP_TREND_DETACHMENT": "VWAP TREND RUNAWAY", "IB_EXPANSION_TREND": "WIDE OPENING RANGE"}
+
+
+def _gate(status: str, label: str, **extra: Any) -> dict[str, Any]:
+    return {"status": status, "label": label, **extra}
+
+
+def _join(names: Sequence[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " & " + names[-1]
+
+
+def evaluate_preflight(a: Mapping[str, Any], env: Mapping[str, Any], live_regime: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Four gates to read before selling the at-the-money straddle by hand, from the live analysis ``a``, the seller environment ``env`` (see ``assess``) and the live regime
+    (``live_regime.evaluate_live_regime``):
+
+      premium_decay     the roll-adjusted at-the-money premium over the last 15 minutes: falling or flat passes, rising fails;
+      volatility_shock  the at-the-money IV over the last 15 minutes: up to RADAR_IV_MAX_PTS vol points passes, more fails;
+      regime_squeeze    FAIL when a short squeeze, a VWAP runaway or a wide opening range is on, WARN when only the put floor is advancing, PASS when none is on, UNKNOWN when no reading could be formed;
+      structure_flip    spot against the modelled gamma flip: above it (or within RADAR_FLIP_BUFFER_PTS below) passes, further below warns.
+    Gamma cost above CONVEXITY_RATIO x theta and a negative decay efficiency (the seller flags) also block, and are named in the headline. A gate whose input does not exist is UNKNOWN: never a pass,
+    never a failure; nothing failing with something unknown is GREY (INCOMPLETE), not green. RED blocks, YELLOW is a warning only, GREEN needs all four gates to pass, GREY (NO_LIVE_DATA) is a stored or
+    stale session. ``trade_setup`` repeats the current at-the-money prices and two reference levels (a stop and a re-strike distance): fixed working values, not a recommendation."""
+    tracker = a.get("tracker") or {}
+    flags_ = {f["id"] for f in ((env.get("seller") or {}).get("flags") or []) if isinstance(f, Mapping) and "id" in f}
+    spot = num((a.get("spot") or [None])[-1]) if a.get("spot") else None
+    strike = tracker.get("atm_now")
+    ce, pe = num(g(tracker, "rolling", "ce", "current")), num(g(tracker, "rolling", "pe", "current"))
+    total = num(g(tracker, "rolling", "straddle", "current"))
+    if total is None and ce is not None and pe is not None:
+        total = round(ce + pe, 2)
+    stop_at = None if total is None or total <= 0 else round(total * (1 + RADAR_STOP_PCT / 100), 1)
+    setup = {"strike": strike, "spot": spot, "combined_premium": total, "ce_price": ce, "pe_price": pe, "stop_loss_pts": stop_at, "stop_loss_pct": RADAR_STOP_PCT, "re_strike_pts": RADAR_RESTRIKE_PTS}
+    lr = live_regime or {}
+    regime = {"label": lr.get("label"), "ib_ratio": g(lr, "ib", "ratio"), "flags": lr.get("flags") or []}
+
+    live, stale, age = bool(g(a, "quality", "live")), bool(g(a, "quality", "stale")), g(a, "quality", "age_minutes")  # the analysis keeps these under "quality"
+    if not live or stale:
+        why = "this is a stored session, not the live straddle" if not live else f"the newest stored sample is {age} minutes old"
+        return {"verdict": "NO_LIVE_DATA", "badge": "GREY", "headline": "NO LIVE READING", "summary": f"No live reading: {why}.", "gates": {}, "reasons": [], "unknown": [], "regime": regime,
+                "trade_setup": setup, "note": RADAR_NOTE}  # fmt: skip
+
+    pr = premium_path(a, "rolling")
+    prem = None if pr is None else pr["pts"].get("15")
+    iv15 = num(g(a, "iv", "moves", "rolling_atm", "15"))
+    flip = num(g(a, "structure", "gex", "flip"))
+    eff = evidence(a, {}).get("eff") or {}
+    gamma_pts, theta_pts = (eff.get("causes") or {}).get(_CONVEXITY_KEY), eff.get("expected_decay")
+
+    gates: dict[str, dict[str, Any]] = {}
+    if prem is None:
+        gates["premium_decay"] = _gate("UNKNOWN", "Not enough stored minutes", val_15m=None)
+    elif prem <= RADAR_PREM_MAX_PTS:
+        gates["premium_decay"] = _gate("PASS", f"Decaying ({prem:+.1f} pts)", val_15m=prem)
+    else:
+        gates["premium_decay"] = _gate("FAIL", f"Expanding ({prem:+.1f} pts)", val_15m=prem)
+    if iv15 is None:
+        gates["volatility_shock"] = _gate("UNKNOWN", "No IV reading", val_15m=None)
+    elif iv15 <= RADAR_IV_MAX_PTS:
+        gates["volatility_shock"] = _gate("PASS", f"{'Cooling' if iv15 <= 0 else 'Stable'} ({iv15:+.2f} vol)", val_15m=iv15)
+    else:
+        gates["volatility_shock"] = _gate("FAIL", f"IV spike ({iv15:+.2f} vol)", val_15m=iv15)
+    on = {f["id"] for f in regime["flags"]}
+    trend_on = [i for i in ("ACTIVE_SHORT_SQUEEZE", "VWAP_TREND_DETACHMENT", "IB_EXPANSION_TREND") if i in on]
+    if not lr or not lr.get("any_known"):
+        gates["regime_squeeze"] = _gate("UNKNOWN", "No squeeze or regime reading yet")
+    elif trend_on:
+        gates["regime_squeeze"] = _gate("FAIL", "Active squeeze / trend" if "ACTIVE_SHORT_SQUEEZE" in on else "Trend day risk: " + ", ".join(_REASON_NAMES[i].lower() for i in trend_on), flags=trend_on)
+    elif "PUT_FLOOR_ADVANCING" in on:
+        gates["regime_squeeze"] = _gate("WARN", "Put floor advancing", flags=["PUT_FLOOR_ADVANCING"])
+    elif lr.get("label") == "DECAY_FAVOURED":
+        gates["regime_squeeze"] = _gate("PASS", f"Mean-reverting box (opening range {g(lr, 'ib', 'ratio'):.2f}x the daily move)", flags=[])
+    else:
+        known = sum(1 for k in ("ib", "squeeze", "put_floor", "vwap") if g(lr, k, "status") == "ok")
+        gates["regime_squeeze"] = _gate("PASS", f"No squeeze or trend flag ({known} of 4 readings available)", flags=[])
+    if flip is None or spot is None:
+        gates["structure_flip"] = _gate("UNKNOWN", "No modelled gamma flip", flip=flip, spot=spot)
+    else:
+        label = f"Spot {spot - flip:+.0f} pts from flip ({flip:.0f})"
+        gates["structure_flip"] = _gate("PASS" if spot >= flip - RADAR_FLIP_BUFFER_PTS else "WARN", label, flip=flip, spot=spot)
+
+    reasons: list[str] = [_REASON_NAMES[i] for i in trend_on]
+    if gates["premium_decay"]["status"] == "FAIL" or "premium_expansion" in flags_:
+        reasons.append("PREMIUM EXPANSION")
+    if gates["volatility_shock"]["status"] == "FAIL":
+        reasons.append("IV SPIKE")
+    if "convexity_blowout" in flags_ and gamma_pts is not None and theta_pts is not None:
+        reasons.append("GAMMA CONVEXITY")
+    detail = [f["message"] for f in regime["flags"] if f["id"] in trend_on]
+    if gates["premium_decay"]["status"] == "FAIL":
+        detail.append(f"Premiums are expanding ({prem:+.1f} pts in 15 min).")
+    if gates["volatility_shock"]["status"] == "FAIL":
+        detail.append(f"ATM IV is spiking ({iv15:+.2f} vol points in 15 min).")
+    if "convexity_blowout" in flags_ and gamma_pts is not None and theta_pts is not None:
+        detail.append(f"Realised convexity (+{gamma_pts:.1f} pts) is overwhelming theta ({theta_pts:.1f} pts).")
+    unknown = [k for k, v in gates.items() if v["status"] == "UNKNOWN"]
+    warns = [k for k, v in gates.items() if v["status"] == "WARN"]
+    if reasons:
+        verdict, badge = "BLOCKED", "RED"
+        headline = "DO NOT SELL — " + _join(reasons) + " DETECTED"
+        summary = " ".join(detail) if detail else "Do not sell."
+    elif warns:
+        verdict, badge = "SELECTIVE", "YELLOW"
+        headline = "SELECTIVE / CAUTION"
+        summary = " ".join(
+            ["Spot is below the modelled gamma flip, where moves tend to amplify." if "structure_flip" in warns else "", "Put open interest is being added much faster than call open interest while the index rises."
+             if "regime_squeeze" in warns else ""]).strip()  # fmt: skip
+    elif unknown:
+        verdict, badge = "INCOMPLETE", "GREY"
+        headline = "NO ALL-CLEAR — INCOMPLETE DATA"
+        summary = "Nothing fails, but not every gate could be read (" + ", ".join(unknown) + "): no all-clear."
+    else:
+        verdict, badge = "ALL_CLEAR_TO_SELL", "GREEN"
+        headline = "ALL CLEAR — PREMIUMS DECAYING (OK TO SELL MANUALLY)"
+        summary = "Premiums are decaying, IV is calm, no squeeze or trend flag is on and spot is above the modelled gamma flip."
+    return {"verdict": verdict, "badge": badge, "headline": headline, "summary": summary, "gates": gates, "reasons": reasons, "unknown": unknown, "regime": regime, "trade_setup": setup, "note": RADAR_NOTE}

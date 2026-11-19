@@ -481,3 +481,25 @@ describe("the redesigned page: a reading first, five tabs", () => {
     expect(screen.queryByTestId("sdi-tracker")).toBeNull(); // the numbers live in the other tabs
   });
 });
+
+describe("pre-flight radar on the overview", () => {
+  const pf = {
+    verdict: "BLOCKED", badge: "RED", headline: "DO NOT SELL — PREMIUM EXPANSION DETECTED", summary: "Premiums are expanding (+1.8 pts in 15 min).", reasons: ["PREMIUM EXPANSION"], unknown: ["regime_squeeze"], note: "provisional",
+    gates: { premium_decay: { status: "FAIL", label: "Expanding (+1.8 pts)", val_15m: 1.75 } }, regime: { label: null, ib_ratio: null, flags: [] },
+    trade_setup: { strike: 24000, spot: 24010, combined_premium: 170, ce_price: 80, pe_price: 90, stop_loss_pts: 200.6, stop_loss_pct: 18, re_strike_pts: 35 },
+  } as unknown as StraddleDecay["preflight"];
+
+  it("sits above the seller and buyer gauges on the opening tab", async () => {
+    mount({ ...rich(), preflight: pf });
+    const radar = await screen.findByTestId("preflight");
+    const reading = await screen.findByTestId("sdi-reading-card");
+    expect(radar.compareDocumentPosition(reading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy(); // the radar comes first in the page
+    expect(within(radar).getByTestId("preflight-summary")).toHaveTextContent("Premiums are expanding (+1.8 pts in 15 min)");
+  });
+
+  it("is not drawn when the answer carries no radar (a replay or a stored session)", async () => {
+    mount({ ...rich(), preflight: null });
+    await screen.findByTestId("sdi-reading-card");
+    expect(screen.queryByTestId("preflight")).toBeNull();
+  });
+});

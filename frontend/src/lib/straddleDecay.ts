@@ -53,6 +53,40 @@ export interface McContext {
   gex: Record<string, unknown> | null;
 }
 
+/** The pre-flight radar (backend `straddle_env.evaluate_preflight`): four gates read before selling the at-the-money straddle by hand. UNKNOWN = the input does not exist (never a pass). */
+export interface PreflightGate {
+  status: "PASS" | "FAIL" | "WARN" | "UNKNOWN";
+  label: string;
+  val_15m?: number | null;
+  flip?: number | null;
+  spot?: number | null;
+  flags?: string[];
+}
+
+export interface PreflightRegimeFlag { id: string; severity: string; message: string }
+
+export interface PreflightRadar {
+  verdict: "ALL_CLEAR_TO_SELL" | "SELECTIVE" | "BLOCKED" | "INCOMPLETE" | "NO_LIVE_DATA";
+  badge: "GREEN" | "YELLOW" | "RED" | "GREY";
+  headline: string;
+  summary: string;
+  gates: { premium_decay?: PreflightGate; volatility_shock?: PreflightGate; regime_squeeze?: PreflightGate; structure_flip?: PreflightGate };
+  reasons: string[];
+  unknown: string[];
+  regime: { label: string | null; ib_ratio: number | null; flags: PreflightRegimeFlag[] };
+  trade_setup: {
+    strike: number | null;
+    spot: number | null;
+    combined_premium: number | null;
+    ce_price: number | null;
+    pe_price: number | null;
+    stop_loss_pts: number | null;
+    stop_loss_pct: number;
+    re_strike_pts: number;
+  };
+  note: string;
+}
+
 export interface StraddleDecay {
   status: "ok" | "unavailable";
   message?: string;
@@ -126,6 +160,8 @@ export interface StraddleDecay {
   interpretation: { q: string; a: string }[];
   climate?: { label: "favourable" | "mixed" | "unfavourable" | "unknown"; tally: number; because: string[]; window: string; note: string };
   environment?: Environment | null;
+  /** the pre-flight radar; absent on a replay or a stored session */
+  preflight?: PreflightRadar | null;
   environment_note?: string;
   environment_trend?: Record<"seller" | "buyer", { now: number | null; m15: number | null; m30: number | null }> | null;
   context?: McContext | null;

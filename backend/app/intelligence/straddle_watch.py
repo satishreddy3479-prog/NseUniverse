@@ -88,6 +88,18 @@ def detect(prev: Sequence[Mapping[str, Any]], cur: Mapping[str, Any], cfg: Mappi
     h, cv, ph, pc = _g(cur, "flow", "heavy15"), _g(cur, "flow", "cvd"), _g(p1, "flow", "heavy15"), _g(p1, "flow", "cvd")
     if None not in (h, cv, ph, pc) and h * cv < 0 and ph * pc < 0 and abs(h) >= cfg["heavy_level"] and abs(cv) >= cfg["cvd_level"] and not (ph * pc < 0 and abs(ph) >= cfg["heavy_level"] and abs(pc) >= cfg["cvd_level"]):
         add("Heavyweight CVD divergence", "medium", "neutral", f"Heavyweight CVD ({h:+.0f}) and futures CVD ({cv:+.1f}%) point opposite ways (both estimates)", [])
+    # live regime and squeeze readings (live_regime.py): the snapshot carries which flags were on that minute and their sentences
+    lv, p1v, p3v = cur.get("live") or {}, _g(p1, "live") or {}, _g(_ago(prev, 3), "live") or {}
+    on, was, before = set(lv.get("flags") or []), set(p1v.get("flags") or []), set(p3v.get("flags") or [])
+    msgs = lv.get("messages") or {}
+    if "ACTIVE_SHORT_SQUEEZE" in on and "ACTIVE_SHORT_SQUEEZE" in was and "ACTIVE_SHORT_SQUEEZE" not in before:
+        add("Short squeeze detected", "high", "bearish", msgs.get("ACTIVE_SHORT_SQUEEZE") or "Index rising while futures open interest unwinds", ["price up, futures open interest down (15 minutes)"])
+    if "IB_EXPANSION_TREND" in on and "IB_EXPANSION_TREND" not in was:
+        add("Opening range expansion (wide IB)", "high", "neutral", msgs.get("IB_EXPANSION_TREND") or "The opening 30 minutes were wide against the implied daily move", ["initial balance against the implied daily SD"])
+    if "PUT_FLOOR_ADVANCING" in on and "PUT_FLOOR_ADVANCING" in was and "PUT_FLOOR_ADVANCING" not in before:
+        add("Put floor advancing aggressively", "medium", "bullish", msgs.get("PUT_FLOOR_ADVANCING") or "Put open interest is being added much faster than call open interest while the index rises", ["15-minute option open-interest additions"])
+    if "VWAP_TREND_DETACHMENT" in on and "VWAP_TREND_DETACHMENT" in was and "VWAP_TREND_DETACHMENT" not in before:
+        add("VWAP trend runaway", "high", "neutral", msgs.get("VWAP_TREND_DETACHMENT") or "The index has stayed on one side of the VWAP and has moved away from it", ["minutes on one side of the VWAP"])
     # environment scores over 10 minutes
     ss, s10 = cur.get("seller"), _g(p10, "seller")
     if ss is not None and s10 is not None and s10 - ss >= cfg["score_move"]:

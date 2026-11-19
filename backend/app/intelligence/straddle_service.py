@@ -18,7 +18,13 @@ from zoneinfo import ZoneInfo
 
 from app.domain.session import session_close
 from app.intelligence import fusion as fz
-from app.intelligence import straddle, straddle_env, straddle_validation, straddle_watch
+from app.intelligence import (
+    live_regime,
+    straddle,
+    straddle_env,
+    straddle_validation,
+    straddle_watch,
+)
 from app.intelligence.straddle_store import StraddleStore
 from app.storage.observations import to_ms
 
@@ -73,6 +79,9 @@ def snapshot(a: Mapping[str, Any], env: Mapping[str, Any], last: straddle.Snap |
         "gex": {"net": gx.get("net"), "flip": flip, "side": None if flip is None or spot is None else (1 if spot > flip else -1), "dist_pts": gx.get("flip_distance_pts")},
         "flow": {"orderflow": ev.get("orderflow"), "heavy15": ev.get("heavy15"), "cvd": ev.get("cvd"), "vwap_pct": ev.get("vwap_pct"), "positioning": ev.get("positioning")},
         "flags": [f["id"] for f in g(env, "seller", "flags") or []],
+        "track": g(a, "live_regime", "track"),
+        "live": {"flags": [f["id"] for f in g(a, "live_regime", "flags") or []], "messages": {f["id"]: f["message"] for f in g(a, "live_regime", "flags") or []}, "label": g(a, "live_regime", "label"),
+                 "ib_ratio": g(a, "live_regime", "ib", "ratio")},
     }  # fmt: skip
 
 
@@ -212,8 +221,13 @@ class StraddleDecay:
                     recent = [r["seller"] for r in self.store.rows(day.isoformat(), 2, newest_first=True)][::-1] if self.store is not None else []
                     env = straddle_env.assess(out, mi, recent)
                     out["environment"], out["context"], out["sources"] = env, mi_context(mi), sources(mi, out)
+                    last_oi = snaps[-1].oi if snaps else None
+                    trk = live_regime.track_now(last_oi, (out.get("spot") or [None])[-1], mi)
+                    hist = [(r["at"], (r["data"] or {}).get("track")) for r in self.store.rows(day.isoformat(), 120, newest_first=True)] if self.store is not None else []
+                    out["live_regime"] = live_regime.evaluate_live_regime(out, mi, trk, hist)
+                    out["preflight"] = straddle_env.evaluate_preflight(out, env, out["live_regime"])
                 else:
-                    out["environment"], out["context"] = None, None
+                    out["environment"], out["context"], out["preflight"], out["live_regime"] = None, None, None, None
                     out["environment_note"] = "Buyer and seller environments are computed for the live session only (they read live flow and positioning). The recorded history below is what was stored."
                 out |= self._history(day.isoformat(), until=as_of)
             if as_of is not None:

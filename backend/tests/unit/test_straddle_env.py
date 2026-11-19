@@ -428,3 +428,21 @@ def test_the_pressure_reading_is_shown_as_context_and_does_not_move_the_side_ris
     assert side_risk(ev, {"value": None, "label": "unavailable"}, +1)["context"] is None
     only = side_risk({**ev, "dce30": None, "accel": None}, {"value": 0.9, "label": "u"}, +1)
     assert only["risk"] is None and only["context"]["value"] == 0.9  # pressure alone never makes a risk score
+
+
+class TestPreflightVerdicts:
+    """The two verdicts the pre-flight radar spec names; the full matrix of gates and boundaries is in test_straddle_preflight.py and the detectors in test_live_regime.py."""
+
+    def test_evaluate_preflight_is_blocked_on_short_squeeze_conditions(self) -> None:
+        from tests.unit.test_straddle_preflight import SQUEEZE, analysis, regime
+
+        out = env.evaluate_preflight(analysis(prem15=1.75, gamma=16.0, theta=10.0), {"seller": {"flags": env.flags(env.evidence(analysis(gamma=16.0, theta=10.0), {}))}}, regime(SQUEEZE, label="TREND_RISK"))
+        assert out["verdict"] == "BLOCKED" and out["badge"] == "RED" and out["gates"]["regime_squeeze"]["status"] == "FAIL"
+        assert out["headline"].startswith("DO NOT SELL — SHORT SQUEEZE") and "Do not sell at-the-money calls or straddles" in out["summary"]
+
+    def test_evaluate_preflight_is_all_clear_around_the_vwap_with_a_falling_premium(self) -> None:
+        from tests.unit.test_straddle_preflight import analysis, regime
+
+        a = analysis(prem15=-4.2, iv15=-0.2)
+        out = env.evaluate_preflight(a, {"seller": {"flags": env.flags(env.evidence(a, {}))}}, regime(label="UNCLEAR"))
+        assert out["verdict"] == "ALL_CLEAR_TO_SELL" and out["badge"] == "GREEN" and out["reasons"] == [] and out["gates"]["premium_decay"]["label"] == "Decaying (-4.2 pts)"

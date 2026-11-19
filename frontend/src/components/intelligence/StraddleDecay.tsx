@@ -9,6 +9,7 @@ import { EChart, useChartColors } from "../EChart";
 import { pill } from "../dashboard/PriceBoards";
 import { useReplay } from "../dashboard/ReplayContext";
 import { StraddleGlance } from "./StraddleGlance";
+import { StraddlePreflightCard } from "./StraddlePreflightCard";
 import { StraddleReadingCard } from "./StraddleReading";
 import { TabPanel, Tabs, type TabDef } from "../swing/shared";
 
@@ -177,6 +178,7 @@ export function StraddleDecayPanel() {
 
       {tab === "overview" && (
         <TabPanel id="overview">
+          <StraddlePreflightCard d={d} />
           <StraddleReadingCard d={d} mode={mode} />
           <StraddleGlance d={d} mode={mode} setMode={setMode} part="history" />
         </TabPanel>
