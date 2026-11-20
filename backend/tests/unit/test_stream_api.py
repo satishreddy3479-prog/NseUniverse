@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
@@ -20,6 +21,8 @@ from app.domain.models import (
 )
 from app.services.universe import tokens_from_snapshots
 from app.storage.store import SnapshotStore
+from app.stream.manager import WIRE_EXCLUDE, wire_tick
+from app.stream.models import LiveTick
 from tests.conftest import make_app
 
 LOCAL = ("127.0.0.1", 50000)
@@ -227,3 +230,41 @@ def test_daily_login_status_is_exposed(tmp_path: Path) -> None:
         body = c.get("/api/broker/daily-login").json()
         assert body["enabled"] is True and body["time_ist"] == "08:30"
         assert body["done_today"] in (True, False)
+
+
+def test_a_streamed_tick_drops_the_fields_the_browser_never_reads_and_keeps_the_rest() -> None:
+    # the real NIFTY 25550 CE tick read from the server's stream on 20 Nov 2026
+    tick = LiveTick(
+        key="nse_fo|64475",
+        kind="scrip",
+        exchange_segment="nse_fo",
+        instrument_token="64475",
+        trading_symbol="NIFTY26NOV25550CE",
+        ltp=113.15,
+        open=58.05,
+        high=118.8,
+        low=48.3,
+        prev_close=124.6,
+        volume=127749310,
+        oi=10319205,
+        net_change=-11.45,
+        net_change_pct=-9.19,
+        last_trade_time_raw=1795151862,
+        last_update_time_raw=1795151862,
+        bid=113.15,
+        ask=113.45,
+        bid_qty=1365,
+        ask_qty=585,
+        total_buy_qty=4799340,
+        total_sell_qty=934960,
+        last_trade_qty=65,
+        avg_price=97.94,
+        received_at=datetime(2026, 11, 20, 5, 17, 42, 886249, tzinfo=UTC),
+        seq=63749,
+    )
+    full, slim = tick.model_dump(mode="json"), wire_tick(tick)
+    assert set(full) - set(slim) == set(WIRE_EXCLUDE)
+    assert slim == {k: v for k, v in full.items() if k not in WIRE_EXCLUDE}
+    page_reads = {"key", "kind", "ltp", "open", "high", "low", "prev_close", "volume", "oi"}
+    assert page_reads | {"net_change", "received_at", "seq", "source"} <= set(slim)
+    assert len(json.dumps(slim)) < 0.7 * len(json.dumps(full))  # measured on this tick: about 0.6
