@@ -6,6 +6,7 @@ is the ATM strike of that snapshot plus ``each_side`` listed strikes on both sid
 
 from __future__ import annotations
 
+from array import array
 from datetime import datetime
 from typing import Any
 
@@ -131,9 +132,83 @@ _COMPARE = (
 )  # fmt: skip
 
 
-# A stored snapshot is immutable, so its observation is computed once (a day holds hundreds).
-_CACHE: dict[tuple[str, int, frozenset[float] | None], Observation] = {}
-_CACHE_MAX = 20000
+# A stored snapshot is immutable, so what is read from it is read once. The cache holds a compact digest of every strike (not an Observation for one strike set): the strike set follows the
+# newest snapshot's at-the-money strike, so every time the index crosses a strike boundary a cache keyed by it was cold for the whole day and the page waited about 2.7 s (20 Nov 2026,
+# measured on the server) while every stored file was read again. A digest is 9 numbers a strike (about 11 kB a snapshot), so 1,500 of them stay near 17 MB.
+_FIELDS = 9  # per strike: strike, call present, call ltp, call oi, call volume, put present, put ltp, put oi, put volume (NaN = missing)
+_NAN = float("nan")
+_CACHE_MAX = 1500
+
+
+class _Digest:
+    __slots__ = ("atm_call_ltp", "atm_put_ltp", "atm_strike", "prev_close", "retrieved_at", "rows", "session_id", "snapshot_id", "underlying_ltp")
+
+    def __init__(self, snap: OptionChainSnapshot, atm_row: Any) -> None:
+        def num(v: float | None) -> float:
+            return _NAN if v is None else float(v)
+
+        self.snapshot_id, self.retrieved_at, self.session_id = snap.snapshot_id, snap.retrieved_at, snap.session_id
+        self.underlying_ltp, self.prev_close = snap.underlying_ltp, snap.underlying_prev_close
+        self.atm_strike = atm_row.strike if atm_row else None
+        self.atm_call_ltp = atm_row.call.ltp if atm_row and atm_row.call else None
+        self.atm_put_ltp = atm_row.put.ltp if atm_row and atm_row.put else None
+        flat: list[float] = []
+        for r in snap.rows:
+            c, p = r.call, r.put
+            flat += [float(r.strike), 1.0 if c else 0.0, num(c.ltp) if c else _NAN, num(c.oi) if c else _NAN, num(c.volume) if c else _NAN,
+                     1.0 if p else 0.0, num(p.ltp) if p else _NAN, num(p.oi) if p else _NAN, num(p.volume) if p else _NAN]  # fmt: skip
+        self.rows = array("d", flat)
+
+
+def _digest(snap: OptionChainSnapshot, each_side: int) -> _Digest:
+    """The digest of a snapshot: its ATM row follows the same rule as ``observe`` (the universe rule only decides the ATM here, the strike set is the caller's)."""
+    return _Digest(snap, _universe(snap, each_side)[1])
+
+
+def _observe_digest(d: _Digest, fixed: frozenset[float]) -> Observation:
+    """The same Observation ``observe(snap, each_side, fixed)`` gives, from a digest: sums are taken in strike order over the strikes in ``fixed``, missing values skipped."""
+    rows = d.rows
+    ce: list[list[float]] = [[], [], []]  # ltp, oi, volume of the calls present
+    pe: list[list[float]] = [[], [], []]
+    n = missing = 0
+    for i in range(0, len(rows), _FIELDS):
+        if rows[i] not in fixed:
+            continue
+        n += 1
+        for present, base, out in ((rows[i + 1], i + 2, ce), (rows[i + 5], i + 6, pe)):
+            if present:
+                if rows[base] != rows[base]:  # NaN: no last traded price
+                    missing += 1
+                for k in range(3):
+                    v = rows[base + k]
+                    if v == v:
+                        out[k].append(v)
+
+    def total(vals: list[float]) -> float | None:
+        return sum(vals) if vals else None
+
+    return Observation(
+        snapshot_id=d.snapshot_id,
+        retrieved_at=d.retrieved_at,
+        session_id=d.session_id,
+        underlying_ltp=d.underlying_ltp,
+        underlying_prev_close=d.prev_close,
+        atm_strike=d.atm_strike,
+        atm_call_ltp=d.atm_call_ltp,
+        atm_put_ltp=d.atm_put_ltp,
+        straddle=d.atm_call_ltp + d.atm_put_ltp if d.atm_call_ltp is not None and d.atm_put_ltp is not None else None,
+        total_ce_premium=total(ce[0]),
+        total_pe_premium=total(pe[0]),
+        total_ce_oi=total(ce[1]),
+        total_pe_oi=total(pe[1]),
+        total_ce_volume=total(ce[2]),
+        total_pe_volume=total(pe[2]),
+        strikes_in_universe=n,
+        missing_ltp=missing,
+    )
+
+
+_CACHE: dict[str, _Digest] = {}
 
 
 def _fixed_strikes(
@@ -160,17 +235,22 @@ def build_history(
     fixed = _fixed_strikes(store, items, each_side)
     obs: list[Observation] = []
     for s in items:
-        key = (s.snapshot_id, each_side, fixed)
-        cached = _CACHE.get(key)
-        if cached is None:
+        if fixed is None:  # no newest snapshot to anchor the strike set: each snapshot re-centres on its own ATM (not cached, a rare case)
             snap = store.load(s.snapshot_id)
             if snap is None:
                 continue
-            cached = observe(snap, each_side, fixed)
-            if len(_CACHE) >= _CACHE_MAX:
-                _CACHE.clear()
-            _CACHE[key] = cached
-        o = cached.model_copy()  # only same_as_previous depends on the neighbouring snapshot
+            o = observe(snap, each_side, None)
+        else:
+            d = _CACHE.get(s.snapshot_id)
+            if d is None:
+                snap = store.load(s.snapshot_id)
+                if snap is None:
+                    continue
+                d = _digest(snap, each_side)
+                if len(_CACHE) >= _CACHE_MAX:
+                    _CACHE.clear()
+                _CACHE[s.snapshot_id] = d
+            o = _observe_digest(d, fixed)
         if obs and all(getattr(o, f) == getattr(obs[-1], f) for f in _COMPARE):
             o.same_as_previous = True
         obs.append(o)
