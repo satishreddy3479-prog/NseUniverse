@@ -159,6 +159,15 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
   const histEnd = d.history?.times?.length ? d.history.times[d.history.times.length - 1] : null;
   const generatedMs = d.generated_at ? new Date(d.generated_at).getTime() : NaN;
   const histLive = Number.isFinite(generatedMs) && isSessionMs(generatedMs);
+  // minutes with no score: a score needs at least half of its evidence inputs, and several (15 to 30 minute windows) do not exist in the first minutes; the chart leaves them blank, never as neutral
+  const blank = (vals: (number | null)[] | undefined, label: string): string | null => {
+    const times = d.history?.times ?? [];
+    const idx = (vals ?? []).flatMap((v, i) => (v == null ? [i] : []));
+    if (!idx.length || times.length !== (vals ?? []).length) return null;
+    const first = times[idx[0] as number], last = times[idx[idx.length - 1] as number];
+    return `${label}: no score ${idx.length === 1 ? `at ${fmtTimeIST(first).slice(0, 5)}` : `for ${idx.length} minutes (${fmtTimeIST(first).slice(0, 5)} to ${fmtTimeIST(last).slice(0, 5)} IST)`}`;
+  };
+  const gaps = [blank(d.history?.seller, "Seller"), blank(d.history?.buyer, "Buyer")].filter((x): x is string => x != null);
   const fixedChg = tr?.fixed.straddle.change ?? null;
   const rollChg = tr?.rolling.adjusted_change ?? null;
   const sellerPnl = (pts: number | null) => (pts == null || lot == null ? null : -pts * lot);
@@ -251,6 +260,7 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
         <section aria-label="Score history" className="rounded-xl border border-rule bg-ink/40 p-3">
           <h4 className="text-sm font-semibold text-paper">How the scores moved today</h4>
           <div className="mt-1 h-[190px]"><EChart group="sdi" option={hist} ariaLabel="Seller and buyer environment score history" /></div>
+          {gaps.length > 0 && <p className="text-[11px] text-muted" data-testid="sdi-hist-gaps">{gaps.join(". ")}. A score needs at least half of its evidence inputs, and several of them need 15 to 30 stored minutes, so the line starts later; a missing reading is left blank, never counted as neutral.</p>}
           <p className="text-[11px] text-muted" data-testid="sdi-hist-note">{histLive ? "One recorded reading per minute; the last point is the current reading shown in the gauges above." : `One recorded reading per minute. The market is closed: the chart ends at the last recorded minute${histEnd ? ` (${fmtTimeIST(histEnd)})` : ""}.`}</p>
         </section>
       )}

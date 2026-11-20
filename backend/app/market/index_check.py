@@ -36,26 +36,27 @@ def minute_key(at: datetime) -> str:
 
 
 def bar_offsets(bars: Sequence[Mapping[str, object]], futures: Mapping[str, float], field: str = "c") -> list[float | None]:
-    """For each bar (``at`` ISO minute start, ``c`` close, ``n`` reads) the basis of ``field`` (c, h or l) minus the median basis of the bars within ``NEIGHBOURS`` minutes (itself excluded), in points.
-    ``futures`` maps a minute key to the future's last price in that minute. None where the bar or its neighbours have no future price."""
+    """For each bar (``at`` ISO minute start, ``o``/``h``/``l``/``c``, ``n`` reads) the basis of ``field`` minus the median basis of the bars within ``NEIGHBOURS`` minutes (itself excluded), in points.
+
+    ``futures`` maps a minute key to the future's price taken within seconds of that minute starting, so it is a price of the minute's START. It is only comparable with an index level of the same moment:
+    the reference basis is future minus the bar's OPEN, and a bar's close is compared with the next minute's future price (the end of this minute). Comparing a start-of-minute future with
+    the close of a minute in which NIFTY moved 40 points flagged good bars at the open (20 Nov 2026, 09:18 and 09:25: the index continued smoothly from the previous bar, n = 60 reads).
+    The high and low are compared with the start-of-minute future and the wider allowance. None where the bar, its future price or its neighbours are missing (the newest bar has no next-minute price yet)."""
     keys = [minute_key(datetime.fromisoformat(str(b["at"]))) for b in bars]
+    stamps = [datetime.fromisoformat(str(b["at"])).timestamp() for b in bars]
     basis: list[float | None] = []
     for b, k in zip(bars, keys, strict=True):
-        f, c = futures.get(k), b.get("c")  # the neighbours' reference is always built from closes
+        f, o = futures.get(k), b.get("o")  # the neighbours' reference is always built from opens: the same moment as the future's price
         thin = isinstance(b.get("n"), int) and int(b["n"]) < THIN_READS  # type: ignore[call-overload]
-        basis.append(None if f is None or not isinstance(c, (int, float)) or thin else float(f) - float(c))
+        basis.append(None if f is None or not isinstance(o, (int, float)) or thin else float(f) - float(o))
     out: list[float | None] = []
-    stamps = [datetime.fromisoformat(str(b["at"])).timestamp() for b in bars]
     for i, b in enumerate(bars):
-        c, f, x = b.get("c"), futures.get(keys[i]), b.get(field)
-        if f is None or not isinstance(c, (int, float)) or not isinstance(x, (int, float)):
+        o, x = b.get("o"), b.get(field)
+        f = futures.get(minute_key(datetime.fromisoformat(str(b["at"])) + timedelta(minutes=1))) if field == "c" else futures.get(keys[i])
+        if f is None or not isinstance(o, (int, float)) or not isinstance(x, (int, float)):
             out.append(None)
             continue
-        near = [
-            b
-            for j, b in enumerate(basis)
-            if j != i and b is not None and abs(stamps[j] - stamps[i]) <= NEIGHBOURS * 60
-        ]
+        near = [v for j, v in enumerate(basis) if j != i and v is not None and abs(stamps[j] - stamps[i]) <= NEIGHBOURS * 60]
         if len(near) < MIN_NEIGHBOURS:
             out.append(None)
             continue

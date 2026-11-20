@@ -17,10 +17,27 @@ def test_a_bar_far_from_the_future_is_flagged_and_the_rest_are_not() -> None:
     # 30 minutes with the future 10 points above the index (basis +10); minute 12 closes 75 points above where the future says the index is
     bars = [bar(i, 25400.0 + (i % 5)) for i in range(30)]
     futs = {minute_key(T0 + timedelta(minutes=i)): 25410.0 + (i % 5) for i in range(30)}
-    bars[12] = bar(12, 25487.0)  # the future of minute 12 is 25,412, so this bar's basis is 25,412 - 25,487 = -75 against the median +10: off = -85
+    bars[12] = bar(12, 25487.0)  # a close is compared with the NEXT minute's future (the end of the minute): 25,413 - 25,487 = -74 against the median +10 (opens): off = -84
     flag_bars(bars, futs)
     assert [i for i, b in enumerate(bars) if "off" in b] == [12]
-    assert bars[12]["off"] == -85.0
+    assert bars[12]["off"] == -84.0
+
+
+def test_a_fast_minute_with_a_steady_gap_to_the_future_is_not_flagged_but_a_real_jump_is() -> None:
+    # 20 Nov 2026 09:18 IST, real stored values: future 25,422.1 at the start of the minute, 25,460.0 at the start of the next; the index ran 25,445.70 -> 25,486.35 (+40.65) in the minute and
+    # continued from the previous close 25,444.65. The opens sit a steady 18 to 24 below the index, so the gap is about -23.6 at the open and -26.4 at the close (25,460.0 - 25,486.35):
+    # compared start-of-minute future against the close the gap was -64.2 and the bar was flagged (-41.4) though the index feed was right.
+    opens = [25367.9, 25369.15, 25428.45, 25445.7, 25484.4, 25455.6, 25454.9, 25447.65, 25470.35, 25458.05, 25466.1, 25433.15]
+    closes = [25370.75, 25437.3, 25444.65, 25486.35, 25457.4, 25451.7, 25447.8, 25473.4, 25454.9, 25465.55, 25433.0, 25435.5]
+    fut = [25355.6, 25350.0, 25410.0, 25422.1, 25460.0, 25431.0, 25436.0, 25430.0, 25448.8, 25440.5, 25441.5, 25400.5, 25402.7]
+    t0 = datetime(2026, 11, 20, 3, 45, tzinfo=UTC)  # 09:15 IST
+    bars = [{"at": (t0 + timedelta(minutes=i)).isoformat(), "o": o, "h": max(o, c) + 3, "l": min(o, c) - 3, "c": c, "n": 60} for i, (o, c) in enumerate(zip(opens, closes, strict=True))]
+    futs = {minute_key(t0 + timedelta(minutes=i)): f for i, f in enumerate(fut)}
+    flag_bars(bars, futs)
+    assert all("off" not in b for b in bars)
+    bars[3]["c"] = 25486.35 + 90.0  # a feed that really jumped 90 points at the close is still caught (a hand-picked, real-sized fault)
+    flag_bars(bars, futs)
+    assert "off" in bars[3]
 
 
 def test_a_wild_high_or_low_inside_a_good_close_is_flagged_with_the_wider_allowance() -> None:

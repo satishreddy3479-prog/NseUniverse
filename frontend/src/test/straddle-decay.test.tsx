@@ -344,6 +344,16 @@ describe("audit fixes (12 Nov 2026)", () => {
     expect(screen.getByTestId("sdi-hist-note")).toHaveTextContent("last point is the current reading");
   });
 
+  itIn("overview", "minutes with no score are named under the chart (real 20 Nov: buyer coverage 0.48 at 09:17 and 09:18, below the 0.5 minimum) and not drawn as neutral", async () => {
+    const d = rich();
+    const times = ["2026-11-20T03:47:00Z", "2026-11-20T03:48:00Z", "2026-11-20T03:49:00Z", "2026-11-20T03:50:00Z"]; // 09:17 to 09:20 IST
+    mount({ ...d, generated_at: "2026-11-20T04:20:30Z", history: { times, seller: [47, 38.7, 36.7, 34], buyer: [null, null, 68.3, 69.2], regime: [null, null, null, null], eff30: [null, null, null, null], spot: [1, 2, 3, 4] } });
+    const gaps = await screen.findByTestId("sdi-hist-gaps");
+    expect(gaps).toHaveTextContent("Buyer: no score for 2 minutes (09:17 to 09:18 IST)");
+    expect(gaps).not.toHaveTextContent("Seller:");
+    expect(gaps).toHaveTextContent("never counted as neutral");
+  });
+
   itIn("overview", "after the close the history ends at the last recorded minute instead of drawing a flat line to the time the page was opened", async () => {
     const d = rich();
     mount({ ...d, generated_at: "2026-11-11T12:16:00Z", history: { times: ["2026-11-11T09:58:00Z", "2026-11-11T09:59:00Z"], seller: [60.2, 48.7], buyer: [48, 53.7], regime: [null, null], eff30: [null, null], spot: [1, 2] } }); // opened at 17:46 IST
