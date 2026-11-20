@@ -139,7 +139,14 @@ def create_risk(settings: Settings, store: SnapshotStore, stream: StreamManager)
         portfolio=portfolio,
         config_error=error,
     )
-    return RiskService(store, settings.underlying, lambda: stream.book, cfg)
+
+    def live_book() -> Any:
+        # With the market closed the feed still repeats the last quotes and each repeat renews a
+        # tick's receive time, so a tick can look fresh for hours: no live book is used then, and
+        # the surface says it is built from the stored chain.
+        return None if stream.market.state == "closed" else stream.book
+
+    return RiskService(store, settings.underlying, live_book, cfg)
 
 
 def create_app(settings: Settings | None = None, broker: MarketDataBroker | None = None) -> FastAPI:

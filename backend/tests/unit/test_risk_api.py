@@ -31,7 +31,7 @@ from app.risk.pricing import CALL, PUT, black76, years_between
 from app.risk.svi import SVIParams
 from app.risk.whatif import Leg, Scenario, WhatIfEngine
 from app.stream.models import LiveTick
-from tests.conftest import make_app
+from tests.conftest import make_app, make_settings
 
 IST = ZoneInfo("Asia/Kolkata")
 NOW = datetime(2026, 10, 28, 5, 30, tzinfo=UTC)  # 11:00 IST, a Wednesday
@@ -188,6 +188,23 @@ def test_a_live_book_is_preferred_to_the_stored_last_price_and_a_stale_tick_is_n
     app.state.stream.book.update(tick(f"{E1[-2:]}25600CE", stale, 1.0, 2.0))
     again = get(c, f"/api/risk/surface?expiry={E1}")
     assert again["data"][0]["live_books"] == 1  # the stale tick was ignored
+
+
+def test_no_live_book_is_used_while_the_market_is_closed(tmp_path: Path) -> None:
+    """After the close the feed repeats the last quotes and every repeat renews a tick's receive time: found on the server at 00:47 IST on a Saturday, where the surface said "live" for a nine-hour-old chain."""
+    from types import SimpleNamespace
+
+    from app.main import create_risk
+    from app.stream.book import LiveBook
+
+    book = LiveBook()
+    stream = SimpleNamespace(book=book, market=SimpleNamespace(state="closed"))
+    svc = create_risk(make_settings(tmp_path), None, stream)  # type: ignore[arg-type]
+    assert svc._book() is None  # noqa: SLF001
+    stream.market.state = "open"
+    assert svc._book() is book  # noqa: SLF001
+    stream.market.state = "unknown"
+    assert svc._book() is book  # noqa: SLF001 - an unreported state does not hide a fresh book (the tick's own age still decides)
 
 
 # ------------------------------------------------------------------ chain Greeks
