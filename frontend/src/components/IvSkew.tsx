@@ -31,11 +31,10 @@ export function IvSkewBody({ expiry }: { expiry: string | null }) {
   const c = useChartColors();
   const [view, setView] = useState<(typeof VIEWS)[number]>("Smile");
   const q = useQuery({ queryKey: ["ivSkew", expiry], queryFn: () => api.intradayIvSkew(expiry!), enabled: !!expiry, refetchInterval: 30_000, retry: false });
-  // comparison session: the previous stored session of the same expiry unless the user picks another or none
-  const [picked, setPicked] = useState<string | null | undefined>(undefined);
+  // comparison session: none until the user picks one (an earlier session's dashed curves under today's live smile read as part of today's chart)
+  const [picked, setPicked] = useState<string | null>(null);
   const sessionList = q.data?.sessions ?? [];
-  const prevDefault = sessionList.length >= 2 ? sessionList[sessionList.length - 2]! : null;
-  const cmpSession = picked === undefined ? prevDefault : picked;
+  const cmpSession = picked;
   const cmpQ = useQuery({ queryKey: ["ivSkew", expiry, cmpSession], queryFn: () => api.intradayIvSkew(expiry!, cmpSession!), enabled: !!expiry && !!cmpSession && view === "Smile", staleTime: 300_000, retry: false });
   // Live: while the stream is fresh the smile and every measure are recomputed from the option chain's live prices on each tick,
   // exactly as the old skew widget did. The stored chain (a sample a minute) is the source when the stream is not live, and it

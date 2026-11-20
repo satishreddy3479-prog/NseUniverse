@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../lib/api";
-import { MISSING } from "../lib/format";
+import { hhmmIST, MISSING } from "../lib/format";
 import { METRICS } from "../lib/metricRegistry";
 import type { PremiumBasketPoint, PremiumBaskets } from "../lib/types";
 import { EChart, useChartColors } from "./EChart";
@@ -11,7 +11,7 @@ const WINDOWS = [["5", "ATM ±5"], ["10", "ATM ±10"], ["20", "ATM ±20"], ["all
 const VIEWS = [["abs", "Absolute premium"], ["idx", "Normalised (open = 100)"], ["chg", "Change since open"], ["pct", "% change since open"]] as const;
 const f = (v: number | null | undefined, d = 2) => (v == null ? MISSING : v.toFixed(d));
 const sg = (v: number | null | undefined, d = 2) => (v == null ? MISSING : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}`);
-const hhmm = (iso: string) => iso.slice(11, 16);
+const hhmm = hhmmIST;
 
 /** Worked example from the newest point: the change, percentage and asymmetry restated from the totals on screen. */
 export function premiumExample(d: PremiumBaskets): string[] {

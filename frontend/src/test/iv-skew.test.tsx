@@ -62,6 +62,15 @@ describe("Volatility Skew", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Term" }));
     expect(screen.getByTestId("ivskew-term")).toBeInTheDocument();
   });
+  it("draws no earlier session on the smile until one is picked (20 Nov: the previous day's dashed curves were drawn by default)", async () => {
+    const calls = mock({ "/api/intraday/iv-skew": { ...skew, sessions: ["2026-11-04", "2026-11-05"] } });
+    wrap(<IvSkewBody expiry="2026-11-10" />);
+    const select = (await screen.findByLabelText("Compare with session")) as HTMLSelectElement;
+    expect(select.value).toBe(""); // none
+    expect(calls.filter((u) => u.includes("session="))).toEqual([]); // no earlier session was fetched
+    fireEvent.change(select, { target: { value: "2026-11-04" } });
+    expect(select.value).toBe("2026-11-04");
+  });
   it("says why when nothing is stored", async () => {
     mock({ "/api/intraday/iv-skew": { status: "no stored option-chain sample for this expiry", smile: [], term: [] } });
     wrap(<IvSkewBody expiry="2026-11-10" />);

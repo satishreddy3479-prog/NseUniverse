@@ -53,6 +53,11 @@ export function fmtTimeIST(iso: string | null | undefined): string {
   return iso ? `${istTime.format(new Date(iso))} IST` : MISSING;
 }
 
+/** HH:MM in Asia/Kolkata of an ISO time of any offset: stored series carry UTC times, and slicing the text would draw the axis 5 h 30 min early. */
+export function hhmmIST(iso: string): string {
+  return new Date(new Date(iso).getTime() + 330 * 60_000).toISOString().slice(11, 16);
+}
+
 export function fmtDateTimeIST(iso: string | null | undefined): string {
   return iso ? `${istDateTime.format(new Date(iso))} IST` : MISSING;
 }

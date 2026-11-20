@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../lib/api";
-import { MISSING } from "../lib/format";
+import { hhmmIST, MISSING } from "../lib/format";
 import { METRICS } from "../lib/metricRegistry";
 import type { IvMomentum as Mom, IvMomentumChange } from "../lib/types";
 import { EChart, useChartColors } from "./EChart";
@@ -53,7 +53,7 @@ export function IvMomentumBody({ expiry }: { expiry: string | null }) {
   const opt = {
     animation: false, tooltip: tip, legend: { top: 0, left: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
     grid: { left: 46, right: 56, top: 30, bottom: 28 },
-    xAxis: { type: "category", data: d.series.map((p) => p.at.slice(11, 16)), axisLabel: { color: c.muted, hideOverlap: true }, axisLine: { lineStyle: { color: c.rule } } },
+    xAxis: { type: "category", data: d.series.map((p) => hhmmIST(p.at)), axisLabel: { color: c.muted, hideOverlap: true }, axisLine: { lineStyle: { color: c.rule } } },
     yAxis: [{ type: "value", scale: true, axisLabel: { color: c.muted, formatter: "{value}%" }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } }, { type: "value", scale: true, position: "right", axisLabel: { color: c.muted }, splitLine: { show: false } }],
     series: [
       { name: "CE IV", type: "line", showSymbol: false, connectNulls: false, data: d.series.map((p) => p[bucket].ce), lineStyle: { color: c.up, width: 1.6 } },

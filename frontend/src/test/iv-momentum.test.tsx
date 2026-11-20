@@ -2,13 +2,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { hhmmIST } from "../lib/format";
 import { IvMomentumBody, momentumExample, momentumReading } from "../components/IvMomentum";
 import { toolById } from "../lib/tools";
 import type { IvMomentum, IvMomentumBucket, IvMomentumChange } from "../lib/types";
 
 vi.mock("../components/EChart", () => ({
   useChartColors: () => ({ up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" }),
-  EChart: ({ ariaLabel }: { ariaLabel: string }) => <div role="img" aria-label={ariaLabel} />,
+  EChart: ({ ariaLabel, option }: { ariaLabel: string; option?: { xAxis?: { data?: string[] } } }) => <div role="img" aria-label={ariaLabel} data-x={JSON.stringify(option?.xAxis?.data ?? [])} />,
 }));
 afterEach(() => vi.unstubAllGlobals());
 
@@ -36,6 +37,15 @@ describe("IV Momentum", () => {
     const ex = momentumExample(data);
     expect(ex.join("\n")).toContain("CE IV change = 13.60 − 13.00 = +0.60 points");
     expect(ex.join("\n")).toContain("IV momentum = +0.60 − (+0.20) = +0.40 points");
+  });
+  it("the chart's time axis is in IST: stored series carry UTC times (20 Nov: 03:45 UTC was drawn as 03:45, the open is 09:15 IST)", async () => {
+    expect(hhmmIST("2026-11-20T03:45:05.470000+00:00")).toBe("09:15");
+    expect(hhmmIST("2026-11-20T09:15:00+05:30")).toBe("09:15"); // the same instant with an IST offset
+    expect(hhmmIST("2026-11-20T10:00:00Z")).toBe("15:30");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ...data, series: [{ ...data.series[0]!, at: "2026-11-20T03:45:05.470000+00:00" }, { ...data.series[0]!, at: "2026-11-20T03:46:04.100000+00:00" }] }), { status: 200 })));
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><IvMomentumBody expiry="2026-11-10" /></QueryClientProvider>);
+    const chart = await screen.findByRole("img", { name: "Call and put implied volatility through the session" });
+    expect(JSON.parse(chart.getAttribute("data-x") ?? "[]")).toEqual(["09:15", "09:16"]);
   });
   it("shows the table with missing windows left missing, and the closed methodology panel", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(data), { status: 200 })));

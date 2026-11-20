@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { fmtInt, MISSING } from "../lib/format";
+import { fmtInt, hhmmIST, MISSING } from "../lib/format";
 import { fmtCrore } from "../lib/gammaAnalysis";
 import { api } from "../lib/api";
 import { METRICS } from "../lib/metricRegistry";
@@ -7,7 +7,7 @@ import type { GexHistory } from "../lib/types";
 import { EChart, useChartColors } from "./EChart";
 import { MethodologyPanel } from "./MethodologyPanel";
 
-const hhmm = (iso: string) => iso.slice(11, 16);
+const hhmm = hhmmIST;
 
 /** Worked example from the newest rebuilt snapshot: net = call + put, and where the flip, walls and peak were. */
 export function gexHistoryExample(d: GexHistory): string[] {
