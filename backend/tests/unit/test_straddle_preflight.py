@@ -72,7 +72,7 @@ def analysis(prem15: float | None = -2.0, iv15: float | None = 0.1, flip: float 
 
 
 SQUEEZE = {"id": "ACTIVE_SHORT_SQUEEZE", "severity": "high", "message": "Short squeeze in progress: NIFTY +0.22% in 15 minutes while futures open interest shed 40,000 units (615 lots). Do not sell at-the-money calls or straddles."}
-VWAP = {"id": "VWAP_TREND_DETACHMENT", "severity": "high", "message": "NIFTY has stayed above the future's VWAP for 40 minutes."}
+VWAP = {"id": "VWAP_TREND_DETACHMENT", "severity": "high", "message": "The future has stayed above its VWAP for 40 minutes."}
 IB = {"id": "IB_EXPANSION_TREND", "severity": "high", "message": "The opening 30 minutes covered 140 points, 0.70 of the implied daily move (200): trend-day risk"}
 FLOOR = {"id": "PUT_FLOOR_ADVANCING", "severity": "medium", "message": "Put floor advancing: 30,000 units added on puts."}
 
@@ -114,6 +114,19 @@ def test_a_short_squeeze_blocks_and_names_itself_with_gamma_convexity_in_the_hea
     assert r["reasons"] == ["SHORT SQUEEZE", "GAMMA CONVEXITY"]
     assert "Short squeeze in progress" in r["summary"] and "Realised convexity (+16.0 pts) is overwhelming theta (10.0 pts)" in r["summary"]
     assert radar(analysis(gamma=15.0, theta=10.0), regime())["gates"]["regime_squeeze"]["status"] == "PASS"  # exactly 1.5 x theta is within the limit, and no squeeze
+
+
+def test_one_vwap_or_opening_range_flag_alone_warns_and_two_trend_flags_or_a_squeeze_block() -> None:
+    # 20 Nov 2026 10:30 IST: only the VWAP flag (0.23% from the future's VWAP) was on while premium decayed 9 points, IV cooled and spot was above the flip; the card was red for it (D224)
+    lone = radar(analysis(), regime(VWAP, label="TREND_RISK"))
+    assert lone["verdict"] == "SELECTIVE" and lone["badge"] == "YELLOW" and lone["headline"] == "SELECTIVE / CAUTION" and lone["reasons"] == []
+    assert lone["gates"]["regime_squeeze"]["status"] == "WARN" and lone["gates"]["regime_squeeze"]["label"] == "Trend day risk: vwap trend runaway"
+    assert "The future has stayed above its VWAP" in lone["summary"]
+    wide = radar(analysis(), regime(IB, label="TREND_RISK"))
+    assert wide["badge"] == "YELLOW" and "opening 30 minutes covered 140 points" in wide["summary"]
+    assert radar(analysis(), regime(SQUEEZE, label="TREND_RISK"))["badge"] == "RED"  # a squeeze alone still blocks
+    assert radar(analysis(), regime(VWAP, IB, label="TREND_RISK"))["badge"] == "RED"  # two trend flags together block
+    assert radar(analysis(prem15=1.0), regime(VWAP, label="TREND_RISK"))["badge"] == "RED"  # a warning does not hide another failing gate (premium rising)
 
 
 def test_other_trend_flags_block_too_and_a_put_floor_alone_only_warns() -> None:

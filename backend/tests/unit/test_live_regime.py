@@ -125,21 +125,48 @@ def test_the_put_floor_needs_puts_added_much_faster_than_calls_while_the_index_r
     assert falling["put_floor"]["active"] is False
 
 
+def test_a_vwap_distance_that_bounces_across_the_limit_does_not_flip_the_flag_but_a_held_one_counts() -> None:
+    # 20 Nov 2026, real stored distances (% from the future's VWAP) 04:42 to 04:59 UTC: 0.232, then 0.14, 0.108, 0.206, then 0.266 now. Above the 0.22 limit now, but not held
+    a = analysis([25000.0] * 61, sd=None)
+    bounce = hist([(m, {"vwap_side": "above", "vwap_dist_pct": d}) for m, d in [(40, 0.30), (50, 0.232), (55, 0.14), (56, 0.108), (57, 0.206), (58, 0.19), (59, 0.21)]] + [(m, {"vwap_side": "above", "vwap_dist_pct": 0.30}) for m in range(21, 40)])
+    r = lr.evaluate_live_regime(a, {}, {"vwap_side": "above", "vwap_dist_pct": 0.266}, bounce)
+    assert r["vwap"]["active"] is False and r["vwap"]["held"] is False and "not counted yet" in r["vwap"]["reason"] and r["label"] == "UNCLEAR"
+    held = hist([(m, {"vwap_side": "above", "vwap_dist_pct": 0.25}) for m in range(21, 60)])  # beyond the limit in each of the last minutes
+    on = lr.evaluate_live_regime(a, {}, {"vwap_side": "above", "vwap_dist_pct": 0.266}, held)["vwap"]
+    assert on["active"] is True and on["held"] is True and "beyond 0.22% for 3 minutes" in on["message"] and on["message"].startswith("The future has stayed above its VWAP")
+    one_dip = hist([(m, {"vwap_side": "above", "vwap_dist_pct": 0.25}) for m in range(21, 59)] + [(58, {"vwap_side": "above", "vwap_dist_pct": 0.21})])
+    assert lr.evaluate_live_regime(a, {}, {"vwap_side": "above", "vwap_dist_pct": 0.266}, one_dip)["vwap"]["active"] is False  # minute 58 is inside the last 3 minutes and not beyond the limit
+    unknown_before = hist([(m, {"vwap_side": "above"}) for m in range(21, 60)])  # minutes stored before the distance was recorded: not confirmed, not a pass
+    assert lr.evaluate_live_regime(a, {}, {"vwap_side": "above", "vwap_dist_pct": 0.266}, unknown_before)["vwap"]["active"] is False
+
+
+def test_the_opening_range_is_the_clock_window_even_when_the_first_sample_is_a_minute_late() -> None:
+    # 20 Nov 2026: first stored minute 09:16, so the window is 09:15 to 09:45 (30 minutes by the clock), not 09:16 to 09:46
+    spots = [25000.0] * 61
+    spots[31] = 25200.0  # 09:47 when the series starts at 09:16 (index 31 is minute 31 after 09:16): outside; minute 30 from the open is 09:45 = index 29
+    spots[29] = 25100.0  # 09:45: inside
+    r = lr.initial_balance(analysis(spots, start_min=1))
+    assert r["range_pts"] == 100.0  # 25,100 - 25,000, the 09:46 and later samples are not part of it
+    spots2 = [25000.0] * 61
+    spots2[30] = 25200.0  # 09:46: one minute outside the clock window
+    assert lr.initial_balance(analysis(spots2, start_min=1))["range_pts"] == 0.0
+
+
 def test_vwap_detachment_counts_the_minutes_on_one_side_and_the_distance() -> None:
     a = analysis([25000.0] * 61, sd=None)
     track = {"vwap_side": "above", "vwap_dist_pct": 0.30}
-    run = hist([(m, {"vwap_side": "above"}) for m in range(21, 60)])  # above since minute 21 of the session: 39 minutes before minute 60
+    run = hist([(m, {"vwap_side": "above", "vwap_dist_pct": 0.30}) for m in range(21, 60)])  # above since minute 21 of the session: 39 minutes before minute 60
     r = lr.evaluate_live_regime(a, {}, track, run)
     v = r["vwap"]
     assert v["status"] == "ok" and v["active"] is True and v["minutes_away"] == 39 and v["at_least"] is True  # the stored minutes start at 21: a lower bound
     assert "at least 39 minutes" in v["message"] and r["flags"][0]["id"] == "VWAP_TREND_DETACHMENT" and r["label"] == "TREND_RISK"
-    crossed = hist([(m, {"vwap_side": "above"}) for m in range(41, 60)] + [(40, {"vwap_side": "below"})])  # crossed 20 minutes ago: 19 minutes on this side
+    crossed = hist([(m, {"vwap_side": "above", "vwap_dist_pct": 0.30}) for m in range(41, 60)] + [(40, {"vwap_side": "below"})])  # crossed 20 minutes ago: 19 minutes on this side
     c = lr.evaluate_live_regime(a, {}, track, crossed)["vwap"]
     assert c["active"] is False and c["minutes_away"] == 19 and c["at_least"] is False
     close = lr.evaluate_live_regime(a, {}, {"vwap_side": "above", "vwap_dist_pct": 0.20}, run)["vwap"]  # 0.20 % is not beyond 0.22 %
     assert close["active"] is False
     assert lr.evaluate_live_regime(a, {}, {"vwap_side": None, "vwap_dist_pct": None}, run)["vwap"]["status"] == "unknown"
-    thirty_five = lr.evaluate_live_regime(a, {}, track, hist([(m, {"vwap_side": "above"}) for m in range(25, 60)]))["vwap"]  # exactly 35 minutes: not more than 35
+    thirty_five = lr.evaluate_live_regime(a, {}, track, hist([(m, {"vwap_side": "above", "vwap_dist_pct": 0.30}) for m in range(25, 60)]))["vwap"]  # exactly 35 minutes: not more than 35
     assert thirty_five["minutes_away"] == 35 and thirty_five["active"] is False
 
 

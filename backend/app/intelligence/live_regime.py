@@ -37,6 +37,7 @@ CFG: dict[str, float] = {
     "put_floor_min_share": 0.005,  # added put interest as a share of the put interest near the money (below this it is noise, not a floor)
     "vwap_minutes": 35.0,
     "vwap_distance_pct": 0.22,
+    "vwap_hold_min": 3.0,  # the distance must stay beyond the limit for this many minutes (on the stored minutes), so a reading that bounces across the limit does not flip the flag
     "oi_band_pct": 2.5,  # strikes within this percent of the index count as near the money
     "window_min": 15.0,
     "tolerance_min": 3.0,  # a stored minute this close to the window start stands in for it
@@ -108,9 +109,9 @@ def initial_balance(a: Mapping[str, Any], cfg: Mapping[str, float] = CFG) -> dic
     open_at = datetime.combine(first.astimezone(IST).date(), SESSION_OPEN, IST)
     if (first.astimezone(IST) - open_at).total_seconds() / 60 > cfg["open_slack_min"]:
         return out | {"reason": f"the first stored minute is {first.astimezone(IST):%H:%M}, not the open: the stored first half hour is not the opening range"}
-    if (last - first).total_seconds() / 60 < 30:
+    if (last - open_at).total_seconds() / 60 < 30:
         return out | {"status": "forming", "reason": "the opening 30 minutes are not complete yet"}
-    window = [s for t, s in pts if (t - first).total_seconds() / 60 <= 30]
+    window = [s for t, s in pts if (t - open_at).total_seconds() / 60 <= 30]  # 09:15 to 09:45 by the clock, whatever minute the first sample came in
     rng = max(window) - min(window)
     out |= {"range_pts": round(rng, 1)}
     if sd is None or sd <= 0:
@@ -186,9 +187,16 @@ def evaluate_live_regime(a: Mapping[str, Any], mi: Mapping[str, Any], track: Map
                 break
         away = (now_t - start).total_seconds() / 60
         vwap |= {"status": "ok", "minutes_away": round(away), "at_least": reached_oldest and bool(rows), "side": side}
-        if away > cfg["vwap_minutes"] and abs(float(track["vwap_dist_pct"])) > cfg["vwap_distance_pct"]:
+        limit = cfg["vwap_distance_pct"]
+        recent = [tr for t, tr in rows if (now_t - t).total_seconds() / 60 < cfg["vwap_hold_min"]]  # the stored minutes of the last few minutes
+        held = len(recent) >= 2 and all(tr.get("vwap_side") == side and (d := _num(tr.get("vwap_dist_pct"))) is not None and abs(d) > limit for tr in recent)
+        vwap["held"] = held
+        beyond = abs(float(track["vwap_dist_pct"])) > limit
+        if away > cfg["vwap_minutes"] and beyond and not held:
+            vwap["reason"] = f"{abs(float(track['vwap_dist_pct'])):.2f}% from the future's VWAP now, but not beyond {limit:.2f}% for the last {cfg['vwap_hold_min']:.0f} minutes: not counted yet"
+        if away > cfg["vwap_minutes"] and beyond and held:
             vwap["active"] = True
-            msg = f"NIFTY has stayed {side} the future's VWAP for {'at least ' if vwap['at_least'] else ''}{away:.0f} minutes and is {abs(float(track['vwap_dist_pct'])):.2f}% away: mean reversion has broken, the market is running one way"
+            msg = f"The future has stayed {side} its VWAP for {'at least ' if vwap['at_least'] else ''}{away:.0f} minutes and is {abs(float(track['vwap_dist_pct'])):.2f}% away, beyond {limit:.2f}% for {cfg['vwap_hold_min']:.0f} minutes: mean reversion has broken, the market is running one way"
             vwap["message"] = msg
             flags.append({"id": "VWAP_TREND_DETACHMENT", "severity": "high", "message": msg})
     else:

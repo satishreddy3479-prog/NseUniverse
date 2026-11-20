@@ -464,7 +464,8 @@ def evaluate_preflight(a: Mapping[str, Any], env: Mapping[str, Any], live_regime
 
       premium_decay     the roll-adjusted at-the-money premium over the last 15 minutes: falling or flat passes, rising fails;
       volatility_shock  the at-the-money IV over the last 15 minutes: up to RADAR_IV_MAX_PTS vol points passes, more fails;
-      regime_squeeze    FAIL when a short squeeze, a VWAP runaway or a wide opening range is on, WARN when only the put floor is advancing, PASS when none is on, UNKNOWN when no reading could be formed;
+      regime_squeeze    FAIL when a short squeeze is on or two of (squeeze, VWAP runaway, wide opening range) are; WARN when a VWAP runaway or a wide opening range is the only trend flag, or only the put floor is advancing
+                        (one provisional, unvalidated flag alone does not block: D224); PASS when none is on, UNKNOWN when no reading could be formed;
       structure_flip    spot against the modelled gamma flip: above it (or within RADAR_FLIP_BUFFER_PTS below) passes, further below warns.
     Gamma cost above CONVEXITY_RATIO x theta and a negative decay efficiency (the seller flags) also block, and are named in the headline. A gate whose input does not exist is UNKNOWN: never a pass,
     never a failure; nothing failing with something unknown is GREY (INCOMPLETE), not green. RED blocks, YELLOW is a warning only, GREEN needs all four gates to pass, GREY (NO_LIVE_DATA) is a stored or
@@ -510,10 +511,13 @@ def evaluate_preflight(a: Mapping[str, Any], env: Mapping[str, Any], live_regime
         gates["volatility_shock"] = _gate("FAIL", f"IV spike ({iv15:+.2f} vol)", val_15m=iv15)
     on = {f["id"] for f in regime["flags"]}
     trend_on = [i for i in ("ACTIVE_SHORT_SQUEEZE", "VWAP_TREND_DETACHMENT", "IB_EXPANSION_TREND") if i in on]
+    hard = trend_on if ("ACTIVE_SHORT_SQUEEZE" in on or len(trend_on) >= 2) else []  # what blocks: a squeeze, or two trend flags together
     if not lr or not lr.get("any_known"):
         gates["regime_squeeze"] = _gate("UNKNOWN", "No squeeze or regime reading yet")
-    elif trend_on:
+    elif hard:
         gates["regime_squeeze"] = _gate("FAIL", "Active squeeze / trend" if "ACTIVE_SHORT_SQUEEZE" in on else "Trend day risk: " + ", ".join(_REASON_NAMES[i].lower() for i in trend_on), flags=trend_on)
+    elif trend_on:  # a lone VWAP runaway or wide opening range: a warning, not a block
+        gates["regime_squeeze"] = _gate("WARN", "Trend day risk: " + ", ".join(_REASON_NAMES[i].lower() for i in trend_on), flags=trend_on)
     elif "PUT_FLOOR_ADVANCING" in on:
         gates["regime_squeeze"] = _gate("WARN", "Put floor advancing", flags=["PUT_FLOOR_ADVANCING"])
     elif lr.get("label") == "DECAY_FAVOURED":
@@ -527,14 +531,14 @@ def evaluate_preflight(a: Mapping[str, Any], env: Mapping[str, Any], live_regime
         label = f"Spot {spot - flip:+.0f} pts from flip ({flip:.0f})"
         gates["structure_flip"] = _gate("PASS" if spot >= flip - RADAR_FLIP_BUFFER_PTS else "WARN", label, flip=flip, spot=spot)
 
-    reasons: list[str] = [_REASON_NAMES[i] for i in trend_on]
+    reasons: list[str] = [_REASON_NAMES[i] for i in hard]
     if gates["premium_decay"]["status"] == "FAIL" or "premium_expansion" in flags_:
         reasons.append("PREMIUM EXPANSION")
     if gates["volatility_shock"]["status"] == "FAIL":
         reasons.append("IV SPIKE")
     if "convexity_blowout" in flags_ and gamma_pts is not None and theta_pts is not None:
         reasons.append("GAMMA CONVEXITY")
-    detail = [f["message"] for f in regime["flags"] if f["id"] in trend_on]
+    detail = [f["message"] for f in regime["flags"] if f["id"] in hard]
     if gates["premium_decay"]["status"] == "FAIL":
         detail.append(f"Premiums are expanding ({prem:+.1f} pts in 15 min).")
     if gates["volatility_shock"]["status"] == "FAIL":
@@ -550,9 +554,11 @@ def evaluate_preflight(a: Mapping[str, Any], env: Mapping[str, Any], live_regime
     elif warns:
         verdict, badge = "SELECTIVE", "YELLOW"
         headline = "SELECTIVE / CAUTION"
+        soft = [f["message"] for f in regime["flags"] if f["id"] in trend_on and f["id"] not in hard]
+        put_floor = "PUT_FLOOR_ADVANCING" in on
         summary = " ".join(
-            ["Spot is below the modelled gamma flip, where moves tend to amplify." if "structure_flip" in warns else "", "Put open interest is being added much faster than call open interest while the index rises."
-             if "regime_squeeze" in warns else ""]).strip()  # fmt: skip
+            ["Spot is below the modelled gamma flip, where moves tend to amplify." if "structure_flip" in warns else "", *soft,
+             "Put open interest is being added much faster than call open interest while the index rises." if put_floor else ""]).strip()  # fmt: skip
     elif unknown:
         verdict, badge = "INCOMPLETE", "GREY"
         headline = "NO ALL-CLEAR — INCOMPLETE DATA"

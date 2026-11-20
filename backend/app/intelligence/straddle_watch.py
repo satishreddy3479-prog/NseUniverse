@@ -99,7 +99,7 @@ def detect(prev: Sequence[Mapping[str, Any]], cur: Mapping[str, Any], cfg: Mappi
     if "PUT_FLOOR_ADVANCING" in on and "PUT_FLOOR_ADVANCING" in was and "PUT_FLOOR_ADVANCING" not in before:
         add("Put floor advancing aggressively", "medium", "bullish", msgs.get("PUT_FLOOR_ADVANCING") or "Put open interest is being added much faster than call open interest while the index rises", ["15-minute option open-interest additions"])
     if "VWAP_TREND_DETACHMENT" in on and "VWAP_TREND_DETACHMENT" in was and "VWAP_TREND_DETACHMENT" not in before:
-        add("VWAP trend runaway", "high", "neutral", msgs.get("VWAP_TREND_DETACHMENT") or "The index has stayed on one side of the VWAP and has moved away from it", ["minutes on one side of the VWAP"])
+        add("VWAP trend runaway", "high", "neutral", msgs.get("VWAP_TREND_DETACHMENT") or "The future has stayed on one side of its VWAP and has moved away from it", ["minutes on one side of the VWAP"])
     # environment scores over 10 minutes
     ss, s10 = cur.get("seller"), _g(p10, "seller")
     if ss is not None and s10 is not None and s10 - ss >= cfg["score_move"]:
