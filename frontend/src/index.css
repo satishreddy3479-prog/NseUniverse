@@ -294,3 +294,15 @@ header.bg-slate { background: var(--header-bg); box-shadow: var(--shadow); }
 /* The verdict card on Market Intelligence: its tone shows as a thick edge and a faint wash. */
 [data-theme="light"] [data-testid="mi-verdict"][class*="border-up"] { border-left-width: 6px; border-color: var(--up); background-image: linear-gradient(100deg, color-mix(in srgb, var(--up) 7%, white), white 55%); }
 [data-theme="light"] [data-testid="mi-verdict"][class*="border-down"] { border-left-width: 6px; border-color: var(--down); background-image: linear-gradient(100deg, color-mix(in srgb, var(--down) 7%, white), white 55%); }
+
+/* Touch: the dense controls of the dashboards (range chips at 24 px, remove buttons at 28 px) are too small for a finger. On a touch screen they grow to 36 px; with a mouse they keep their compact size. */
+@media (pointer: coarse) {
+  button.min-h-6,
+  button.min-h-7 {
+    min-height: 2.25rem;
+  }
+  button.size-7 {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+}

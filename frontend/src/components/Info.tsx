@@ -61,7 +61,7 @@ export function Info({ term, entry, title, className = "" }: { term?: string; en
         aria-controls={open ? id : undefined}
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
         onMouseDown={(e) => e.stopPropagation()}
-        className={`widget-nodrag inline-grid size-[18px] shrink-0 place-items-center rounded-full border border-muted/60 align-middle font-serif text-[11px] italic leading-none text-muted after:content-['i'] hover:border-info hover:text-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-info ${open ? "border-info text-info" : ""} ${className}`}
+        className={`widget-nodrag relative inline-grid size-[18px] shrink-0 before:absolute before:-inset-2 before:content-[''] place-items-center rounded-full border border-muted/60 align-middle font-serif text-[11px] italic leading-none text-muted after:content-['i'] hover:border-info hover:text-info focus-visible:outline focus-visible:outline-2 focus-visible:outline-info ${open ? "border-info text-info" : ""} ${className}`}
       >
       </button>
       {open && pos && createPortal(

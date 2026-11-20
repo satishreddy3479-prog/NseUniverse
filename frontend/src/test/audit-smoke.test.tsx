@@ -14,7 +14,7 @@ vi.mock("../components/EChart", () => ({
   EChart: ({ ariaLabel }: { ariaLabel: string }) => <div role="img" aria-label={ariaLabel} />,
 }));
 
-const routes = ["/", "/overview", "/market-intelligence", "/market-intelligence/straddle", "/option-chain", "/expiry-comparison", "/analysis", "/strategy", "/swing", "/data", "/portfolio", "/cleanup", "/server", "/diagnostics", "/settings",
+const routes = ["/", "/overview", "/market-intelligence", "/market-intelligence/straddle", "/option-chain", "/analysis", "/strategy", "/swing", "/data", "/portfolio", "/cleanup", "/server", "/diagnostics", "/settings",
   ...TOOLS.map((t) => toolPath(t)).filter((p): p is string => !!p && p !== "/option-chain"), "/tools/forward-test", "/tools/forward-test-cost"];
 
 beforeEach(() => {

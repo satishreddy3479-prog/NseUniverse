@@ -48,7 +48,7 @@ export function AppShell() {
         </button>
         <Link to="/" className="flex min-w-0 shrink-0 items-center gap-2 leading-tight" aria-label="NSE Universe home">
           <img src="/logo.svg" alt="" width={34} height={34} className="h-[34px] w-[34px] shrink-0 rounded-[9px] ring-1 ring-black/10 max-[340px]:hidden" />
-          <span className="hidden flex-col min-[520px]:flex">
+          <span className="hidden flex-col min-[520px]:flex md:hidden xl:flex">
             <span className="text-[15px] font-semibold tracking-tight text-paper">NSE Universe</span>
             <span className="hidden text-[11px] text-muted 2xl:block">{underlying} 50 options</span>
           </span>

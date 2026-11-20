@@ -29,6 +29,7 @@ from app.analytics.oi import (
     premium_decay,
     strike_series,
 )
+from app.api.coalesce import Coalescer
 from app.api.security import require_local_control
 from app.broker.base import AuthStatus, BrokerError
 from app.domain.models import (
@@ -798,6 +799,10 @@ async def swing_live(request: Request) -> dict[str, Any]:
     return await asyncio.to_thread(request.app.state.swing_live.view)
 
 
+# callers within two seconds share one computation (see app/api/coalesce.py)
+_SUMMARY = Coalescer(ttl_s=2.0)
+
+
 @router.get("/intelligence/summary")
 async def intelligence_summary(request: Request, expiry: date | None = None) -> dict[str, Any]:
     """The NIFTY 50 market-intelligence dashboard: fused sentiment, engines, regime, scenarios."""
@@ -805,7 +810,9 @@ async def intelligence_summary(request: Request, expiry: date | None = None) -> 
     if svc is None or not svc.enabled:
         msg = "the market-intelligence dashboard is turned off"
         raise HTTPException(status_code=404, detail={"code": "disabled", "message": msg})
-    return await asyncio.to_thread(svc.summary, None if expiry is None else expiry.isoformat())
+    key = None if expiry is None else expiry.isoformat()
+    out: dict[str, Any] = await _SUMMARY.get(key, lambda: asyncio.to_thread(svc.summary, key))
+    return out
 
 
 @router.get("/intelligence/timeline")

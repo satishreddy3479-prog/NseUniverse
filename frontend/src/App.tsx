@@ -8,7 +8,6 @@ import { DataSessions } from "./pages/DataSessions";
 import { OptionChain } from "./pages/OptionChain";
 import { Home } from "./pages/Home";
 import { Overview } from "./pages/Overview";
-import { Planned } from "./pages/Planned";
 
 // Loaded on demand so the charting library is not part of the first page.
 const Analysis = lazy(() => import("./pages/Analysis"));
@@ -31,14 +30,23 @@ const PAGE_LOADERS: (() => Promise<unknown>)[] = [
   () => import("./pages/Diagnostics"), () => import("./pages/ServerManagement"), () => import("./pages/DataCleanup"),
 ];
 
-/** Warm the browser cache with the other pages, one at a time while the browser is idle. Skipped on a saver or very slow connection. */
+/** The pages worth fetching ahead: the ones opened daily. The rest (settings, portfolio, diagnostics, server management, data cleanup) load when opened. */
+const WARM_COUNT = 6;
+
+/** Whether to warm the cache at all: not on a data saver, a mobile-data (cellular) or a 2g/3g connection, where about a megabyte of pages nobody asked for costs money and time. */
+export function shouldPrefetch(conn: { saveData?: boolean; effectiveType?: string; type?: string } | undefined): boolean {
+  if (!conn) return true;
+  return !(conn.saveData || conn.type === "cellular" || /(^|-)[23]g$/.test(conn.effectiveType ?? ""));
+}
+
+/** Warm the browser cache with the most used pages, one at a time while the browser is idle (see shouldPrefetch). */
 export function prefetchPages(): void {
-  const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
-  if (conn?.saveData || /(^|-)2g$/.test(conn?.effectiveType ?? "")) return;
+  const conn = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string; type?: string } }).connection;
+  if (!shouldPrefetch(conn)) return;
   const idle = (fn: () => void) => { if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(fn, { timeout: 4000 }); else setTimeout(fn, 800); };
   let i = 0;
   const next = () => {
-    const load = PAGE_LOADERS[i++];
+    const load = i < WARM_COUNT ? PAGE_LOADERS[i++] : undefined;
     if (!load) return;
     warmUp.active = true;
     load().catch(() => { /* a failed warm-up is harmless: the page is fetched when it is opened */ }).finally(() => { warmUp.active = false; idle(next); });
@@ -65,10 +73,6 @@ export function AppRoutes() {
         <Route path="tools/:id" element={
           <Suspense fallback={<p className="text-muted">Loading tool…</p>}><ToolPage /></Suspense>} />
         <Route path="option-chain" element={<OptionChain />} />
-        <Route path="expiry-comparison" element={
-          <Planned title="Expiry comparison" when="Checkpoint 3">
-            <p>Weekly and monthly chains side by side: dates, contract counts, snapshot times, subscription status and OI/volume charts.</p>
-          </Planned>} />
         <Route path="analysis" element={
           <Suspense fallback={<p className="text-muted">Loading analysis…</p>}><Analysis /></Suspense>} />
         <Route path="strategy" element={

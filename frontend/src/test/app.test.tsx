@@ -103,12 +103,6 @@ describe("dashboard", () => {
     expect(within(table).getByText("101.50")).toBeInTheDocument();
   });
 
-  it("shows planned pages honestly instead of fake features", async () => {
-    mockFetch(base);
-    renderAt("/expiry-comparison");
-    expect(await screen.findByText("Planned for Checkpoint 3")).toBeInTheDocument();
-  });
-
   it("sends the old /charts address to the analysis dashboard", async () => {
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     mockFetch(base);

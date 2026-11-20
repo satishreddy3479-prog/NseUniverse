@@ -72,6 +72,6 @@ describe("closing the message", () => {
     show(warn);
     const strip = await screen.findByTestId("alert-strip");
     expect(strip.querySelector("ul")!.className).toContain("break-words");
-    expect(strip.querySelector("button")!.className).toContain("shrink-0");
+    expect(strip.querySelector("button[aria-label='Close this message']")!.className).toContain("shrink-0"); // the cross (the fold toggle now comes before it)
   });
 });
