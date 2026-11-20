@@ -32,7 +32,7 @@ from app.risk.pricing import (
 )
 
 IST = ZoneInfo("Asia/Kolkata")
-pytestmark = pytest.mark.filterwarnings("error")  # a RuntimeWarning (invalid, overflow, divide) from NumPy is a failure
+pytestmark = pytest.mark.filterwarnings("error::RuntimeWarning")  # a NumPy warning (invalid value, overflow, divide) is a failure; unrelated warnings from other tests (unclosed databases) are not  # a RuntimeWarning (invalid, overflow, divide) from NumPy is a failure
 
 
 def n_ref(x: float) -> float:

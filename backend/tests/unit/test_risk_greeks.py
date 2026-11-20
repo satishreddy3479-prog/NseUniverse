@@ -19,7 +19,7 @@ from hypothesis import strategies as st
 from app.risk.greeks import GreeksConfig, greeks, higher_order, in_rupees, scale
 from app.risk.pricing import CALL, DEFAULT, PUT, black76
 
-pytestmark = pytest.mark.filterwarnings("error")
+pytestmark = pytest.mark.filterwarnings("error::RuntimeWarning")  # a NumPy warning (invalid value, overflow, divide) is a failure; unrelated warnings from other tests (unclosed databases) are not
 
 F0, R0 = 25500.0, 0.065
 

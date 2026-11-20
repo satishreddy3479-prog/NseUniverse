@@ -28,7 +28,7 @@ from app.risk.ivsurface import (
 from app.risk.pricing import CALL, DEFAULT, PUT, black76
 from app.risk.svi import SVIParams, calendar_violation, fit_svi, nelder_mead
 
-pytestmark = pytest.mark.filterwarnings("error")
+pytestmark = pytest.mark.filterwarnings("error::RuntimeWarning")  # a NumPy warning (invalid value, overflow, divide) is a failure; unrelated warnings from other tests (unclosed databases) are not
 IST = ZoneInfo("Asia/Kolkata")
 NOW = datetime(2026, 11, 20, 11, 0, tzinfo=IST)
 F, R = 25500.0, 0.065

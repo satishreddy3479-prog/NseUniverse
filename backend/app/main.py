@@ -16,6 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.risk_routes import router as risk_router
 from app.api.routes import router
 from app.api.ws import router as ws_router
 from app.broker.base import MarketDataBroker
@@ -105,6 +106,40 @@ def _use_user_holidays(settings: Settings) -> None:
     from app.prediction.calendar import USER_FILE_NAME, set_user_file
 
     set_user_file(settings.data_dir / USER_FILE_NAME)
+
+
+def create_risk(settings: Settings, store: SnapshotStore, stream: StreamManager) -> Any:
+    """The Greeks and What-If service.
+
+    A bad limits configuration does not stop the application: the engine answers 503 with the
+    reason until it is fixed (a typo must never switch a limit off silently).
+    """
+    import json
+
+    from app.risk.portfolio import PortfolioConfig
+    from app.risk.service import RiskService, RiskSettings
+
+    error: str | None = None
+    portfolio = PortfolioConfig()
+    if settings.greeks_limits_json.strip():
+        try:
+            portfolio = PortfolioConfig.from_mapping(json.loads(settings.greeks_limits_json))
+        except (ValueError, TypeError) as e:
+            error = f"GREEKS_LIMITS_JSON is not valid: {e}"
+    cfg = RiskSettings(
+        rate=settings.risk_free_rate,
+        spread_threshold_pct=settings.greeks_spread_threshold_pct,
+        allow_ltp_fallback=settings.greeks_allow_ltp_fallback,
+        rebuild_interval_s=settings.greeks_rebuild_interval_s,
+        rebuild_min_changed=settings.greeks_rebuild_min_changed,
+        default_sticky=settings.greeks_default_sticky,
+        max_legs=settings.greeks_max_legs,
+        stale_after_s=float(settings.snapshot_stale_after_seconds),
+        live_max_age_s=float(settings.stream_stale_after_seconds),
+        portfolio=portfolio,
+        config_error=error,
+    )
+    return RiskService(store, settings.underlying, lambda: stream.book, cfg)
 
 
 def create_app(settings: Settings | None = None, broker: MarketDataBroker | None = None) -> FastAPI:
@@ -307,6 +342,8 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             store=StraddleStore(settings.data_dir), mi=intelligence.summary,
         )
         app.state.straddle.start()
+        if settings.greeks_enabled:
+            app.state.risk = create_risk(settings, store, stream)
         async def forward_expiries() -> tuple[str | None, str | None]:
             sel = await snapshot_service.expiries()
             weekly = None if sel.weekly is None else sel.weekly.isoformat()
@@ -447,6 +484,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         )
 
     app.include_router(router)
+    app.include_router(risk_router)
     app.include_router(servermgmt_router)
     app.include_router(ws_router)
     return app

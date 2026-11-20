@@ -53,6 +53,22 @@ class Settings(BaseSettings):
     history_autofetch: bool = True
     flows_history_days: int = 10  # NSE files are collected from this many days back, then daily
     risk_free_rate: float = 0.06  # annual discount rate for the IV model; an assumption
+    # the Greeks and What-If engine (app/risk): read-only; the surface, the limits and the sticky
+    # rule are configuration, never code
+    greeks_enabled: bool = True
+    # a book wider than this share of its mid is rejected
+    greeks_spread_threshold_pct: float = Field(default=15.0, gt=0, le=100)
+    # a quote with no book at all may use its last traded price, labelled
+    greeks_allow_ltp_fallback: bool = True
+    # the surface is rebuilt at most this often when something changed ...
+    greeks_rebuild_interval_s: float = Field(default=1.0, ge=0.1, le=60)
+    # ... or at once when this many quotes changed
+    greeks_rebuild_min_changed: int = Field(default=10, ge=1, le=1000)
+    greeks_default_sticky: str = Field(default="moneyness", pattern=r"^(moneyness|strike|delta)$")
+    greeks_max_legs: int = Field(default=60, ge=1, le=500)
+    # PortfolioConfig as JSON: limits per leg, bucket and portfolio, beta, warn fraction
+    # (see app/risk/portfolio.py)
+    greeks_limits_json: str = ""
     # a frozen index quote in a chain snapshot is replaced by the level its option prices imply
     chain_spot_check: bool = True
     # decision-support risk and cost assumptions (paper trading only; no orders are ever placed)

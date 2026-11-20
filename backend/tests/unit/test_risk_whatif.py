@@ -29,7 +29,7 @@ from app.risk.whatif import (
 )
 from tests.unit.test_risk_ivsurface import smile_quotes
 
-pytestmark = pytest.mark.filterwarnings("error")
+pytestmark = pytest.mark.filterwarnings("error::RuntimeWarning")  # a NumPy warning (invalid value, overflow, divide) is a failure; unrelated warnings from other tests (unclosed databases) are not
 IST = ZoneInfo("Asia/Kolkata")
 NOW = datetime(2026, 11, 20, 11, 0, tzinfo=IST)
 R = 0.065
