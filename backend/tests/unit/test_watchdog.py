@@ -31,6 +31,13 @@ class Api:
         class H(BaseHTTPRequestHandler):
             def do_GET(self) -> None:  # noqa: N802
                 body = outer.get(self.path)
+                if isinstance(body, dict) and "__fail_first__" in body:  # a restart: the first calls get a 503, then the real body
+                    body["__calls__"] = body.get("__calls__", 0) + 1
+                    if body["__calls__"] <= body["__fail_first__"]:
+                        self.send_response(503)
+                        self.end_headers()
+                        return
+                    body = body["body"]
                 if body is None:
                     self.send_response(500)
                     self.end_headers()
@@ -52,7 +59,7 @@ class Api:
         self.server.shutdown()
 
 
-def run(tmp: Path, routes: dict[str, Any], now: datetime, backups_age_h: float | None = 5, notify: str | None = None) -> tuple[list[dict[str, Any]], str]:
+def run(tmp: Path, routes: dict[str, Any], now: datetime, backups_age_h: float | None = 5, notify: str | None = None, retries: str = "3") -> tuple[list[dict[str, Any]], str]:
     api = Api(routes)
     try:
         state, back = tmp / "state", tmp / "backups"
@@ -65,7 +72,7 @@ def run(tmp: Path, routes: dict[str, Any], now: datetime, backups_age_h: float |
             os.utime(day, (t, t))
         script = tmp / "w.py"
         script.write_text(python_part(), encoding="utf-8")
-        env = {**os.environ, "NSE_NOW": now.isoformat()}
+        env = {**os.environ, "NSE_NOW": now.isoformat(), "NSE_WATCHDOG_PAUSE_S": "0", "NSE_WATCHDOG_RETRIES": retries}
         out = subprocess.run([sys.executable, str(script), api.url, str(state), str(back), notify or str(tmp / "no-notify.env")], capture_output=True, text=True, env=env, timeout=60)
         assert out.returncode == 0, out.stderr
         return json.loads((state / "alerts.json").read_text())["alerts"], out.stdout
@@ -111,6 +118,31 @@ def test_a_quiet_night_raises_nothing(tmp_path: Path) -> None:
 def test_a_backend_that_does_not_answer_is_critical(tmp_path: Path) -> None:
     alerts, _ = run(tmp_path, {"/api/health": None}, NOON)
     assert keys(alerts) == {"backend"} and alerts[0]["level"] == "critical"
+
+
+def test_a_call_refused_during_a_restart_is_tried_again_before_it_counts(tmp_path: Path) -> None:
+    # 20 Nov 2026 03:11 IST: the checks fell inside a deploy and three warnings stayed on every page for up to five minutes
+    routes = healthy(**{"/api/market/session": {"__fail_first__": 2, "body": {"holiday_coverage": ["2026-01-01", "2027-12-31"]}}})
+    assert run(tmp_path, routes, NOON)[0] == []  # two 503s, then the answer: nothing is raised
+    for name, route, expect in (
+        ("again", {"__fail_first__": 9, "body": {}}, {"holiday-status"}),  # still 503 after the three tries: raised
+        ("plain", None, {"holiday-status"}),  # a plain 500 is a real error, not retried
+    ):
+        (tmp_path / name).mkdir()
+        assert keys(run(tmp_path / name, healthy(**{"/api/market/session": route}), NOON)[0]) == expect
+
+
+def test_a_backend_that_refuses_connections_is_critical_after_the_tries(tmp_path: Path) -> None:
+    state, back = tmp_path / "state", tmp_path / "backups"
+    state.mkdir()
+    back.mkdir()
+    script = tmp_path / "w.py"
+    script.write_text(python_part(), encoding="utf-8")
+    env = {**os.environ, "NSE_NOW": NOON.isoformat(), "NSE_WATCHDOG_PAUSE_S": "0", "NSE_WATCHDOG_RETRIES": "3"}
+    out = subprocess.run([sys.executable, str(script), "http://127.0.0.1:9", str(state), str(back), str(tmp_path / "no.env")], capture_output=True, text=True, env=env, timeout=60)
+    assert out.returncode == 0, out.stderr
+    alerts = json.loads((state / "alerts.json").read_text())["alerts"]
+    assert "backend" in keys(alerts) and alerts[0]["level"] == "critical"
 
 
 def test_a_lost_broker_login_and_a_stale_feed_in_market_hours(tmp_path: Path) -> None:

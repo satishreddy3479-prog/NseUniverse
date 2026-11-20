@@ -14,7 +14,7 @@ NOTIFY_ENV=${NSE_NOTIFY_ENV:-/etc/nse-universe/notify.env}
 mkdir -p "$STATE"
 
 python3 - "$API" "$STATE" "$BACKUPS" "$NOTIFY_ENV" <<'PY'
-import json, os, sys, time, urllib.parse, urllib.request
+import json, os, sys, time, urllib.error, urllib.parse, urllib.request
 from datetime import date, datetime, timedelta, timezone
 
 api, state_dir, backups, notify_env = sys.argv[1:5]
@@ -28,9 +28,27 @@ def add(key: str, level: str, text: str) -> None:
     alerts.append({"key": key, "level": level, "text": text})
 
 
+# A deploy or a restart takes the backend down for 10 to 25 seconds. A call refused in that window (connection refused or reset, or a 502/503/504) is tried again a few times before it counts:
+# on 20 Nov 2026 a check that fell inside a deploy showed "/api/market/session failed (URLError)" on every page for up to five minutes. A slow answer (timeout) or any other error is not retried.
+RETRIES = int(os.environ.get("NSE_WATCHDOG_RETRIES", "3"))
+PAUSE_S = float(os.environ.get("NSE_WATCHDOG_PAUSE_S", "12"))
+
+
+def transient(e: Exception) -> bool:
+    if isinstance(e, urllib.error.HTTPError):
+        return e.code in (502, 503, 504)
+    return isinstance(getattr(e, "reason", e), ConnectionError)
+
+
 def get(path: str, timeout: int = 8):
-    with urllib.request.urlopen(api + path, timeout=timeout) as r:
-        return json.load(r)
+    for attempt in range(1, RETRIES + 1):
+        try:
+            with urllib.request.urlopen(api + path, timeout=timeout) as r:
+                return json.load(r)
+        except Exception as e:  # noqa: BLE001
+            if attempt == RETRIES or not transient(e):
+                raise
+            time.sleep(PAUSE_S)
 
 
 def age_s(iso: str | None) -> float | None:
