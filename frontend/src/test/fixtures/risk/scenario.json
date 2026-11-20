@@ -1,0 +1,121 @@
+{
+ "surface_version_id": "v1-585d0a3da6d5",
+ "as_of_ist": "2026-10-28T11:00:00+05:30",
+ "source": "stored",
+ "stale": false,
+ "data": [
+  {
+   "expiry": "2026-11-03",
+   "status": "ok",
+   "snapshot_id": "snap-2026-11-03",
+   "snapshot_at_ist": "2026-10-28T11:00:00+05:30",
+   "age_s": 0.0,
+   "stale": false,
+   "quotes": 30,
+   "live_books": 0,
+   "lot_size": 65,
+   "expiry_instant_ist": "2026-11-03T15:40:00+05:30"
+  },
+  {
+   "expiry": "2026-11-23",
+   "status": "ok",
+   "snapshot_id": "snap-2026-11-23",
+   "snapshot_at_ist": "2026-10-28T11:00:00+05:30",
+   "age_s": 0.0,
+   "stale": false,
+   "quotes": 30,
+   "live_books": 0,
+   "lot_size": 65,
+   "expiry_instant_ist": "2026-11-23T15:40:00+05:30"
+  }
+ ],
+ "result": {
+  "scenario": {
+   "spot_shock": 150.0,
+   "iv_shock": 2.0,
+   "time_elapsed_hours": 12.0,
+   "sticky_rule": "moneyness",
+   "rate_shock": 0.0
+  },
+  "surface_version_id": "v1-585d0a3da6d5",
+  "as_of_ist": "2026-10-28T11:00:00+05:30",
+  "pnl": 4848.475558265424,
+  "partial_pnl": 4848.475558265424,
+  "legs": [
+   {
+    "expiry": "2026-11-03",
+    "strike": 25500.0,
+    "cp": 1.0,
+    "quantity": -2.0,
+    "status": "ok",
+    "base_iv": 0.08539079431818901,
+    "new_iv": 0.10736448555531014,
+    "base_value": 113.05026444050469,
+    "new_value": 224.4948511574041,
+    "pnl": -14487.796273196924,
+    "pnl_vs_entry": -10984.330650462533
+   },
+   {
+    "expiry": "2026-11-03",
+    "strike": 25500.0,
+    "cp": -1.0,
+    "quantity": -2.0,
+    "status": "ok",
+    "base_iv": 0.08539079431818901,
+    "new_iv": 0.10736448555531014,
+    "base_value": 113.05026444050469,
+    "new_value": 74.6351964193491,
+    "pnl": 4993.958842750227,
+    "pnl_vs_entry": 7197.424465484617
+   },
+   {
+    "expiry": "2026-11-03",
+    "strike": 25800.0,
+    "cp": 1.0,
+    "quantity": 2.0,
+    "status": "ok",
+    "base_iv": 0.08468269533690949,
+    "new_iv": 0.104511765507225,
+    "base_value": 20.972432764536126,
+    "new_value": 72.04899260166424,
+    "pnl": 6639.952778826655,
+    "pnl_vs_entry": null
+   },
+   {
+    "expiry": "2026-11-03",
+    "strike": 25200.0,
+    "cp": -1.0,
+    "quantity": 2.0,
+    "status": "ok",
+    "base_iv": 0.09013315207149668,
+    "new_iv": 0.1132220987671405,
+    "base_value": 24.40401509844148,
+    "new_value": 18.111770456845026,
+    "pnl": -817.991803407539,
+    "pnl_vs_entry": null
+   },
+   {
+    "expiry": "2026-11-23",
+    "strike": 25500.0,
+    "cp": 1.0,
+    "quantity": 1.0,
+    "status": "ok",
+    "base_iv": 0.16118047977072486,
+    "new_iv": 0.1818359485089369,
+    "base_value": 437.3378578130656,
+    "new_value": 568.4201964791118,
+    "pnl": 8520.352013293004,
+    "pnl_vs_entry": null
+   }
+  ],
+  "forward_after": {
+   "2026-11-03": 25650.0,
+   "2026-11-23": 25650.0
+  },
+  "t_years_after": {
+   "2026-11-03": 0.015601217656012177,
+   "2026-11-23": 0.07039573820395739
+  },
+  "warnings": []
+ }
+}

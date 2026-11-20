@@ -1,0 +1,124 @@
+{
+ "surface_version_id": "v1-ff64ff939579",
+ "as_of_ist": "2026-10-28T11:00:00+05:30",
+ "source": "stored",
+ "stale": false,
+ "data": [
+  {
+   "expiry": "2026-11-03",
+   "status": "ok",
+   "snapshot_id": "snap-2026-11-03",
+   "snapshot_at_ist": "2026-10-28T11:00:00+05:30",
+   "age_s": 0.0,
+   "stale": false,
+   "quotes": 6,
+   "live_books": 0,
+   "lot_size": 65,
+   "expiry_instant_ist": "2026-11-03T15:40:00+05:30"
+  },
+  {
+   "expiry": "2026-11-23",
+   "status": "ok",
+   "snapshot_id": "snap-2026-11-23",
+   "snapshot_at_ist": "2026-10-28T11:00:00+05:30",
+   "age_s": 0.0,
+   "stale": false,
+   "quotes": 30,
+   "live_books": 0,
+   "lot_size": 65,
+   "expiry_instant_ist": "2026-11-23T15:40:00+05:30"
+  }
+ ],
+ "result": {
+  "scenario": {
+   "spot_shock": 0.0,
+   "iv_shock": 0.0,
+   "time_elapsed_hours": 0.0,
+   "sticky_rule": "moneyness",
+   "rate_shock": 0.0
+  },
+  "surface_version_id": "v1-ff64ff939579",
+  "as_of_ist": "2026-10-28T11:00:00+05:30",
+  "pnl": null,
+  "partial_pnl": 0.0,
+  "legs": [
+   {
+    "expiry": "2026-11-03",
+    "strike": 25500.0,
+    "cp": 1.0,
+    "quantity": -2.0,
+    "status": "no fitted smile for the expiry",
+    "base_iv": null,
+    "new_iv": null,
+    "base_value": null,
+    "new_value": null,
+    "pnl": null,
+    "pnl_vs_entry": null
+   },
+   {
+    "expiry": "2026-11-03",
+    "strike": 25500.0,
+    "cp": -1.0,
+    "quantity": -2.0,
+    "status": "no fitted smile for the expiry",
+    "base_iv": null,
+    "new_iv": null,
+    "base_value": null,
+    "new_value": null,
+    "pnl": null,
+    "pnl_vs_entry": null
+   },
+   {
+    "expiry": "2026-11-03",
+    "strike": 25800.0,
+    "cp": 1.0,
+    "quantity": 2.0,
+    "status": "no fitted smile for the expiry",
+    "base_iv": null,
+    "new_iv": null,
+    "base_value": null,
+    "new_value": null,
+    "pnl": null,
+    "pnl_vs_entry": null
+   },
+   {
+    "expiry": "2026-11-03",
+    "strike": 25200.0,
+    "cp": -1.0,
+    "quantity": 2.0,
+    "status": "no fitted smile for the expiry",
+    "base_iv": null,
+    "new_iv": null,
+    "base_value": null,
+    "new_value": null,
+    "pnl": null,
+    "pnl_vs_entry": null
+   },
+   {
+    "expiry": "2026-11-23",
+    "strike": 25500.0,
+    "cp": 1.0,
+    "quantity": 1.0,
+    "status": "ok",
+    "base_iv": 0.16118047977072486,
+    "new_iv": 0.16118047977072486,
+    "base_value": 437.3378578130656,
+    "new_value": 437.3378578130656,
+    "pnl": 0.0,
+    "pnl_vs_entry": null
+   }
+  ],
+  "forward_after": {
+   "2026-11-23": 25500.0
+  },
+  "t_years_after": {
+   "2026-11-23": 0.07176560121765602
+  },
+  "warnings": [
+   "leg 1 (2026-11-03 25500 CE): no fitted smile for the expiry",
+   "leg 2 (2026-11-03 25500 PE): no fitted smile for the expiry",
+   "leg 3 (2026-11-03 25800 CE): no fitted smile for the expiry",
+   "leg 4 (2026-11-03 25200 PE): no fitted smile for the expiry"
+  ]
+ }
+}

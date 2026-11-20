@@ -1,0 +1,27 @@
+{
+ "enabled": true,
+ "config_error": null,
+ "surface_version_id": "v1-585d0a3da6d5",
+ "as_of_ist": "2026-10-28T11:00:00+05:30",
+ "source": "stored",
+ "rebuilds": 1,
+ "pending_changes": 0,
+ "sticky_rules": [
+  "moneyness",
+  "strike",
+  "delta"
+ ],
+ "default_sticky": "moneyness",
+ "rebuild_interval_s": 1.0,
+ "rebuild_min_changed": 10,
+ "rate": 0.06,
+ "spread_threshold_pct": 15.0,
+ "max_legs": 60,
+ "greeks_cache": {
+  "size": 5,
+  "max_size": 4096,
+  "hits": 0,
+  "misses": 5,
+  "evictions": 0
+ }
+}

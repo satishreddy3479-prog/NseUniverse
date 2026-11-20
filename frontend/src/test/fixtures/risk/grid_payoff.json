@@ -1,0 +1,67 @@
+{
+ "surface_version_id": "v1-585d0a3da6d5",
+ "as_of_ist": "2026-10-28T11:00:00+05:30",
+ "source": "stored",
+ "stale": false,
+ "data": [
+  {
+   "expiry": "2026-11-03",
+   "status": "ok",
+   "snapshot_id": "snap-2026-11-03",
+   "snapshot_at_ist": "2026-10-28T11:00:00+05:30",
+   "age_s": 0.0,
+   "stale": false,
+   "quotes": 30,
+   "live_books": 0,
+   "lot_size": 65,
+   "expiry_instant_ist": "2026-11-03T15:40:00+05:30"
+  },
+  {
+   "expiry": "2026-11-23",
+   "status": "ok",
+   "snapshot_id": "snap-2026-11-23",
+   "snapshot_at_ist": "2026-10-28T11:00:00+05:30",
+   "age_s": 0.0,
+   "stale": false,
+   "quotes": 30,
+   "live_books": 0,
+   "lot_size": 65,
+   "expiry_instant_ist": "2026-11-23T15:40:00+05:30"
+  }
+ ],
+ "grid": {
+  "surface_version_id": "v1-585d0a3da6d5",
+  "as_of_ist": "2026-10-28T11:00:00+05:30",
+  "row_axis": [
+   -400.0,
+   -200.0,
+   0.0,
+   200.0,
+   400.0
+  ],
+  "col_axis": [
+   148.66666666666666
+  ],
+  "col_kind": "hours",
+  "pnl": [
+   [
+    -30231.176067030912
+   ],
+   [
+    -12204.26822169829
+   ],
+   [
+    19932.31708145419
+   ],
+   [
+    1178.8048890628388
+   ],
+   [
+    -3520.883857056997
+   ]
+  ],
+  "sticky_rule": "moneyness",
+  "warnings": []
+ },
+ "forward": 25500.0
+}

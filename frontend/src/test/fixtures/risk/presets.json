@@ -1,0 +1,123 @@
+{
+ "surface_version_id": "v1-585d0a3da6d5",
+ "as_of_ist": "2026-10-28T11:00:00+05:30",
+ "source": "stored",
+ "stale": false,
+ "data": [
+  {
+   "expiry": "2026-11-03",
+   "status": "ok",
+   "snapshot_id": "snap-2026-11-03",
+   "snapshot_at_ist": "2026-10-28T11:00:00+05:30",
+   "age_s": 0.0,
+   "stale": false,
+   "quotes": 30,
+   "live_books": 0,
+   "lot_size": 65,
+   "expiry_instant_ist": "2026-11-03T15:40:00+05:30"
+  },
+  {
+   "expiry": "2026-11-23",
+   "status": "ok",
+   "snapshot_id": "snap-2026-11-23",
+   "snapshot_at_ist": "2026-10-28T11:00:00+05:30",
+   "age_s": 0.0,
+   "stale": false,
+   "quotes": 30,
+   "live_books": 0,
+   "lot_size": 65,
+   "expiry_instant_ist": "2026-11-23T15:40:00+05:30"
+  }
+ ],
+ "presets": {
+  "gap_down": {
+   "scenario": {
+    "spot_shock": -510.0,
+    "iv_shock": 0.0,
+    "time_elapsed_hours": 0.0,
+    "sticky_rule": "moneyness",
+    "rate_shock": 0.0
+   },
+   "pnl": -25801.22410908872,
+   "partial_pnl": -25801.22410908872,
+   "warnings": []
+  },
+  "iv_spike": {
+   "scenario": {
+    "spot_shock": 0.0,
+    "iv_shock": 5.0,
+    "time_elapsed_hours": 0.0,
+    "sticky_rule": "moneyness",
+    "rate_shock": 0.0
+   },
+   "pnl": 3904.052565713113,
+   "partial_pnl": 3904.052565713113,
+   "warnings": []
+  },
+  "expiry_crush": {
+   "scenario": {
+    "spot_shock": 0.0,
+    "iv_shock": -4.0,
+    "time_elapsed_hours": 147.66666666666666,
+    "sticky_rule": "moneyness",
+    "rate_shock": 0.0
+   },
+   "pnl": 12498.641130433258,
+   "partial_pnl": 12498.641130433258,
+   "warnings": []
+  },
+  "sd_plus_1": {
+   "scenario": {
+    "spot_shock": 283.6651496455392,
+    "iv_shock": 0.0,
+    "time_elapsed_hours": 0.0,
+    "sticky_rule": "moneyness",
+    "rate_shock": 0.0
+   },
+   "pnl": 4329.5359263661085,
+   "partial_pnl": 4329.5359263661085,
+   "warnings": []
+  },
+  "sd_minus_1": {
+   "scenario": {
+    "spot_shock": -283.6651496455392,
+    "iv_shock": 0.0,
+    "time_elapsed_hours": 0.0,
+    "sticky_rule": "moneyness",
+    "rate_shock": 0.0
+   },
+   "pnl": -13949.072095013918,
+   "partial_pnl": -13949.072095013918,
+   "warnings": []
+  },
+  "sd_plus_2": {
+   "scenario": {
+    "spot_shock": 567.3302992910784,
+    "iv_shock": 0.0,
+    "time_elapsed_hours": 0.0,
+    "sticky_rule": "moneyness",
+    "rate_shock": 0.0
+   },
+   "pnl": 10187.48077656792,
+   "partial_pnl": 10187.48077656792,
+   "warnings": []
+  },
+  "sd_minus_2": {
+   "scenario": {
+    "spot_shock": -567.3302992910784,
+    "iv_shock": 0.0,
+    "time_elapsed_hours": 0.0,
+    "sticky_rule": "moneyness",
+    "rate_shock": 0.0
+   },
+   "pnl": -28030.46444830444,
+   "partial_pnl": -28030.46444830444,
+   "warnings": []
+  }
+ },
+ "sticky_rules": [
+  "moneyness",
+  "strike",
+  "delta"
+ ]
+}

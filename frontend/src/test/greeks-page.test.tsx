@@ -1,0 +1,306 @@
+// The Greeks and What-If page, rendered against real engine output (fixtures captured from the risk API on exact synthetic chains): the version stamp, the position, presets, the scenario result, the risk matrix and
+// payoff, the Greeks dashboard with its limits, the volatility surface, and every empty, error, stale and degraded state.
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { GreeksWhatIf } from "../pages/GreeksWhatIf";
+import chainFx from "./fixtures/risk/chain_greeks.json";
+import degradedFx from "./fixtures/risk/surface_degraded.json";
+import gridPayoff from "./fixtures/risk/grid_payoff.json";
+import gridIv from "./fixtures/risk/grid_spot_iv.json";
+import gridTime from "./fixtures/risk/grid_spot_time.json";
+import portfolioFx from "./fixtures/risk/portfolio.json";
+import presetsFx from "./fixtures/risk/presets.json";
+import scenarioFx from "./fixtures/risk/scenario.json";
+import statusFx from "./fixtures/risk/status.json";
+import surfaceFx from "./fixtures/risk/surface.json";
+
+vi.mock("../components/EChart", () => ({
+  useChartColors: () => ({ up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" }),
+  EChart: ({ ariaLabel, option }: { ariaLabel: string; option: unknown }) => <div role="img" aria-label={ariaLabel} data-option={JSON.stringify(option)} />,
+}));
+
+const E1 = "2026-11-03";
+const E2 = "2026-11-23";
+const LEGS = [
+  { expiry: E1, strike: 25500, type: "CE", action: "SELL", lots: 2, entry_price: 140 },
+  { expiry: E1, strike: 25500, type: "PE", action: "SELL", lots: 2, entry_price: 130 },
+  { expiry: E1, strike: 25800, type: "CE", action: "BUY", lots: 2, entry_price: null },
+  { expiry: E1, strike: 25200, type: "PE", action: "BUY", lots: 2, entry_price: null },
+  { expiry: E2, strike: 25500, type: "CE", action: "BUY", lots: 1, entry_price: null },
+];
+const builderDoc = { doc: { legs: [{ id: "a", expiry: E1, strike: 25500, type: "CE", action: "SELL", lots: 1, premium: 140, premiumSource: "manual" }, { id: "b", expiry: E1, strike: 25400, type: "PE", action: "BUY", lots: 3, premium: null, premiumSource: null, enabled: false }] }, checking: { live: false, last_check_at: null, error: null } };
+
+type Over = Partial<Record<string, { status?: number; body: unknown }>>;
+let calls: { url: string; method: string; body: Record<string, unknown> | null }[] = [];
+
+function install(over: Over = {}) {
+  calls = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null;
+    calls.push({ url, method, body });
+    const reply = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { "Content-Type": "application/json" } });
+    const key = url.replace(/\?.*/, "");
+    const o = over[key] ?? over[url];
+    if (o) return reply(o.body, o.status ?? 200);
+    if (key === "/api/risk/status") return reply(statusFx);
+    if (key === "/api/risk/surface") return reply(surfaceFx);
+    if (key === "/api/risk/scenario") return reply(scenarioFx);
+    if (key === "/api/risk/presets") return reply(presetsFx);
+    if (key === "/api/risk/portfolio") return reply(portfolioFx);
+    if (key === "/api/risk/grid") return reply(body?.kind === "spot_time" ? gridTime : body?.kind === "payoff" ? gridPayoff : gridIv);
+    if (key === "/api/strategies/running") return reply(builderDoc);
+    return reply({ detail: { code: "nf", message: "not found" } }, 404);
+  }));
+}
+
+function mount() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={qc}><MemoryRouter><GreeksWhatIf /></MemoryRouter></QueryClientProvider>);
+}
+const optionOf = (label: string | RegExp) => JSON.parse(screen.getByRole("img", { name: label }).getAttribute("data-option") ?? "{}") as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+beforeEach(() => { localStorage.clear(); localStorage.setItem("nse.greeks.legs", JSON.stringify(LEGS)); });
+afterEach(() => vi.unstubAllGlobals());
+
+describe("Greeks and What-If page", () => {
+  it("shows the version and time of the surface everything was valued on, and says the chain is stored", async () => {
+    install();
+    mount();
+    await waitFor(() => expect(screen.getByTestId("risk-stamp-text")).toHaveTextContent("Greeks as of 11:00:00 IST, surface v1"));
+    expect(screen.getByTestId("risk-stamp-text")).toHaveAttribute("title", portfolioFx.surface_version_id);
+    expect(screen.getByTestId("risk-stamp")).toHaveTextContent("Stored chain");
+    expect(await screen.findByTestId("risk-greeks-stamp")).toHaveTextContent("Greeks as of 11:00:00 IST, surface v1");
+    expect(screen.getByText(/Read-only: nothing is placed or sent to a broker/)).toBeInTheDocument();
+  });
+
+  it("lists the position and lets legs be changed, with every control labelled", async () => {
+    install();
+    mount();
+    const rows = await screen.findAllByTestId("risk-leg-row");
+    expect(rows).toHaveLength(5);
+    expect(within(rows[0]!).getByLabelText("Leg 1 strike")).toHaveValue(25500);
+    expect(within(rows[0]!).getByLabelText("Leg 1 side")).toHaveValue("SELL");
+    expect(within(rows[0]!).getByLabelText("Leg 1 entry premium")).toHaveValue(140);
+    expect(within(rows[2]!).getByLabelText("Leg 3 entry premium")).toHaveValue(null);
+    fireEvent.change(within(rows[0]!).getByLabelText("Leg 1 lots"), { target: { value: "3" } });
+    expect(JSON.parse(localStorage.getItem("nse.greeks.legs")!)[0].lots).toBe(3); // kept for the next visit
+    fireEvent.click(within(rows[4]!).getByLabelText("Remove leg 5"));
+    await waitFor(() => expect(screen.getAllByTestId("risk-leg-row")).toHaveLength(4));
+    fireEvent.click(screen.getByTestId("risk-add-leg"));
+    expect(screen.getAllByTestId("risk-leg-row")).toHaveLength(5);
+  });
+
+  it("the scenario result is the engine's: total, volatilities and values per leg, and the entry-price column", async () => {
+    install();
+    mount();
+    expect(await screen.findByTestId("risk-total")).toHaveTextContent("+₹4,848"); // the fixture's 4848.4756
+    const t = screen.getByTestId("risk-leg-results");
+    const rows = within(t).getAllByRole("row");
+    expect(rows).toHaveLength(6); // header and five legs
+    expect(rows[1]).toHaveTextContent("11-03 · 25,500 CE · Sell 2");
+    expect(rows[1]).toHaveTextContent("−₹14,488"); // first leg's change
+    expect(rows[3]).toHaveTextContent("—"); // a leg with no entry price: a dash, not zero
+    const body = calls.find((c) => c.url === "/api/risk/scenario")!.body!;
+    expect((body.legs as unknown[]).length).toBe(5);
+    expect(body.scenario).toMatchObject({ spot_shock: 0, iv_shock: 0, time_elapsed_hours: 0, sticky_rule: "moneyness" });
+  });
+
+  it("preset buttons show their P&L and apply their scenario to the controls and to the request", async () => {
+    install();
+    mount();
+    const gap = await screen.findByTestId("risk-preset-gap_down");
+    expect(gap).toHaveTextContent("Gap down 2%");
+    expect(gap).toHaveTextContent("−₹25,801"); // the fixture
+    expect(screen.getByTestId("risk-preset-sd_plus_1")).toHaveTextContent("+₹4,330");
+    expect(screen.getByTestId("risk-preset-expiry_crush")).toHaveTextContent("+₹12,499");
+    expect(gap).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(gap);
+    await waitFor(() => expect(screen.getByTestId("risk-spot")).toHaveValue(-510));
+    expect(screen.getByTestId("risk-preset-gap_down")).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/risk/scenario" && (c.body!.scenario as { spot_shock: number }).spot_shock === -510)).toBe(true));
+    fireEvent.click(screen.getByTestId("risk-reset"));
+    await waitFor(() => expect(screen.getByTestId("risk-spot")).toHaveValue(0));
+    fireEvent.change(screen.getByTestId("risk-rule"), { target: { value: "delta" } });
+    expect(screen.getByTestId("risk-rule-hint")).toHaveTextContent("function of delta");
+    fireEvent.change(screen.getByTestId("risk-rate"), { target: { value: "0.5" } });
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/risk/scenario" && (c.body!.scenario as { rate_shock: number; sticky_rule: string }).rate_shock === 0.005 && (c.body!.scenario as { sticky_rule: string }).sticky_rule === "delta")).toBe(true)); // percentage points become an absolute rate
+  });
+
+  it("the risk matrix is the grid the engine returned, with the surface version, and can switch to time", async () => {
+    install();
+    mount();
+    const chart = await screen.findByRole("img", { name: /Risk matrix/ });
+    const o = optionOf(/Risk matrix/);
+    expect(o.series[0].data).toHaveLength(15);
+    expect(chart).toBeInTheDocument();
+    expect(screen.getByTestId("risk-matrix")).toHaveTextContent("Surface v1");
+    expect(screen.getByTestId("risk-matrix")).toHaveTextContent("Volatility follows moneyness");
+    fireEvent.click(screen.getByTestId("risk-matrix-spot_time"));
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/risk/grid" && c.body!.kind === "spot_time")).toBe(true));
+    await waitFor(() => expect(optionOf(/Risk matrix/).xAxis.data).toEqual(["now", "+24h", "+3.0d"]));
+    expect(screen.getByTestId("risk-matrix-spot_time")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("the payoff chart has today's line and the standard deviation bands from the presets", async () => {
+    install();
+    mount();
+    await screen.findByRole("img", { name: /Payoff of the position/ });
+    await waitFor(() => expect(optionOf(/Payoff of the position/).series).toHaveLength(2));
+    const o = optionOf(/Payoff of the position/);
+    expect(o.series[0].name).toBe("At expiry");
+    expect(o.series[0].markArea.data).toHaveLength(3);
+    const sd1 = presetsFx.presets.sd_plus_1.scenario.spot_shock;
+    expect(o.series[0].markArea.data[2][1].xAxis).toBeCloseTo(gridPayoff.forward! + sd1, 6);
+    expect(screen.getByTestId("risk-payoff")).toHaveTextContent("Against the current value, not the entry price");
+  });
+
+  it("the Greeks dashboard shows rupee Greeks, the beta-weighted delta, expiry buckets, and the limits that are near or over", async () => {
+    install();
+    mount();
+    const net = await screen.findByTestId("risk-net");
+    const p = portfolioFx.portfolio;
+    expect(within(net).getByTestId("risk-net-delta")).toHaveTextContent("+₹31"); // 31.099 rupees per point
+    expect(within(net).getByTestId("risk-net-vega")).toHaveTextContent("+₹338");
+    expect(within(net).getByTestId("risk-net-theta_day")).toHaveTextContent("+₹407");
+    expect(within(net).getByTestId("risk-net-gamma")).toHaveTextContent(p.net.rupee.gamma.toFixed(4).replace("-", "−")); // four decimals, a true minus
+    expect(p.net.rupee.gamma).toBeLessThan(0);
+    expect(screen.getByTestId("risk-beta")).toHaveTextContent("beta 1.00, config");
+    expect(screen.getAllByTestId("risk-bucket").map((r) => r.textContent)).toEqual([expect.stringContaining("2026-11-03 (front)"), expect.stringContaining("2026-11-23 (next)")]);
+    const breaches = screen.getAllByTestId("risk-breach");
+    expect(breaches.map((b) => b.getAttribute("data-level"))).toEqual(["breach", "breach", "warn"]); // worst first, as the server sent them
+    expect(breaches[0]).toHaveTextContent("Over limit");
+    expect(breaches[0]).toHaveTextContent("Leg 2026-11-03 25500 CE · delta");
+    expect(breaches[0]).toHaveTextContent("109%");
+    expect(breaches[2]).toHaveTextContent("Near limit");
+    fireEvent.click(screen.getByTestId("risk-unit-raw"));
+    expect(screen.getByTestId("risk-net-delta")).toHaveTextContent(`${p.net.raw.delta!.toFixed(2).replace(".", ".")}`);
+    expect(screen.getByTestId("risk-net-theta_day")).toHaveTextContent("₹ per year");
+    fireEvent.click(screen.getByTestId("risk-unit-rupee"));
+    fireEvent.click(screen.getByTestId("risk-more-greeks"));
+    const all = within(screen.getByTestId("risk-all-greeks")).getAllByRole("row");
+    expect(all).toHaveLength(16); // header and fifteen Greeks
+    expect(screen.getByTestId("risk-all-greeks")).toHaveTextContent("Ultima");
+  });
+
+  it("each leg opens to its own Greeks, and the model's volatility and value", async () => {
+    install();
+    mount();
+    const details = await screen.findAllByTestId("risk-leg-details");
+    expect(details).toHaveLength(5);
+    expect(details[0]).toHaveTextContent("11-03 · 25,500 CE · Sell 2 × 65");
+    expect(details[0]).toHaveTextContent(/Θ .*\/day/);
+    fireEvent.click(within(details[0]!).getByText(/11-03 · 25,500 CE/));
+    expect(within(details[0]!).getByText("Volatility used")).toBeInTheDocument();
+    expect(within(details[0]!).getByText("Zomma")).toBeInTheDocument();
+  });
+
+  it("the volatility surface: an expiry at a time, the fit quality, the arbitrage checks, and charts", async () => {
+    install();
+    mount();
+    const viewer = await screen.findByTestId("risk-surface");
+    expect(viewer).toHaveTextContent("stored chain, surface v1");
+    expect(within(viewer).getByTestId("risk-counts")).toHaveTextContent(/\d+ \/ \d+ \/ \d+/);
+    expect(within(viewer).getByTestId("risk-arb")).toHaveTextContent("butterfly ok, calendar ok");
+    expect(within(viewer).getByTestId("risk-expiry-2026-11-03")).toHaveAttribute("aria-selected", "true");
+    expect(optionOf(/Implied volatility smile for 2026-11-03/).series[0].name).toBe("Fitted smile");
+    fireEvent.click(within(viewer).getByTestId("risk-expiry-2026-11-23"));
+    await screen.findByRole("img", { name: /Implied volatility smile for 2026-11-23/ });
+    expect(within(viewer).getByTestId("risk-expiry-2026-11-23")).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByTestId("risk-degraded")).toBeNull();
+  });
+});
+
+describe("empty, error, stale and degraded states", () => {
+  it("with no legs it says so, calls no scenario endpoint, and loads the Strategy Builder's legs on request (disabled ones left out)", async () => {
+    localStorage.clear();
+    install();
+    mount();
+    expect(await screen.findByTestId("risk-no-legs")).toHaveTextContent("No legs yet");
+    expect(screen.getByTestId("risk-result")).toHaveTextContent("Add legs to see what a scenario would do");
+    const use = await screen.findByTestId("risk-use-builder");
+    await waitFor(() => expect(use).toHaveTextContent("(1)"));
+    expect(calls.some((c) => c.url === "/api/risk/scenario" || c.url === "/api/risk/portfolio")).toBe(false);
+    fireEvent.click(use);
+    await waitFor(() => expect(screen.getAllByTestId("risk-leg-row")).toHaveLength(1));
+    expect(JSON.parse(localStorage.getItem("nse.greeks.legs")!)).toEqual([{ expiry: E1, strike: 25500, type: "CE", action: "SELL", lots: 1, entry_price: 140 }]);
+    await screen.findByTestId("risk-total");
+  });
+
+  it("no stored chain yet: every panel says why in plain words, not a blank", async () => {
+    install({
+      "/api/risk/surface": { status: 503, body: { detail: { code: "no_surface", message: "no stored option chain" } } },
+      "/api/risk/scenario": { status: 503, body: { detail: { code: "no_surface", message: "no stored option chain" } } },
+      "/api/risk/portfolio": { status: 503, body: { detail: { code: "no_surface", message: "no stored option chain" } } },
+      "/api/risk/grid": { status: 503, body: { detail: { code: "no_surface", message: "no stored option chain" } } },
+      "/api/risk/presets": { status: 503, body: { detail: { code: "no_surface", message: "no stored option chain" } } },
+    });
+    mount();
+    await waitFor(() => expect(screen.getAllByRole("alert").length).toBeGreaterThanOrEqual(4));
+    expect(screen.getByTestId("risk-result")).toHaveTextContent("No stored option chain is available yet");
+    expect(screen.getByTestId("risk-matrix")).toHaveTextContent("No stored option chain is available yet");
+    expect(screen.getByTestId("risk-greeks")).toHaveTextContent("No stored option chain is available yet");
+    expect(screen.getByTestId("risk-stamp-text")).toHaveTextContent("No surface yet");
+  });
+
+  it("an expiry with no chain, no fit and an invalid input each get their own message", async () => {
+    install({ "/api/risk/scenario": { status: 409, body: { detail: { code: "expiry_unavailable", message: "no chain data (and so no lot size) for the expiry 2026-12-29" } } } });
+    mount();
+    await waitFor(() => expect(screen.getByTestId("risk-result")).toHaveTextContent("no chain data (and so no lot size) for the expiry 2026-12-29. Pick an expiry that has a chain."));
+    vi.unstubAllGlobals();
+    install({ "/api/risk/scenario": { status: 422, body: { detail: [{ msg: "Input should be greater than 0" }] } } });
+    mount();
+    await waitFor(() => expect(screen.getAllByTestId("risk-result").some((e) => e.textContent?.includes("Input should be greater than 0"))).toBe(true));
+  });
+
+  it("a stale stored chain is flagged on the stamp and in the surface", async () => {
+    const stale = { ...surfaceFx, stale: true, data: surfaceFx.data.map((d) => ({ ...d, stale: true, age_s: 14400 })) };
+    install({ "/api/risk/surface": { body: stale }, "/api/risk/portfolio": { body: { ...portfolioFx, stale: true } } });
+    mount();
+    expect(await screen.findByTestId("risk-surface-stale")).toHaveTextContent("240 minutes old");
+    await waitFor(() => expect(screen.getByTestId("risk-stamp")).toHaveTextContent("stale"));
+  });
+
+  it("a degraded expiry is announced on top and in the surface, with the reason, and the engine's own message about the fit", async () => {
+    install({ "/api/risk/surface": { body: degradedFx } });
+    mount();
+    expect(await screen.findByTestId("risk-degraded-banner")).toHaveTextContent("Model degraded for 2026-11-03: only 3 usable points (need 7)");
+    const viewer = await screen.findByTestId("risk-surface");
+    expect(within(viewer).getByTestId("risk-degraded")).toHaveTextContent("No smile could be fitted");
+    expect(within(viewer).getByTestId("risk-expiry-2026-11-03")).toHaveTextContent("⚠");
+    expect(within(viewer).getByTestId("risk-problems")).toHaveTextContent(/quote.* not used in the fit/);
+  });
+
+  it("an incomplete position says its totals are unavailable and shows the legs that could be valued", async () => {
+    const p = JSON.parse(JSON.stringify(portfolioFx));
+    p.portfolio.complete = false;
+    p.portfolio.warnings = ["leg 2 (2026-12-29 25500 CE): expiry not on the surface"];
+    p.portfolio.legs[1].status = "expiry not on the surface";
+    install({ "/api/risk/portfolio": { body: p } });
+    mount();
+    expect(await screen.findByTestId("risk-incomplete")).toHaveTextContent("some legs could not be valued");
+    expect(screen.getAllByTestId("risk-leg-details")[1]).toHaveTextContent("expiry not on the surface");
+  });
+
+  it("the engine switched off, and a configuration error, are explained instead of showing empty panels", async () => {
+    install({ "/api/risk/status": { status: 404, body: { detail: { code: "disabled", message: "off" } } } });
+    mount();
+    expect(await screen.findByTestId("risk-disabled")).toHaveTextContent("turned off on this server");
+    expect(screen.queryByTestId("risk-legs")).toBeNull();
+    vi.unstubAllGlobals();
+    install({ "/api/risk/status": { body: { ...statusFx, config_error: "GREEKS_LIMITS_JSON is not valid: unknown limit metrics: ['dellta']" } } });
+    mount();
+    const alerts = await screen.findAllByTestId("risk-config-error");
+    expect(alerts[0]).toHaveTextContent("dellta");
+  });
+
+  it("chain Greeks fixture has the shape the API promises (guards the fixtures themselves)", () => {
+    const row = chainFx.rows[3]!;
+    expect(chainFx.rows).toHaveLength(7);
+    expect(row.call.unit.delta - row.put.unit.delta).toBeCloseTo(Math.exp(-0.06 * chainFx.t_years), 6);
+    expect(Object.keys(row.call.rupee_per_long_lot)).toContain("theta_day");
+  });
+});

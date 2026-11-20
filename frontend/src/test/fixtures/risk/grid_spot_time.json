@@ -1,0 +1,67 @@
+{
+ "surface_version_id": "v1-585d0a3da6d5",
+ "as_of_ist": "2026-10-28T11:00:00+05:30",
+ "source": "stored",
+ "stale": false,
+ "data": [
+  {
+   "expiry": "2026-11-03",
+   "status": "ok",
+   "snapshot_id": "snap-2026-11-03",
+   "snapshot_at_ist": "2026-10-28T11:00:00+05:30",
+   "age_s": 0.0,
+   "stale": false,
+   "quotes": 30,
+   "live_books": 0,
+   "lot_size": 65,
+   "expiry_instant_ist": "2026-11-03T15:40:00+05:30"
+  },
+  {
+   "expiry": "2026-11-23",
+   "status": "ok",
+   "snapshot_id": "snap-2026-11-23",
+   "snapshot_at_ist": "2026-10-28T11:00:00+05:30",
+   "age_s": 0.0,
+   "stale": false,
+   "quotes": 30,
+   "live_books": 0,
+   "lot_size": 65,
+   "expiry_instant_ist": "2026-11-23T15:40:00+05:30"
+  }
+ ],
+ "grid": {
+  "surface_version_id": "v1-585d0a3da6d5",
+  "as_of_ist": "2026-10-28T11:00:00+05:30",
+  "row_axis": [
+   -300.0,
+   0.0,
+   300.0
+  ],
+  "col_axis": [
+   0.0,
+   24.0,
+   72.0
+  ],
+  "col_kind": "hours",
+  "pnl": [
+   [
+    -14916.350692425134,
+    -15478.81954513168,
+    -17140.485726286763
+   ],
+   [
+    0.0,
+    514.329588483603,
+    2539.016848322415
+   ],
+   [
+    4510.208518933547,
+    4043.782264649719,
+    2672.803368006371
+   ]
+  ],
+  "sticky_rule": "moneyness",
+  "warnings": []
+ },
+ "forward": 25500.0
+}
