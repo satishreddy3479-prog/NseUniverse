@@ -9,10 +9,11 @@ dependencies = [
   "pydantic>=2.7,<3",
   "pydantic-settings>=2.4,<3",
   "kotakneoapi>=3.0.13,<4",
+  "numpy>=1.26,<3",  # the Greeks and What-If engine (app/risk): vectorised Black-76
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.24", "httpx>=0.27", "ruff>=0.6", "mypy>=1.11"]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "httpx>=0.27", "ruff>=0.6", "mypy>=1.11", "hypothesis>=6.100,<7"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -42,6 +43,8 @@ ignore = ["S101"]
 "app/intelligence/live_regime.py" = ["E501"]
 "app/services/history.py" = ["E501"]
 "app/api/coalesce.py" = ["E501"]
+"app/risk/*.py" = ["E501"]
+"tests/unit/test_risk_*.py" = ["E501"]
 "tests/unit/test_proc_metrics_real.py" = ["E501"]
 "tests/unit/test_swing_http.py" = ["E501"]
 "tests/unit/test_coalesce.py" = ["E501"]
