@@ -830,6 +830,7 @@ export default function StrategyBuilder() {
           </div>
         </details>
         <Link to="/portfolio#closed" data-testid="closed-menu" aria-label="Closed strategies" className={`${field} flex items-center`} title="Closed strategies are listed, opened and deleted on the Strategy portfolio page">Closed ({closed.length})</Link>
+        <Link to="/greeks-whatif" data-testid="greeks-link" aria-label="Open in Greeks and What-If" className={`${field} flex items-center`} title="Greeks, scenarios and the volatility surface for these legs (use 'Use my Strategy Builder legs' there)">Greeks &amp; What-If</Link>
         <Button ariaLabel="Reset strategy" onClick={resetStrategy} disabled={!canReset} title="Undo your edits: back to the strategy as it was built or loaded (legs, strikes, lots, targets, stops, what-if, date and IV shift)">Reset</Button>
         <Button ariaLabel="New strategy" onClick={newStrategy} disabled={!canNew} title="Start a blank strategy: clears the legs and the name">New</Button>
         <span className="text-xs text-muted sm:ml-auto" title={liveMode === "fresh" ? "Streamed last traded prices overlay the stored snapshot, as on the Option chain page" : "Premiums are the last traded prices in this stored snapshot, not live quotes"}>{liveMode === "fresh" ? <span className="mr-2 rounded-sm border border-up/60 px-1 text-up">LIVE</span> : null}Snapshot <span className={`num ${chain.data?.stale ? "text-warn" : "text-paper"}`}>{snap ? fmtDateTimeIST(snap.retrieved_at) : "—"}</span>{chain.data?.stale ? " · stale" : ""}</span>

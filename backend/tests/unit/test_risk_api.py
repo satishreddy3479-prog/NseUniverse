@@ -278,7 +278,7 @@ def test_portfolio_and_presets_over_http(client: tuple[TestClient, Any]) -> None
     assert p["net"]["rupee"]["delta"] == pytest.approx(want.net.rupee["delta"], rel=1e-12) and p["net"]["rupee"]["vega"] == pytest.approx(want.net.rupee["vega"], rel=1e-12)
     assert p["beta_weighted_delta_rupees"] == pytest.approx(p["net"]["rupee"]["delta"], rel=1e-12) and p["breaches"] == []
     pr = post(c, "/api/risk/presets", {"legs": STRADDLE})
-    assert set(pr["presets"]) == {"gap_down", "iv_spike", "expiry_crush", "sd_plus_1", "sd_minus_1", "sd_plus_2", "sd_minus_2"}
+    assert {"gap_down", "iv_spike", "expiry_crush", "sd_plus_1", "sd_minus_1", "sd_plus_2", "sd_minus_2"} <= set(pr["presets"]) <= {"gap_down", "iv_spike", "expiry_crush", "sd_plus_1", "sd_minus_1", "sd_plus_2", "sd_minus_2", "expiry_minus_3h", "expiry_minus_1h", "expiry_minus_15m"}
     assert all(isinstance(v["pnl"], float) for v in pr["presets"].values()) and pr["presets"]["gap_down"]["scenario"]["spot_shock"] == pytest.approx(-0.02 * F, abs=0.5)
 
 

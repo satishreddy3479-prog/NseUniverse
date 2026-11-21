@@ -310,7 +310,11 @@ def test_presets_by_hand(engine: WhatIfEngine) -> None:
     assert p["sd_plus_1"].spot_shock == pytest.approx(sd, rel=1e-12) and p["sd_minus_2"].spot_shock == pytest.approx(-2.0 * sd, rel=1e-12)
     assert p["expiry_crush"].iv_shock == -4.0 and p["expiry_crush"].time_elapsed_hours == pytest.approx(75.0, abs=1e-12)  # 76 hours left: the clock moves to one hour before the expiry instant
     assert presets_for(f, vol, t, 0.5)["expiry_crush"].time_elapsed_hours == 0.0  # never negative
-    assert set(p) == {"gap_down", "iv_spike", "expiry_crush", "sd_plus_1", "sd_minus_1", "sd_plus_2", "sd_minus_2"}
+    assert set(p) == {"gap_down", "iv_spike", "expiry_crush", "expiry_minus_3h", "expiry_minus_1h", "expiry_minus_15m", "sd_plus_1", "sd_minus_1", "sd_plus_2", "sd_minus_2"}
+    assert p["expiry_minus_3h"].time_elapsed_hours == pytest.approx(73.0, abs=1e-12) and p["expiry_minus_15m"].time_elapsed_hours == pytest.approx(75.75, abs=1e-12)  # 76 h left minus 3 h / minus 15 min
+    assert p["expiry_minus_1h"].iv_shock == 0.0 and p["expiry_minus_1h"].spot_shock == 0.0  # the clock alone
+    near = presets_for(f, vol, t, 2.0)  # 2 h left: the 3 h step is already past, so it is not offered
+    assert "expiry_minus_3h" not in near and near["expiry_minus_1h"].time_elapsed_hours == pytest.approx(1.0, abs=1e-12)
     assert presets_for(f, vol, t, 76.0, WhatIfConfig(gap_down_pct=3.0, iv_spike_pts=8.0), rule="strike")["gap_down"].spot_shock == pytest.approx(-765.0, abs=1e-9)  # configurable
     assert presets_for(f, vol, t, 76.0, rule="strike")["iv_spike"].sticky_rule == "strike"
     for name, sc in engine.presets().items():

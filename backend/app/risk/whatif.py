@@ -344,6 +344,9 @@ class WhatIfEngine:
         return presets_for(f, s, t, self.hours_to_nearest_expiry(), self.cfg)
 
 
+EXPIRY_CLOCK_PRESETS: tuple[tuple[str, float], ...] = (("expiry_minus_3h", 3.0), ("expiry_minus_1h", 1.0), ("expiry_minus_15m", 0.25))
+
+
 def presets_for(forward: float, atm_vol: float, t_years: float, hours_to_expiry: float, cfg: WhatIfConfig = DEFAULT_WHATIF, rule: str | None = None) -> dict[str, Scenario]:
     """Named scenarios: gap down 2 %, IV spike +5, the one and two standard deviation bands (sigma_atm sqrt(T) F points either way), and the expiry-day crush (the clock moved to one hour before the
     expiry instant with four volatility points lost: a convention, configurable)."""
@@ -354,6 +357,9 @@ def presets_for(forward: float, atm_vol: float, t_years: float, hours_to_expiry:
         "iv_spike": Scenario(iv_shock=cfg.iv_spike_pts, sticky_rule=rule),
         "expiry_crush": Scenario(iv_shock=-cfg.crush_pts, time_elapsed_hours=max(hours_to_expiry - cfg.crush_hours_before_expiry, 0.0), sticky_rule=rule),
     }
+    for key, left_h in EXPIRY_CLOCK_PRESETS:  # time only: the clock moves to this long before the expiry instant, nothing else changes (skipped when already closer)
+        if hours_to_expiry > left_h:
+            out[key] = Scenario(time_elapsed_hours=hours_to_expiry - left_h, sticky_rule=rule)
     for n in (1, 2):
         out[f"sd_plus_{n}"] = Scenario(spot_shock=n * sd, sticky_rule=rule)
         out[f"sd_minus_{n}"] = Scenario(spot_shock=-n * sd, sticky_rule=rule)

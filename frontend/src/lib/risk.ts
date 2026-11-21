@@ -267,11 +267,14 @@ export const PRESET_LABELS: Record<string, string> = {
   gap_down: "Gap down 2%",
   iv_spike: "IV spike +5",
   expiry_crush: "Expiry-day crush",
+  expiry_minus_3h: "3 h to expiry",
+  expiry_minus_1h: "1 h to expiry",
+  expiry_minus_15m: "15 min to expiry",
   sd_plus_1: "+1σ",
   sd_minus_1: "−1σ",
   sd_plus_2: "+2σ",
   sd_minus_2: "−2σ",
 };
-export const PRESET_ORDER = ["gap_down", "iv_spike", "expiry_crush", "sd_minus_2", "sd_minus_1", "sd_plus_1", "sd_plus_2"];
+export const PRESET_ORDER = ["gap_down", "iv_spike", "expiry_crush", "expiry_minus_3h", "expiry_minus_1h", "expiry_minus_15m", "sd_minus_2", "sd_minus_1", "sd_plus_1", "sd_plus_2"];
 
 export const legKey = (l: RiskLeg): string => `${l.expiry}|${l.strike}|${l.type}|${l.action}`;
