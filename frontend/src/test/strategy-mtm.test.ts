@@ -1,0 +1,69 @@
+// Mark-to-market of a strategy through the stored samples. Every expected number is a hand calculation (lot 65).
+import { describe, expect, it } from "vitest";
+import { buildMtm } from "../lib/strategyMtm";
+import type { Leg } from "../lib/strategy";
+import type { FuturesSeries, StrikeSeries } from "../lib/types";
+
+const LOT = 65;
+const EXP = "2026-11-24";
+const at = (hm: string) => `2026-11-20T${hm}:00.000Z`; // minutes only matter
+const times = [at("03:50"), at("03:51"), at("03:52"), at("03:53"), at("03:54")]; // 09:20 .. 09:24 IST
+
+const ss = (ce: (number | null)[], pe: (number | null)[]): StrikeSeries =>
+  ({ underlying: "NIFTY", expiry: EXP, strikes: [25800], atm_strike: 25800, times, spot: [], ce_price: { "25800": ce }, pe_price: { "25800": pe }, ce_oi: {}, pe_oi: {}, ce_change: {}, pe_change: {} }) as unknown as StrikeSeries;
+const fs = (f: (number | null)[]): FuturesSeries => ({ day: "2026-11-20", contract: "NIFTY26NOVFUT", expiry: EXP, times, future: f }) as unknown as FuturesSeries;
+const leg = (o: Partial<Leg>): Leg => ({ id: "x", expiry: EXP, strike: 25800, type: "CE", action: "SELL", lots: 1, premium: 100, premiumSource: "market", enteredAt: at("03:51"), ...o }) as Leg;
+
+const CE = [100, 100, 105, 110, 95]; // 09:20 .. 09:24
+const PE = [90, 90, 85, 80, 92];
+const FUT = [25800, 25800, 25790, 25770, 25810];
+const legs = [leg({ id: "ce", enteredAt: at("03:50") }), leg({ id: "pe", type: "PE", premium: 90, enteredAt: at("03:51") }), leg({ id: "f", type: "FUT", strike: 0, action: "BUY", premium: 25800, enteredAt: at("03:51") })];
+
+describe("strategy mark-to-market", () => {
+  it("short straddle + long future: starts when the last leg is in, and every value is the hand sum", () => {
+    const m = buildMtm(legs, LOT, { [EXP]: ss(CE, PE) }, fs(FUT));
+    expect(m.reason).toBeNull();
+    expect(m.from).toBe(Date.parse(at("03:51")));
+    expect(m.t).toHaveLength(4); // 09:20 is before the last leg was entered
+    // 09:21 all at entry: 0
+    // 09:22 CE -(105-100)*65 = -325, PE -(85-90)*65 = +325, FUT (25790-25800)*65 = -650  => -650
+    // 09:23 CE -650, PE +650, FUT -30*65 = -1950                                         => -1950
+    // 09:24 CE +325 (95), PE -(92-90)*65 = -130, FUT +10*65 = +650                       => +845
+    expect(m.pnl).toEqual([0, -650, -1950, 845]);
+    expect(m.now).toBe(845);
+    expect(m.peak).toEqual({ pnl: 845, t: Date.parse(at("03:54")) });
+    expect(m.trough).toEqual({ pnl: -1950, t: Date.parse(at("03:53")) });
+    expect(m.drawdown).toEqual({ amount: 1950, from: Date.parse(at("03:51")), to: Date.parse(at("03:53")) }); // from the high of 0 to the low of -1950
+  });
+
+  it("a leg that has exited keeps what it booked: the call stopped at 110 (-650) is a constant afterwards", () => {
+    const out = [leg({ id: "ce", enteredAt: at("03:50"), exitPrice: 110, exitedAt: at("03:52"), exitReason: "stop", realised: -650 }), legs[1]!, legs[2]!];
+    const m = buildMtm(out, LOT, { [EXP]: ss(CE, PE) }, fs(FUT));
+    // the call exits at 09:22: from then on it is -650 flat. 09:21 is before the exit (0); 09:22: -650 + 325 - 650 = -975
+    // 09:23: -650 + 650 - 1950 = -1950 ; 09:24: -650 - 130 + 650 = -130
+    expect(m.pnl).toEqual([0, -975, -1950, -130]);
+  });
+
+  it("a price that was not stored leaves a gap, counted, never zero or carried forward", () => {
+    const m = buildMtm(legs, LOT, { [EXP]: ss(CE, [90, 90, null, 80, 92]) }, fs(FUT));
+    expect(m.pnl).toEqual([0, null, -1950, 845]);
+    expect(m.missing).toBe(1);
+  });
+
+  it("a leg re-entered after a booked cycle counts the earlier booking from its new entry", () => {
+    // the call was stopped once for -650, then entered again at 100 at 09:21: realised -650 stays, the current cycle is open
+    const re = [leg({ id: "ce", enteredAt: at("03:51"), realised: -650, cycles: 1 })];
+    const m = buildMtm(re, LOT, { [EXP]: ss(CE, PE) }, undefined);
+    expect(m.pnl).toEqual([-650, -650 - 325, -650 - 650, -650 + 325]);
+  });
+
+  it("says why nothing is drawn: no legs, no entry price, no entry time, no samples yet, a future whose contract is not stored", () => {
+    expect(buildMtm([], LOT, {}, undefined).reason).toMatch(/at least one leg/);
+    expect(buildMtm([leg({ premium: null })], LOT, {}, undefined).reason).toMatch(/entry price/);
+    const untimed = buildMtm([leg({ enteredAt: null })], LOT, { [EXP]: ss(CE, PE) }, undefined);
+    expect(untimed.reason).toMatch(/no recorded entry time/); expect(untimed.untimed).toBe(1);
+    expect(buildMtm([leg({ enteredAt: at("05:00") })], LOT, { [EXP]: ss(CE, PE) }, undefined).reason).toMatch(/No stored sample/);
+    const wrong = buildMtm([legs[2]!], LOT, {}, { ...fs(FUT), expiry: "2026-12-29" } as FuturesSeries); // the stored future is the other month's
+    expect(wrong.pnl.every((v) => v == null)).toBe(true);
+  });
+});

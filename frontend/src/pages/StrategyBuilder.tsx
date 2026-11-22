@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StrategyTimeChart } from "../components/StrategyTimeChart";
+import { StrategyMtm } from "../components/StrategyMtm";
 import { liveKey, mergeRows, type LiveMode } from "../components/ChainTable";
 import { useThrottledVersion } from "../components/dashboard/DashContext";
 import { useLiveSpot, useStreamStatus } from "../lib/useLive";
@@ -175,7 +176,7 @@ export default function StrategyBuilder() {
   const [moveToCost, setMoveToCost] = useState<boolean>(work?.moveToCost ?? false);
   // when the holding rule started counting (set by the server when a strategy is first sent; changed when the rule is changed)
   const [holdFrom, setHoldFrom] = useState<string | null>(work?.holdFrom ?? null);
-  const [tab, setTab] = useState<"positions" | "chart" | "greeks" | "scenarios">("positions");
+  const [tab, setTab] = useState<"positions" | "chart" | "mtm" | "greeks" | "scenarios">("positions");
   const [bias, setBias] = useState<Bias>("Neutral");
   const [rate, setRate] = useState(6);
   const [days, setDays] = useState(0);
@@ -408,6 +409,7 @@ export default function StrategyBuilder() {
   const chart = useThrottledValue(chartNow, 2500, `${zoom}|${narrow}|${live.length}|${live.map((l) => `${l.action}${l.type}${l.strike}${l.lots}${l.premium}${l.exitPrice ?? ''}${l.stop ?? ''}${l.target ?? ''}`).join(",")}|${lines}|${oiMode}|${days}|${ivPts}|${whatPct}`);
   const pop = ready && a?.defined && lotSize && spot && payIv && payExp ? (multi ? probabilityOfProfitFn(pnlFn, spot, payIv, payExp, snapMs, payCarry) : probabilityOfProfit(live, lotSize, spot, payIv, payExp, snapMs, payCarry)) : null;
   const greeks = ready && lotSize && spot ? netGreeks(mlegs, lotSize, val0) : null;
+  const mtmLegs = useMemo(() => legs.map((l) => ({ ...l, lots: l.lots * mult })), [legs, mult]); // the lots as the page shows them
   const optionGreeks = ready && lotSize && spot ? netGreeks(mlegs.filter((l) => l.type !== "FUT"), lotSize, val0) : null; // the time chart holds the option legs only
   /** P&L of one leg: what is booked, plus the open part against the market price */
   const unreal = (l: Leg, mkt: number | null) => {
@@ -1134,7 +1136,7 @@ export default function StrategyBuilder() {
           {legs.length > 0 && (
             <section aria-label="Positions" className="rounded-[var(--radius-panel)] border border-rule bg-slate">
               <div className="flex flex-wrap items-center gap-3 border-b border-rule px-3 py-2 text-sm">
-                {(["positions", "chart", "greeks", "scenarios"] as const).map((t) => <button key={t} type="button" aria-pressed={tab === t} onClick={() => setTab(t)} className={`rounded-sm px-3 py-1 ${tab === t ? "bg-info/15 text-info" : "text-muted hover:text-paper"}`}>{t === "positions" ? "Positions" : t === "chart" ? "Price chart" : t === "greeks" ? "Greeks" : "Scenarios"}</button>)}
+                {(["positions", "chart", "mtm", "greeks", "scenarios"] as const).map((t) => <button key={t} type="button" aria-pressed={tab === t} onClick={() => setTab(t)} className={`rounded-sm px-3 py-1 ${tab === t ? "bg-info/15 text-info" : "text-muted hover:text-paper"}`}>{t === "positions" ? "Positions" : t === "chart" ? "Price chart" : t === "mtm" ? "MTM" : t === "greeks" ? "Greeks" : "Scenarios"}</button>)}
                 <div className="ml-auto flex flex-wrap items-center gap-3 text-xs text-muted">
                   <span>Multiplier <button type="button" aria-label="Decrease multiplier" className="mx-1 rounded-sm border border-rule px-2" onClick={() => setMult((m) => Math.max(1, m - 1))}>−</button><span className="num text-paper" data-testid="mult">{mult}</span><button type="button" aria-label="Increase multiplier" className="mx-1 rounded-sm border border-rule px-2" onClick={() => setMult((m) => m + 1)}>+</button></span>
                   <span>Qty per lot <span className="num text-paper">{lotSize ?? "—"}</span></span>
@@ -1366,6 +1368,8 @@ export default function StrategyBuilder() {
                 </div>
               ) : tab === "chart" ? (
                 <>{open.some((l) => l.type === "FUT") && <p className="px-3 pt-2 text-xs text-muted" data-testid="stl-future-note">This chart is drawn from the stored one-minute prices of the option strikes in your legs; the future is not in it (its P&L and delta are in the table, the payoff and the Greeks).</p>}<StrategyTimeChart legs={open.filter((l) => l.type !== "FUT") as (Leg & { type: OptionType })[]} historyExpiries={[...collected]} lotSize={lotSize} modelDelta={optionGreeks?.delta ?? null} rules={rules} /></>
+              ) : tab === "mtm" ? (
+                <StrategyMtm legs={mtmLegs} historyExpiries={[...collected]} lotSize={lotSize} liveNow={totalPnl} />
               ) : tab === "greeks" ? (
                 <div className="overflow-x-auto p-2" data-testid="greeks">
                   <table className="w-full text-sm" aria-label="Greeks">

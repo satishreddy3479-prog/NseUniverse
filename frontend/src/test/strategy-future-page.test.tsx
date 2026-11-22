@@ -88,6 +88,15 @@ describe("NIFTY future in the Strategy builder", () => {
     expect(within(await screen.findByRole("table", { name: "Strategy legs" })).getByLabelText("Entry premium")).toHaveValue(24150);
   });
 
+  it("the MTM tab opens for a strategy with a future and says what is missing instead of drawing nothing", async () => {
+    mount();
+    await loaded();
+    await userEvent.click(await screen.findByRole("button", { name: "Buy future" }));
+    await userEvent.click(await screen.findByRole("button", { name: "MTM" }));
+    const msg = await screen.findByTestId(/^mtm-/, undefined, { timeout: 10000 });
+    expect(msg.textContent ?? "").not.toBe(""); // the stored one-minute prices are not part of this fixture: the tab explains it
+  });
+
   it("with no contract resolved the buttons are off and nothing is invented", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => (String(input).includes("/api/futures/contracts") ? new Response("{}", { status: 503 }) : new Response("{}", { status: 404 }))));
     mount();
