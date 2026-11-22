@@ -1,4 +1,7 @@
-import { fmtPct, fmtPrice, fmtSigned, fmtTimeIST } from "../lib/format";
+import { fmtDateTimeIST, fmtPct, fmtPrice, fmtSigned, fmtTimeIST } from "../lib/format";
+
+/** True when the ISO time falls on today's date in India: an older snapshot carries its date so a Friday price is not read as today's. */
+const sameIstDay = (iso: string): boolean => new Date(Date.parse(iso) + 330 * 60_000).toISOString().slice(0, 10) === new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
 import { INDEX_KEY } from "../lib/liveStore";
 import { useSpotDisplay } from "../lib/useLive";
 import type { SnapshotSummary } from "../lib/types";
@@ -25,7 +28,7 @@ export function SpotBadge({ latest, className = "" }: { latest: SnapshotSummary 
     <div className={`flex shrink-0 items-center gap-x-3 whitespace-nowrap leading-tight ${className}`} title={useLive ? "Live from the exchange feed" : held ? `Held: the last price from the exchange feed, ${spot.at ? fmtTimeIST(new Date(spot.at).toISOString()) : ""}. Live prices resume when the market opens.` : "From the latest snapshot, not live"}>
       <div className="hidden flex-col items-start gap-0.5 min-[520px]:flex">
         <span className="flex items-center gap-1.5 text-xs text-muted">NIFTY 50 {held ? <><span className="inline-flex items-center rounded-sm border border-warn/50 px-1.5 py-px text-xs font-medium text-warn" data-testid="spot-held">Held {spot.at ? fmtTimeIST(new Date(spot.at).toISOString()) : ""}</span> <Info term="held price" /></> : <SourceTag source={source} />}</span>
-        {spot.kind === "snapshot" && latest && <span className="num text-[11px] text-muted" title={`Stored snapshot of the ${latest.expiry} expiry; each expiry reads the index on its own, so the other expiry can differ by a point or so`}>{fmtTimeIST(latest.retrieved_at)} · {latest.expiry.slice(5)}</span>}
+        {spot.kind === "snapshot" && latest && <span className="num text-[11px] text-muted" title={`Stored snapshot of the ${latest.expiry} expiry; each expiry reads the index on its own, so the other expiry can differ by a point or so`}>{sameIstDay(latest.retrieved_at) ? fmtTimeIST(latest.retrieved_at) : fmtDateTimeIST(latest.retrieved_at)} · {latest.expiry.slice(5)}</span>}
       </div>
       <div className="flex flex-col items-start gap-px leading-none min-[520px]:items-end min-[520px]:gap-0.5 min-[520px]:leading-tight">
         <span className="text-[10px] font-medium tracking-wide text-muted min-[520px]:hidden">NIFTY</span>

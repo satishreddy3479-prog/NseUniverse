@@ -3,6 +3,7 @@ import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SpotBadge } from "../components/SpotBadge";
 import { INDEX_KEY, liveStore } from "../lib/liveStore";
+import { isLiveTickTime } from "../lib/useLive";
 import { liveTick, status, streamStatus, summary } from "./fixtures";
 
 const latest = summary({ underlying_ltp: 22698.85, underlying_prev_close: 22749.75 });
@@ -87,10 +88,42 @@ describe("spot badge: the pre-open price is held until the market opens", () => 
     expect(screen.getByText("Live")).toBeInTheDocument();
   });
 
+  it("a quote the broker sends again after a restart at night is not 'Held 23:15': the stored snapshot is shown with its own date and time", () => {
+    // Sunday 22 Nov 2026, 23:15:21 IST: the backend restarted and replayed Friday's close; the stored snapshot is Friday 20 Nov 15:39 IST
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-22T17:46:00Z"));
+    try {
+      showWith(summary({ underlying_ltp: 25800.6, underlying_prev_close: 25514.6, retrieved_at: "2026-11-20T10:09:04Z" }));
+      feedTick("market_closed", preOpenTick("2026-11-22T17:45:21Z")); // 23:15:21 IST
+      expect(screen.queryByTestId("spot-held")).toBeNull();
+      expect(screen.getByText("25,800.60")).toBeInTheDocument();
+      expect(screen.getByText(/20 Nov.*15:39:04 IST/)).toBeInTheDocument(); // the real time of the price, with its date
+      expect(document.body.textContent).not.toContain("23:15");
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("a tick received during the session on a day the exchange reports closed (a holiday) is not held either", () => {
+    showWith(summary({ underlying_ltp: 25500.0, underlying_prev_close: 25227.95, retrieved_at: "2026-11-19T04:00:00Z" }));
+    feedTick("market_closed", preOpenTick("2026-11-19T05:30:00Z")); // 11:00 IST, newer than the snapshot
+    expect(screen.queryByTestId("spot-held")).toBeNull();
+  });
+
   it("does not hold a price older than the stored snapshot: the snapshot is the newer value", () => {
     showWith(summary({ underlying_ltp: 25500.0, underlying_prev_close: 25227.95, retrieved_at: "2026-11-19T04:00:00Z" })); // 09:30 IST
     feedTick("stale", preOpenTick("2026-11-19T03:38:00Z"));
     expect(screen.getByText("25,500.00")).toBeInTheDocument();
     expect(screen.queryByTestId("spot-held")).toBeNull();
+  });
+});
+
+describe("isLiveTickTime", () => {
+  it("is a weekday between 09:00 and 15:45 IST and nothing else", () => {
+    const at = (iso: string) => isLiveTickTime(Date.parse(iso));
+    expect(at("2026-11-20T03:30:00Z")).toBe(true); // Fri 09:00 IST
+    expect(at("2026-11-20T10:15:00Z")).toBe(true); // Fri 15:45 IST
+    expect(at("2026-11-20T03:29:00Z")).toBe(false); // 08:59
+    expect(at("2026-11-20T10:16:00Z")).toBe(false); // 15:46
+    expect(at("2026-11-22T17:45:21Z")).toBe(false); // Sunday 23:15
+    expect(at("2026-11-21T05:00:00Z")).toBe(false); // Saturday 10:30
+    expect(at("2026-11-20T19:00:00Z")).toBe(false); // Friday 00:30 Saturday IST
   });
 });

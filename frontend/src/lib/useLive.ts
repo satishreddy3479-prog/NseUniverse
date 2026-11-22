@@ -70,13 +70,26 @@ export interface SpotDisplay {
  * a dropped link) the last live tick is HELD for as long as it is newer than the stored fallback, instead of the app falling back to a stored value from an earlier moment: before the
  * open the stored snapshot is yesterday's close, so the price would jump back to it when pre-open ended. A held value is never called live.
  */
+/**
+ * Whether a tick received at ``ms`` can be a live exchange tick: on a weekday between 09:00 and 15:45 IST. The broker sends the last known quote again whenever the
+ * backend restarts or the feed reconnects, and that tick is stamped with the time it was received, so after the close or at night it carried the time of the restart
+ * ("Held 23:15:21") instead of the time the price was made, and the time changed with every deploy.
+ */
+export function isLiveTickTime(ms: number): boolean {
+  const d = new Date(ms + 330 * 60_000);
+  const day = d.getUTCDay(), min = d.getUTCHours() * 60 + d.getUTCMinutes();
+  return day >= 1 && day <= 5 && min >= 9 * 60 && min <= 15 * 60 + 45;
+}
+
 export function useSpotDisplay(fallback: { ltp: number | null; prevClose: number | null; at: string | null }): SpotDisplay {
   const tick = useLiveTick(INDEX_KEY);
   const { stream } = useStreamStatus();
   const tickMs = tick?.ltp != null ? Date.parse(tick.received_at) : Number.NaN;
   if (stream?.effective_state === "streaming" && tick?.ltp != null) return { ltp: tick.ltp, prevClose: tick.prev_close, kind: "live", at: Number.isFinite(tickMs) ? tickMs : null };
   const fbMs = fallback.at ? Date.parse(fallback.at) : Number.NaN;
-  if (tick?.ltp != null && Number.isFinite(tickMs) && (!Number.isFinite(fbMs) || tickMs > fbMs)) return { ltp: tick.ltp, prevClose: tick.prev_close ?? fallback.prevClose, kind: "held", at: tickMs };
+  // a replayed last quote is not held: outside the session, or while the exchange says the market is closed (a holiday), the stored snapshot is shown with its own time
+  const replay = !isLiveTickTime(tickMs) || stream?.effective_state === "market_closed";
+  if (tick?.ltp != null && Number.isFinite(tickMs) && !replay && (!Number.isFinite(fbMs) || tickMs > fbMs)) return { ltp: tick.ltp, prevClose: tick.prev_close ?? fallback.prevClose, kind: "held", at: tickMs };
   return { ltp: fallback.ltp, prevClose: fallback.prevClose, kind: "snapshot", at: Number.isFinite(fbMs) ? fbMs : null };
 }
 
