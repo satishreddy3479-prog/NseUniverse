@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type CalEvent, type GlobalItem, type NewsItem } from "../lib/api";
 import { fmtAge, MISSING } from "../lib/format";
+import { compressSeries, gapText, labelIndexes, rangeStats } from "../lib/globalChart";
 import { EChart, useChartColors } from "./EChart";
 import { QuickLinks } from "./ToolMenu";
 import { Loading } from "./Loading";
@@ -68,7 +70,7 @@ function Card({ it, onOpen }: { it: GlobalItem; onOpen: () => void }) {
 }
 
 const RANGES = [{ h: 24, label: "1D" }, { h: 72, label: "3D" }, { h: 168, label: "7D" }] as const;
-const GAP_MS = 90 * 60_000; // a longer silence between two prices is a closed market: the line breaks there instead of joining them
+const GAP_MS = 90 * 60_000; // a longer silence between two prices is a closed market: it is cut out of the axis and marked, not joined or left as empty space
 
 function SeriesChart({ item, hours }: { item: GlobalItem; hours: number }) {
   const colors = useChartColors();
@@ -78,27 +80,59 @@ function SeriesChart({ item, hours }: { item: GlobalItem; hours: number }) {
   const s = q.data;
   if (s.prices.length < 2) return <p className="p-4 text-sm text-muted">Not enough stored one-minute prices yet to draw {item.name}.</p>;
   const d = item.decimals;
-  const data: [number, number | null][] = [];
-  s.times.forEach((t, i) => {
-    const ms = new Date(t).getTime();
-    const prev = data.length ? data[data.length - 1]![0] : null;
-    if (prev != null && ms - prev > GAP_MS) data.push([prev + 60_000, null]);
-    data.push([ms, s.prices[i]!]);
-  });
+  const cs = compressSeries(s.times, s.prices, GAP_MS);
+  if (cs.values.length < 2) return <p className="p-4 text-sm text-muted">Not enough stored one-minute prices yet to draw {item.name}.</p>;
   const multiDay = hours > 24;
-  const stamp = (v: number) => new Intl.DateTimeFormat("en-IN", { ...(multiDay ? { day: "numeric", month: "short" } : {}), hour: "2-digit", minute: "2-digit", hour12: false, timeZone: IST }).format(new Date(v));
   const ref = s.prev_close;
+  const st = rangeStats(cs.values)!;
+  const upRange = st.change >= 0;
+  const line = upRange ? colors.up : colors.down;
+  const show = labelIndexes(cs.ms, multiDay);
+  const fmt = (v: number, withDay: boolean) => new Intl.DateTimeFormat("en-IN", { ...(withDay ? { day: "numeric", month: "short" } : {}), hour: "2-digit", minute: "2-digit", hour12: false, timeZone: IST }).format(new Date(v));
+  const dayOnly = (v: number) => new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: IST }).format(new Date(v));
+  const closures = cs.breaks.map((b) => ({
+    xAxis: b.index, lineStyle: { color: colors.muted, type: "dotted", width: 1, opacity: 0.8 },
+    label: b.gapMs >= 3 * 3_600_000 ? { formatter: `closed ${gapText(b.gapMs)}`, color: colors.muted, fontSize: 10, position: "insideEndTop", rotate: 90 } : { show: false },
+  }));
   const option = {
-    animation: false, grid: { left: 60, right: 14, top: 16, bottom: 28 },
-    tooltip: { trigger: "axis", formatter: (p: { value: [number, number | null] }[]) => { const v = p[0]?.value; return v && v[1] != null ? `${stamp(v[0])} IST<br/><b>${num(v[1], d)}</b>` : ""; } },
-    xAxis: { type: "time", axisLabel: { color: colors.muted, hideOverlap: true, formatter: (v: number) => stamp(v) }, axisLine: { lineStyle: { color: colors.rule } } },
+    animation: false, grid: { left: 62, right: 16, top: 14, bottom: 30 },
+    tooltip: {
+      trigger: "axis", confine: true, axisPointer: { type: "cross", label: { show: false }, lineStyle: { color: colors.muted, type: "dashed" } },
+      formatter: (p: { dataIndex: number }[]) => {
+        const k = p[0]?.dataIndex;
+        if (k == null) return "";
+        const v = cs.values[k]!;
+        const vs = ref != null ? `<br/><span style="color:${v - ref >= 0 ? colors.up : colors.down}">${signed(v - ref, d)} (${signed(((v - ref) / ref) * 100, 2)}%) vs prev close</span>` : "";
+        return `${fmt(cs.ms[k]!, true)} IST<br/><b>${num(v, d)}</b>${vs}`;
+      },
+    },
+    xAxis: {
+      type: "category", boundaryGap: false, data: cs.ms.map(String),
+      axisLabel: { color: colors.muted, interval: (i: number) => show.has(i), hideOverlap: true, formatter: (v: string) => (multiDay ? dayOnly(Number(v)) : fmt(Number(v), false)) },
+      axisLine: { lineStyle: { color: colors.rule } }, axisTick: { show: false }, splitLine: { show: false },
+    },
     yAxis: { type: "value", scale: true, axisLabel: { color: colors.muted, formatter: (v: number) => num(v, d) }, splitLine: { lineStyle: { color: colors.rule, opacity: 0.5 } } },
     series: [{
-      name: item.name, type: "line", showSymbol: false, connectNulls: false, data, lineStyle: { width: 2, color: colors.brass }, itemStyle: { color: colors.brass },
-      markLine: ref != null ? { silent: true, symbol: "none", lineStyle: { color: colors.muted, type: "dashed" }, label: { color: colors.muted, formatter: `Prev close ${num(ref, d)}`, position: "insideEndTop" }, data: [{ yAxis: ref }] } : undefined,
+      name: item.name, type: "line", showSymbol: false, data: cs.values, lineStyle: { width: 2, color: line }, itemStyle: { color: line },
+      areaStyle: { color: line, opacity: 0.08 },
+      markLine: { silent: true, symbol: "none", data: [
+        ...(ref != null ? [{ yAxis: ref, lineStyle: { color: colors.muted, type: "dashed", width: 1 }, label: { color: colors.muted, formatter: `Prev close ${num(ref, d)}`, position: "insideEndTop" } }] : []),
+        ...closures,
+      ] },
     }],
   };
-  return <EChart option={option} ariaLabel={`${item.name}, last ${hours / 24} day${hours > 24 ? "s" : ""} of one-minute prices (times in IST)`} className="h-[min(60vh,420px)] w-full" />;
+  const stat = (k: string, v: string, c = "") => <div className="rounded-sm border border-rule bg-slate-2 px-2 py-1"><dt className="text-[10px] uppercase tracking-wide text-muted">{k}</dt><dd className={`tabular-nums text-sm ${c}`}>{v}</dd></div>;
+  return (
+    <div className="flex flex-col gap-2" data-testid="global-chart">
+      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {stat(`Change over ${hours / 24 === 1 ? "1 day" : `${hours / 24} days`}`, `${signed(st.change, d)}${st.changePct != null ? ` (${signed(st.changePct, 2)}%)` : ""}`, tone(st.change))}
+        {stat("High", num(st.high, d))}
+        {stat("Low", num(st.low, d))}
+        {stat("Closed periods", cs.breaks.length ? String(cs.breaks.length) : "none")}
+      </dl>
+      <EChart option={option} ariaLabel={`${item.name}, last ${hours / 24} day${hours > 24 ? "s" : ""} of one-minute prices (times in IST)`} className="h-[min(56vh,400px)] w-full" />
+    </div>
+  );
 }
 
 /** The chart of one symbol over the stored prices, full screen on a phone: 1, 3 or 7 days, the previous close as a dashed line, and a link to the symbol at its source. */
@@ -111,7 +145,8 @@ function ChartSheet({ item, onClose }: { item: GlobalItem; onClose: () => void }
     document.body.style.overflow = "hidden";
     return () => { document.removeEventListener("keydown", key); document.body.style.overflow = prev; };
   }, [onClose]);
-  return (
+  // rendered in the page body: a transformed or animated ancestor makes `fixed` relative to itself, which put the sheet at the top of the page instead of the screen
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center sm:p-4" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label={`${item.name} chart`} onClick={(e) => e.stopPropagation()}
         className="flex max-h-full w-full flex-col gap-2 overflow-y-auto rounded-t-[var(--radius-panel)] border border-rule bg-slate p-3 sm:max-w-[900px] sm:rounded-[var(--radius-panel)]">
@@ -134,9 +169,10 @@ function ChartSheet({ item, onClose }: { item: GlobalItem; onClose: () => void }
           {item.chart_url && <a href={item.chart_url} target="_blank" rel="noopener noreferrer" className="ml-auto inline-flex min-h-9 items-center rounded-sm border border-rule bg-slate-2 px-3 text-sm text-paper hover:border-brass hover:text-brass">Open at source ↗</a>}
         </div>
         <SeriesChart item={item} hours={hours} />
-        <p className="text-[11px] text-muted">One-minute prices stored by this app, times in IST. A gap in the line is a closed market. The dashed line is the previous close the change is measured from.</p>
+        <p className="text-[11px] text-muted">One-minute prices stored by this app, times in IST. Closed hours are cut out so the line is continuous; a dotted line marks each closure and how long it lasted. The dashed line is the previous close the change is measured from.</p>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

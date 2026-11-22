@@ -7,6 +7,11 @@ import { AppRoutes } from "../App";
 import { ToolMenu } from "../components/ToolMenu";
 import { expiries, status, summary } from "./fixtures";
 
+vi.mock("../components/EChart", async () => {
+  const actual = await vi.importActual<typeof import("../components/EChart")>("../components/EChart");
+  return { ...actual, EChart: ({ ariaLabel }: { ariaLabel: string }) => <div role="img" aria-label={ariaLabel} /> };
+});
+
 // Values are the ones the backend tests hand-check from the captured Yahoo bars: ES 7583.00 against the 16:00 New York close 7616.25 (-33.25, -0.4366 %).
 const overview = {
   generated_at: "2026-11-15T18:30:00+00:00",
@@ -51,7 +56,7 @@ const news = {
 function mockApi(extra: Record<string, unknown> = {}) {
   const routes: Record<string, unknown> = {
     "/api/status": status(), "/api/expiries": expiries, "/api/snapshots": [summary()], "/api/sessions": [], "/api/errors": [],
-    "/api/global/overview": overview, "/api/global/series": { key: "ES", name: "S&P 500 futures", unit: "pts", decimals: 2, times: [], prices: [] },
+    "/api/global/overview": overview, "/api/global/series": { key: "ES", name: "S&P 500 futures", unit: "pts", decimals: 2, prev_close: 7480, times: ["2026-11-20T03:30:00Z", "2026-11-20T03:31:00Z", "2026-11-20T14:30:00Z"], prices: [7500, 7510, 7490] },
     "/api/calendar": calendar, "/api/news": news, ...extra,
   };
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
@@ -188,6 +193,15 @@ describe("global board charts", () => {
     await userEvent.click(view);
     const dlg = screen.getByRole("dialog", { name: "S&P 500 futures chart" });
     expect(within(dlg).getByText("7,583.00")).toBeInTheDocument();
+    // the sheet sits directly in the page body, so no transformed or animated ancestor can pin it to the top of the page instead of the screen
+    expect(dlg.parentElement?.parentElement).toBe(document.body);
+    expect(await within(dlg).findByTestId("global-chart")).toBeInTheDocument();
+    // 7500 -> 7490 is -10 (-0.13 %), high 7510, low 7490; one closure (09:01 to 20:00 IST) is cut out and counted
+    const chart = within(dlg).getByTestId("global-chart");
+    expect(chart).toHaveTextContent("−10.00 (−0.13%)");
+    expect(chart).toHaveTextContent("High7,510.00");
+    expect(chart).toHaveTextContent("Low7,490.00");
+    expect(chart).toHaveTextContent("Closed periods1");
     const src = within(dlg).getByRole("link", { name: /Open at source/ });
     expect(src).toHaveAttribute("href", "https://finance.yahoo.com/quote/ES%3DF/");
     expect(src).toHaveAttribute("target", "_blank");
