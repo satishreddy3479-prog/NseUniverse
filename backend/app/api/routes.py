@@ -1402,6 +1402,35 @@ async def futures_series_route(
     )
 
 
+@router.get("/futures/contracts")
+async def futures_contracts_route(request: Request) -> dict[str, Any]:
+    """The NIFTY futures a strategy can hold (current and next month) with live price and expiry."""
+    from app.market.future_quote import future_contracts
+    from app.market.service import FUT_NEXT_SYMBOL, FUT_SYMBOL
+
+    market = request.app.state.market
+    svc: SnapshotService = request.app.state.snapshot_service
+    try:
+        sel = await svc.expiries()
+    except BrokerError as e:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, {"code": e.code, "message": e.message}
+        ) from e
+    tm = market.token_map()
+    cur, nxt = tm.get(FUT_SYMBOL), tm.get(FUT_NEXT_SYMBOL)
+    return future_contracts(
+        monthly=sel.monthly,
+        available=sel.available,
+        cur_symbol=cur.trading_symbol if cur else None,
+        cur_token=cur.token if cur else None,
+        cur=market._nifty_cur_quote(),  # noqa: SLF001
+        next_symbol=nxt.trading_symbol if nxt else None,
+        next_token=nxt.token if nxt else None,
+        nxt=market.fo_nifty_next,
+        now=datetime.now(UTC),
+    )
+
+
 # ------------------------------------------------------------ global markets, calendar, news
 def _globalmkts(request: Request) -> Any:
     return request.app.state.globalmkts

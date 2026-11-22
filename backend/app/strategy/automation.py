@@ -56,6 +56,11 @@ def _stamp(at: datetime) -> str:
     return at.astimezone(IST).strftime("%d %b, %H:%M:%S")  # with the date: "16 Nov, 10:34:38"
 
 
+def _name(leg: Leg) -> str:
+    """How a leg is named in the log: "25800 CE", or "NIFTY future"."""
+    return "NIFTY future" if leg.get("type") == "FUT" else f"{leg.get('strike')} {leg.get('type')}"
+
+
 def _money(v: float) -> str:
     return f"{'−' if v < 0 else '+'}₹{round(abs(v)):,}"
 
@@ -76,7 +81,7 @@ def exit_leg(leg: Leg, price: float, reason: str, lot_size: int, at: datetime, m
     stop_name = "Stop at cost" if leg.get("costMoved") else "Trailing stop" if leg.get("stopTrailed") else "Stop"
     what = label or {"stop": stop_name, "target": "Target"}.get(reason, "Manual exit")
     text = (
-        f"{what}: {leg['action']} {leg['strike']} {leg['type']} closed at {price:.2f} "
+        f"{what}: {leg['action']} {_name(leg)} closed at {price:.2f} "
         f"(entry {prem:.2f}), {_money(pnl)}"
     )
     out = dict(leg)
@@ -103,7 +108,7 @@ def reenter_leg(leg: Leg, price: float, at: datetime) -> Leg:
         stopSetAt=None if leg.get("stopPct") is None else at.isoformat(), targetSetAt=None if leg.get("targetPct") is None else at.isoformat(),
         reentry=max(0, (leg.get("reentry") or 0) - 1), cycles=(leg.get("cycles") or 0) + 1,
         log=[*(leg.get("log") or []),
-             {"at": at.isoformat(), "text": f"{_stamp(at)} Re-entry: {leg['action']} {leg['strike']} {leg['type']} at {price:.2f} [server]"}][-20:],
+             {"at": at.isoformat(), "text": f"{_stamp(at)} Re-entry: {leg['action']} {_name(leg)} at {price:.2f} [server]"}][-20:],
     )  # fmt: skip
     return out
 
@@ -112,7 +117,7 @@ def _trail_logged(old: Leg, new: Leg, px: float, at: datetime) -> Leg:
     """A trailed leg with the move written in its log and the time the stop moved."""
     if new is old:
         return old
-    text = f"{_stamp(at)} Trailing stop: {old['action']} {old['strike']} {old['type']} stop {old['stop']:.2f} → {new['stop']:.2f} (price {px:.2f}) [server]"
+    text = f"{_stamp(at)} Trailing stop: {old['action']} {_name(old)} stop {old['stop']:.2f} → {new['stop']:.2f} (price {px:.2f}) [server]"
     return {**new, "stopSetAt": at.isoformat(), "log": [*(new.get("log") or []), {"at": at.isoformat(), "text": text}][-20:]}
 
 
@@ -317,7 +322,7 @@ def move_stops_to_cost(
             out.append(lg)
             continue
         buy = lg.get("action") == "BUY"
-        who = f"{lg['action']} {lg['strike']} {lg['type']}"
+        who = f"{lg['action']} {_name(lg)}"
         px = price_of(lg)
         if px is None or not px > 0:
             events.append(f"{_stamp(at)} Stop to cost skipped for {who}: no live price [server]")
@@ -333,7 +338,7 @@ def move_stops_to_cost(
             continue
         text = (
             f"{_stamp(at)} Stop moved to cost: {who} stop {'none' if stop is None else f'{stop:.2f}'} → {prem:.2f} "
-            f"because {first['action']} {first['strike']} {first['type']} was stopped out [server]"
+            f"because {first['action']} {_name(first)} was stopped out [server]"
         )
         events.append(text)
         base = lg.get("stopBase")
@@ -369,7 +374,7 @@ def apply_automation(
             trailed = _trail_logged(leg, trail_leg(leg, px), px, at)
             if trailed is not leg:
                 events.append(
-                    f"{_stamp(at)} Trailing stop {leg['action']} {leg['strike']} {leg['type']}: "
+                    f"{_stamp(at)} Trailing stop {leg['action']} {_name(leg)}: "
                     f"stop {leg['stop']:.2f} → {trailed['stop']:.2f} (price {px:.2f}) [server]"
                 )
                 leg = trailed
@@ -424,7 +429,7 @@ def keep_exits(cur: dict[str, Any], doc: dict[str, Any]) -> tuple[dict[str, Any]
         if old is None:
             legs.append(lg)
             continue
-        name = f"{old.get('action')} {old.get('strike')} {old.get('type')}"
+        name = f"{old.get('action')} {_name(old)}"
         reentered = (lg.get("cycles") or 0) > (old.get("cycles") or 0) or lg.get("premium") != old.get("premium")
         if is_exited(old) and not is_exited(lg) and not reentered:
             legs.append(old)

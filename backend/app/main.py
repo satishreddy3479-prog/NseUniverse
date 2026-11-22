@@ -233,7 +233,14 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
 
         def _live_price(key: str) -> float | None:
             t = stream.book.get(key)
-            return t.ltp if t is not None else None
+            if t is not None:
+                return t.ltp
+            # a NIFTY future is a server-side contract (not in the browser feed); fresh ticks only
+            f = stream.book.get_internal(key)
+            if f is None or f.received_at is None or not f.ltp or f.ltp <= 0:
+                return None
+            fresh = (datetime.now(UTC) - f.received_at).total_seconds() <= 180
+            return f.ltp if fresh else None
 
         strategy_automation = StrategyAutomation(
             app.state.strategies,

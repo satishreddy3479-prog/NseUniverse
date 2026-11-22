@@ -17,11 +17,12 @@ import { LegTimes } from "../components/LegTimes";
 import { useExpiries, useThrottledValue } from "../lib/hooks";
 import { marketClockMs, sessionCloseHHMM } from "../lib/session";
 import { buildBook, marketIvOf, type Book } from "../lib/strategyBook";
+import { futureOf, futurePrice, futureToAdd, futureToRollInto, useFutureContracts } from "../lib/futures";
 import { analyzeCurve, curveOf, isEstimateAt, legExpiries, pnlAtExpiry } from "../lib/multiExpiry";
-import { expiryEnd, legGreeks, sdLevel, netGreeks, probabilityOfProfit, probabilityOfProfitFn, scenarioGrid, sdBands, spotAtPremium, theoreticalPnl, type ContractGreeks, type Valuation } from "../lib/optionModel";
+import { carryFromForward, expiryEnd, legGreeks, sdLevel, netGreeks, probabilityOfProfit, probabilityOfProfitFn, scenarioGrid, sdBands, spotAtPremium, theoreticalPnl, type ContractGreeks, type Valuation } from "../lib/optionModel";
 import { adoptExits,
-  analyzeExpiry, applyAutomation, applyHold, DEFAULT_HOLD, holdProblem, type HoldRule, applyStrategyRules, exitLeg, expiryPnl, hitOf, isExited, isFinished, newLegId, reenterLeg, rollLeg, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds, NO_RULES, hasRules, lockFloor, rulesProblem, type StrategyRules, type RulesState,
-  type Action, type Bias, type Leg, type OptionType, type Template,
+  analyzeExpiry, applyAutomation, applyHold, DEFAULT_HOLD, legName, holdProblem, type HoldRule, applyStrategyRules, exitLeg, expiryPnl, hitOf, isExited, isFinished, newLegId, reenterLeg, rollFutureLeg, rollLeg, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds, NO_RULES, hasRules, lockFloor, rulesProblem, type StrategyRules, type RulesState,
+  type Action, type Bias, type Leg, type LegType, type OptionType, type Template,
 } from "../lib/strategy";
 
 export const WORKING_KEY = "nse.builder.working.v1";
@@ -279,8 +280,10 @@ export default function StrategyBuilder() {
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expiry, rows, otherExpiries, otherKey, collected, spot, snapMs, r, liveMode, liveVersion]);
-  /** Last traded price of a contract in its own expiry's chain (the shown expiry unless one is given). */
-  const ltp = (k: number, t: OptionType, e: string | null = expiry): number | null => {
+  const futs = useFutureContracts().data;
+  /** Last traded price of a contract in its own expiry's chain (the shown expiry unless one is given); for a future, its own live quote. */
+  const ltp = (k: number, t: LegType, e: string | null = expiry): number | null => {
+    if (t === "FUT") return e ? futurePrice(futs, e) : null;
     const row = (e ? books.get(e)?.rows : undefined)?.find((x) => x.strike === k);
     const q = t === "CE" ? row?.call : row?.put;
     return q?.ltp != null && q.ltp > 0 ? q.ltp : null;
@@ -324,10 +327,23 @@ export default function StrategyBuilder() {
   const dte = payExp ? Math.max(0, dayDiff(payExp, snapMs)) : 0;
   const targetMs = snapMs + Math.min(days, dte) * 86_400_000;
   const carryBy = useMemo(() => Object.fromEntries([...books].map(([e, b]) => [e, b.carry])), [books]);
-  const val0: Valuation = { spotNow: spot ?? 0, nowMs: snapMs, rate: r, carry, carryByExpiry: carryBy, ivShift: 0 };
+  // A held future is valued with the carry its own live price implies (ln(F / spot) / t), so the model passes through the price on screen. Used only when that
+  // quote is fresh and from the same moment as the spot (within 90 s), and sane; otherwise the option chain's carry stands in and the future's P&L still uses its quote.
+  const futCarryBy = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const l of legs) {
+      if (l.type !== "FUT" || out[l.expiry] != null || !spot) continue;
+      const c = futureOf(futs, l.expiry), px = futurePrice(futs, l.expiry);
+      if (!c || px == null || !c.as_of || Math.abs(Date.parse(c.as_of) - snapMs) > 90_000) continue;
+      const k = carryFromForward(spot, px, l.expiry, snapMs);
+      if (k != null && Math.abs(k) < 0.5) out[l.expiry] = k;
+    }
+    return out;
+  }, [legs, futs, spot, snapMs]);
+  const val0: Valuation = { spotNow: spot ?? 0, nowMs: snapMs, rate: r, carry, carryByExpiry: carryBy, futCarryByExpiry: futCarryBy, ivShift: 0 };
   const val: Valuation = { ...val0, ivShift: ivPts / 100 };
   // every model leg uses the volatility the stored market price of its own strike and expiry implies, not one backed out of the entry premium you typed
-  const marketIv = (l: Leg) => marketIvOf(books.get(l.expiry), l.strike, l.type);
+  const marketIv = (l: Leg) => (l.type === "FUT" ? null : marketIvOf(books.get(l.expiry), l.strike, l.type));
   const mlegs = useMemo(() => open.map((l) => ({ ...l, iv: l.iv ?? marketIv(l) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [open, books]);
@@ -351,7 +367,7 @@ export default function StrategyBuilder() {
   }, [live, lotSize, multi, spot, payExp, mAll, pnlFn, open]);
   const curve = useMemo(() => {
     if (!ready || !a?.defined || !lotSize || !spot) return null;
-    const ks = open.map((l) => l.strike);
+    const ks = open.filter((l) => l.type !== "FUT").map((l) => l.strike); // a future has no strike: 0 would stretch the chart down to zero
     // show the part that matters: out to the 2-sigma band, the strikes and the breakevens, plus a margin
     const near = [spot, ...ks, ...a.breakevens, ...(bands ? [bands.m2, bands.p2] : [spot * 0.94, spot * 1.06])];
     const m = spot * 0.012;
@@ -379,7 +395,7 @@ export default function StrategyBuilder() {
   // a different strategy (strikes, sides, types) starts framed on its profit zone, not at the zoom left from the previous one
   const shapeKey = live.map((l) => `${l.action}${l.type}${l.strike}`).join(",");
   useEffect(() => { setZoom(0); }, [shapeKey]);
-  const view = useMemo(() => (curve?.length && a?.defined && spot ? payoffView(curve, a.breakevens, spot, live.map((l) => l.strike), zoom) : null), [curve, a, spot, live, zoom]);
+  const view = useMemo(() => (curve?.length && a?.defined && spot ? payoffView(curve, a.breakevens, spot, live.filter((l) => l.type !== "FUT").map((l) => l.strike), zoom) : null), [curve, a, spot, live, zoom]);
   const chartNow = useMemo(() => (curve?.length && a?.defined && spot ? payoffOption({
     expiry: curve, target: target && target.some((x) => x.pnl != null) ? target : null,
     targetLabel: `${days > 0 ? `Estimated in ${Math.min(days, dte)} day${days === 1 ? "" : "s"}` : "Estimated at the snapshot time"}${ivPts ? `, IV ${ivPts > 0 ? "+" : ""}${ivPts} pts` : ""} (model)`,
@@ -392,6 +408,7 @@ export default function StrategyBuilder() {
   const chart = useThrottledValue(chartNow, 2500, `${zoom}|${narrow}|${live.length}|${live.map((l) => `${l.action}${l.type}${l.strike}${l.lots}${l.premium}${l.exitPrice ?? ''}${l.stop ?? ''}${l.target ?? ''}`).join(",")}|${lines}|${oiMode}|${days}|${ivPts}|${whatPct}`);
   const pop = ready && a?.defined && lotSize && spot && payIv && payExp ? (multi ? probabilityOfProfitFn(pnlFn, spot, payIv, payExp, snapMs, payCarry) : probabilityOfProfit(live, lotSize, spot, payIv, payExp, snapMs, payCarry)) : null;
   const greeks = ready && lotSize && spot ? netGreeks(mlegs, lotSize, val0) : null;
+  const optionGreeks = ready && lotSize && spot ? netGreeks(mlegs.filter((l) => l.type !== "FUT"), lotSize, val0) : null; // the time chart holds the option legs only
   /** P&L of one leg: what is booked, plus the open part against the market price */
   const unreal = (l: Leg, mkt: number | null) => {
     if (!lotSize) return null;
@@ -458,6 +475,7 @@ export default function StrategyBuilder() {
   const skipPush = useRef(false);
   const seenEvents = useRef<string | null>(null);
   const keyOf = (l: Leg): string | null => {
+    if (l.type === "FUT") return futureOf(futs, l.expiry)?.key ?? l.key ?? null;
     const row = (collected.has(l.expiry) ? books.get(l.expiry)?.rows : undefined)?.find((x) => x.strike === l.strike);
     return liveKey(l.type === "CE" ? row?.call ?? null : row?.put ?? null) ?? l.key ?? null;
   };
@@ -581,6 +599,37 @@ export default function StrategyBuilder() {
     if (px == null) { setNote("No live price for that leg yet."); return; }
     commitTrades(legs.map((x) => (x.id === l.id ? reenterLeg(x, px, new Date().toISOString(), false) : x)));
   };
+  /** Add the NIFTY future of the current month (after its expiry the backend already reports the next month as current), at its live price. One lot, either side. */
+  const addFuture = (action: Action) => {
+    const c = futureToAdd(futs, todayIST());
+    if (!c || !c.expiry) { setNote("No NIFTY future is available yet: the contract or its expiry is not resolved."); return; }
+    setNote(null);
+    setLegs((ls) => {
+      const same = ls.find((l) => l.type === "FUT" && l.expiry === c.expiry && l.action === action && !isExited(l));
+      if (same) return ls.map((l) => (l.id === same.id ? { ...l, lots: l.lots + 1 } : l));
+      const px = c.fresh && c.ltp != null && c.ltp > 0 ? c.ltp : null;
+      return [...ls, { id: newLegId(), expiry: c.expiry as string, strike: 0, type: "FUT" as const, action, lots: 1, premium: px, premiumSource: px == null ? null : "market" as const, key: c.key, enteredAt: px == null ? null : new Date().toISOString() }];
+    });
+  };
+  const futureBar = (() => {
+          const c = futureToAdd(futs, todayIST());
+          return (
+            <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 px-1 text-xs text-muted" data-testid="add-future">
+              <span className="font-medium text-paper">NIFTY future</span>
+              <button type="button" className="min-h-8 rounded-sm border border-up/60 px-3 text-up hover:bg-up/10 disabled:opacity-40" disabled={!c} onClick={() => addFuture("BUY")} title="Add one lot long: gains when NIFTY rises (adds delta)">Buy future</button>
+              <button type="button" className="min-h-8 rounded-sm border border-down/60 px-3 text-down hover:bg-down/10 disabled:opacity-40" disabled={!c} onClick={() => addFuture("SELL")} title="Add one lot short: gains when NIFTY falls (removes delta). Use it to make the strategy delta neutral">Sell future</button>
+              <span className="num" data-testid="future-quote">{c ? `${c.symbol ?? "current month"} · expires ${dmy(c.expiry as string)} · ${c.fresh && c.ltp != null ? fmtPrice(c.ltp) : "no live price"}` : futs ? "the contract is not resolved yet" : "loading the contract…"}</span>
+            </div>
+          );
+  })();
+  /** Roll a future into the next month's contract: the old one is closed at its live price (P&L booked) and the same position opens in the new one at its live price. */
+  const rollFuture = (l: Leg) => {
+    const next = futureToRollInto(futs, l.expiry);
+    const oldPx = futurePrice(futs, l.expiry), newPx = next ? futurePrice(futs, next.expiry as string) : null;
+    if (!lotSize || !next?.expiry) { setNote("There is no later NIFTY future to roll into yet."); return; }
+    if (oldPx == null || newPx == null) { setNote(`Cannot roll: no live price for ${oldPx == null ? "the current" : "the next-month"} future.`); return; }
+    commitTrades(legs.map((x) => (x.id === l.id ? rollFutureLeg(x, next.expiry as string, next.key, oldPx, newPx, lotSize, new Date().toISOString(), mult) : x)));
+  };
   /** Roll: close the leg at its live price (P&L booked) and open the same leg at another strike at that strike's live price. */
   const rollNow = (l: Leg) => {
     const k = Number(rollTo[l.id]);
@@ -590,7 +639,9 @@ export default function StrategyBuilder() {
     commitTrades(legs.map((x) => (x.id === l.id ? rollLeg(x, k, oldPx, newPx, lotSize, new Date().toISOString(), mult) : x)));
     setRollTo((d) => ({ ...d, [l.id]: "" }));
   };
-  const netPremium = lotSize && live.length && live.every((l) => l.premium != null) ? live.reduce((s, l) => s - sign(l.action) * (l.premium as number) * l.lots * lotSize, 0) : null;
+  // premium is an option's price; a future has none (its entry price is a notional, not a credit or a debit), so it is left out of the net premium
+  const optionLegs = live.filter((l) => l.type !== "FUT");
+  const netPremium = lotSize && optionLegs.length && optionLegs.every((l) => l.premium != null) ? optionLegs.reduce((s, l) => s - sign(l.action) * (l.premium as number) * l.lots * lotSize, 0) : null;
   const exitPnl = (kind: "target" | "stop") => {
     if (!lotSize) return null;
     const withPx = open.filter((l) => (kind === "target" ? l.target : l.stop) != null && l.premium != null);
@@ -738,7 +789,7 @@ export default function StrategyBuilder() {
     const active = legs.filter((l) => l.enabled !== false);
     const missing = active.filter((l) => !isExited(l) && (ltp(l.strike, l.type, l.expiry) == null || l.premium == null));
     if (active.length === 0) return;
-    if (missing.length) { setNote(`Cannot exit: no stored price or no entry premium for ${missing.map((l) => `${l.strike} ${l.type}`).join(", ")}. Untick or remove those legs, or enter the entry premium.`); return; }
+    if (missing.length) { setNote(`Cannot exit: no stored price or no entry premium for ${missing.map((l) => legName(l)).join(", ")}. Untick or remove those legs, or enter the entry premium.`); return; }
     const out: ClosedLeg[] = active.map((l) => ({ ...l, lots: l.lots * mult, exit: isExited(l) ? (l.exitPrice as number) : (ltp(l.strike, l.type, l.expiry) as number) }));
     // a leg closed earlier by its stop or target keeps its booked P&L; an open one is closed now; earlier cycles stay booked
     const pnl = out.reduce((t, l) => t + (isExited(l) ? 0 : sign(l.action) * (l.exit - (l.premium as number)) * l.lots * lotSize) + (l.realised ?? 0), 0);
@@ -974,6 +1025,7 @@ export default function StrategyBuilder() {
             )}
             {legs.length === 0 ? (
               <div className="p-3" data-testid="gallery">
+                {futureBar}
                 <h2 className="mb-2 text-sm font-semibold text-paper">Ready-made strategies</h2>
                 <div role="tablist" aria-label="Strategy view" className="mb-3 flex flex-wrap gap-2">
                   {(["Bullish", "Bearish", "Neutral", "Calendar", "Other"] as const).map((b) => <button key={b} role="tab" type="button" aria-selected={bias === b} onClick={() => setBias(b)} className={`min-h-8 rounded-sm border px-3 text-sm ${bias === b ? "border-info bg-info/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{b}</button>)}
@@ -1109,7 +1161,7 @@ export default function StrategyBuilder() {
                     const hits = open.flatMap((l) => (["stop", "target"] as const).flatMap((k) => { const m = ltp(l.strike, l.type, l.expiry); return m != null && hitOf(l, k, m) ? [{ l, k, m }] : []; }));
                     return hits.length === 0 ? null : (
                       <div role="status" className="mb-2 rounded-sm border border-warn/60 bg-warn/10 px-3 py-2 text-xs" data-testid="hit-banner">
-                        {hits.map(({ l, k, m }) => <div key={l.id + k} className={k === "stop" ? "text-down" : "text-up"}>{k === "stop" ? "Stop" : "Target"} reached on {l.action} {fmtInt(l.strike)} {l.type}: price {fmtPrice(m)} against {fmtPrice((k === "stop" ? l.stop : l.target) as number)}.</div>)}
+                        {hits.map(({ l, k, m }) => <div key={l.id + k} className={k === "stop" ? "text-down" : "text-up"}>{k === "stop" ? "Stop" : "Target"} reached on {l.action} {l.type === "FUT" ? "NIFTY future" : `${fmtInt(l.strike)} ${l.type}`}: price {fmtPrice(m)} against {fmtPrice((k === "stop" ? l.stop : l.target) as number)}.</div>)}
                         <div className="mt-1 text-muted">Nothing is exited for you and nothing is sent to a broker. Use Exit all, or untick or remove the leg here and act in your broker.</div>
                       </div>
                     );
@@ -1190,6 +1242,7 @@ export default function StrategyBuilder() {
                       </details>
                     );
                   })()}
+                  {futureBar}
                   <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-muted" data-testid="legs-summary">
                     <span><span className="num text-paper">{legs.filter((l) => l.enabled !== false).length}</span> of {legs.length} legs active</span>
                     <span>Net premium <span className={`num ${tone(netPremium)}`}>{netPremium == null ? "—" : `${money(netPremium)} ${netPremium >= 0 ? "credit" : "debit"}`}</span></span>
@@ -1215,13 +1268,13 @@ export default function StrategyBuilder() {
                             <td className="px-2 py-2"><input type="checkbox" aria-label="Include leg" checked={l.enabled !== false} onChange={(e) => update(l.id, { enabled: e.target.checked })} /></td>
                             <td data-label="Leg" className="px-1 py-1.5"><div className="flex gap-1">
                               <select className={`${field} !px-1 font-semibold ${buy ? "border-up/60 text-up" : "border-down/60 text-down"}`} aria-label="Action" value={l.action} onChange={(e) => update(l.id, { action: e.target.value as Action })}><option>BUY</option><option>SELL</option></select>
-                              <select className={`${field} !px-1 font-semibold`} aria-label="Option type" value={l.type} onChange={(e) => { const t = e.target.value as OptionType; const m = ltp(l.strike, t, l.expiry); update(l.id, { type: t, ...(l.premiumSource === "manual" ? {} : { premium: m, premiumSource: m == null ? null : "market" }) }); }}><option>CE</option><option>PE</option></select>
+                              {l.type === "FUT" ? <span className="grid min-h-8 place-items-center rounded-sm border border-rule bg-slate-2 px-2 font-semibold text-paper" aria-label="Instrument">FUT</span> : <select className={`${field} !px-1 font-semibold`} aria-label="Option type" value={l.type} onChange={(e) => { const t = e.target.value as OptionType; const m = ltp(l.strike, t, l.expiry); update(l.id, { type: t, ...(l.premiumSource === "manual" ? {} : { premium: m, premiumSource: m == null ? null : "market" }) }); }}><option>CE</option><option>PE</option></select>}
                             </div></td>
-                            <td data-label="Strike" className="px-1 py-1.5"><div className="flex items-center gap-1">
+                            <td data-label="Strike" className="px-1 py-1.5">{l.type === "FUT" ? <div data-testid={`leg-future-${l.id}`}><div className="whitespace-nowrap text-xs text-paper">NIFTY future</div><div className="num mt-0.5 text-[10px] text-muted">{futureOf(futs, l.expiry)?.symbol ?? "contract"} · {dmy(l.expiry)}</div></div> : <><div className="flex items-center gap-1">
                               <button type="button" className={step} aria-label="Previous strike" disabled={si <= 0} onClick={() => chooseStrike(l, lk[si - 1]!)}>‹</button>
                               <select className={`${field} w-[4.9rem] !px-1`} aria-label="Strike" value={l.strike} onChange={(e) => chooseStrike(l, Number(e.target.value))}>{si < 0 && <option value={l.strike}>{l.strike} (not listed)</option>}{lk.map((k) => <option key={k} value={k}>{fmtInt(k)}</option>)}</select>
                               <button type="button" className={step} aria-label="Next strike" disabled={si < 0 || si >= lk.length - 1} onClick={() => chooseStrike(l, lk[si + 1]!)}>›</button>
-                            </div><div className="num mt-0.5 text-[10px] text-muted">{dmy(l.expiry)}{spot ? ` · ${(((l.strike / spot) - 1) * 100).toFixed(1)}% vs spot` : ""}</div></td>
+                            </div><div className="num mt-0.5 text-[10px] text-muted">{dmy(l.expiry)}{spot ? ` · ${(((l.strike / spot) - 1) * 100).toFixed(1)}% vs spot` : ""}</div></>}</td>
                             <td data-label="Lots" className="px-1 py-1.5"><div className="flex items-center gap-1">
                               <button type="button" className={step} aria-label="Decrease lots" disabled={l.lots <= 1} onClick={() => update(l.id, { lots: Math.max(1, l.lots - 1) })}>−</button>
                               <input className={`${field} w-10 !px-1 text-center`} type="number" min={1} step={1} aria-label="Lots" value={l.lots} onChange={(e) => update(l.id, { lots: Number(e.target.value) })} />
@@ -1230,7 +1283,7 @@ export default function StrategyBuilder() {
                             <td data-label="Entry ₹" className="px-1 py-1.5"><input className={`${field} w-[4.6rem] !px-1.5`} type="number" min={0} step="0.05" aria-label="Entry premium" value={l.premium ?? ""} placeholder="enter" title={l.premiumSource === "market" ? "Stored quote" : l.premiumSource === "manual" ? "You entered this" : "Missing"} onChange={(e) => update(l.id, { premium: e.target.value === "" ? null : Number(e.target.value), premiumSource: e.target.value === "" ? null : "manual" })} />
                               <div className="text-[10px] text-muted">{l.premiumSource === "market" ? "stored quote" : l.premiumSource === "manual" ? "you entered" : "missing"}</div></td>
                             <td data-label="LTP" className="num px-1 py-2">{mk == null ? <span className="text-muted" title="No quote in the stored chain for this contract">—</span> : fmtPrice(mk)}
-                              {(() => { const r = dayRange(l.strike, l.type, l.expiry); return <div className="mt-0.5 whitespace-nowrap text-[10px] text-muted" title="Today's high and low of this contract, from the stored quote" data-testid={`leg-range-${l.id}`}>H {r.high == null ? "—" : fmtPrice(r.high)} · L {r.low == null ? "—" : fmtPrice(r.low)}</div>; })()}</td>
+                              {(() => { const r = l.type === "FUT" ? { high: null, low: null } : dayRange(l.strike, l.type, l.expiry); return <div className="mt-0.5 whitespace-nowrap text-[10px] text-muted" title="Today's high and low of this contract, from the stored quote" data-testid={`leg-range-${l.id}`}>H {r.high == null ? "—" : fmtPrice(r.high)} · L {r.low == null ? "—" : fmtPrice(r.low)}</div>; })()}</td>
                             <td data-label="P&L" className={`num whitespace-nowrap px-1 py-2 ${tone(pl)}`}>{money(pl)}</td>
                             <td data-label="Δ · Θ/day" className="num px-1 py-2 text-xs">{lg ? <><div className="whitespace-nowrap"><span className="text-muted">Δ </span><span className="text-paper">{lg.delta.toFixed(1)}</span></div><div className="whitespace-nowrap"><span className="text-muted">Θ </span><span className={tone(lg.thetaDay)}>{money(lg.thetaDay)}</span></div></> : <span className="text-muted" title="No volatility fits this leg's stored price">—</span>}</td>
                             <td data-label="Target ₹" className="px-1 py-1">{exitCell(l, "target")}</td>
@@ -1259,7 +1312,16 @@ export default function StrategyBuilder() {
                                     <button type="button" aria-label="Enter leg again" onClick={() => enterAgain(l)} className="rounded-sm border border-info/60 px-3 py-1 text-info hover:bg-info/10">Enter again at live price</button>
                                   </span>
                                 )}
-                                {!exited && (
+                                {!exited && l.type === "FUT" && (() => {
+                                  const next = futureToRollInto(futs, l.expiry);
+                                  return (
+                                    <span className="flex items-center gap-1 text-muted" title="Roll: close this future at its live price (the P&L is booked) and open the same position in the next month's contract at its live price">
+                                      <button type="button" aria-label="Roll future to next month" disabled={!next || l.premium == null} onClick={() => rollFuture(l)}
+                                        className="rounded-sm border border-info/60 px-3 py-1 text-info hover:bg-info/10 disabled:opacity-40">Roll to {next?.expiry ? `${dmy(next.expiry)} contract` : "next month"}</button>
+                                    </span>
+                                  );
+                                })()}
+                                {!exited && l.type !== "FUT" && (
                                   <span className="flex items-center gap-1 text-muted" title="Roll: close this leg at its live price (the P&L is booked) and open the same leg at another strike at that strike's live price">
                                     Roll to <Info term="Roll" />
                                     <select aria-label="Roll to strike" className={`${field} w-[5.4rem] !px-1`} value={rollTo[l.id] ?? ""} onChange={(e) => setRollTo((d) => ({ ...d, [l.id]: e.target.value }))}>
@@ -1303,7 +1365,7 @@ export default function StrategyBuilder() {
                   </div>
                 </div>
               ) : tab === "chart" ? (
-                <StrategyTimeChart legs={open} historyExpiries={[...collected]} lotSize={lotSize} modelDelta={greeks?.delta ?? null} rules={rules} />
+                <>{open.some((l) => l.type === "FUT") && <p className="px-3 pt-2 text-xs text-muted" data-testid="stl-future-note">This chart is drawn from the stored one-minute prices of the option strikes in your legs; the future is not in it (its P&L and delta are in the table, the payoff and the Greeks).</p>}<StrategyTimeChart legs={open.filter((l) => l.type !== "FUT") as (Leg & { type: OptionType })[]} historyExpiries={[...collected]} lotSize={lotSize} modelDelta={optionGreeks?.delta ?? null} rules={rules} /></>
               ) : tab === "greeks" ? (
                 <div className="overflow-x-auto p-2" data-testid="greeks">
                   <table className="w-full text-sm" aria-label="Greeks">
@@ -1311,9 +1373,9 @@ export default function StrategyBuilder() {
                     <tbody>
                       {mlegs.map((l) => {
                         const g = lotSize && spot ? legGreeks(l, lotSize, val0) : null;
-                        const c = books.get(l.expiry)?.cg.get(l.strike)?.[l.type === "CE" ? "ce" : "pe"];
-                        return <tr key={l.id} className="num border-t border-rule/50"><td className="px-1 py-1">{l.action} {l.lots}× {fmtInt(l.strike)} {l.type}{multi ? <span className="ml-1 text-[11px] text-muted">{dmy(l.expiry)}</span> : null}</td><td className="px-1 text-right">{c ? `${(c.iv * 100).toFixed(1)}%` : "—"}</td>
-                          {!g ? <td colSpan={5} className="px-1 text-right text-xs text-muted">unavailable: no volatility fits the premium</td> : <><td className="px-1 text-right text-muted">{c ? c.delta.toFixed(3) : "—"}</td><td className="px-1 text-right">{g.delta.toFixed(1)}</td><td className="px-1 text-right">{g.gamma.toFixed(4)}</td><td className={`px-1 text-right ${tone(g.thetaDay)}`}>{money(g.thetaDay)}</td><td className={`px-1 text-right ${tone(g.vegaPt)}`}>{money(g.vegaPt)}</td></>}</tr>;
+                        const c = l.type === "FUT" ? undefined : books.get(l.expiry)?.cg.get(l.strike)?.[l.type === "CE" ? "ce" : "pe"];
+                        return <tr key={l.id} className="num border-t border-rule/50"><td className="px-1 py-1">{l.action} {l.lots}× {l.type === "FUT" ? "NIFTY future" : `${fmtInt(l.strike)} ${l.type}`}{multi ? <span className="ml-1 text-[11px] text-muted">{dmy(l.expiry)}</span> : null}</td><td className="px-1 text-right">{c ? `${(c.iv * 100).toFixed(1)}%` : "—"}</td>
+                          {!g ? <td colSpan={5} className="px-1 text-right text-xs text-muted">{l.type === "FUT" ? "unavailable: this future has expired" : "unavailable: no volatility fits the premium"}</td> : <><td className="px-1 text-right text-muted">{l.type === "FUT" ? (g.delta / (sign(l.action) * l.lots * (lotSize ?? 1))).toFixed(3) : c ? c.delta.toFixed(3) : "—"}</td><td className="px-1 text-right">{g.delta.toFixed(1)}</td><td className="px-1 text-right">{g.gamma.toFixed(4)}</td><td className={`px-1 text-right ${tone(g.thetaDay)}`}>{money(g.thetaDay)}</td><td className={`px-1 text-right ${tone(g.vegaPt)}`}>{money(g.vegaPt)}</td></>}</tr>;
                       })}
                       {greeks && <tr className="num border-t border-rule font-medium"><td className="px-1 py-1">Net</td><td /><td /><td className="px-1 text-right">{greeks.delta.toFixed(1)}</td><td className="px-1 text-right">{greeks.gamma.toFixed(4)}</td><td className={`px-1 text-right ${tone(greeks.thetaDay)}`}>{money(greeks.thetaDay)}</td><td className={`px-1 text-right ${tone(greeks.vegaPt)}`}>{money(greeks.vegaPt)}</td></tr>}
                     </tbody>

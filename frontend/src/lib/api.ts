@@ -234,6 +234,7 @@ export const api = {
   intradayGexHistory: (expiry: string, universe = "dynamic", session?: string) => request<import("./types").GexHistory>(`/api/intraday/gex-history?expiry=${encodeURIComponent(expiry)}&universe=${universe}${session ? `&session=${session}` : ""}`),
   intradayPremiumBaskets: (expiry: string, window = "10", kind = "fixed") => request<import("./types").PremiumBaskets>(`/api/intraday/premium-baskets?expiry=${encodeURIComponent(expiry)}&window=${window}&kind=${kind}`),
   intradayIvSkew: (expiry: string, session?: string) => request<IvSkew>(`/api/intraday/iv-skew?expiry=${encodeURIComponent(expiry)}${session ? `&session=${encodeURIComponent(session)}` : ""}`),
+  futureContracts: () => request<import("./futures").FutureContracts>("/api/futures/contracts"),
   futuresSeries: (since?: string) => request<FuturesSeries>("/api/futures/series" + (since ? `?since=${encodeURIComponent(since)}` : "")),
   oiSeries: (expiry: string, strikes: string, since?: string, maxPoints?: number) =>
     request<OiSeries>(

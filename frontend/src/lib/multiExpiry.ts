@@ -53,7 +53,7 @@ export function analyzeCurve(legs: Leg[], lotSize: number, spot: number, pnlAt: 
   if (legs.length === 0) return { defined: false, reason: "Add at least one leg.", ...none };
   if (legs.some((l) => l.premium == null && l.exitPrice == null)) return { defined: false, reason: "Enter the entry premium of every leg.", ...none };
   const open = legs.filter((l) => l.exitPrice == null);
-  const strikes = [...new Set(open.map((l) => l.strike))].sort((a, b) => a - b);
+  const strikes = [...new Set(open.filter((l) => l.type !== "FUT").map((l) => l.strike))].sort((a, b) => a - b); // a future has no strike and no kink
   const lo = Math.max(1, Math.min(spot, ...strikes) * 0.5), hi = Math.max(spot, ...strikes) * 1.8;
   const n = 2400;
   const xs: number[] = [], ys: number[] = [];
@@ -69,7 +69,7 @@ export function analyzeCurve(legs: Leg[], lotSize: number, spot: number, pnlAt: 
     if (p == null) return { defined: false, reason: "A leg could not be valued by the model (no volatility fits its price).", ...none };
     ys.push(p);
   }
-  const upSlope = open.reduce((a, l) => a + (l.type === "CE" ? sign(l.action) * l.lots * lotSize : 0), 0);
+  const upSlope = open.reduce((a, l) => a + (l.type === "CE" || l.type === "FUT" ? sign(l.action) * l.lots * lotSize : 0), 0); // above every strike a call and a future both gain one point per point
   const be: number[] = [];
   for (let i = 0; i < n; i++) {
     const a = ys[i]!, b = ys[i + 1]!;

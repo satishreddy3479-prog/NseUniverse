@@ -8,6 +8,7 @@ import { EChart, useChartColors } from "../components/EChart";
 import { Info } from "../components/Info";
 import { Panel } from "../components/ui";
 import { api } from "../lib/api";
+import { futurePrice, useFutureContracts } from "../lib/futures";
 import { fmtDateTimeIST, fmtInt } from "../lib/format";
 import { portfolioStats, type PortfolioStats } from "../lib/portfolioStats";
 import { EQUITY_HEIGHT, portfolioEquityOption } from "../lib/portfolioCharts";
@@ -37,6 +38,7 @@ export function Portfolio() {
   const expiries = useMemo(() => [...new Set([...saved.map((s) => s.expiry), ...(draft?.expiry ? [draft.expiry] : [])])].sort(), [saved, draft?.expiry]);
   const chains = useQueries({ queries: expiries.map((e) => ({ queryKey: ["chain", e], queryFn: () => api.optionChain(e), refetchInterval: 15_000, retry: false })) });
   const { stream } = useStreamStatus();
+  const futs = useFutureContracts().data;
   const streamActive = !!stream && ["streaming", "waiting_for_data", "reconnecting"].includes(stream.state);
   const version = useThrottledVersion(400);
   const books = useMemo(() => {
@@ -58,7 +60,7 @@ export function Portfolio() {
   const rows = useMemo(() => {
     const mk = (name: string, expiry: string, legs: Leg[], key: string, isDraft: boolean) => {
       const b = books.get(expiry);
-      const p = b?.lot ? strategyPnl(legs, b.priceOf, b.lot) : { booked: legs.reduce((t, l) => t + (l.realised ?? 0), 0), open: null as number | null, total: null as number | null, openLegs: legs.filter((l) => l.enabled !== false && !isExited(l)).length };
+      const p = b?.lot ? strategyPnl(legs, (k, t, e) => (t === "FUT" ? futurePrice(futs, e) : b.priceOf(k, t)), b.lot) : { booked: legs.reduce((t, l) => t + (l.realised ?? 0), 0), open: null as number | null, total: null as number | null, openLegs: legs.filter((l) => l.enabled !== false && !isExited(l)).length };
       return { key, name, expiry, legs: legs.filter((l) => l.enabled !== false).length, ...p, live: !!b?.live, at: b?.at ?? null, isDraft };
     };
     const list = saved.map((s) => mk(s.name, s.expiry, s.legs, `s-${s.name}`, false)).filter((r) => r.openLegs > 0);

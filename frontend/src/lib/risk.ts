@@ -239,7 +239,7 @@ export function stampText(s: { as_of_ist: string; surface_version_id: string } |
 /** The enabled legs of the Strategy Builder as API legs (lots as whole numbers; the premium entered, or null). */
 export function legsFromBuilder(legs: Leg[] | undefined | null): RiskLeg[] {
   return (legs ?? [])
-    .filter((l) => l.enabled !== false && Number.isFinite(l.strike) && l.lots > 0)
+    .filter((l): l is Leg & { type: "CE" | "PE" } => l.enabled !== false && l.type !== "FUT" && Number.isFinite(l.strike) && l.lots > 0)
     .map((l) => ({ expiry: l.expiry, strike: l.strike, type: l.type, action: l.action, lots: Math.round(l.lots), entry_price: l.premium ?? null }));
 }
 

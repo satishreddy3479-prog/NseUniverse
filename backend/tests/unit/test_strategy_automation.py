@@ -323,3 +323,35 @@ def test_a_stop_is_still_executed_inside_a_real_session(tmp_path: Path) -> None:
     auto = _session_auto(tmp_path, datetime(2026, 11, 5, 4, 0, tzinfo=UTC), True)  # 09:30 IST, a trading day
     auto.put(doc(), None)
     assert auto.check_once() and auto.get()["legs"][0]["exitPrice"] == 131.0  # type: ignore[index]
+
+
+def future(action: str = "BUY", **kw: object) -> dict[str, object]:
+    """A NIFTY future leg: strike 0, entry price in ``premium``, one lot of 65."""
+    return {"id": "f1", "expiry": "2026-11-24", "strike": 0, "type": "FUT", "action": action, "lots": 1,
+            "premium": 25800.0, "premiumSource": "market", "enabled": True, "key": "nse_fo|1", **kw}
+
+
+def test_a_long_future_stop_is_executed_by_the_server_and_booked_by_hand(tmp_path: Path) -> None:
+    """Long 1 lot at 25 800 with a stop at 25 700, price falls to 25 690: (25 690 - 25 800) * 65 = -7 150."""
+    auto, _ = make(tmp_path, 25690.0)
+    auto.put(doc(legs=[future(stop=25700.0)]), None)
+    events = auto.check_once()
+    leg = auto.get()["legs"][0]  # type: ignore[index]
+    assert events and "NIFTY future" in events[0]  # named as a future, not "0 FUT"
+    assert leg["exitPrice"] == 25690.0 and leg["exitReason"] == "stop"
+    assert leg["realised"] == (25690.0 - 25800.0) * 65
+
+
+def test_a_short_future_target_is_executed_by_the_server_and_booked_by_hand(tmp_path: Path) -> None:
+    """Short 1 lot at 25 800 with a target at 25 600, price falls to 25 590: (25 800 - 25 590) * 65 = +13 650."""
+    auto, _ = make(tmp_path, 25590.0)
+    auto.put(doc(legs=[future("SELL", target=25600.0)]), None)
+    assert auto.check_once()
+    leg = auto.get()["legs"][0]  # type: ignore[index]
+    assert leg["exitReason"] == "target" and leg["realised"] == (25800.0 - 25590.0) * 65
+
+
+def test_a_future_without_a_live_price_is_left_alone(tmp_path: Path) -> None:
+    auto, _ = make(tmp_path, None)
+    auto.put(doc(legs=[future(stop=25700.0)]), None)
+    assert auto.check_once() == [] and auto.get()["legs"][0].get("exitPrice") is None  # type: ignore[index]

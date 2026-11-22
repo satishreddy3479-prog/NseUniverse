@@ -58,6 +58,7 @@ export function GreeksWhatIf() {
   }, [status.data?.default_sticky]);
   const builder = useQuery({ queryKey: ["risk-builder"], queryFn: api.runningGet, refetchInterval: 30_000, retry: false });
   const builderLegs = useMemo(() => legsFromBuilder(builder.data?.doc?.legs), [builder.data]);
+  const builderFutures = useMemo(() => (builder.data?.doc?.legs ?? []).filter((l) => l.enabled !== false && l.type === "FUT").length, [builder.data]);
 
   const surface = useQuery({ queryKey: ["risk-surface"], queryFn: () => riskApi.surface(), refetchInterval: POLL.surface, retry: false, placeholderData: keepPreviousData });
   const expiries = useMemo(() => Array.from(new Set([...(surface.data?.slices.map((s) => s.expiry) ?? []), ...legs.map((l) => l.expiry)])).filter(Boolean).sort(), [surface.data, legs]);
@@ -106,6 +107,7 @@ export function GreeksWhatIf() {
           {status.data?.config_error && <p role="alert" className="rounded-sm border border-down/50 bg-down/10 p-2 text-sm text-down" data-testid="risk-config-error">The engine's configuration needs fixing: {status.data.config_error}</p>}
           {degraded.length > 0 && <p className="rounded-sm border border-warn/50 bg-warn/10 px-2 py-1 text-xs text-warn" data-testid="risk-degraded-banner">Model degraded for {degraded.map((s) => s.expiry).join(", ")}: {degraded[0]!.degraded_reason}. Figures for these expiries are unavailable or less reliable; see the surface below.</p>}
           <LegsEditor legs={legs} onChange={setLegs} expiries={expiries} maxLegs={status.data?.max_legs ?? 60} builderCount={builderLegs.length} onUseBuilder={() => setLegs(builderLegs)} />
+          {builderFutures > 0 && <p role="note" className="px-1 text-xs text-warn" data-testid="greeks-futures-note">The Strategy Builder holds {builderFutures} NIFTY future leg{builderFutures === 1 ? "" : "s"}. This page prices options only, so the future is left out of "Use builder legs" and of every number here: net delta, the P&L grid and the presets do not include it. The Strategy Builder's own payoff, Greeks and P&L tabs do.</p>}
           <ScenarioPanel scenario={scenario} onChange={setScenario} presets={presets.data} result={scen.data?.result} defaultRule={defaultRule} busy={scen.isFetching} error={has ? explain(scen.error) : null} />
           <div className="grid gap-3 xl:grid-cols-2">
             <RiskMatrixPanel grid={matrix.data?.grid} kind={matrixKind} onKind={setMatrixKind} forward={matrix.data?.forward ?? null} version={matrix.data?.surface_version_id ?? null} busy={matrix.isFetching} error={has ? explain(matrix.error) : null} />

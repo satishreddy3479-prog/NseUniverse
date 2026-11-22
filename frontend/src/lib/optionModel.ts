@@ -78,6 +78,8 @@ export interface Valuation {
   carry?: number;
   /** the carry of each expiry read from its own chain; an expiry not listed here uses ``carry`` (then ``rate``) */
   carryByExpiry?: Record<string, number>;
+  /** the carry each held future's own live price implies (ln(F / spot) / t); a future uses it before the option chain's carry, so the model passes through the price the market shows */
+  futCarryByExpiry?: Record<string, number>;
   /** added to every leg's volatility, in volatility points (0.02 = +2 vol points) */
   ivShift: number;
 }
@@ -85,7 +87,30 @@ export interface Valuation {
 /** Volatility used for a leg: the manual override, else the one implied by its entry premium at the current spot. */
 const carryOf = (v: { rate: number; carry?: number; carryByExpiry?: Record<string, number> }, expiry?: string) => (expiry != null ? v.carryByExpiry?.[expiry] : undefined) ?? v.carry ?? v.rate;
 
+/**
+ * Model price of the NIFTY future of ``expiry`` when the index is at ``s`` on date ``atMs``: s * e^(carry * t), t in years to its expiry; the index
+ * itself once the contract has expired. The same carry the option model reads from the chain (so a future and its options agree on the forward).
+ * Not discounted: a future carries no premium, it is marked to market every day.
+ */
+export function futureValue(s: number, expiry: string, atMs: number, carry: number): number {
+  const t = (expiryEnd(expiry) - atMs) / YEAR_MS;
+  return t > 0 ? s * Math.exp(carry * t) : s;
+}
+
+/**
+ * Greeks of one future per unit, from the same model: delta = e^(carry t) (price change per index point; about 1), gamma 0, vega 0, and theta =
+ * price one calendar day later minus price now at a fixed index level, which is the carry running off as the contract nears expiry (a negative number
+ * for a long future, not an option-style time decay). Null once expired.
+ */
+export function futureGreeks(spot: number, expiry: string, nowMs: number, carry: number): { delta: number; gamma: number; thetaDay: number; vegaPt: number } | null {
+  const t = (expiryEnd(expiry) - nowMs) / YEAR_MS;
+  if (!(t > 0) || !(spot > 0)) return null;
+  const val = (tt: number) => spot * Math.exp(carry * tt);
+  return { delta: Math.exp(carry * t), gamma: 0, thetaDay: (t > 1 / 365 ? val(t - 1 / 365) : spot) - val(t), vegaPt: 0 };
+}
+
 export function legIv(l: Leg, v: Valuation): { iv: number | null; source: "manual" | "implied from entry premium" | "unavailable" } {
+  if (l.type === "FUT") return { iv: null, source: "unavailable" }; // a future has no volatility
   if (l.iv != null && l.iv > 0) return { iv: l.iv, source: "manual" };
   if (l.premium == null) return { iv: null, source: "unavailable" };
   const t = (expiryEnd(l.expiry) - v.nowMs) / YEAR_MS;
@@ -95,11 +120,12 @@ export function legIv(l: Leg, v: Valuation): { iv: number | null; source: "manua
 
 /** Model value per unit of one leg at spot s on date `atMs`. Null when its volatility is unknown. */
 export function legTheoreticalValue(l: Leg, s: number, atMs: number, v: Valuation): number | null {
+  if (l.type === "FUT") return futureValue(s, l.expiry, atMs, v.futCarryByExpiry?.[l.expiry] ?? carryOf(v, l.expiry));
   const t = (expiryEnd(l.expiry) - atMs) / YEAR_MS;
   if (t <= 0) return intrinsic(l, s);
   const { iv } = legIv(l, v);
   if (iv == null) return null;
-  return black76(l.type, s * Math.exp(carryOf(v, l.expiry) * t), l.strike, t, Math.max(iv + v.ivShift, 1e-4), v.rate);
+  return black76(l.type as OptionType, s * Math.exp(carryOf(v, l.expiry) * t), l.strike, t, Math.max(iv + v.ivShift, 1e-4), v.rate);
 }
 
 /** Estimated strategy P&L at spot s on a date before expiry (before costs). Null if any leg cannot be valued. */
@@ -150,9 +176,15 @@ export function contractGreeks(type: OptionType, price: number | null, spot: num
 
 /** Position Greeks of one leg in rupee units (lots x lot size, sign for buy/sell) at the current spot and time. Null when no volatility is available. */
 export function legGreeks(l: Leg, lotSize: number, v: Valuation): { delta: number; gamma: number; thetaDay: number; vegaPt: number } | null {
+  if (l.type === "FUT") {
+    const fg = futureGreeks(v.spotNow, l.expiry, v.nowMs, v.futCarryByExpiry?.[l.expiry] ?? carryOf(v, l.expiry));
+    if (!fg) return null;
+    const qf = sign(l.action) * l.lots * lotSize;
+    return { delta: qf * fg.delta, gamma: 0, thetaDay: qf * fg.thetaDay, vegaPt: 0 };
+  }
   const { iv } = legIv(l, v);
   if (iv == null) return null;
-  const g = contractGreeks(l.type, null, v.spotNow, l.strike, l.expiry, v.nowMs, v.rate, carryOf(v, l.expiry), Math.max(iv + v.ivShift, 1e-4));
+  const g = contractGreeks(l.type as OptionType, null, v.spotNow, l.strike, l.expiry, v.nowMs, v.rate, carryOf(v, l.expiry), Math.max(iv + v.ivShift, 1e-4));
   if (!g) return null;
   const q = sign(l.action) * l.lots * lotSize;
   return { delta: q * g.delta, gamma: q * g.gamma, thetaDay: q * g.thetaDay, vegaPt: q * g.vegaPt };
@@ -163,7 +195,7 @@ export function netGreeks(legs: Leg[], lotSize: number, v: Valuation): NetGreeks
   const out: NetGreeks = { delta: 0, gamma: 0, thetaDay: 0, vegaPt: 0, unavailable: [] };
   for (const l of legs) {
     const g = legGreeks(l, lotSize, v);
-    if (!g) { out.unavailable.push(`${l.type} ${l.strike}`); continue; }
+    if (!g) { out.unavailable.push(l.type === "FUT" ? "NIFTY future" : `${l.type} ${l.strike}`); continue; }
     out.delta += g.delta; out.gamma += g.gamma; out.thetaDay += g.thetaDay; out.vegaPt += g.vegaPt;
   }
   return out;

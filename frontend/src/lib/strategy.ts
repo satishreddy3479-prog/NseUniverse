@@ -6,13 +6,15 @@
 import { sessionCloseHHMM } from "./session"; // the auto-close time may not be after the session close (15:40; 15:45 from 7 Dec 2026)
 
 export type OptionType = "CE" | "PE";
+/** A leg is an option (CE or PE at a strike) or a NIFTY index future ("FUT", strike 0, premium = the entry price of the contract). */
+export type LegType = OptionType | "FUT";
 export type Action = "BUY" | "SELL";
 
 export interface Leg {
   id: string;
   expiry: string; // ISO date, the contract's expiry
   strike: number;
-  type: OptionType;
+  type: LegType;
   action: Action;
   lots: number; // whole lots
   premium: number | null; // entry premium per unit; null = not entered
@@ -62,6 +64,8 @@ export interface Leg {
 }
 
 export const sign = (a: Action) => (a === "BUY" ? 1 : -1);
+/** How a leg is named in text: "25800 CE", or "NIFTY future" for a future. */
+export const legName = (l: Pick<Leg, "type" | "strike">): string => (l.type === "FUT" ? "NIFTY future" : `${l.strike} ${l.type}`);
 export const isExited = (l: Pick<Leg, "exitPrice">): boolean => l.exitPrice != null;
 /** A strategy whose whole position was closed by the strategy itself (the clock close or a profit rule): every ticked leg is out, one of them by reason "strategy",
  *  and no stopped leg is still waiting to be entered again. Such a strategy is finished and belongs under Closed; one with a leg still open, or closed only by a
@@ -93,7 +97,7 @@ export const stripStamp = (text: string): string => text.replace(/^(\d{1,2} [A-Z
 /** A leg after the trailing stop moved its stop: the time and the move are written in its log. */
 function trailLogged(old: Leg, t: Leg, px: number, at: string): Leg {
   if (t === old) return old;
-  return { ...t, stopSetAt: at, log: [...(t.log ?? []), { at, text: `${stamp(at)} Trailing stop: ${old.action} ${old.strike} ${old.type} stop ${old.stop!.toFixed(2)} → ${t.stop!.toFixed(2)} (price ${px.toFixed(2)})` }].slice(-20) };
+  return { ...t, stopSetAt: at, log: [...(t.log ?? []), { at, text: `${stamp(at)} Trailing stop: ${old.action} ${legName(old)} stop ${old.stop!.toFixed(2)} → ${t.stop!.toFixed(2)} (price ${px.toFixed(2)})` }].slice(-20) };
 }
 
 /** The stop as the user set it: before any trailing, and nothing when the only stop is one the app moved to cost on a leg that had none. */
@@ -104,7 +108,7 @@ export function exitLeg(l: Leg, price: number, reason: "stop" | "target" | "manu
   if (l.premium == null || isExited(l)) return l;
   const pnl = sign(l.action) * (price - l.premium) * l.lots * lotsFactor * lotSize;
   const what = label ?? (reason === "stop" ? (l.costMoved ? "Stop at cost" : l.stopTrailed ? "Trailing stop" : "Stop") : reason === "target" ? "Target" : "Manual exit");
-  const text = `${what}: ${l.action} ${l.strike} ${l.type} closed at ${price.toFixed(2)} (entry ${l.premium.toFixed(2)}), ${pnl < 0 ? "−" : "+"}₹${Math.round(Math.abs(pnl)).toLocaleString("en-IN")}`;
+  const text = `${what}: ${l.action} ${legName(l)} closed at ${price.toFixed(2)} (entry ${l.premium.toFixed(2)}), ${pnl < 0 ? "−" : "+"}₹${Math.round(Math.abs(pnl)).toLocaleString("en-IN")}`;
   return {
     ...l, exitPrice: price, exitReason: reason, exitedAt: at, realised: (l.realised ?? 0) + pnl,
     reentryLevel: reason === "stop" ? l.premium : null,
@@ -124,7 +128,27 @@ export function reenterLeg(l: Leg, price: number, at: string, viaBox: boolean): 
     ...l, premium: price, premiumSource: "market", exitPrice: null, exitReason: null, exitedAt: null, reentryLevel: null, enteredAt: at,
     stop: lvl(l.stopPct, false), target: lvl(l.targetPct, true), stopBase: null, stopTrailed: false, costMoved: false, stopSetAt: l.stopPct == null ? null : at, targetSetAt: l.targetPct == null ? null : at,
     reentry: viaBox ? Math.max(0, (l.reentry ?? 0) - 1) : l.reentry, cycles: (l.cycles ?? 0) + 1,
-    log: [...(l.log ?? []), { at, text: `${stamp(at)} ${what}: ${l.action} ${l.strike} ${l.type} at ${price.toFixed(2)}` }].slice(-20),
+    log: [...(l.log ?? []), { at, text: `${stamp(at)} ${what}: ${l.action} ${legName(l)} at ${price.toFixed(2)}` }].slice(-20),
+  };
+}
+
+/**
+ * Roll a future to the next month's contract: the old contract is closed at its live price (its P&L is booked) and the same position is opened in the
+ * new contract at its live price. The stop and target keep their percentage distance from the new entry. Paper only. Unchanged when the leg is not a
+ * future, is closed, has no entry price, or the expiry does not move later.
+ */
+export function rollFutureLeg(l: Leg, newExpiry: string, newKey: string | null, oldPrice: number, newPrice: number, lotSize: number, at: string, lotsFactor = 1): Leg {
+  if (l.type !== "FUT" || isExited(l) || l.premium == null || newExpiry <= l.expiry) return l;
+  const pnl = sign(l.action) * (oldPrice - l.premium) * l.lots * lotsFactor * lotSize;
+  const buy = l.action === "BUY";
+  const pct = (lvl: number | null | undefined) => (lvl == null ? null : Math.abs(lvl / l.premium! - 1));
+  const lvl = (p: number | null, profitSide: boolean) => (p == null ? null : tick(newPrice * (profitSide === buy ? 1 + p : 1 - p)));
+  const text = `Rolled ${l.action} NIFTY future ${l.expiry} to ${newExpiry}: old closed at ${oldPrice.toFixed(2)} (entry ${l.premium.toFixed(2)}), ${pnl < 0 ? "−" : "+"}₹${Math.round(Math.abs(pnl)).toLocaleString("en-IN")} booked; new entry ${newPrice.toFixed(2)}`;
+  return {
+    ...l, expiry: newExpiry, key: newKey, premium: newPrice, premiumSource: "market", realised: (l.realised ?? 0) + pnl, cycles: (l.cycles ?? 0) + 1,
+    stop: lvl(pct(stopTyped(l)), false), target: lvl(pct(l.target), true), stopBase: null, stopTrailed: false, costMoved: false, exitPrice: null, exitReason: null, reentryLevel: null,
+    enteredAt: at, stopSetAt: stopTyped(l) == null ? null : at, targetSetAt: l.target == null ? null : at,
+    log: [...(l.log ?? []), { at, text: `${stamp(at)} ${text}` }].slice(-20),
   };
 }
 
@@ -149,7 +173,7 @@ export function rollLeg(l: Leg, newStrike: number, oldPrice: number, newPrice: n
 }
 
 /** The strategy's P&L from its legs and live prices: what is booked plus the open legs against the market. Null total when an open leg has no price or entry. */
-export function strategyPnl(legs: Leg[], priceOf: (strike: number, type: OptionType, expiry: string) => number | null, lotSize: number): { booked: number; open: number | null; total: number | null; openLegs: number } {
+export function strategyPnl(legs: Leg[], priceOf: (strike: number, type: LegType, expiry: string) => number | null, lotSize: number): { booked: number; open: number | null; total: number | null; openLegs: number } {
   let booked = 0, open: number | null = 0, openLegs = 0;
   for (const l of legs) {
     if (l.enabled === false) continue;
@@ -223,7 +247,7 @@ export function lockFloor(r: StrategyRules, pnl: number): number | null {
  * leg is closed at its live price (reason "strategy", so no leg re-enters) and `done` records which rule it was.
  * Legs are given at their own lots; `lotsFactor` is the multiplier. Nothing happens while any open leg has no live price.
  */
-export function applyStrategyRules(legs: Leg[], rules: StrategyRules, state: RulesState, priceOf: (strike: number, type: OptionType, expiry: string) => number | null, lotSize: number, at: string, lotsFactor = 1): { legs: Leg[]; state: RulesState; events: string[] } {
+export function applyStrategyRules(legs: Leg[], rules: StrategyRules, state: RulesState, priceOf: (strike: number, type: LegType, expiry: string) => number | null, lotSize: number, at: string, lotsFactor = 1): { legs: Leg[]; state: RulesState; events: string[] } {
   if (state.done || !hasRules(rules)) return { legs, state, events: [] };
   const live = legs.filter((l) => l.enabled !== false);
   if (live.length === 0) return { legs, state, events: [] };
@@ -265,7 +289,7 @@ export function applyStrategyRules(legs: Leg[], rules: StrategyRules, state: Rul
  * already at the entry or on the profit side stays. The moved stop is a trailed one (it may sit at the entry), and the stop you typed is remembered.
  * Paper only: nothing is sent to a broker. The server applies the same rule (`move_stops_to_cost` in backend/app/strategy/automation.py).
  */
-export function moveStopsToCost(legs: Leg[], stopped: Leg[], priceOf: (strike: number, type: OptionType, expiry: string) => number | null, at: string): { legs: Leg[]; events: string[] } {
+export function moveStopsToCost(legs: Leg[], stopped: Leg[], priceOf: (strike: number, type: LegType, expiry: string) => number | null, at: string): { legs: Leg[]; events: string[] } {
   const events: string[] = [];
   if (stopped.length === 0) return { legs, events };
   const sides = new Set(stopped.map((s) => s.action));
@@ -273,7 +297,7 @@ export function moveStopsToCost(legs: Leg[], stopped: Leg[], priceOf: (strike: n
   const out = legs.map((l) => {
     if (l.enabled === false || isExited(l) || l.premium == null || !sides.has(l.action)) return l;
     const buy = l.action === "BUY";
-    const who = `${l.action} ${l.strike} ${l.type}`;
+    const who = `${l.action} ${legName(l)}`;
     const px = priceOf(l.strike, l.type, l.expiry);
     if (px == null || !(px > 0)) { events.push(`${stamp(at)} Stop to cost skipped for ${who}: no live price`); return l; }
     if (buy ? !(px > l.premium) : !(px < l.premium)) {
@@ -292,7 +316,7 @@ export function moveStopsToCost(legs: Leg[], stopped: Leg[], priceOf: (strike: n
   return { legs: out, events };
 }
 
-export function applyAutomation(legs: Leg[], priceOf: (strike: number, type: OptionType, expiry: string) => number | null, lotSize: number, at: string, lotsFactor = 1, moveToCost = false): { legs: Leg[]; events: string[] } {
+export function applyAutomation(legs: Leg[], priceOf: (strike: number, type: LegType, expiry: string) => number | null, lotSize: number, at: string, lotsFactor = 1, moveToCost = false): { legs: Leg[]; events: string[] } {
   const events: string[] = [];
   const stoppedNow: Leg[] = []; // legs this pass closed by their stop
   const out = legs.map((l) => {
@@ -303,7 +327,7 @@ export function applyAutomation(legs: Leg[], priceOf: (strike: number, type: Opt
       if (l.premium == null) return l;
       const t = trailLeg(l, px);
       if (t !== l) {
-        events.push(`Trailing stop ${l.action} ${l.strike} ${l.type}: stop ${l.stop!.toFixed(2)} → ${t.stop!.toFixed(2)} (price ${px.toFixed(2)})`);
+        events.push(`Trailing stop ${l.action} ${legName(l)}: stop ${l.stop!.toFixed(2)} → ${t.stop!.toFixed(2)} (price ${px.toFixed(2)})`);
         l = trailLogged(l, t, px, at);
       }
       const kind = hitOf(l, "stop", px) ? "stop" : hitOf(l, "target", px) ? "target" : null;
@@ -332,7 +356,9 @@ export function applyAutomation(legs: Leg[], priceOf: (strike: number, type: Opt
 }
 
 // ---------------------------------------------------------------- expiry payoff
-export const intrinsic = (l: Pick<Leg, "type" | "strike">, s: number) => Math.max(l.type === "CE" ? s - l.strike : l.strike - s, 0);
+/** Value of a leg at expiry: an option's intrinsic value; a future settles at the index level itself (it has no floor but zero, and the index is never negative). */
+export const intrinsic = (l: Pick<Leg, "type" | "strike">, s: number) => (l.type === "FUT" ? s : Math.max(l.type === "CE" ? s - l.strike : l.strike - s, 0));
+export const isFuture = (l: Pick<Leg, "type">): boolean => l.type === "FUT";
 
 /** P&L of one leg at expiry, before costs. Null while the premium is missing. */
 export function legExpiryPnl(l: Leg, s: number, lotSize: number): number | null {
@@ -376,11 +402,11 @@ export function analyzeExpiry(legs: Leg[], lotSize: number): ExpiryAnalysis {
   if (legs.length === 0) return { defined: false, reason: "Add at least one leg.", ...none };
   if (new Set(legs.map((l) => l.expiry)).size > 1) return { defined: false, reason: "The legs expire on different dates: there is no single expiry payoff. See the theoretical curve.", ...none };
   if (legs.some((l) => l.premium == null)) return { defined: false, reason: "Enter the entry premium of every leg.", ...none };
-  const kinks = [...new Set(legs.map((l) => l.strike))].sort((a, b) => a - b);
+  const kinks = [...new Set(legs.filter((l) => !isFuture(l)).map((l) => l.strike))].sort((a, b) => a - b); // a future is a straight line: it adds no kink
   const pts = [0, ...kinks];
   const f = (s: number) => expiryPnl(legs, s, lotSize) as number;
   // slope above the last strike: calls only (puts are worthless there); below the first strike: puts only
-  const upSlope = legs.filter((l) => !isExited(l)).reduce((a, l) => a + (l.type === "CE" ? sign(l.action) * l.lots * lotSize : 0), 0);
+  const upSlope = legs.filter((l) => !isExited(l)).reduce((a, l) => a + (l.type === "CE" || l.type === "FUT" ? sign(l.action) * l.lots * lotSize : 0), 0); // above the last strike a call and a future both gain one point per point
   const values = pts.map(f);
   const maxFinite = Math.max(...values), minFinite = Math.min(...values);
   const profitUnlimited = upSlope > 0, lossUnlimited = upSlope < 0;
@@ -416,7 +442,7 @@ export function payoffCurve(legs: Leg[], lotSize: number, lo: number, hi: number
   const out: { s: number; pnl: number }[] = [];
   if (!(step > 0) || hi < lo) return out;
   // the expiry payoff only bends at the strikes: sample them too, or a peak that falls between two grid points is cut off
-  for (const s of curveLevels(lo, hi, step, legs.map((l) => l.strike))) {
+  for (const s of curveLevels(lo, hi, step, legs.filter((l) => !isFuture(l)).map((l) => l.strike))) {
     const p = expiryPnl(legs, s, lotSize);
     if (p == null) return [];
     out.push({ s, pnl: p });
@@ -438,11 +464,16 @@ export function validateStrategy(legs: Leg[], ctx: ValidationContext): Issue[] {
   for (const l of legs) {
     const err = (field: string, message: string) => out.push({ legId: l.id, field, message, level: "error" });
     if (!Number.isInteger(l.lots) || l.lots < 1) err("lots", "Lots must be a whole number of at least 1.");
-    if (!Number.isFinite(l.strike) || l.strike <= 0) err("strike", "Strike must be a positive number.");
-    if (!ctx.expiries.includes(l.expiry)) err("expiry", `${l.expiry} is not a listed expiry for this instrument.`);
-    else if (l.expiry < ctx.today) err("expiry", "This expiry has passed.");
-    const listed = ctx.strikesByExpiry[l.expiry];
-    if (listed && listed.length && !listed.includes(l.strike)) err("strike", `${l.strike} is not a listed strike for ${l.expiry}.`);
+    if (l.type === "FUT") {
+      if (l.strike !== 0) err("strike", "A future has no strike.");
+      if (l.expiry < ctx.today) err("expiry", "This future has expired: roll it to the next month.");
+    } else {
+      if (!Number.isFinite(l.strike) || l.strike <= 0) err("strike", "Strike must be a positive number.");
+      if (!ctx.expiries.includes(l.expiry)) err("expiry", `${l.expiry} is not a listed expiry for this instrument.`);
+      else if (l.expiry < ctx.today) err("expiry", "This expiry has passed.");
+      const listed = ctx.strikesByExpiry[l.expiry];
+      if (listed && listed.length && !listed.includes(l.strike)) err("strike", `${l.strike} is not a listed strike for ${l.expiry}.`);
+    }
     if (l.premium == null) out.push({ legId: l.id, field: "premium", message: "Entry premium is missing: enter it or use the market quote.", level: "warning" });
     else if (!Number.isFinite(l.premium) || l.premium < 0) err("premium", "Premium cannot be negative.");
   }
@@ -586,7 +617,7 @@ export function holdMoment(h: HoldRule, heldFromMs: number, expiry: string | nul
   return m;
 }
 
-export function applyHold(legs: Leg[], h: HoldRule, heldFrom: string | null, priceOf: (strike: number, type: OptionType, expiry: string) => number | null, lotSize: number, at: string, lotsFactor = 1): { legs: Leg[]; events: string[] } {
+export function applyHold(legs: Leg[], h: HoldRule, heldFrom: string | null, priceOf: (strike: number, type: LegType, expiry: string) => number | null, lotSize: number, at: string, lotsFactor = 1): { legs: Leg[]; events: string[] } {
   const from = heldFrom ? Date.parse(heldFrom) : NaN;
   if (!Number.isFinite(from)) return { legs, events: [] };
   const label = `Auto close (${h.mode === "intraday" ? "intraday" : "expiry day"} ${h.closeAt})`;

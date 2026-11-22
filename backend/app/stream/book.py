@@ -43,6 +43,10 @@ class LiveBook:
     def update_internal(self, tick: LiveTick) -> None:
         self._internal[tick.key] = tick
 
+    def get_internal(self, key: str) -> LiveTick | None:
+        """Latest tick of a server-side contract (a NIFTY future)."""
+        return self._internal.get(key)
+
     def internal_ticks(self) -> dict[str, LiveTick]:
         return dict(self._internal)
 
