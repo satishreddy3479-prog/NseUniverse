@@ -16,8 +16,37 @@ HEALTH_URL=${NSE_HEALTH_URL:-http://127.0.0.1:8010/api/health}
 SYSTEMCTL=${NSE_SYSTEMCTL:-systemctl}
 MIN_FREE_MB=${NSE_MIN_FREE_MB:-1500}
 KEEP_RELEASES=${NSE_KEEP_RELEASES:-3}
+ASSET_KEEP_DAYS=${NSE_ASSET_KEEP_DAYS:-7}   # how long a release keeps the built page files of the releases before it (see keep_assets)
 RETRY_AFTER_S=${NSE_RETRY_AFTER_S:-1800}
 TEST_MODE=${NSE_TEST_MODE:-0}   # tests only: skip pip/npm and run as the current user
+
+# ---- Built-file helpers. Tests load them with `NSE_UPDATE_LIB=1 source update.sh`.
+# The app's pages are loaded on demand under hashed names; a browser tab opened before a deploy still asks for the old names, and when they are gone that page cannot open
+# (a blank screen until the person reloads). So each release keeps the previous release's built files next to its own. They are hard links, not copies (same disk): a file
+# lives once however many releases hold it. Names are content hashes, so old and new never clash. Files older than DAYS are dropped from the NEW release only.
+keep_assets() {
+  local old=$1 new=$2 days=$3
+  [ -d "$old/frontend/dist/assets" ] && [ -d "$new/frontend/dist/assets" ] || return 0
+  cp -aln "$old/frontend/dist/assets/." "$new/frontend/dist/assets/" 2>/dev/null || cp -an "$old/frontend/dist/assets/." "$new/frontend/dist/assets/" 2>/dev/null || true
+  find "$new/frontend/dist/assets" -type f -mtime +"$days" -delete 2>/dev/null || true
+}
+# Releases made before the hard-link change each hold their own copy of the same files: make identical files (same name, same bytes) share one copy with the newest release.
+dedupe_assets() {
+  local root=$1 rel=$2 cur d f b
+  cur="$rel/frontend/dist/assets"
+  [ -d "$cur" ] || return 0
+  for d in "$root"/releases/*/; do
+    d=${d%/}
+    [ "$d" = "$rel" ] && continue
+    [ -d "$d/frontend/dist/assets" ] || continue
+    for f in "$d"/frontend/dist/assets/*; do
+      [ -f "$f" ] || continue
+      b=$(basename "$f")
+      if [ -f "$cur/$b" ] && [ ! "$f" -ef "$cur/$b" ] && cmp -s "$f" "$cur/$b"; then ln -f "$cur/$b" "$f" 2>/dev/null || true; fi
+    done
+  done
+}
+[ "${NSE_UPDATE_LIB:-0}" = 1 ] && return 0
 
 STATE="$ROOT/state"
 mkdir -p "$STATE" "$ROOT/releases" "$ROOT/cache"
@@ -109,14 +138,9 @@ if [ "$TEST_MODE" != 1 ]; then
   [ -f "$rel/frontend/dist/index.html" ] || fail "frontend build produced no index.html"
 fi
 
-# ---- Keep the previous release's built files next to the new ones. The app's pages are loaded on demand under hashed names; a tab
-# (or the installed app) opened before this deploy still asks for the old names, and when they are gone that page cannot open
-# (a blank screen until the person reloads). Names are content hashes, so old and new never clash; files older than 14 days go.
+# ---- Keep the previous release's built files next to the new ones (hard links, see keep_assets).
 oldd=$(readlink -f "$ROOT/current" 2>/dev/null || true)
-if [ -n "$oldd" ] && [ "$oldd" != "$rel" ] && [ -d "$oldd/frontend/dist/assets" ] && [ -d "$rel/frontend/dist/assets" ]; then
-  cp -an "$oldd/frontend/dist/assets/." "$rel/frontend/dist/assets/" 2>/dev/null || true
-  find "$rel/frontend/dist/assets" -type f -mtime +14 -delete 2>/dev/null || true
-fi
+if [ -n "$oldd" ] && [ "$oldd" != "$rel" ]; then keep_assets "$oldd" "$rel" "$ASSET_KEEP_DAYS"; fi
 
 # ---- Switch over, check health, roll back on failure
 prev=$(readlink -f "$ROOT/current" 2>/dev/null || true)
@@ -152,8 +176,11 @@ if [ "$TEST_MODE" != 1 ] && [ -f "$rel/deploy/systemd/nse-universe-watchdog.time
 fi
 log "deployed $sha; healthy"
 
-# keep the newest releases (source copies only; data lives elsewhere and is never touched here)
+# one copy of every built file across the releases still held, then keep the newest releases (source copies only; data lives elsewhere and is never touched here)
+dedupe_assets "$ROOT" "$rel"
 cur=$(basename "$(readlink -f "$ROOT/current")")
 ls -1dt "$ROOT"/releases/*/ 2>/dev/null | tail -n +$((KEEP_RELEASES + 1)) | while read -r d; do
   [ "$(basename "$d")" = "$cur" ] || rm -rf "$d"
 done
+# the deploy clone fetches one commit at a time, so objects of earlier commits pile up unused: tidy them (about 60 MB after three weeks of daily deploys)
+if [ "$TEST_MODE" != 1 ]; then as_app git -c pack.threads=1 -C "$ROOT/repo" gc --quiet --prune=now >/dev/null 2>&1 || true; fi
