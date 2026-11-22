@@ -37,3 +37,6 @@ Status: plan only, nothing built. Owner request: our own divergence indicators i
 - Smart OI is built from ATM +-10 strikes only; far wings are not in it.
 - Option volume and OI come from stored one-minute samples, not every trade; a candle's change is a difference of two samples.
 - A divergence says positioning and price disagree; it does not say which one is right.
+
+## Status (23 Nov 2026)
+Built (D257): all eight indicators, 3 and 5 minute candles, panel under the Smart OI chart, research script and report. Owner answers: all eight; 3m and 5m; expiry day treated like any other day; research on stored sessions allowed. The research found no indicator supported yet (`docs/smart-oi-research.md`); re-run it as stored sessions accumulate before giving any of them weight in alerts or the intelligence summary.

@@ -538,3 +538,5 @@ Full report: [audit-2026-10-30](audit-2026-10-30.md). Fixed: intraday IV/Greeks/
 - 13 Nov 2026 (D156): live India VIX subscribed and shown on the pulse card when fresh (else the daily close, labelled). Tests pass; whether the broker serves it is checked on the server after deploy.
 
 - 13 Nov 2026 (D157): blank-page-after-update fixed in four layers (old build files kept by update.sh, error boundaries with one-time reload, Caddy 404/immutable cache for assets, service worker v2); other pages prefetched when idle; slow endpoints (clean-up overview 22 s, straddle validation 5 s, storage status 7 s) cached. The Caddy part needs `deploy/apply-caddyfile.sh` run once on the server.
+
+- 23 Nov 2026 (D257): Smart OI divergence indicators (eight, 3 and 5 minute candles) added under the Smart OI chart, with tests and a research run on 7 stored sessions (`docs/smart-oi-research.md`): none is validated yet, so they are shown as indicators only. Also D250 to D256 (holiday auto-close guard, page-wide timeframe on Gamma and Vega, NIFTY future as a strategy leg, MTM tab, global chart fixes, shared chart look, Home page, offline strip, GEX and Vega calculations re-verified).

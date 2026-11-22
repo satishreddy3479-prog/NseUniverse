@@ -17,6 +17,7 @@ import {
   oiExplorerOption, futuresOption, sessionize, totalsBarOption, type FuturesKind, type StrikeMetric } from "../../lib/chartOptions";
 import { ageSeconds, fmtDateTimeIST, fmtExpiry, fmtTimeIST, fmtInt, fmtPct, fmtPrice, fmtSigned } from "../../lib/format";
 import { smartOiCandles } from "../../lib/optionTools";
+import { SmartOiDivergence } from "./SmartOiDivergence";
 import { useSpotDisplay } from "../../lib/useLive";
 import type { BaselineKind, Observation, OiChange, OptionChainRow } from "../../lib/types";
 import { Loading } from "../../components/Loading";
@@ -360,6 +361,8 @@ function SmartOiChartWidget() {
   const [lower, setLower] = useState<"pcr" | "volume">("pcr");
   const ratioOpt = useMemo(() => (res ? (lower === "volume" ? smartOiVolumeOption(res, colors) : smartOiRatioOption(res, colors)) : null), [res, colors, lower]);
   const last = res?.candles[res.candles.length - 1];
+  const listedStrikes = useMemo(() => [...new Set(d.rows.map((r) => r.strike))].sort((a, b) => a - b), [d.rows]);
+  const openAtmStrike = useMemo(() => (all && since ? (all.find((o) => o.retrieved_at === since)?.atm_strike ?? null) : null), [all, since]);
   return (
     <ChainGuard>
       <Body footer={
@@ -448,6 +451,7 @@ function SmartOiChartWidget() {
               </div>
             </div>
           )}
+          <SmartOiDivergence res={res} tf={tf} since={since} expiry={d.expiry ?? null} listed={listedStrikes} openAtm={openAtmStrike} />
         </div>
       </Body>
     </ChainGuard>
