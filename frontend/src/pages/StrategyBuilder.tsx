@@ -8,6 +8,7 @@ import { useThrottledVersion } from "../components/dashboard/DashContext";
 import { useLiveSpot, useStreamStatus } from "../lib/useLive";
 import { EChart, useChartColors } from "../components/EChart";
 import { Info } from "../components/Info";
+import { OiBar } from "../components/OiBar";
 import { Button } from "../components/ui";
 import { PAYOFF_ZOOM, payoffOption, payoffView } from "../lib/chartOptions";
 import { api, ApiError, type RunningDoc } from "../lib/api";
@@ -307,7 +308,8 @@ export default function StrategyBuilder() {
     const i = rows.findIndex((x) => x.strike === atm);
     return rows.slice(Math.max(0, i - width), i + width + 1);
   }, [rows, atm, width]);
-  const maxOi = useMemo(() => Math.max(1, ...shown.map((x) => Math.max(x.call?.oi ?? 0, x.put?.oi ?? 0))), [shown]);
+  const maxCallOi = useMemo(() => Math.max(0, ...shown.map((x) => x.call?.oi ?? 0)), [shown]); // each side is scaled to its own largest value, so a column of bars compares within itself
+  const maxPutOi = useMemo(() => Math.max(0, ...shown.map((x) => x.put?.oi ?? 0)), [shown]);
 
   // legs with the multiplier applied and the unticked ones left out
   const live = useMemo(() => legs.filter((l) => l.enabled !== false).map((l) => ({ ...l, lots: l.lots * mult })), [legs, mult]);
@@ -964,9 +966,6 @@ export default function StrategyBuilder() {
                       );
                     });
                     const tag = (v: number) => (v === 0 ? null : <span data-testid={`held-${row.strike}`} className={`whitespace-nowrap rounded-sm border px-1 text-[10px] font-semibold ${v > 0 ? "border-up text-up" : "border-down text-down"}`}>{v > 0 ? "+" : "−"}{Math.abs(v)} lot{Math.abs(v) === 1 ? "" : "s"}</span>);
-                    const bar = (v: number | null, color: string, align: "left" | "right") => (
-                      <div className={`flex h-4 ${align === "right" ? "justify-end" : ""}`}><div className="h-4 rounded-sm" style={{ width: `${v == null ? 0 : Math.max(2, (v / maxOi) * 100)}%`, background: color, opacity: 0.35 }} title={v == null ? "no OI" : `OI ${compactIN(v)}`} /></div>
-                    );
                     const cell = (c: ContractGreeks | null | undefined, key: GKey, right: boolean) => (
                       <td key={`${right ? "p" : "c"}${key}`} className={`px-1.5 py-1 text-xs text-muted max-sm:hidden ${right ? "text-right" : "text-left"}`}>{c == null ? "—" : fmtG(key, c)}</td>
                     );
@@ -976,9 +975,9 @@ export default function StrategyBuilder() {
                         {GCOLS.filter((x) => gcols.includes(x.key)).map((x) => cell(g?.ce, x.key, false))}
                         <td className={`px-2 py-1 text-left ${side(netCe)}`}><div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5"><span>{ltp(row.strike, "CE") == null ? "—" : fmtPrice(ltp(row.strike, "CE"))}</span>{tag(netCe)}</div>
                           <div className={`mt-0.5 flex flex-wrap items-center gap-1 ${on || netCe !== 0 ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:hidden"}`}>{pm("CE", netCe)}{bs("CE")}</div></td>
-                        <td className="w-[16%] px-1 py-1">{bar(row.call?.oi ?? null, colors.up, "right")}</td>
+                        <td className="w-[16%] px-1 py-1"><OiBar side="call" value={row.call?.oi ?? null} max={maxCallOi} color={colors.up} wall={row.call?.oi != null && row.call.oi > 0 && row.call.oi === maxCallOi} /></td>
                         <td className={`px-2 py-1 text-center font-medium ${isAtm ? "text-brass" : "text-paper"}`}><span className={`inline-block min-w-[3.6rem] rounded-sm border px-1.5 py-0.5 ${held ? "border-info bg-info/25" : "border-rule bg-slate-2"}`}>{fmtInt(row.strike)}</span></td>
-                        <td className="w-[16%] px-1 py-1">{bar(row.put?.oi ?? null, colors.down, "left")}</td>
+                        <td className="w-[16%] px-1 py-1"><OiBar side="put" value={row.put?.oi ?? null} max={maxPutOi} color={colors.down} wall={row.put?.oi != null && row.put.oi > 0 && row.put.oi === maxPutOi} /></td>
                         <td className={`px-2 py-1 text-right ${side(netPe)}`}><div className="flex flex-wrap items-center justify-end gap-x-1.5 gap-y-0.5">{tag(netPe)}{ltp(row.strike, "PE") == null ? "—" : fmtPrice(ltp(row.strike, "PE"))}</div>
                           <div className={`mt-0.5 flex flex-wrap items-center justify-end gap-1 ${on || netPe !== 0 ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:hidden"}`}>{pm("PE", netPe)}{bs("PE")}</div></td>
                         {[...GCOLS].reverse().filter((x) => gcols.includes(x.key)).map((x) => cell(g?.pe, x.key, true))}
