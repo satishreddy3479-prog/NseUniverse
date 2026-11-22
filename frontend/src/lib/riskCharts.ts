@@ -96,23 +96,32 @@ export function payoffOption(i: PayoffInput): EChartsCoreOption {
 const byStrike = (a: SurfaceStrike, b: SurfaceStrike) => a.strike - b.strike;
 
 /** The smile of one expiry: the SVI fit as a line, the market volatilities used as dots, the flagged and the unused other-side points marked apart; the forward as a vertical line. */
+/** The top of the smile chart in percent: 1.6 times the highest fitted volatility, rounded up to 5. Undefined when nothing is fitted (the axis then scales itself). */
+export function smileTop(strikes: SurfaceStrike[]): number | undefined {
+  const fitted = strikes.filter((x) => x.fit_iv != null && (x.status === "used" || x.status === "flagged"));
+  return fitted.length ? Math.ceil((Math.max(...fitted.map((x) => x.fit_iv! * 100)) * 1.6) / 5) * 5 : undefined;
+}
 export function smileOption(strikes: SurfaceStrike[], forward: Num, c: ChartColors): EChartsCoreOption {
   const pct = (v: number | null) => (v == null ? null : v * 100);
   const fitted = [...strikes].filter((x) => x.fit_iv != null && (x.status === "used" || x.status === "flagged")).sort(byStrike);
+  // The axis follows the smile, not the stray quotes: a far or other-side quote can print 100 % or more and would squash the curve into the bottom of the chart.
+  // Quotes above the top are not drawn (the text under the chart counts them).
+  const yMax = smileTop(strikes);
   const pts = (status: SurfaceStrike["status"]) => strikes.filter((x) => x.status === status && x.iv != null).sort(byStrike).map((x) => [x.strike, pct(x.iv)]);
   return {
     animation: false,
-    legend: { top: 0, left: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8 },
-    grid: { left: 54, right: 16, top: 30, bottom: 40 },
+    legend: { top: 0, left: 0, textStyle: { color: c.paper, fontSize: 12 }, itemWidth: 14, itemHeight: 8, itemGap: 14 },
+    grid: { left: 54, right: 16, top: 56, bottom: 40 },
     tooltip: { trigger: "item", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: unknown) => (typeof v === "number" ? `${v.toFixed(2)}%` : "—") },
     xAxis: { type: "value", scale: true, name: "Strike", nameLocation: "middle", nameGap: 26, axisLabel: { ...axisText(c), formatter: (v: number) => fmtInt(v) }, splitLine: { show: false } },
-    yAxis: { type: "value", scale: true, axisLabel: { ...axisText(c), formatter: (v: number) => `${v.toFixed(1)}%` }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
+    yAxis: { type: "value", min: 0, ...(yMax != null ? { max: yMax } : {}), axisLabel: { ...axisText(c), formatter: (v: number) => `${v.toFixed(0)}%` }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
     series: [
-      { name: "Fitted smile", type: "line", showSymbol: false, smooth: false, data: fitted.map((x) => [x.strike, pct(x.fit_iv)]), lineStyle: { color: c.brass, width: 2 }, itemStyle: { color: c.brass },
-        markLine: forward != null ? { symbol: "none", silent: true, label: { formatter: "forward", color: c.muted, fontSize: 10 }, lineStyle: { color: c.muted, type: "dotted" }, data: [{ xAxis: forward }] } : undefined },
-      { name: "Market (used)", type: "scatter", symbolSize: 6, data: pts("used"), itemStyle: { color: c.info } },
-      { name: "Flagged (arbitrage)", type: "scatter", symbol: "diamond", symbolSize: 11, data: pts("flagged"), itemStyle: { color: c.down } },
-      { name: "Other side (not used)", type: "scatter", symbolSize: 4, data: pts("unused"), itemStyle: { color: c.muted, opacity: 0.6 } },
+      { name: "Fitted smile", type: "line", showSymbol: false, smooth: false, z: 3.5, data: fitted.map((x) => [x.strike, pct(x.fit_iv)]), lineStyle: { color: c.brass, width: 2.5 }, itemStyle: { color: c.brass },
+        markLine: forward != null ? { symbol: "none", silent: true, label: { formatter: "forward", color: c.muted, fontSize: 11, position: "end", rotate: 0, distance: 4 }, lineStyle: { color: c.muted, type: "dotted" }, data: [{ xAxis: forward }] } : undefined },
+      { name: "Market (used in the fit)", type: "scatter", symbolSize: 6, z: 3, data: pts("used"), itemStyle: { color: c.info } },
+      // flagged quotes are hollow and small so the market dot under them stays visible
+      { name: "Flagged (breaks a no-arbitrage rule)", type: "scatter", symbol: "diamond", symbolSize: 9, z: 4, data: pts("flagged"), itemStyle: { color: "transparent", borderColor: c.down, borderWidth: 1.6 } },
+      { name: "Not used (far or other-side quotes)", type: "scatter", symbolSize: 4, z: 1, data: pts("unused"), itemStyle: { color: c.muted, opacity: 0.55 } },
     ],
   } as EChartsCoreOption;
 }
@@ -131,4 +140,46 @@ export function residualOption(strikes: SurfaceStrike[], limit: number, c: Chart
       markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: c.muted, type: "dashed" }, data: [{ yAxis: limit }, { yAxis: -limit }] },
     }],
   } as EChartsCoreOption;
+}
+
+/** The fitted implied volatility (as a fraction) at ``k``, by straight-line interpolation between the two nearest fitted strikes; null outside the fitted strikes. */
+export function fitAt(strikes: SurfaceStrike[], k: number): number | null {
+  const f = [...strikes].filter((x) => x.fit_iv != null && (x.status === "used" || x.status === "flagged")).sort(byStrike);
+  for (let i = 1; i < f.length; i++) {
+    const a = f[i - 1]!, b = f[i]!;
+    if (k >= a.strike && k <= b.strike) return b.strike === a.strike ? a.fit_iv : a.fit_iv! + ((b.fit_iv! - a.fit_iv!) * (k - a.strike)) / (b.strike - a.strike);
+  }
+  return null;
+}
+
+export interface SmileReading { headline: string; lines: string[]; above: number }
+/**
+ * The smile in plain words, every figure read from the surface: the at-the-money volatility, the volatility 5 % below and above the forward, which side the
+ * market charges more for, how close the line is to the quotes, whether the no-arbitrage checks pass, what the grey dots are, and how many quotes sit above the
+ * top of the chart. Nothing is concluded that the numbers do not show.
+ */
+export function smileReading(strikes: SurfaceStrike[], forward: Num, s: { n_used: number; n_rejected: number; n_flagged: number; rms_vol_pts: number | null; butterfly_ok: boolean; calendar_ok: boolean; params: unknown | null }): SmileReading {
+  const p = (v: number | null) => (v == null ? null : v * 100);
+  const atm = forward == null ? null : p(fitAt(strikes, forward));
+  const lo = forward == null ? null : p(fitAt(strikes, forward * 0.95)), hi = forward == null ? null : p(fitAt(strikes, forward * 1.05));
+  if (atm == null || forward == null) return { headline: "no smile could be fitted for this expiry", lines: ["There is nothing to read here until a smile can be fitted."], above: 0 };
+  const f1 = (v: number) => v.toFixed(1);
+  const lines: string[] = [];
+  lines.push(`At the money (the forward, ${Math.round(forward).toLocaleString("en-IN")}) the market is pricing ${f1(atm)}% volatility a year. That is the bottom of the curve.`);
+  if (lo != null && hi != null) {
+    const d = lo - hi;
+    lines.push(`5% below the forward the line is at ${f1(lo)}% (${f1(lo - atm)} points above the money) and 5% above it ${f1(hi)}% (${f1(hi - atm)} points above).`);
+    lines.push(Math.abs(d) < 1 ? "The two sides are about level: the market is not paying more for one direction." : d > 0 ? "The left side is higher: puts (downside protection) are priced richer than calls. This is the usual shape for an index." : "The right side is higher: calls are priced richer than puts, which is less usual for an index.");
+  }
+  lines.push("A U-shape is normal: the further a strike is from the money, the more volatility the market charges. A dot above the line is an option priced richer than the smile says, below the line cheaper.");
+  const gap = s.rms_vol_pts;
+  lines.push(`${s.n_used} quotes shape the line${gap == null ? "" : `; on average they sit ${gap.toFixed(2)} volatility points from it (${gap < 0.5 ? "a tight fit" : gap < 1.5 ? "a fair fit" : "a loose fit: treat the Greeks with care"})`}.`);
+  if (s.params != null) lines.push(s.butterfly_ok && s.calendar_ok ? "The no-arbitrage checks pass (butterfly and calendar): the curve does not imply free money between strikes or expiries." : `A no-arbitrage check fails (${[!s.butterfly_ok ? "butterfly" : "", !s.calendar_ok ? "calendar" : ""].filter(Boolean).join(" and ")}): the smile prices something inconsistently.`);
+  const unused = strikes.filter((x) => x.status === "unused").length;
+  if (unused > 0) lines.push(`${unused} grey dots are quotes that were not used: far out of the money or on the other side of the forward, where prices are thin and the implied volatility can print absurdly high. They are ignored by the fit.`);
+  if (s.n_flagged + s.n_rejected > 0) lines.push(`${s.n_flagged} flagged (hollow red diamonds: a quote that breaks a no-arbitrage rule) and ${s.n_rejected} rejected quotes are listed under the chart with the reason.`);
+  const top = smileTop(strikes) ?? Infinity;
+  const above = strikes.filter((x) => x.iv != null && x.iv * 100 > top).length;
+  const shape = lo != null && hi != null ? (lo - hi > 1 ? ", steeper on the downside" : hi - lo > 1 ? ", steeper on the upside" : ", level on both sides") : "";
+  return { headline: `${f1(atm)}% at the money${shape}`, lines, above };
 }

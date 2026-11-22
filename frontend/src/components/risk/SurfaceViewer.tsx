@@ -2,7 +2,7 @@ import { useState } from "react";
 import { EChart, useChartColors } from "../EChart";
 import { Loading } from "../Loading";
 import { type RiskSurface, volPct, versionLabel } from "../../lib/risk";
-import { residualOption, smileOption } from "../../lib/riskCharts";
+import { residualOption, smileOption, smileReading } from "../../lib/riskCharts";
 
 /** The implied-volatility surface, one expiry at a time: the smile with its SVI fit, the residuals, the fit quality and arbitrage checks, and every quote that was rejected or flagged with its reason. */
 export function SurfaceViewer({ surface, busy, error }: { surface: RiskSurface | undefined; busy: boolean; error: string | null }) {
@@ -42,9 +42,22 @@ export function SurfaceViewer({ surface, busy, error }: { surface: RiskSurface |
             <div><dt className="text-muted">Lot size</dt><dd className="num">{dataRow?.lot_size ?? "—"}</dd></div>
             <div><dt className="text-muted">Expires</dt><dd className="num">{dataRow?.expiry_instant_ist ? dataRow.expiry_instant_ist.slice(0, 16).replace("T", " ") + " IST" : "—"}</dd></div>
           </dl>
-          <p className="mt-2 text-[11px] text-muted">Implied volatility (%) by strike: the fitted smile and the market quotes behind it.</p>
-          <div className="h-[300px]" data-testid="risk-smile"><EChart option={smileOption(strikes, slice.forward, colors)} ariaLabel={`Implied volatility smile for ${slice.expiry}`} /></div>
-          <div className="h-[170px]" data-testid="risk-residuals"><EChart option={residualOption(strikes, surface.config.degraded_rms_vol_pts, colors)} ariaLabel={`Fit residuals for ${slice.expiry}`} /></div>
+          {(() => {
+            const rd = smileReading(strikes, slice.forward, slice);
+            return (
+              <div className="mt-3 rounded-sm border border-rule bg-slate-2 px-3 py-2" data-testid="risk-reading">
+                <h3 className="text-sm font-semibold text-paper">In plain words: {rd.headline}</h3>
+                <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-paper">{rd.lines.map((l) => <li key={l}>{l}</li>)}</ul>
+              </div>
+            );
+          })()}
+          <h3 className="mt-3 text-sm font-semibold text-paper">Implied volatility by strike</h3>
+          <p className="text-xs text-muted">Each dot is one option: its strike across, the volatility its price implies up. The brown line is the smooth curve fitted to the dots that are used.</p>
+          <div className="h-[320px]" data-testid="risk-smile"><EChart option={smileOption(strikes, slice.forward, colors)} ariaLabel={`Implied volatility smile for ${slice.expiry}`} /></div>
+          {(() => { const above = smileReading(strikes, slice.forward, slice).above; return above > 0 ? <p className="text-[11px] text-muted" data-testid="risk-above">{above} quote{above === 1 ? " is" : "s are"} above the top of the chart (volatility far higher than the smile) and not drawn.</p> : null; })()}
+          <h3 className="mt-3 text-sm font-semibold text-paper">How far each quote is from the line</h3>
+          <p className="text-xs text-muted">Market volatility minus the fitted line, in volatility points, per strike. Bars between the dashed limits are a good fit; red bars are flagged quotes; gold bars are outside the limit.</p>
+          <div className="h-[190px]" data-testid="risk-residuals"><EChart option={residualOption(strikes, surface.config.degraded_rms_vol_pts, colors)} ariaLabel={`Fit residuals for ${slice.expiry}`} /></div>
           {problems.length > 0 && (
             <details className="mt-2 rounded-sm border border-rule/60 bg-slate-2" data-testid="risk-problems">
               <summary className="cursor-pointer px-2.5 py-1.5 text-xs">{problems.length} quote{problems.length === 1 ? "" : "s"} not used in the fit</summary>

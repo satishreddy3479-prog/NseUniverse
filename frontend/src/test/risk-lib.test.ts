@@ -123,7 +123,7 @@ describe("volatility surface charts", () => {
     expect(o.series[1].data[0][1]).toBeCloseTo(used.sort((a, b) => a.strike - b.strike)[0]!.iv! * 100, 9);
     expect(o.series[0].data).toHaveLength(used.length); // nothing flagged in this surface
     expect(o.series[0].markLine.data[0].xAxis).toBe(25500);
-    expect(o.series[2].name).toBe("Flagged (arbitrage)");
+    expect(o.series[2].name).toBe("Flagged (breaks a no-arbitrage rule)");
     expect(o.series[2].data).toHaveLength(0);
     const sorted = o.series[0].data.map((p: number[]) => p[0]);
     expect(sorted).toEqual([...sorted].sort((a: number, b: number) => a - b)); // the curve runs left to right
