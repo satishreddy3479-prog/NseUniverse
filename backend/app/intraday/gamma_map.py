@@ -118,7 +118,7 @@ def blast(points: Sequence[Mapping[str, Any]], hours_to_expiry: float | None) ->
     if hours_to_expiry is None:
         add("time", "Time left to expiry", None, "expiry time unknown")
     else:
-        add("time", "Time left to expiry", clip01((TIME_FAR - hours_to_expiry) / (TIME_FAR - TIME_NEAR)), f"{hours_to_expiry:.1f} hours to expiry: gamma concentrates as it falls")
+        add("time", "Time left to expiry", clip01((TIME_FAR - hours_to_expiry) / (TIME_FAR - TIME_NEAR)), f"{hours_to_expiry:.1f} calendar hours to expiry (weekends and holidays count, as in the option model): gamma concentrates as it falls")
     st = steps(points)
     if len(st) >= 6 and spot is not None:
         spots = [_num(p.get("spot")) for p in points]

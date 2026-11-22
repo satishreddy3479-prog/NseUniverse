@@ -35,7 +35,10 @@ const axisText = (c: ChartColors) => ({ color: c.muted, fontSize: 11 });
 export function profileOption(rows: GammaProfileRow[], spot: number | null, flip: number | null, c: ChartColors): EChartsCoreOption {
   const nearest = (v: number | null) => (v == null || rows.length === 0 ? null : rows.reduce((b, r) => (Math.abs(r.strike - v) < Math.abs(b.strike - v) ? r : b)).strike);
   const sk = nearest(spot), fk = nearest(flip);
-  const mark = (k: number | null, name: string, color: string) => (k == null ? [] : [{ xAxis: String(k), name, lineStyle: { color, type: "dashed" }, label: { formatter: name, color, fontSize: 10 } }]);
+  const mark = (k: number | null, name: string, text: string, color: string) => (k == null ? [] : [{ xAxis: String(k), name, lineStyle: { color, type: "dashed" }, label: { formatter: text, color, fontSize: 10 } }]);
+  // spot and the flip are often within one strike of each other: one line then carries both labels, so neither hides the other
+  const spotText = spot == null ? "spot" : `spot ${Math.round(spot).toLocaleString("en-IN")}`, flipText = flip == null ? "flip" : `flip ${Math.round(flip).toLocaleString("en-IN")}`;
+  const marks = sk != null && sk === fk ? mark(sk, "spot", `${spotText} · ${flipText}`, c.paper).concat(mark(fk, "flip", "", c.brass)) : [...mark(sk, "spot", spotText, c.paper), ...mark(fk, "flip", flipText, c.brass)];
   return {
     animation: false, grid: { left: 8, right: 12, top: 36, bottom: 8, containLabel: true },
     legend: { top: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
@@ -43,7 +46,7 @@ export function profileOption(rows: GammaProfileRow[], spot: number | null, flip
     xAxis: { type: "category", data: rows.map((r) => String(r.strike)), axisLabel: { ...axisText(c), interval: "auto", rotate: 60 }, axisTick: { show: false } },
     yAxis: { type: "value", axisLabel: { ...axisText(c), formatter: (v: number) => crore(v, 0) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.4 } } },
     series: [
-      { name: "Call (+)", type: "bar", stack: "side", itemStyle: { color: c.up }, data: rows.map((r) => r.ce), markLine: { symbol: "none", silent: true, data: [...mark(sk, "spot", c.paper), ...mark(fk, "flip", c.brass)] } },
+      { name: "Call (+)", type: "bar", stack: "side", itemStyle: { color: c.up }, data: rows.map((r) => r.ce), markLine: { symbol: "none", silent: true, data: marks } },
       { name: "Put (−)", type: "bar", stack: "side", itemStyle: { color: c.down }, data: rows.map((r) => r.pe) },
       { name: "Net", type: "line", symbol: "circle", symbolSize: 4, lineStyle: { color: c.brass, width: 2 }, itemStyle: { color: c.brass }, data: rows.map((r) => r.net) },
     ],

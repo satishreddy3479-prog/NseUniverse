@@ -98,7 +98,7 @@ describe("gamma map and sudden-move risk", () => {
     mount();
     const ev = await screen.findByTestId("gamma-events");
     expect(ev).toHaveTextContent("down 60 points (−0.25%) · near-the-money gamma was short before it");
-    expect(ev).toHaveTextContent("three times the typical step): 1");
+    expect(ev).toHaveTextContent("the larger of 0.15% and three times the typical step, 0.040%): 1");
     expect(screen.getByTestId("gamma-sudden-now")).toHaveTextContent("at least 0.15% of NIFTY");
   });
 

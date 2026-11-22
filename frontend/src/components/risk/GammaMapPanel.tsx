@@ -89,7 +89,7 @@ export function GammaMapPanel({ expiries }: { expiries: string[] }) {
                 </ul>
                 {b.sudden && (
                   <div className="mt-2 text-xs" data-testid="gamma-events">
-                    <div className="text-muted">Sudden moves so far this session (a 5-minute step of at least {b.sudden.threshold_pct == null ? MISSING : `${b.sudden.threshold_pct.toFixed(2)}%`}, three times the typical step): {b.sudden.events.length}</div>
+                    <div className="text-muted">Sudden moves so far this session (a 5-minute step of at least {b.sudden.threshold_pct == null ? MISSING : `${b.sudden.threshold_pct.toFixed(2)}%`}: the larger of 0.15% and three times the typical step{b.sudden.typical_step_pct == null ? "" : `, ${b.sudden.typical_step_pct.toFixed(3)}%`}): {b.sudden.events.length}</div>
                     {b.sudden.events.length > 0 && (
                       <ul className="mt-1 space-y-0.5">
                         {b.sudden.events.map((e) => <li key={e.at} className="text-paper">{fmtTimeIST(e.at)} · {e.direction} {Math.abs(e.move).toFixed(0)} points ({e.pct > 0 ? "+" : "−"}{Math.abs(e.pct).toFixed(2)}%){e.short_gamma_before ? " · near-the-money gamma was short before it" : e.short_gamma_before === false ? " · gamma was long before it" : ""}</li>)}
