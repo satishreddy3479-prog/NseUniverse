@@ -1,5 +1,5 @@
 # Off-server copy of everything that cannot be re-created: the stored option-chain snapshots, the end-of-day archives and manifests,
-# and the nightly database backups. The server keeps one copy only; this puts a second one on your own disk.
+# the zip bundles of aged data (checked by checksum and confirmed to the server) and the nightly database backups. The server keeps one copy only; this puts a second one on your own disk.
 #   powershell -ExecutionPolicy Bypass -File scripts\pull-backups.ps1                 # copy what is new
 #   powershell -ExecutionPolicy Bypass -File scripts\pull-backups.ps1 -ListOnly       # only say what would be copied
 #   powershell -ExecutionPolicy Bypass -File scripts\pull-backups.ps1 -Dest D:\NseBackup
@@ -59,6 +59,36 @@ foreach ($j in $jobs) {
   $bad = 0
   foreach ($l in $lines) { $p = $l -split "`t"; if ($p.Count -ge 2 -and $missing.Contains($p[0])) { $f = Join-Path $local ($p[0] -replace "/", "\"); if (-not (Test-Path $f) -or (Get-Item $f).Length -ne [int64]$p[1]) { $bad++ } } }
   if ($bad -gt 0) { Write-Host "   WARNING: $bad file(s) did not arrive complete; run this script again" -ForegroundColor Yellow } else { Write-Host "   copied and checked" -ForegroundColor Green }
+}
+# ---- Bundles of aged data (the data library). The server zips snapshot days that are about to age out; each bundle that has not been downloaded is copied here, its SHA-256 is
+# compared with the server's, and only then is the server told the copy exists (the server never deletes a bundle that was not confirmed). Nothing is deleted here or there.
+$bundleDir = Join-Path $Dest "bundles"
+$lib = $null
+try { $lib = (Remote "curl -s -m 20 http://127.0.0.1:8010/api/library/status") -join "`n" | ConvertFrom-Json } catch { }
+if ($null -eq $lib -or $null -eq $lib.bundles) { Write-Host "== bundles: the data library is not available on this server yet" }
+else {
+  New-Item -ItemType Directory -Force -Path $bundleDir | Out-Null
+  Write-Host "== bundles -> $bundleDir ($(@($lib.bundles).Count) on the server)"
+  foreach ($b in $lib.bundles) {
+    if (-not $b.on_server) { continue }
+    $target = Join-Path $bundleDir $b.name
+    $ok = (Test-Path $target) -and ((Get-FileHash $target -Algorithm SHA256).Hash.ToLower() -eq $b.sha256)
+    if (-not $ok) {
+      if ($ListOnly) { Write-Host ("   would copy {0} ({1:N1} MB)" -f $b.name, ($b.bytes / 1MB)); continue }
+      & scp -q "${Server}:/var/lib/nse-universe/data/bundles/$($b.name)" $target
+      if ($LASTEXITCODE -ne 0) { Write-Host "   WARNING: could not copy $($b.name)" -ForegroundColor Yellow; continue }
+      $ok = (Get-FileHash $target -Algorithm SHA256).Hash.ToLower() -eq $b.sha256
+      if (-not $ok) { Remove-Item $target -Force; Write-Host "   WARNING: $($b.name) did not arrive intact and was not kept; run this script again" -ForegroundColor Yellow; continue }
+      $totalFiles += 1; $totalBytes += [int64]$b.bytes
+    }
+    if ($ok -and -not $b.downloaded -and -not $ListOnly) {
+      $confirm = "curl -s -m 20 -X POST -H 'Content-Type: application/json' -d '{""sha256"":""$($b.sha256)""}' http://127.0.0.1:8010/api/library/bundles/$($b.id)/confirm"
+      $reply = $confirm | & ssh $Server "bash -s"
+      if (($reply -join "") -match '"downloaded":\s*true') { Write-Host "   $($b.name): copied, checked and confirmed to the server" -ForegroundColor Green }
+      else { Write-Host "   WARNING: the server did not accept the confirmation for $($b.name): $($reply -join ' ')" -ForegroundColor Yellow }
+    }
+    elseif ($ok) { Write-Host "   $($b.name): already here and confirmed" }
+  }
 }
 if ($ListOnly) { Write-Host ("Would copy {0} file(s), {1:N1} MB. Nothing was changed." -f $totalFiles, ($totalBytes / 1MB)) }
 else { Write-Host ("Done: {0} file(s), {1:N1} MB copied to {2}." -f $totalFiles, ($totalBytes / 1MB), $Dest) }

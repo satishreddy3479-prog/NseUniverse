@@ -113,6 +113,7 @@ def _snapshot_id(name: str) -> str:
 def prune_snapshots(
     data_dir: Path, today: date, raw_keep_days: int, normalized_keep_days: int,
     archived_days: set[str], known_ids: set[str], dry_run: bool = True,
+    bundled_days: set[str] | None = None, hard_stop_days: int = 60, free_bytes: int | None = None, min_free_bytes: int = 6_000_000_000,
 ) -> dict[str, Any]:
     """Apply the owner-approved retention to snapshot files (0 = keep forever).
 
@@ -120,8 +121,11 @@ def prune_snapshots(
     verified archive and manifest, and its snapshot id is in the observation database (whose rows the
     archive holds). Today's and later days are never touched. Index rows stay, so the app reports the
     snapshot as no longer available instead of failing.
+
+    With ``bundled_days`` given (the data library), a day is also kept until it is inside a verified bundle, unless it is older than ``hard_stop_days`` or the free space is
+    under ``min_free_bytes``: a bundle that cannot be built must not let the disk fill up.
     """
-    out: dict[str, Any] = {"dry_run": dry_run, "raw_files": 0, "raw_bytes": 0, "normalized_files": 0, "normalized_bytes": 0, "kept_not_archived": 0, "kept_not_in_database": 0}
+    out: dict[str, Any] = {"dry_run": dry_run, "raw_files": 0, "raw_bytes": 0, "normalized_files": 0, "normalized_bytes": 0, "kept_not_archived": 0, "kept_not_in_database": 0, "kept_not_bundled": 0, "forced": 0}
     root = data_dir / "snapshots"
     if not root.exists() or (raw_keep_days <= 0 and normalized_keep_days <= 0):
         return out
@@ -140,6 +144,12 @@ def prune_snapshots(
             if dayDir.name not in archived_days:
                 out["kept_not_archived"] += 1
                 continue
+            if bundled_days is not None and dayDir.name not in bundled_days:
+                forced = age > hard_stop_days or (free_bytes is not None and free_bytes < min_free_bytes)
+                if not forced:
+                    out["kept_not_bundled"] += 1
+                    continue
+                out["forced"] += 1
             if _snapshot_id(f.name) not in known_ids:
                 out["kept_not_in_database"] += 1
                 continue

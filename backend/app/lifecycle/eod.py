@@ -17,6 +17,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import shutil
 import threading
 from collections.abc import Callable
 from datetime import UTC, date, datetime, time, timedelta
@@ -82,6 +83,7 @@ class EodService:
         self.backups, self.raw_keep, self.norm_keep = backups, raw_keep_days, normalized_keep_days
         self.obs_keep, self.obs_dry_run = observation_keep_sessions, observation_prune_dry_run
         self.last_prune: dict[str, Any] | None = None
+        self.library: Any = None  # the data library (set by the application): bundles the days about to age out, and the pruning waits for them
         self.last_obs_prune: dict[str, Any] | None = None
         self._pruned_on: date | None = None
         self.manifests = data_dir / "manifests"
@@ -273,10 +275,15 @@ class EodService:
                     out["tidy"] = self.last_tidy
             if self.prune_due(now) and out["state"] == "ok":
                 self._pruned_on = now.astimezone(IST).date()
-                # approved retention: only days with a verified archive, only ids held in the database
+                lib = self.library if self.library is not None and self.library.enabled else None
+                if lib is not None:
+                    out["library"] = lib.auto_run()
+                # approved retention: only days with a verified archive, only ids held in the database, and (with the library) only days inside a verified bundle
                 self.last_prune = storage.prune_snapshots(
                     self.data_dir, now.astimezone(IST).date(), self.raw_keep, self.norm_keep,
                     self.archived_days(), self.obs.known_snapshot_ids(), dry_run=False,
+                    bundled_days=None if lib is None else lib.bundled_days(), hard_stop_days=0 if lib is None else lib.hard_stop,
+                    free_bytes=shutil.disk_usage(self.data_dir).free, min_free_bytes=0 if lib is None else lib.min_free,
                 )  # fmt: skip
                 out["prune"] = self.last_prune
                 if self.obs_keep > 0:  # per-contract rows of old sessions: archive-verified, dry run unless approved

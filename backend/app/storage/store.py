@@ -19,7 +19,7 @@ import io
 import json
 import sqlite3
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -78,6 +78,8 @@ def scrub(obj: Any) -> Any:
 class SnapshotStore:
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = data_dir
+        self.restore_on_demand: Callable[[str], Path | None] = lambda day: None  # restores the bundle holding a day (the data library) and returns its folder  # noqa: E501
+        self.fallback_roots: Callable[[], list[Path]] = list  # folders of the active restores (the data library): a file missing from the data directory is looked for there  # noqa: E501
         self.snap_dir = data_dir / "snapshots"
         self.export_dir = data_dir / "exports"
         self.snap_dir.mkdir(parents=True, exist_ok=True)
@@ -208,6 +210,18 @@ class SnapshotStore:
         path = (self.data_dir / row[0]).resolve()
         if self.data_dir.resolve() not in path.parents:
             raise StorageError("snapshot path escapes data dir")
+        if not path.exists():
+            for root in self.fallback_roots():
+                alt = (root / row[0]).resolve()
+                if root.resolve() in alt.parents and alt.exists():
+                    path = alt
+                    break
+        if not path.exists():
+            parts = Path(row[0]).parts
+            if len(parts) >= 3 and parts[0] == "snapshots":
+                restored = self.restore_on_demand(parts[1])
+                if restored is not None and restored.resolve() in (restored / row[0]).resolve().parents and (restored / row[0]).exists():  # noqa: E501
+                    path = (restored / row[0]).resolve()
         try:
             if path.suffix == ".gz":
                 with gzip.open(path, "rt", encoding="utf-8") as f:

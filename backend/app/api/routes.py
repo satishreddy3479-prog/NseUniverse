@@ -1011,7 +1011,12 @@ async def intraday_backtest(
         msg = "sessions must be 3 to 60, cost_bps 0 to 100, universe fixed, dynamic or full"
         raise HTTPException(status_code=422, detail={"code": "bad_range", "message": msg})
     svc = request.app.state.intraday
-    return await asyncio.to_thread(svc.backtest, expiry.isoformat(), sessions, cost_bps, universe)
+    res: dict[str, Any] = await asyncio.to_thread(svc.backtest, expiry.isoformat(), sessions, cost_bps, universe)  # noqa: E501
+    lib = getattr(request.app.state, "library", None)
+    if lib is not None and lib.enabled and isinstance(res.get("sessions"), list) and res["sessions"]:  # noqa: E501
+        # a backtest checks that the data it reads is there before its result is trusted (the data library); the cached result itself is left as it was  # noqa: E501
+        res = {**res, "data_coverage": await asyncio.to_thread(lib.coverage, list(res["sessions"]))}
+    return res
 
 
 @router.get("/intraday/gex-history")

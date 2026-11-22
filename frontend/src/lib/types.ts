@@ -967,6 +967,7 @@ export interface Backtest {
   progress?: { done: number; total: number; uncached?: number };
   reconstruction?: { snapshots_with: Record<string, number>; snapshots_skipped: Record<string, number>; opening_atm: Record<string, number | null> };
   timing?: Record<string, number>;
+  data_coverage?: import("./library").DataCoverage;
 }
 export interface GexHistoryPoint { at: string; spot: number; ce: number | null; pe: number | null; net: number | null; abs: number | null; flip: number | null; near_net: number | null; call_wall: number | null; put_wall: number | null; peak: number | null; used: number | null }
 export interface GexHistory {

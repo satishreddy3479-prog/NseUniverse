@@ -16,6 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.library_routes import router as library_router
 from app.api.risk_routes import router as risk_router
 from app.api.routes import router
 from app.api.ws import router as ws_router
@@ -32,6 +33,7 @@ from app.intraday.costs import CostModel
 from app.intraday.service import IntradayService
 from app.intraday.setups import RiskConfig
 from app.intraday.store import IntradayStore
+from app.library.service import LibraryService
 from app.lifecycle.eod import EodService
 from app.lifecycle.session_close import SessionCloseTracker
 from app.logging_setup import log_event, setup_logging
@@ -310,6 +312,17 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             keep_monthly_backups=settings.backup_keep_monthly,
         )
         app.state.eod = eod
+        library = LibraryService(
+            settings.data_dir, observations, settings.underlying, raw_keep_days=settings.snapshot_raw_keep_days, normalized_keep_days=settings.snapshot_normalized_keep_days,  # noqa: E501
+            min_batch_days=settings.library_min_batch_days, bundle_keep_days=settings.library_bundle_keep_days, restore_ttl_hours=settings.library_restore_ttl_hours,  # noqa: E501
+            restore_max_bytes=settings.library_restore_max_mb * 10**6, min_free_bytes=int(settings.library_min_free_gb * 1e9), hard_stop_days=settings.library_hard_stop_days,  # noqa: E501
+            enabled=settings.library_enabled,
+        )  # fmt: skip
+        library.cleanup_restores()  # a restore that expired while the backend was down
+        app.state.library = library
+        eod.library = library
+        store.restore_on_demand = library.ensure_day  # an old snapshot opened on the Data page is restored from its bundle by itself  # noqa: E501
+        store.fallback_roots = library.fallback_roots  # a snapshot file missing from the data directory is read from an active restore  # noqa: E501
         app.state.intraday_store = intraday_store
         eod.start()
         close_tracker = SessionCloseTracker(observations, settings.market_close)
@@ -492,6 +505,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
 
     app.include_router(router)
     app.include_router(risk_router)
+    app.include_router(library_router)
     app.include_router(servermgmt_router)
     app.include_router(ws_router)
     return app

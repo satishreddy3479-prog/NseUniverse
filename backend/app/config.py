@@ -88,8 +88,16 @@ class Settings(BaseSettings):
     breadth_enabled: bool = True  # stock breadth, heavyweights, sectors (market-breadth-plan.md)
     eod_enabled: bool = True  # after-close archive, summary, manifest, backup (storage-plan.md)
     eod_backups: bool = True  # False on the server, where deploy/backup.sh already backs up nightly
-    snapshot_raw_keep_days: int = 7  # owner-approved retention (D58); 0 = keep forever
-    snapshot_normalized_keep_days: int = 14  # only days with a verified archive are ever removed
+    snapshot_raw_keep_days: int = 30  # owner-approved retention (D58; 30 days from 22 Nov 2026); 0 = keep forever  # noqa: E501
+    snapshot_normalized_keep_days: int = 30  # only days with a verified archive are ever removed
+    # the data library (docs/data-library-plan.md): automatic zip bundles of days that are about to age out, kept until downloaded; temporary restores for backtests  # noqa: E501
+    library_enabled: bool = True
+    library_min_batch_days: int = 7  # a bundle is made when this many days are due (or the oldest is about to be deleted)  # noqa: E501
+    library_bundle_keep_days: int = 90  # a downloaded and confirmed bundle is removed from the server after this; one never downloaded is kept  # noqa: E501
+    library_restore_ttl_hours: int = 24
+    library_restore_max_mb: int = 1024
+    library_min_free_gb: float = 6.0  # below this a bundle is not built or unpacked, and pruning stops waiting for a bundle  # noqa: E501
+    library_hard_stop_days: int = 60  # pruning stops waiting for a bundle after this many days
     # per-contract rows of older sessions, removable once their archive is verified (0 = keep all)
     observation_keep_sessions: int = 2
     observation_prune_dry_run: bool = True  # report only; False needs owner approval

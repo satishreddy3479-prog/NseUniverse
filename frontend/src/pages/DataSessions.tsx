@@ -7,6 +7,7 @@ import type { ChainResponse } from "../lib/types";
 import { ChainTable } from "../components/ChainTable";
 import { CompletenessText, EmptyState, ErrorNote, Panel, Skeleton, SourceTag } from "../components/ui";
 import { SnapshotTable } from "./Overview";
+import { LibraryPanel } from "../components/LibraryPanel";
 
 function Inspector({ data }: { data: ChainResponse }) {
   const s = data.snapshot;
@@ -66,6 +67,10 @@ export function DataSessions() {
             : detail.data ? <Inspector data={detail.data} /> : null}
         </Panel>
       )}
+
+      <Panel title="Data library: bundles, downloads and temporary restores">
+        <LibraryPanel />
+      </Panel>
 
       <Panel title="Snapshots">
         {snapshots.isLoading ? <Skeleton className="h-24 w-full" />

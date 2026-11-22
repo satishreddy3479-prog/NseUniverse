@@ -107,8 +107,9 @@ def overview(*, data_dir: Path, log_dir: Path | None, today: date, obs: Observat
         "note": "Today's data stays until the end-of-day job has archived and verified it. ",
     }
     # candidates (all measured, none executed)
-    raw = storage.prune_snapshots(data_dir, today, raw_keep, 0, set(archived), obs.known_snapshot_ids(), dry_run=True) if raw_keep > 0 else None
-    norm = storage.prune_snapshots(data_dir, today, 0, norm_keep, set(archived), obs.known_snapshot_ids(), dry_run=True) if norm_keep > 0 else None
+    bundled = _bundled(eod)
+    raw = storage.prune_snapshots(data_dir, today, raw_keep, 0, set(archived), obs.known_snapshot_ids(), dry_run=True, bundled_days=bundled) if raw_keep > 0 else None
+    norm = storage.prune_snapshots(data_dir, today, 0, norm_keep, set(archived), obs.known_snapshot_ids(), dry_run=True, bundled_days=bundled) if norm_keep > 0 else None
     rows_plan = obs.plan_contract_pruning(obs_keep, archived, delete=False) if obs_keep > 0 else None
     tidy = plan_tidy(data_dir, now)
     candidates = [
@@ -138,6 +139,12 @@ def overview(*, data_dir: Path, log_dir: Path | None, today: date, obs: Observat
     }
 
 
+def _bundled(eod: Any) -> set[str] | None:
+    """The days inside a verified bundle (the data library), or None when the library is not in use: a removal then waits only for the archive."""
+    lib = getattr(eod, "library", None)
+    return lib.bundled_days() if lib is not None and lib.enabled else None
+
+
 def run(items: list[str], *, data_dir: Path, today: date, obs: ObservationStore, eod: Any,
         raw_keep: int, norm_keep: int, obs_keep: int, now: float) -> dict[str, Any]:
     """Remove the named categories (see ``overview`` for what each holds). Unknown names are refused."""
@@ -149,9 +156,9 @@ def run(items: list[str], *, data_dir: Path, today: date, obs: ObservationStore,
     out: dict[str, Any] = {}
     ids = obs.known_snapshot_ids()
     if "raw_snapshots" in items and raw_keep > 0:
-        out["raw_snapshots"] = storage.prune_snapshots(data_dir, today, raw_keep, 0, set(archived), ids, dry_run=False)
+        out["raw_snapshots"] = storage.prune_snapshots(data_dir, today, raw_keep, 0, set(archived), ids, dry_run=False, bundled_days=_bundled(eod))
     if "normalized_snapshots" in items and norm_keep > 0:
-        out["normalized_snapshots"] = storage.prune_snapshots(data_dir, today, 0, norm_keep, set(archived), ids, dry_run=False)
+        out["normalized_snapshots"] = storage.prune_snapshots(data_dir, today, 0, norm_keep, set(archived), ids, dry_run=False, bundled_days=_bundled(eod))
     if "contract_rows" in items and obs_keep > 0:
         out["contract_rows"] = obs.plan_contract_pruning(obs_keep, archived, delete=True)
     if "regenerable" in items:

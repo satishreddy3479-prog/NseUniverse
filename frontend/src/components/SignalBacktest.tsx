@@ -7,6 +7,7 @@ import type { BacktestResult, BacktestSide } from "../lib/types";
 import { GexHistoryChart } from "./GexHistoryChart";
 import { MethodologyPanel } from "./MethodologyPanel";
 import { Loading } from "./Loading";
+import { DataCoverageNote } from "./LibraryPanel";
 
 const f = (v: number | null | undefined, d = 3) => (v == null ? MISSING : v.toFixed(d));
 const ci = (c: [number, number] | null | undefined, d = 3) => (c == null ? MISSING : `${c[0].toFixed(d)} to ${c[1].toFixed(d)}`);
@@ -96,6 +97,7 @@ export function SignalBacktestBody({ expiry }: { expiry: string | null }) {
           <label className="flex items-center gap-1">Round-trip cost (bps of NIFTY)<select aria-label="Cost" value={cost} onChange={(e) => setCost(Number(e.target.value))} className="min-h-8 rounded-sm border border-rule bg-slate-2 px-1 text-paper">{[0, 2, 5, 10, 20].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
         </div>
         <p className="mt-2 text-xs text-warn" data-testid="bt-note">{d.note}</p>
+        <div className="mt-2"><DataCoverageNote coverage={d.data_coverage} /></div>
         {d.status !== "ok" && <p className="mt-2 text-sm text-muted" data-testid="bt-empty">{d.status}.</p>}
       </div>
       {d.tests.length > 0 && (
