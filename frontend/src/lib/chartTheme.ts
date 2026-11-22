@@ -40,7 +40,17 @@ const fixAxis = (a: Obj, wide: boolean, t: ThemeTokens, value: boolean): Obj => 
   return out;
 };
 
-const fixSeries = (s: Obj, wide: boolean): Obj => {
+/** The value a bar is drawn for: a number, ``{ value }``, or a pair (the second element, or the first for a horizontal bar). */
+const barValue = (d: unknown, horizontal: boolean): number | null => {
+  const v = isObj(d) && "value" in d ? d.value : d;
+  const n = Array.isArray(v) ? v[horizontal ? 0 : 1] : v;
+  return typeof n === "number" && Number.isFinite(n) ? n : null;
+};
+/** Rounded outer end of a bar: the end away from the axis, whichever way the bar points (positive up or right, negative down or left). */
+export const barRadius = (value: number, horizontal: boolean): number[] =>
+  horizontal ? (value >= 0 ? [0, 3, 3, 0] : [3, 0, 0, 3]) : value >= 0 ? [3, 3, 0, 0] : [0, 0, 3, 3];
+
+const fixSeries = (s: Obj, wide: boolean, horizontal: boolean): Obj => {
   const out: Obj = { ...s };
   if (s.type === "line") {
     const ls = isObj(s.lineStyle) ? s.lineStyle : {};
@@ -53,8 +63,18 @@ const fixSeries = (s: Obj, wide: boolean): Obj => {
   }
   if (s.type === "bar") {
     const it = isObj(s.itemStyle) ? s.itemStyle : {};
-    // rounded tops on a vertical bar (a horizontal one is rounded on its right end by the same value order: left to right)
-    if (it.borderRadius === undefined) out.itemStyle = { ...it, borderRadius: [3, 3, 0, 0] };
+    // Rounded on the end away from the axis, per bar: a bar below zero (or to the left of it) is rounded at its bottom (left), not at the axis. A stacked series is left square: a rounded
+    // segment inside a stack leaves notches. A radius the chart set itself, on the series or on a bar, is kept.
+    if (it.borderRadius === undefined && s.stack === undefined && Array.isArray(s.data)) {
+      out.data = (s.data as unknown[]).map((d) => {
+        const v = barValue(d, horizontal);
+        if (v == null) return d;
+        const own = isObj(d) && isObj(d.itemStyle) && d.itemStyle.borderRadius !== undefined;
+        if (own) return d;
+        const base: Obj = isObj(d) ? { ...d } : Array.isArray(d) ? { value: d } : { value: d };
+        return { ...base, itemStyle: { ...(isObj(base.itemStyle) ? base.itemStyle : {}), borderRadius: barRadius(v, horizontal) } };
+      });
+    }
   }
   if (isObj(s.markLine) && isObj(s.markLine.label)) out.markLine = { ...s.markLine, label: lift(s.markLine.label, wide) };
   if (isObj(s.markArea) && isObj(s.markArea.label)) out.markArea = { ...s.markArea, label: lift(s.markArea.label, wide) };
@@ -88,7 +108,9 @@ export function withChartTheme<O extends object>(option: O, t: ThemeTokens, widt
 
   if (o.xAxis !== undefined) out.xAxis = mapEach(o.xAxis, (a) => fixAxis(a, wide, t, a.type === "value"));
   if (o.yAxis !== undefined) out.yAxis = mapEach(o.yAxis, (a) => fixAxis(a, wide, t, a.type === undefined || a.type === "value" || a.type === "log"));
-  if (Array.isArray(o.series)) out.series = o.series.map((s) => (isObj(s) ? fixSeries(s, wide) : s));
+  const ax = (a: unknown): Obj | undefined => (Array.isArray(a) ? (a[0] as Obj | undefined) : (a as Obj | undefined));
+  const horizontal = ax(o.yAxis)?.type === "category" && ax(o.xAxis)?.type !== "category"; // bars lie sideways when the categories run down the page
+  if (Array.isArray(o.series)) out.series = o.series.map((s) => (isObj(s) ? fixSeries(s, wide, horizontal) : s));
   return out as O;
 }
 

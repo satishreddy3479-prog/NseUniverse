@@ -103,7 +103,7 @@ export function GammaAnalysisBoard() {
           data: visible.map((r) => ({ value: pick(r), itemStyle: { color: (pick(r) ?? 0) >= 0 ? c.info : c.down } })),
           markLine: { symbol: "none", silent: true, data: levelMarks },
         },
-        ...(absOn && type === "combined" ? [{ name: "Absolute GEX", type: "line", smooth: false, showSymbol: true, symbolSize: 4, data: visible.map((r) => r.abs), lineStyle: { color: c.info, width: 1.2, opacity: 0.8 }, itemStyle: { color: c.info } }] : []),
+        ...(absOn && type === "combined" ? [{ name: "Absolute GEX", type: "line", smooth: false, showSymbol: true, symbolSize: 4, data: visible.map((r) => r.abs), lineStyle: { color: c.muted, width: 1.6 }, itemStyle: { color: c.muted } }] : []) // the size of the exposure in a colour of its own: blue above zero and red below belong to the bars,
       ],
     };
   }, [lv, visible, type, levelsOn, absOn, c]);
@@ -168,7 +168,8 @@ export function GammaAnalysisBoard() {
       xAxis: { type: "value", axisLabel: { color: c.muted, formatter: (v: number) => fmtCrore(v) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
       yAxis: { type: "category", data: rows.map((r) => String(r.strike)), axisLabel: { color: c.paper, fontSize: 11 }, axisLine: { lineStyle: { color: c.rule } } },
       series: [
-        { name: "Absolute GEX", type: "bar", barWidth: "55%", data: rows.map((r) => r.abs), itemStyle: { color: c.rule } },
+        // the size of the exposure drawn on the same side as the strike's net bar, so the net bar sits inside it: a strike below zero shows both to the left
+        { name: "Absolute GEX", type: "bar", barWidth: "55%", data: rows.map((r) => (r.abs == null ? null : (r.net ?? 0) >= 0 ? r.abs : -r.abs)), itemStyle: { color: c.rule }, tooltip: { valueFormatter: (v: number | null) => (v == null ? MISSING : `${fmtCrore(Math.abs(v))} cr`) } },
         { name: "Net GEX", type: "bar", barWidth: "30%", barGap: "-60%", data: rows.map((r) => ({ value: r.net, itemStyle: { color: (r.net ?? 0) >= 0 ? c.info : c.down } })) },
       ],
     };

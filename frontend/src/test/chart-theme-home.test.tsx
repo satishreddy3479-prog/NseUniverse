@@ -46,13 +46,28 @@ describe("withChartTheme", () => {
     expect(withChartTheme({ xAxis: { axisLabel: { fontSize: 14 } } } as O, T, 900).xAxis.axisLabel.fontSize).toBe(14); // larger is kept
   });
 
-  it("rounds the tops of bars unless the chart chose a radius, and does not touch other series", () => {
-    const out = withChartTheme({ series: [{ type: "bar", data: [1] }, { type: "bar", data: [1], itemStyle: { borderRadius: 0 } }, { type: "scatter", data: [] }] } as O, T, 900) as O;
-    expect(out.series[0].itemStyle.borderRadius).toEqual([3, 3, 0, 0]);
-    expect(out.series[1].itemStyle.borderRadius).toBe(0);
-    expect(out.series[2].itemStyle).toBeUndefined();
+  it("rounds the end of each bar that is away from the axis: up for a positive vertical bar, down for a negative one, right and left for sideways bars", () => {
+    const v = withChartTheme({ xAxis: { type: "category" }, yAxis: { type: "value" }, series: [{ type: "bar", data: [5, -5, { value: 3, itemStyle: { color: "#123456" } }, null] }] } as O, T, 900) as O;
+    const d = v.series[0].data;
+    expect(d[0].itemStyle.borderRadius).toEqual([3, 3, 0, 0]);
+    expect(d[1].itemStyle.borderRadius).toEqual([0, 0, 3, 3]);
+    expect(d[2].itemStyle).toEqual({ color: "#123456", borderRadius: [3, 3, 0, 0] }); // the bar's own colour is kept
+    expect(d[3]).toBeNull();
+    const h = withChartTheme({ xAxis: { type: "value" }, yAxis: { type: "category" }, series: [{ type: "bar", data: [5, -5] }] } as O, T, 900) as O;
+    expect(h.series[0].data[0].itemStyle.borderRadius).toEqual([0, 3, 3, 0]); // sideways: positive rounds on the right
+    expect(h.series[0].data[1].itemStyle.borderRadius).toEqual([3, 0, 0, 3]); // negative rounds on the left
+    const pairs = withChartTheme({ xAxis: { type: "category" }, yAxis: { type: "value" }, series: [{ type: "bar", data: [["a", -2]] }] } as O, T, 900) as O;
+    expect(pairs.series[0].data[0].itemStyle.borderRadius).toEqual([0, 0, 3, 3]);
   });
-
+  it("leaves a stacked series and any radius the chart chose alone, and does not touch other series", () => {
+    const out = withChartTheme({ xAxis: { type: "category" }, yAxis: { type: "value" }, series: [
+      { type: "bar", stack: "s", data: [1, -1] }, { type: "bar", itemStyle: { borderRadius: 0 }, data: [1, -1] },
+      { type: "bar", data: [{ value: -4, itemStyle: { borderRadius: [1, 1, 1, 1] } }] }, { type: "scatter", data: [] }] } as O, T, 900) as O;
+    expect(out.series[0].data).toEqual([1, -1]);
+    expect(out.series[1].data).toEqual([1, -1]);
+    expect(out.series[2].data[0].itemStyle.borderRadius).toEqual([1, 1, 1, 1]);
+    expect(out.series[3].itemStyle).toBeUndefined();
+  });
   it("handles array axes, array legends and an option without them", () => {
     const out = withChartTheme({ yAxis: [{ type: "value" }, { type: "value", position: "right" }], legend: [{}, {}] } as O, T, 900) as O;
     expect(out.yAxis).toHaveLength(2); expect(out.yAxis[1].splitLine.lineStyle.type).toBe("dashed");
