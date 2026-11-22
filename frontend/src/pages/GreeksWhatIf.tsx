@@ -8,6 +8,7 @@ import { PayoffPanel, RiskMatrixPanel, type MatrixKind } from "../components/ris
 import { ScenarioPanel, ZERO_SCENARIO } from "../components/risk/ScenarioPanel";
 import { SurfaceViewer } from "../components/risk/SurfaceViewer";
 import { api } from "../lib/api";
+import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { legsFromBuilder, type RiskLeg, riskApi, RiskApiError, type ScenarioParams, stampText, type StickyRule } from "../lib/risk";
 
 const LEGS_KEY = "nse.greeks.legs";
@@ -95,9 +96,12 @@ export function GreeksWhatIf() {
           <h1 className="text-xl font-semibold md:text-2xl">Greeks and What-If</h1>
           <p className="text-xs text-muted">The Greeks of your NIFTY option legs in rupees, and what a move in the index, in volatility, in time or in rates would do to them. Read-only: nothing is placed or sent to a broker. Valued on a fitted volatility surface; thresholds and limits are configuration.</p>
         </div>
-        <div className="text-right text-xs" data-testid="risk-stamp">
-          <div className="font-medium text-paper" title={stamp?.surface_version_id ?? ""} data-testid="risk-stamp-text">{stampText(stamp)}</div>
-          {stamp && <div className={stamp.stale || stamp.source === "stored" ? "text-warn" : "text-up"}>{stamp.source === "live" ? "Live books in use" : "Stored chain"}{stamp.stale ? " · stale" : ""}</div>}
+        <div className="flex flex-wrap items-start justify-end gap-3">
+          <ChartInfoToggle />
+          <div className="text-right text-xs" data-testid="risk-stamp">
+            <div className="font-medium text-paper" title={stamp?.surface_version_id ?? ""} data-testid="risk-stamp-text">{stampText(stamp)}</div>
+            {stamp && <div className={stamp.stale || stamp.source === "stored" ? "text-warn" : "text-up"}>{stamp.source === "live" ? "Live books in use" : "Stored chain"}{stamp.stale ? " · stale" : ""}</div>}
+          </div>
         </div>
       </header>
       {gone ? (

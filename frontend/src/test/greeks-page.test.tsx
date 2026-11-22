@@ -198,6 +198,19 @@ describe("Greeks and What-If page", () => {
     expect(within(details[0]!).getByText("Zomma")).toBeInTheDocument();
   });
 
+  it("has the switch for the card that shows the values when you point at a chart, so a choice made on another page can be undone here", async () => {
+    install();
+    mount();
+    const toggle = await screen.findByTestId("chart-info-toggle");
+    expect(toggle).toHaveTextContent("Hide chart info"); // shown by default
+    fireEvent.click(toggle);
+    expect(toggle).toHaveTextContent("Show chart info");
+    expect(localStorage.getItem("nse.charts.hideInfo")).toBe("1");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveTextContent("Hide chart info");
+    expect(localStorage.getItem("nse.charts.hideInfo")).toBe("0");
+  });
+
   it("the volatility surface: an expiry at a time, the fit quality, the arbitrage checks, and charts", async () => {
     install();
     mount();
