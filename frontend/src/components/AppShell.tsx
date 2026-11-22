@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation } from "react-router-dom";
 import { ToolTabs } from "./ToolTabs";
@@ -12,6 +12,8 @@ import { ThemeSwitch } from "./ThemeSwitch";
 import { SpotBadge } from "./SpotBadge";
 import { StatusPill } from "./StatusPill";
 import { AlertStrip } from "./AlertStrip";
+import { OfflineStrip } from "./OfflineStrip";
+import { rememberPage } from "../lib/recent";
 import { HeadsUpStrip } from "./HeadsUp";
 import { ScoreChips } from "./ScoreChips";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -23,6 +25,7 @@ import { TopProgress } from "./TopProgress";
 export function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false);
   const { pathname } = useLocation();
+  useEffect(() => { rememberPage(pathname); }, [pathname]); // Home offers the pages opened last
   useLiveConnection();
   // The session's open, close and holidays come from the backend, which follows the exchange feed; pages are
   // redrawn once when they differ from the defaults.
@@ -73,6 +76,7 @@ export function AppShell() {
         </div>
       )}
       <TopProgress />
+      <OfflineStrip />
       <AlertStrip />
       <HeadsUpStrip />
       <main key={pathname} className="page-enter relative min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 md:p-4 lg:p-6">

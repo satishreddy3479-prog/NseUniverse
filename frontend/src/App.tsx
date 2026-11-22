@@ -60,7 +60,8 @@ const wait = (what: string, el: React.ReactNode) => <Suspense fallback={<Loading
 
 export function makeQueryClient() {
   return new QueryClient({
-    defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: true } },
+    // a few seconds of freshness stops a burst of identical requests when several widgets mount or the window regains focus; a failed read is retried once after a pause that grows
+    defaultOptions: { queries: { retry: 1, retryDelay: (n: number) => Math.min(1000 * 2 ** n, 8000), refetchOnWindowFocus: true, staleTime: 3_000 } },
   });
 }
 

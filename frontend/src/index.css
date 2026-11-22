@@ -392,3 +392,14 @@ header.bg-slate { background: var(--header-bg); box-shadow: var(--shadow); }
 [data-theme="light"] tbody tr { border-color: #edf0f6; }
 /* The open tool in a strip of sibling tools: the same violet "chosen" look. */
 [data-theme="light"] a[aria-current="page"].bg-brass\/15 { background-color: #efeaff; color: #2b1b9a; font-weight: 650; box-shadow: inset 0 -2px 0 var(--accent); }
+
+/* Readability, everywhere. Headings and the figures that matter are bold, labels are a clear step lighter, table heads are bold, and the smallest
+   text sizes in the product (10 and 11 px) are one pixel larger: small grey text was the complaint, and it is now never below 11 px. */
+h1, h2, h3 { font-weight: 600; letter-spacing: -0.005em; }
+h4 { font-weight: 600; }
+strong, b { font-weight: 600; }
+th { font-weight: 600; }
+dt { font-weight: 500; }
+dd { font-weight: 600; }
+.text-\[10px\] { font-size: 11px; }
+.text-\[11px\] { font-size: 12px; }

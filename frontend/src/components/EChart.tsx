@@ -10,6 +10,7 @@ import { CanvasRenderer } from "echarts/renderers";
 import type { EChartsCoreOption, ECharts } from "echarts/core";
 import type { ChartColors } from "../lib/chartOptions";
 import { getHideInfo, subscribeHideInfo, withInfoHidden } from "../lib/chartInfo";
+import { withChartTheme, type ThemeTokens } from "../lib/chartTheme";
 import { hideHover, syncHover, syncLegend, syncZoom, type LinkChart } from "../lib/hoverSync";
 
 /** The charts of each link group (see ``group`` and ``hoverGroup`` on EChart). */
@@ -280,6 +281,14 @@ export function keepLegend(option: EChartsCoreOption, user: Record<string, boole
   return o.legend ? ({ ...o, legend: apply(o.legend as Obj) } as EChartsCoreOption) : option;
 }
 
+/** The current theme's tokens for the shared chart look (read when the option is applied, so a theme switch is picked up with the rebuilt option). */
+function themeTokens(): ThemeTokens {
+  const root = document.documentElement;
+  const st = getComputedStyle(root);
+  const g = (n: string, d: string) => st.getPropertyValue(n).trim() || d;
+  return { dark: root.getAttribute("data-theme") !== "light", font: g("--font-ui", "IBM Plex Sans, system-ui, sans-serif"), muted: g("--muted", "#888"), rule: g("--rule", "#ccc"), paper: g("--paper", "#111"), slate: g("--slate", "#fff") };
+}
+
 /** Thin ECharts wrapper: owns the instance, resizes with its container, keeps zoom and the user's legend choices across updates. */
 export function EChart({ option, onClick, ariaLabel, className = "", group, hoverGroup }: {
   option: EChartsCoreOption;
@@ -380,7 +389,7 @@ export function EChart({ option, onClick, ariaLabel, className = "", group, hove
     // Only then, not on every data refresh, which would close a card that is open.
     const toggled = lastHide.current !== hideInfo;
     lastHide.current = hideInfo;
-    chart.current?.setOption({ ...(withInactiveLegend(keepLegend(fitLayout(fitNarrow(withInfoHidden(safeTooltips(option), hideInfo), width), width, height), userLegend.current, legendDefaults.current), getComputedStyle(document.documentElement).getPropertyValue("--legend-off").trim() || "#8a96ab") as Obj), animation: false, animationDuration: 0, animationDurationUpdate: 0 }, { replaceMerge: toggled ? ["series", "tooltip"] : ["series"] });
+    chart.current?.setOption({ ...(withInactiveLegend(keepLegend(fitLayout(fitNarrow(withInfoHidden(safeTooltips(withChartTheme(option, themeTokens(), width)), hideInfo), width), width, height), userLegend.current, legendDefaults.current), getComputedStyle(document.documentElement).getPropertyValue("--legend-off").trim() || "#8a96ab") as Obj), animation: false, animationDuration: 0, animationDurationUpdate: 0 }, { replaceMerge: toggled ? ["series", "tooltip"] : ["series"] });
     if (hideInfo) chart.current?.dispatchAction({ type: "hideTip" }); // a card that is showing goes away at once
   }, [option, width, height, hideInfo]);
 
