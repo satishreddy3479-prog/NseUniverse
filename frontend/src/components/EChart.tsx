@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import * as echarts from "echarts/core";
-import { BarChart, CandlestickChart, HeatmapChart, LineChart, ScatterChart } from "echarts/charts";
+import { BarChart, CandlestickChart, CustomChart, HeatmapChart, LineChart, ScatterChart } from "echarts/charts";
 import {
   DataZoomComponent, GraphicComponent, GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent, MarkPointComponent, TitleComponent, TooltipComponent,
   VisualMapComponent,
@@ -21,7 +21,7 @@ let propagating = false; // a zoom or legend change that is being copied to the 
 // production (a scatter series simply never appeared; text corners, diamond markers, overlap-free end labels and containLabel grids were silently dropped).
 // src/test/echart-registration.test.ts fails when one of them goes missing.
 echarts.use([
-  BarChart, CandlestickChart, HeatmapChart, LineChart, ScatterChart, DataZoomComponent, GraphicComponent, GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent,
+  BarChart, CandlestickChart, CustomChart, HeatmapChart, LineChart, ScatterChart, DataZoomComponent, GraphicComponent, GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent,
   MarkPointComponent, TitleComponent, TooltipComponent, VisualMapComponent, LabelLayout, LegacyGridContainLabel, CanvasRenderer,
 ]);
 

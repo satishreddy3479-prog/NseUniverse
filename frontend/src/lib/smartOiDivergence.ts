@@ -447,6 +447,32 @@ export function gradeOf(q: QualityFlags[], i: number, w: number, stalled: boolea
   return flagged >= 1 ? "B" : "A";
 }
 
+export interface Burst extends Signal {
+  /** how many consecutive signals of this indicator and direction this burst holds */
+  count: number;
+  lastI: number; lastAt: string;
+}
+/**
+ * One entry per burst. A rolling indicator (momentum, PCR, conviction) fires on every candle for as long as its condition holds, which is one situation, not
+ * thirty: signals of the same indicator and direction that follow each other within ``gap`` candles are one burst, shown at its start (the onset), with its length
+ * and its last candle. The strength is the largest in the burst. Nothing is dropped from the report itself; this is only for drawing and listing.
+ */
+export function collapseBursts(signals: readonly Signal[], gap = 3): Burst[] {
+  const out: Burst[] = [];
+  const open = new Map<string, Burst>();
+  for (const s of [...signals].sort((a, b) => a.i - b.i)) {
+    const key = `${s.id}|${s.direction}`, cur = open.get(key);
+    if (cur && s.i - cur.lastI <= gap) {
+      cur.count++; cur.lastI = s.i; cur.lastAt = s.at; cur.strength = Math.max(cur.strength, s.strength);
+      continue;
+    }
+    const b: Burst = { ...s, count: 1, lastI: s.i, lastAt: s.at };
+    open.set(key, b);
+    out.push(b);
+  }
+  return out.sort((a, b) => a.i - b.i);
+}
+
 /** The eighth indicator: how many of the seven agree. A direction needs at least three active and a lead of two over the other side. */
 export function composeOf(readings: Reading[], grade: Grade): Composite {
   const bull = readings.filter((r) => r.active && r.direction === "bullish").length, bear = readings.filter((r) => r.active && r.direction === "bearish").length;

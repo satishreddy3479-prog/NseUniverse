@@ -727,6 +727,35 @@ export function groupedBarsOption(categories: string[], series: { name: string; 
 const upTxt = (v: number | null) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${compactIN(Math.abs(v))}`);
 
 /** Spot candles (top), Smart OI zero-baseline candles (middle) and option volume per candle (bottom) on one shared time axis. */
+
+export interface CandleRow { o: number; c: number; l: number; h: number; outline?: boolean }
+/**
+ * Candles drawn from their centre. The built-in candlestick snaps the edges of the body and the position of the wick to whole pixels separately, so with an odd
+ * body width the wick sat half a pixel off the middle of the body: on a phone, where a candle is a few pixels wide, it looked off-centre. Here the wick is drawn at
+ * the exact centre of the category and the body is centred on it, whatever the zoom or the screen. ``wick: false`` draws the body only (a bar from zero).
+ * An outlined candle (``outline``) is the stand-in drawn from the future, not the index.
+ */
+export function candleSeries(name: string, xAxisIndex: number, yAxisIndex: number, rows: (CandleRow | null)[], colors: { up: string; down: string; muted: string }, wick = true): Record<string, unknown> {
+  return {
+    name, type: "custom", xAxisIndex, yAxisIndex,
+    dimensions: ["i", "open", "close", "low", "high", "outline"], encode: { x: 0, y: [1, 2, 3, 4], tooltip: [1, 2, 3, 4] },
+    data: rows.map((r, i) => (r ? [i, r.o, r.c, r.l, r.h, r.outline ? 1 : 0] : [i, null, null, null, null, 0])),
+    renderItem: (_p: unknown, api: { value: (d: number) => number; coord: (v: [number, number]) => number[]; size: (v: [number, number]) => number[] }) => {
+      const o = api.value(1), cl = api.value(2), lo = api.value(3), hi = api.value(4);
+      if (![o, cl, lo, hi].every((v) => Number.isFinite(v))) return null;
+      const idx = api.value(0);
+      const x = api.coord([idx, o])[0]!, yo = api.coord([idx, o])[1]!, yc = api.coord([idx, cl])[1]!, yl = api.coord([idx, lo])[1]!, yh = api.coord([idx, hi])[1]!;
+      const w = Math.max(2, Math.min(api.size([1, 0])[0]! * 0.7, 18));
+      const color = cl >= o ? colors.up : colors.down;
+      const outline = api.value(5) === 1;
+      const children: unknown[] = [];
+      if (wick) children.push({ type: "line", shape: { x1: x, y1: yh, x2: x, y2: yl }, style: { stroke: outline ? colors.muted : color, lineWidth: 1.4 } });
+      children.push({ type: "rect", shape: { x: x - w / 2, y: Math.min(yo, yc), width: w, height: Math.max(1, Math.abs(yo - yc)) }, style: outline ? { fill: "rgba(0,0,0,0)", stroke: colors.muted, lineWidth: 1.2 } : { fill: color } });
+      return { type: "group", children };
+    },
+  };
+}
+
 /** The volume lines of the Smart OI tooltip: contracts traded in this candle (put, call, total, put share) and the day's totals so far. */
 function volumeLines(k: SmartOiResult["candles"][number]): string {
   const u = (v: number | null) => (v == null ? "—" : compactIN(v));
@@ -789,17 +818,11 @@ export function smartOiOption(r: SmartOiResult, c: ChartColors): EChartsCoreOpti
     legend: { data: [{ name: "Put volume", itemStyle: { color: c.up } }, { name: "Call volume", itemStyle: { color: c.down } }], top: "72.5%", left: 62, itemWidth: 12, itemHeight: 8, itemGap: 12, textStyle: { color: c.paper, fontSize: 11 } },
     dataZoom: [{ type: "inside", xAxisIndex: [0, 1, 2], filterMode: "none" }],
     series: [
+      // a candle that is partly the future minus its basis (the closing session, when the index is not published) is outlined in grey, not filled: it is not the index
+      candleSeries("NIFTY", 0, 0, cs.map((k) => (k.spot ? { o: k.spot.open, c: k.spot.close, l: k.spot.low, h: k.spot.high, outline: k.spotProxy } : null)), c),
       {
-        name: "NIFTY", type: "candlestick", xAxisIndex: 0, yAxisIndex: 0,
-        // a candle that is partly the future minus its basis (the closing session, when the index is not published) is outlined in grey, not filled: it is not the index
-        data: cs.map((k) => (k.spot ? (k.spotProxy ? { value: [k.spot.open, k.spot.close, k.spot.low, k.spot.high], itemStyle: { color: "transparent", color0: "transparent", borderColor: c.muted, borderColor0: c.muted } } : [k.spot.open, k.spot.close, k.spot.low, k.spot.high]) : "-")),
-        itemStyle: { color: c.up, color0: c.down, borderColor: c.up, borderColor0: c.down },
-      },
-      {
-        name: "Smart OI", type: "candlestick", xAxisIndex: 1, yAxisIndex: 1,
         // open is always 0: the bar starts on the zero line and ends at ΔPE − ΔCE; the baseline candle has no bar.
-        data: cs.map((k) => (k.p == null ? "-" : [0, k.p, Math.min(0, k.p), Math.max(0, k.p)])),
-        itemStyle: { color: c.up, color0: c.down, borderColor: c.up, borderColor0: c.down },
+        ...candleSeries("Smart OI", 1, 1, cs.map((k) => (k.p == null ? null : { o: 0, c: k.p, l: Math.min(0, k.p), h: Math.max(0, k.p) })), c, false),
         markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: c.muted, width: 1 }, data: [{ yAxis: 0 }] },
       },
       { name: "Put volume", type: "bar", stack: "v", xAxisIndex: 2, yAxisIndex: 2, data: cs.map((k) => k.peVolDelta), itemStyle: { color: c.up, opacity: 0.85 } },

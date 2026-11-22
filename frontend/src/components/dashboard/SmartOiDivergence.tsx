@@ -7,7 +7,7 @@ import { sessionOpenMin } from "../../lib/session";
 import { strikesAround } from "../../lib/optionTools";
 import type { SmartOiResult } from "../../lib/optionTools";
 import {
-  alignFuture, analyseSmartOi, buildStrikeFlow, INDICATOR_NAMES, TH, type DivergenceReport, type Direction, type Signal,
+  alignFuture, analyseSmartOi, buildStrikeFlow, collapseBursts, INDICATOR_NAMES, TH, type Burst, type DivergenceReport, type Direction, type Signal,
 } from "../../lib/smartOiDivergence";
 import type { ChartColors } from "../../lib/chartOptions";
 import { EChart, useChartColors } from "../EChart";
@@ -40,7 +40,8 @@ export function SmartOiDivergence({ res, tf, since, expiry, listed, openAtm }: {
     const flow = ss ? buildStrikeFlow(res, ss, sessionOpenMin()) : undefined;
     return analyseSmartOi(res, { strikeFlow: flow, future: fut ? alignFuture(res, fut) : undefined });
   }, [on, res, ss, fut]);
-  const option = useMemo(() => (res && report ? markerOption(res, report, colors) : null), [res, report, colors]);
+  const bursts = useMemo(() => (report ? collapseBursts(report.signals) : []), [report]);
+  const option = useMemo(() => (res && report ? markerOption(res, report, bursts, colors) : null), [res, report, bursts, colors]);
 
   if (!on) {
     return <p className="rounded-sm border border-rule bg-slate-2 px-3 py-2 text-sm text-muted" data-testid="div-off">Divergence indicators are built for 3 and 5 minute candles. Choose 3 min or 5 min above to see them.</p>;
@@ -49,7 +50,7 @@ export function SmartOiDivergence({ res, tf, since, expiry, listed, openAtm }: {
     return <p className="rounded-sm border border-rule bg-slate-2 px-3 py-2 text-sm text-muted" data-testid="div-wait">Divergences need at least four {tf}-minute candles of stored samples.</p>;
   }
   const c = report.composite;
-  const recent = [...report.signals].reverse().slice(0, 14);
+  const recent = [...bursts].reverse().slice(0, 14);
   return (
     <section aria-label="Divergence indicators" className="flex flex-col gap-3 rounded-[var(--radius-panel)] border border-rule bg-slate p-3" data-testid="divergence">
       <header className="flex flex-wrap items-center justify-between gap-2">
@@ -71,15 +72,23 @@ export function SmartOiDivergence({ res, tf, since, expiry, listed, openAtm }: {
           </li>
         ))}
       </ul>
-      {option && <div><EChart className="echart-fixed !h-[260px]" hoverGroup="smart-oi" option={option} ariaLabel="NIFTY close with the divergence signals marked" /></div>}
+      {option && (
+        <div>
+          <EChart className="echart-fixed !h-[300px]" hoverGroup="smart-oi" option={option} ariaLabel="NIFTY close with the divergence signals marked" />
+          <p className="mt-1 text-xs text-muted" data-testid="div-chart-note">
+            <span className="text-up">▲</span> under the price line: something other than price leans bullish, <span className="text-down">▼</span> above it: bearish, <span>●</span> a notable reading with no direction. One marker is the <b>start</b> of a run of the same signal (hover it for how long it lasted and why). Markers at the same time are different indicators agreeing or disagreeing, which is what the composite line above counts. A hollow marker failed.
+          </p>
+        </div>
+      )}
       <div>
         <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Signals today, newest first</h4>
         {recent.length === 0 ? <p className="text-sm text-muted" data-testid="div-none">No divergence signal has formed today on {tf}-minute candles.</p> : (
           <ul className="flex flex-col gap-1" data-testid="div-events">
             {recent.map((s, k) => (
               <li key={`${s.id}-${s.i}-${k}`} className="flex flex-wrap items-baseline gap-x-2 text-sm">
-                <span className="num text-muted">{s.at}</span>
+                <span className="num text-muted">{s.at}{s.count > 1 ? `–${s.lastAt}` : ""}</span>
                 <span className={`font-semibold ${tone(s.direction)}`}>{arrow(s.direction)} {INDICATOR_NAMES[s.id]}</span>
+                {s.count > 1 && <span className="rounded-sm border border-rule px-1 text-[11px] text-muted" title={`The same signal held for ${s.count} candles in a row`}>×{s.count}</span>}
                 {s.state === "failed" && <span className="rounded-sm border border-warn/50 px-1 text-[11px] text-warn" title="Price later went beyond the swing the signal was built on">failed</span>}
                 <span className="text-muted">{s.text}</span>
               </li>
@@ -109,13 +118,14 @@ export function SmartOiDivergence({ res, tf, since, expiry, listed, openAtm }: {
 }
 
 /** The price line with one marker per signal: triangles up (bullish) and down (bearish), a dot for neutral, a hollow marker once a flow divergence failed, and a dashed line between the two swings of a flow divergence. */
-function markerOption(res: SmartOiResult, rep: DivergenceReport, c: ChartColors): EChartsCoreOption {
+function markerOption(res: SmartOiResult, rep: DivergenceReport, bursts: Burst[], c: ChartColors): EChartsCoreOption {
   const labels = res.candles.map((x) => x.label);
   const close = res.candles.map((x) => x.spot?.close ?? null);
   const at = (s: Signal) => close[s.i] ?? null;
-  const mark = (dir: Direction, symbol: string, color: string) => ({
-    name: dir, type: "scatter", symbol, symbolSize: 13, itemStyle: { color }, z: 5,
-    data: rep.signals.filter((s) => s.direction === dir && at(s) != null).map((s) => ({ value: [s.i, at(s)], signal: s, itemStyle: s.state === "failed" ? { color: "transparent", borderColor: color, borderWidth: 2 } : undefined })),
+  // bullish markers sit just under the price line and bearish ones just above it, so they never cover the line; one marker per burst
+  const mark = (dir: Direction, symbol: string, color: string, dy: number) => ({
+    name: dir, type: "scatter", symbol, symbolSize: 10, symbolOffset: [0, dy], itemStyle: { color }, z: 5,
+    data: bursts.filter((s) => s.direction === dir && at(s) != null).map((s) => ({ value: [s.i, at(s)], signal: s, itemStyle: s.state === "failed" ? { color: "transparent", borderColor: color, borderWidth: 2 } : undefined })),
   });
   const links = rep.signals.filter((s) => s.link && at(s) != null).map((s) => {
     const l = s.link!, series = res.candles.map((x) => (l.price === "high" ? x.spot?.high : x.spot?.low) ?? null);
@@ -128,14 +138,15 @@ function markerOption(res: SmartOiResult, rep: DivergenceReport, c: ChartColors)
       trigger: "item", confine: true,
       formatter: (p: { data?: { signal?: Signal }; dataIndex?: number }) => {
         const s = p.data?.signal;
-        return s ? `<b>${INDICATOR_NAMES[s.id]}</b> · ${s.at}${s.state === "failed" ? " · failed" : ""}<br/>${s.text}` : "";
+        const run = (s as Burst | undefined)?.count ?? 1;
+        return s ? `<b>${INDICATOR_NAMES[s.id]}</b> · ${s.at}${run > 1 ? ` to ${(s as Burst).lastAt} (${run} candles)` : ""}${s.state === "failed" ? " · failed" : ""}<br/>${s.text}` : "";
       },
     },
     xAxis: { type: "value", min: 0, max: Math.max(1, labels.length - 1), axisLabel: { color: c.muted, formatter: (v: number) => labels[Math.round(v)] ?? "" }, splitLine: { show: false }, axisLine: { lineStyle: { color: c.rule } } },
     yAxis: { type: "value", scale: true, axisLabel: { color: c.muted }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
     series: [
       { name: "NIFTY close", type: "line", showSymbol: false, data: close.map((v, i) => [i, v]), lineStyle: { color: c.brass, width: 2 }, itemStyle: { color: c.brass }, connectNulls: false },
-      mark("bullish", "triangle", c.up), { ...mark("bearish", "triangle", c.down), symbolRotate: 180 }, mark("neutral", "circle", c.muted),
+      mark("bullish", "triangle", c.up, 9), { ...mark("bearish", "triangle", c.down, -9), symbolRotate: 180 }, mark("neutral", "circle", c.muted, 0),
       ...links,
     ],
   };

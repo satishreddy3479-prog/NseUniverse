@@ -1,8 +1,8 @@
 // Smart OI divergence indicators, checked by hand on small series built for the purpose. Expected values are counted, not read back from the code.
 import { describe, expect, it } from "vitest";
 import {
-  alignFuture, analyseSmartOi, buildStrikeFlow, candlesFor, composeOf, ema, gradeOf, pressureOf, qualityOf, TH,
-  type FutureLeg, type Reading, type StrikeFlow,
+  alignFuture, analyseSmartOi, buildStrikeFlow, candlesFor, collapseBursts, composeOf, ema, gradeOf, pressureOf, qualityOf, TH,
+  type FutureLeg, type Reading, type Signal, type StrikeFlow,
 } from "../lib/smartOiDivergence";
 import type { SmartOiCandle, SmartOiResult } from "../lib/optionTools";
 import type { FuturesSeries, StrikeSeries } from "../lib/types";
@@ -307,5 +307,29 @@ describe("8 composite and quality", () => {
     expect(r.readings.find((x) => x.id === "pcr")!.active).toBe(true);
     const calm = [...cs, ...Array.from({ length: 14 }, () => ({ high: 100, low: 99, pcr: 1.22, volPcr: 0.68 }))];
     expect(analyseSmartOi(result(5, calm)).readings.find((x) => x.id === "pcr")!.active).toBe(false); // flat for a full window since
+  });
+});
+
+describe("collapseBursts: one marker for a run of the same signal", () => {
+  const sig = (id: Signal["id"], i: number, direction: Signal["direction"], strength = 0.5): Signal => ({ id, i, at: `09:${String(15 + i).padStart(2, "0")}`, direction, strength, state: "confirmed", title: "", text: "", evidence: {} });
+  it("signals of one indicator and direction within 3 candles of each other are one burst: its start, its length, its last candle, its strongest reading", () => {
+    const b = collapseBursts([sig("momentum", 10, "bullish", 0.2), sig("momentum", 11, "bullish", 0.7), sig("momentum", 13, "bullish", 0.4), sig("momentum", 20, "bullish", 0.3)]);
+    expect(b).toHaveLength(2);
+    expect(b[0]).toMatchObject({ i: 10, count: 3, lastI: 13, strength: 0.7 });
+    expect(b[1]).toMatchObject({ i: 20, count: 1, lastI: 20 }); // 7 candles later: a new burst
+  });
+  it("different indicators, or different directions, never merge", () => {
+    const b = collapseBursts([sig("momentum", 10, "bullish"), sig("momentum", 11, "bearish"), sig("pcr", 11, "bullish")]);
+    expect(b).toHaveLength(3);
+    expect(collapseBursts([])).toEqual([]);
+  });
+  it("a gap of exactly 3 candles still joins, 4 does not", () => {
+    expect(collapseBursts([sig("zone", 5, "bearish"), sig("zone", 8, "bearish")])).toHaveLength(1);
+    expect(collapseBursts([sig("zone", 5, "bearish"), sig("zone", 9, "bearish")])).toHaveLength(2);
+  });
+  it("the report itself keeps every signal: collapsing is for drawing only", () => {
+    const cs = Array.from({ length: 12 }, (_, i) => ({ high: 100, low: 99, pcr: 1 + 0.02 * i, volPcr: 0.9 - 0.02 * i }));
+    const r = analyseSmartOi(result(5, cs));
+    expect(r.signals.length).toBeGreaterThan(collapseBursts(r.signals).length);
   });
 });
