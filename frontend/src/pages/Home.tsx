@@ -7,6 +7,7 @@ import { api } from "../lib/api";
 import { loadRecent } from "../lib/recent";
 import { MENU_ORDER, MENU_TITLES, TOOLS, menuGroups, toolPath, type Tool } from "../lib/tools";
 import { Loading } from "../components/Loading";
+import { PinnedStrategy } from "../components/PinnedStrategy";
 
 function ToolLink({ t }: { t: Tool }) {
   const to = toolPath(t);
@@ -71,6 +72,7 @@ export function Home() {
       {intel.isPending && <Loading label="Loading the market summary" />}
       {intel.data && <CommandStrip d={intel.data} compact />}
       {intel.isError && <p className="rounded-sm border border-rule bg-slate px-3 py-2 text-sm text-muted" data-testid="home-no-intel">The market summary is not available right now ({intel.error instanceof Error ? intel.error.message : "unknown error"}). The tools below still work.</p>}
+      <PinnedStrategy />
       {recent.length > 0 && (
         <section aria-label="Jump back in" data-testid="home-recent" className="flex flex-col gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Jump back in</h2>

@@ -4,7 +4,7 @@ import type { EChartsCoreOption } from "echarts/core";
 import { api } from "../lib/api";
 import { fmtInt } from "../lib/format";
 import { isFuture, legName, type Leg } from "../lib/strategy";
-import { buildMtm, type Mtm } from "../lib/strategyMtm";
+import { buildMtm, splitAtZero, type Mtm } from "../lib/strategyMtm";
 import type { ChartColors } from "../lib/chartOptions";
 import { EChart, useChartColors } from "./EChart";
 import { Loading } from "./Loading";
@@ -73,7 +73,8 @@ export function StrategyMtm({ legs, historyExpiries, lotSize, liveNow }: { legs:
 }
 
 function buildOption(m: Mtm, legs: Leg[], c: ChartColors): EChartsCoreOption {
-  const data = m.t.map((t, i) => [t, m.pnl[i]]);
+  const z = splitAtZero(m.t, m.pnl);
+  const hidden = { lineStyle: { width: 0, opacity: 0 }, showSymbol: false, silent: true, tooltip: { show: false } };
   const events: { xAxis: number; name: string; lineStyle: { color: string; type: string; width: number }; label: { formatter: string; color: string; fontSize: number; position: string } }[] = [];
   for (const l of legs) {
     if (l.exitedAt && l.exitPrice != null) {
@@ -83,13 +84,20 @@ function buildOption(m: Mtm, legs: Leg[], c: ChartColors): EChartsCoreOption {
   }
   return {
     animation: false, grid: { left: 64, right: 24, top: 24, bottom: 36 },
-    tooltip: { trigger: "axis", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, formatter: (p: { value: [number, number | null] }[]) => { const v = p[0]?.value; return v ? `${dayHhmm(v[0])} IST<br/>MTM ${money(v[1])}` : ""; } },
+    tooltip: { trigger: "axis", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, formatter: (p: { seriesName?: string; value: [number, number | null] }[]) => { const v = p.find((x) => x.seriesName === "MTM")?.value; return v ? `${dayHhmm(v[0])} IST<br/>MTM <b style="color:${(v[1] ?? 0) >= 0 ? c.up : c.down}">${money(v[1])}</b>` : ""; } },
     xAxis: { type: "time", axisLabel: { color: c.muted, formatter: (v: number) => hhmm(v) }, axisLine: { lineStyle: { color: c.rule } }, splitLine: { show: false } },
-    yAxis: { type: "value", scale: true, axisLabel: { color: c.muted, formatter: (v: number) => money(v, false) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
-    series: [{
-      name: "MTM", type: "line", showSymbol: false, connectNulls: false, data,
-      lineStyle: { color: c.brass, width: 2 }, areaStyle: { color: c.brass, opacity: 0.08 },
-      markLine: { symbol: "none", silent: true, data: [{ yAxis: 0, name: "Break-even", lineStyle: { color: c.muted, type: "dashed", width: 1 }, label: { formatter: "₹0", color: c.muted, fontSize: 10 } }, ...events] },
-    }],
+    yAxis: { type: "value", axisLabel: { color: c.muted, formatter: (v: number) => money(v, false) }, splitLine: { lineStyle: { color: c.rule, opacity: 0.5 } } },
+    series: [
+      // green area above zero, red area below it, each meeting the other exactly where the line crosses zero
+      { name: "above zero", type: "line", data: z.pos, ...hidden, areaStyle: { color: c.up, opacity: 0.22 }, z: 1 },
+      { name: "below zero", type: "line", data: z.neg, ...hidden, areaStyle: { color: c.down, opacity: 0.22 }, z: 1 },
+      { name: "line above zero", type: "line", data: z.linePos, showSymbol: false, silent: true, connectNulls: false, lineStyle: { color: c.up, width: 2 }, itemStyle: { color: c.up }, tooltip: { show: false }, z: 3 },
+      { name: "line below zero", type: "line", data: z.lineNeg, showSymbol: false, silent: true, connectNulls: false, lineStyle: { color: c.down, width: 2 }, itemStyle: { color: c.down }, tooltip: { show: false }, z: 3 },
+      // the full series carries the tooltip, the zero line and the exit marks
+      {
+        name: "MTM", type: "line", data: z.full, ...hidden, silent: false, tooltip: { show: true }, z: 4,
+        markLine: { symbol: "none", silent: true, data: [{ yAxis: 0, name: "Break-even", lineStyle: { color: c.muted, type: "dashed", width: 1 }, label: { formatter: "₹0", color: c.muted, fontSize: 11 } }, ...events] },
+      },
+    ],
   };
 }

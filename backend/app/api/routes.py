@@ -1243,6 +1243,12 @@ async def running_get(request: Request) -> dict[str, Any]:
     }
 
 
+@router.get("/strategies/running/pnl")
+async def running_pnl(request: Request) -> dict[str, Any]:
+    """P&L now of the running strategy from the server's live prices; nothing is guessed."""
+    return await asyncio.to_thread(_automation(request).pnl_now)
+
+
 @router.put("/strategies/running")
 async def running_put(body: RunningPut, request: Request) -> dict[str, Any]:
     """Store the builder's current strategy. Refused (409) when the server changed it since `base_rev` (a stop or target it executed)."""  # noqa: E501

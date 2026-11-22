@@ -834,13 +834,8 @@ export default function StrategyBuilder() {
   const openClosed = (c: Closed) => { setPicked(c.expiry); loadLegs(c.legs.map(({ exit: _e, ...l }) => ({ ...l, id: newLegId() }))); setMult(1); setNote(null); setOpened(c); setLoaded(null); };
   const persist = (s: Saved[]) => { pushDiff("saved", saved, s, (x) => x.name); setSaved(s); try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch { /* storage unavailable: kept for this visit only */ } };
   const net = (k: number, t: OptionType) => legs.filter((l) => l.expiry === expiry && l.strike === k && l.type === t).reduce((s, l) => s + sign(l.action) * l.lots, 0);
-  const controlsChanged = mult !== 1 || days !== 0 || ivPts !== 0 || whatPct !== 0 || zoom !== 0;
-  const legsChanged = JSON.stringify(legs.map(({ id: _i, ...r }) => r)) !== JSON.stringify(baseline.map(({ id: _i, ...r }) => r));
-  const canReset = legsChanged || controlsChanged;
   const canNew = legs.length > 0 || name !== "" || loaded != null || opened != null;
-  /** Reset: undo edits, keeping the strategy. */
-  const resetStrategy = () => { setLegs(baseline.map((l) => ({ ...l }))); setRearmAt(new Date().toISOString()); setHoldFrom(null); setMult(1); setDays(0); setIvPts(0); setWhatPct(0); setZoom(0); setNote(null); setSel(null); };
-  /** New: forget the strategy entirely and start from the gallery. */
+  /** Reset: forget the strategy on the page entirely and show the default start page: every leg (including ones only being checked and not saved), the name, the what-if controls. Saved and closed strategies are not touched. */
   const newStrategy = () => { setLegs([]); setRearmAt(new Date().toISOString()); setHoldFrom(null); setBaseline([]); setName(""); setLoaded(null); setOpened(null); setNote(null); setSel(null); setMult(1); setDays(0); setIvPts(0); setWhatPct(0); setZoom(0); };
   const savedEntry = loaded ? saved.find((x) => x.name === loaded) : undefined;
   const sig = (ls: Leg[]) => JSON.stringify(ls.map(({ id: _i, ...r }) => r));
@@ -889,8 +884,7 @@ export default function StrategyBuilder() {
         </details>
         <Link to="/portfolio#closed" data-testid="closed-menu" aria-label="Closed strategies" className={`${field} flex items-center`} title="Closed strategies are listed, opened and deleted on the Strategy portfolio page">Closed ({closed.length})</Link>
         <Link to="/greeks-whatif" data-testid="greeks-link" aria-label="Open in Greeks and What-If" className={`${field} flex items-center`} title="Greeks, scenarios and the volatility surface for these legs (use 'Use my Strategy Builder legs' there)">Greeks &amp; What-If</Link>
-        <Button ariaLabel="Reset strategy" onClick={resetStrategy} disabled={!canReset} title="Undo your edits: back to the strategy as it was built or loaded (legs, strikes, lots, targets, stops, what-if, date and IV shift)">Reset</Button>
-        <Button ariaLabel="New strategy" onClick={newStrategy} disabled={!canNew} title="Start a blank strategy: clears the legs and the name">New</Button>
+        <Button ariaLabel="Reset strategy" onClick={newStrategy} disabled={!canNew} title="Clear the page: removes every leg, including legs you are only checking and have not saved, and shows the start page. Saved and closed strategies are not touched.">Reset</Button>
         <span className="text-xs text-muted sm:ml-auto" title={liveMode === "fresh" ? "Streamed last traded prices overlay the stored snapshot, as on the Option chain page" : "Premiums are the last traded prices in this stored snapshot, not live quotes"}>{liveMode === "fresh" ? <span className="mr-2 rounded-sm border border-up/60 px-1 text-up">LIVE</span> : null}Snapshot <span className={`num ${chain.data?.stale ? "text-warn" : "text-paper"}`}>{snap ? fmtDateTimeIST(snap.retrieved_at) : "—"}</span>{chain.data?.stale ? " · stale" : ""}</span>
       </div>
 

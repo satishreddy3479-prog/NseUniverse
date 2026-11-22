@@ -110,7 +110,7 @@ describe("Strategy builder page", () => {
     await pick("bull_call_spread");
     await userEvent.type(await screen.findByLabelText("Strategy name"), "my spread");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
-    await userEvent.click(screen.getByRole("button", { name: "New strategy" }));
+    await userEvent.click(screen.getByRole("button", { name: "Reset strategy" }));
     expect(screen.getByTestId("gallery")).toBeInTheDocument();
     await userEvent.click(within(screen.getByTestId("saved-menu")).getByText(/my spread/));
     expect(within(await screen.findByRole("table", { name: "Strategy legs" })).getAllByLabelText("Strike")).toHaveLength(2);
@@ -136,25 +136,30 @@ describe("Payoff chart zoom", () => {
   });
 });
 
-describe("Reset and New work independently", () => {
-  it("Reset undoes edits but keeps the strategy; New clears it; each is disabled when it has nothing to do", async () => {
+describe("Reset clears the page", () => {
+  it("Reset removes every leg, checked or unsaved, and shows the default start page; there is no New button; it is disabled when there is nothing to clear", async () => {
     mount();
     await loaded();
+    expect(screen.queryByRole("button", { name: "New strategy" })).toBeNull();
     expect(screen.getByRole("button", { name: "Reset strategy" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "New strategy" })).toBeDisabled();
     await pick("bull_call_spread");
-    expect(screen.getByRole("button", { name: "Reset strategy" })).toBeDisabled(); // just built: nothing to undo
-    expect(screen.getByRole("button", { name: "New strategy" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Reset strategy" })).toBeEnabled();
     const table = () => within(screen.getByRole("table", { name: "Strategy legs" }));
-    await userEvent.click(table().getAllByLabelText("Increase lots")[0]!);
-    expect((table().getAllByLabelText("Lots")[0] as HTMLInputElement).value).toBe("2");
+    await userEvent.click(table().getAllByLabelText("Increase lots")[0]!); // an edit on top of the unsaved legs
     await userEvent.click(screen.getByRole("button", { name: "Reset strategy" }));
-    expect((table().getAllByLabelText("Lots")[0] as HTMLInputElement).value).toBe("1"); // edit undone, legs still there
-    expect(table().getAllByLabelText("Strike")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Reset strategy" })).toBeDisabled();
-    await userEvent.click(screen.getByRole("button", { name: "New strategy" }));
     expect(screen.getByTestId("gallery")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New strategy" })).toBeDisabled();
+    expect(screen.queryByRole("table", { name: "Strategy legs" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Reset strategy" })).toBeDisabled();
+  });
+  it("does not delete a saved strategy: it is still in Saved after a Reset", async () => {
+    mount();
+    await loaded();
+    await pick("bull_call_spread");
+    await userEvent.type(await screen.findByLabelText("Strategy name"), "keep me");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await userEvent.click(screen.getByRole("button", { name: "Reset strategy" }));
+    expect(screen.getByTestId("gallery")).toBeInTheDocument();
+    expect(within(screen.getByTestId("saved-menu")).getByText(/keep me/)).toBeInTheDocument();
   });
 });
 
@@ -177,7 +182,7 @@ describe("Updating a saved strategy", () => {
     const stored = JSON.parse(localStorage.getItem("nse.strategies.v1") ?? "[]") as { legs: { stop?: number | null }[] }[];
     expect(stored).toHaveLength(1);
     expect(stored[0]!.legs.some((l) => l.stop != null)).toBe(true);
-    await userEvent.click(screen.getByRole("button", { name: "New strategy" }));
+    await userEvent.click(screen.getByRole("button", { name: "Reset strategy" }));
     expect(screen.queryByTestId("update-saved")).not.toBeInTheDocument();
   });
 });

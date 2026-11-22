@@ -560,6 +560,40 @@ class StrategyAutomation:
             logger.info("strategy_automation", extra={"fields": {"events": events}})
             return events
 
+    def pnl_now(self) -> dict[str, Any]:
+        """The running strategy's P&L now, from the server's own live prices (so it needs no open page): booked (earlier exits and cycles) plus the open legs
+        marked at their live price, before costs, in rupees. ``total`` is None while an open leg has no live price: nothing is guessed. ``running`` is true
+        when at least one ticked leg is open and has an entry price. ``live`` is false outside the session, when the prices are the last stored ones."""
+        at = self._now()
+        doc = self.get()
+        out: dict[str, Any] = {"at": at.isoformat(), "running": False, "live": False, "name": None, "booked": None, "open": None, "total": None, "missing": []}
+        if not doc or not doc.get("legs"):
+            return out
+        lot = doc.get("lotSize")
+        mult = float(doc.get("mult") or 1)
+        legs = [lg for lg in doc["legs"] if lg.get("enabled", True) is not False]
+        open_legs = [lg for lg in legs if not is_exited(lg) and lg.get("premium") is not None]
+        out["name"] = doc.get("loaded") or doc.get("name") or None
+        out["running"] = bool(lot and open_legs)
+        out["live"] = bool(self.is_live() and self.market_open(at))
+        if not lot or not legs:
+            return out
+        booked = sum(float(lg.get("realised") or 0) for lg in legs)
+        live_part = 0.0
+        missing: list[str] = []
+        for lg in open_legs:
+            px = self.price_of_key(lg["key"]) if lg.get("key") else None
+            if px is None:
+                missing.append(_name(lg))
+                continue
+            live_part += _sign(lg) * (px - float(lg["premium"])) * float(lg.get("lots") or 0) * mult * int(lot)
+        out["booked"] = booked
+        out["missing"] = missing
+        if not missing:
+            out["open"] = live_part
+            out["total"] = booked + live_part
+        return out
+
     def _write_back_saved(self, name: Any, legs: list[Leg], expiry: Any, at: datetime) -> None:
         """A stop the server executes is also written to the saved strategy the page has open, as the page does for its own exits:
         a saved copy left with the leg still open would bring the leg back the next time it is opened on any device."""

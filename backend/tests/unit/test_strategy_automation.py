@@ -355,3 +355,44 @@ def test_a_future_without_a_live_price_is_left_alone(tmp_path: Path) -> None:
     auto, _ = make(tmp_path, None)
     auto.put(doc(legs=[future(stop=25700.0)]), None)
     assert auto.check_once() == [] and auto.get()["legs"][0].get("exitPrice") is None  # type: ignore[index]
+
+
+def _pnl_auto(tmp_path: Path, prices: dict[str, float | None], live: bool = True) -> tuple[StrategyAutomation, StrategyStore]:
+    store = StrategyStore(tmp_path)
+    auto = StrategyAutomation(store, lambda k: prices.get(k), lambda: live, now=lambda: AT)
+    return auto, store
+
+
+def test_running_pnl_is_booked_plus_open_by_hand(tmp_path: Path) -> None:
+    """Sold call at 100 now 90 (+650), bought put at 80 now 70 (-650), a future bought at 25 800 now 25 850 (+3 250), a leg closed earlier that booked -1 000."""
+    auto, _ = _pnl_auto(tmp_path, {"c": 90.0, "p": 70.0, "f": 25850.0})
+    legs = [
+        {**sold(), "key": "c"},
+        {**sold(action="BUY", type="PE", premium=80.0), "id": "p1", "key": "p"},
+        future(key="f"),
+        {**sold(), "id": "x", "exitPrice": 130.0, "realised": -1000.0, "key": "gone"},
+    ]
+    auto.put(doc(legs=legs), None)
+    p = auto.pnl_now()
+    assert p["running"] is True and p["missing"] == []
+    assert p["booked"] == -1000.0
+    assert p["open"] == 650.0 - 650.0 + 3250.0  # (100-90)*65, (70-80)*65, (25850-25800)*65
+    assert p["total"] == 2250.0
+
+
+def test_running_pnl_does_not_guess_a_missing_price(tmp_path: Path) -> None:
+    auto, _ = _pnl_auto(tmp_path, {"c": 90.0})
+    auto.put(doc(legs=[{**sold(), "key": "c"}, future(key="f")]), None)
+    p = auto.pnl_now()
+    assert p["total"] is None and p["open"] is None and p["missing"] == ["NIFTY future"]
+    assert p["booked"] == 0.0
+
+
+def test_running_pnl_scales_with_the_lot_multiplier_and_says_when_nothing_runs(tmp_path: Path) -> None:
+    auto, _ = _pnl_auto(tmp_path, {"c": 90.0})
+    assert auto.pnl_now()["running"] is False  # no strategy stored
+    auto.put(doc(mult=2, legs=[{**sold(), "key": "c"}]), None)
+    assert auto.pnl_now()["total"] == (100.0 - 90.0) * 65 * 2
+    auto.put(doc(legs=[{**sold(), "exitPrice": 90.0, "realised": 650.0, "key": "c"}]), auto.get()["rev"])  # type: ignore[index]
+    done = auto.pnl_now()
+    assert done["running"] is False and done["total"] == 650.0  # everything closed: nothing runs, the result is booked

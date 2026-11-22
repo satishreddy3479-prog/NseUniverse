@@ -31,6 +31,36 @@ export interface Mtm {
   untimed: number;
 }
 
+export type Pt = [number, number | null];
+export interface ZeroSplit {
+  /** every sample, with an exact point added where the line crosses zero between two samples */
+  full: Pt[];
+  /** the same points clipped to zero from below (for the green area) and from above (for the red area) */
+  pos: Pt[]; neg: Pt[];
+  /** the line itself in two colours: its green part (null where it is below zero) and its red part (null where it is above) */
+  linePos: Pt[]; lineNeg: Pt[];
+}
+/**
+ * The mark-to-market series prepared for drawing in two colours. Between two consecutive samples on opposite sides of zero the crossing is found by
+ * straight-line interpolation and added as a point at exactly zero, so the green area, the red area and the two parts of the line all meet at the
+ * crossing, not at the next sample. A gap (a missing value) stays a gap.
+ */
+export function splitAtZero(t: readonly number[], pnl: readonly (number | null)[]): ZeroSplit {
+  const full: Pt[] = [];
+  for (let i = 0; i < t.length; i++) {
+    const v = pnl[i] ?? null, p = i > 0 ? pnl[i - 1] ?? null : null;
+    if (v != null && p != null && ((p < 0 && v > 0) || (p > 0 && v < 0))) full.push([t[i - 1]! + ((0 - p) / (v - p)) * (t[i]! - t[i - 1]!), 0]);
+    full.push([t[i]!, v]);
+  }
+  return {
+    full,
+    pos: full.map(([x, v]) => [x, v == null ? null : Math.max(v, 0)]),
+    neg: full.map(([x, v]) => [x, v == null ? null : Math.min(v, 0)]),
+    linePos: full.map(([x, v]) => [x, v != null && v >= 0 ? v : null]),
+    lineNeg: full.map(([x, v]) => [x, v != null && v <= 0 ? v : null]),
+  };
+}
+
 const priceIn = (map: Record<string, (number | null)[]>, strike: number, i: number): number | null => {
   const arr = map[String(strike)] ?? map[strike.toFixed(1)] ?? map[Object.keys(map).find((k) => Number(k) === strike) ?? ""];
   const v = arr?.[i];

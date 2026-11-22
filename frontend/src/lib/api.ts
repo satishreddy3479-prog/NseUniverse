@@ -51,6 +51,7 @@ export interface RunningDoc {
   rev?: number; auto?: boolean; lotSize?: number | null; mult?: number; expiry?: string | null; name?: string; loaded?: string | null;
   legs?: import("./strategy").Leg[]; rules?: import("./strategy").StrategyRules; rstate?: import("./strategy").RulesState | null; rearmAt?: string | null; hold?: import("./strategy").HoldRule; moveToCost?: boolean; holdFrom?: string | null; baseline?: import("./strategy").Leg[]; serverEvents?: { at: string; text: string }[];
 }
+export interface RunningPnl { at: string; running: boolean; live: boolean; name: string | null; booked: number | null; open: number | null; total: number | null; missing: string[] }
 export interface RunningResponse { doc: RunningDoc | null; checking: { live: boolean; last_check_at: string | null; error: string | null } }
 
 /** What /api/market/summary returns for the NIFTY 50 tools; only the fields the pages use. Missing stays null. */
@@ -188,6 +189,8 @@ export const api = {
     }),
   marketSummary: () => request<MarketSummary>("/api/market/summary"),
   runningGet: () => request<RunningResponse>("/api/strategies/running"),
+  /** P&L now of the running strategy from the server's live prices; total is null while a price is missing. */
+  runningPnl: () => request<RunningPnl>("/api/strategies/running/pnl"),
   runningPut: (doc: unknown, baseRev: number | null) =>
     request<{ ok: boolean; rev: number }>("/api/strategies/running", {
       method: "PUT", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ doc, base_rev: baseRev }),

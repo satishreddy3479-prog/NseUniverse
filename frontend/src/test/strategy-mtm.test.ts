@@ -1,6 +1,6 @@
 // Mark-to-market of a strategy through the stored samples. Every expected number is a hand calculation (lot 65).
 import { describe, expect, it } from "vitest";
-import { buildMtm } from "../lib/strategyMtm";
+import { buildMtm, splitAtZero } from "../lib/strategyMtm";
 import type { Leg } from "../lib/strategy";
 import type { FuturesSeries, StrikeSeries } from "../lib/types";
 
@@ -65,5 +65,26 @@ describe("strategy mark-to-market", () => {
     expect(buildMtm([leg({ enteredAt: at("05:00") })], LOT, { [EXP]: ss(CE, PE) }, undefined).reason).toMatch(/No stored sample/);
     const wrong = buildMtm([legs[2]!], LOT, {}, { ...fs(FUT), expiry: "2026-12-29" } as FuturesSeries); // the stored future is the other month's
     expect(wrong.pnl.every((v) => v == null)).toBe(true);
+  });
+});
+
+describe("splitAtZero: green above, red below", () => {
+  it("a rise from -10 to +10 over 10 minutes crosses zero exactly halfway: the added point is at 5, value 0", () => {
+    const z = splitAtZero([0, 10], [-10, 10]);
+    expect(z.full).toEqual([[0, -10], [5, 0], [10, 10]]);
+    expect(z.pos).toEqual([[0, 0], [5, 0], [10, 10]]); // the green area starts at the crossing, not at the first sample
+    expect(z.neg).toEqual([[0, -10], [5, 0], [10, 0]]);
+    expect(z.linePos).toEqual([[0, null], [5, 0], [10, 10]]);
+    expect(z.lineNeg).toEqual([[0, -10], [5, 0], [10, null]]);
+  });
+  it("an uneven crossing is interpolated: +30 to -10 over 4 minutes crosses at 3 minutes", () => {
+    expect(splitAtZero([0, 4], [30, -10]).full[1]).toEqual([3, 0]);
+  });
+  it("no crossing adds nothing; a sample exactly at zero is not a crossing; a gap stays a gap and is not bridged", () => {
+    expect(splitAtZero([0, 1, 2], [1, 2, 3]).full).toHaveLength(3);
+    expect(splitAtZero([0, 1, 2], [-1, 0, 1]).full).toEqual([[0, -1], [1, 0], [2, 1]]);
+    const g = splitAtZero([0, 1, 2], [-5, null, 5]);
+    expect(g.full).toEqual([[0, -5], [1, null], [2, 5]]); // no crossing is invented across a missing minute
+    expect(g.pos[1]).toEqual([1, null]);
   });
 });
