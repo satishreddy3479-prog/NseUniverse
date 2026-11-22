@@ -143,4 +143,16 @@ describe("Vega Analysis page", () => {
     expect(ins.getByText(/not a forecast that volatility will rise or fall/)).toBeInTheDocument();
     expect(within(screen.getByTestId("vega-stats")).getByText("Call options (CE)")).toBeInTheDocument();
   });
+
+  it("describes the change of the band by its sign: a fall is called a fall, never a gain", async () => {
+    mockApi();
+    renderPage();
+    const text = (await screen.findByTestId("vega-insights")).textContent ?? "";
+    const m = /call side's vega moved ([+−-]?[\d.,]+) and the put side's ([+−-]?[\d.,]+): call vega (rose|fell) and put vega (rose|fell); the (.+?)\./.exec(text);
+    expect(m).not.toBeNull();
+    const neg = (v: string) => v.startsWith("−") || v.startsWith("-");
+    expect(m![3]).toBe(neg(m![1]!) ? "fell" : "rose");
+    expect(m![4]).toBe(neg(m![2]!) ? "fell" : "rose");
+    expect(text).not.toMatch(/gained the larger share/);
+  });
 });
