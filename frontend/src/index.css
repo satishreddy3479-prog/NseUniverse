@@ -37,10 +37,10 @@
    every colour from these tokens, so lines, grids, labels and tooltips are tuned together. Rules for this theme that are more than a colour
    live at the bottom of this file. */
 [data-theme="light"] {
-  --ink: #e7ecf4;          /* page: a cool grey that lets white cards stand clear of it */
+  --ink: #edf1f7;          /* page: a light cool grey that lets white cards stand clear of it without a heavy outline */
   --slate: #ffffff;        /* cards and panels */
-  --slate-2: #edf1f8;      /* inset areas: table heads, tiles */
-  --rule: #cfd8e6;         /* hairlines */
+  --slate-2: #f1f4fa;      /* inset areas: table heads, tiles */
+  --rule: #d5dce9;         /* hairlines */
   --paper: #0a1530;        /* text: deep ink */
   --muted: #42516c;        /* secondary text: 8:1 on white, 7:1 on the inset panels */
   --accent: #5a3de8;       /* brand violet: primary actions, focus, selection */
@@ -50,7 +50,7 @@
   --warn: #9a4505;
   --info: #1760c4;
   --legend-off: #5f6b84;    /* switched-off legend entry: 4.5:1 or better on every day surface */
-  --shadow: 0 1px 2px rgba(10, 21, 48, 0.08), 0 4px 14px rgba(10, 21, 48, 0.07);
+  --shadow: 0 1px 2px rgba(11, 22, 48, 0.05), 0 8px 22px -10px rgba(11, 22, 48, 0.16);
   --shadow-pop: 0 2px 4px rgba(14, 26, 51, 0.06), 0 16px 36px rgba(14, 26, 51, 0.18);
   --r-panel: 12px;
   --r-ctl: 8px;
@@ -356,3 +356,39 @@ header.bg-slate { background: var(--header-bg); box-shadow: var(--shadow); }
   a.tool-card { transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease; }
   a.tool-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-pop); }
 }
+
+/* ---- Day refresh (D243): quieter edges, real depth, one brand colour for "chosen". Everything here is the day theme only; the night theme is untouched. ---- */
+/* The page: a soft light wash at the top fading into the grey, so the header, the cards and the page read as three layers. */
+[data-theme="light"] body { background: radial-gradient(1100px 380px at 50% -140px, #ffffff 0%, rgba(255, 255, 255, 0) 72%), var(--ink); background-repeat: no-repeat; }
+/* Cards: a lighter hairline (the shadow now carries the edge), and a very small lift when a card is a link. */
+[data-theme="light"] .bg-slate { border-color: #d3dbe8; }
+[data-theme="light"] header.bg-slate { border-bottom-color: #dbe2ee; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 4px 16px -10px rgba(11, 22, 48, 0.25); }
+/* Main navigation: the open page is marked in the brand violet, as an underline and a faint wash, instead of the warm ATM colour. */
+[data-theme="light"] nav[aria-label="Main"] a.border-brass, [data-theme="light"] nav[aria-label="Main"] button.border-brass {
+  border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); border-radius: 6px 6px 0 0;
+}
+/* Chosen state of buttons and chips (expiry, window, mode, tab): the brand violet, filled and firm; warm brass stays for "at the money". */
+[data-theme="light"] button.border-brass.bg-brass\/15, [data-theme="light"] button.border-brass.bg-brass\/10, [data-theme="light"] button.border-brass.bg-brass\/20,
+[data-theme="light"] a.border-brass.bg-brass\/15, [data-theme="light"] a.border-brass.bg-brass\/10 {
+  background-color: #efeaff; border-color: var(--accent); color: #2b1b9a; box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent) inset;
+}
+[data-theme="light"] [role="tab"][aria-selected="true"] { color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
+/* Buttons: a soft lift on hover so they feel pressable. */
+[data-theme="light"] button.bg-slate-2:not(:disabled):hover, [data-theme="light"] a.bg-slate-2:hover { box-shadow: 0 2px 8px -2px rgba(11, 22, 48, 0.22); }
+/* Inset tiles and panels: a fainter ring and a white top edge, so they sit in the card instead of boxing it. */
+[data-theme="light"] div.bg-slate-2, [data-theme="light"] section.bg-slate-2, [data-theme="light"] li.bg-slate-2, [data-theme="light"] article.bg-slate-2 { box-shadow: inset 0 0 0 1px #e1e7f1, inset 0 1px 0 #ffffff; }
+/* Headings: a firmer top level and quiet small labels. */
+[data-theme="light"] h1 { letter-spacing: -0.015em; }
+[data-theme="light"] h4.uppercase, [data-theme="light"] .tracking-wide.uppercase { letter-spacing: 0.06em; color: var(--muted); }
+/* Strips under the header: a thin rounded-edge look, a lighter tint and the colour on the left edge only. */
+[data-theme="light"] [role="region"][aria-label="Heads up"], [data-theme="light"] [data-testid="alert-strip"] { border-bottom-width: 0; border-left-width: 4px; margin: 0; box-shadow: inset 0 -1px 0 rgba(11, 22, 48, 0.06); }
+[data-theme="light"] [role="region"][aria-label="Heads up"] { background: #fff7e8; border-left-color: var(--brass); }
+[data-theme="light"] [data-testid="alert-strip"][class*="border-warn"] { background: #fff2e4; border-left-color: var(--warn); }
+[data-theme="light"] [data-testid="alert-strip"][class*="border-down"] { background: #feeef1; border-left-color: var(--down); }
+/* The home hero: the sentiment card gets a violet edge and a cooler wash. */
+[data-theme="light"] .hero { background: linear-gradient(135deg, #f3f0ff 0%, #ffffff 58%); }
+/* Tables: a lighter head line and a fine row rule. */
+[data-theme="light"] thead th { border-bottom-color: #d5dce9; background-color: #f6f8fc; }
+[data-theme="light"] tbody tr { border-color: #edf0f6; }
+/* The open tool in a strip of sibling tools: the same violet "chosen" look. */
+[data-theme="light"] a[aria-current="page"].bg-brass\/15 { background-color: #efeaff; color: #2b1b9a; font-weight: 650; box-shadow: inset 0 -2px 0 var(--accent); }

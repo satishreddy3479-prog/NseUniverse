@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Loading } from "../components/Loading";
 import { TopProgress } from "../components/TopProgress";
+import { NoExpiry } from "../components/dashboard/NoExpiry";
 
 describe("Loading", () => {
   it("says in words what is loading, in both shapes, and is announced as a status", () => {
@@ -51,5 +52,16 @@ describe("colour tokens", () => {
     for (const fg of ["paper", "muted", "accent", "brass", "up", "down", "warn", "info", "legend-off"]) {
       for (const bg of ["ink", "slate", "slate-2"]) expect(contrast(t[fg]!, t[bg]!), `${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
     }
+  });
+});
+
+describe("NoExpiry", () => {
+  it("shows a loading state while the expiry list is arriving and the empty state once it has", async () => {
+    const qc = new QueryClient();
+    function Probe() { useQuery({ queryKey: ["expiries"], queryFn: () => new Promise((r) => setTimeout(() => r(1), 150)) }); return <NoExpiry />; }
+    render(<QueryClientProvider client={qc}><Probe /></QueryClientProvider>);
+    expect(await screen.findByRole("status")).toHaveTextContent("Loading the expiries…");
+    expect(await screen.findByText("Choose an expiry above.")).toBeInTheDocument();
+    expect(screen.queryByRole("status")).toBeNull();
   });
 });

@@ -20,6 +20,7 @@ import { useClipped } from "./ReplayContext";
 import { useSessionWindow } from "./PriceBoards";
 import { Card, Section } from "./VegaAnalysis";
 import { Loading } from "../../components/Loading";
+import { NoExpiry } from "./NoExpiry";
 
 const RANGES = [5, 10, 15, 20];
 const TFS = [1, 3, 5, 15];
@@ -173,7 +174,7 @@ export function GammaAnalysisBoard() {
     };
   }, [visible, c]);
 
-  if (!d.expiry) return <EmptyState title="No expiry">Choose an expiry above.</EmptyState>;
+  if (!d.expiry) return <NoExpiry />;
   if (d.chain.isPending) return <Loading label="Loading the option chain…" className="m-3" />;
   if (!d.snapshot || !profile || !lv) return <EmptyState title="No snapshot stored for this expiry yet">{d.noSnapshot ? "Refresh or start the stream to store one." : "No option-chain data to show."}</EmptyState>;
   if (lv.netTotal == null) return <EmptyState title="Gamma exposure could not be computed">No strike has both a usable price and open interest on both sides ({profile.skipped} contracts skipped).</EmptyState>;

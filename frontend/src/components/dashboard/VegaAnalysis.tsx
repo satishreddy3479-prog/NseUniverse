@@ -17,6 +17,7 @@ import { useDash } from "./DashContext";
 import { useClipped } from "./ReplayContext";
 import { useSessionWindow } from "./PriceBoards";
 import { Loading } from "../../components/Loading";
+import { NoExpiry } from "./NoExpiry";
 
 const GROUP_A = "vega-level";
 const GROUP_B = "vega-change";
@@ -182,7 +183,7 @@ export function VegaAnalysisBoard() {
   const chg = change[change.length - 1];
   const baseOptions = samples.slice(0, 10).map((s, i) => ({ i, label: `${i + 1}${["st", "nd", "rd"][i] ?? "th"} (${new Date(s.t + 330 * 60_000).toISOString().slice(11, 16)})` }));
 
-  if (!d.expiry) return <EmptyState title="No expiry">Choose an expiry above.</EmptyState>;
+  if (!d.expiry) return <NoExpiry />;
   if (d.chain.isPending || d.history.isPending) return <Loading label="Loading stored samples…" className="m-3" />;
   if (!d.snapshot) return <EmptyState title="No snapshot stored for this expiry yet">{d.noSnapshot ? "Refresh or start the stream to store one." : "No option-chain data to show."}</EmptyState>;
   if (w.afterHoursOnly || !w.since) return <EmptyState title="No session samples stored yet">The sampler stores one sample a minute during the market session. Only after-hours samples exist for this expiry.</EmptyState>;

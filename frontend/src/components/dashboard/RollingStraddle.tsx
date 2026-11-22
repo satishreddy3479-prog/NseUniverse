@@ -9,6 +9,7 @@ import { fmtInt, fmtTimeIST, MISSING } from "../../lib/format";
 import { strikeBoard, strikesAround } from "../../lib/optionTools";
 import { rupee, timeLinesOption, type Line } from "../../lib/priceCharts";
 import { readRollingStraddle, rollingStraddle, type RollRule } from "../../lib/rollingStraddle";
+import { NoExpiry } from "./NoExpiry";
 
 const RULES: { id: string; label: string; title: string; rule: RollRule }[] = [
   { id: "nearest", label: "Nearest ATM", title: "Hold the strike nearest spot at every sample (rolls whenever spot crosses a mid-point)", rule: { kind: "nearest" } },
@@ -71,7 +72,7 @@ export function RollingStraddleBoard() {
     return { prem, pct };
   }, [r, c, w.bounds]);
   const s = r?.stats;
-  if (!d.expiry) return <EmptyState title="No expiry">Choose an expiry above.</EmptyState>;
+  if (!d.expiry) return <NoExpiry />;
   return (
     <div className="flex flex-col gap-3" data-testid="rolling-straddle-board">
       <div role="group" aria-label="Roll rule" className="flex flex-wrap items-center gap-1.5 rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2">

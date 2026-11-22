@@ -11,6 +11,7 @@ import { strikeBoard, strikesAround, type StrikeBoard } from "../../lib/optionTo
 import { ratio, rupee, signedUnits, STRIKE_COLORS, timeLinesOption, units, type Line } from "../../lib/priceCharts";
 import type { StrikeSeries } from "../../lib/types";
 import { Loading } from "../../components/Loading";
+import { NoExpiry } from "./NoExpiry";
 
 export const GROUP = "price-tools";
 
@@ -82,7 +83,7 @@ export function Frame({ q, w, res, children, footer }: {
   children: ReactNode; footer: ReactNode;
 }) {
   const d = useDash();
-  if (!d.expiry) return <EmptyState title="No expiry">Choose an expiry above.</EmptyState>;
+  if (!d.expiry) return <NoExpiry />;
   if (d.chain.isPending) return <Loading label="Loading the option chain…" className="m-3" />;
   if (!d.snapshot) return <EmptyState title="No snapshot stored for this expiry yet">{d.noSnapshot ? "Refresh or start the stream to store one." : "No option-chain data to show."}</EmptyState>;
   if (!w.loaded || (q.isPending && w.since)) return <Loading label="Loading stored samples…" className="m-3" />;
