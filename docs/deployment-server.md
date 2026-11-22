@@ -60,3 +60,5 @@ On 13 Nov 2026 the server allowed SSH password login and root login, with no fir
 - This host may already run another project; nothing here stops or modifies it. With about 1 GB of RAM the two together will use swap: check `free -m`.
 - The backend's control endpoints trust local connections, and the proxy is local, so the website login is what protects them. Keep the login password strong; do not expose port 8010.
 - The Yahoo/NSE downloads (daily history, institutional flows) run on the server; on 1 GB they are slow but bounded by the service memory limits.
+
+**Applied on 22 Nov 2026 (D248):** passwords off, root by key only, ufw (22, 80, 443), fail2ban. The script now writes `00-nse-hardening.conf` because `99-ctrl.conf` on this server set passwords on and sshd keeps the first value it reads.
