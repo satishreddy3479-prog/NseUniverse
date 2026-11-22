@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 describe("page shell", () => {
   it("keeps absolutely positioned descendants inside the one scrolling area", () => {
     const shell = readFileSync(resolve(__dirname, "..", "components", "AppShell.tsx"), "utf8");
-    const main = shell.match(/<main className="([^"]+)"/)?.[1] ?? "";
+    const main = shell.match(/<main[^>]*?className="([^"]+)"/)?.[1] ?? "";
     expect(main).toMatch(/\brelative\b/);
     expect(main).toMatch(/\boverflow-y-auto\b/);
   });

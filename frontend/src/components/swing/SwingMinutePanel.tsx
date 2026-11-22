@@ -8,6 +8,7 @@ import { fmtStamp, signedRupees } from "../../lib/swing";
 import { liveEquityOption } from "../../lib/swingCharts";
 import type { MinuteComparison, MinuteEvent, MinuteView } from "../../lib/swingMinute";
 import { Stat, TABLE_WRAP, TD, TD_L, THEAD } from "./shared";
+import { Loading } from "../../components/Loading";
 
 const TH_L = "px-2 py-1.5 text-left font-medium";
 const TH_R = "px-2 py-1.5 text-right font-medium";
@@ -116,7 +117,7 @@ export function SwingMinutePanel() {
         <p className="mt-1 text-muted">The same rules as the official book, run live: every decision is taken on the close of a completed 1-minute candle and filled at the next candle&apos;s open. This book never places an order. After the close the evening scan hands the same candidate list to both books; from then on this book works only from its own copy of that list and its own portfolio, so it can hold a stock the official book does not (and the other way round). Each evening it is compared with what the official daily-bar rules did. All times are IST.</p>
         {d && <details className="mt-1 text-xs text-muted"><summary className="cursor-pointer text-info">The rules</summary><ul className="mt-1 list-disc space-y-1 pl-5">{d.rules.map((r) => <li key={r}>{r}</li>)}</ul></details>}
       </div>
-      {q.isPending && <p className="text-sm text-muted">Reading the live paper book…</p>}
+      {q.isPending && <Loading variant="inline" label="Reading the live paper book…" />}
       {q.isError && <p role="alert" className="text-sm text-down" data-testid="minute-error">Could not read the live paper book: {q.error instanceof Error ? q.error.message : "unknown error"}</p>}
       {d && !d.enabled && <p className="mb-2 text-sm text-warn" data-testid="minute-off">The live paper book is switched off in the server settings (swing_live_enabled).</p>}
       {d && (

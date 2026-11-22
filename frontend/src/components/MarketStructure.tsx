@@ -10,6 +10,7 @@ import { classifyRegime, type RegimeInputs, type RegimeResult } from "../lib/reg
 import { marketClockMs } from "../lib/session";
 import { useDashOptional } from "./dashboard/DashContext";
 import { MethodologyPanel } from "./MethodologyPanel";
+import { Loading } from "./Loading";
 
 const sg = (v: number | null | undefined, d = 2) => (v == null ? MISSING : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}`);
 const f2 = (v: number | null | undefined, u = "") => (v == null ? MISSING : `${v.toFixed(2)}${u}`);
@@ -34,7 +35,7 @@ export function MarketStructureBody({ expiry }: { expiry: string | null }) {
   const gexh = useQuery({ queryKey: ["gexHistory", expiry, "dynamic"], queryFn: () => api.intradayGexHistory(expiry!, "dynamic"), ...on });
   const chart = useQuery({ queryKey: ["ivchart", 21], queryFn: () => api.intradayIvChart(21), refetchInterval: 300_000, retry: false });
   if (!expiry) return <p className="text-sm text-muted">Waiting for the expiry list from the broker.</p>;
-  if ([skew, mom, pos, chart].every((q) => q.isLoading)) return <div className="h-40 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading" />;
+  if ([skew, mom, pos, chart].every((q) => q.isLoading)) return <Loading label="Loading" />;
 
   const sk = skew.data?.status === "ok" ? skew.data : null;
   const m15 = mom.data?.table?.periods["15"] ?? null;

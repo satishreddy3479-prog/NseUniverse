@@ -8,6 +8,7 @@ import { DataSessions } from "./pages/DataSessions";
 import { OptionChain } from "./pages/OptionChain";
 import { Home } from "./pages/Home";
 import { Overview } from "./pages/Overview";
+import { Loading } from "./components/Loading";
 
 // Loaded on demand so the charting library is not part of the first page.
 const Analysis = lazy(() => import("./pages/Analysis"));
@@ -55,7 +56,7 @@ export function prefetchPages(): void {
   idle(next);
 }
 
-const wait = (what: string, el: React.ReactNode) => <Suspense fallback={<p className="text-muted" role="status">Loading {what}…</p>}>{el}</Suspense>;
+const wait = (what: string, el: React.ReactNode) => <Suspense fallback={<Loading label={`Loading ${what}…`} />}>{el}</Suspense>;
 
 export function makeQueryClient() {
   return new QueryClient({
@@ -72,15 +73,15 @@ export function AppRoutes() {
         <Route path="market-intelligence/straddle" element={wait("straddle intelligence", <StraddleIntelligence />)} />
         <Route path="overview" element={<Overview />} />
         <Route path="tools/:id" element={
-          <Suspense fallback={<p className="text-muted">Loading tool…</p>}><ToolPage /></Suspense>} />
+          <Suspense fallback={<Loading label="Loading tool…" />}><ToolPage /></Suspense>} />
         <Route path="option-chain" element={<OptionChain />} />
         <Route path="greeks-whatif" element={wait("Greeks and What-If", <GreeksWhatIf />)} />
         <Route path="analysis" element={
-          <Suspense fallback={<p className="text-muted">Loading analysis…</p>}><Analysis /></Suspense>} />
+          <Suspense fallback={<Loading label="Loading analysis…" />}><Analysis /></Suspense>} />
         <Route path="strategy" element={
-          <Suspense fallback={<p className="text-muted">Loading strategy builder…</p>}><StrategyBuilder /></Suspense>} />
+          <Suspense fallback={<Loading label="Loading strategy builder…" />}><StrategyBuilder /></Suspense>} />
         <Route path="swing" element={
-          <Suspense fallback={<p className="text-muted">Loading swing trading…</p>}><Swing /></Suspense>} />
+          <Suspense fallback={<Loading label="Loading swing trading…" />}><Swing /></Suspense>} />
         <Route path="charts" element={<Navigate to="/analysis" replace />} />
         <Route path="data" element={<DataSessions />} />
         <Route path="portfolio" element={wait("portfolio", <Portfolio />)} />

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Loading } from "../Loading";
 import { MISSING } from "../../lib/format";
 import { type Breach, type Greeks, num, type Num, type PortfolioRisk, rupees, versionLabel } from "../../lib/risk";
 
@@ -57,7 +58,7 @@ export function GreeksDashboard({ risk, version, asOf, busy, error }: { risk: Po
         </div>
       </div>
       {error ? <p role="alert" className="mt-2 text-sm text-down">{error}</p> : risk == null ? (
-        <p className="mt-2 text-sm text-muted">{busy ? "Calculating…" : "Add legs to see their Greeks."}</p>
+        <p className="mt-2 text-sm text-muted">{busy ? <Loading variant="inline" label="Calculating…" /> : "Add legs to see their Greeks."}</p>
       ) : (
         <>
           {!risk.complete && <p className="mt-2 rounded-sm border border-warn/50 bg-warn/10 px-2 py-1 text-xs text-warn" data-testid="risk-incomplete">Totals are unavailable because some legs could not be valued ({risk.warnings.join("; ")}). The figures shown are for the legs that could be valued.</p>}

@@ -4,6 +4,7 @@ import { buildupRows, buildupSession, type Buildup, type BuildupRow } from "../l
 import { api } from "../lib/api";
 import { fmtPct, fmtTimeIST, MISSING } from "../lib/format";
 import { EChart, useChartColors } from "./EChart";
+import { Loading } from "./Loading";
 
 const TONE: Record<Buildup, string> = {
   "long buildup": "border-up/50 text-up", "short covering": "border-up/30 text-up", "short buildup": "border-down/50 text-down",
@@ -40,7 +41,7 @@ export function FuturesBuildupBody() {
   const [showOi, setShowOi] = useState(true);
   const q = useQuery({ queryKey: ["futSeries", null], queryFn: () => api.futuresSeries(), refetchInterval: 30_000, retry: false });
   const s = q.data;
-  if (q.isLoading) return <div className="h-40 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading" />;
+  if (q.isLoading) return <Loading label="Loading" />;
   if (q.isError || !s) return <p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down">The futures series could not be loaded: {q.error instanceof Error ? q.error.message : "unknown error"}.</p>;
   if (s.times.length === 0) return <p className="text-sm text-muted" data-testid="buildup-empty">{s.warnings[0] ?? "No futures samples are stored yet."}</p>;
   const all = buildupSession(s.times, s.future, s.oi);

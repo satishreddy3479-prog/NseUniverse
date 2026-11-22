@@ -1,6 +1,7 @@
 import { FlowsUpdate, useFlowsStatus } from "./FlowsUpdate";
 import { fmtInt } from "../lib/format";
 import { Panel } from "./ui";
+import { Loading } from "./Loading";
 
 const ROWS: { key: "fao_participant_oi" | "fao_participant_vol" | "fii_dii_cash"; name: string; note: string }[] = [
   { key: "fao_participant_oi", name: "F&O participant open interest", note: "Client, DII, FII, Pro positions, one NSE file per session" },
@@ -14,7 +15,7 @@ export function PredictionFlows() {
   const s = q.data;
   return (
     <Panel title="NSE institutional flows">
-      {q.isPending ? <p className="text-sm text-muted">Loading…</p>
+      {q.isPending ? <Loading variant="inline" label="Loading…" />
         : q.error || !s ? <p className="text-sm text-muted">Not available: the running backend does not have this module yet.</p>
         : (
           <div className="space-y-3">

@@ -1,4 +1,5 @@
 import { MISSING } from "../../lib/format";
+import { Loading } from "../Loading";
 import { num, PRESET_LABELS, PRESET_ORDER, type RiskPresets, rupees, type ScenarioParams, type ScenarioResult, STICKY_RULES, type StickyRule, volPct } from "../../lib/risk";
 
 export const ZERO_SCENARIO = (rule: StickyRule): ScenarioParams => ({ spot_shock: 0, iv_shock: 0, time_elapsed_hours: 0, sticky_rule: rule, rate_shock: 0 });
@@ -50,7 +51,7 @@ export function ScenarioPanel({ scenario, onChange, presets, result, defaultRule
         {error ? (
           <p role="alert" className="text-sm text-down">{error}</p>
         ) : result == null ? (
-          <p className="text-sm text-muted">{busy ? "Calculating…" : "Add legs to see what a scenario would do to them."}</p>
+          busy ? <Loading variant="inline" label="Calculating…" /> : <p className="text-sm text-muted">Add legs to see what a scenario would do to them.</p>
         ) : (
           <>
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">

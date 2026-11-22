@@ -4,13 +4,11 @@ import { fmtTimeIST, MISSING } from "../lib/format";
 import type { HvReport, IvSeries } from "../lib/types";
 import { EChart, useChartColors } from "./EChart";
 import { IvMinusHvChart } from "./IvChartPages";
+import { Loading } from "./Loading";
 
 const one = (v: number | null | undefined, unit = "%") => (v == null ? MISSING : `${v.toFixed(2)}${unit}`);
 const pts = (v: number | null | undefined) => (v == null ? MISSING : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)} pts`);
 
-function Loading() {
-  return <div className="h-40 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading" />;
-}
 function Problem({ what, e }: { what: string; e: unknown }) {
   return <p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down">{what} could not be loaded: {e instanceof Error ? e.message : "unknown error"}.</p>;
 }

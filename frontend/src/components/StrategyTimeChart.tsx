@@ -10,6 +10,7 @@ import {
   alignFuture, bands, buildTimeline, cumMean, cumWeighted, decompose, ema, mergedKey, mergeStrikeSeries, regress, sma, timelineStats, type Timeline, type TimelineLeg,
 } from "../lib/strategyTimeline";
 import { EChart, useChartColors } from "./EChart";
+import { Loading } from "./Loading";
 
 const money = (v: number | null | undefined, signed = true) => (v == null ? "—" : `${v < 0 ? "−" : v > 0 && signed ? "+" : ""}₹${fmtInt(Math.round(Math.abs(v)))}`);
 const pts = (v: number | null | undefined, d = 1) => (v == null ? "—" : `${v < 0 ? "−" : ""}${Math.abs(v).toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d })}`);
@@ -75,7 +76,7 @@ export function StrategyTimeChart({ legs, historyExpiries, lotSize, modelDelta, 
   if (noHistory.length > 0) {
     return <p className="p-3 text-sm text-muted" data-testid="stl-nohistory">The price chart is drawn from stored one-minute prices, which exist only for the expiries the sampler collects (the weekly and the monthly). {noHistory.map((e) => e).join(", ")} {noHistory.length === 1 ? "has" : "have"} no stored history, so this strategy cannot be charted through time. Its payoff and Greeks are unaffected.</p>;
   }
-  if (ss.isPending || (!ss.data && !ss.error)) return <p className="p-3 text-sm text-muted">Loading stored samples…</p>;
+  if (ss.isPending || (!ss.data && !ss.error)) return <Loading label="Loading stored samples…" className="m-3" />;
   if (ss.error) return <p className="p-3 text-sm text-muted">Could not load the stored strike prices: {String((ss.error as Error).message)}</p>;
   if (!model || model.empty) return <p className="p-3 text-sm text-muted" data-testid="stl-few">Not enough stored samples for these strikes yet ({model?.tl.samples ?? 0}). The sampler stores one a minute during market hours.</p>;
 

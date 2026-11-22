@@ -4,6 +4,7 @@ import { api } from "../../lib/api";
 import { fmtInt, fmtTimeIST, MISSING } from "../../lib/format";
 import { ENGINE_ORDER, signed, toneOf, type AlertRow, type Divergence, type Intelligence, type Scenarios, type TimelinePoint } from "../../lib/intelligence";
 import { EChart, useChartColors } from "../EChart";
+import { Loading } from "../../components/Loading";
 
 const SEV: Record<string, string> = { high: "border-down/60 text-down", medium: "border-warn/60 text-warn", low: "border-rule text-muted" };
 const STATUS: Record<string, string> = { "early warning": "text-warn", developing: "text-info", confirmed: "text-up", invalidated: "text-muted" };
@@ -103,7 +104,7 @@ export function TimelinePanel() {
   return (
     <section aria-label="Market timeline" className="rounded-[var(--radius-panel)] border border-rule bg-slate p-4" data-testid="mi-timeline">
       <h2 className="mb-1 text-sm font-semibold text-paper">Intraday timeline <span className="font-normal text-muted">· only minutes that were recorded</span></h2>
-      {q.isLoading && <div className="h-24 animate-pulse rounded-sm bg-slate-2" aria-label="Loading" />}
+      {q.isLoading && <Loading label="Loading" />}
       {q.isError && <p role="alert" className="text-sm text-down">The timeline could not be loaded.</p>}
       {q.data && pts.length === 0 && <p className="text-sm text-muted" data-testid="mi-timeline-empty">No minute has been recorded for {q.data.session} yet. The dashboard starts recording when it runs during market hours; earlier minutes are not reconstructed.</p>}
       {opt && (

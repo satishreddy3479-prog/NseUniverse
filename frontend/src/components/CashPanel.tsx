@@ -6,6 +6,7 @@ import { groupedBarsOption } from "../lib/chartOptions";
 import { EChart, useChartColors } from "./EChart";
 import { Button, Panel } from "./ui";
 import { FlowsUpdateLoader } from "./FlowsUpdate";
+import { Loading } from "./Loading";
 
 /** "Wed 18 Nov" from a session date (YYYY-MM-DD), read as a calendar date so no timezone shifts it. */
 const dayLabel = (d: string) => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T12:00:00Z`).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }) : d);
@@ -37,7 +38,7 @@ export function CashPanel() {
             NSE’s FII/DII figures were not collected for {(st.data?.cash_gaps ?? []).join(", ")}. NSE’s feed shows only the latest session, so a missed day cannot be fetched again; paste NSE’s FII/DII report CSV under “Import from an NSE CSV” to fill it.
           </p>
         )}
-        {q.isPending ? <p className="text-sm text-muted">Loading…</p>
+        {q.isPending ? <Loading variant="inline" label="Loading…" />
           : q.error ? <p className="text-sm text-muted">Not available: the running backend does not have this module yet.</p>
           : days.length === 0 ? <p className="text-sm text-muted" data-testid="cash-empty">No cash-market data yet. NSE does not allow automated downloads of this feed. Download the CSV from NSE’s FII/DII report page and paste its contents below.</p>
           : (

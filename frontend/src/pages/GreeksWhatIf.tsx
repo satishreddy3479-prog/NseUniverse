@@ -87,7 +87,7 @@ export function GreeksWhatIf() {
   const gone = status.data?.enabled === false || (status.error instanceof RiskApiError && status.error.code === "disabled");
 
   return (
-    <div className="mx-auto flex max-w-[1500px] flex-col gap-3" data-testid="greeks-page">
+    <div className="stagger mx-auto flex max-w-[1500px] flex-col gap-3" data-testid="greeks-page">
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-xs text-muted"><Link to="/" className="text-info hover:underline">← All tools</Link></p>

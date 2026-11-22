@@ -4,6 +4,7 @@ import { Info } from "../components/Info";
 import { Panel } from "../components/ui";
 import { api, type CleanupCandidate } from "../lib/api";
 import { fmtDateTimeIST } from "../lib/format";
+import { Loading } from "../components/Loading";
 
 const size = (b: number): string => (b >= 1e9 ? `${(b / 1e9).toFixed(2)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : b >= 1e3 ? `${(b / 1e3).toFixed(0)} KB` : `${b} B`);
 const n = (v: number): string => v.toLocaleString("en-IN");
@@ -28,7 +29,7 @@ export function DataCleanup({ embedded = false }: { embedded?: boolean } = {}) {
   return (
     <div className={`flex flex-col gap-3 ${embedded ? "" : "mx-auto max-w-[1200px]"}`}>
       {!embedded && <h1 className="text-xl font-semibold">Data clean-up</h1>}
-      {q.isPending ? <p className="text-sm text-muted">Measuring the server…</p>
+      {q.isPending ? <Loading variant="inline" label="Measuring the server…" />
         : q.isError || !o ? <p role="alert" className="text-sm text-down">The storage overview is not available from the backend.</p>
         : (
           <>

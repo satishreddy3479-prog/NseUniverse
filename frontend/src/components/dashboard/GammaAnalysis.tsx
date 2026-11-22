@@ -19,6 +19,7 @@ import { useDash } from "./DashContext";
 import { useClipped } from "./ReplayContext";
 import { useSessionWindow } from "./PriceBoards";
 import { Card, Section } from "./VegaAnalysis";
+import { Loading } from "../../components/Loading";
 
 const RANGES = [5, 10, 15, 20];
 const TFS = [1, 3, 5, 15];
@@ -173,7 +174,7 @@ export function GammaAnalysisBoard() {
   }, [visible, c]);
 
   if (!d.expiry) return <EmptyState title="No expiry">Choose an expiry above.</EmptyState>;
-  if (d.chain.isPending) return <p className="p-3 text-sm text-muted">Loading the option chain…</p>;
+  if (d.chain.isPending) return <Loading label="Loading the option chain…" className="m-3" />;
   if (!d.snapshot || !profile || !lv) return <EmptyState title="No snapshot stored for this expiry yet">{d.noSnapshot ? "Refresh or start the stream to store one." : "No option-chain data to show."}</EmptyState>;
   if (lv.netTotal == null) return <EmptyState title="Gamma exposure could not be computed">No strike has both a usable price and open interest on both sides ({profile.skipped} contracts skipped).</EmptyState>;
 
@@ -256,7 +257,7 @@ export function GammaAnalysisBoard() {
       <Section title="Underlying and net GEX through the session" right={<span className="flex flex-wrap items-center gap-2 text-xs text-muted">{structure.length} points · session {w.day ?? MISSING}<span role="group" aria-label="Timeframe" className="flex gap-1">{TFS.map(tfBtn)}</span></span>}>
         <div className="border-b border-rule px-3 py-2">{w.controls}</div>
         <div className="p-2">
-          {q.isPending && !!key ? <p className="p-3 text-sm text-muted">Loading stored samples…</p>
+          {q.isPending && !!key ? <Loading label="Loading stored samples…" className="m-3" />
             : q.error ? <p className="p-3 text-sm text-down">Could not load the stored series: {String((q.error as Error).message)}</p>
             : structOpt ? (
               <>

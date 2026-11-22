@@ -55,7 +55,7 @@ export function AlertStrip() {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
             <span className={`font-semibold ${critical ? "text-down" : "text-warn"}`}>{critical ? "Needs attention" : "Heads up"}</span>
-            <span className="text-[11px] text-muted">checked {d.checked_at ? fmtTimeIST(d.checked_at) : "—"} · <Link to="/diagnostics" className="text-info hover:underline">details</Link></span>
+            <span className="text-[11px] text-muted">checked {d.checked_at ? fmtTimeIST(d.checked_at) : "—"} · <Link to="/diagnostics" className="inline-flex min-h-7 items-center px-1 text-info hover:underline">details</Link></span>
             {!critical && <button type="button" onClick={() => setOpenOnPhone(!openOnPhone)} aria-expanded={open} data-testid="alert-toggle" className="min-h-8 text-xs font-semibold text-info hover:underline sm:hidden">{open ? "Hide" : `${shown.length} alert${shown.length === 1 ? "" : "s"} · show`}</button>}
           </div>
           <ul className={`mt-1 space-y-1 break-words ${open ? "" : "max-sm:hidden"}`} data-testid="alert-list">

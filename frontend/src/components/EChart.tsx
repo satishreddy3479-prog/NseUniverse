@@ -384,7 +384,7 @@ export function EChart({ option, onClick, ariaLabel, className = "", group, hove
     if (hideInfo) chart.current?.dispatchAction({ type: "hideTip" }); // a card that is showing goes away at once
   }, [option, width, height, hideInfo]);
 
-  return <div ref={el} role="img" aria-label={ariaLabel} className={`echart-box h-full min-h-[120px] w-full ${className}`} />;
+  return <div ref={el} role="img" aria-label={ariaLabel} className={`echart-box chart-in h-full min-h-[120px] w-full ${className}`} />;
 }
 
 /** Chart colours follow the active theme (CSS variables) and update when the theme changes. */

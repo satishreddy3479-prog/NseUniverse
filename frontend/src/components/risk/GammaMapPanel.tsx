@@ -4,6 +4,7 @@ import { fmtInt, fmtTimeIST, MISSING } from "../../lib/format";
 import { crore, fetchGammaMap, type GammaMap, LEVEL_TEXT, LEVEL_TONE, profileOption } from "../../lib/gammaMap";
 import { timeLinesOption, type Line } from "../../lib/priceCharts";
 import { EChart, useChartColors } from "../EChart";
+import { Loading } from "../Loading";
 
 const sel = "min-h-9 rounded-sm border border-rule bg-slate-2 px-2 text-xs text-paper";
 
@@ -65,7 +66,7 @@ export function GammaMapPanel({ expiries }: { expiries: string[] }) {
       <p className="mt-1 text-[11px] text-muted">Modelled gamma exposure of the option chain in ₹ crore per 1% move. Calls count positive and puts negative, an assumed sign convention, not observed dealer positions. "Gamma blast" here means a sudden NIFTY move; the reading says how much the stored conditions favour one, never which way. Descriptive, provisional, not a trading signal.</p>
       {expiries.length === 0 ? <p className="mt-2 text-sm text-muted" data-testid="gamma-empty">No expiry is available yet.</p>
         : q.isError ? <p role="alert" className="mt-2 text-sm text-down" data-testid="gamma-error">{q.error instanceof Error ? q.error.message : "The gamma map could not be loaded."}</p>
-        : !d ? <p className="mt-2 text-sm text-muted" data-testid="gamma-loading">Loading the gamma map…</p>
+        : !d ? <div className="mt-2" data-testid="gamma-loading"><Loading label="Loading the gamma map…" /></div>
         : !ok ? <p className="mt-2 text-sm text-muted" data-testid="gamma-unavailable">No gamma map for {expiry}: {d.status}. It needs a stored session of this expiry with open interest and a solvable chain.</p>
         : (
           <>

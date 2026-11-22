@@ -4,8 +4,8 @@ import { api, type CalEvent, type GlobalItem, type NewsItem } from "../lib/api";
 import { fmtAge, MISSING } from "../lib/format";
 import { EChart, useChartColors } from "./EChart";
 import { QuickLinks } from "./ToolMenu";
+import { Loading } from "./Loading";
 
-const Loading = () => <div className="h-40 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading" />;
 const Problem = ({ what, e }: { what: string; e: unknown }) => (
   <p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down">{what} could not be loaded: {e instanceof Error ? e.message : "unknown error"}.</p>
 );

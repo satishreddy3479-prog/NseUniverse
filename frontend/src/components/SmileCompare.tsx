@@ -3,6 +3,7 @@ import { METRICS } from "../lib/metricRegistry";
 import { ivAtDelta, type SmileRow } from "../lib/skew";
 import type { IvSkew } from "../lib/types";
 import { MethodologyPanel } from "./MethodologyPanel";
+import { Loading } from "./Loading";
 
 export interface SmileView {
   label: string; session: string | null; expiry: string; atmIv: number | null; at: string | null;
@@ -55,7 +56,7 @@ export function SmileComparePanel({ now, then, sessions, value, onChange, loadin
         <span>Same expiry ({now.expiry}) on both sides; each smile is the last in-session stored chain of its session.</span>
       </div>
       {options.length === 0 && <p className="mt-2 text-xs text-warn" data-testid="smile-compare-none">No other session has a stored chain for this expiry, so there is nothing to compare with.</p>}
-      {loading && <p className="mt-2 text-xs text-muted">Loading the comparison session…</p>}
+      {loading && <Loading variant="inline" label="Loading the comparison session…" className="mt-2" />}
       {error && <p role="alert" className="mt-2 text-xs text-down">The comparison session could not be loaded: {error}</p>}
       {then && (
         <>

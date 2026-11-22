@@ -14,6 +14,7 @@ import { useClipped } from "./ReplayContext";
 import { MethodologyPanel } from "../MethodologyPanel";
 import { useSessionWindow } from "./PriceBoards";
 import { Section } from "./VegaAnalysis";
+import { Loading } from "../../components/Loading";
 
 const pill = (on: boolean) => `widget-nodrag min-h-8 rounded-sm border px-2.5 text-xs ${on ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`;
 const lvl = (v: number | null | undefined) => (v == null ? MISSING : fmtInt(Math.round(v)));
@@ -138,7 +139,7 @@ export function GexSessionIntel({ expiry, listed, openAtm, curAtm, rate }: { exp
           {w.controls}
         </div>
         <div className="p-2">
-          {q.isPending && !!key ? <p className="p-3 text-sm text-muted">Loading stored samples…</p>
+          {q.isPending && !!key ? <Loading label="Loading stored samples…" className="m-3" />
             : key === "" ? <p className="p-3 text-sm text-muted" data-testid="gexintel-nokey">{uni === "fixed" ? "No opening snapshot found for this session: the fixed universe cannot be built." : "No ATM strike to centre the dynamic universe on."}</p>
             : opt ? (
               <>

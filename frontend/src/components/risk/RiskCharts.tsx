@@ -1,4 +1,5 @@
 import { useChartColors, EChart } from "../EChart";
+import { Loading } from "../Loading";
 import { MISSING } from "../../lib/format";
 import { type GridResult, type Num, type RiskGrid, versionLabel } from "../../lib/risk";
 import { payoffOption, riskMatrixOption } from "../../lib/riskCharts";
@@ -28,7 +29,7 @@ export function RiskMatrixPanel({ grid, kind, onKind, forward, version, busy, er
         </div>
       </div>
       {error ? <p role="alert" className="mt-2 text-sm text-down">{error}</p> : grid == null ? (
-        <p className="mt-2 text-sm text-muted">{busy ? "Calculating…" : "Add legs to see the matrix."}</p>
+        <p className="mt-2 text-sm text-muted">{busy ? <Loading variant="inline" label="Calculating…" /> : "Add legs to see the matrix."}</p>
       ) : (
         <>
           {grid.warnings.length > 0 && <p className="mt-1 text-xs text-warn">{grid.warnings.join("; ")}</p>}
@@ -58,7 +59,7 @@ export function PayoffPanel({ payoff, now, forward, sd1, sd2, version, busy, err
     <section aria-label="Payoff" className="rounded-xl border border-rule bg-ink/40 p-3" data-testid="risk-payoff">
       <h2 className="text-sm font-semibold text-paper">Payoff <span className="font-normal text-muted">· at the nearest expiry and today</span></h2>
       {error ? <p role="alert" className="mt-2 text-sm text-down">{error}</p> : payoff == null ? (
-        <p className="mt-2 text-sm text-muted">{busy ? "Calculating…" : "Add legs to see the payoff."}</p>
+        <p className="mt-2 text-sm text-muted">{busy ? <Loading variant="inline" label="Calculating…" /> : "Add legs to see the payoff."}</p>
       ) : (
         <>
           <p className="mt-2 text-[11px] text-muted">Change in value (₹) against the index level.</p>

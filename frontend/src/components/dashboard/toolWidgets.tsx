@@ -7,12 +7,13 @@ import { buildupOf, chainGreeks, exposures, peCeDifference, smartOiSummary, type
 import { marketClockMs } from "../../lib/session";
 import { useLiveSpot } from "../../lib/useLive";
 import type { ChartColors } from "../../lib/chartOptions";
+import { Loading } from "../../components/Loading";
 
 /** Widgets of the Options Lab tools. Each says what it is built from and how many strikes it could not use. */
 function Guard({ children }: { children: ReactNode }) {
   const d = useDash();
   if (d.snapshot) return <>{children}</>;
-  if (d.chain.isPending && d.expiry) return <p className="p-3 text-sm text-muted">Loading snapshot…</p>;
+  if (d.chain.isPending && d.expiry) return <Loading label="Loading snapshot…" className="m-3" />;
   return <p className="p-3 text-sm text-muted">{d.noSnapshot ? "No snapshot stored for this expiry yet." : "No option-chain data to show."}</p>;
 }
 const Note = ({ children }: { children: ReactNode }) => <p className="mt-1 text-[11px] text-muted">{children}</p>;

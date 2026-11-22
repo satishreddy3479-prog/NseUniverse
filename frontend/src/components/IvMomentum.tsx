@@ -6,6 +6,7 @@ import { METRICS } from "../lib/metricRegistry";
 import type { IvMomentum as Mom, IvMomentumChange } from "../lib/types";
 import { EChart, useChartColors } from "./EChart";
 import { MethodologyPanel } from "./MethodologyPanel";
+import { Loading } from "./Loading";
 
 const BUCKETS = [{ key: "atm", label: "ATM" }, { key: "d25", label: "25Δ" }, { key: "d10", label: "10Δ" }] as const;
 const TFS = [1, 3, 5, 15] as const;
@@ -44,7 +45,7 @@ export function IvMomentumBody({ expiry }: { expiry: string | null }) {
   const [bucket, setBucket] = useState<(typeof BUCKETS)[number]["key"]>("d25");
   const q = useQuery({ queryKey: ["ivMomentum", expiry, tf], queryFn: () => api.intradayIvMomentum(expiry!, tf), enabled: !!expiry, refetchInterval: 30_000, retry: false });
   if (!expiry) return <p className="text-sm text-muted">Waiting for the expiry list from the broker.</p>;
-  if (q.isLoading) return <div className="h-40 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading" />;
+  if (q.isLoading) return <Loading label="Loading" />;
   if (q.isError || !q.data) return <p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down">IV momentum could not be loaded: {q.error instanceof Error ? q.error.message : "unknown error"}.</p>;
   const d = q.data;
   if (d.status !== "ok" || !d.table) return <p className="text-sm text-muted" data-testid="ivmom-empty">{d.status}.</p>;

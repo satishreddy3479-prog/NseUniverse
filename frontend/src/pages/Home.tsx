@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { CommandStrip } from "../components/intelligence/Overview";
 import { api } from "../lib/api";
 import { MENU_ORDER, MENU_TITLES, TOOLS, menuGroups, toolPath, type Tool } from "../lib/tools";
+import { Loading } from "../components/Loading";
 
 function ToolLink({ t }: { t: Tool }) {
   const to = toolPath(t);
@@ -18,7 +19,7 @@ function ToolLink({ t }: { t: Tool }) {
     </>
   );
   const cls = "block rounded-sm border border-rule bg-slate px-3 py-2 transition";
-  return to ? <Link to={to} className={`${cls} hover:border-brass`}>{body}</Link> : <div className={`${cls} opacity-75`} aria-disabled="true">{body}</div>;
+  return to ? <Link to={to} className={`${cls} tool-card hover:border-brass`}>{body}</Link> : <div className={`${cls} opacity-75`} aria-disabled="true">{body}</div>;
 }
 
 const START: { to: string; label: string; text: string }[] = [
@@ -41,11 +42,11 @@ export function Home() {
         <div><h1 className="text-xl font-semibold md:text-2xl">NIFTY 50 command centre</h1><p className="text-xs text-muted md:text-sm">Your own Kotak feed and the snapshots this server stores every minute. {ready} tools are ready.</p></div>
         <div className="flex flex-wrap items-center gap-2"><ChartInfoToggle /><Link to="/market-intelligence" className="rounded-sm border border-brass px-3 py-1.5 text-sm text-paper hover:bg-brass/15">Open the full dashboard →</Link></div>
       </header>
-      {intel.isPending && <div className="h-28 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading the market summary" />}
+      {intel.isPending && <Loading label="Loading the market summary" />}
       {intel.data && <CommandStrip d={intel.data} compact />}
       {intel.isError && <p className="rounded-sm border border-rule bg-slate px-3 py-2 text-sm text-muted" data-testid="home-no-intel">The market summary is not available right now ({intel.error instanceof Error ? intel.error.message : "error"}). The tools below still work.</p>}
       <section aria-label="Start here" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-        {START.map((x) => <Link key={x.to} to={x.to} className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3 hover:border-brass"><div className="text-sm font-semibold text-paper">{x.label}</div><p className="mt-0.5 text-xs text-muted">{x.text}</p></Link>)}
+        {START.map((x) => <Link key={x.to} to={x.to} className="tool-card rounded-[var(--radius-panel)] border border-rule bg-slate p-3 hover:border-brass"><div className="text-sm font-semibold text-paper">{x.label}</div><p className="mt-0.5 text-xs text-muted">{x.text}</p></Link>)}
       </section>
       <section aria-label="All tools" className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-base font-semibold">All tools</h2>

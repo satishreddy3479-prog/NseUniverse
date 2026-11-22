@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, type HolidaysView } from "../lib/api";
 import { daysUntil, isWeekend, mergeRows, parseHolidayText, type HolidayRow } from "../lib/holidays";
 import { Button, Panel } from "./ui";
+import { Loading } from "./Loading";
 
 type Kind = "holiday" | "special";
 interface Row extends HolidayRow { kind: Kind }
@@ -89,7 +90,7 @@ export function HolidaysPanel() {
 
   return (
     <Panel title="Exchange holidays">
-      {q.isLoading && <p className="text-sm text-muted">Loading…</p>}
+      {q.isLoading && <Loading variant="inline" label="Loading…" />}
       {q.isError && <p role="alert" className="text-sm text-warn">The holiday list could not be read from the server.</p>}
       {v && (
         <div className="flex flex-col gap-4 text-sm">

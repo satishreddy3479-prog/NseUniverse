@@ -10,6 +10,7 @@ import { fmtExpiry, fmtInt, fmtTimeIST } from "../../lib/format";
 import { strikeBoard, strikesAround, type StrikeBoard } from "../../lib/optionTools";
 import { ratio, rupee, signedUnits, STRIKE_COLORS, timeLinesOption, units, type Line } from "../../lib/priceCharts";
 import type { StrikeSeries } from "../../lib/types";
+import { Loading } from "../../components/Loading";
 
 export const GROUP = "price-tools";
 
@@ -82,9 +83,9 @@ export function Frame({ q, w, res, children, footer }: {
 }) {
   const d = useDash();
   if (!d.expiry) return <EmptyState title="No expiry">Choose an expiry above.</EmptyState>;
-  if (d.chain.isPending) return <p className="p-3 text-sm text-muted">Loading the option chain…</p>;
+  if (d.chain.isPending) return <Loading label="Loading the option chain…" className="m-3" />;
   if (!d.snapshot) return <EmptyState title="No snapshot stored for this expiry yet">{d.noSnapshot ? "Refresh or start the stream to store one." : "No option-chain data to show."}</EmptyState>;
-  if (!w.loaded || (q.isPending && w.since)) return <p className="p-3 text-sm text-muted">Loading stored samples…</p>;
+  if (!w.loaded || (q.isPending && w.since)) return <Loading label="Loading stored samples…" className="m-3" />;
   if (w.afterHoursOnly || !w.since)
     return <EmptyState title="No session samples stored yet">The sampler stores one sample a minute during the market session. Only after-hours samples exist for this expiry, and they would draw a flat line, so nothing is plotted.</EmptyState>;
   if (q.error) return <EmptyState title="Could not load the stored series">{String((q.error as Error).message)}</EmptyState>;

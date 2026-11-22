@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { fmtDateTimeIST, fmtInt } from "../lib/format";
 import { Button, Panel } from "./ui";
+import { Loading } from "./Loading";
 
 /** Daily price history: what exists, what is missing, and a refresh.
  *  It also refreshes by itself once a day after the close; nothing here needs a restart. */
@@ -30,7 +31,7 @@ export function PredictionData() {
         </Button>
       }
     >
-      {q.isPending ? <p className="text-sm text-muted">Loading…</p>
+      {q.isPending ? <Loading variant="inline" label="Loading…" />
         : q.error || !s ? <p className="text-sm text-muted">Not available: the running backend does not have the prediction module yet.</p>
         : (
           <div className="space-y-3">

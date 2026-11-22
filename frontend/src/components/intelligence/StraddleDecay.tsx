@@ -12,6 +12,7 @@ import { canManaged, StraddleGlance, type Mode } from "./StraddleGlance";
 import { StraddlePreflightCard } from "./StraddlePreflightCard";
 import { StraddleReadingCard } from "./StraddleReading";
 import { TabPanel, Tabs, type TabDef } from "../swing/shared";
+import { Loading } from "../../components/Loading";
 
 /** The newest NIFTY value of a series that can end with missing minutes (null), as text; undefined when there is none. */
 const lastSpot = (spot: (number | null)[] | null | undefined): string | undefined => { const v = [...(spot ?? [])].reverse().find((x) => x != null); return v == null ? undefined : v.toLocaleString("en-IN"); };
@@ -84,7 +85,7 @@ export function StraddleSummaryCard() {
         <h2 className="text-sm font-semibold text-paper">Straddle decay and buyer/seller environments <span className="font-normal text-muted">· separate from the sentiment score</span></h2>
         <Link to="/market-intelligence/straddle" className="text-xs text-info hover:underline">Open the full analysis →</Link>
       </div>
-      {q.isPending ? <p className="mt-2 text-xs text-muted">Loading…</p> : q.isError || !d ? <p role="alert" className="mt-2 text-xs text-down">Could not be loaded.</p> : !e ? <p className="mt-2 text-xs text-muted" data-testid="sdi-card-empty">{d.status !== "ok" ? d.message : d.environment_note ?? "No environment is available."}</p> : (
+      {q.isPending ? <Loading variant="inline" label="Loading…" className="mt-2" /> : q.isError || !d ? <p role="alert" className="mt-2 text-xs text-down">Could not be loaded.</p> : !e ? <p className="mt-2 text-xs text-muted" data-testid="sdi-card-empty">{d.status !== "ok" ? d.message : d.environment_note ?? "No environment is available."}</p> : (
         <div className="mt-2 grid gap-2 sm:grid-cols-3">
           <Score id="sdi-card-seller" title="Seller environment" score={e.seller.score} cls={e.seller.class} toneCls={SELLER_TONE[e.seller.class] ?? "text-muted"} />
           <Score id="sdi-card-buyer" title="Buyer environment" score={e.buyer.score} cls={e.buyer.class} toneCls={BUYER_TONE[e.buyer.class] ?? "text-muted"} />
@@ -410,7 +411,7 @@ export function StraddleDecayPanel() {
       <details className="mt-3 rounded-sm border border-rule" data-testid="sdi-validation" onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) setWantVal(true); }}>
         <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-paper">Historical validation: theta arithmetic and recorded environment scores</summary>
         <div className="space-y-3 border-t border-rule px-3 py-2 text-xs">
-          {val.isPending && wantVal ? <p className="text-muted">Computing from stored sessions…</p> : val.isError ? <p className="text-down">Validation could not be computed.</p> : val.data ? (
+          {val.isPending && wantVal ? <Loading variant="inline" label="Computing from stored sessions…" /> : val.isError ? <p className="text-down">Validation could not be computed.</p> : val.data ? (
             <>
               <div>
                 <p className={val.data.sufficient ? "text-paper" : "text-warn"} data-testid="sdi-val-message">{val.data.message}</p>

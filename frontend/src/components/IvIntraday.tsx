@@ -5,6 +5,7 @@ import { useExpiries } from "../lib/hooks";
 import { fmtTimeIST, MISSING } from "../lib/format";
 import type { IvSeries } from "../lib/types";
 import { EChart, useChartColors } from "./EChart";
+import { Loading } from "./Loading";
 
 const MAX_EXPIRIES = 5;
 const TFS = [1, 3, 5, 15];
@@ -120,7 +121,7 @@ export function IvIntradayBody({ expiry }: { expiry: string | null }) {
         {series.some((x) => x.error) && <p role="alert" className="mt-1 text-xs text-down">An expiry&apos;s series could not be loaded.</p>}
       </div>
       <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
-        {series.some((x) => x.loading) && loaded.length === 0 ? <div className="h-40 animate-pulse" aria-label="Loading" />
+        {series.some((x) => x.loading) && loaded.length === 0 ? <Loading label="Loading" />
           : empty ? <p className="text-sm text-muted" data-testid="ivintraday-empty">{firstProblem ?? "No stored option-chain sample for these expiries"}.</p>
           : view === "intraday" ? (
             <>

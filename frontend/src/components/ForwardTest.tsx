@@ -8,6 +8,7 @@ import { portfolioStats, type PortfolioStats } from "../lib/portfolioStats";
 import { positionToBuilder, type PositionIn } from "../lib/forwardStrategy";
 import { TEMP_KEY } from "../pages/StrategyBuilder";
 import { EChart, useChartColors } from "./EChart";
+import { Loading } from "./Loading";
 
 const IST = "Asia/Kolkata";
 const inr = (v: number | null | undefined, signed = true) => (v == null ? MISSING : `${v < 0 ? "−" : v > 0 && signed ? "+" : ""}₹${Math.abs(Math.round(v)).toLocaleString("en-IN")}`);
@@ -25,7 +26,6 @@ const COST_RULES: [string, string][] = [
   ["leg30_cost", "Stop 30% + cost"], ["leg40_cost", "Stop 40% + cost"], ["leg50_cost", "Stop 50% + cost"], ["leg60_cost", "Stop 60% + cost"], ["leg70_cost", "Stop 70% + cost"], ["leg80_cost", "Stop 80% + cost"],
 ];
 
-const Loading = () => <div className="h-40 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading" />;
 const Panel = ({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) => (
   <section aria-label={title} className="rounded-[var(--radius-panel)] border border-rule bg-slate">
     <header className="border-b border-rule px-3 py-2"><h2 className="text-sm font-semibold">{title}</h2>{hint && <p className="text-xs text-muted">{hint}</p>}</header>

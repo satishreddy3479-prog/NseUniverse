@@ -5,6 +5,7 @@ import { fmtTimeIST } from "../lib/format";
 import { EChart, useChartColors } from "./EChart";
 import { Panel } from "./ui";
 import type { ChartColors } from "../lib/chartOptions";
+import { Loading } from "./Loading";
 
 const pct = (v: number | null, d = 2) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(d)}%`);
 const tone = (v: number | null) => (v == null || v === 0 ? "text-muted" : v > 0 ? "text-up" : "text-down");
@@ -26,7 +27,7 @@ function useSummary() {
 }
 
 function Guard({ q, children }: { q: ReturnType<typeof useSummary>; children: (s: MarketSummary) => React.ReactNode }) {
-  if (q.isPending) return <p className="text-sm text-muted">Loading…</p>;
+  if (q.isPending) return <Loading variant="inline" label="Loading…" />;
   if (q.error) {
     const off = q.error instanceof ApiError && q.error.status === 404;
     return <p role="alert" className="rounded-sm border border-rule bg-slate p-3 text-sm text-warn">{off ? "Stock breadth is turned off on this server, so there is nothing to show." : q.error instanceof ApiError ? q.error.message : "Could not load the NIFTY 50 stock data."}</p>;

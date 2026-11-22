@@ -6,6 +6,7 @@ import { METRICS } from "../lib/metricRegistry";
 import type { PositioningBasket, PositioningDemand, PositioningQuote, StrikePositioning as Pos } from "../lib/types";
 import { MethodologyPanel } from "./MethodologyPanel";
 import { PremiumBasketChart } from "./PremiumBasketChart";
+import { Loading } from "./Loading";
 
 const WINDOWS = [["5", "5 min"], ["15", "15 min"], ["30", "30 min"], ["60", "1 hour"], ["open", "Since open"], ["prev", "Previous close"]] as const;
 const FILTERS = [["5", "ATM ±5"], ["10", "ATM ±10"], ["20", "ATM ±20"], ["all", "All"], ["d25", "25Δ band"], ["d10", "10Δ band"]] as const;
@@ -66,7 +67,7 @@ export function StrikePositioningBody({ expiry }: { expiry: string | null }) {
   const [flt, setFlt] = useState<string>("10");
   const q = useQuery({ queryKey: ["strikePos", expiry, win], queryFn: () => api.intradayStrikePositioning(expiry!, win), enabled: !!expiry, refetchInterval: 30_000, retry: false });
   if (!expiry) return <p className="text-sm text-muted">Waiting for the expiry list from the broker.</p>;
-  if (q.isLoading) return <div className="h-40 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading" />;
+  if (q.isLoading) return <Loading label="Loading" />;
   if (q.isError || !q.data) return <p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down">Strike positioning could not be loaded: {q.error instanceof Error ? q.error.message : "unknown error"}.</p>;
   const d = q.data;
   if (d.status !== "ok") return <p className="text-sm text-muted" data-testid="pos-empty">{d.status}.</p>;

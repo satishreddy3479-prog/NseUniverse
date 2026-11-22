@@ -78,7 +78,7 @@ export function EngineBars({ d, onMore }: { d: Intelligence; onMore: () => void 
     <section aria-label="Evidence at a glance" className="rounded-[var(--radius-panel)] border border-rule bg-slate p-4" data-testid="mi-bars">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold text-paper">Evidence at a glance <span className="font-normal text-muted">· each group scored from −100 (bearish) to +100 (bullish)</span></h2>
-        <button type="button" onClick={onMore} className="text-sm text-info hover:underline">See the evidence behind each →</button>
+        <button type="button" onClick={onMore} className="min-h-8 text-sm text-info hover:underline">See the evidence behind each →</button>
       </div>
       <ul className="mt-3 space-y-2">
         {d.engines.map((e: EngineView) => {

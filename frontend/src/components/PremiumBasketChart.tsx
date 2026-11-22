@@ -6,6 +6,7 @@ import { METRICS } from "../lib/metricRegistry";
 import type { PremiumBasketPoint, PremiumBaskets } from "../lib/types";
 import { EChart, useChartColors } from "./EChart";
 import { MethodologyPanel } from "./MethodologyPanel";
+import { Loading } from "./Loading";
 
 const WINDOWS = [["5", "ATM ±5"], ["10", "ATM ±10"], ["20", "ATM ±20"], ["all", "Full chain"]] as const;
 const VIEWS = [["abs", "Absolute premium"], ["idx", "Normalised (open = 100)"], ["chg", "Change since open"], ["pct", "% change since open"]] as const;
@@ -57,7 +58,7 @@ export function PremiumBasketChart({ expiry }: { expiry: string }) {
         <div role="group" aria-label="Basket type" className="flex gap-1">{([["fixed", "Fixed (opening strikes)"], ["dynamic", "Dynamic (recentred)"]] as const).map(([k, l]) => <button key={k} type="button" aria-pressed={kind === k} onClick={() => setKind(k)} className={btn(kind === k)}>{l}</button>)}</div>
         <div role="group" aria-label="Show" className="flex flex-wrap gap-1">{VIEWS.map(([k, l]) => <button key={k} type="button" aria-pressed={view === k} onClick={() => setView(k)} className={btn(view === k)}>{l}</button>)}</div>
       </div>
-      {q.isLoading && <div className="mt-2 h-40 animate-pulse rounded-sm bg-slate-2" aria-label="Loading" />}
+      {q.isLoading && <Loading label="Loading" />}
       {q.isError && <p role="alert" className="mt-2 text-sm text-down">The premium chart could not be loaded: {q.error instanceof Error ? q.error.message : "unknown error"}.</p>}
       {d && d.status !== "ok" && <p className="mt-2 text-sm text-muted" data-testid="prem-empty">{d.status}.</p>}
       {d?.status === "ok" && Array.isArray(d.points) && (

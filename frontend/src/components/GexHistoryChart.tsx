@@ -6,6 +6,7 @@ import { METRICS } from "../lib/metricRegistry";
 import type { GexHistory } from "../lib/types";
 import { EChart, useChartColors } from "./EChart";
 import { MethodologyPanel } from "./MethodologyPanel";
+import { Loading } from "./Loading";
 
 const hhmm = hhmmIST;
 
@@ -43,7 +44,7 @@ export function GexHistoryChart({ expiry, universe }: { expiry: string; universe
   return (
     <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3" data-testid="gexhist-section">
       <h2 className="mb-1 text-sm font-semibold text-paper">GEX and gamma flip rebuilt from the stored chains{d?.session ? ` · ${d.session}` : ""}</h2>
-      {q.isLoading && <div className="h-32 animate-pulse rounded-sm bg-slate-2" aria-label="Loading" />}
+      {q.isLoading && <Loading label="Loading" />}
       {q.isError && <p role="alert" className="text-sm text-down">The GEX history could not be rebuilt: {q.error instanceof Error ? q.error.message : "unknown error"}.</p>}
       {d && d.status !== "ok" && <p className="text-sm text-muted" data-testid="gexhist-empty">{d.status}.</p>}
       {opt && <div style={{ height: 300 }} data-testid="gexhist-chart"><EChart option={opt} ariaLabel="NIFTY, gamma flip, walls, peak gamma and net GEX rebuilt at each stored snapshot" /></div>}

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { fmtDateTimeIST } from "../lib/format";
 import { Panel } from "./ui";
+import { Loading } from "./Loading";
 
 function size(b: number): string {
   if (b >= 1e9) return `${(b / 1e9).toFixed(2)} GB`;
@@ -19,7 +20,7 @@ export function StoragePanel() {
   const s = q.data;
   return (
     <Panel title="Storage and end-of-day">
-      {q.isLoading ? <p className="text-sm text-muted">Measuring…</p>
+      {q.isLoading ? <Loading variant="inline" label="Measuring…" />
         : q.isError || !s ? <p role="alert" className="text-sm text-down">Storage status is not available from the backend.</p>
         : (
           <div className="flex flex-col gap-4" data-testid="storage-panel">

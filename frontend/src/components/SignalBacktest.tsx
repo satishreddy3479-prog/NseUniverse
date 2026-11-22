@@ -6,6 +6,7 @@ import { METRICS } from "../lib/metricRegistry";
 import type { BacktestResult, BacktestSide } from "../lib/types";
 import { GexHistoryChart } from "./GexHistoryChart";
 import { MethodologyPanel } from "./MethodologyPanel";
+import { Loading } from "./Loading";
 
 const f = (v: number | null | undefined, d = 3) => (v == null ? MISSING : v.toFixed(d));
 const ci = (c: [number, number] | null | undefined, d = 3) => (c == null ? MISSING : `${c[0].toFixed(d)} to ${c[1].toFixed(d)}`);
@@ -70,7 +71,7 @@ export function SignalBacktestBody({ expiry }: { expiry: string | null }) {
     refetchInterval: (query) => (query.state.data?.status === "computing" ? 1500 : false), // a large run reports progress until it is done
   });
   if (!expiry) return <p className="text-sm text-muted">Waiting for the expiry list from the broker.</p>;
-  if (q.isLoading) return <div className="h-40 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading (the test reads every stored chain of the sessions: it can take a while)" />;
+  if (q.isLoading) return <Loading label="Loading (the test reads every stored chain of the sessions: it can take a while)" />;
   if (q.isError || !q.data) return <p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down">The backtest could not be run: {q.error instanceof Error ? q.error.message : "unknown error"}.</p>;
   const d = q.data;
   if (d.status === "computing" || d.status === "busy") {

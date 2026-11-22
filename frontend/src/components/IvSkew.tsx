@@ -12,6 +12,7 @@ import { TermStructureView } from "./TermStructureView";
 import { useLiveSpot } from "../lib/useLive";
 import { useDashOptional } from "./dashboard/DashContext";
 import { EChart, useChartColors } from "./EChart";
+import { Loading } from "./Loading";
 
 const n2 = (v: number | null | undefined, unit = "") => (v == null ? MISSING : `${v.toFixed(2)}${unit}`);
 const sgn = (v: number | null | undefined, unit = " pts") => (v == null ? MISSING : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}${unit}`);
@@ -51,7 +52,7 @@ export function IvSkewBody({ expiry }: { expiry: string | null }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveOn, dash?.rows, ls.ltp, expiry]);
   if (!expiry) return <p className="text-sm text-muted">Waiting for the expiry list from the broker.</p>;
-  if (!live && q.isLoading) return <div className="h-40 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading" />;
+  if (!live && q.isLoading) return <Loading label="Loading" />;
   if (!live && (q.isError || !q.data)) return <p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down">The volatility skew could not be loaded: {q.error instanceof Error ? q.error.message : "unknown error"}.</p>;
   const stored = q.data;
   if (!live && (!stored || stored.smile.length === 0 || !stored.cards)) return <p className="text-sm text-muted" data-testid="ivskew-empty">{stored?.status ?? "No stored chain"}.</p>;

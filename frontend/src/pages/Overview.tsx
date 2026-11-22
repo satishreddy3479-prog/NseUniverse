@@ -196,7 +196,7 @@ export function SnapshotTable({ rows, selected }: { rows: SnapshotSummary[]; sel
               <td className="py-2 pr-4"><CompletenessText value={s.completeness} /></td>
               <td className="py-2 pr-4"><SourceTag source={s.source} /></td>
               <td className="py-2 text-right">
-                <Link className="text-info underline-offset-2 hover:underline"
+                <Link className="-my-1 inline-flex min-h-8 items-center px-2 text-info underline-offset-2 hover:underline"
                   to={`/data?snapshot=${encodeURIComponent(s.snapshot_id)}`}>
                   Inspect
                 </Link>

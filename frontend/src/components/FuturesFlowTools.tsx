@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { fmtTimeIST } from "../lib/format";
 import { FlowCard, Sectors } from "./CommandCenter";
+import { Loading } from "./Loading";
 
 /** Futures flow / heavyweights and the sector table, moved here from the Intraday Booster page (Future Lab). */
 export function FuturesFlowBody({ expiry, part }: { expiry: string | null; part: "flow" | "sectors" }) {
@@ -14,7 +15,7 @@ export function FuturesFlowBody({ expiry, part }: { expiry: string | null; part:
   });
   const d = q.data;
   if (!expiry) return <p className="text-sm text-muted">Waiting for the expiry list from the broker.</p>;
-  if (q.isLoading) return <div className="h-40 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading" />;
+  if (q.isLoading) return <Loading label="Loading" />;
   if (q.isError || !d)
     return (
       <p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down">

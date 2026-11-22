@@ -6,6 +6,7 @@ import { fmtDay, HV_WINDOWS, hvLabel, ivpReading, labelEvery, rankAt, rankExampl
 import { MethodologyPanel } from "./MethodologyPanel";
 import { METRICS } from "../lib/metricRegistry";
 import { EChart, useChartColors } from "./EChart";
+import { Loading } from "./Loading";
 
 const pct = (v: number | null | undefined, d = 2) => (v == null ? MISSING : `${v.toFixed(d)}%`);
 const btn = (on: boolean) => `min-h-9 rounded-sm border px-3 text-xs ${on ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`;
@@ -27,7 +28,7 @@ function useChart(hv: number) {
   return useQuery({ queryKey: ["ivChart", hv], queryFn: () => api.intradayIvChart(hv), refetchInterval: 300_000, retry: false });
 }
 function problem(q: ReturnType<typeof useChart>) {
-  if (q.isLoading) return <div className="h-40 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading" />;
+  if (q.isLoading) return <Loading label="Loading" />;
   if (q.isError || !q.data) return <p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down">The daily volatility history could not be loaded: {q.error instanceof Error ? q.error.message : "unknown error"}.</p>;
   if (q.data.dates.length === 0) return <p className="text-sm text-muted" data-testid="ivchart-empty">No days with both a NIFTY close and an India VIX close are stored yet.</p>;
   return null;

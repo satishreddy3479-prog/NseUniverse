@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { EChart, useChartColors } from "../EChart";
+import { Loading } from "../Loading";
 import { type RiskSurface, volPct, versionLabel } from "../../lib/risk";
 import { residualOption, smileOption } from "../../lib/riskCharts";
 
@@ -8,7 +9,7 @@ export function SurfaceViewer({ surface, busy, error }: { surface: RiskSurface |
   const colors = useChartColors();
   const [pick, setPick] = useState<string | null>(null);
   if (error) return <section aria-label="Volatility surface" className="rounded-xl border border-rule bg-ink/40 p-3"><h2 className="text-sm font-semibold text-paper">Volatility surface</h2><p role="alert" className="mt-2 text-sm text-down">{error}</p></section>;
-  if (!surface) return <section aria-label="Volatility surface" className="rounded-xl border border-rule bg-ink/40 p-3"><h2 className="text-sm font-semibold text-paper">Volatility surface</h2><p className="mt-2 text-sm text-muted">{busy ? "Building the surface…" : "No surface yet."}</p></section>;
+  if (!surface) return <section aria-label="Volatility surface" className="rounded-xl border border-rule bg-ink/40 p-3"><h2 className="text-sm font-semibold text-paper">Volatility surface</h2>{busy ? <Loading variant="inline" label="Building the surface…" className="mt-2" /> : <p className="mt-2 text-sm text-muted">No surface yet.</p>}</section>;
   const expiry = pick && surface.slices.some((s) => s.expiry === pick) ? pick : surface.slices[0]?.expiry ?? null;
   const slice = surface.slices.find((s) => s.expiry === expiry);
   const strikes = surface.strikes.filter((x) => x.expiry === expiry);

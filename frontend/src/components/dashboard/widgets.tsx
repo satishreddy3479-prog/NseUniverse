@@ -19,6 +19,7 @@ import { ageSeconds, fmtDateTimeIST, fmtExpiry, fmtTimeIST, fmtInt, fmtPct, fmtP
 import { smartOiCandles } from "../../lib/optionTools";
 import { useSpotDisplay } from "../../lib/useLive";
 import type { BaselineKind, Observation, OiChange, OptionChainRow } from "../../lib/types";
+import { Loading } from "../../components/Loading";
 
 /** Age in seconds of the newest stored sample, re-evaluated every 15 s so the label cannot go stale. */
 function useLastSample(): { at: string | null; age: number | null } {
@@ -68,7 +69,7 @@ function Body({ children, footer }: { children: ReactNode; footer?: ReactNode })
 
 function NoChain() {
   const d = useDash();
-  if (d.chain.isPending && d.expiry) return <p className="p-3 text-sm text-muted">Loading snapshot…</p>;
+  if (d.chain.isPending && d.expiry) return <Loading label="Loading snapshot…" className="m-3" />;
   if (d.noSnapshot)
     return (
       <EmptyState title="No snapshot stored for this expiry"
@@ -206,7 +207,7 @@ function TimeSeries({ build, label, note, extra }: {
     <ChainGuard>
       <Body footer={<Meta kind="history"><span>{obs.length} sample{obs.length === 1 ? "" : "s"} · {rangeLabel}{all.length !== obs.length ? ` of ${all.length} stored` : ""}</span>{note && <span className="basis-full" data-testid="series-note">{note}</span>}</Meta>}>
         {d.history.isPending ? (
-          <p className="p-3 text-sm text-muted">Loading stored snapshots…</p>
+          <Loading label="Loading stored snapshots…" className="m-3" />
         ) : all.length < 2 ? (
           <EmptyState title="Not enough stored snapshots to draw a line">
             {all.length} snapshot stored for this expiry and strike range. A line needs at least two. Each
@@ -424,7 +425,7 @@ function SmartOiChartWidget() {
             );
           })()}
           {d.history.isPending || q.isPending ? (
-            <p className="p-3 text-sm text-muted">Loading stored samples…</p>
+            <Loading label="Loading stored samples…" className="m-3" />
           ) : q.error ? (
             <EmptyState title="Could not load the stored OI series">{String((q.error as Error).message)}</EmptyState>
           ) : !res || res.candles.length < 2 || !main || !dayOpt || !ratioOpt ? (
@@ -694,7 +695,7 @@ function BaselineSummary({ res }: { res: OiChange }) {
 
 function OiGuard({ q, children }: { q: ReturnType<typeof useOiChange>; children: (res: OiChange) => ReactNode }) {
   if (q.isPending && q.fetchStatus === "idle") return <p className="p-3 text-sm text-muted">Choose a baseline time.</p>;
-  if (q.isPending) return <p className="p-3 text-sm text-muted">Loading observations…</p>;
+  if (q.isPending) return <Loading label="Loading observations…" className="m-3" />;
   if (q.error) return <EmptyState title="Could not load OI observations">{String((q.error as Error).message)}</EmptyState>;
   const res = q.data!;
   if (res.observations_available === 0)
@@ -775,7 +776,7 @@ export function OiHeatmapWidget() {
             </div>
             <BaselineControls kind={kind} onKind={setKind} at="" onAt={() => {}} kinds={["session_open", "previous", "prev_session", "broker_prev_day"]} />
           </div>
-          {q.isPending ? <p className="p-3 text-sm text-muted">Loading observations…</p>
+          {q.isPending ? <Loading label="Loading observations…" className="m-3" />
             : q.error ? <EmptyState title="Could not load the heatmap">{String((q.error as Error).message)}</EmptyState>
             : !h || h.times.length === 0 ? <EmptyState title="No observations stored for this expiry yet" />
             : h.times.length < 2 && kind !== "broker_prev_day" ? (
@@ -995,7 +996,7 @@ function OiExplorerBody({ large, mode, setMode, win, setWin, action }: {
         {!large && action}
       </div>
       <div className={large ? "min-h-[240px] flex-1" : "min-h-0 flex-1"}>
-        {q.isPending && q.fetchStatus !== "idle" ? <p className="p-3 text-sm text-muted">Loading observations…</p>
+        {q.isPending && q.fetchStatus !== "idle" ? <Loading label="Loading observations…" className="m-3" />
           : q.error ? <EmptyState title="Could not load OI for this window">{String((q.error as Error).message)}</EmptyState>
           : !res || res.observations_available === 0 ? <EmptyState title="No observations stored for this expiry yet">Observations are stored each time a chain is fetched.</EmptyState>
           : opt ? <EChart option={opt} ariaLabel="Open interest by strike" onClick={(p) => { const k = Number(p.name); if (Number.isFinite(k)) d.select(k); }} />

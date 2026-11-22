@@ -6,6 +6,7 @@ import { groupedBarsOption } from "../lib/chartOptions";
 import { EChart, useChartColors } from "./EChart";
 import { Panel } from "./ui";
 import { ParticipantAnalysis } from "./ParticipantAnalysis";
+import { Loading } from "./Loading";
 
 const GROUPS = ["FII", "DII", "Pro", "Client"] as const;
 
@@ -26,7 +27,7 @@ export function FlowsPanel() {
   return (
     <Panel title="Institutional positions — NSE F&O participant open interest (net = long − short, contracts)">
       <div className="mb-3"><FlowsUpdateLoader components={["participant_oi", "participant_vol"]} /></div>
-      {q.isPending ? <p className="text-sm text-muted">Loading…</p>
+      {q.isPending ? <Loading variant="inline" label="Loading…" />
         : q.error ? <p className="text-sm text-muted">Not available: the running backend does not have this module yet.</p>
         : days.length === 0 ? <p className="text-sm text-muted" data-testid="flows-empty">No NSE participant files stored yet. They download by themselves (Settings → NSE institutional flows).</p>
         : (

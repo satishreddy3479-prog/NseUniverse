@@ -13,6 +13,7 @@ import { EChart, useChartColors } from "./EChart";
 import { Info } from "./Info";
 import { getSessionClock, sessionCloseHHMM } from "../lib/session";
 import { FillBar, Gauge, MiniBar, RangeBar, SplitBar, Tile } from "./viz";
+import { Loading } from "./Loading";
 
 const PHASE: Record<string, string> = {
   closed: "Closed (no session today)", pre_market: "Pre-market", pre_open: "Pre-open (09:00–09:15)", opening: "Opening (09:15–09:45)",
@@ -606,7 +607,7 @@ function ForwardCheckCard({ expiry }: { expiry: string }) {
   const rows: ["bullish" | "neutral" | "bearish", string, string][] = [["bullish", "Score ≥ +0.2 (bullish)", "text-up"], ["neutral", "Between (neutral)", "text-muted"], ["bearish", "Score ≤ −0.2 (bearish)", "text-down"]];
   return (
     <Card title="Forward check of the rules-based sentiment" className="lg:col-span-12" right={<span className="text-[11px] text-muted">stored in real time · what NIFTY did next</span>}>
-      {q.isLoading ? <p className="text-sm text-muted">Loading…</p> : !r ? <p className="text-sm text-muted" data-testid="cc-forward-error">The forward check is unavailable.</p> : (
+      {q.isLoading ? <Loading variant="inline" label="Loading…" /> : !r ? <p className="text-sm text-muted" data-testid="cc-forward-error">The forward check is unavailable.</p> : (
         <div className="space-y-3 text-xs" data-testid="cc-forward">
           <p className="text-paper"><span className="num font-semibold">{r.sessions}</span> session(s) of stored scores. <span className="text-muted">{r.conclusion ?? "The sample is large enough to read, with the usual caution."}</span></p>
           <div className="grid gap-3 md:grid-cols-3">
@@ -720,7 +721,7 @@ function Replay({ expiry }: { expiry: string }) {
             <button type="submit" className="rounded border border-rule px-2 py-0.5 text-paper hover:bg-slate">Show the dashboard as it was</button>
           </form>
         )}
-        {res.isLoading && <p className="text-muted">Loading…</p>}
+        {res.isLoading && <Loading variant="inline" label="Loading…" />}
         {r && r.status !== "ok" && <p className="text-warn">{r.status}</p>}
         {r && s && (
           <div className="space-y-1" data-testid="cc-replay-result">
@@ -977,7 +978,7 @@ export function CommandCenter({ expiry }: { expiry: string | null }) {
       {hidden ? null : !expiry ? (
         <p className="text-sm text-muted">Waiting for the expiry list from the broker.</p>
       ) : q.isLoading ? (
-        <div className="h-40 animate-pulse rounded-[var(--radius-panel)] border border-rule bg-slate" aria-label="Loading command center" />
+        <Loading label="Loading command center" />
       ) : q.isError || !d ? (
         <p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down">
           The command center could not be computed: {q.error instanceof Error ? q.error.message : "unknown error"}. The widgets below still work.

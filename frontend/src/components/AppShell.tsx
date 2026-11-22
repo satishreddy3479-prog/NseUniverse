@@ -15,6 +15,7 @@ import { AlertStrip } from "./AlertStrip";
 import { HeadsUpStrip } from "./HeadsUp";
 import { ScoreChips } from "./ScoreChips";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { TopProgress } from "./TopProgress";
 
 
 /** Top bar keeps only what matters at a glance: the product, the NIFTY level and one status.
@@ -71,9 +72,10 @@ export function AppShell() {
           <MobileNav onNavigate={() => setMenuOpen(false)} />
         </div>
       )}
+      <TopProgress />
       <AlertStrip />
       <HeadsUpStrip />
-      <main className="relative min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 md:p-4 lg:p-6">
+      <main key={pathname} className="page-enter relative min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 md:p-4 lg:p-6">
         <ToolTabs />
         <ErrorBoundary resetKey={pathname} scope="page"><Outlet key={clockKey} /></ErrorBoundary>
       </main>
