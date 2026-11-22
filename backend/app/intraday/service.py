@@ -24,6 +24,7 @@ from typing import Any
 from app.domain.session import market_time, session_close
 from app.intraday import (
     backtest,
+    gamma_map,
     gex_history,
     labels,
     momentum,
@@ -853,6 +854,32 @@ class IntradayService:
             pts.append({"at": f["at"].isoformat(), "spot": f["spot"], **{k.split(".", 1)[1]: v for k, v in f["extra"].items() if k.startswith(f"{universe}.")}})
         return {"status": "ok" if pts else "no solvable snapshot", "expiry": expiry, "session": day, "universe": universe, "sessions": plan["days"], "opening_atm": plan["opening"][day], "points": pts, "skipped": skipped,
                 "timing": {k: round(v, 1) for k, v in timing.items()}, "units": "₹ crore per 1 % move; calls +, puts − (model sign)"}
+
+    def gamma_map(self, expiry: str, session: str | None = None, universe: str = "dynamic") -> dict[str, Any]:
+        """Gamma by strike at the latest stored snapshot of a session, the since-open gamma history and average, and the sudden-move ("gamma blast") reading.
+        Built from ``gex_history`` (same stored prices and open interest, same definitions); see ``gamma_map`` for the provisional score."""
+        hist = self.gex_history(expiry, session, universe)
+        if hist.get("status") != "ok":
+            return {"status": hist.get("status", "unavailable"), "expiry": expiry, "points": [], "sessions": hist.get("sessions", [])}
+        plan = self._bt_plan(expiry, 60)
+        day = hist["session"]
+        pts = hist["points"]
+        x = max(plan["by_day"][day].values(), key=lambda s: s.sample_id)
+        exp_d = plan["exp_d"]
+        sf = self._surface_of(x, exp_d, x.received_at, 400)
+        profile: list[dict[str, Any]] = []
+        if sf.get("status") == "ok" and x.spot is not None:
+            ch = self.obs.contracts(x.values_from)
+            q = float(sf["forward"]) / float(x.spot)
+            t_yr = volmod.years_to_expiry(exp_d, market_time(x.received_at, self._trading))
+            rows = gex_history.strike_rows(gex_history.contracts_of(sf["rows"], ch), float(x.spot), q, t_yr, self.risk_free_rate)
+            profile = gamma_map.strike_profile(rows, float(x.spot))
+        hours = volmod.years_to_expiry(exp_d, market_time(x.received_at, self._trading)) * volmod.YEAR_DAYS * 24
+        return {
+            "status": "ok", "expiry": expiry, "session": day, "universe": universe, "sessions": hist["sessions"], "snapshot_at": x.received_at.isoformat(), "spot": None if x.spot is None else float(x.spot),
+            "hours_to_expiry": round(hours, 2), "profile": profile, "points": pts, "skipped": hist["skipped"], "average": gamma_map.average_gamma(pts), "blast": gamma_map.blast(pts, hours if hours > 0 else None),
+            "units": hist["units"], "note": "Modelled gamma exposure: calls +, puts − is an assumed sign convention, not observed dealer positioning. Stored 5-minute snapshots only.",
+        }
 
     def premium_baskets(self, expiry: str, session: str | None = None, n: int | None = 10, kind: str = "fixed") -> dict[str, Any]:
         """Aggregate call and put premium of an ATM +/- ``n`` basket (``None`` = all strikes), fixed or dynamically recentred, at each

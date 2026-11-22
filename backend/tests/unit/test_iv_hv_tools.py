@@ -284,6 +284,17 @@ def test_gex_history_service_rebuilds_the_gex_at_each_snapshot(tmp_path: Path) -
     assert make(tmp_path / "y", 30, 30).gex_history(EXP, session="2026-01-01")["status"] == "no stored session"
 
 
+def test_gamma_map_service_gives_the_strike_profile_the_history_the_average_and_the_blast_reading(tmp_path: Path) -> None:
+    out = make(tmp_path, 30, 30).gamma_map(EXP)
+    assert out["status"] == "ok" and out["spot"] is not None and len(out["points"]) >= 5 and out["hours_to_expiry"] > 0
+    assert 10 < len(out["profile"]) <= 31
+    atm = min(out["profile"], key=lambda r: abs(r["strike"] - out["spot"]))
+    assert atm["ce"] is not None and atm["ce"] > 0 and atm["pe"] is not None and atm["pe"] < 0 and atm["abs"] == pytest.approx(atm["ce"] - atm["pe"], rel=1e-9)  # calls positive, puts negative
+    assert out["average"]["abs"]["samples"] == len(out["points"]) and out["blast"]["status"] in ("ok", "unavailable")
+    assert out["blast"]["score"] is None or 0 <= out["blast"]["score"] <= 100
+    assert make(tmp_path / "x", 30, 30).gamma_map(EXP, universe="bogus")["status"] == "bad universe"
+
+
 def test_large_backtests_run_as_one_background_job_and_report_progress(tmp_path: Path) -> None:
     import time as t_
 

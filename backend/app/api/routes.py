@@ -1027,6 +1027,19 @@ async def intraday_gex_history(
     return await asyncio.to_thread(svc.gex_history, expiry.isoformat(), iso, universe)
 
 
+@router.get("/intraday/gamma-map")
+async def intraday_gamma_map(
+    request: Request, expiry: date, session: date | None = None, universe: str = "dynamic"
+) -> dict[str, Any]:
+    """Gamma by strike, since-open gamma and the sudden-move reading."""
+    if universe not in _UNIVERSES:
+        msg = "universe must be fixed, dynamic or full"
+        raise HTTPException(status_code=422, detail={"code": "bad_range", "message": msg})
+    svc = request.app.state.intraday
+    iso = None if session is None else session.isoformat()
+    return await asyncio.to_thread(svc.gamma_map, expiry.isoformat(), iso, universe)
+
+
 @router.get("/intraday/premium-baskets")
 async def intraday_premium_baskets(
     request: Request, expiry: date, session: date | None = None, window: str = "10",

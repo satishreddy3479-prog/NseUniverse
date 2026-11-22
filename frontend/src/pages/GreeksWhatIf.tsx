@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { GammaMapPanel } from "../components/risk/GammaMapPanel";
 import { GreeksDashboard } from "../components/risk/GreeksDashboard";
 import { LegsEditor } from "../components/risk/LegsEditor";
 import { PayoffPanel, RiskMatrixPanel, type MatrixKind } from "../components/risk/RiskCharts";
@@ -111,6 +112,7 @@ export function GreeksWhatIf() {
             <PayoffPanel payoff={payoff.data} now={gridNow.data?.grid} forward={payoff.data?.forward ?? null} sd1={sd1} sd2={sd2} version={payoff.data?.surface_version_id ?? null} busy={payoff.isFetching} error={has ? explain(payoff.error) : null} />
           </div>
           <GreeksDashboard risk={portfolio.data?.portfolio} version={portfolio.data?.surface_version_id ?? null} asOf={stampText(portfolio.data ?? null).replace(/, surface .*/, "")} busy={portfolio.isFetching} error={has ? explain(portfolio.error) : null} />
+          <GammaMapPanel expiries={expiries} />
           <SurfaceViewer surface={surface.data} busy={surface.isFetching} error={explain(surface.error)} />
         </>
       )}
