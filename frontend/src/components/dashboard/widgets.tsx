@@ -437,16 +437,16 @@ function SmartOiChartWidget() {
             </EmptyState>
           ) : (
             <div className="grid min-h-0 flex-1 gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-              <div><EChart className="echart-fixed !h-[440px]" hoverGroup="smart-oi" option={main} ariaLabel="NIFTY candles, Smart OI candles and option volume" /></div>
+              <div><EChart className="echart-fixed !h-[720px]" hoverGroup="smart-oi" option={main} ariaLabel="NIFTY candles, Smart OI candles and option volume" /></div>
               <div className="grid min-h-0 grid-rows-2 gap-2">
-                <div><EChart className="echart-fixed !h-[210px]" hoverGroup="smart-oi" option={dayOpt} ariaLabel="Put, call and put minus call OI change since the first candle" /></div>
+                <div><EChart className="echart-fixed !h-[350px]" hoverGroup="smart-oi" option={dayOpt} ariaLabel="Put, call and put minus call OI change since the first candle" /></div>
                 <div>
                   <div role="group" aria-label="Lower right chart" className="mb-1 flex flex-wrap justify-end gap-0.5">
                     {([["pcr", "PCR"], ["volume", "PE, CE & PE − CE volume"]] as const).map(([k, l]) => (
                       <button key={k} type="button" aria-pressed={lower === k} onClick={() => setLower(k)} className={`widget-nodrag min-h-6 rounded-sm border px-2 text-xs ${lower === k ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{l}</button>
                     ))}
                   </div>
-                  <EChart className="echart-fixed !h-[184px]" hoverGroup="smart-oi" option={ratioOpt} ariaLabel={lower === "volume" ? "Put and call volume today with the put minus call difference on the right axis" : "OI put-call ratio and volume put-call ratio"} />
+                  <EChart className="echart-fixed !h-[350px]" hoverGroup="smart-oi" option={ratioOpt} ariaLabel={lower === "volume" ? "Put and call volume today with the put minus call difference on the right axis" : "OI put-call ratio and volume put-call ratio"} />
                 </div>
               </div>
             </div>
@@ -1143,7 +1143,7 @@ export const WIDGETS: WidgetDef[] = [
   { id: "oiHeatmap", title: "OI change heatmap", render: () => <OiHeatmapWidget />, x: 6, y: 37, w: 6, h: 12, minW: 4, minH: 7 },
   { id: "oiConcentration", title: "OI concentration", render: () => <OiConcentrationWidget />, x: 0, y: 49, w: 5, h: 10, minW: 3, minH: 6 },
   { id: "priceOi", title: "Price and OI", render: () => <PriceOiWidget />, x: 5, y: 49, w: 7, h: 10, minW: 4, minH: 6 },
-  { id: "smartOi", title: "Smart OI: change per candle", render: () => <SmartOiChartWidget />, x: 0, y: 100, w: 12, h: 18, minW: 6, minH: 12 },
+  { id: "smartOi", title: "Smart OI: change per candle", render: () => <SmartOiChartWidget />, x: 0, y: 100, w: 12, h: 30, minW: 6, minH: 12 },
   { id: "oiBuildup", title: "OI buildup by strike", render: () => <OiBuildupWidget />, x: 0, y: 118, w: 12, h: 14, minW: 5, minH: 8 },
   { id: "peCe", title: "PE − CE difference", render: () => <PeCeWidget />, x: 0, y: 132, w: 12, h: 10, minW: 4, minH: 6 },
   { id: "ivSkew", title: "Volatility skew", render: () => <IvSkewWidget />, x: 0, y: 142, w: 12, h: 10, minW: 4, minH: 6 },
