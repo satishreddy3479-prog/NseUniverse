@@ -295,3 +295,31 @@ def test_a_rule_state_change_on_the_server_is_not_a_conflict_but_a_leg_change_is
     with pytest.raises(RunningConflict):  # a stop was executed after revision 3: refused
         auto.put(doc(), 3)
     assert auto.put(doc(), 4)["rev"] == 5  # a page that has seen it is accepted
+
+
+def _session_auto(tmp_path: Path, at: datetime, trading: bool | None) -> StrategyAutomation:
+    return StrategyAutomation(
+        StrategyStore(tmp_path), lambda k: 131.0 if k == "nse_fo|1" else None, lambda: True, now=lambda: at,
+        trading_day=lambda d: trading,
+    )
+
+
+def test_nothing_is_closed_on_a_holiday_a_sunday_or_outside_the_session(tmp_path: Path) -> None:
+    """22 Nov 2026 (a Sunday): a restart replayed Friday's close and the server booked a stop and a clock close at it."""
+    sunday = datetime(2026, 11, 22, 2, 50, 21, tzinfo=UTC)  # 08:20:21 IST
+    for name, at, trading in (
+        ("sunday-no-calendar", sunday, None),
+        ("holiday-in-calendar", datetime(2026, 11, 5, 5, 0, tzinfo=UTC), False),  # a weekday the calendar says is closed
+        ("before-open", datetime(2026, 11, 5, 3, 30, tzinfo=UTC), True),  # 09:00 IST
+        ("after-close", datetime(2026, 11, 5, 11, 0, tzinfo=UTC), True),  # 16:30 IST
+    ):
+        auto = _session_auto(tmp_path / name, at, trading)
+        auto.put(doc(), None)
+        assert auto.check_once() == [], name
+        assert auto.get()["legs"][0].get("exitPrice") is None, name  # type: ignore[index]
+
+
+def test_a_stop_is_still_executed_inside_a_real_session(tmp_path: Path) -> None:
+    auto = _session_auto(tmp_path, datetime(2026, 11, 5, 4, 0, tzinfo=UTC), True)  # 09:30 IST, a trading day
+    auto.put(doc(), None)
+    assert auto.check_once() and auto.get()["legs"][0]["exitPrice"] == 131.0  # type: ignore[index]

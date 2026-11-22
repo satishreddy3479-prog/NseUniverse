@@ -16,7 +16,7 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from typing import Any
 
-from app.domain.session import session_close
+from app.domain.session import SESSION_OPEN, session_close
 from app.storage.strategies import StrategyStore
 
 logger = logging.getLogger(__name__)
@@ -463,7 +463,9 @@ class StrategyAutomation:
         is_live: Callable[[], bool],
         interval_s: float = 1.0,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        trading_day: Callable[[date], bool | None] | None = None,
     ) -> None:
+        self.trading_day = trading_day
         self.store = store
         self.price_of_key = price_of_key
         self.is_live = is_live
@@ -505,6 +507,19 @@ class StrategyAutomation:
             self.store.put(RUNNING_KIND, RUNNING_KEY, doc)
             return doc
 
+    def market_open(self, at: datetime) -> bool:
+        """Stops, targets and the hold rule act only inside a real session: a trading day (exchange calendar; weekday when it
+        has no entry) between the open and the close. Outside it the stored last prices are not a market: the broker replays the
+        previous close on every restart, and acting on it books a fake exit (22 Nov 2026, a Sunday).
+        Without a calendar wired in (tests) there is no guard."""
+        if self.trading_day is None:
+            return True
+        t = at.astimezone(IST)
+        known = self.trading_day(t.date())
+        if known is False or (known is None and t.weekday() >= 5):
+            return False
+        return SESSION_OPEN <= t.time() <= session_close()
+
     # ---- one evaluation
     def check_once(self) -> list[str]:
         at = self._now()
@@ -512,7 +527,7 @@ class StrategyAutomation:
         self.checks += 1
         with self._lock:
             doc = self.get()
-            if not doc or not doc.get("auto") or not doc.get("legs") or not self.is_live():
+            if not doc or not doc.get("auto") or not doc.get("legs") or not self.is_live() or not self.market_open(at):
                 return []
             lot = doc.get("lotSize")
             exp = doc.get("expiry")

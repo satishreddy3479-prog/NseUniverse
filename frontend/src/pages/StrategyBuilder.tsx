@@ -52,6 +52,11 @@ export const sameEntries = (a: Leg[], b: Leg[]): boolean => {
   const sig = (ls: Leg[]) => ls.filter((l) => l.enabled !== false).map((l) => JSON.stringify([l.action, l.type, l.strike, l.expiry, l.premium])).sort().join("|");
   return a.length > 0 && sig(a) === sig(b);
 };
+/** The same legs (same leg ids, same entry premium) as a trade already in Closed: a closed trade brought back as running legs (an old copy, a restart) is that trade, never a new one, so it is not filed a second time with other exit prices. */
+export const isRefiled = (closed: Closed[], legs: Leg[]): Closed | undefined => {
+  const on = legs.filter((l) => l.enabled !== false);
+  return on.length === 0 ? undefined : closed.find((c) => on.every((l) => c.legs.some((x) => x.id === l.id && x.premium === l.premium && x.strike === l.strike && x.type === l.type)));
+};
 const DUPLICATE_WINDOW_MS = 15 * 60_000; // the same position filed again within this long is the same exit clicked twice, not a second trade
 const loadClosed = (): Closed[] => { try { return JSON.parse(localStorage.getItem(CLOSED_KEY) ?? "[]") as Closed[]; } catch { return []; } };
 /** A number box that commits on blur or Enter, so a half-typed "2" on the way to "2000" never arms a rule. Empty clears it. */
@@ -755,7 +760,7 @@ export default function StrategyBuilder() {
       filed.current.add(`open:${loaded ?? ""}`);
       // The same finished legs may already be in Closed: a closed trade that was opened to look at, then restored after a refresh or a
       // page switch, comes back as plain legs. Filing them again would book the same P&L twice, so it is shown as the closed trade it is.
-      const twin = closed.find((c) => sameTrade(c.legs, legs));
+      const twin = closed.find((c) => sameTrade(c.legs, legs)) ?? isRefiled(closed, legs);
       if (twin) { setOpened(twin); return; }
       exitAll();
       setNote("All legs were closed by the strategy's own close rule, so it moved to Closed.");
@@ -764,7 +769,7 @@ export default function StrategyBuilder() {
     const done = saved.filter((s) => s.name !== loaded && isFinished(s.legs) && !filed.current.has(s.name));
     if (done.length === 0) return;
     done.forEach((s) => filed.current.add(s.name));
-    const recs: Closed[] = done.map((s) => {
+    const recs: Closed[] = done.filter((s) => !isRefiled(closed, s.legs)).map((s) => {
       const on = s.legs.filter((l) => l.enabled !== false);
       const at = on.map((l) => l.exitedAt ?? "").sort().at(-1) || s.updatedAt || s.savedAt;
       return { id: `auto-${s.name}-${at.slice(0, 10)}`, name: s.name, closedAt: at, snapshotAt: at, expiry: s.expiry, lotSize, pnl: on.reduce((t, l) => t + (l.realised ?? 0), 0), legs: on.map((l) => ({ ...l, exit: l.exitPrice as number })) };

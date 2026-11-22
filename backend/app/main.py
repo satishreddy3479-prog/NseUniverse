@@ -239,6 +239,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             app.state.strategies,
             _live_price,
             lambda: stream.status().effective_state == "streaming",
+            trading_day=lambda d: app.state.intraday.trading_day(d),
         )
         app.state.strategy_automation = strategy_automation
         strategy_automation.start()
