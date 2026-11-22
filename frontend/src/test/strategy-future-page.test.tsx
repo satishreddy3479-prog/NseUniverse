@@ -97,6 +97,16 @@ describe("NIFTY future in the Strategy builder", () => {
     expect(msg.textContent ?? "").not.toBe(""); // the stored one-minute prices are not part of this fixture: the tab explains it
   });
 
+  it("the Scenarios tab carries the surface what-if for the strategy, and says the future is included", async () => {
+    mount();
+    await loaded();
+    await userEvent.click(await screen.findByRole("button", { name: "Sell future" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Scenarios" }));
+    const box = await screen.findByTestId("builder-whatif", undefined, { timeout: 10000 });
+    expect(box).toHaveTextContent("What-if on the volatility surface");
+    expect(within(box).getByTestId("whatif-futures-note")).toHaveTextContent("−₹75 per index point"); // one sold lot of 75 in this fixture
+  });
+
   it("with no contract resolved the buttons are off and nothing is invented", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => (String(input).includes("/api/futures/contracts") ? new Response("{}", { status: 503 }) : new Response("{}", { status: 404 }))));
     mount();

@@ -24,7 +24,7 @@ const ServerManagement = named(() => import("./pages/ServerManagement"), "Server
 const Portfolio = named(() => import("./pages/Portfolio"), "Portfolio");
 const Diagnostics = named(() => import("./pages/Diagnostics"), "Diagnostics");
 const Settings = named(() => import("./pages/Settings"), "Settings");
-const GreeksWhatIf = named(() => import("./pages/GreeksWhatIf"), "GreeksWhatIf");
+const AdvancedGreeks = named(() => import("./pages/AdvancedGreeks"), "AdvancedGreeks");
 /** The pages that load on demand, most used first. Fetched quietly once the first screen is up (see prefetchPages), so a click on a menu item does not wait for the network. */
 const PAGE_LOADERS: (() => Promise<unknown>)[] = [
   () => import("./pages/MarketIntelligence"), () => import("./pages/StrategyBuilder"), () => import("./pages/ToolPage"), () => import("./pages/Analysis"),
@@ -76,7 +76,8 @@ export function AppRoutes() {
         <Route path="tools/:id" element={
           <Suspense fallback={<Loading label="Loading tool…" />}><ToolPage /></Suspense>} />
         <Route path="option-chain" element={<OptionChain />} />
-        <Route path="greeks-whatif" element={wait("Greeks and What-If", <GreeksWhatIf />)} />
+        <Route path="advanced-greeks" element={wait("Advanced Greeks", <AdvancedGreeks />)} />
+        <Route path="greeks-whatif" element={<Navigate to="/advanced-greeks" replace />} />
         <Route path="analysis" element={
           <Suspense fallback={<Loading label="Loading analysis…" />}><Analysis /></Suspense>} />
         <Route path="strategy" element={

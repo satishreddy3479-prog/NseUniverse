@@ -278,3 +278,28 @@ export const PRESET_LABELS: Record<string, string> = {
 export const PRESET_ORDER = ["gap_down", "iv_spike", "expiry_crush", "expiry_minus_3h", "expiry_minus_1h", "expiry_minus_15m", "sd_minus_2", "sd_minus_1", "sd_plus_1", "sd_plus_2"];
 
 export const legKey = (l: RiskLeg): string => `${l.expiry}|${l.strike}|${l.type}|${l.action}`;
+
+// ---- the NIFTY future beside the options (the engine prices options only)
+/**
+ * Rupees per index point of the builder's open NIFTY futures: signed lots x multiplier x lot size. A future moves one for one with the index, so a scenario that
+ * moves the index by ``ds`` points changes its value by ``units x ds``; the engine's convention is the same (the forward moves by the points, the basis stays).
+ * Time and a rate move do not change a future's value in that convention. Exited and unticked legs are not counted.
+ */
+export function futureUnits(legs: readonly Leg[], lotSize: number | null | undefined): number {
+  if (!lotSize) return 0;
+  return legs.filter((l) => l.type === "FUT" && l.enabled !== false && l.exitPrice == null).reduce((a, l) => a + (l.action === "BUY" ? 1 : -1) * l.lots * lotSize, 0);
+}
+const plus = (v: Num, add: number): Num => (v == null ? null : v + add);
+/** The grid with the futures added to every cell: rows are index shocks in points, so a row adds ``units x shock`` to each of its cells. */
+export function gridWithFutures(g: GridResult, units: number): GridResult {
+  return units === 0 ? g : { ...g, pnl: g.pnl.map((row, i) => row.map((v) => plus(v, units * (g.row_axis[i] ?? 0)))) };
+}
+export function scenarioWithFutures(r: ScenarioResult, units: number): ScenarioResult {
+  const add = units * r.scenario.spot_shock;
+  return units === 0 ? r : { ...r, pnl: plus(r.pnl, add), partial_pnl: plus(r.partial_pnl, add) };
+}
+export function presetsWithFutures(p: RiskPresets, units: number): RiskPresets {
+  if (units === 0) return p;
+  return { ...p, presets: Object.fromEntries(Object.entries(p.presets).map(([k, v]) => [k, { ...v, pnl: plus(v.pnl, units * v.scenario.spot_shock), partial_pnl: plus(v.partial_pnl, units * v.scenario.spot_shock) }])) };
+}
+

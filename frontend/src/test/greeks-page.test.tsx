@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GreeksWhatIf } from "../pages/GreeksWhatIf";
+import { AdvancedGreeks } from "../pages/AdvancedGreeks";
 import chainFx from "./fixtures/risk/chain_greeks.json";
 import degradedFx from "./fixtures/risk/surface_degraded.json";
 import gridPayoff from "./fixtures/risk/grid_payoff.json";
@@ -59,7 +59,7 @@ function install(over: Over = {}) {
 
 function mount() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={qc}><MemoryRouter><GreeksWhatIf /></MemoryRouter></QueryClientProvider>);
+  return render(<QueryClientProvider client={qc}><MemoryRouter><AdvancedGreeks /></MemoryRouter></QueryClientProvider>);
 }
 const optionOf = (label: string | RegExp) => JSON.parse(screen.getByRole("img", { name: label }).getAttribute("data-option") ?? "{}") as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -92,70 +92,6 @@ describe("Greeks and What-If page", () => {
     await waitFor(() => expect(screen.getAllByTestId("risk-leg-row")).toHaveLength(4));
     fireEvent.click(screen.getByTestId("risk-add-leg"));
     expect(screen.getAllByTestId("risk-leg-row")).toHaveLength(5);
-  });
-
-  it("the scenario result is the engine's: total, volatilities and values per leg, and the entry-price column", async () => {
-    install();
-    mount();
-    expect(await screen.findByTestId("risk-total")).toHaveTextContent("+₹4,848"); // the fixture's 4848.4756
-    const t = screen.getByTestId("risk-leg-results");
-    const rows = within(t).getAllByRole("row");
-    expect(rows).toHaveLength(6); // header and five legs
-    expect(rows[1]).toHaveTextContent("11-03 · 25,500 CE · Sell 2");
-    expect(rows[1]).toHaveTextContent("−₹14,488"); // first leg's change
-    expect(rows[3]).toHaveTextContent("—"); // a leg with no entry price: a dash, not zero
-    const body = calls.find((c) => c.url === "/api/risk/scenario")!.body!;
-    expect((body.legs as unknown[]).length).toBe(5);
-    expect(body.scenario).toMatchObject({ spot_shock: 0, iv_shock: 0, time_elapsed_hours: 0, sticky_rule: "moneyness" });
-  });
-
-  it("preset buttons show their P&L and apply their scenario to the controls and to the request", async () => {
-    install();
-    mount();
-    const gap = await screen.findByTestId("risk-preset-gap_down");
-    expect(gap).toHaveTextContent("Gap down 2%");
-    expect(gap).toHaveTextContent("−₹25,801"); // the fixture
-    expect(screen.getByTestId("risk-preset-sd_plus_1")).toHaveTextContent("+₹4,330");
-    expect(screen.getByTestId("risk-preset-expiry_crush")).toHaveTextContent("+₹12,499");
-    expect(gap).toHaveAttribute("aria-pressed", "false");
-    fireEvent.click(gap);
-    await waitFor(() => expect(screen.getByTestId("risk-spot")).toHaveValue(-510));
-    expect(screen.getByTestId("risk-preset-gap_down")).toHaveAttribute("aria-pressed", "true");
-    await waitFor(() => expect(calls.some((c) => c.url === "/api/risk/scenario" && (c.body!.scenario as { spot_shock: number }).spot_shock === -510)).toBe(true));
-    fireEvent.click(screen.getByTestId("risk-reset"));
-    await waitFor(() => expect(screen.getByTestId("risk-spot")).toHaveValue(0));
-    fireEvent.change(screen.getByTestId("risk-rule"), { target: { value: "delta" } });
-    expect(screen.getByTestId("risk-rule-hint")).toHaveTextContent("function of delta");
-    fireEvent.change(screen.getByTestId("risk-rate"), { target: { value: "0.5" } });
-    await waitFor(() => expect(calls.some((c) => c.url === "/api/risk/scenario" && (c.body!.scenario as { rate_shock: number; sticky_rule: string }).rate_shock === 0.005 && (c.body!.scenario as { sticky_rule: string }).sticky_rule === "delta")).toBe(true)); // percentage points become an absolute rate
-  });
-
-  it("the risk matrix is the grid the engine returned, with the surface version, and can switch to time", async () => {
-    install();
-    mount();
-    const chart = await screen.findByRole("img", { name: /Risk matrix/ });
-    const o = optionOf(/Risk matrix/);
-    expect(o.series[0].data).toHaveLength(15);
-    expect(chart).toBeInTheDocument();
-    expect(screen.getByTestId("risk-matrix")).toHaveTextContent("Surface v1");
-    expect(screen.getByTestId("risk-matrix")).toHaveTextContent("Volatility follows moneyness");
-    fireEvent.click(screen.getByTestId("risk-matrix-spot_time"));
-    await waitFor(() => expect(calls.some((c) => c.url === "/api/risk/grid" && c.body!.kind === "spot_time")).toBe(true));
-    await waitFor(() => expect(optionOf(/Risk matrix/).xAxis.data).toEqual(["now", "+24h", "+3.0d"]));
-    expect(screen.getByTestId("risk-matrix-spot_time")).toHaveAttribute("aria-pressed", "true");
-  });
-
-  it("the payoff chart has today's line and the standard deviation bands from the presets", async () => {
-    install();
-    mount();
-    await screen.findByRole("img", { name: /Payoff of the position/ });
-    await waitFor(() => expect(optionOf(/Payoff of the position/).series).toHaveLength(2));
-    const o = optionOf(/Payoff of the position/);
-    expect(o.series[0].name).toBe("At expiry");
-    expect(o.series[0].markArea.data).toHaveLength(3);
-    const sd1 = presetsFx.presets.sd_plus_1.scenario.spot_shock;
-    expect(o.series[0].markArea.data[2][1].xAxis).toBeCloseTo(gridPayoff.forward! + sd1, 6);
-    expect(screen.getByTestId("risk-payoff")).toHaveTextContent("Against the current value, not the entry price");
   });
 
   it("the Greeks dashboard shows rupee Greeks, the beta-weighted delta, expiry buckets, and the limits that are near or over", async () => {
@@ -233,14 +169,13 @@ describe("empty, error, stale and degraded states", () => {
     install();
     mount();
     expect(await screen.findByTestId("risk-no-legs")).toHaveTextContent("No legs yet");
-    expect(screen.getByTestId("risk-result")).toHaveTextContent("Add legs to see what a scenario would do");
     const use = await screen.findByTestId("risk-use-builder");
     await waitFor(() => expect(use).toHaveTextContent("(1)"));
-    expect(calls.some((c) => c.url === "/api/risk/scenario" || c.url === "/api/risk/portfolio")).toBe(false);
+    expect(calls.some((c) => c.url === "/api/risk/portfolio")).toBe(false);
     fireEvent.click(use);
     await waitFor(() => expect(screen.getAllByTestId("risk-leg-row")).toHaveLength(1));
     expect(JSON.parse(localStorage.getItem("nse.greeks.legs")!)).toEqual([{ expiry: E1, strike: 25500, type: "CE", action: "SELL", lots: 1, entry_price: 140 }]);
-    await screen.findByTestId("risk-total");
+    await screen.findByTestId("risk-greeks");
   });
 
   it("no stored chain yet: every panel says why in plain words, not a blank", async () => {
@@ -252,21 +187,9 @@ describe("empty, error, stale and degraded states", () => {
       "/api/risk/presets": { status: 503, body: { detail: { code: "no_surface", message: "no stored option chain" } } },
     });
     mount();
-    await waitFor(() => expect(screen.getAllByRole("alert").length).toBeGreaterThanOrEqual(4));
-    expect(screen.getByTestId("risk-result")).toHaveTextContent("No stored option chain is available yet");
-    expect(screen.getByTestId("risk-matrix")).toHaveTextContent("No stored option chain is available yet");
+    await waitFor(() => expect(screen.getAllByRole("alert").length).toBeGreaterThanOrEqual(2));
     expect(screen.getByTestId("risk-greeks")).toHaveTextContent("No stored option chain is available yet");
     expect(screen.getByTestId("risk-stamp-text")).toHaveTextContent("No surface yet");
-  });
-
-  it("an expiry with no chain, no fit and an invalid input each get their own message", async () => {
-    install({ "/api/risk/scenario": { status: 409, body: { detail: { code: "expiry_unavailable", message: "no chain data (and so no lot size) for the expiry 2026-12-29" } } } });
-    mount();
-    await waitFor(() => expect(screen.getByTestId("risk-result")).toHaveTextContent("no chain data (and so no lot size) for the expiry 2026-12-29. Pick an expiry that has a chain."));
-    vi.unstubAllGlobals();
-    install({ "/api/risk/scenario": { status: 422, body: { detail: [{ msg: "Input should be greater than 0" }] } } });
-    mount();
-    await waitFor(() => expect(screen.getAllByTestId("risk-result").some((e) => e.textContent?.includes("Input should be greater than 0"))).toBe(true));
   });
 
   it("a stale stored chain is flagged on the stamp and in the surface", async () => {

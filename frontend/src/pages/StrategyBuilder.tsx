@@ -9,6 +9,8 @@ import { useLiveSpot, useStreamStatus } from "../lib/useLive";
 import { EChart, useChartColors } from "../components/EChart";
 import { Info } from "../components/Info";
 import { OiBar } from "../components/OiBar";
+import { BuilderWhatIf } from "../components/risk/BuilderWhatIf";
+import { futureUnits, legsFromBuilder } from "../lib/risk";
 import { Button } from "../components/ui";
 import { PAYOFF_ZOOM, payoffOption, payoffView } from "../lib/chartOptions";
 import { api, ApiError, type RunningDoc } from "../lib/api";
@@ -412,6 +414,10 @@ export default function StrategyBuilder() {
   const pop = ready && a?.defined && lotSize && spot && payIv && payExp ? (multi ? probabilityOfProfitFn(pnlFn, spot, payIv, payExp, snapMs, payCarry) : probabilityOfProfit(live, lotSize, spot, payIv, payExp, snapMs, payCarry)) : null;
   const greeks = ready && lotSize && spot ? netGreeks(mlegs, lotSize, val0) : null;
   const mtmLegs = useMemo(() => legs.map((l) => ({ ...l, lots: l.lots * mult })), [legs, mult]); // the lots as the page shows them
+  // the legs still open, with the lots as the page shows them: what the surface what-if values (options) and adds (futures)
+  const openScaled = useMemo(() => open.map((l) => ({ ...l, lots: l.lots * mult })), [open, mult]);
+  const whatIfLegs = useMemo(() => legsFromBuilder(openScaled), [openScaled]);
+  const whatIfFut = useMemo(() => futureUnits(openScaled, lotSize), [openScaled, lotSize]);
   const optionGreeks = ready && lotSize && spot ? netGreeks(mlegs.filter((l) => l.type !== "FUT"), lotSize, val0) : null; // the time chart holds the option legs only
   /** P&L of one leg: what is booked, plus the open part against the market price */
   const unreal = (l: Leg, mkt: number | null) => {
@@ -885,7 +891,7 @@ export default function StrategyBuilder() {
           </div>
         </details>
         <Link to="/portfolio#closed" data-testid="closed-menu" aria-label="Closed strategies" className={`${field} flex items-center`} title="Closed strategies are listed, opened and deleted on the Strategy portfolio page">Closed ({closed.length})</Link>
-        <Link to="/greeks-whatif" data-testid="greeks-link" aria-label="Open in Greeks and What-If" className={`${field} flex items-center`} title="Greeks, scenarios and the volatility surface for these legs (use 'Use my Strategy Builder legs' there)">Greeks &amp; What-If</Link>
+        <Link to="/advanced-greeks" data-testid="greeks-link" aria-label="Open in Advanced Greeks" className={`${field} flex items-center`} title="Rupee Greeks by leg and limit, the gamma map and the volatility surface (use 'Use builder legs' there). The what-if scenarios are on the Scenarios tab here.">Advanced Greeks</Link>
         <Button ariaLabel="Reset strategy" onClick={newStrategy} disabled={!canNew} title="Clear the page: removes every leg, including legs you are only checking and have not saved, and shows the start page. Saved and closed strategies are not touched.">Reset</Button>
         <span className="text-xs text-muted sm:ml-auto" title={liveMode === "fresh" ? "Streamed last traded prices overlay the stored snapshot, as on the Option chain page" : "Premiums are the last traded prices in this stored snapshot, not live quotes"}>{liveMode === "fresh" ? <span className="mr-2 rounded-sm border border-up/60 px-1 text-up">LIVE</span> : null}Snapshot <span className={`num ${chain.data?.stale ? "text-warn" : "text-paper"}`}>{snap ? fmtDateTimeIST(snap.retrieved_at) : "—"}</span>{chain.data?.stale ? " · stale" : ""}</span>
       </div>
@@ -1396,6 +1402,7 @@ export default function StrategyBuilder() {
                       </tbody>
                     </table>
                   ) : <p className="text-sm text-muted">{ready ? "Needs an at-the-money implied volatility from the stored chain." : "Enter the entry premium of every leg."}</p>}
+                  <div className="mt-4 border-t border-rule pt-3"><BuilderWhatIf legs={whatIfLegs} futUnits={whatIfFut} /></div>
                   <p className="mt-2 text-[11px] text-muted">Rows are NIFTY levels at -2σ to +2σ of the model distribution (ATM implied volatility {atmIv == null ? "—" : `${(atmIv * 100).toFixed(1)}%`}). Columns before expiry are Black-76 model estimates{ivPts ? ` with implied volatility ${ivPts > 0 ? "+" : ""}${ivPts} points` : ""}; the expiry column is the exact payoff. Entry premiums are yours; nothing here is a forecast.</p>
                 </div>
               )}
