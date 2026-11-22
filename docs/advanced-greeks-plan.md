@@ -1,6 +1,6 @@
 # Advanced Greeks: what an institutional desk looks at, and what to add (plan, 23 Nov 2026)
 
-Status: plan only. The page today (`/advanced-greeks`) shows rupee Greeks by leg, expiry bucket and limit, the gamma map and the volatility surface. The what-if scenarios moved to the Strategy Builder's Scenarios tab (D267). Read-only throughout: nothing here places an order.
+Status: built on 23 Nov 2026 (D268), all four phases, on the Strategy Builder's strategy only. Original plan follows. The page today (`/advanced-greeks`) shows rupee Greeks by leg, expiry bucket and limit, the gamma map and the volatility surface. The what-if scenarios moved to the Strategy Builder's Scenarios tab (D267). Read-only throughout: nothing here places an order.
 
 ## What a desk reads that this page does not yet show
 Grouped by the question each answers. Every item lists its data, how it is verified, and what it cannot say.

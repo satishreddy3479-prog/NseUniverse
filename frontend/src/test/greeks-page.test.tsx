@@ -22,14 +22,7 @@ vi.mock("../components/EChart", () => ({
 }));
 
 const E1 = "2026-11-03";
-const E2 = "2026-11-23";
-const LEGS = [
-  { expiry: E1, strike: 25500, type: "CE", action: "SELL", lots: 2, entry_price: 140 },
-  { expiry: E1, strike: 25500, type: "PE", action: "SELL", lots: 2, entry_price: 130 },
-  { expiry: E1, strike: 25800, type: "CE", action: "BUY", lots: 2, entry_price: null },
-  { expiry: E1, strike: 25200, type: "PE", action: "BUY", lots: 2, entry_price: null },
-  { expiry: E2, strike: 25500, type: "CE", action: "BUY", lots: 1, entry_price: null },
-];
+
 const builderDoc = { doc: { legs: [{ id: "a", expiry: E1, strike: 25500, type: "CE", action: "SELL", lots: 1, premium: 140, premiumSource: "manual" }, { id: "b", expiry: E1, strike: 25400, type: "PE", action: "BUY", lots: 3, premium: null, premiumSource: null, enabled: false }] }, checking: { live: false, last_check_at: null, error: null } };
 
 type Over = Partial<Record<string, { status?: number; body: unknown }>>;
@@ -63,7 +56,7 @@ function mount() {
 }
 const optionOf = (label: string | RegExp) => JSON.parse(screen.getByRole("img", { name: label }).getAttribute("data-option") ?? "{}") as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-beforeEach(() => { localStorage.clear(); localStorage.setItem("nse.greeks.legs", JSON.stringify(LEGS)); });
+beforeEach(() => localStorage.clear());
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Greeks and What-If page", () => {
@@ -77,21 +70,16 @@ describe("Greeks and What-If page", () => {
     expect(screen.getByText(/Read-only: nothing is placed or sent to a broker/)).toBeInTheDocument();
   });
 
-  it("lists the position and lets legs be changed, with every control labelled", async () => {
+  it("analyses the Strategy Builder's strategy only: no legs editor, the open ticked legs go to the engine and the disabled one stays out", async () => {
     install();
     mount();
-    const rows = await screen.findAllByTestId("risk-leg-row");
-    expect(rows).toHaveLength(5);
-    expect(within(rows[0]!).getByLabelText("Leg 1 strike")).toHaveValue(25500);
-    expect(within(rows[0]!).getByLabelText("Leg 1 side")).toHaveValue("SELL");
-    expect(within(rows[0]!).getByLabelText("Leg 1 entry premium")).toHaveValue(140);
-    expect(within(rows[2]!).getByLabelText("Leg 3 entry premium")).toHaveValue(null);
-    fireEvent.change(within(rows[0]!).getByLabelText("Leg 1 lots"), { target: { value: "3" } });
-    expect(JSON.parse(localStorage.getItem("nse.greeks.legs")!)[0].lots).toBe(3); // kept for the next visit
-    fireEvent.click(within(rows[4]!).getByLabelText("Remove leg 5"));
-    await waitFor(() => expect(screen.getAllByTestId("risk-leg-row")).toHaveLength(4));
-    fireEvent.click(screen.getByTestId("risk-add-leg"));
-    expect(screen.getAllByTestId("risk-leg-row")).toHaveLength(5);
+    await screen.findByTestId("risk-greeks");
+    expect(screen.queryByTestId("risk-add-leg")).toBeNull();
+    expect(screen.queryByTestId("risk-leg-row")).toBeNull();
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/risk/portfolio")).toBe(true));
+    const sent = calls.filter((c) => c.url === "/api/risk/portfolio").map((c) => c.body as { legs: unknown[] });
+    expect(sent[0]!.legs).toEqual([{ expiry: E1, strike: 25500, type: "CE", action: "SELL", lots: 1, entry_price: 140 }]);
+    expect(screen.getByText(/Strategy Builder/, { selector: "a" })).toBeInTheDocument();
   });
 
   it("the Greeks dashboard shows rupee Greeks, the beta-weighted delta, expiry buckets, and the limits that are near or over", async () => {
@@ -164,18 +152,11 @@ describe("Greeks and What-If page", () => {
 });
 
 describe("empty, error, stale and degraded states", () => {
-  it("with no legs it says so, calls no scenario endpoint, and loads the Strategy Builder's legs on request (disabled ones left out)", async () => {
-    localStorage.clear();
-    install();
+  it("with an empty Builder it says so and calls no scenario or portfolio endpoint", async () => {
+    install({ "/api/strategies/running": { body: { doc: null, checking: { live: false, last_check_at: null, error: null } } } });
     mount();
-    expect(await screen.findByTestId("risk-no-legs")).toHaveTextContent("No legs yet");
-    const use = await screen.findByTestId("risk-use-builder");
-    await waitFor(() => expect(use).toHaveTextContent("(1)"));
-    expect(calls.some((c) => c.url === "/api/risk/portfolio")).toBe(false);
-    fireEvent.click(use);
-    await waitFor(() => expect(screen.getAllByTestId("risk-leg-row")).toHaveLength(1));
-    expect(JSON.parse(localStorage.getItem("nse.greeks.legs")!)).toEqual([{ expiry: E1, strike: 25500, type: "CE", action: "SELL", lots: 1, entry_price: 140 }]);
-    await screen.findByTestId("risk-greeks");
+    expect(await screen.findByTestId("adv-empty")).toHaveTextContent("The Strategy Builder has no open legs");
+    expect(calls.some((c) => c.url === "/api/risk/portfolio" || c.url === "/api/risk/scenario")).toBe(false);
   });
 
   it("no stored chain yet: every panel says why in plain words, not a blank", async () => {
