@@ -447,6 +447,20 @@ describe("the opening strike goes stale and the managed straddle is shown", () =
     expect(screen.getByTestId("sdi-managed")).toHaveTextContent("about −₹650 per lot of 65");
   });
 
+  itIn("today", "lets the managed straddle be followed like the fixed and rolling ones", async () => {
+    const f = full();
+    const r = f.tracker!.rolling;
+    const managed = { threshold: 100, restrikes: 2, segments: [], strike_now: 24100, realised: -30, open_pnl: 20, total: -10, total_rupees: -650, lot_size: 65, note: "n", ce: r.ce, pe: r.pe, straddle: r.straddle, adjusted_change: 7.5 };
+    mount(full({ tracker: { ...f.tracker!, managed }, series: { ...f.series!, managed: { ...f.series!.rolling, pnl: f.series!.rolling.straddle } }, cumulative: { ...f.cumulative!, managed: f.cumulative!.rolling }, attribution: { ...f.attribution!, managed: f.attribution!.rolling }, iv: { ...f.iv!, managed: f.iv!.rolling } }));
+    const card = await screen.findByTestId("sdi-managed");
+    expect(card).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(card);
+    expect(card).toHaveAttribute("aria-pressed", "true");
+    expect(card).toHaveTextContent("shown in the sections below");
+    expect(screen.getByTestId("sdi-position-note")).toHaveTextContent("Managed position: the opening straddle, moved to the strike nearest NIFTY whenever NIFTY is 100 points from the held strike (now 24100). 2 re-strikes so far");
+    expect(screen.getByTestId("sdi-compare-rolling").className).not.toContain("ring-brass");
+  });
+
   itIn("today", "says nothing about a stale strike while the opening strike is still at the money", async () => {
     const f = full();
     mount(full({ tracker: { ...f.tracker!, fixed: { ...f.tracker!.fixed, reference: { distance: 30, distance_pct_of_premium: 9, net_delta: 0.1, stale: false, threshold: 100 } } } }));

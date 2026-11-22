@@ -33,7 +33,7 @@ export function StraddleReadingCard({ d, mode }: { d: StraddleDecay; mode: Mode 
           {r.positions.length === 0 ? <span className="text-muted">No straddle sample yet.</span> : (
             <ul className="space-y-1.5" data-testid="sdi-reading-positions">
               {r.positions.map((p) => (
-                <li key={p.name}><span className={`font-medium ${p.name.startsWith(mode === "fixed" ? "Fixed" : "Rolling") ? "text-paper" : "text-muted"}`}>{p.name}</span>
+                <li key={p.name}><span className={`font-medium ${p.name.startsWith(mode === "fixed" ? "Fixed" : mode === "managed" ? "Managed" : "Rolling") ? "text-paper" : "text-muted"}`}>{p.name}</span>
                   <span className="num block text-xs text-muted">{p.open == null ? MISSING : p.open.toFixed(1)} at the open → {p.now == null ? MISSING : p.now.toFixed(1)} now ({sg(p.change)} points): {p.words}.</span></li>
               ))}
             </ul>

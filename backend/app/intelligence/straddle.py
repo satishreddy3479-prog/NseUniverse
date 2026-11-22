@@ -604,6 +604,7 @@ def analyse(
 
     steps_roll, skip_roll = attribute_steps(pts, rolling_k)
     steps_fix, skip_fix = attribute_steps(pts, fixed_held)
+    steps_man, skip_man = attribute_steps(pts, managed_k)  # a re-strike closes and opens at traded prices, so the managed profit is the sum of same-contract changes, as for the rolling line
     last_t = times[max(i for i, p in enumerate(pts) if p is not None)]
 
     def cumulative(steps: Sequence[dict[str, Any] | None]) -> dict[str, list[float | None]]:
@@ -627,7 +628,7 @@ def analyse(
             out[name] = None if ws is None else {k: ({c: rd(x, 3) for c, x in v.items()} if isinstance(v, dict) else v) for k, v in ws.items()} | {"efficiency": efficiency(ws["both"])}
         return out
 
-    attribution = {"fixed": windows(steps_fix), "rolling": windows(steps_roll)}
+    attribution = {"fixed": windows(steps_fix), "rolling": windows(steps_roll), "managed": windows(steps_man)}
     # --- module 1: premium tracker
     s_fix, s_roll = _stat(fix["straddle"]), _stat(roll["straddle"])
     tracker: dict[str, Any] = {
@@ -643,9 +644,9 @@ def analyse(
     lp = pts[last_ok]
     f_ce, f_pe = (None, None) if lp is None else (lp.leg(fixed_k, CALL), lp.leg(fixed_k, PUT))
     tracker["fixed"]["reference"] = reference_status(spot[last_ok], fixed_k, s_fix["open"], None if f_ce is None or f_pe is None else f_ce.g.delta + f_pe.g.delta)
-    tracker["managed"] = managed_book(times, managed_k, man["straddle"], pair_price)
+    tracker["managed"] = managed_book(times, managed_k, man["straddle"], pair_price) | {"ce": _stat(man["ce"]), "pe": _stat(man["pe"]), "straddle": _stat(man["straddle"]), "adjusted_change": rd(cumulative(steps_man)["actual"][-1], 2)}
     tracker["moves"] = {"fixed": {"straddle": _moves(times, fix["straddle"]), "ce": _moves(times, fix["ce"]), "pe": _moves(times, fix["pe"])},
-                        "rolling_adjusted": {"straddle": _moves(times, adj_series)}}  # fmt: skip
+                        "rolling_adjusted": {"straddle": _moves(times, adj_series)}, "managed_adjusted": {"straddle": _moves(times, cumulative(steps_man)["actual"])}}  # fmt: skip
     f_now, r_now = s_fix["current"], s_roll["current"]
     tracker["difference"] = {"fixed_minus_rolling_now": None if f_now is None or r_now is None else rd(f_now - r_now),
                              "fixed_change": s_fix["change"], "rolling_adjusted_change": tracker["rolling"]["adjusted_change"],
@@ -681,6 +682,7 @@ def analyse(
         "levels": {"pe25": _stat(pe25), "ce25": _stat(ce25), "pe10": _stat(pe10), "ce10": _stat(ce10), "butterfly25": _stat(bfly25), "butterfly10": _stat(bfly10)},
         "moves": ivm, "regimes": regimes,
         "fixed": {"ce": _stat(fix["ce_iv"]), "pe": _stat(fix["pe_iv"]), "combined": iv_comb}, "rolling": {"ce": _stat(roll["ce_iv"]), "pe": _stat(roll["pe_iv"]), "combined": _stat(roll["iv"])},
+        "managed": {"ce": _stat(man["ce_iv"]), "pe": _stat(man["pe_iv"]), "combined": _stat(man["iv"])},
         "skew25": _stat(skew25), "skew10": _stat(skew10), "rr25": _stat(rr25), "rr10": _stat(rr10),
         "per_spot_pct": None if spot_move_pct is None or abs(spot_move_pct) < 0.1 or iv_comb["change"] is None else rd(iv_comb["change"] / spot_move_pct, 2),
         "iv_vs_spot": {"slope_pts_per_pct": rd(slope, 2), "corr": rd(corr, 2), "pairs": len(xs), "note": "5-sample changes; needs at least 20 pairs"},
@@ -749,15 +751,15 @@ def analyse(
     age_min = None if now is None else (now - last_at).total_seconds() / 60
     quality = {
         "last_sample_at": last_at.isoformat(), "age_minutes": rd(age_min, 1), "stale": bool(live and age_min is not None and age_min > 10), "live": live,
-        "steps_skipped_fixed": skip_fix, "steps_skipped_rolling": skip_roll, "forward_fallbacks": sum(1 for p in ok if p.f_src.startswith("spot x carry")),
+        "steps_skipped_fixed": skip_fix, "steps_skipped_rolling": skip_roll, "steps_skipped_managed": skip_man, "forward_fallbacks": sum(1 for p in ok if p.f_src.startswith("spot x carry")),
         "estimated": ["implied volatility and Greeks (model, assumed rate)", "forward (put-call parity)", "opening values = first stored sample with both prices"],
         "stride_note": "Samples are about a minute apart; thinned only if a session has more than the page limit.",
     }  # fmt: skip
     out = base | {
         "status": "ok", "times": [t.isoformat() for t in times], "spot": [rd(v) for v in spot], "forward": [rd(v) for v in fwd], "tracker": tracker,
-        "series": {"managed": {"strike": managed_k, "straddle": [rd(x, 3) for x in man["straddle"]], "pnl": tracker["managed"]["pnl"]}, "rolling": {k: [rd(x, 3) for x in v] if k != "strike" else v for k, v in roll.items()}, "fixed": {k: [rd(x, 3) for x in v] if k != "strike" else v for k, v in fix.items()},
+        "series": {"managed": {k: [rd(x, 3) for x in v] if k != "strike" else v for k, v in man.items()} | {"pnl": tracker["managed"]["pnl"]}, "rolling": {k: [rd(x, 3) for x in v] if k != "strike" else v for k, v in roll.items()}, "fixed": {k: [rd(x, 3) for x in v] if k != "strike" else v for k, v in fix.items()},
                    "skew25": [rd(x, 3) for x in skew25], "skew10": [rd(x, 3) for x in skew10], "rr25": [rd(x, 3) for x in rr25], "rr10": [rd(x, 3) for x in rr10]},
-        "iv": iv, "regime": regime, "retention": retention(tracker["fixed"], attribution["fixed"]["open"]), "attribution": attribution, "cumulative": {"fixed": cumulative(steps_fix), "rolling": cumulative(steps_roll)}, "realised_vs_implied": rvs, "structure": structure, "quality": quality,
+        "iv": iv, "regime": regime, "retention": retention(tracker["fixed"], attribution["fixed"]["open"]), "attribution": attribution, "cumulative": {"fixed": cumulative(steps_fix), "rolling": cumulative(steps_roll), "managed": cumulative(steps_man)}, "realised_vs_implied": rvs, "structure": structure, "quality": quality,
     }  # fmt: skip
     tracker["managed"] = {k: v for k, v in tracker["managed"].items() if k != "pnl"}
     out["interpretation"], out["climate"] = interpret(out)

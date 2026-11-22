@@ -8,7 +8,7 @@ import type { AlertRow, Component, EnvBucket, Moves, Stat, StraddleDecay, Terms,
 import { EChart, useChartColors } from "../EChart";
 import { pill } from "../dashboard/PriceBoards";
 import { useReplay } from "../dashboard/ReplayContext";
-import { StraddleGlance } from "./StraddleGlance";
+import { canManaged, StraddleGlance, type Mode } from "./StraddleGlance";
 import { StraddlePreflightCard } from "./StraddlePreflightCard";
 import { StraddleReadingCard } from "./StraddleReading";
 import { TabPanel, Tabs, type TabDef } from "../swing/shared";
@@ -125,7 +125,7 @@ export function StraddleDecayPanel() {
     if (!rp.on) { if (asked != null) setAsked(null); return; }
     if (asked == null || (rp.cutMs != null && rp.cutMs !== asked && !q.isFetching)) setAsked(rp.cutMs);
   }, [rp.on, rp.cutMs, asked, q.isFetching]);
-  const [mode, setMode] = useState<"fixed" | "rolling">("rolling");
+  const [mode, setMode] = useState<Mode>("rolling");
   const [tab, setTab] = useState<SdTab>(startTab);
   const go = (t: SdTab) => { setTab(t); try { window.history.replaceState(null, "", `#${t}`); } catch { /* the tab still changes without the address */ } };
   const [win, setWin] = useState<keyof Windows>("open");
@@ -135,7 +135,7 @@ export function StraddleDecayPanel() {
   const times = useMemo(() => (d?.times ?? []).map((t) => new Date(t).getTime()), [d?.times]);
   const charts = useMemo(() => {
     if (!d || d.status !== "ok" || !d.series || !d.cumulative) return null;
-    const sr = d.series[mode], cm = d.cumulative[mode];
+    const sr = (d.series[mode] ?? d.series.rolling), cm = (d.cumulative[mode] ?? d.cumulative.rolling);
     const f = (v: number) => sg(v, 1), pc = (v: number) => `${v.toFixed(2)}%`;
     const prem: Line[] = [{ name: "Straddle", color: c.brass, data: sr.straddle, fmt: rupee }, { name: "Call", color: c.up, data: sr.ce, fmt: rupee, dotted: true }, { name: "Put", color: c.down, data: sr.pe, fmt: rupee, dotted: true }];
     const att: Line[] = [
@@ -160,11 +160,11 @@ export function StraddleDecayPanel() {
     return <section aria-label="Straddle decay intelligence" className="rounded-[var(--radius-panel)] border border-rule bg-slate p-4" data-testid="sdi-panel">{head}<p className="mt-2 text-sm text-muted" data-testid="sdi-empty">{d.message ?? "Not enough stored data."}</p></section>;
   }
   const tr = d.tracker, iv = d.iv, rv = d.realised_vs_implied, st = d.structure, ql = d.quality, env = d.environment, ctx = d.context;
-  const pos = mode === "fixed" ? tr.fixed : tr.rolling;
-  const w = d.attribution[mode][win];
+  const pos = mode === "fixed" ? tr.fixed : mode === "managed" && tr.managed?.straddle && tr.managed.ce && tr.managed.pe ? { ce: tr.managed.ce, pe: tr.managed.pe, straddle: tr.managed.straddle } : tr.rolling;
+  const w = (d.attribution[mode] ?? d.attribution.rolling)[win];
   const eff = w?.efficiency;
   const es = (eff ? STATUS[eff.status] : undefined) ?? STATUS.unavailable!;
-  const ivv = iv[mode];
+  const ivv = iv[mode] ?? iv.rolling;
   const src = fmtSrc(d);
   return (
     <section aria-label="Straddle decay intelligence" className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3 sm:p-4 [&_.text-xs]:!text-[13px] [&_.text-\[11px\]]:!text-xs" data-testid="sdi-panel">
@@ -189,29 +189,32 @@ export function StraddleDecayPanel() {
         <span className="text-muted">Position</span>
         <button type="button" aria-pressed={mode === "fixed"} onClick={() => setMode("fixed")} className={pill(mode === "fixed")} title={`The strike that was ATM at the first usable sample (${fmtTimeIST(tr.opening_at)}), held all session. It is not the current ATM strike.`}>Fixed {tr.fixed.strike} · ATM at open</button>
         <button type="button" aria-pressed={mode === "rolling"} onClick={() => setMode("rolling")} className={pill(mode === "rolling")} title="The ATM strike at each step; only same-contract changes are added, so a roll makes no jump">Rolling ATM ({tr.rolling.rolls} rolls)</button>
+        {canManaged(d) && <button type="button" aria-pressed={mode === "managed"} onClick={() => setMode("managed")} className={pill(mode === "managed")} title={`The opening straddle, re-struck to the at-the-money strike whenever NIFTY is ${tr.managed?.threshold ?? 100} points from it; each re-strike books the old pair's profit or loss`}>Managed ({tr.managed?.restrikes ?? 0} re-strikes)</button>}
         <span className="ml-2 text-muted">Window</span>
         {(["open", "60", "30"] as const).map((k) => <button key={k} type="button" aria-pressed={win === k} onClick={() => setWin(k)} className={pill(win === k)}>{WINDOW_LABEL[k]}</button>)}
       </div>
       <p className="mt-1 text-[11px] text-muted" data-testid="sdi-position-note">
         {mode === "fixed"
           ? `Fixed position: the ${tr.fixed.strike} straddle, the strike nearest NIFTY at the first usable sample (${fmtTimeIST(tr.opening_at)}${d.spot?.[0] != null ? `, NIFTY ${d.spot[0].toLocaleString("en-IN")}` : ""}), held all session. NIFTY is now ${lastSpot(d.spot) ?? MISSING} and the at-the-money strike is ${tr.atm_now ?? MISSING}; the rolling position follows that strike.`
+          : mode === "managed"
+          ? `Managed position: the opening straddle, moved to the strike nearest NIFTY whenever NIFTY is ${tr.managed?.threshold ?? 100} points from the held strike (now ${tr.managed?.strike_now ?? MISSING}). ${tr.managed?.restrikes ?? 0} re-strikes so far; a re-strike closes and opens at stored prices, so only same-contract changes are added.`
           : `Rolling position: the strike nearest NIFTY at each sample (now ${tr.atm_now ?? MISSING}), with only same-contract changes added so a roll makes no jump.`}
       </p>
 
           <StraddleGlance d={d} mode={mode} setMode={setMode} part="today" />
       <div className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-2">
         {/* 4. Tracker */}
-        <Box title="Straddle premium tracker" plain="The price of the straddle now against where it started, and how it moved over the last 5, 15, 30 and 60 minutes." note={mode === "fixed" ? `fixed ${tr.fixed.strike}` : "rolling ATM, roll-adjusted"} id="sdi-tracker" foot={`${src} · opening = first stored sample (${fmtTimeIST(tr.opening_at)})`}>
+        <Box title="Straddle premium tracker" plain="The price of the straddle now against where it started, and how it moved over the last 5, 15, 30 and 60 minutes." note={mode === "fixed" ? `fixed ${tr.fixed.strike}` : mode === "managed" ? "managed, re-strike-adjusted" : "rolling ATM, roll-adjusted"} id="sdi-tracker" foot={`${src} · opening = first stored sample (${fmtTimeIST(tr.opening_at)})`}>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <Tile label="Opening CE" value={n1(pos.ce.open)} sub={`now ${n1(pos.ce.current)} (${sg(pos.ce.change)})`} />
             <Tile label="Opening PE" value={n1(pos.pe.open)} sub={`now ${n1(pos.pe.current)} (${sg(pos.pe.change)})`} />
             <Tile label="Opening straddle" value={n1(pos.straddle.open)} sub={`first sample ${fmtTimeIST(tr.opening_at)}`} />
             <Tile label="Straddle now" value={n1(pos.straddle.current)} sub={`high ${n1(pos.straddle.high)} · low ${n1(pos.straddle.low)}`} />
-            <Tile label="Change (points)" value={sg(pos.straddle.change)} tone={tone(pos.straddle.change)} sub={mode === "rolling" ? `roll-adjusted ${sg(tr.rolling.adjusted_change)}` : undefined} />
+            <Tile label="Change (points)" value={sg(pos.straddle.change)} tone={tone(pos.straddle.change)} sub={mode === "rolling" ? `roll-adjusted ${sg(tr.rolling.adjusted_change)}` : mode === "managed" ? `re-strike-adjusted ${sg(tr.managed?.adjusted_change)}` : undefined} />
             <Tile label="Decay (%)" value={pos.straddle.change_pct == null ? MISSING : `${sg(pos.straddle.change_pct, 2)}%`} tone={tone(pos.straddle.change_pct)} sub={`ATM strike ${tr.atm_open ?? MISSING} → ${tr.atm_now ?? MISSING}`} />
           </div>
           {tr.moves && <div className="mt-2 overflow-x-auto"><table className="w-full min-w-[22rem] text-xs" data-testid="sdi-moves"><thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Premium change (points)</th>{MOVE_KEYS.map((k) => <th key={k} className="py-1 text-right font-normal">{k} min</th>)}</tr></thead>
-            <tbody><MoveRow label="Fixed straddle" m={tr.moves.fixed.straddle} /><MoveRow label="Fixed call" m={tr.moves.fixed.ce} /><MoveRow label="Fixed put" m={tr.moves.fixed.pe} /><MoveRow label="Rolling, roll-adjusted" m={tr.moves.rolling_adjusted.straddle} /></tbody></table></div>}
+            <tbody><MoveRow label="Fixed straddle" m={tr.moves.fixed.straddle} /><MoveRow label="Fixed call" m={tr.moves.fixed.ce} /><MoveRow label="Fixed put" m={tr.moves.fixed.pe} /><MoveRow label="Rolling, roll-adjusted" m={tr.moves.rolling_adjusted.straddle} />{tr.moves.managed_adjusted && <MoveRow label="Managed, re-strike-adjusted" m={tr.moves.managed_adjusted.straddle} />}</tbody></table></div>}
           {tr.difference && <p className="mt-1 text-xs text-paper" data-testid="sdi-fixed-vs-rolling">Fixed minus rolling premium now: {sg(tr.difference.fixed_minus_rolling_now)} points; change since open: fixed {sg(tr.difference.fixed_change)}, rolling roll-adjusted {sg(tr.difference.rolling_adjusted_change)}. <span className="text-muted">{tr.difference.note}</span></p>}
           {charts && <div className="mt-2 h-[240px]"><EChart group="sdi" option={charts.prem} ariaLabel="Intraday premium decay: straddle, call and put" /></div>}
         </Box>
@@ -245,12 +248,15 @@ export function StraddleDecayPanel() {
         <span className="text-muted">Position</span>
         <button type="button" aria-pressed={mode === "fixed"} onClick={() => setMode("fixed")} className={pill(mode === "fixed")} title={`The strike that was ATM at the first usable sample (${fmtTimeIST(tr.opening_at)}), held all session. It is not the current ATM strike.`}>Fixed {tr.fixed.strike} · ATM at open</button>
         <button type="button" aria-pressed={mode === "rolling"} onClick={() => setMode("rolling")} className={pill(mode === "rolling")} title="The ATM strike at each step; only same-contract changes are added, so a roll makes no jump">Rolling ATM ({tr.rolling.rolls} rolls)</button>
+        {canManaged(d) && <button type="button" aria-pressed={mode === "managed"} onClick={() => setMode("managed")} className={pill(mode === "managed")} title={`The opening straddle, re-struck to the at-the-money strike whenever NIFTY is ${tr.managed?.threshold ?? 100} points from it; each re-strike books the old pair's profit or loss`}>Managed ({tr.managed?.restrikes ?? 0} re-strikes)</button>}
         <span className="ml-2 text-muted">Window</span>
         {(["open", "60", "30"] as const).map((k) => <button key={k} type="button" aria-pressed={win === k} onClick={() => setWin(k)} className={pill(win === k)}>{WINDOW_LABEL[k]}</button>)}
       </div>
       <p className="mt-1 text-[11px] text-muted" data-testid="sdi-position-note">
         {mode === "fixed"
           ? `Fixed position: the ${tr.fixed.strike} straddle, the strike nearest NIFTY at the first usable sample (${fmtTimeIST(tr.opening_at)}${d.spot?.[0] != null ? `, NIFTY ${d.spot[0].toLocaleString("en-IN")}` : ""}), held all session. NIFTY is now ${lastSpot(d.spot) ?? MISSING} and the at-the-money strike is ${tr.atm_now ?? MISSING}; the rolling position follows that strike.`
+          : mode === "managed"
+          ? `Managed position: the opening straddle, moved to the strike nearest NIFTY whenever NIFTY is ${tr.managed?.threshold ?? 100} points from the held strike (now ${tr.managed?.strike_now ?? MISSING}). ${tr.managed?.restrikes ?? 0} re-strikes so far; a re-strike closes and opens at stored prices, so only same-contract changes are added.`
           : `Rolling position: the strike nearest NIFTY at each sample (now ${tr.atm_now ?? MISSING}), with only same-contract changes added so a roll makes no jump.`}
       </p>
 
@@ -321,7 +327,7 @@ export function StraddleDecayPanel() {
           <StraddleGlance d={d} mode={mode} setMode={setMode} part="why" />
       <div className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-2">
         {/* 5. IV and skew */}
-        <Box title="IV and skew analysis" plain="IV is how much movement the market is pricing in. Falling IV helps sellers; rising IV helps buyers." note={mode === "fixed" ? `fixed ${tr.fixed.strike} legs` : "rolling ATM legs"} id="sdi-iv" foot={`Model implied vols (Black-76, forward from put-call parity, assumed rate ${((d.rate_assumed ?? 0) * 100).toFixed(1)}%). ${ctx ? `Term structure and skew cards: Market Intelligence, as of ${fmtTimeIST(ctx.as_of)}.` : ""}`}>
+        <Box title="IV and skew analysis" plain="IV is how much movement the market is pricing in. Falling IV helps sellers; rising IV helps buyers." note={mode === "fixed" ? `fixed ${tr.fixed.strike} legs` : mode === "managed" ? "managed legs" : "rolling ATM legs"} id="sdi-iv" foot={`Model implied vols (Black-76, forward from put-call parity, assumed rate ${((d.rate_assumed ?? 0) * 100).toFixed(1)}%). ${ctx ? `Term structure and skew cards: Market Intelligence, as of ${fmtTimeIST(ctx.as_of)}.` : ""}`}>
           <div className="overflow-x-auto"><table className="w-full min-w-[26rem] text-xs"><thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Implied vol (%)</th><th className="py-1 text-right font-normal">Open</th><th className="py-1 text-right font-normal">Now</th><th className="py-1 text-right font-normal">Change (pts)</th><th className="py-1 text-right font-normal">Change (%)</th></tr></thead>
             <tbody><StatRow label="Call IV" s={ivv.ce} /><StatRow label="Put IV" s={ivv.pe} /><StatRow label="Combined ATM IV" s={ivv.combined} />
               <StatRow label="25Δ put IV" s={iv.levels?.pe25} /><StatRow label="25Δ call IV" s={iv.levels?.ce25} /><StatRow label="10Δ put IV" s={iv.levels?.pe10} /><StatRow label="10Δ call IV" s={iv.levels?.ce10} />

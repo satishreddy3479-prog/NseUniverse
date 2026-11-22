@@ -7,7 +7,10 @@ import type { Component, StraddleDecay, Terms } from "../../lib/straddleDecay";
 import { EChart, useChartColors } from "../EChart";
 
 type Colors = ReturnType<typeof useChartColors>;
-type Mode = "fixed" | "rolling";
+export type Mode = "fixed" | "rolling" | "managed";
+
+/** The managed straddle can be followed only when the server sent its full series, attribution and vols (older responses carried just its profit line). */
+export const canManaged = (d: StraddleDecay): boolean => !!(d.tracker?.managed?.straddle && d.series?.managed?.straddle && d.cumulative?.managed && d.attribution?.managed && d.iv?.managed);
 
 const sg = (v: number | null | undefined, d = 1) => (v == null ? MISSING : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}`);
 const inr = (v: number) => `${v < 0 ? "−" : "+"}₹${Math.abs(Math.round(v)).toLocaleString("en-IN")}`;
@@ -80,7 +83,7 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
   const times = useMemo(() => (d.times ?? []).map((t) => new Date(t).getTime()), [d.times]);
   const lot = [d.attribution?.fixed.open, d.attribution?.fixed["60"], d.attribution?.fixed["30"], d.attribution?.rolling.open, d.attribution?.rolling["60"], d.attribution?.rolling["30"]].map((w) => w?.efficiency.lot_size).find((x) => x != null);
 
-  const posName = mode === "fixed" ? `Fixed ${tr?.fixed.strike ?? ""}` : `Rolling ATM (now ${tr?.atm_now ?? MISSING})`;
+  const posName = mode === "fixed" ? `Fixed ${tr?.fixed.strike ?? ""}` : mode === "managed" ? `Managed (re-struck at ${tr?.managed?.threshold ?? 100} points, now ${tr?.managed?.strike_now ?? MISSING})` : `Rolling ATM (now ${tr?.atm_now ?? MISSING})`;
   const change = useMemo(() => {
     if (!d.series || !d.cumulative) return null;
     const fx = d.series.fixed.straddle;
@@ -98,7 +101,7 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
     o.grid = { ...o.grid, top: 40 };
     o.legend = { ...o.legend, top: 4, left: "center", itemGap: 14 };
     // the position being followed is drawn bold, the other as thick but faded, so choosing a position visibly changes the chart
-    const on = mode === "fixed" ? "Fixed" : "Rolling ATM";
+    const on = mode === "fixed" ? "Fixed" : mode === "managed" ? "Managed (re-struck)" : "Rolling ATM";
     for (const sr of o.series) {
       if (sr.name.startsWith("NIFTY")) continue;
       const sel = sr.name === on;
@@ -109,7 +112,7 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
   }, [d, times, c, mode]);
 
   const sources = useMemo(() => {
-    const f = d.attribution?.fixed.open?.both, r = d.attribution?.rolling.open?.both;
+    const f = d.attribution?.fixed.open?.both, r = d.attribution?.rolling.open?.both, mg = d.attribution?.managed?.open?.both;
     if (!f || !r) return null;
     return {
       animation: false, grid: { left: 8, right: 12, top: 28, bottom: 8, containLabel: true },
@@ -120,13 +123,14 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
       series: [
         { name: "Fixed", type: "bar", barMaxWidth: 14, itemStyle: { color: c.brass, opacity: mode === "fixed" ? 1 : 0.3 }, data: TERM_LABEL.map(([k]) => termValue(f, k)) },
         { name: "Rolling ATM", type: "bar", barMaxWidth: 14, itemStyle: { color: c.info, opacity: mode === "rolling" ? 1 : 0.3 }, data: TERM_LABEL.map(([k]) => termValue(r, k)) },
+        ...(mg ? [{ name: "Managed", type: "bar", barMaxWidth: 14, itemStyle: { color: c.up, opacity: mode === "managed" ? 1 : 0.3 }, data: TERM_LABEL.map(([k]) => termValue(mg, k)) }] : []),
       ],
     } as EChartsCoreOption;
   }, [d, c, mode]);
 
   /** Call and put premium at the open and now for the followed position (the fixed strike, or the at-the-money strike of the first sample against the current one). */
   const kept = useMemo(() => {
-    const pos = mode === "fixed" ? tr?.fixed : tr?.rolling;
+    const pos = mode === "fixed" ? tr?.fixed : mode === "managed" ? tr?.managed : tr?.rolling;
     const ce = pos?.ce, pe = pos?.pe;
     if (ce?.open == null || pe?.open == null || ce.current == null || pe.current == null) return null;
     const r1 = (x: number) => Math.round(x * 10) / 10;
@@ -138,7 +142,7 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
       yAxis: { type: "category", inverse: true, data: ["Call (CE)", "Put (PE)"], axisLabel: { color: c.paper, fontSize: 12 }, axisTick: { show: false } },
       series: [
         { name: "At the open", type: "bar", barMaxWidth: 20, barGap: "15%", barCategoryGap: "30%", itemStyle: { color: c.muted, borderRadius: 3 }, data: [r1(ce.open), r1(pe.open)], label: { show: true, position: "right", color: c.paper, fontSize: 12 } },
-        { name: "Now", type: "bar", barMaxWidth: 20, itemStyle: { color: mode === "fixed" ? c.brass : c.info, borderRadius: 3 }, data: [r1(ce.current), r1(pe.current)], label: { show: true, position: "right", color: c.paper, fontSize: 11 } },
+        { name: "Now", type: "bar", barMaxWidth: 20, itemStyle: { color: mode === "fixed" ? c.brass : mode === "managed" ? c.up : c.info, borderRadius: 3 }, data: [r1(ce.current), r1(pe.current)], label: { show: true, position: "right", color: c.paper, fontSize: 11 } },
       ],
     } as EChartsCoreOption;
   }, [tr, c, mode]);
@@ -177,7 +181,7 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
   };
 
   /** The time of the newest sample that has a price for the followed straddle: near expiry the model stops, the stored prices go on, and the card says which sample it shows. */
-  const asOf = (m: Mode): string | null => { const sd = d.series?.[m].straddle ?? []; const times = d.times ?? []; let i = sd.length - 1; while (i >= 0 && sd[i] == null) i--; return i < 0 || !times[i] ? null : fmtTimeIST(times[i]!); };
+  const asOf = (m: Mode): string | null => { const sd = (d.series?.[m] ?? d.series?.rolling)?.straddle ?? []; const times = d.times ?? []; let i = sd.length - 1; while (i >= 0 && sd[i] == null) i--; return i < 0 || !times[i] ? null : fmtTimeIST(times[i]!); };
   return (
     <div className="mt-3 space-y-3" data-testid="sdi-glance">
       {part === "today" && (
@@ -185,7 +189,7 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
         <h3 className="text-base font-semibold text-paper">Today at a glance</h3>
         <div role="group" aria-label="Position to follow" className="flex flex-wrap items-center gap-1.5 text-sm" data-testid="sdi-follow">
           <span className="text-muted">Following</span>
-          {tr && ([["fixed", `Fixed ${tr.fixed.strike}`], ["rolling", "Rolling ATM"]] as const).map(([m, l]) => (
+          {tr && ([["fixed", `Fixed ${tr.fixed.strike}`], ["rolling", "Rolling ATM"], ...(canManaged(d) ? [["managed", "Managed (re-struck)"] as const] : [])] as const).map(([m, l]) => (
             <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)} className={`min-h-9 rounded-full border px-3 ${mode === m ? "border-brass bg-brass/15 font-semibold text-paper" : "border-rule text-muted hover:text-paper"}`}>{l}</button>
           ))}
         </div>
@@ -220,8 +224,8 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
             ))}
           </div>
           {tr.managed && (
-            <div className="mt-3 rounded-lg border border-rule p-3" data-testid="sdi-managed">
-              <div className="text-sm font-semibold text-up">Managed straddle: re-struck when NIFTY is {tr.managed.threshold} points away</div>
+            <button type="button" aria-pressed={mode === "managed"} disabled={!canManaged(d)} onClick={() => setMode("managed")} data-testid="sdi-managed" className={`mt-3 block w-full rounded-lg border p-3 text-left transition-colors ${mode === "managed" ? "border-brass bg-brass/5 ring-1 ring-brass/40" : "border-rule hover:border-muted"}`}>
+              <div className="text-sm font-semibold text-up">Managed straddle: re-struck when NIFTY is {tr.managed.threshold} points away{mode === "managed" && <span className="ml-2 rounded-full bg-brass/15 px-2 py-0.5 text-[10px] font-normal text-paper">shown in the sections below</span>}</div>
               <p className="mt-0.5 text-xs leading-snug text-muted">What a seller who sold the opening straddle and moved it to the new at-the-money strike each time NIFTY ran {tr.managed.threshold} points would have made. Each move books the old pair's profit or loss. Last traded prices, before costs.</p>
               <dl className="mt-2 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
                 <div><dt className="text-[11px] text-muted">Booked</dt><dd className={`num text-lg font-semibold ${pnlTone(tr.managed.realised)}`}>{sg(tr.managed.realised)}</dd></div>
@@ -230,7 +234,7 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
                 <div><dt className="text-[11px] text-muted">Re-strikes · now at</dt><dd className="num text-lg font-semibold text-paper">{tr.managed.restrikes} · {tr.managed.strike_now ?? MISSING}</dd></div>
               </dl>
               <p className="mt-1 text-[11px] text-muted">{tr.managed.total_rupees == null ? "Not enough data yet." : `Profit (+) or loss (−): about ${tr.managed.total_rupees >= 0 ? "+" : "−"}${inr(Math.abs(tr.managed.total_rupees)).slice(1)} per lot of ${tr.managed.lot_size}, before costs.`}</p>
-            </div>
+            </button>
           )}
           {change && <div className="mt-3"><div className="mb-1 text-xs text-muted">Change in premium since the open, in points (below zero = premium has decayed; NIFTY on the right axis)</div><div className="h-[250px]"><EChart group="sdi" option={change} ariaLabel="Change in straddle premium since the open: fixed against rolling" /></div></div>}
           {kept && <div className="mt-3"><div className="mb-1 text-xs text-muted">{mode === "fixed" ? `Call and put price of the fixed ${tr.fixed.strike} straddle: at the open and now (points)` : `Call and put price of the at-the-money strike: at the first sample (${tr.fixed.strike}) and now (${tr.atm_now ?? MISSING}). They are different strikes, so compare the level, not the decay`}</div><div className="h-[170px]"><EChart option={kept} ariaLabel="Call and put premium at the open and now for the followed position" /></div></div>}

@@ -411,6 +411,12 @@ class TestStaleOpeningStrikeAndManagedStraddle:
         assert mg["restrikes"] >= 1 and mg["total"] is not None and "pnl" not in mg  # the per-minute list lives in series.managed
         assert len(a["series"]["managed"]["pnl"]) == len(a["times"])
         assert a["tracker"]["managed"]["strike_now"] == a["series"]["managed"]["strike"][-1]
+        # the managed straddle can be followed like the other two: full legs, vols, attribution and cumulative causes
+        assert set(a["series"]["managed"]) >= {"strike", "ce", "pe", "straddle", "ce_iv", "pe_iv", "iv", "pnl"}
+        assert mg["straddle"]["current"] is not None and mg["adjusted_change"] is not None and a["iv"]["managed"]["combined"]["current"] is not None
+        assert a["attribution"]["managed"]["open"] is not None and len(a["cumulative"]["managed"]["actual"]) == len(a["times"])
+        # a re-strike closes and opens at traded prices: the same-contract changes add up to minus the seller's profit (the booked total), to rounding
+        assert a["cumulative"]["managed"]["actual"][-1] == pytest.approx(-mg["total"], abs=0.05 * len(a["times"]))
 
 
 def test_the_pressure_reading_is_shown_as_context_and_does_not_move_the_side_risk() -> None:

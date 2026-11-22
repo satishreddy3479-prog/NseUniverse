@@ -2,7 +2,7 @@
  *  what the conditions are, where the followed straddle stands, what is holding the scores back, and what would change the picture. */
 import type { StraddleDecay } from "./straddleDecay";
 
-export type Mode = "fixed" | "rolling";
+export type Mode = "fixed" | "rolling" | "managed";
 export interface SideReading { score: number | null; label: string; move15: number | null }
 export interface PositionReading { name: string; open: number | null; now: number | null; change: number | null; words: string }
 export interface StraddleReading {
