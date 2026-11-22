@@ -140,9 +140,9 @@ def overview(*, data_dir: Path, log_dir: Path | None, today: date, obs: Observat
 
 
 def _bundled(eod: Any) -> set[str] | None:
-    """The days inside a verified bundle (the data library), or None when the library is not in use: a removal then waits only for the archive."""
+    """The days inside a bundle that was downloaded and confirmed (the data library), or None when the library is not in use: a removal then waits only for the archive."""
     lib = getattr(eod, "library", None)
-    return lib.bundled_days() if lib is not None and lib.enabled else None
+    return lib.exported_days() if lib is not None and lib.enabled else None
 
 
 def run(items: list[str], *, data_dir: Path, today: date, obs: ObservationStore, eod: Any,

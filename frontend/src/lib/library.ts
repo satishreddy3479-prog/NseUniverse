@@ -10,10 +10,12 @@ export interface LibSession {
   bundle: { id: number; name: string; downloaded: boolean; on_server: boolean } | null; exported: boolean; restored: boolean; state: string;
 }
 export interface LibStatus {
-  enabled: boolean; bundles: LibBundle[]; restores: LibRestore[]; sessions: LibSession[]; due_days: string[]; disk_free_gb: number; unconfirmed_bundles: number; note: string;
-  policy: { raw_keep_days: number; normalized_keep_days: number; bundle_after_days: number; min_batch_days: number; bundle_keep_days: number; restore_ttl_hours: number; restore_max_mb: number; hard_stop_days: number; min_free_gb: number };
-  last_auto: { state?: string; at?: string; built?: { name: string; days: number; bytes: number }; due_days?: number };
+  enabled: boolean; bundles: LibBundle[]; restores: LibRestore[]; sessions: LibSession[]; disk_free_gb: number; unconfirmed_bundles: number; note: string;
+  policy: { block_days: number; restore_ttl_hours: number; restore_max_mb: number; min_free_gb: number };
+  next_block: { start: string; end: string; ready_on: string; ready: boolean; days: number; days_left: number } | null;
+  last_auto: { state?: string; at?: string; built?: { name: string; days: number; bytes: number } };
 }
+export type LibConfirmed = LibBundle & { released_files: number; released_bytes: number };
 export interface DataCoverage {
   days: number; observations_ok: number; observations_missing: string[]; snapshot_files_missing: string[]; restorable_from_bundle: string[]; ok: boolean; message: string;
 }
@@ -45,8 +47,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export const libraryApi = {
   status: () => call<LibStatus>("/api/library/status"),
   build: (start: string, end: string) => call<LibBundle>("/api/library/bundles", { method: "POST", body: JSON.stringify({ start, end }) }),
-  confirm: (id: number, sha256: string) => call<LibBundle>(`/api/library/bundles/${id}/confirm`, { method: "POST", body: JSON.stringify({ sha256 }) }),
-  remove: (id: number) => call<{ removed: string }>(`/api/library/bundles/${id}`, { method: "DELETE" }),
+  confirm: (id: number, sha256: string) => call<LibConfirmed>(`/api/library/bundles/${id}/confirm`, { method: "POST", body: JSON.stringify({ sha256 }) }),
   restore: (bundleId: number) => call<LibRestore>("/api/library/restore", { method: "POST", body: JSON.stringify({ bundle_id: bundleId }) }),
   upload: (file: File) => call<LibRestore>(`/api/library/restore/upload?name=${encodeURIComponent(file.name)}`, { method: "PUT", body: file, headers: { "Content-Type": "application/octet-stream" } }),
   removeRestore: (id: number) => call<{ removed: number }>(`/api/library/restore/${id}`, { method: "DELETE" }),
@@ -58,7 +59,7 @@ export const hex = (buf: ArrayBuffer): string => [...new Uint8Array(buf)].map((b
 export type DownloadStep = "downloading" | "checking" | "saving" | "confirming";
 
 /** Download a bundle, check its SHA-256 against the server's, hand it to the browser as a file, then tell the server the copy exists. A damaged download is never saved. */
-export async function downloadBundle(b: LibBundle, onStep: (s: DownloadStep) => void = () => undefined): Promise<void> {
+export async function downloadBundle(b: LibBundle, onStep: (s: DownloadStep) => void = () => undefined): Promise<LibConfirmed> {
   onStep("downloading");
   let res: Response;
   try {
@@ -81,7 +82,7 @@ export async function downloadBundle(b: LibBundle, onStep: (s: DownloadStep) => 
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
   onStep("confirming");
-  await libraryApi.confirm(b.id, got);
+  return libraryApi.confirm(b.id, got);
 }
 
 export const mb = (bytes: number): string => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(2)} GB` : `${(bytes / 1e6).toFixed(bytes < 1e7 ? 1 : 0)} MB`);

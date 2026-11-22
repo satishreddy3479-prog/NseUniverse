@@ -313,10 +313,8 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         )
         app.state.eod = eod
         library = LibraryService(
-            settings.data_dir, observations, settings.underlying, raw_keep_days=settings.snapshot_raw_keep_days, normalized_keep_days=settings.snapshot_normalized_keep_days,  # noqa: E501
-            min_batch_days=settings.library_min_batch_days, bundle_keep_days=settings.library_bundle_keep_days, restore_ttl_hours=settings.library_restore_ttl_hours,  # noqa: E501
-            restore_max_bytes=settings.library_restore_max_mb * 10**6, min_free_bytes=int(settings.library_min_free_gb * 1e9), hard_stop_days=settings.library_hard_stop_days,  # noqa: E501
-            enabled=settings.library_enabled,
+            settings.data_dir, observations, settings.underlying, block_days=settings.library_block_days, restore_ttl_hours=settings.library_restore_ttl_hours,  # noqa: E501
+            restore_max_bytes=settings.library_restore_max_mb * 10**6, min_free_bytes=int(settings.library_min_free_gb * 1e9), enabled=settings.library_enabled,  # noqa: E501
         )  # fmt: skip
         library.cleanup_restores()  # a restore that expired while the backend was down
         app.state.library = library

@@ -70,7 +70,7 @@ function TradeAlert({ a }: { a: TradeGroup }) {
     <li className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5" data-testid="headsup-trade">
       <span aria-hidden className={tone}>{icon}</span>
       <Link to={a.link} className="font-semibold hover:text-brass hover:underline">{a.title}</Link>
-      <span className="text-xs text-muted">{a.source === "strategy" ? "Strategy" : "Swing"} · {clock(a.at)} IST · {a.text}{a.count > 1 ? ` · ${a.count} times since ${clock(a.first)} IST` : ""}</span>
+      <span className="text-xs text-muted">{a.source === "strategy" ? "Strategy" : a.source === "library" ? "Data library" : "Swing"} · {clock(a.at)} IST · {a.text}{a.count > 1 ? ` · ${a.count} times since ${clock(a.first)} IST` : ""}</span>
     </li>
   );
 }

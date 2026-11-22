@@ -142,28 +142,35 @@ def test_something_that_is_not_a_bundle_is_refused(tmp_path: Path) -> None:
 
 
 # ------------------------------------------------------------------ the automatic step and the pruning gate
-def test_days_about_to_age_out_are_bundled_by_themselves_and_not_twice(data: Path) -> None:
-    svc = service(data, list(range(0, 40)), raw_keep_days=30, normalized_keep_days=30)
-    assert svc.bundle_after_days() == 25
-    due = svc.due_days(TODAY)
-    assert due[0] == day(39).isoformat() and due[-1] == day(25).isoformat() and len(due) == 15  # every day at least 25 days old
+def test_every_30_days_of_files_become_one_bundle_by_themselves_and_not_twice(data: Path) -> None:
+    svc = service(data, list(range(0, 41)))  # snapshot days from 40 days ago to today
+    blk = svc.next_block(TODAY)
+    assert blk is not None and blk["start"] == day(40).isoformat() and blk["end"] == day(11).isoformat() and blk["ready"] is True and blk["days"] == 30
     out = svc.auto_run()
-    assert out["state"] == "ok" and out["built"]["days"] == 15
-    assert svc.bundled_days() == set(due) and svc.due_days(TODAY) == []
+    assert out["state"] == "ok" and out["built"]["days"] == 30
+    assert svc.bundled_days() == {day(n).isoformat() for n in range(11, 41)}  # the block: 30 days from the oldest
+    nxt = svc.next_block(TODAY)
+    assert nxt is not None and nxt["start"] == day(10).isoformat() and nxt["ready"] is False and nxt["days"] == 11  # the next block has started
     again = svc.auto_run()
     assert "built" not in again and len(svc.store.bundles()) == 1
 
 
-def test_a_few_due_days_wait_for_a_batch_unless_the_oldest_is_about_to_be_deleted(data: Path) -> None:
-    svc = service(data, list(range(0, 27)), raw_keep_days=30, normalized_keep_days=30)  # days 25 and 26 are due: two days, the oldest 26 days old
-    assert "built" not in svc.auto_run()
-    svc2 = service(data.parent / "d2", list(range(0, 29)), raw_keep_days=30, normalized_keep_days=30)  # the oldest is 28 days old: 2 days before deletion
-    assert svc2.auto_run()["built"]["days"] == 4
+def test_a_block_that_is_not_over_waits(data: Path) -> None:
+    svc = service(data, list(range(0, 21)))  # the oldest day is 20 days old: the block runs 9 more days
+    blk = svc.next_block(TODAY)
+    assert blk is not None and blk["ready"] is False and blk["ready_on"] == (day(20) + timedelta(days=30)).isoformat() and blk["days_left"] == 10
+    assert "built" not in svc.auto_run() and svc.store.bundles() == []
 
 
-def test_with_no_deletion_there_is_nothing_to_bundle(data: Path) -> None:
-    svc = service(data, list(range(0, 60)), raw_keep_days=0, normalized_keep_days=0)
-    assert svc.bundle_after_days() == 0 and svc.due_days(TODAY) == [] and svc.auto_run()["state"] == "ok"
+def test_the_block_length_is_a_setting(data: Path) -> None:
+    svc = service(data, list(range(0, 15)), block_days=10)
+    assert svc.auto_run()["built"]["days"] == 10
+    assert svc.next_block(TODAY)["start"] == day(4).isoformat()  # type: ignore[index]
+
+
+def test_with_nothing_on_the_server_there_is_no_block(data: Path) -> None:
+    svc = service(data, [])
+    assert svc.next_block(TODAY) is None and svc.auto_run()["state"] == "ok"
 
 
 def test_pruning_waits_for_the_bundle_except_at_the_hard_stop_or_low_disk(data: Path) -> None:
@@ -181,8 +188,8 @@ def test_pruning_waits_for_the_bundle_except_at_the_hard_stop_or_low_disk(data: 
 
 
 # ------------------------------------------------------------------ download, confirm, remove
-def test_a_download_is_confirmed_by_checksum_and_only_then_may_the_bundle_go(data: Path) -> None:
-    svc = service(data, list(range(25, 40)), raw_keep_days=30, normalized_keep_days=30)
+def test_after_a_confirmed_download_the_server_deletes_the_bundle_and_the_snapshot_files_but_keeps_the_archive(data: Path) -> None:
+    svc = service(data, list(range(25, 40)))
     b = svc.build(day(39), day(25))
     path, rec = svc.bundle_file(b["id"])
     with pytest.raises(LibraryError) as e:
@@ -191,23 +198,66 @@ def test_a_download_is_confirmed_by_checksum_and_only_then_may_the_bundle_go(dat
     with pytest.raises(LibraryError) as e2:
         svc.confirm(b["id"], "0" * 64)
     assert e2.value.code == "checksum_mismatch"
-    ok = svc.confirm(b["id"], hashlib.sha256(path.read_bytes()).hexdigest().upper())
-    assert ok["downloaded"] and set(ok["days"]) <= svc.exported_days()
-    assert svc.cleanup_bundles() == 0  # confirmed, but not yet old enough to go
-    svc.now = lambda: NOW + timedelta(days=91)  # type: ignore[method-assign]
-    assert svc.cleanup_bundles() == 1 and not path.exists()
-    assert svc.store.bundles() == [] and svc.exported_days()  # still known as exported after the file went
+    assert any((data / "snapshots").rglob("*.gz")) and path.exists()  # nothing was deleted by a refused confirmation
+    done = svc.confirm(b["id"], hashlib.sha256(path.read_bytes()).hexdigest().upper())
+    assert done["downloaded"] and done["on_server"] is False and done["released_files"] == 15 * 3
+    assert not path.exists() and svc.store.bundles() == []  # the bundle is gone from the server
+    assert not any((data / "snapshots").rglob("*.gz")) and not any(p.is_dir() for p in (data / "snapshots").iterdir())  # the snapshot files and their empty day folders are gone
+    assert all((archive_path(data, day(n))).exists() and (data / "manifests" / f"session={day(n)}.json").exists() for n in range(25, 40))  # the archive and manifests stay forever
+    assert svc.exported_days() == {day(n).isoformat() for n in range(25, 40)}  # and the days are known to have been exported
+    assert svc.next_block(TODAY) is None  # the process starts over with the next days
 
 
-def test_an_unconfirmed_bundle_is_never_removed_however_old(data: Path) -> None:
-    svc = service(data, list(range(25, 40)), raw_keep_days=30, normalized_keep_days=30)
+def test_a_file_that_does_not_match_the_bundle_or_has_no_archive_is_not_deleted(data: Path) -> None:
+    svc = service(data, list(range(25, 40)))
+    b = svc.build(day(39), day(25))
+    folder = data / "snapshots" / day(30).isoformat()
+    changed = sorted(folder.iterdir())[0]
+    changed.write_bytes(changed.read_bytes() + b"x")  # a file that is not what the bundle holds
+    (data / "manifests" / f"session={day(31)}.json").unlink()  # a day without its verified archive
+    path, _ = svc.bundle_file(b["id"])
+    svc.confirm(b["id"], hashlib.sha256(path.read_bytes()).hexdigest())
+    assert changed.exists()
+    assert len(list((data / "snapshots" / day(31).isoformat()).iterdir())) == 3
+
+
+def test_an_unconfirmed_bundle_is_never_removed_however_long_it_waits(data: Path) -> None:
+    svc = service(data, list(range(25, 40)))
     b = svc.build(day(39), day(25))
     svc.now = lambda: NOW + timedelta(days=400)  # type: ignore[method-assign]
-    assert svc.cleanup_bundles() == 0 and svc.bundle_file(b["id"])[0].exists()
+    svc.auto_run()
+    assert svc.bundle_file(b["id"])[0].exists() and any((data / "snapshots").rglob("*.gz"))  # the bundle and the files are still there
+
+
+def test_a_full_disk_removes_the_snapshot_files_of_a_bundle_that_is_on_the_server_but_keeps_the_bundle(data: Path) -> None:
+    svc = service(data, list(range(25, 40)))
+    b = svc.build(day(39), day(25))
+    svc.min_free = 10**15  # the disk is under its floor
+    done = svc.protect_disk()
+    assert done["files"] == 15 * 3 and not any((data / "snapshots").rglob("*.gz"))
+    assert svc.bundle_file(b["id"])[0].exists() and svc.describe_bundle(b["id"])["downloaded"] is False  # nothing is lost: the bundle holds the files and stays until it is downloaded
+    assert svc.protect_disk()["files"] == 0  # nothing more to free
+
+
+def test_the_owner_is_told_in_the_heads_up_until_the_bundle_is_downloaded(data: Path) -> None:
+    svc = service(data, list(range(25, 40)))
+    assert svc.notices() == []
+    b = svc.build(day(39), day(25))
+    n = svc.notices()
+    assert len(n) == 1 and n[0]["source"] == "library" and n[0]["link"] == "/data" and n[0]["level"] == "warn" and n[0]["title"] == "Data bundle ready: download it"
+    assert f"{day(39)} to {day(25)}, 15 days" in n[0]["text"] and "deletes it" in n[0]["text"]
+    svc.now = lambda: NOW + timedelta(days=8)  # type: ignore[method-assign]
+    assert svc.notices()[0]["key"] != n[0]["key"]  # a closed notice comes back the next week
+    path, _ = svc.bundle_file(b["id"])
+    svc.min_free = svc.free_bytes() + 1  # the disk is under its floor plus margin
+    assert svc.notices()[0]["level"] == "bad" and "disk is getting full" in svc.notices()[0]["text"]
+    svc.min_free = 0
+    svc.confirm(b["id"], hashlib.sha256(path.read_bytes()).hexdigest())
+    assert svc.notices() == []  # downloaded: nothing more to say
 
 
 def test_a_missing_bundle_file_stops_counting_as_a_safe_copy(data: Path) -> None:
-    svc = service(data, list(range(25, 40)), raw_keep_days=30, normalized_keep_days=30)
+    svc = service(data, list(range(25, 40)))
     b = svc.build(day(39), day(25))
     assert svc.bundled_days()
     svc.bundle_file(b["id"])[0].unlink()
@@ -215,7 +265,7 @@ def test_a_missing_bundle_file_stops_counting_as_a_safe_copy(data: Path) -> None
 
 
 def test_the_database_can_be_lost_without_losing_a_bundle(data: Path) -> None:
-    svc = service(data, list(range(25, 40)), raw_keep_days=30, normalized_keep_days=30)
+    svc = service(data, list(range(25, 40)))
     svc.build(day(39), day(25))
     svc.store.close()
     (data / "library.sqlite3").unlink()
@@ -224,7 +274,7 @@ def test_the_database_can_be_lost_without_losing_a_bundle(data: Path) -> None:
 
 
 def test_a_build_needs_free_space_and_a_sensible_range(data: Path) -> None:
-    svc = service(data, list(range(25, 40)), raw_keep_days=30, normalized_keep_days=30)
+    svc = service(data, list(range(25, 40)))
     svc.min_free = 10**15
     with pytest.raises(LibraryError) as e:
         svc.build(day(39), day(25))
@@ -240,7 +290,7 @@ def test_a_build_needs_free_space_and_a_sensible_range(data: Path) -> None:
 
 # ------------------------------------------------------------------ temporary restore and the coverage check
 def test_a_restore_unpacks_into_a_scratch_folder_that_expires_by_itself(data: Path) -> None:
-    svc = service(data, list(range(25, 40)), raw_keep_days=30, normalized_keep_days=30)
+    svc = service(data, list(range(25, 40)))
     b = svc.build(day(39), day(25))
     for d in svc.bundled_days():  # the loose files are gone, as after pruning
         for f in (data / "snapshots" / d).iterdir():
@@ -257,7 +307,7 @@ def test_a_restore_unpacks_into_a_scratch_folder_that_expires_by_itself(data: Pa
 
 
 def test_a_restore_can_be_removed_early_and_a_big_bundle_is_refused(data: Path) -> None:
-    svc = service(data, list(range(25, 40)), raw_keep_days=30, normalized_keep_days=30)
+    svc = service(data, list(range(25, 40)))
     b = svc.build(day(39), day(25))
     r = svc.restore_from_server(b["id"])
     svc.remove_restore(r["id"])
@@ -269,7 +319,7 @@ def test_a_restore_can_be_removed_early_and_a_big_bundle_is_refused(data: Path) 
 
 
 def test_a_restore_of_something_that_is_not_a_bundle_is_refused(data: Path, tmp_path: Path) -> None:
-    svc = service(data, [30], raw_keep_days=30, normalized_keep_days=30)
+    svc = service(data, [30])
     p = tmp_path / "nope.zip"
     p.write_bytes(b"nothing")
     with pytest.raises(LibraryError) as e:
@@ -278,7 +328,7 @@ def test_a_restore_of_something_that_is_not_a_bundle_is_refused(data: Path, tmp_
 
 
 def test_the_coverage_check_names_the_days_that_are_not_there(data: Path) -> None:
-    svc = service(data, [10, 9, 8], raw_keep_days=30, normalized_keep_days=30)
+    svc = service(data, [10, 9, 8])
     svc.obs.counts[day(9).isoformat()] = 120  # a partial day
     c = svc.coverage([day(n).isoformat() for n in (10, 9, 8, 7)])
     assert c["ok"] is False and c["observations_missing"] == [day(9).isoformat(), day(7).isoformat()] and c["observations_ok"] == 2
@@ -287,7 +337,7 @@ def test_the_coverage_check_names_the_days_that_are_not_there(data: Path) -> Non
 
 
 def test_the_inventory_says_where_each_day_is(data: Path) -> None:
-    svc = service(data, list(range(25, 40)), raw_keep_days=30, normalized_keep_days=30)
+    svc = service(data, list(range(25, 40)))
     b = svc.build(day(39), day(25))
     for f in (data / "snapshots" / day(39).isoformat()).iterdir():
         f.unlink()
@@ -295,10 +345,12 @@ def test_the_inventory_says_where_each_day_is(data: Path) -> None:
     assert rows[day(39).isoformat()]["state"] == "in a bundle" and rows[day(39).isoformat()]["bundle"]["id"] == b["id"]
     assert rows[day(30).isoformat()]["state"] == "on the server" and rows[day(30).isoformat()]["snapshot_files"] == 3 and rows[day(30).isoformat()]["archive"] is True
     assert rows[day(30).isoformat()]["exported"] is False
-    svc.confirm(b["id"], b["sha256"])
-    assert {r["day"]: r for r in svc.inventory()}[day(30).isoformat()]["exported"] is True
+    path, _ = svc.bundle_file(b["id"])
+    svc.confirm(b["id"], hashlib.sha256(path.read_bytes()).hexdigest())
+    after = {r["day"]: r for r in svc.inventory()}
+    assert after[day(30).isoformat()]["exported"] is True and after[day(30).isoformat()]["state"] == "downloaded, removed from the server"
     s = svc.status()
-    assert s["unconfirmed_bundles"] == 0 and s["policy"]["bundle_after_days"] == 25 and s["bundles"][0]["on_server"] is True
+    assert s["unconfirmed_bundles"] == 0 and s["policy"]["block_days"] == 30 and s["bundles"] == [] and s["next_block"] is None
 
 
 # ------------------------------------------------------------------ the API
@@ -319,7 +371,7 @@ def api(tmp_path: Path) -> Any:
 def test_the_api_builds_downloads_confirms_restores_and_removes(api: Any) -> None:
     c, app = api
     s = c.get("/api/library/status").json()
-    assert s["bundles"] == [] and len(s["sessions"]) == 15 and s["policy"]["raw_keep_days"] == 30
+    assert s["bundles"] == [] and len(s["sessions"]) == 15 and s["policy"]["block_days"] == 30
     r = c.post("/api/library/bundles", json={"start": day(39).isoformat(), "end": day(25).isoformat()})
     assert r.status_code == 200, r.text
     b = r.json()
@@ -330,14 +382,18 @@ def test_the_api_builds_downloads_confirms_restores_and_removes(api: Any) -> Non
     bad = c.post(f"/api/library/bundles/{b['id']}/confirm", json={"sha256": "0" * 64})
     assert bad.status_code == 409 and bad.json()["detail"]["code"] == "checksum_mismatch"
     assert c.delete(f"/api/library/bundles/{b['id']}").status_code == 409  # not downloaded yet
-    assert c.post(f"/api/library/bundles/{b['id']}/confirm", json={"sha256": b["sha256"]}).json()["downloaded"] is True
     rs = c.post("/api/library/restore", json={"bundle_id": b["id"]})
     assert rs.status_code == 200 and rs.json()["days"] == b["days"]
     assert c.post(f"/api/library/restore/{rs.json()['id']}/keep").status_code == 200
     assert c.delete(f"/api/library/restore/{rs.json()['id']}").status_code == 200
     assert c.delete(f"/api/library/restore/{rs.json()['id']}").status_code == 404
-    assert c.delete(f"/api/library/bundles/{b['id']}").json() == {"removed": b["name"]}
+    heads = c.get("/api/headsup/trades").json()["alerts"]
+    assert [a["title"] for a in heads if a["source"] == "library"] == ["Data bundle ready: download it"]  # the owner is told in the heads-up strip
+    done = c.post(f"/api/library/bundles/{b['id']}/confirm", json={"sha256": b["sha256"]}).json()
+    assert done["downloaded"] is True and done["released_files"] == 15 * 3 and done["on_server"] is False  # the server has deleted the bundle and the snapshot files
     assert c.get(f"/api/library/bundles/{b['id']}/download").status_code == 404
+    assert c.get("/api/library/status").json()["bundles"] == []
+    assert [a for a in c.get("/api/headsup/trades").json()["alerts"] if a["source"] == "library"] == []  # nothing more to say
 
 
 def test_the_api_restores_from_an_uploaded_zip_streamed_to_disk(api: Any) -> None:
@@ -411,16 +467,19 @@ def test_the_manual_clean_up_waits_for_the_bundle_like_the_nightly_run(api: Any)
 
     c, app = api
     eod = app.state.eod
-    assert cleanup._bundled(eod) == set()  # noqa: SLF001 - the library is in use and nothing is bundled yet
-    app.state.library.build(day(39), day(25))
-    assert cleanup._bundled(eod) == {day(n).isoformat() for n in range(25, 40)}  # noqa: SLF001
+    assert cleanup._bundled(eod) == set()  # noqa: SLF001 - the library is in use and nothing has been downloaded yet
+    b = app.state.library.build(day(39), day(25))
+    assert cleanup._bundled(eod) == set()  # noqa: SLF001 - a bundle on the server is not a copy off the server
+    path, _ = app.state.library.bundle_file(b["id"])
+    app.state.library.confirm(b["id"], b["sha256"])
+    assert cleanup._bundled(eod) == {day(n).isoformat() for n in range(25, 40)}  # noqa: SLF001 - after a confirmed download
     eod.library = None
     assert cleanup._bundled(eod) is None  # noqa: SLF001 - without the library only the archive is waited for
 
 
 # ------------------------------------------------------------------ a day that moved into a bundle comes back when something asks for it
 def test_a_day_inside_a_bundle_is_restored_when_asked_for_and_only_within_the_limits(data: Path) -> None:
-    svc = service(data, list(range(25, 40)), raw_keep_days=30, normalized_keep_days=30)
+    svc = service(data, list(range(25, 40)))
     assert svc.ensure_day(day(30).isoformat()) is None  # no bundle holds it yet
     svc.build(day(39), day(25))
     first = svc.ensure_day(day(30).isoformat())
@@ -451,3 +510,30 @@ def test_the_snapshot_reader_restores_a_bundled_day_by_itself(api: Any) -> None:
     assert loaded is not None and loaded.snapshot_id == "snap-ondemand"  # restored from its bundle, then read
     assert len(lib.store.restores()) == 1 and not path.exists()  # the loose file did not come back: only the scratch copy exists
     assert store.load("snap-ondemand") is not None and len(lib.store.restores()) == 1  # the second read reuses the restore
+
+
+# ------------------------------------------------------------------ the end-of-day run
+def test_the_end_of_day_run_bundles_a_finished_block_once_a_day_and_leaves_the_pruning_to_the_library(api: Any) -> None:
+    c, app = api
+    eod, lib = app.state.eod, app.state.library
+    eod.enabled = True
+    eod._clock = lambda: NOW  # noqa: SLF001
+    assert eod.library is lib and eod.library_due(NOW) is True
+    assert eod.library_due(NOW.replace(hour=5)) is False  # before 15:55 IST nothing runs
+    res = eod.run(NOW)
+    assert res["library"]["built"]["days"] == 15 and len(lib.store.bundles()) == 1
+    assert res["prune"] == {"handled_by": "the data library: snapshot files are deleted after the bundle that holds them has been downloaded"}
+    assert any((app.state.settings.data_dir / "snapshots").rglob("*.gz"))  # the snapshot files are still there: they wait for the download
+    assert eod.library_due(NOW) is False  # once a day
+    assert "library" not in eod.run(NOW)
+
+
+def test_a_bundle_confirmed_before_the_rule_existed_is_released_by_the_next_automatic_step(data: Path) -> None:
+    svc = service(data, list(range(25, 40)))
+    b = svc.build(day(39), day(25))
+    path, _ = svc.bundle_file(b["id"])
+    svc.store.confirm_bundle(b["id"], NOW.isoformat())  # downloaded and confirmed, but nothing was deleted (an earlier version)
+    assert path.exists() and any((data / "snapshots").rglob("*.gz"))
+    out = svc.auto_run()
+    assert out["released"] == 1 and not path.exists() and not any((data / "snapshots").rglob("*.gz"))
+    assert svc.exported_days() and svc.store.bundles() == []

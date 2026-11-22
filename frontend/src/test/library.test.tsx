@@ -14,8 +14,8 @@ const bundle = (over: Record<string, unknown> = {}) => ({
   bytes: BYTES.length, sha256: SHA, files: 12, origin: "auto", confirmed_utc: null, on_server: true, downloaded: false, ...over,
 });
 const status = (over: Partial<LibStatus> = {}): LibStatus => ({
-  enabled: true, bundles: [bundle() as never], restores: [], due_days: ["2026-11-13", "2026-11-16"], disk_free_gb: 10.9, unconfirmed_bundles: 1, note: "",
-  policy: { raw_keep_days: 30, normalized_keep_days: 30, bundle_after_days: 25, min_batch_days: 7, bundle_keep_days: 90, restore_ttl_hours: 24, restore_max_mb: 1024, hard_stop_days: 60, min_free_gb: 6 },
+  enabled: true, bundles: [bundle() as never], restores: [], disk_free_gb: 10.9, next_block: { start: "2026-11-13", end: "2026-12-12", ready_on: "2026-12-13", ready: false, days: 6, days_left: 21 }, unconfirmed_bundles: 1, note: "",
+  policy: { block_days: 30, restore_ttl_hours: 24, restore_max_mb: 1024, min_free_gb: 6 },
   last_auto: { state: "ok" },
   sessions: [
     { day: "2026-11-20", samples: 389, complete: true, archive: true, snapshot_files: 778, snapshot_bytes: 7_300_000, bundle: null, exported: false, restored: false, state: "on the server" },
@@ -37,7 +37,7 @@ function install(over: { downloadBytes?: Uint8Array; confirmStatus?: number; lis
     if (over.list?.[url]) return json(over.list[url]!.body, over.list[url]!.status);
     if (url === "/api/library/status") return json(current);
     if (url.endsWith("/download")) return new Response((over.downloadBytes ?? BYTES) as BodyInit, { status: 200, headers: { "Content-Type": "application/zip" } });
-    if (url.endsWith("/confirm")) return over.confirmStatus && over.confirmStatus !== 200 ? json({ detail: { code: "checksum_mismatch", message: "mismatch" } }, over.confirmStatus) : json(bundle({ downloaded: true, confirmed_utc: "2026-11-22T04:00:00+00:00" }));
+    if (url.endsWith("/confirm")) return over.confirmStatus && over.confirmStatus !== 200 ? json({ detail: { code: "checksum_mismatch", message: "mismatch" } }, over.confirmStatus) : json({ ...bundle({ downloaded: true, confirmed_utc: "2026-11-22T04:00:00+00:00", on_server: false }), released_files: 2290, released_bytes: 38_000_000 });
     if (url === "/api/library/restore") return json({ id: 5, bundle_name: "b", dir: "/x", days: ["2026-10-28", "2026-11-12"], bytes: 5_000_000, created_utc: "2026-11-22T04:00:00+00:00", expires_utc: "2026-11-23T04:00:00+00:00" });
     if (url.startsWith("/api/library/restore/upload")) return json({ id: 6, bundle_name: "mine.zip", dir: "/y", days: ["2026-11-01"], bytes: 1_000_000, created_utc: "2026-11-22T04:00:00+00:00", expires_utc: "2026-11-23T04:00:00+00:00" });
     if (method === "DELETE") return json({ removed: "x" });
@@ -69,9 +69,10 @@ describe("data library panel", () => {
     expect(screen.getByTestId("lib-bundle-1")).toHaveTextContent("not downloaded");
     const tiles = screen.getByTestId("lib-tiles");
     expect(tiles).toHaveTextContent("Not downloaded yet1no copy off the server");
-    expect(tiles).toHaveTextContent("Next bundle2days due (at 25 days old)");
+    expect(tiles).toHaveTextContent("Next bundlein 21 days2026-11-13 → 2026-12-12 · 6 days so far");
     expect(tiles).toHaveTextContent("Disk free10.9 GB");
-    expect(screen.getByText(/kept on the server for 30 days/)).toBeInTheDocument();
+    expect(screen.getByTestId("lib-explain")).toHaveTextContent("Every 30 days of snapshot files the system zips into one bundle by itself, checks it, and tells you in the heads-up strip");
+    expect(screen.getByTestId("lib-explain")).toHaveTextContent("only then does the server delete the bundle and those days' snapshot files");
     const sessions = within(screen.getByTestId("lib-sessions"));
     expect(sessions.getByText("389")).toBeInTheDocument();
     expect(sessions.getByText("120 (partial)")).toBeInTheDocument(); // a partial day is said to be partial
@@ -87,7 +88,7 @@ describe("data library panel", () => {
     const confirm = calls.find((c) => c.url.endsWith("/confirm"))!;
     expect(confirm.body).toEqual({ sha256: SHA });
     expect(calls.map((c) => c.url).indexOf("/api/library/bundles/1/download")).toBeLessThan(calls.indexOf(confirm)); // downloaded first
-    expect(await screen.findByTestId("lib-note")).toHaveTextContent("downloaded and confirmed");
+    expect(await screen.findByTestId("lib-note")).toHaveTextContent("downloaded and checked. The server has deleted the bundle and 2290 snapshot files (38 MB); the archive and the database stay.");
   });
 
   it("does not save or confirm a damaged download", async () => {
@@ -106,14 +107,11 @@ describe("data library panel", () => {
     expect(await screen.findByTestId("lib-error-1")).toHaveTextContent("mismatch");
   });
 
-  it("will not remove a bundle that has not been downloaded, and removes one that has", async () => {
-    current = status({ bundles: [bundle({ id: 1 }) as never, bundle({ id: 2, name: "second.zip", downloaded: true, confirmed_utc: "2026-11-21T10:00:00+00:00" }) as never], unconfirmed_bundles: 1 });
+  it("has no remove button: the server deletes a bundle by itself after the confirmed download", async () => {
     install();
     mount();
-    expect(await screen.findByRole("button", { name: /Remove nse-universe-bundle.* from the server/ })).toBeDisabled();
-    expect(screen.getByTestId("lib-bundle-2")).toHaveTextContent("✓ downloaded and checked");
-    fireEvent.click(screen.getByRole("button", { name: "Remove second.zip from the server" }));
-    await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url === "/api/library/bundles/2")).toBe(true));
+    await screen.findByTestId("lib-bundle-1");
+    expect(screen.queryByRole("button", { name: /Remove nse-universe-bundle/ })).toBeNull();
   });
 
   it("restores a bundle held on the server, and a file from this computer", async () => {
@@ -157,10 +155,10 @@ describe("data library panel", () => {
   });
 
   it("says plainly when there is no bundle, when the library is off and when it cannot be loaded", async () => {
-    current = status({ bundles: [], unconfirmed_bundles: 0, due_days: [] });
+    current = status({ bundles: [], unconfirmed_bundles: 0, next_block: null });
     install();
     const a = mount();
-    expect(await screen.findByTestId("lib-no-bundles")).toHaveTextContent("made automatically when snapshot days reach 25 days of age");
+    expect(await screen.findByTestId("lib-no-bundles")).toHaveTextContent("made automatically when the 30-day block that is filling up has ended");
     expect(screen.getByTestId("lib-no-restores")).toBeInTheDocument();
     a.unmount();
     install({ list: { "/api/library/status": { status: 404, body: { detail: { code: "disabled", message: "off" } } } } });

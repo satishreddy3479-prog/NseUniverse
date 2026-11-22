@@ -1447,7 +1447,9 @@ async def headsup_trades(request: Request) -> dict[str, Any]:
         except Exception:  # noqa: BLE001 - the strategy messages must still be served
             swing = []
         generated = now.isoformat(timespec="seconds")
-        return {"generated_at": generated, "alerts": ht.build(strategy, swing)}
+        lib = getattr(request.app.state, "library", None)
+        library = lib.notices() if lib is not None else []  # a bundle waiting to be downloaded (the data library)  # noqa: E501
+        return {"generated_at": generated, "alerts": [*library, *ht.build(strategy, swing)]}
 
     return await asyncio.to_thread(collect)
 

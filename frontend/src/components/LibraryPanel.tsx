@@ -25,8 +25,8 @@ export function LibraryPanel() {
   const download = async (b: LibBundle) => {
     setErr((e) => ({ ...e, [b.id]: "" }));
     try {
-      await downloadBundle(b, (s) => setBusy((x) => ({ ...x, [b.id]: s })));
-      setNote(`${b.name} downloaded and confirmed.`);
+      const r = await downloadBundle(b, (s) => setBusy((x) => ({ ...x, [b.id]: s })));
+      setNote(`${b.name} downloaded and checked. The server has deleted the bundle and ${r.released_files} snapshot files (${mb(r.released_bytes)}); the archive and the database stay.`);
     } catch (e) {
       setErr((x) => ({ ...x, [b.id]: msg(e) }));
     } finally {
@@ -53,14 +53,15 @@ export function LibraryPanel() {
 
   return (
     <div className="flex flex-col gap-3" data-testid="library">
-      <p className="text-xs text-muted">
-        Snapshot files are kept on the server for {s.policy.raw_keep_days} days. Before they reach that age the system zips them into a bundle by itself, checks it, and only then lets the old files go.
-        Download a bundle to keep a copy off the server; a bundle that was never downloaded is never removed. For a backtest that needs older files, restore a bundle temporarily (it removes itself after {s.policy.restore_ttl_hours} hours).
+      <p className="text-xs text-muted" data-testid="lib-explain">
+        Every {s.policy.block_days} days of snapshot files the system zips into one bundle by itself, checks it, and tells you in the heads-up strip. Download it: the page checks the file, and only then does the server
+        delete the bundle and those days' snapshot files. The archive and the database keep all the research data forever, so backtests never need the bundle. For old snapshot files, restore a bundle temporarily
+        (it removes itself after {s.policy.restore_ttl_hours} hours).
       </p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid="lib-tiles">
         <div className="rounded-sm border border-rule/60 bg-slate-2 p-2"><div className="text-[11px] text-muted">Bundles on the server</div><div className="num text-base font-semibold">{bundles.length}</div><div className="text-[11px] text-muted">{mb(total)}</div></div>
         <div className={`rounded-sm border p-2 ${s.unconfirmed_bundles > 0 ? "border-warn/60 bg-warn/10" : "border-rule/60 bg-slate-2"}`}><div className="text-[11px] text-muted">Not downloaded yet</div><div className={`num text-base font-semibold ${s.unconfirmed_bundles > 0 ? "text-warn" : ""}`}>{s.unconfirmed_bundles}</div><div className="text-[11px] text-muted">{s.unconfirmed_bundles > 0 ? "no copy off the server" : "every bundle has a copy"}</div></div>
-        <div className="rounded-sm border border-rule/60 bg-slate-2 p-2"><div className="text-[11px] text-muted">Next bundle</div><div className="num text-base font-semibold">{s.due_days.length}</div><div className="text-[11px] text-muted">days due (at {s.policy.bundle_after_days} days old)</div></div>
+        <div className="rounded-sm border border-rule/60 bg-slate-2 p-2"><div className="text-[11px] text-muted">Next bundle</div><div className="num text-base font-semibold">{s.next_block ? (s.next_block.ready ? "now" : `in ${s.next_block.days_left} day${s.next_block.days_left === 1 ? "" : "s"}`) : MISSING}</div><div className="text-[11px] text-muted">{s.next_block ? `${s.next_block.start} → ${s.next_block.end} · ${s.next_block.days} days so far` : "no snapshot files waiting"}</div></div>
         <div className="rounded-sm border border-rule/60 bg-slate-2 p-2"><div className="text-[11px] text-muted">Disk free</div><div className="num text-base font-semibold">{s.disk_free_gb} GB</div><div className="text-[11px] text-muted">last automatic step: {s.last_auto.state ?? MISSING}</div></div>
       </div>
       {note && <p role="status" className="rounded-sm border border-rule bg-slate-2 px-3 py-2 text-xs text-paper" data-testid="lib-note">{note}</p>}
@@ -70,7 +71,7 @@ export function LibraryPanel() {
           <h3 className="text-sm font-semibold">Bundles</h3>
           {pending.length > 1 && <button type="button" className={btn} onClick={downloadAll} data-testid="lib-download-all">Download all {pending.length} not yet downloaded</button>}
         </div>
-        {bundles.length === 0 ? <p className="mt-2 text-sm text-muted" data-testid="lib-no-bundles">No bundle yet. The first one is made automatically when snapshot days reach {s.policy.bundle_after_days} days of age.</p> : (
+        {bundles.length === 0 ? <p className="mt-2 text-sm text-muted" data-testid="lib-no-bundles">No bundle waiting. The next one is made automatically when the {s.policy.block_days}-day block that is filling up has ended.</p> : (
           <div className="mt-2 overflow-x-auto">
             <table className="w-full min-w-[40rem] text-xs">
               <thead><tr className="text-left text-[11px] text-muted"><th className="py-1 font-normal">Days</th><th className="font-normal">Size</th><th className="font-normal">Made</th><th className="font-normal">Copy off the server</th><th /></tr></thead>
@@ -84,7 +85,6 @@ export function LibraryPanel() {
                     <td className="space-x-1 whitespace-nowrap py-1 text-right">
                       <button type="button" className={btn} disabled={!b.on_server || !!busy[b.id]} onClick={() => void download(b)} aria-label={`Download ${b.name}`}>{busy[b.id] && busy[b.id] !== "error" ? STEP[busy[b.id] as DownloadStep] : b.downloaded ? "Download again" : "Download"}</button>
                       <button type="button" className={btn} disabled={!b.on_server || act.isPending} onClick={() => act.mutate(async () => { const r = await libraryApi.restore(b.id); setNote(`Restored ${r.days.length} days (${mb(r.bytes)}) for ${s.policy.restore_ttl_hours} hours.`); })} aria-label={`Restore ${b.name}`}>Restore</button>
-                      <button type="button" className={btn} disabled={!b.downloaded || act.isPending} title={b.downloaded ? "Remove the zip from the server (your downloaded copy stays)" : "Download it first: it may be the only copy"} onClick={() => act.mutate(async () => { await libraryApi.remove(b.id); setNote(`${b.name} removed from the server.`); })} aria-label={`Remove ${b.name} from the server`}>Remove</button>
                     </td>
                   </tr>
                 ))}

@@ -17,7 +17,6 @@ import asyncio
 import contextlib
 import json
 import logging
-import shutil
 import threading
 from collections.abc import Callable
 from datetime import UTC, date, datetime, time, timedelta
@@ -86,6 +85,7 @@ class EodService:
         self.library: Any = None  # the data library (set by the application): bundles the days about to age out, and the pruning waits for them
         self.last_obs_prune: dict[str, Any] | None = None
         self._pruned_on: date | None = None
+        self._library_on: date | None = None
         self.manifests = data_dir / "manifests"
         self._lock = threading.Lock()
         self._task: asyncio.Task[None] | None = None
@@ -123,7 +123,11 @@ class EodService:
             return False
         if self.last_attempt and now - self.last_attempt < RETRY_AFTER and self.last_result.get("state") == "error":
             return False
-        return bool(self.pending_days(now)) or self.backup_due(now) or self.prune_due(now)
+        return bool(self.pending_days(now)) or self.backup_due(now) or self.prune_due(now) or self.library_due(now)
+
+    def library_due(self, now: datetime) -> bool:
+        t = now.astimezone(IST)
+        return self.library is not None and self.library.enabled and t.time() >= RUN_AFTER and self._library_on != t.date()
 
     def prune_due(self, now: datetime) -> bool:
         t = now.astimezone(IST)
@@ -273,18 +277,21 @@ class EodService:
                 else:
                     self.last_tidy = storage.tidy(self.data_dir)
                     out["tidy"] = self.last_tidy
+            lib = self.library if self.library is not None and self.library.enabled else None
+            if lib is not None and self.library_due(now) and out["state"] == "ok":
+                # every 30 days of snapshot files becomes one bundle, announced in the heads-up strip; the files are deleted only after the download is confirmed
+                self._library_on = now.astimezone(IST).date()
+                out["library"] = lib.auto_run()
             if self.prune_due(now) and out["state"] == "ok":
                 self._pruned_on = now.astimezone(IST).date()
-                lib = self.library if self.library is not None and self.library.enabled else None
-                if lib is not None:
-                    out["library"] = lib.auto_run()
-                # approved retention: only days with a verified archive, only ids held in the database, and (with the library) only days inside a verified bundle
-                self.last_prune = storage.prune_snapshots(
-                    self.data_dir, now.astimezone(IST).date(), self.raw_keep, self.norm_keep,
-                    self.archived_days(), self.obs.known_snapshot_ids(), dry_run=False,
-                    bundled_days=None if lib is None else lib.bundled_days(), hard_stop_days=0 if lib is None else lib.hard_stop,
-                    free_bytes=shutil.disk_usage(self.data_dir).free, min_free_bytes=0 if lib is None else lib.min_free,
-                )  # fmt: skip
+                if lib is None:
+                    # approved retention: only days with a verified archive, only ids held in the database
+                    self.last_prune = storage.prune_snapshots(
+                        self.data_dir, now.astimezone(IST).date(), self.raw_keep, self.norm_keep,
+                        self.archived_days(), self.obs.known_snapshot_ids(), dry_run=False,
+                    )  # fmt: skip
+                else:
+                    self.last_prune = {"handled_by": "the data library: snapshot files are deleted after the bundle that holds them has been downloaded"}
                 out["prune"] = self.last_prune
                 if self.obs_keep > 0:  # per-contract rows of old sessions: archive-verified, dry run unless approved
                     self.last_obs_prune = self.obs.plan_contract_pruning(

@@ -92,12 +92,10 @@ class Settings(BaseSettings):
     snapshot_normalized_keep_days: int = 30  # only days with a verified archive are ever removed
     # the data library (docs/data-library-plan.md): automatic zip bundles of days that are about to age out, kept until downloaded; temporary restores for backtests  # noqa: E501
     library_enabled: bool = True
-    library_min_batch_days: int = 7  # a bundle is made when this many days are due (or the oldest is about to be deleted)  # noqa: E501
-    library_bundle_keep_days: int = 90  # a downloaded and confirmed bundle is removed from the server after this; one never downloaded is kept  # noqa: E501
+    library_block_days: int = 30  # every this many days of snapshot files become one bundle, announced in the heads-up strip, deleted from the server after the download is confirmed  # noqa: E501
     library_restore_ttl_hours: int = 24
     library_restore_max_mb: int = 1024
-    library_min_free_gb: float = 6.0  # below this a bundle is not built or unpacked, and pruning stops waiting for a bundle  # noqa: E501
-    library_hard_stop_days: int = 60  # pruning stops waiting for a bundle after this many days
+    library_min_free_gb: float = 6.0  # below this a bundle is not built or unpacked, and the snapshot files of bundled days are removed to protect the disk  # noqa: E501
     # per-contract rows of older sessions, removable once their archive is verified (0 = keep all)
     observation_keep_sessions: int = 2
     observation_prune_dry_run: bool = True  # report only; False needs owner approval

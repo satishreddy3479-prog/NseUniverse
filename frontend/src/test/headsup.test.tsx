@@ -97,4 +97,13 @@ describe("heads up strip", () => {
     await userEvent.click(within(strip).getByRole("button", { name: "Close heads up" }));
     expect(screen.queryByRole("region", { name: "Heads up" })).toBeNull();
   });
+  it("tells the owner that a data bundle is ready, with a link to the page that downloads it", async () => {
+    const alerts = [{ key: "library|ready|b.zip|2026-W48", source: "library", kind: "bundle_ready", level: "warn", title: "Data bundle ready: download it", text: "2026-10-28 to 2026-11-26, 24 days, 38 MB. Download it on the Data page (Data library): the server then deletes it and those days' snapshot files, and keeps the archive and the database.", at: "2026-11-27T14:00:00+00:00", link: "/data" }];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(String(url).includes("headsup/trades") ? { generated_at: "x", alerts } : { generated_at: "x", reminders: [], news: [] }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={qc}><MemoryRouter><HeadsUpStrip /></MemoryRouter></QueryClientProvider>);
+    const strip = await screen.findByRole("region", { name: "Heads up" });
+    expect(within(strip).getByRole("link", { name: "Data bundle ready: download it" })).toHaveAttribute("href", "/data");
+    expect(within(strip).getByText(/Data library · 19:30 IST · 2026-10-28 to 2026-11-26, 24 days, 38 MB/)).toBeInTheDocument();
+  });
 });
