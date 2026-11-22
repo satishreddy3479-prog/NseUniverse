@@ -23,7 +23,7 @@ export const SYSTEM: { to: string; label: string }[] = [
 ];
 
 const link = (active: boolean) =>
-  `inline-flex min-h-10 items-center whitespace-nowrap border-b-2 px-2 text-[13px] xl:px-2.5 xl:text-sm ${active ? "border-brass font-medium text-paper" : "border-transparent text-muted hover:text-paper"}`;
+  `inline-flex min-h-10 items-center whitespace-nowrap border-b-2 px-2 text-[13px] xl:px-2.5 xl:text-sm ${active ? "border-accent font-medium text-paper" : "border-transparent text-muted hover:text-paper"}`;
 
 function Dropdown({ id, open, setOpen, children, label, wide }: { id: string; open: boolean; setOpen: (o: boolean) => void; children: React.ReactNode; label: string; wide?: boolean }) {
   // A menu opened by hovering stays open when the same pointer clicks the button; only a click-opened menu toggles shut.

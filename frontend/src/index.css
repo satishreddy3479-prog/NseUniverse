@@ -373,6 +373,8 @@ header.bg-slate { background: var(--header-bg); box-shadow: var(--shadow); }
   background-color: #efeaff; border-color: var(--accent); color: #2b1b9a; box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent) inset;
 }
 [data-theme="light"] [role="tab"][aria-selected="true"] { color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
+/* One underline, one colour: a tab that already draws its own bottom border (the section tabs) must not get the inset line on top of it, which made the underline two tones and twice as thick. */
+[role="tab"][class*="border-b-2"][aria-selected="true"] { box-shadow: none; border-color: var(--accent); }
 /* Buttons: a soft lift on hover so they feel pressable. */
 [data-theme="light"] button.bg-slate-2:not(:disabled):hover, [data-theme="light"] a.bg-slate-2:hover { box-shadow: 0 2px 8px -2px rgba(11, 22, 48, 0.22); }
 /* Inset tiles and panels: a fainter ring and a white top edge, so they sit in the card instead of boxing it. */

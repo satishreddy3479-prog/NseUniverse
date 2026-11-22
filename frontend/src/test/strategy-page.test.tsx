@@ -72,8 +72,8 @@ describe("Strategy builder page", () => {
     const table = await screen.findByRole("table", { name: "Strategy legs" });
     const ranges = within(table).getAllByTestId(/^leg-range-/).map((e) => e.textContent);
     expect(ranges).toHaveLength(2);
-    expect(ranges).toContain("H 112.50 · L 91.00"); // the ATM call: high 112.5, low 91 in the stored quote
-    expect(ranges).toContain("H — · L —"); // the ATM put's quote carries neither
+    expect(ranges).toContain("Day H 112.50 · L 91.00"); // the ATM call: high 112.5, low 91 in the stored quote
+    expect(ranges).toContain("Day H — · L —"); // the ATM put's quote carries neither
   });
 
   it("every leg is editable: lots, duplicate, remove; bad input is explained", async () => {

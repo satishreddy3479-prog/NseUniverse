@@ -616,11 +616,11 @@ export default function StrategyBuilder() {
   const futureBar = (() => {
           const c = futureToAdd(futs, todayIST());
           return (
-            <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 px-1 text-xs text-muted" data-testid="add-future">
-              <span className="font-medium text-paper">NIFTY future</span>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2 text-sm text-muted" data-testid="add-future">
+              <span className="font-semibold text-paper">NIFTY future</span>
               <button type="button" className="min-h-8 rounded-sm border border-up/60 px-3 text-up hover:bg-up/10 disabled:opacity-40" disabled={!c} onClick={() => addFuture("BUY")} title="Add one lot long: gains when NIFTY rises (adds delta)">Buy future</button>
               <button type="button" className="min-h-8 rounded-sm border border-down/60 px-3 text-down hover:bg-down/10 disabled:opacity-40" disabled={!c} onClick={() => addFuture("SELL")} title="Add one lot short: gains when NIFTY falls (removes delta). Use it to make the strategy delta neutral">Sell future</button>
-              <span className="num" data-testid="future-quote">{c ? `${c.symbol ?? "current month"} · expires ${dmy(c.expiry as string)} · ${c.fresh && c.ltp != null ? fmtPrice(c.ltp) : "no live price"}` : futs ? "the contract is not resolved yet" : "loading the contract…"}</span>
+              <span className="num" data-testid="future-quote">{c ? `${c.symbol ?? "current month"} · expires ${dmy(c.expiry as string)} · ${c.fresh && c.ltp != null ? fmtPrice(c.ltp) : "no live price (market closed or not streaming)"}` : futs ? "the contract is not resolved yet" : "loading the contract…"}</span>
             </div>
           );
   })();
@@ -888,6 +888,7 @@ export default function StrategyBuilder() {
         <span className="text-xs text-muted sm:ml-auto" title={liveMode === "fresh" ? "Streamed last traded prices overlay the stored snapshot, as on the Option chain page" : "Premiums are the last traded prices in this stored snapshot, not live quotes"}>{liveMode === "fresh" ? <span className="mr-2 rounded-sm border border-up/60 px-1 text-up">LIVE</span> : null}Snapshot <span className={`num ${chain.data?.stale ? "text-warn" : "text-paper"}`}>{snap ? fmtDateTimeIST(snap.retrieved_at) : "—"}</span>{chain.data?.stale ? " · stale" : ""}</span>
       </div>
 
+      {futureBar}
       <div className={`grid gap-3 [&>*]:min-w-0 ${wide || chainHidden ? "" : "xl:grid-cols-[minmax(480px,36%)_1fr]"}`}>
         {/* ------------------------------------------------------------ chain */}
         <section aria-label="Option chain" className={`flex h-fit flex-col rounded-[var(--radius-panel)] border border-rule bg-slate ${wide || chainHidden ? "" : "xl:sticky xl:top-2 xl:self-start"}`}>
@@ -1021,7 +1022,6 @@ export default function StrategyBuilder() {
             )}
             {legs.length === 0 ? (
               <div className="p-3" data-testid="gallery">
-                {futureBar}
                 <h2 className="mb-2 text-sm font-semibold text-paper">Ready-made strategies</h2>
                 <div role="tablist" aria-label="Strategy view" className="mb-3 flex flex-wrap gap-2">
                   {(["Bullish", "Bearish", "Neutral", "Calendar", "Other"] as const).map((b) => <button key={b} role="tab" type="button" aria-selected={bias === b} onClick={() => setBias(b)} className={`min-h-8 rounded-sm border px-3 text-sm ${bias === b ? "border-info bg-info/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{b}</button>)}
@@ -1238,7 +1238,6 @@ export default function StrategyBuilder() {
                       </details>
                     );
                   })()}
-                  {futureBar}
                   <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-muted" data-testid="legs-summary">
                     <span><span className="num text-paper">{legs.filter((l) => l.enabled !== false).length}</span> of {legs.length} legs active</span>
                     <span>Net premium <span className={`num ${tone(netPremium)}`}>{netPremium == null ? "—" : `${money(netPremium)} ${netPremium >= 0 ? "credit" : "debit"}`}</span></span>
@@ -1279,7 +1278,7 @@ export default function StrategyBuilder() {
                             <td data-label="Entry ₹" className="px-1 py-1.5"><input className={`${field} w-[4.6rem] !px-1.5`} type="number" min={0} step="0.05" aria-label="Entry premium" value={l.premium ?? ""} placeholder="enter" title={l.premiumSource === "market" ? "Stored quote" : l.premiumSource === "manual" ? "You entered this" : "Missing"} onChange={(e) => update(l.id, { premium: e.target.value === "" ? null : Number(e.target.value), premiumSource: e.target.value === "" ? null : "manual" })} />
                               <div className="text-[10px] text-muted">{l.premiumSource === "market" ? "stored quote" : l.premiumSource === "manual" ? "you entered" : "missing"}</div></td>
                             <td data-label="LTP" className="num px-1 py-2">{mk == null ? <span className="text-muted" title="No quote in the stored chain for this contract">—</span> : fmtPrice(mk)}
-                              {(() => { const r = l.type === "FUT" ? { high: null, low: null } : dayRange(l.strike, l.type, l.expiry); return <div className="mt-0.5 whitespace-nowrap text-[10px] text-muted" title="Today's high and low of this contract, from the stored quote" data-testid={`leg-range-${l.id}`}>H {r.high == null ? "—" : fmtPrice(r.high)} · L {r.low == null ? "—" : fmtPrice(r.low)}</div>; })()}</td>
+                              {(() => { const r = l.type === "FUT" ? { high: null, low: null } : dayRange(l.strike, l.type, l.expiry); return <div className="mt-0.5 whitespace-nowrap text-[10px] text-muted" title="The day's high and low of this contract since the market opened (the exchange's day values in the stored quote). Not since you entered the leg." data-testid={`leg-range-${l.id}`}>Day H {r.high == null ? "—" : fmtPrice(r.high)} · L {r.low == null ? "—" : fmtPrice(r.low)}</div>; })()}</td>
                             <td data-label="P&L" className={`num whitespace-nowrap px-1 py-2 ${tone(pl)}`}>{money(pl)}</td>
                             <td data-label="Δ · Θ/day" className="num px-1 py-2 text-xs">{lg ? <><div className="whitespace-nowrap"><span className="text-muted">Δ </span><span className="text-paper">{lg.delta.toFixed(1)}</span></div><div className="whitespace-nowrap"><span className="text-muted">Θ </span><span className={tone(lg.thetaDay)}>{money(lg.thetaDay)}</span></div></> : <span className="text-muted" title="No volatility fits this leg's stored price">—</span>}</td>
                             <td data-label="Target ₹" className="px-1 py-1">{exitCell(l, "target")}</td>

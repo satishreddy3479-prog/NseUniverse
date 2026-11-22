@@ -32,7 +32,7 @@ export function Tabs({ tabs, value, onChange, label }: {
             tabIndex={on ? 0 : -1}
             onClick={() => onChange(t.id)}
             onKeyDown={(e) => move(e, i)}
-            className={`min-h-10 shrink-0 border-b-2 px-3 text-sm ${on ? "border-brass font-medium text-paper" : "border-transparent text-muted hover:text-paper"}`}
+            className={`min-h-10 shrink-0 border-b-2 px-3 text-sm ${on ? "border-accent font-medium text-paper" : "border-transparent text-muted hover:text-paper"}`}
           >
             {t.label}
           </button>
