@@ -19,11 +19,11 @@ import { useDash } from "./DashContext";
 import { useClipped } from "./ReplayContext";
 import { useSessionWindow } from "./PriceBoards";
 import { Card, Section } from "./VegaAnalysis";
+import { TimeframeBar, useTimeframe } from "./Timeframe";
 import { Loading } from "../../components/Loading";
 import { NoExpiry } from "./NoExpiry";
 
 const RANGES = [5, 10, 15, 20];
-const TFS = [1, 3, 5, 15];
 const pill = (on: boolean) => `widget-nodrag min-h-8 rounded-sm border px-2.5 text-xs ${on ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`;
 const field = "widget-nodrag min-h-9 rounded-sm border border-rule bg-slate-2 px-2 text-sm text-paper";
 const lvl = (v: number | null | undefined) => (v == null ? MISSING : fmtInt(Math.round(v)));
@@ -39,7 +39,7 @@ export function GammaAnalysisBoard() {
   const [levelsOn, setLevelsOn] = useState(true);
   const [absOn, setAbsOn] = useState(true);
   const [extra, setExtra] = useState(false);
-  const [tf, setTf] = useState(5);
+  const [tf] = useTimeframe();
 
   const spot = d.snapshot?.underlying_ltp ?? null;
   const atMs = d.snapshot ? Date.parse(d.snapshot.retrieved_at) : 0;
@@ -182,9 +182,9 @@ export function GammaAnalysisBoard() {
   const top = [...profile.rows].filter((r) => r.net != null).sort((a, b) => Math.abs(b.net!) - Math.abs(a.net!)).slice(0, 10);
   const distFlip = lv.flip == null ? null : ((lv.flip - lv.spot) / lv.spot) * 100;
   const bias = lv.flip == null ? "No gamma flip within ±8% of spot: the aggregate keeps one sign across that range." : lv.spot >= lv.flip ? `Spot is ${Math.abs(distFlip!).toFixed(2)}% above the gamma flip (${lvl(lv.flip)}): the ${lv.netTotal >= 0 ? "stabilizing" : "destabilizing"} side of the model.` : `Spot is ${Math.abs(distFlip!).toFixed(2)}% below the gamma flip (${lvl(lv.flip)}): the ${lv.netTotal >= 0 ? "stabilizing" : "destabilizing"} side of the model.`;
-  const tfBtn = (m: number) => <button key={m} type="button" aria-pressed={tf === m} onClick={() => setTf(m)} className={pill(tf === m)}>{m}m</button>;
   return (
     <div className="flex flex-col gap-3" data-testid="gamma-analysis">
+      <TimeframeBar />
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2 text-sm">
         <label className="flex items-center gap-2 text-muted">Strike range
           <select aria-label="Strike range" value={range} onChange={(e) => setRange(Number(e.target.value))} className={field}>{RANGES.map((n) => <option key={n} value={n}>±{n}</option>)}</select>
@@ -255,7 +255,7 @@ export function GammaAnalysisBoard() {
         </div>
       </Section>
 
-      <Section title="Underlying and net GEX through the session" right={<span className="flex flex-wrap items-center gap-2 text-xs text-muted">{structure.length} points · session {w.day ?? MISSING}<span role="group" aria-label="Timeframe" className="flex gap-1">{TFS.map(tfBtn)}</span></span>}>
+      <Section title="Underlying and net GEX through the session" right={<span className="flex flex-wrap items-center gap-2 text-xs text-muted">{structure.length} points · session {w.day ?? MISSING}{tf}-minute candles</span>}>
         <div className="border-b border-rule px-3 py-2">{w.controls}</div>
         <div className="p-2">
           {q.isPending && !!key ? <Loading label="Loading stored samples…" className="m-3" />

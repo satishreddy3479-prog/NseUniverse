@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { fmtInt } from "../../lib/format";
+import { TimeframeBar, useTimeframe } from "./Timeframe";
 import { MISSING } from "../../lib/format";
 import { sessionDays, sessionWindow } from "../../lib/analytics";
 import { strikesAround } from "../../lib/optionTools";
@@ -21,7 +22,6 @@ import { NoExpiry } from "./NoExpiry";
 
 const GROUP_A = "vega-level";
 const GROUP_B = "vega-change";
-const TFS = [1, 3, 5, 15];
 const PER_SIDE = [5, 10, 15, 21];
 const MIN_SAMPLES = 100; // a percentile needs a real history: at least this many stored samples over at least two sessions
 const MIN_SESSIONS = 2;
@@ -65,7 +65,7 @@ export function VegaAnalysisBoard() {
   const d = useDash();
   const c = useChartColors();
   const w = useSessionWindow();
-  const [tf, setTf] = useState(5);
+  const [tf] = useTimeframe();
   const [near, setNear] = useState(1);
   const [pick, setPick] = useState<number | null>(null);
   const [perSide, setPerSide] = useState(21);
@@ -192,9 +192,9 @@ export function VegaAnalysisBoard() {
   if (level.length < 2) return <EmptyState title="Not enough usable samples">Vega needs at least two stored samples in the session with prices for the chosen strikes ({level.length} so far).</EmptyState>;
 
   const toggle = (k: keyof typeof show) => setShow((s) => ({ ...s, [k]: !s[k] }));
-  const tfBtn = (m: number) => <button key={m} type="button" aria-pressed={tf === m} onClick={() => setTf(m)} className={pill(tf === m)}>{m}m</button>;
   return (
     <div className="flex flex-col gap-3" data-testid="vega-analysis">
+      <TimeframeBar />
       <div className="flex flex-col gap-2 rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2">
         {w.controls}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
@@ -222,7 +222,7 @@ export function VegaAnalysisBoard() {
         <Card label="Vega rank" value={rank == null ? MISSING : `${rank.toFixed(0)}%`} sub="position in the stored history" />
       </div>
 
-      <Section title="Vega — volatility sensitivity" right={<span className="flex items-center gap-2 text-xs text-muted">NIFTY · {w.day} · at {now ? stamp(now.t) : MISSING}<span role="group" aria-label="Timeframe" className="flex gap-1">{TFS.map(tfBtn)}</span></span>}>
+      <Section title="Vega — volatility sensitivity" right={<span className="flex items-center gap-2 text-xs text-muted">NIFTY · {w.day} · at {now ? stamp(now.t) : MISSING}{tf}-minute candles</span>}>
         <div className="flex flex-wrap items-center gap-1.5 border-b border-rule px-3 py-2" role="group" aria-label="Overlays">
           <button type="button" aria-pressed={show.call} onClick={() => toggle("call")} className={pill(show.call)}>Call Vega</button>
           <button type="button" aria-pressed={show.put} onClick={() => toggle("put")} className={pill(show.put)}>Put Vega</button>

@@ -7,6 +7,7 @@ import { fmtInt, MISSING } from "../../lib/format";
 import { METRICS } from "../../lib/metricRegistry";
 import { strikesAround } from "../../lib/optionTools";
 import { sessionOpenMin } from "../../lib/session";
+import { useTimeframe } from "./Timeframe";
 import type { OptionChainRow } from "../../lib/types";
 import { candles } from "../../lib/vegaAnalysis";
 import { EChart, useChartColors } from "../EChart";
@@ -19,7 +20,6 @@ import { Loading } from "../../components/Loading";
 const pill = (on: boolean) => `widget-nodrag min-h-8 rounded-sm border px-2.5 text-xs ${on ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`;
 const lvl = (v: number | null | undefined) => (v == null ? MISSING : fmtInt(Math.round(v)));
 const sg = (v: number | null | undefined, d = 1) => (v == null ? MISSING : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}`);
-const TFS = [1, 3, 5, 15] as const;
 const WINDOWS: [string, number | null][] = [["5 min", 5], ["15 min", 15], ["30 min", 30], ["1 hour", 60], ["Full session", null]];
 const hhmm = (ms: number) => new Date(ms + 330 * 60_000).toISOString().slice(11, 16);
 
@@ -82,7 +82,7 @@ export function GexSessionIntel({ expiry, listed, openAtm, curAtm, rate }: { exp
   const c = useChartColors();
   const w = useSessionWindow();
   const [uni, setUni] = useState<"fixed" | "dynamic">("fixed");
-  const [tf, setTf] = useState<(typeof TFS)[number]>(5);
+  const [tf] = useTimeframe();
   const centre = uni === "fixed" ? openAtm : (curAtm ?? openAtm);
   const key = useMemo(() => (centre == null ? "" : strikesAround(listed, centre, uni === "fixed" ? 21 : 41).join(",")), [listed, centre, uni]);
   const q = useQuery({
@@ -98,8 +98,8 @@ export function GexSessionIntel({ expiry, listed, openAtm, curAtm, rate }: { exp
   }, [qd, expiry, uni, tf, w.day, rate]);
   const dyn = useMemo(() => gexDynamics(pts), [pts]);
   const ft = useMemo(() => flipTime(pts), [pts]);
-  const five = useMemo(() => gexStructure(candles(qd ? gexSamples(qd, expiry, rate, uni === "dynamic" ? 10 : undefined).filter((x) => !w.day || x.day === w.day) : [], 5, sessionOpenMin())), [qd, expiry, uni, w.day, rate]);
-  const div = useMemo(() => WINDOWS.map(([label, m]) => [label, gexPriceDivergence(five, m)] as const), [five]);
+  const five = useMemo(() => gexStructure(candles(qd ? gexSamples(qd, expiry, rate, uni === "dynamic" ? 10 : undefined).filter((x) => !w.day || x.day === w.day) : [], tf, sessionOpenMin())), [qd, expiry, uni, w.day, rate, tf]);
+  const div = useMemo(() => WINDOWS.filter(([, m]) => m == null || m >= tf).map(([label, m]) => [label, gexPriceDivergence(five, m)] as const), [five, tf]);
   const th = "px-2 py-1.5 text-right font-normal";
   const btn = (on: boolean) => pill(on);
   const mig = (k: Migrating, label: string) => { const m = migration(pts, k); return (
@@ -135,7 +135,7 @@ export function GexSessionIntel({ expiry, listed, openAtm, curAtm, rate }: { exp
       <Section title="Intraday GEX: movement, migration and time around the flip" right={<span className="text-xs text-muted">{pts.length} candles · session {w.day ?? MISSING}</span>}>
         <div className="flex flex-wrap items-center gap-2 border-b border-rule px-3 py-2 text-xs text-muted">
           <div role="group" aria-label="GEX universe" className="flex gap-1">{([["fixed", "Fixed opening ATM ±10"], ["dynamic", "Dynamic ATM ±10"]] as const).map(([k, l]) => <button key={k} type="button" aria-pressed={uni === k} onClick={() => setUni(k)} className={btn(uni === k)}>{l}</button>)}</div>
-          <div role="group" aria-label="Candle" className="flex gap-1">{TFS.map((t) => <button key={t} type="button" aria-pressed={tf === t} onClick={() => setTf(t)} className={btn(tf === t)}>{t}m</button>)}</div>
+          <span>{tf}-minute candles (set at the top of the page)</span>
           {w.controls}
         </div>
         <div className="p-2">
@@ -157,7 +157,7 @@ export function GexSessionIntel({ expiry, listed, openAtm, curAtm, rate }: { exp
           <MethodologyPanel metrics={[METRICS.gex_dynamics!]} example={dynExample} freshness={fresh} />
         </div>
       </Section>
-      <Section title="GEX-price divergence" right={<span className="text-xs text-muted">{uni} universe · 5-minute candles</span>}>
+      <Section title="GEX-price divergence" right={<span className="text-xs text-muted">{uni} universe · {tf}-minute candles</span>}>
         <div className="overflow-x-auto p-2">
           <table className="num w-full min-w-[46rem] text-xs" data-testid="gexdiv-table">
             <thead><tr className="text-[11px] text-muted"><th className="px-2 py-1.5 text-left font-normal">Window</th><th className={th}>NIFTY change</th><th className={th}>Net GEX then → now</th><th className={th}>Net GEX change</th><th className="px-2 py-1.5 text-left font-normal">Reading</th></tr></thead>

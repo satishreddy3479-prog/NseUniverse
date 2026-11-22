@@ -83,6 +83,23 @@ describe("Vega Analysis page", () => {
     expect(cards.getByText("not enough stored history")).toBeInTheDocument(); // 40 samples of one session: the percentile waits for 30 in the window, regime says so below
   });
 
+  it("one page-wide timeframe: 1m keeps every minute, 15m groups them, and the choice is remembered", async () => {
+    mockApi();
+    renderPage();
+    const bar = within(await screen.findByTestId("timeframe-bar"));
+    const pts = () => Number(screen.getByRole("img", { name: "Call vega, put vega and NIFTY through the session" }).getAttribute("data-points")!.split(",")[0]);
+    await userEvent.click(bar.getByRole("button", { name: "1m" }));
+    const one = pts();
+    await userEvent.click(bar.getByRole("button", { name: "15m" }));
+    const fifteen = pts();
+    try {
+      expect(one).toBe(40); // 40 stored one-minute samples, one candle each
+      expect(fifteen).toBeLessThanOrEqual(4); // 40 minutes cover at most 4 fifteen-minute candles
+      expect(bar.getByRole("button", { name: "15m" })).toHaveAttribute("aria-pressed", "true");
+      expect(localStorage.getItem("nse.timeframe.v1")).toBe("15");
+    } finally { await userEvent.click(bar.getByRole("button", { name: "5m" })); } // leave the shared choice as the default for the other tests
+  });
+
   it("charts price, call vega and put vega, with CE − PE bars and the notes on axes", async () => {
     mockApi();
     renderPage();
