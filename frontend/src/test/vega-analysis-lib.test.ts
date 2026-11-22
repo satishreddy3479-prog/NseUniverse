@@ -29,6 +29,15 @@ describe("candles", () => {
     expect(candles(pts, 3, 555).map((p) => p.v)).toEqual([2, 5]); // 09:15-09:17 ends at 2, 09:18-09:20 at 5
     expect(candles(pts, 1, 555)).toHaveLength(6);
   });
+  it("every timeframe of the page bar (1, 3, 5, 15) keeps the last sample of each bucket counted from 09:15", () => {
+    const pts = Array.from({ length: 31 }, (_, m) => ({ t: at(m), v: m })); // 09:15 .. 09:45, one a minute
+    expect(candles(pts, 1, 555).map((p) => p.v)).toEqual(pts.map((p) => p.v));
+    expect(candles(pts, 3, 555).map((p) => p.v)).toEqual([2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 30]); // buckets of three minutes; 09:45 starts the last one
+    expect(candles(pts, 5, 555).map((p) => p.v)).toEqual([4, 9, 14, 19, 24, 29, 30]);
+    expect(candles(pts, 15, 555).map((p) => p.v)).toEqual([14, 29, 30]);
+    // a sample before the open lands in its own earlier bucket, never in the first candle
+    expect(candles([{ t: at(-3), v: -3 }, ...pts.slice(0, 3)], 5, 555).map((p) => p.v)).toEqual([-3, 2]);
+  });
 });
 
 describe("percentile rank and regime", () => {

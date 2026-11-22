@@ -198,7 +198,8 @@ describe("global board charts", () => {
     expect(await within(dlg).findByTestId("global-chart")).toBeInTheDocument();
     // 7500 -> 7490 is -10 (-0.13 %), high 7510, low 7490; one closure (09:01 to 20:00 IST) is cut out and counted
     const chart = within(dlg).getByTestId("global-chart");
-    expect(chart).toHaveTextContent("−10.00 (−0.13%)");
+    expect(chart).toHaveTextContent("Vs previous close+10.00 (+0.13%)"); // 7490 against 7480
+    expect(chart).toHaveTextContent("−10.00 (−0.13%)"); // first to last: 7500 to 7490
     expect(chart).toHaveTextContent("High7,510.00");
     expect(chart).toHaveTextContent("Low7,490.00");
     expect(chart).toHaveTextContent("Closed periods1");

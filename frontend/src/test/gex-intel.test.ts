@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { black76, expiryEnd } from "../lib/optionModel";
 import { gexSamples, nearestStrikes, type GexProfile, type GexRow, type StructurePoint } from "../lib/gammaAnalysis";
 import { flipTime, gexDynamics, gexPriceDivergence, gexUniverses, migration, scenarioNet, SIGN_SCENARIOS } from "../lib/gexIntel";
+import { candles } from "../lib/vegaAnalysis";
 import type { OptionChainRow, StrikeSeries } from "../lib/types";
 
 const EXPIRY = "2026-11-24";
@@ -76,6 +77,21 @@ describe("GEX-price divergence", () => {
     expect(gexPriceDivergence(base(24000, 24100, 10, 50), 60).label).toContain("NIFTY up while net GEX becomes more positive");
     expect(gexPriceDivergence(base(24100, 24000, 50, 10), 60).label).toContain("potential downside amplification");
     expect(gexPriceDivergence(base(24100, 24000, 10, 50), 60).label).toContain("potential stabilisation");
+  });
+  it("windows are real minutes: built from 5-minute candles the 15-minute window is found, from 15-minute candles it is not (so the page keeps 5-minute candles whatever the timeframe bar says)", () => {
+    // one sample a minute from 09:15 to 10:14; spot rises 1 point a minute, net GEX falls 0.5 a minute
+    const minute = Array.from({ length: 60 }, (_, m) => pt(m, 24000 + m, 100 - 0.5 * m));
+    const open = 555;
+    const cand = (tf: number) => candles(minute, tf, open);
+    const d5 = gexPriceDivergence(cand(5), 15), d15 = gexPriceDivergence(cand(15), 15);
+    // the last 5-minute candle ends at minute 59 (10:14), 15 minutes earlier is minute 44, a 5-minute candle end: found exactly
+    expect(d5.kind).not.toBe("unavailable");
+    expect(d5.spotChange).toBe(15); expect(d5.netChange).toBe(-7.5);
+    // 15-minute candles end at minutes 14, 29, 44, 59; "now" is minute 59, the sample 15 minutes earlier is minute 44: also exact here, but a newest partial candle breaks it
+    const partial = minute.slice(0, 55); // now = minute 54, mid-candle
+    expect(gexPriceDivergence(candles(partial, 15, open), 15).kind).toBe("unavailable"); // the candle before ended at minute 44: 10 minutes away, tolerance 3.75
+    expect(gexPriceDivergence(candles(partial, 5, open), 15).kind).not.toBe("unavailable"); // 5-minute candles: minute 39 is exactly 15 minutes before 54
+    expect(d15.windowMin).toBe(15);
   });
   it("shows absolute and percentage changes, and no reading for flat NIFTY or unchanged GEX", () => {
     const d = gexPriceDivergence(base(24000, 24100, 50, 10), 60);

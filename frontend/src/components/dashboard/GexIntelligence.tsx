@@ -98,8 +98,8 @@ export function GexSessionIntel({ expiry, listed, openAtm, curAtm, rate }: { exp
   }, [qd, expiry, uni, tf, w.day, rate]);
   const dyn = useMemo(() => gexDynamics(pts), [pts]);
   const ft = useMemo(() => flipTime(pts), [pts]);
-  const five = useMemo(() => gexStructure(candles(qd ? gexSamples(qd, expiry, rate, uni === "dynamic" ? 10 : undefined).filter((x) => !w.day || x.day === w.day) : [], tf, sessionOpenMin())), [qd, expiry, uni, w.day, rate, tf]);
-  const div = useMemo(() => WINDOWS.filter(([, m]) => m == null || m >= tf).map(([label, m]) => [label, gexPriceDivergence(five, m)] as const), [five, tf]);
+  const five = useMemo(() => gexStructure(candles(qd ? gexSamples(qd, expiry, rate, uni === "dynamic" ? 10 : undefined).filter((x) => !w.day || x.day === w.day) : [], 5, sessionOpenMin())), [qd, expiry, uni, w.day, rate]); // fixed 5-minute candles: the divergence windows are real minutes (5, 15, 30, 60), so they do not follow the timeframe bar (a 15-minute candle has no sample 15 minutes before it within the matching tolerance)
+  const div = useMemo(() => WINDOWS.map(([label, m]) => [label, gexPriceDivergence(five, m)] as const), [five]);
   const th = "px-2 py-1.5 text-right font-normal";
   const btn = (on: boolean) => pill(on);
   const mig = (k: Migrating, label: string) => { const m = migration(pts, k); return (
@@ -157,7 +157,7 @@ export function GexSessionIntel({ expiry, listed, openAtm, curAtm, rate }: { exp
           <MethodologyPanel metrics={[METRICS.gex_dynamics!]} example={dynExample} freshness={fresh} />
         </div>
       </Section>
-      <Section title="GEX-price divergence" right={<span className="text-xs text-muted">{uni} universe · {tf}-minute candles</span>}>
+      <Section title="GEX-price divergence" right={<span className="text-xs text-muted">{uni} universe · windows in real minutes, from 5-minute candles</span>}>
         <div className="overflow-x-auto p-2">
           <table className="num w-full min-w-[46rem] text-xs" data-testid="gexdiv-table">
             <thead><tr className="text-[11px] text-muted"><th className="px-2 py-1.5 text-left font-normal">Window</th><th className={th}>NIFTY change</th><th className={th}>Net GEX then → now</th><th className={th}>Net GEX change</th><th className="px-2 py-1.5 text-left font-normal">Reading</th></tr></thead>

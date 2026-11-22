@@ -90,10 +90,15 @@ function SeriesChart({ item, hours }: { item: GlobalItem; hours: number }) {
   const show = labelIndexes(cs.ms, multiDay);
   const fmt = (v: number, withDay: boolean) => new Intl.DateTimeFormat("en-IN", { ...(withDay ? { day: "numeric", month: "short" } : {}), hour: "2-digit", minute: "2-digit", hour12: false, timeZone: IST }).format(new Date(v));
   const dayOnly = (v: number) => new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: IST }).format(new Date(v));
+  const roomy = typeof window === "undefined" || window.innerWidth >= 640; // on a phone the rotated closure labels would lie over the line: the dotted separators and the count say it
   const closures = cs.breaks.map((b) => ({
     xAxis: b.index, lineStyle: { color: colors.muted, type: "dotted", width: 1, opacity: 0.8 },
-    label: b.gapMs >= 3 * 3_600_000 ? { formatter: `closed ${gapText(b.gapMs)}`, color: colors.muted, fontSize: 10, position: "insideEndTop", rotate: 90 } : { show: false },
+    // the label only where it has room: not over the price axis at the left edge or the end tag at the right (a closure right after the first samples)
+    label: roomy && b.gapMs >= 3 * 3_600_000 && b.index >= cs.values.length * 0.12 && b.index <= cs.values.length * 0.9 ? { formatter: `closed ${gapText(b.gapMs)}`, color: colors.muted, fontSize: 11, position: "insideEndTop", rotate: 90 } : { show: false },
   }));
+  // one line per stretch of trading: the line never joins the last price before a closure to the first one after it (that was a steep stroke across hours nobody traded)
+  const edges = [0, ...cs.breaks.map((b) => b.index), cs.values.length];
+  const stretches = edges.slice(0, -1).map((from, k) => cs.values.map((v, i) => (i >= from && i < edges[k + 1]! ? v : null)));
   const option = {
     animation: false, grid: { left: 62, right: 16, top: 14, bottom: 30 },
     tooltip: {
@@ -108,24 +113,25 @@ function SeriesChart({ item, hours }: { item: GlobalItem; hours: number }) {
     },
     xAxis: {
       type: "category", boundaryGap: false, data: cs.ms.map(String),
-      axisLabel: { color: colors.muted, interval: (i: number) => show.has(i), hideOverlap: true, formatter: (v: string) => (multiDay ? dayOnly(Number(v)) : fmt(Number(v), false)) },
+      axisLabel: { color: colors.muted, interval: (i: number) => show.has(i), hideOverlap: true, alignMinLabel: "left", alignMaxLabel: "right", formatter: (v: string) => (multiDay ? dayOnly(Number(v)) : fmt(Number(v), false)) },
       axisLine: { lineStyle: { color: colors.rule } }, axisTick: { show: false }, splitLine: { show: false },
     },
     yAxis: { type: "value", scale: true, axisLabel: { color: colors.muted, formatter: (v: number) => num(v, d) }, splitLine: { lineStyle: { color: colors.rule, opacity: 0.5 } } },
-    series: [{
-      name: item.name, type: "line", showSymbol: false, data: cs.values, lineStyle: { width: 2, color: line }, itemStyle: { color: line },
+    series: stretches.map((data, k) => ({
+      name: item.name, type: "line", showSymbol: data.filter((v) => v != null).length === 1, symbolSize: 5, connectNulls: false, data, lineStyle: { width: 2, color: line }, itemStyle: { color: line },
       areaStyle: { color: line, opacity: 0.08 },
-      markLine: { silent: true, symbol: "none", data: [
+      markLine: k > 0 ? undefined : { silent: true, symbol: "none", data: [
         ...(ref != null ? [{ yAxis: ref, lineStyle: { color: colors.muted, type: "dashed", width: 1 }, label: { color: colors.muted, formatter: `Prev close ${num(ref, d)}`, position: "insideEndTop" } }] : []),
         ...closures,
       ] },
-    }],
+    })),
   };
   const stat = (k: string, v: string, c = "") => <div className="rounded-sm border border-rule bg-slate-2 px-2 py-1"><dt className="text-[10px] uppercase tracking-wide text-muted">{k}</dt><dd className={`tabular-nums text-sm ${c}`}>{v}</dd></div>;
   return (
     <div className="flex flex-col gap-2" data-testid="global-chart">
-      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {stat(`Change over ${hours / 24 === 1 ? "1 day" : `${hours / 24} days`}`, `${signed(st.change, d)}${st.changePct != null ? ` (${signed(st.changePct, 2)}%)` : ""}`, tone(st.change))}
+      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        {ref != null && stat("Vs previous close", `${signed(st.last - ref, d)}${ref !== 0 ? ` (${signed(((st.last - ref) / Math.abs(ref)) * 100, 2)}%)` : ""}`, tone(st.last - ref))}
+        {stat(`First to last, ${hours / 24 === 1 ? "1 day" : `${hours / 24} days`}`, `${signed(st.change, d)}${st.changePct != null ? ` (${signed(st.changePct, 2)}%)` : ""}`, tone(st.change))}
         {stat("High", num(st.high, d))}
         {stat("Low", num(st.low, d))}
         {stat("Closed periods", cs.breaks.length ? String(cs.breaks.length) : "none")}
