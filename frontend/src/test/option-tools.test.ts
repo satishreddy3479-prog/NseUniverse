@@ -353,9 +353,10 @@ describe("smartOiCandles: a stalled NIFTY feed (captured 11 Nov 2026, 15:12-15:3
     { at: z(20), o: 25528.2, h: 25656.6, l: 25528.2, c: 25614.9, n: 55 },
   ];
   const r = smartOiCandles(series, 3, { day: "2026-11-11", openMin: 9 * 60 + 15, closeMin: 15 * 60 + 40, bars });
-  it("finds the frozen quote and reports the stall, not the closing constant", () => {
-    expect(r.stalls).toEqual([{ from: "15:15", to: "15:28", value: 25130, samples: 14 }]); // the 25255.05 after the 15:30 close is one sample and not a stall
-    expect(r.thinBars).toBe(3); // the three one-read minutes
+  it("reads no index level from 15:15, the end of cash trading: the frozen run there is not a stall and the one-read bars are not counted", () => {
+    // the 11 Nov samples held 25130 from 15:15 to 15:28; under the rule that the index is not collected after the cash end they are not read, so nothing is reported
+    expect(r.stalls).toEqual([]);
+    expect(r.thinBars).toBe(0);
   });
   it("draws no NIFTY candle for the stalled minutes but keeps their OI", () => {
     const by = Object.fromEntries(r.candles.map((c) => [c.label, c]));
@@ -363,11 +364,9 @@ describe("smartOiCandles: a stalled NIFTY feed (captured 11 Nov 2026, 15:12-15:3
     expect(by["15:15"]!.ceOi).toBeGreaterThan(0);
     expect(by["15:12"]!.spot?.close).toBeCloseTo(25128.8, 5);
   });
-  it("flags the jump when real bars reappear 1.6% away, with the numbers", () => {
-    expect(r.jumps[0]!.at).toBe("15:18"); // the first jump (this excerpt stops before the real bars that slid back to the close)
-    expect(r.jumps[0]!.from).toBeCloseTo(25128.8, 5);
-    expect(r.jumps[0]!.to).toBeCloseTo(25528.2, 5);
-    expect(r.jumps[0]!.pct).toBeCloseTo((25528.2 / 25128.8 - 1) * 100, 6); // +1.59%
+  it("the indicative bar of 15:20 (25,528, +1.6 %) is not drawn and makes no jump: the index is not collected after the cash end", () => {
+    expect(r.jumps).toEqual([]);
+    expect(r.candles.find((c) => c.label === "15:21")!.spot).toBeNull();
   });
   it("a normal day has no stall, thin bar or jump", () => {
     const ok = smartOiCandles({ times: [z(0), z(3), z(6)], spot: [25100, 25110, 25105], ce_oi: [1, 2, 3], pe_oi: [1, 2, 3] }, 3, { day: "2026-11-11" });
@@ -385,14 +384,13 @@ describe("smartOiCandles: bars the future disagrees with (captured 17 Nov 2026, 
     { at: z(21), o: 25450.25, h: 25500.9, l: 25450.25, c: 25498.35, n: 57, off: -75.7 }, { at: z(23), o: 25428, h: 25435, l: 25425, c: 25430, n: 58 },
   ];
   const r = smartOiCandles(series, 1, { day: "2026-11-17", openMin: 9 * 60 + 15, closeMin: 15 * 60 + 40, bars });
-  it("leaves out the flagged bars, lists them, and keeps the others and the OI", () => {
-    expect(r.unconfirmedBars).toEqual([{ at: "15:20", off: -153.2 }, { at: "15:21", off: -75.7 }]);
+  it("draws nothing for the index from 15:15 (the flagged auction bars included, not even listed) and keeps the OI", () => {
+    expect(r.unconfirmedBars).toEqual([]); // the bars at 15:20 and 15:21 are after the cash end: not read, so not flagged
     const by = Object.fromEntries(r.candles.map((c) => [c.label, c]));
-    expect(by["15:18"]!.spot?.high).toBe(25425);
-    expect(by["15:23"]!.spot?.close).toBe(25430);
-    expect(by["15:20"]!.spotFromBars).toBe(false); // no bar to draw: the candle falls back to the stored samples, never to the wild high
-    expect(by["15:20"]!.spot?.high).not.toBe(25580.2);
-    expect(by["15:20"]!.ceOi).toBeGreaterThan(0);
+    expect(by["15:18"]!.spot).toBeNull(); // 15:18 is after 15:15 too: no index price
+    expect(by["15:20"]!.spot).toBeNull();
+    expect(by["15:23"]!.spot).toBeNull();
+    expect(by["15:20"]!.ceOi).toBeGreaterThan(0); // OI and volume go on
   });
 });
 
@@ -408,23 +406,23 @@ describe("smartOiCandles: the closing session (captured 18 Nov 2026, 15:15-15:30
     { at: z(20), o: 25284.35, h: 25580.2, l: 25284.35, c: 25450.85, n: 55, off: -153.2 },
   ];
   const r = smartOiCandles(series, 1, { day: "2026-11-18", openMin: 9 * 60 + 15, closeMin: 15 * 60 + 40, bars });
-  it("draws the stand-in minutes (marked) and leaves out the frozen one-read bar and the flagged one", () => {
+  it("makes no stand-in candle and reads no frozen or flagged bar after 15:15; the candles before it are real index candles", () => {
     const by = Object.fromEntries(r.candles.map((c) => [c.label, c]));
-    expect(by["15:15"]!.spot).toEqual({ open: 25226, high: 25226, low: 25226, close: 25226 }); // the stand-in, not the frozen 25,220.45
-    expect(by["15:15"]!.spotProxy).toBe(true);
-    expect(by["15:12"]!.spotProxy).toBe(false); // a real index candle
-    expect(by["15:19"]!.spot?.close).toBe(25227);
-    expect(by["15:20"]!.spot?.high).not.toBe(25580.2); // the wild bar is not drawn
-    expect(r.proxyMinutes).toBe(3);
-    expect(r.unconfirmedBars).toEqual([{ at: "15:20", off: -153.2 }]);
+    expect(by["15:12"]!.spot?.close).toBe(25230);
+    expect(by["15:12"]!.spotProxy).toBe(false);
+    expect(by["15:15"]!.spot).toBeNull(); // neither the frozen 25,220.45 nor the stand-in 25,226
+    expect(by["15:19"]!.spot).toBeNull();
+    expect(by["15:20"]!.spot).toBeNull(); // the wild bar is not drawn
+    expect([r.proxyMinutes, r.unconfirmedBars.length]).toEqual([0, 0]);
   });
-  it("a constant that starts at 15:29 is the closing value, not a stall; one that starts at 15:26 still is", () => {
+  it("a constant before 15:15 is a stall; the same constant from 15:15 on is the held level, not a stall", () => {
     const run = (from: number) => {
       const m = Array.from({ length: 8 }, (_, i) => from + i);
       return smartOiCandles({ times: m.map(z), spot: m.map(() => 25227.95), ce_oi: m.map((_, i) => i + 1), pe_oi: m.map((_, i) => i + 1) }, 1, { day: "2026-11-18" }).stalls;
     };
+    expect(run(0)).toHaveLength(1); // 15:00-15:07 all the same: the feed stalled
+    expect(run(15)).toEqual([]); // from the cash end the stored level is held flat by design
     expect(run(29)).toEqual([]);
-    expect(run(26)).toHaveLength(1);
   });
 });
 
@@ -438,14 +436,13 @@ describe("smartOiCandles: the closing auction's indicative index values (capture
     { at: z(21), o: 25561, h: 25589.95, l: 25538.9, c: 25573.4, n: 59, ind: true },
   ];
   const r = smartOiCandles(series, 1, { day: "2026-11-19", openMin: 9 * 60 + 15, closeMin: 15 * 60 + 40, bars });
-  it("draws the indicative minutes as real candles and counts them, with no unconfirmed bar", () => {
+  it("does not draw the indicative minutes or the stand-in: the index is not collected in the auction, the OI candles stay", () => {
     const by = Object.fromEntries(r.candles.map((c) => [c.label, c]));
-    expect(by["15:20"]!.spot).toEqual({ open: 25591.9, high: 25596.45, low: 25560.95, close: 25560.95 });
-    expect(by["15:20"]!.spotProxy).toBe(false);
-    expect(by["15:21"]!.spot?.close).toBe(25573.4);
-    expect(by["15:18"]!.spotProxy).toBe(true); // the silent minutes before the auction values keep their stand-in
-    expect(r.indicativeMinutes).toBe(2);
-    expect(r.unconfirmedBars).toEqual([]);
+    expect(by["15:20"]!.spot).toBeNull();
+    expect(by["15:21"]!.spot).toBeNull();
+    expect(by["15:18"]!.spotProxy).toBe(false);
+    expect([r.indicativeMinutes, r.proxyMinutes, r.unconfirmedBars.length]).toEqual([0, 0, 0]);
+    expect(by["15:20"]!.ceOi).toBe(1002);
   });
 });
 

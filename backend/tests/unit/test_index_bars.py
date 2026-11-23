@@ -88,10 +88,10 @@ def test_nothing_is_recorded_outside_the_session_or_from_a_stale_tick(tmp_path: 
 
 @pytest.mark.parametrize("seconds", [0, 30])
 def test_a_finished_minute_survives_being_flushed_when_the_session_ends(tmp_path: Path, seconds: int) -> None:
-    close = datetime(2026, 10, 29, 10, 10, tzinfo=UTC)  # 15:40 IST, the end of the recorded session
+    close = datetime(2026, 10, 29, 9, 44, tzinfo=UTC)  # 15:14 IST, the last minute of continuous cash trading: the index is not collected from 15:15
     svc = MarketService(MarketStore(tmp_path), clock=lambda: close)
     svc._index_tick = lambda: idx(100.0, close)
-    svc.observe_index(close)  # the last session minute
+    svc.observe_index(close)  # the last collected minute
     after = close + timedelta(minutes=2, seconds=seconds)
     svc._index_tick = lambda: idx(100.0, after)
     svc.observe_index(after)  # past the close: the last minute is written, nothing new starts

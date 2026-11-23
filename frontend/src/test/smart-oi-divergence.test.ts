@@ -183,6 +183,21 @@ describe("one marker per candle", () => {
   });
 });
 
+describe("no index price from the cash end", () => {
+  const c = (label: string, spot: boolean) => ({ label, slot: 0, span: 1, strikesChanged: false, spotProxy: false, spot: spot ? { open: 1, high: 1, low: 1, close: 1 } : null });
+  it("a candle with no price from 15:15 is the rule, not a quality fault; before 15:15 it still is (23 Nov 2026), and from 7 Dec the cut is 15:30", () => {
+    const q = qualityOf({ day: "2026-11-23", candles: [c("09:30", false), c("15:12", true), c("15:15", false), c("15:27", false)] } as never);
+    expect(q.map((x) => x.noSpot)).toEqual([true, false, false, false]);
+    const dec = qualityOf({ day: "2026-12-08", candles: [c("15:20", false), c("15:30", false)] } as never);
+    expect(dec.map((x) => x.noSpot)).toEqual([true, false]);
+  });
+  it("the premium flow is not read for a candle with no index price", () => {
+    const res = { day: "2026-11-23", timeframe: 3, candles: [{ slot: 0, spot: { open: 1, high: 1, low: 1, close: 1 } }, { slot: 1, spot: null }, { slot: 2, spot: null }] } as never;
+    const ss = { times: [], spot: [], strikes: [], ce_oi: {}, pe_oi: {}, ce_price: {}, pe_price: {}, expiry: "2026-11-24" } as never;
+    expect(buildStrikeFlow(res, ss, 555)).toEqual([null, null, null]);
+  });
+});
+
 describe("3 conviction", () => {
   const base = (lowConv: boolean, flat = false) => Array.from({ length: 20 }, (_, i) => {
     const late = i >= 12;

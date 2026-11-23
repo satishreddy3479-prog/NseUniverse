@@ -61,6 +61,13 @@ def closing_schedule(day: date) -> ClosingSchedule:
     return _SCHEDULE_SECOND if regime(day) == 2 else _SCHEDULE_FIRST
 
 
+def spot_end(day: date) -> time | None:
+    """The time from which the NIFTY index level is no longer collected on ``day``: the end of continuous cash trading (15:15 IST from 3 Aug 2026, 15:30 from 7 Dec 2026). After it the
+    exchange publishes only indicative auction values for the index, which are displayed live but never stored or charted. None before 3 Aug 2026, when there was no closing auction.
+    Option, future, OI and volume collection is not affected: it runs to ``session_close()``."""
+    return None if regime(day) == 0 else closing_schedule(day).cash_end
+
+
 class _Clock:
     """The session close the exchange feed has confirmed (see app/lifecycle/session_close.py), and the schedule regime it was seen in. Never guessed: with no confirmation for
     today's regime the schedule's default for today is used, so the close also moves on 7 Dec without a code change or a restart."""

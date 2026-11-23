@@ -5,7 +5,7 @@
 import { RISK_FREE_RATE } from "./assumptions";
 import { carryFromForward, contractGreeks, impliedForward, type ContractGreeks } from "./optionModel";
 import { isSessionMs } from "./analytics";
-import { closingSchedule, sessionCloseMin } from "./session";
+import { closingSchedule, sessionCloseMin, spotEndFor } from "./session";
 import type { OptionChainRow, OptionQuote, StrikeSeries } from "./types";
 
 // ---------------------------------------------------------------- Smart OI
@@ -211,6 +211,10 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
   // the minute the index prints its closing value (15:29 until 4 Dec 2026, 15:39 from 7 Dec): a constant from then on is the close, not a stall
   const closeValueMin = Number(closingSchedule(useDay).indexEnd.slice(0, 2)) * 60 + Number(closingSchedule(useDay).indexEnd.slice(3, 5));
   type B = { last: number; lastOi: number; spots: number[]; volIdx: number };
+  // The index is collected only while cash trading runs: from its end the stored samples carry the last traded level held flat, which is not a price and not a stall, so no spot is read from them
+  const spotEnd = spotEndFor(useDay);
+  const spotEndMin = spotEnd ? Number(spotEnd.slice(0, 2)) * 60 + Number(spotEnd.slice(3, 5)) : Infinity;
+  const spotAt = (i: number): number | null => { const t = istOf(s.times[i]!); return t.getUTCHours() * 60 + t.getUTCMinutes() >= spotEndMin ? null : s.spot[i] ?? null; };
   // Stalled quote: the same spot value in a long run of consecutive samples of the day. Those samples keep their OI but carry no usable price.
   const stale = new Set<number>();
   const stalls: SpotStall[] = [];
@@ -218,12 +222,12 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
     let i = 0;
     while (i < n) {
       let j = i;
-      while (j + 1 < n && s.spot[j + 1] != null && s.spot[j + 1] === s.spot[i]) j++;
-      if (s.spot[i] != null && j - i + 1 >= STALL_MIN_SAMPLES && istOf(s.times[i]!).toISOString().slice(0, 10) === useDay) {
+      while (j + 1 < n && spotAt(j + 1) != null && spotAt(j + 1) === spotAt(i)) j++;
+      if (spotAt(i) != null && j - i + 1 >= STALL_MIN_SAMPLES && istOf(s.times[i]!).toISOString().slice(0, 10) === useDay) {
         for (let k = i; k <= j; k++) stale.add(k);
         const hm = (k: number) => istOf(s.times[k]!).toISOString().slice(11, 16);
         const startMin = istOf(s.times[i]!).getUTCHours() * 60 + istOf(s.times[i]!).getUTCMinutes();
-        if (startMin < closeValueMin - 1) stalls.push({ from: hm(i), to: hm(j), value: s.spot[i]!, samples: j - i + 1 }); // a constant from 15:29 on is the closing value (the close is printed at 15:29 to 15:30), not a stall
+        if (startMin < closeValueMin - 1) stalls.push({ from: hm(i), to: hm(j), value: spotAt(i)!, samples: j - i + 1 }); // a constant from 15:29 on is the closing value (the close is printed at 15:29 to 15:30), not a stall
       }
       i = j + 1;
     }
@@ -237,7 +241,7 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
     if (m < openMin || m > closeMin) continue; // the close minute itself is kept: the last stored sample is the closing state
     const slot = Math.floor((m - openMin) / timeframe);
     const b = buckets.get(slot) ?? { last: -1, lastOi: -1, spots: [], volIdx: -1 };
-    const sp = s.spot[i];
+    const sp = spotAt(i);
     if (sp != null && !stale.has(i)) b.spots.push(sp);
     if (s.ce_oi[i] == null || s.pe_oi[i] == null) skipped++;
     else b.lastOi = i;
@@ -254,7 +258,7 @@ export function smartOiCandles(s: SmartOiSeries, timeframe: number, opts: { day?
     const t = istOf(bar.at);
     if (Number.isNaN(t.getTime()) || t.toISOString().slice(0, 10) !== useDay) continue;
     const m = t.getUTCHours() * 60 + t.getUTCMinutes();
-    if (m < openMin || m > closeMin) continue;
+    if (m < openMin || m > closeMin || m >= spotEndMin) continue; // no index bar from the cash end (older stored ones from the auction are not drawn)
     if (bar.proxy) { proxyMinutes++; barSlots.set(Math.floor((m - openMin) / timeframe), [...(barSlots.get(Math.floor((m - openMin) / timeframe)) ?? []), bar]); continue; }
     if (bar.n != null && bar.n < THIN_BAR_READS) { thinBars++; continue; }
     if (bar.off != null) { unconfirmedBars.push({ at: hhmm(m), off: bar.off }); continue; } // the future disagrees: shown as missing, never repaired

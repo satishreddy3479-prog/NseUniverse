@@ -35,11 +35,15 @@ describe("smartOiCandles: the closing value of the index on 7 Dec 2026", () => {
     const m = Array.from({ length: 8 }, (_, i) => from + i);
     return smartOiCandles({ times: m.map(z), spot: m.map(() => 25227.95), ce_oi: m.map((_, i) => i + 1), pe_oi: m.map((_, i) => i + 1) }, 1, { day: "2026-12-07" }).stalls;
   };
-  it("a constant that starts at 15:39 is the closing value, not a stall; one that starts at 15:26 still is", () => {
+  it("from 7 Dec the index is collected to 15:30: a constant before 15:30 is a stall, one from 15:30 on is the held level and none", () => {
+    expect(run(20)).toHaveLength(1); // 15:20-15:27, all before 15:30
+    expect(run(26)).toEqual([]); // only four samples (15:26-15:29) are before 15:30, fewer than a stall needs
+    expect(run(30)).toEqual([]);
     expect(run(39)).toEqual([]);
-    expect(run(26)).toHaveLength(1);
-    // under the earlier schedule a constant from 15:29 on is already the closing value, and 15:26 a stall (the 18 Nov case)
+    // under the earlier schedule the cut is 15:15
     const m = Array.from({ length: 8 }, (_, i) => 29 + i);
-    expect(smartOiCandles({ times: m.map((x) => new Date(Date.UTC(2026, 10, 18, 9, 30 + x)).toISOString()), spot: m.map(() => 25227.95), ce_oi: m.map((_, i) => i + 1), pe_oi: m.map((_, i) => i + 1) }, 1, { day: "2026-11-18" }).stalls).toEqual([]);
+    const old = (from: number) => smartOiCandles({ times: m.map((x) => new Date(Date.UTC(2026, 10, 18, 9, 30 + x - 29 + from)).toISOString()), spot: m.map(() => 25227.95), ce_oi: m.map((_, i) => i + 1), pe_oi: m.map((_, i) => i + 1) }, 1, { day: "2026-11-18" }).stalls;
+    expect(old(0)).toHaveLength(1); // 15:00-15:07
+    expect(old(15)).toEqual([]); // 15:15 on
   });
 });

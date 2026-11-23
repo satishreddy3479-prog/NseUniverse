@@ -8,7 +8,7 @@ export interface SessionClock { open: string; close: string; label: string; sour
 
 /** The first trading day of the second closing-auction schedule (the backend carries the same date: app/domain/session.py). */
 export const CAS_SECOND_DAY = "2026-12-07";
-const CAS_FIRST_DAY = "2026-08-03";
+export const CAS_FIRST_DAY = "2026-08-03";
 /** Today's IST date (YYYY-MM-DD). */
 const istToday = (ms: number = Date.now()): string => new Date(ms + 330 * 60_000).toISOString().slice(0, 10);
 
@@ -22,6 +22,12 @@ export interface ClosingSchedule { cashEnd: string; indicativeFrom: string; inde
  */
 export const closingSchedule = (ymd: string): ClosingSchedule =>
   ymd >= CAS_SECOND_DAY ? { cashEnd: "15:30", indicativeFrom: "15:31", indexEnd: "15:40" } : { cashEnd: "15:15", indicativeFrom: "15:20", indexEnd: "15:30" };
+
+/**
+ * The time from which the NIFTY index level is no longer collected or charted on a day: the end of continuous cash trading (15:15 until 4 Dec 2026, 15:30 from 7 Dec). After it the
+ * exchange publishes only indicative auction values, shown live at the top but never stored. Null before the closing auction existed (3 Aug 2026). Option, OI and volume data go on to the F&O close.
+ */
+export const spotEndFor = (ymd: string): string | null => (ymd >= CAS_FIRST_DAY ? closingSchedule(ymd).cashEnd : null);
 
 const defaultClock = (): SessionClock => { const close = defaultCloseFor(istToday()); return { open: "09:15", close, label: `09:15–${close}`, source: "schedule default (until the backend answers)", holidays: [] }; };
 let clock: SessionClock = defaultClock();

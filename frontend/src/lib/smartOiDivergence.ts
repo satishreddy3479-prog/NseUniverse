@@ -18,6 +18,7 @@
  */
 import { RISK_FREE_RATE } from "./assumptions";
 import { contractDelta, expiryEnd } from "./optionModel";
+import { spotEndFor } from "./session";
 import { optRisk } from "./advancedGreeks";
 import type { SmartOiCandle, SmartOiResult } from "./optionTools";
 import type { FuturesSeries, StrikeSeries } from "./types";
@@ -207,6 +208,7 @@ export function buildStrikeFlow(res: SmartOiResult, ss: StrikeSeries, openMin: n
   return res.candles.map((c, ci) => {
     if (ci === 0) return null;
     const prev = res.candles[ci - 1]!;
+    if (!c.spot || !prev.spot) return null; // no index price for the candle (from the cash end): the premium cannot be read against an index move
     const a = lastIdx.get(prev.slot), b = lastIdx.get(c.slot);
     if (a == null || b == null) return null;
     const s0 = ss.spot[a], s1 = ss.spot[b];
@@ -469,7 +471,8 @@ function momentum(f: Frame): Signal[] {
 
 // ---------------------------------------------------------------- quality and composite
 export function qualityOf(res: SmartOiResult): QualityFlags[] {
-  return res.candles.map((c) => ({ gap: c.span > 1, strikes: c.strikesChanged, proxy: c.spotProxy, noSpot: !c.spot }));
+  const end = res.day ? spotEndFor(res.day) : null; // no index price is collected from the cash end: its absence there is the rule, not a fault
+  return res.candles.map((c) => ({ gap: c.span > 1, strikes: c.strikesChanged, proxy: c.spotProxy, noSpot: !c.spot && !(end != null && c.label >= end) }));
 }
 export function gradeOf(q: QualityFlags[], i: number, w: number, stalled: boolean): Grade {
   const win = q.slice(Math.max(0, i - w + 1), i + 1);

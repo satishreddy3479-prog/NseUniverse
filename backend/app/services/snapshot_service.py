@@ -23,6 +23,7 @@ from app.domain.models import (
 )
 from app.domain.normalize import ChainFormatError, normalize_option_chain
 from app.domain.overrides import ledger
+from app.domain.session import SESSION_OPEN, spot_end
 from app.domain.spot_check import checked_spot
 from app.logging_setup import log_event
 from app.services.state import AppState
@@ -75,6 +76,8 @@ class SnapshotService:
         self._capture_lock = asyncio.Lock()
         self._last_fingerprint: dict[date, str] = {}
         self._broker_levels: dict[date, list[tuple[datetime, float]]] = {}
+        # the index level of the last capture while cash trading ran, and its day
+        self._last_traded: tuple[date, float, datetime] | None = None
         self.skipped_unchanged = 0
 
     @property
@@ -199,6 +202,38 @@ class SnapshotService:
         return len(last3) == 3 and all(v == level for _, v in last3) and span >= 90
 
     def _checked(self, snap: OptionChainSnapshot) -> OptionChainSnapshot:
+        """The index level of a capture: the last traded one once the closing auction has begun.
+
+        From the end of continuous cash trading (15:15 IST, 15:30 from 7 Dec 2026) the
+        exchange publishes only indicative auction values for the index. They are not
+        collected: the chain keeps the last level seen before that moment, with a note, and
+        the broker's own value stays in ``underlying_ltp_broker``. Option prices, OI and
+        volume are stored as always. A capture made in the auction with no earlier level
+        this day (a restart) keeps the existing checks.
+        """
+        t = snap.retrieved_at.astimezone(IST)
+        end = spot_end(t.date())
+        if end is not None and t.weekday() < 5 and t.time() >= end:
+            held = self._last_traded
+            if held is not None and held[0] == t.date():
+                note = (
+                    f"Index not collected in the closing auction (from {end:%H:%M}): the level "
+                    f"is the last traded one, {held[1]:g} at {held[2].astimezone(IST):%H:%M}."
+                )
+                update = {
+                    "underlying_ltp": held[1],
+                    "underlying_ltp_broker": snap.underlying_ltp,
+                    "spot_note": note,
+                    "warnings": [*snap.warnings, note],
+                }
+                return snap.model_copy(update=update)
+        out = self._checked_core(snap)
+        trading = t.weekday() < 5 and SESSION_OPEN <= t.time() and (end is None or t.time() < end)
+        if out.underlying_ltp is not None and trading:
+            self._last_traded = (t.date(), float(out.underlying_ltp), out.retrieved_at)
+        return out
+
+    def _checked_core(self, snap: OptionChainSnapshot) -> OptionChainSnapshot:
         """A frozen index quote is replaced by the level the chain's own prices imply.
 
         A quote that is moving is never replaced.

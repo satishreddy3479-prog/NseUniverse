@@ -112,6 +112,7 @@ def test_a_quote_counts_as_frozen_after_three_identical_captures_ninety_seconds_
 
     svc = object.__new__(SnapshotService)  # the freeze test only needs its own history
     svc._broker_levels = {}
+    svc._last_traded = None
     t0 = datetime(2026, 11, 19, 9, 45, 4, tzinfo=UTC)  # 15:15:04 IST
 
     def cap(seconds: int, level: float) -> bool:
@@ -120,8 +121,10 @@ def test_a_quote_counts_as_frozen_after_three_identical_captures_ninety_seconds_
     assert [cap(0, 25503.7), cap(60, 25503.7), cap(120, 25503.7)] == [False, False, True]  # third identical capture, 120 s after the first
     assert cap(180, 25503.7) is True and cap(240, 25514.3) is False  # the 15:29 close moves it
     svc._broker_levels = {}
+    svc._last_traded = None
     assert [cap(0, 25186.8), cap(60, 25190.7), cap(120, 25193.6), cap(180, 25208.05)] == [False, False, False, False]  # 09:14-09:17 IST: moving every minute
     svc._broker_levels = {}
+    svc._last_traded = None
     assert [cap(0, 25503.7), cap(5, 25503.7), cap(10, 25503.7)] == [False, False, False]  # captures a few seconds apart count once
     assert svc._quote_frozen(SimpleNamespace(expiry=EXPIRY, retrieved_at=t0, underlying_ltp=None)) is False  # missing stays missing
 
@@ -138,6 +141,7 @@ def test_every_replacement_is_written_to_the_override_ledger() -> None:
     svc = object.__new__(SnapshotService)
     svc.spot_check = True
     svc._broker_levels = {}
+    svc._last_traded = None
     chain = rows(25453.8, [25300.0, 25350.0, 25400.0, 25450.0, 25500.0])
     out = []
     for i in range(3):

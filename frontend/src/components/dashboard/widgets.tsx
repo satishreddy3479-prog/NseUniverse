@@ -9,7 +9,7 @@ import { useDash } from "./DashContext";
 import { useClipped, useReplay } from "./ReplayContext";
 import { GexWidget, IvSkewWidget, PeCeWidget, SmartOiWidget as OiBuildupWidget, VegaWidget } from "./toolWidgets";
 import { FullChart } from "./FullChart";
-import { closingSchedule, sessionCloseMin, sessionOpenMin } from "../../lib/session";
+import { closingSchedule, sessionCloseMin, sessionOpenMin, spotEndFor } from "../../lib/session";
 import { Info } from "../Info";
 import { atmStraddle, compactIN, computeTotals, maxPain, OI_MODES, OI_WINDOWS, oiWindowStats, pcr, rangeObservations, spanMinutes, TS_RANGES, windowEndIso, windowStartIso, type OiMode } from "../../lib/analytics";
 import {
@@ -402,7 +402,7 @@ function SmartOiChartWidget() {
             const sch = closingSchedule(res.day ?? ""); // the closing auction of that day: 15:15 until 4 Dec 2026, 15:30 from 7 Dec
             const minus1 = (hm: string) => { const t = Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3, 5)) - 1; return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`; };
             const isClosing = (hm: string) => hm >= minus1(sch.cashEnd);
-            const closing = res.proxyMinutes > 0 || res.indicativeMinutes > 0 || res.stalls.some((t) => isClosing(t.from));
+            const closing = spotEndFor(res.day ?? "") != null && res.candles.some((c) => c.label >= sch.cashEnd); // the price is not drawn from the cash end
             const stalls = res.stalls.filter((t) => !isClosing(t.from));
             const jumps = res.jumps.filter((j) => !isClosing(j.at));
             const off = res.unconfirmedBars.filter((b) => b.at < sch.cashEnd);
@@ -411,7 +411,7 @@ function SmartOiChartWidget() {
               <>
                 {closing && (
                   <p role="note" data-testid="smart-oi-closing-note" className="rounded-sm border border-rule bg-slate-2 px-2 py-1 text-xs text-paper">
-                    <b>Closing auction session (from {sch.cashEnd}).</b> <Info term="closing auction" /> NSE's cash market stops continuous trading at {sch.cashEnd}, so the NIFTY index and the 50 stocks do not update until {sch.indicativeFrom}, then show auction-session values until the close. The NIFTY future and the options keep trading. {res.proxyMinutes > 0 ? `${res.proxyMinutes} minute(s) are drawn as grey outlined candles from the NIFTY future minus the basis it had before ${sch.cashEnd}, so they are a stand-in, not the index. ` : ""}From {sch.indicativeFrom} the exchange sends indicative closing values of the index{res.indicativeMinutes > 0 ? ` (${res.indicativeMinutes} minute(s) shown as drawn)` : ""}: real exchange output, not traded prices, so early auction candles can sit well away from the future. Minutes with neither are left empty. The OI and volume bars are unaffected.
+                    <b>NIFTY price stops at {sch.cashEnd}.</b> <Info term="closing auction" /> Continuous cash trading ends at {sch.cashEnd}; after it the exchange sends only indicative auction values for the index, which can sit far from the traded price. They are shown live at the top of the page but not collected or drawn. The OI and volume bars go on to the F&O close, and the indicators that need the price stay silent after {sch.cashEnd}.
                   </p>
                 )}
                 {(stalls.length > 0 || jumps.length > 0 || thin > 0 || off.length > 0) && (
