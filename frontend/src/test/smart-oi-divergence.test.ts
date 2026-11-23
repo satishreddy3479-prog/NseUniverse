@@ -4,7 +4,7 @@ import { RISK_FREE_RATE } from "../lib/assumptions";
 // Smart OI divergence indicators, checked by hand on small series built for the purpose. Expected values are counted, not read back from the code.
 import { describe, expect, it } from "vitest";
 import {
-  alignFuture, analyseSmartOi, buildStrikeFlow, candlesFor, collapseBursts, composeOf, ema, gradeOf, pressureOf, qualityOf, TH,
+  alignFuture, analyseSmartOi, buildStrikeFlow, candlesFor, collapseBursts, composeOf, scoreBursts, ema, gradeOf, pressureOf, qualityOf, TH,
   type FutureLeg, type Reading, type Signal, type StrikeFlow,
 } from "../lib/smartOiDivergence";
 import type { SmartOiCandle, SmartOiResult } from "../lib/optionTools";
@@ -195,6 +195,31 @@ describe("no index price from the cash end", () => {
     const res = { day: "2026-11-23", timeframe: 3, candles: [{ slot: 0, spot: { open: 1, high: 1, low: 1, close: 1 } }, { slot: 1, spot: null }, { slot: 2, spot: null }] } as never;
     const ss = { times: [], spot: [], strikes: [], ce_oi: {}, pe_oi: {}, ce_price: {}, pe_price: {}, expiry: "2026-11-24" } as never;
     expect(buildStrikeFlow(res, ss, 555)).toEqual([null, null, null]);
+  });
+});
+
+describe("the scorecard of the day's signals", () => {
+  const b = (id: string, i: number, direction: "bullish" | "bearish" | "neutral") => ({ id, i, direction, at: "x", lastAt: "x", count: 1, state: "confirmed", text: "", title: "", strength: 0.5, evidence: {} }) as never;
+  const closes = [100, 101, 102, 101, 100, 99, 98, 97];
+  it("by hand, 15 minutes on 3-minute candles = 5 candles: bullish at 100 -> 99 is -1 % wrong; bearish at 101 -> 98 is a 2.97 % fall, right; bullish at 102 -> 97 is -4.90 %, wrong; a bullish one too recent is not judged", () => {
+    const sc = scoreBursts([b("zone", 0, "bullish"), b("pcr", 1, "bearish"), b("zone", 2, "bullish"), b("momentum", 3, "bullish"), b("flow", 0, "neutral")], closes, 5, 3);
+    expect(sc.horizonMin).toBe(15);
+    expect(sc.bullish).toMatchObject({ signals: 3, judged: 2, right: 0, wrong: 2, pending: 1 });
+    expect(sc.bullish.meanMove).toBeCloseTo((-1 + (97 / 102 - 1) * 100) / 2, 8);
+    expect(sc.bearish).toMatchObject({ signals: 1, judged: 1, right: 1, wrong: 0 });
+    expect(sc.bearish.meanMove).toBeCloseTo(-(98 / 101 - 1) * 100, 8); // 2.97: a fall is a gain for a bearish signal
+    expect(sc.neutral).toBe(1);
+    const zone = sc.byIndicator.find((e) => e.id === "zone" && e.direction === "bullish")!;
+    expect(zone.score).toMatchObject({ signals: 2, wrong: 2 });
+  });
+  it("a missing index price at either end (after the cash close there is none) is not judged, never counted as a move", () => {
+    const sc = scoreBursts([b("future", 1, "bearish"), b("future", 6, "bearish"), b("future", 7, "bearish")], [100, 99, 98, 97, 96, 95, null, 94], 5, 3);
+    expect(sc.bearish).toMatchObject({ signals: 3, judged: 0, pending: 3 }); // no price at the far end (1), none at the start (6), too recent (7)
+    expect(sc.bearish.meanMove).toBeNull();
+  });
+  it("an unchanged index is flat, not right", () => {
+    const sc = scoreBursts([b("zone", 0, "bullish")], [100, 100, 100, 100, 100, 100], 5, 3);
+    expect(sc.bullish).toMatchObject({ judged: 1, right: 0, wrong: 0, flat: 1 });
   });
 });
 

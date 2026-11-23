@@ -7,7 +7,7 @@ import { sessionOpenMin } from "../../lib/session";
 import { strikesAround } from "../../lib/optionTools";
 import type { SmartOiResult } from "../../lib/optionTools";
 import {
-  alignFuture, analyseSmartOi, buildStrikeFlow, collapseBursts, INDICATOR_NAMES, TH, type Burst, type DivergenceReport, type Direction, type Signal,
+  alignFuture, analyseSmartOi, buildStrikeFlow, collapseBursts, INDICATOR_NAMES, scoreBursts, TH, type Burst, type DivergenceReport, type Direction, type Score, type Signal,
 } from "../../lib/smartOiDivergence";
 import type { ChartColors } from "../../lib/chartOptions";
 import { EChart, useChartColors } from "../EChart";
@@ -42,6 +42,7 @@ export function SmartOiDivergence({ res, tf, since, expiry, listed, openAtm }: {
   }, [on, res, ss, fut]);
   const bursts = useMemo(() => (report ? collapseBursts(report.signals) : []), [report]);
   const option = useMemo(() => (res && report ? markerOption(res, report, bursts, colors) : null), [res, report, bursts, colors]);
+  const score = useMemo(() => (res ? scoreBursts(bursts, res.candles.map((x) => x.spot?.close ?? null), Math.max(1, Math.round(15 / tf)), tf) : null), [res, bursts, tf]);
 
   if (!on) {
     return <p className="rounded-sm border border-rule bg-slate-2 px-3 py-2 text-sm text-muted" data-testid="div-off">Divergence indicators are built for 3 and 5 minute candles. Choose 3 min or 5 min above to see them.</p>;
@@ -81,6 +82,7 @@ export function SmartOiDivergence({ res, tf, since, expiry, listed, openAtm }: {
           </p>
         </div>
       )}
+      {score && <Scorecard sc={score} />}
       <div>
         <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Signals today, newest first</h4>
         {recent.length === 0 ? <p className="text-sm text-muted" data-testid="div-none">No divergence signal has formed today on {tf}-minute candles.</p> : (
@@ -165,4 +167,40 @@ function markerOption(res: SmartOiResult, rep: DivergenceReport, bursts: Burst[]
       ...links,
     ],
   };
+}
+
+const pctTxt = (v: number | null) => (v == null ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(2)} %`);
+/** How today's signals fared ``horizonMin`` minutes after each started (see ``scoreBursts``). */
+function Scorecard({ sc }: { sc: ReturnType<typeof scoreBursts> }) {
+  const rows: [string, Score][] = [["Bullish divergences", sc.bullish], ["Bearish divergences", sc.bearish]];
+  return (
+    <section aria-label="Scorecard of today's signals" data-testid="div-scorecard" className="rounded-sm border border-rule bg-slate-2 p-2">
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-muted">Scorecard: how today's signals fared {sc.horizonMin} minutes later</h4>
+      <div className="overflow-x-auto">
+        <table className="mt-1 w-full min-w-[420px] text-xs">
+          <thead className="text-muted"><tr><th className="px-2 py-1 text-left font-normal">Signals</th><th className="px-2 py-1 text-right font-normal">Count</th><th className="px-2 py-1 text-right font-normal">Right</th><th className="px-2 py-1 text-right font-normal">Wrong</th><th className="px-2 py-1 text-right font-normal">Not judged yet</th><th className="px-2 py-1 text-right font-normal" title="The move of the index in the direction the signal pointed, averaged">Average move</th></tr></thead>
+          <tbody>
+            {rows.map(([label, s]) => (
+              <tr key={label} data-testid={`score-${label.startsWith("Bull") ? "bullish" : "bearish"}`} className="border-t border-rule/50">
+                <td className="px-2 py-1 font-medium text-paper">{label}</td><td className="num px-2 py-1 text-right">{s.signals}</td>
+                <td className="num px-2 py-1 text-right text-up">{s.right}</td><td className="num px-2 py-1 text-right text-down">{s.wrong}</td>
+                <td className="num px-2 py-1 text-right text-muted">{s.pending}</td><td className={`num px-2 py-1 text-right ${s.meanMove == null ? "text-muted" : s.meanMove > 0 ? "text-up" : s.meanMove < 0 ? "text-down" : ""}`}>{pctTxt(s.meanMove)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {sc.byIndicator.length > 0 && (
+        <details className="mt-1 text-xs text-muted">
+          <summary className="cursor-pointer text-info">By indicator</summary>
+          <ul className="mt-1 grid gap-x-6 sm:grid-cols-2" data-testid="score-by-indicator">
+            {sc.byIndicator.map((e) => <li key={`${e.id}/${e.direction}`}>{INDICATOR_NAMES[e.id]} ({e.direction}): <span className="text-up">{e.score.right} right</span>, <span className="text-down">{e.score.wrong} wrong</span>{e.score.pending > 0 ? `, ${e.score.pending} not judged yet` : ""}{e.score.flat > 0 ? `, ${e.score.flat} flat` : ""}</li>)}
+          </ul>
+        </details>
+      )}
+      <p className="mt-1 text-xs text-muted" data-testid="score-note">
+        Each signal is judged once, by the index {sc.horizonMin} minutes after the candle it started on: right if the index moved the way the signal pointed, wrong if it moved the other way. Signals after the cash close or too recent to judge are counted as not judged yet. A divergence points against price, so on a day that trends one way the opposite signals are wrong again and again; a handful of signals proves nothing either way. Neutral dots ({sc.neutral}) point nowhere and are not judged.
+      </p>
+    </section>
+  );
 }

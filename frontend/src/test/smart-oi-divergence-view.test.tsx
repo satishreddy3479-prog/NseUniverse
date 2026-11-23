@@ -44,6 +44,10 @@ describe("Smart OI divergence panel", () => {
     expect(screen.getByTestId("div-grade")).toHaveTextContent("Evidence A");
     expect(screen.getByRole("img", { name: "NIFTY close with the divergence signals marked" }).getAttribute("data-series")).toContain("NIFTY close:12");
     expect(within(panel).getByTestId("div-events").textContent).toContain("PCR divergence");
+    const card = within(panel).getByTestId("div-scorecard"); // how the day's signals fared, with the one bullish signal counted
+    expect(within(card).getByTestId("score-bullish")).toHaveTextContent(/Bullish divergences\s*1/);
+    expect(within(card).getByTestId("score-bearish")).toHaveTextContent(/Bearish divergences\s*0/);
+    expect(within(card).getByTestId("score-note")).toHaveTextContent("proves nothing");
   });
   it("says why the per-strike and future indicators are silent when their stored series is not there", async () => {
     mount(res(3), 3);

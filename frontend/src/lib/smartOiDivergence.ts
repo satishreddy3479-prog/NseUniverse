@@ -481,6 +481,46 @@ export function gradeOf(q: QualityFlags[], i: number, w: number, stalled: boolea
   return flagged >= 1 ? "B" : "A";
 }
 
+/** How the signals of one direction fared: ``right`` price moved the way the signal pointed, ``wrong`` it moved the other way, ``flat`` it did not move, ``pending`` the horizon has not passed yet or there is no index price to judge by. */
+export interface Score { signals: number; judged: number; right: number; wrong: number; flat: number; pending: number; meanMove: number | null }
+export interface Scorecard { horizonMin: number; bullish: Score; bearish: Score; neutral: number; byIndicator: { id: IndicatorId; direction: "bullish" | "bearish"; score: Score }[] }
+const emptyScore = (): Score => ({ signals: 0, judged: 0, right: 0, wrong: 0, flat: 0, pending: 0, meanMove: null });
+
+/**
+ * A scorecard of the signals so far: for each burst (the start of a run of one signal), the move of the candle close ``horizon`` candles later against the close of its own candle, counted in the
+ * direction the signal pointed (bullish: a rise is right; bearish: a fall is right). The move is signed, in percent. A neutral signal points nowhere and is only counted. Nothing is judged
+ * before its horizon has passed or without an index price at both ends (after the cash end there is none): those are ``pending``. It describes today only and proves nothing on a few signals;
+ * on a trend day a contrarian signal can be wrong many times in a row, which is what it is there to show.
+ */
+export function scoreBursts(bursts: readonly Burst[], closes: readonly (number | null)[], horizon: number, tf: number): Scorecard {
+  const out: Scorecard = { horizonMin: horizon * tf, bullish: emptyScore(), bearish: emptyScore(), neutral: 0, byIndicator: [] };
+  const sums = new Map<string, number>();
+  const cell = (id: IndicatorId, direction: "bullish" | "bearish") => {
+    let e = out.byIndicator.find((x) => x.id === id && x.direction === direction);
+    if (!e) { e = { id, direction, score: emptyScore() }; out.byIndicator.push(e); }
+    return e.score;
+  };
+  const add = (sc: Score, key: string, r: number | null, sign: 1 | -1) => {
+    sc.signals++;
+    if (r == null) { sc.pending++; return; }
+    const signed = sign * r;
+    sc.judged++;
+    sums.set(key, (sums.get(key) ?? 0) + signed);
+    if (signed > 0) sc.right++; else if (signed < 0) sc.wrong++; else sc.flat++;
+  };
+  for (const b of bursts) {
+    if (b.direction === "neutral") { out.neutral++; continue; }
+    const a = closes[b.i], z = closes[b.i + horizon];
+    const r = a != null && z != null && a > 0 ? (z / a - 1) * 100 : null;
+    const sign = b.direction === "bullish" ? 1 : -1;
+    add(b.direction === "bullish" ? out.bullish : out.bearish, b.direction, r, sign);
+    add(cell(b.id, b.direction), `${b.id}/${b.direction}`, r, sign);
+  }
+  for (const [sc, key] of [[out.bullish, "bullish"], [out.bearish, "bearish"]] as const) sc.meanMove = sc.judged ? (sums.get(key) ?? 0) / sc.judged : null;
+  for (const e of out.byIndicator) e.score.meanMove = e.score.judged ? (sums.get(`${e.id}/${e.direction}`) ?? 0) / e.score.judged : null;
+  return out;
+}
+
 export interface Burst extends Signal {
   /** how many consecutive signals of this indicator and direction this burst holds */
   count: number;
