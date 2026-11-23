@@ -290,7 +290,7 @@ function themeTokens(): ThemeTokens {
 }
 
 /** Thin ECharts wrapper: owns the instance, resizes with its container, keeps zoom and the user's legend choices across updates. */
-export function EChart({ option, onClick, ariaLabel, className = "", group, hoverGroup }: {
+export function EChart({ option, onClick, ariaLabel, className = "", group, hoverGroup, legendOff, onLegendChange }: {
   option: EChartsCoreOption;
   onClick?: (p: PointClick) => void;
   ariaLabel: string;
@@ -306,6 +306,10 @@ export function EChart({ option, onClick, ariaLabel, className = "", group, hove
    * Like ``group`` but only the hover is linked, not zoom or legends.
    */
   hoverGroup?: string;
+  /** Legend entries to keep switched off (a saved view): applied after every update, and an entry that leaves the list is switched on again. Leave undefined to leave the legend alone. */
+  legendOff?: readonly string[];
+  /** Told what the legend now holds (entry name to on or off) after the user clicks it. */
+  onLegendChange?: (selected: Record<string, boolean>) => void;
 }) {
   const el = useRef<HTMLDivElement>(null);
   const chart = useRef<ECharts | null>(null);
@@ -314,6 +318,10 @@ export function EChart({ option, onClick, ariaLabel, className = "", group, hove
   const categories = useRef(0); // the number of categories on the first x axis, for the linked hover
   const kind = useRef<"category" | "value">("value");
   const userLegend = useRef<Record<string, boolean>>({});
+  const legendChangeRef = useRef(onLegendChange);
+  legendChangeRef.current = onLegendChange;
+  const appliedOff = useRef<string[]>([]);
+  const offKey = legendOff?.join("\u0001");
   const legendDefaults = useRef<Record<string, boolean>>({});
   const [width, setWidth] = useState(0);
   const [height, setHeight] = useState(0);
@@ -365,7 +373,7 @@ export function EChart({ option, onClick, ariaLabel, className = "", group, hove
       };
     }
     // remember what the user toggles in the legend (one series, all, or invert) so the next data refresh does not undo it
-    for (const ev of ["legendselectchanged", "legendselectall", "legendinverseselect"]) c.on(ev, (e) => { Object.assign(userLegend.current, (e as { selected?: Record<string, boolean> }).selected ?? {}); });
+    for (const ev of ["legendselectchanged", "legendselectall", "legendinverseselect"]) c.on(ev, (e) => { const sel = (e as { selected?: Record<string, boolean> }).selected ?? {}; Object.assign(userLegend.current, sel); legendChangeRef.current?.(sel); });
     const ro = new ResizeObserver(() => { c.resize(); setWidth(node.clientWidth); setHeight(node.clientHeight); });
     setWidth(node.clientWidth);
     setHeight(node.clientHeight);
@@ -391,7 +399,12 @@ export function EChart({ option, onClick, ariaLabel, className = "", group, hove
     lastHide.current = hideInfo;
     chart.current?.setOption({ ...(withInactiveLegend(keepLegend(fitLayout(fitNarrow(withInfoHidden(safeTooltips(withChartTheme(option, themeTokens(), width)), hideInfo), width), width, height), userLegend.current, legendDefaults.current), getComputedStyle(document.documentElement).getPropertyValue("--legend-off").trim() || "#8a96ab") as Obj), animation: false, animationDuration: 0, animationDurationUpdate: 0 }, { replaceMerge: toggled ? ["series", "tooltip"] : ["series"] });
     if (hideInfo) chart.current?.dispatchAction({ type: "hideTip" }); // a card that is showing goes away at once
-  }, [option, width, height, hideInfo]);
+    if (legendOff) { // a saved view: the graphs it switched off stay off through every refresh, and one taken out of the list comes back
+      for (const n of appliedOff.current) if (!legendOff.includes(n)) chart.current?.dispatchAction({ type: "legendSelect", name: n });
+      for (const n of legendOff) chart.current?.dispatchAction({ type: "legendUnSelect", name: n });
+      appliedOff.current = [...legendOff];
+    }
+  }, [option, width, height, hideInfo, offKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <div ref={el} role="img" aria-label={ariaLabel} className={`echart-box chart-in h-full min-h-[120px] w-full ${className}`} />;
 }
