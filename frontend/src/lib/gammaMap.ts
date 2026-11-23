@@ -35,12 +35,12 @@ const axisText = (c: ChartColors) => ({ color: c.muted, fontSize: 11 });
 export function profileOption(rows: GammaProfileRow[], spot: number | null, flip: number | null, c: ChartColors): EChartsCoreOption {
   const nearest = (v: number | null) => (v == null || rows.length === 0 ? null : rows.reduce((b, r) => (Math.abs(r.strike - v) < Math.abs(b.strike - v) ? r : b)).strike);
   const sk = nearest(spot), fk = nearest(flip);
-  const mark = (k: number | null, name: string, text: string, color: string) => (k == null ? [] : [{ xAxis: String(k), name, lineStyle: { color, type: "dashed" }, label: { formatter: text, color, fontSize: 10 } }]);
+  const mark = (k: number | null, name: string, text: string, color: string, place: { align?: "left" | "right"; dy?: number } = {}) => (k == null ? [] : [{ xAxis: String(k), name, lineStyle: { color, type: "dashed" }, label: { formatter: text, color, fontSize: 10, position: "end", align: place.align ?? "center", offset: [place.align === "left" ? 3 : place.align === "right" ? -3 : 0, place.dy ?? 0] } }]);
   // spot and the flip are often within one strike of each other: one line then carries both labels, so neither hides the other
   const spotText = spot == null ? "spot" : `spot ${Math.round(spot).toLocaleString("en-IN")}`, flipText = flip == null ? "flip" : `flip ${Math.round(flip).toLocaleString("en-IN")}`;
-  const marks = sk != null && sk === fk ? mark(sk, "spot", `${spotText} · ${flipText}`, c.paper).concat(mark(fk, "flip", "", c.brass)) : [...mark(sk, "spot", spotText, c.paper), ...mark(fk, "flip", flipText, c.brass)];
+  const marks = sk != null && sk === fk ? mark(sk, "spot", `${spotText} · ${flipText}`, c.paper).concat(mark(fk, "flip", "", c.brass)) : [...mark(sk, "spot", spotText, c.paper, { align: fk != null && sk != null && fk < sk ? "left" : "right", dy: 0 }), ...mark(fk, "flip", flipText, c.brass, { align: fk != null && sk != null && fk < sk ? "right" : "left", dy: -14 })];
   return {
-    animation: false, grid: { left: 8, right: 12, top: 36, bottom: 8, containLabel: true },
+    animation: false, grid: { left: 8, right: 12, top: 62, bottom: 8, containLabel: true },
     legend: { top: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 12, itemHeight: 8 },
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, valueFormatter: (v: unknown) => (v == null ? MISSING : `${crore(Number(v), 2)} ₹ crore`) },
     xAxis: { type: "category", data: rows.map((r) => String(r.strike)), axisLabel: { ...axisText(c), interval: "auto", rotate: 60 }, axisTick: { show: false } },
