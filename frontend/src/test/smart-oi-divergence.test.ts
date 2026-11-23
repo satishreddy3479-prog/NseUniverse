@@ -1,3 +1,4 @@
+import { markerGroups } from "../components/dashboard/SmartOiDivergence";
 import { black76 } from "../lib/optionModel";
 import { RISK_FREE_RATE } from "../lib/assumptions";
 // Smart OI divergence indicators, checked by hand on small series built for the purpose. Expected values are counted, not read back from the code.
@@ -141,7 +142,7 @@ describe("2 writing or buying", () => {
 });
 
 describe("2b a fast fall is not read as buying", () => {
-  it("every call and put re-priced by the 100-point fall and a 2-point rise of volatility, with three times as much call OI added as put OI, leaves the flow unclassified and the bias near zero", () => {
+  it("every call and put re-priced by the 100-point fall and a 2-point rise of volatility, with three times as much call OI added as put OI, gives no clear lean (the old delta-only logic read this as bias +0.5 on every strike)", () => {
     const S0 = 25800, S1 = 25700, strikes = [25500, 25600, 25700, 25800, 25900, 26000, 26100];
     const T = (Date.parse("2026-11-24T10:10:00Z") - Date.parse("2026-11-20T03:45:00Z")) / (365 * 86_400_000);
     const px = (ty: "CE" | "PE", S: number, k: number, iv: number) => black76(ty, S * Math.exp(RISK_FREE_RATE * T), k, T, iv, RISK_FREE_RATE);
@@ -154,7 +155,31 @@ describe("2b a fast fall is not read as buying", () => {
     const ss = { underlying: "NIFTY", expiry: "2026-11-24", strikes, atm_strike: 25800, times, spot: [S0, S1], ce_price, pe_price, ce_oi, pe_oi, ce_change: {}, pe_change: {} } as unknown as StrikeSeries;
     const x = buildStrikeFlow(result(3, [{ high: 1, low: 1 }, { high: 1, low: 1 }]), ss, 555)[1]!;
     const p = pressureOf(x);
-    expect(p.bias === null || Math.abs(p.bias) < 0.25).toBe(true); // below the 0.25 the indicator needs
+    expect(p.share != null && p.share >= 0.5 && p.bias != null && Math.abs(p.bias) >= 0.5).toBe(false); // the indicator needs both: most OI classified and a clear lean
+  });
+});
+
+describe("2c the chain's own drift is not read as writing or buying", () => {
+  it("option prices following a forward 20 points above the index (calls up, puts down on every strike) with more call OI added is no lean", () => {
+    const S0 = 25800, S1 = 25780, strikes = [25400, 25500, 25600, 25700, 25800, 25900, 26000, 26100];
+    const T = (Date.parse("2026-11-24T10:10:00Z") - Date.parse("2026-11-20T03:45:00Z")) / (365 * 86_400_000);
+    const px = (ty: "CE" | "PE", S: number, k: number) => black76(ty, S * Math.exp(RISK_FREE_RATE * T), k, T, 0.16, RISK_FREE_RATE);
+    const times = ["2026-11-20T03:45:00Z", "2026-11-20T03:48:00Z"];
+    const ce_price: Record<string, number[]> = {}, pe_price: Record<string, number[]> = {}, ce_oi: Record<string, number[]> = {}, pe_oi: Record<string, number[]> = {};
+    for (const k of strikes) { ce_price[k] = [px("CE", S0, k), px("CE", S1 + 20, k)]; pe_price[k] = [px("PE", S0, k), px("PE", S1 + 20, k)]; ce_oi[k] = [1000, 1700]; pe_oi[k] = [1000, 1200]; }
+    const ss = { underlying: "NIFTY", expiry: "2026-11-24", strikes, atm_strike: 25800, times, spot: [S0, S1], ce_price, pe_price, ce_oi, pe_oi, ce_change: {}, pe_change: {} } as unknown as StrikeSeries;
+    const p = pressureOf(buildStrikeFlow(result(3, [{ high: 1, low: 1 }, { high: 1, low: 1 }]), ss, 555)[1]!);
+    expect(p.share != null && p.share >= 0.5 && p.bias != null && Math.abs(p.bias) >= 0.5).toBe(false);
+  });
+});
+
+describe("one marker per candle", () => {
+  const b = (id: string, i: number, direction: "bullish" | "bearish" | "neutral") => ({ id, i, direction, at: "09:45", lastAt: "09:45", count: 1, state: "confirmed", text: "", title: "", strength: 0.5, evidence: {} }) as never;
+  it("two signals on one candle share one marker: the common direction, or neutral when they disagree", () => {
+    const g = markerGroups([b("pcr", 10, "bearish"), b("momentum", 10, "bullish"), b("zone", 11, "bullish"), b("flow", 11, "bullish")]);
+    expect(g).toHaveLength(2);
+    expect(g[0]!.direction).toBe("neutral"); expect(g[0]!.all).toHaveLength(2);
+    expect(g[1]!.direction).toBe("bullish"); expect(g[1]!.all).toHaveLength(2);
   });
 });
 
@@ -277,9 +302,16 @@ describe("7 momentum divergence", () => {
   it("price +0.3 % over 30 minutes while smoothed Smart OI falls: bearish", () => {
     const p = [...alt, 100, 50, 0, -50, -100, -150, -200, -250];
     const cs = p.map((v, i) => ({ high: 100 + 0.05 * i + 0.1, low: 100 + 0.05 * i - 0.1, close: 100 + 0.05 * i, p: v }));
-    const s = only(analyseSmartOi(result(5, cs)), "momentum").filter((x) => x.direction === "bearish" && x.text.includes("fading"));
+    const s = only(analyseSmartOi(result(5, cs)), "momentum").filter((x) => x.direction === "bearish" && x.text.includes("falling further"));
     expect(s.length).toBeGreaterThan(0);
     expect((s[0]!.evidence.slope as number)).toBeLessThanOrEqual(-TH.momSlope);
+  });
+  it("a fall while Smart OI is still negative but less negative is not bullish (the level matters, not only the slope); the same slope above zero is", () => {
+    const fall = (p: number[]) => p.map((v, i) => ({ high: 100 - 0.05 * i + 0.1, low: 100 - 0.05 * i - 0.1, close: 100 - 0.05 * i, p: v }));
+    const still = only(analyseSmartOi(result(5, fall([...alt, -300, -250, -200, -150, -120, -100, -80, -60]))), "momentum").filter((x) => x.direction === "bullish" && x.text.includes("positive and rising"));
+    expect(still).toHaveLength(0); // the smoothed level is below zero: calls are still being added faster than puts
+    const up = only(analyseSmartOi(result(5, fall([...alt, 50, 100, 150, 200, 250, 300, 350, 400]))), "momentum").filter((x) => x.direction === "bullish" && x.text.includes("positive and rising"));
+    expect(up.length).toBeGreaterThan(0);
   });
   it("an unusual reading is flagged once, with its robust z-score: 1000 against a median of 0 and a scale of 148.26 is 6.7", () => {
     const p = [...alt, 1000, 100, -100];

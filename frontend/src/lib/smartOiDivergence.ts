@@ -38,7 +38,7 @@ export const TH = {
   windowMin: 30, maxSwingMin: 180, minSwingCandles: 3,
   pivotK: { 3: 3, 5: 2 } as Record<number, number>,
   flowMinPriceMove: 0.0005, flowMinCsoiShare: 0.1,
-  writingMinBias: 0.25, writingMinClassified: 0.5, writingPremiumTick: 0.05, writingPremiumPct: 0.002,
+  writingMinBias: 0.5, writingMinClassified: 0.5, writingPremiumTick: 0.05, writingPremiumPct: 0.002,
   convMinMove: 0.0015, convLow: 0.5, convHigh: 1.5, convFlatMove: 0.0005, convMinCandles: 8,
   pcrMin: 0.03, pcrPriceMin: 0.0015, pcrVsPrice: 0.05,
   futPriceMove: 0.001, futOiMove: 0.005, futConsistency: 0.2,
@@ -214,7 +214,8 @@ export function buildStrikeFlow(res: SmartOiResult, ss: StrikeSeries, openMin: n
     const nowMs = Date.parse(ss.times[a]!);
     const out: StrikeFlow = { put: kinds(), call: kinds(), unclassified: 0, supportDelta: 0, resistDelta: 0, supportStrike: null, resistStrike: null, strikes: 0 };
     let bestPut = 0, bestCall = 0;
-    const rows: { side: "CE" | "PE"; dOi: number; p0: number; resid: number }[] = [];
+    const rows: { side: "CE" | "PE"; dOi: number; model: number; resid: number; delta: number; vega: number }[] = [];
+    const T1 = (expiryEnd(ss.expiry) - Date.parse(ss.times[b]!)) / (365 * 86_400_000);
     for (const strike of ss.strikes) {
       for (const side of ["CE", "PE"] as const) {
         const oi = side === "CE" ? ss.ce_oi : ss.pe_oi, px = side === "CE" ? ss.ce_price : ss.pe_price;
@@ -223,22 +224,40 @@ export function buildStrikeFlow(res: SmartOiResult, ss: StrikeSeries, openMin: n
         const dOi = o1 - o0;
         if (side === "PE" && strike <= s1) { out.supportDelta += dOi; if (dOi > bestPut) { bestPut = dOi; out.supportStrike = strike; } }
         if (side === "CE" && strike >= s1) { out.resistDelta += dOi; if (dOi > bestCall) { bestCall = dOi; out.resistStrike = strike; } }
-        if (dOi === 0) continue;
         const p0 = get(px, strike, a), p1 = get(px, strike, b);
         const cd = fnum(p0) && p0 > 0 ? contractDelta(side, p0, s0, strike, ss.expiry, nowMs, RISK_FREE_RATE) : null;
-        if (!cd || !fnum(p1) || !(p1 > 0)) { out.unclassified += Math.abs(dOi); continue; }
-        // the premium change the index move explains: delta x move plus the curvature, 1/2 gamma x move^2 (without it a big move makes every option look bought)
-        const g = optRisk(side, s0, strike, (expiryEnd(ss.expiry) - nowMs) / (365 * 86_400_000), cd.iv, RISK_FREE_RATE, RISK_FREE_RATE);
-        const expl = cd.delta * (s1 - s0) + (g ? 0.5 * g.gamma * (s1 - s0) ** 2 : 0);
-        rows.push({ side, dOi, p0: p0 as number, resid: p1 - (p0 as number) - expl });
+        const g = cd && T1 > 0 ? optRisk(side, s1, strike, T1, cd.iv, RISK_FREE_RATE, RISK_FREE_RATE) : null;
+        if (!cd || !g || !fnum(p1) || !(p1 > 0)) { if (dOi !== 0) out.unclassified += Math.abs(dOi); continue; }
+        // the premium the market should show now if only the index and the clock had moved, at the volatility it had: an exact re-pricing (no delta-gamma
+        // approximation, which fails on a 100-point move or on expiry day) that also carries the time decay of the candle
+        rows.push({ side, dOi, model: g.price, resid: p1 - g.price, delta: g.delta, vega: g.vega });
       }
     }
-    // a repricing common to calls and puts (volatility rising or falling as the market moves) says nothing about who is writing or buying: remove the median relative change (needs six or more contracts; with fewer there is no market to compare with)
-    const rel = rows.map((r) => r.resid / r.p0).sort((x, y) => x - y);
-    const common = rel.length >= 6 ? (rel.length % 2 ? rel[(rel.length - 1) / 2]! : (rel[rel.length / 2 - 1]! + rel[rel.length / 2]!) / 2) : 0;
+    // What the whole chain did in this candle says nothing about who wrote or bought: option prices follow a forward that is a little different from the index
+    // we read (a shift of dF index points moves every premium by its delta x dF, calls and puts in opposite directions) and a common volatility move (dSigma moves
+    // every premium by its vega x dSigma). Both are fitted on every contract of the candle (least squares, outliers trimmed once) and taken out; only what an
+    // individual strike did on top is read as writing or buying. Needs eight contracts; with fewer there is no chain to compare with and nothing is removed.
+    const fit = (use: typeof rows): { dF: number; dS: number } | null => {
+      let sdd = 0, sdv = 0, svv = 0, sdr = 0, svr = 0;
+      for (const r of use) { const w = 1 / (1 + r.model); sdd += w * r.delta * r.delta; sdv += w * r.delta * r.vega; svv += w * r.vega * r.vega; sdr += w * r.delta * r.resid; svr += w * r.vega * r.resid; }
+      const det = sdd * svv - sdv * sdv;
+      if (!(Math.abs(det) > 1e-12 * Math.max(1, sdd * svv))) return null;
+      return { dF: (sdr * svv - svr * sdv) / det, dS: (svr * sdd - sdr * sdv) / det };
+    };
+    let common = { dF: 0, dS: 0 };
+    if (rows.length >= 8) {
+      const first = fit(rows);
+      if (first) {
+        const e = rows.map((r) => r.resid - r.delta * first.dF - r.vega * first.dS);
+        const mad = median(e.map((x) => Math.abs(x)))! * 1.4826;
+        const kept = mad > 0 ? rows.filter((_, i) => Math.abs(e[i]!) <= 3 * mad) : rows;
+        common = (kept.length >= 8 ? fit(kept) : null) ?? first;
+      }
+    }
     for (const r of rows) {
-      const resid = r.resid - common * r.p0;
-      if (Math.abs(resid) < Math.max(TH.writingPremiumTick, TH.writingPremiumPct * r.p0)) { out.unclassified += Math.abs(r.dOi); continue; }
+      if (r.dOi === 0) continue;
+      const resid = r.resid - r.delta * common.dF - r.vega * common.dS;
+      if (Math.abs(resid) < Math.max(TH.writingPremiumTick, TH.writingPremiumPct * Math.max(r.model, 0.05))) { out.unclassified += Math.abs(r.dOi); continue; }
       const kind: FlowKind = r.dOi > 0 ? (resid < 0 ? "writing" : "buying") : resid > 0 ? "covering" : "unwinding";
       (r.side === "PE" ? out.put : out.call)[kind] += Math.abs(r.dOi);
       out.strikes++;
@@ -430,12 +449,13 @@ function momentum(f: Frame): Signal[] {
     const e1 = e[i], e0 = e[i - h];
     if (r == null || e1 == null || e0 == null) continue;
     const slope = (e1 - e0) / scale; // in robust standard deviations of Smart OI per half window
-    if (r >= TH.momMove && slope <= -TH.momSlope) {
+    // the level matters as much as the slope: Smart OI that is still negative but less negative is calls being added more slowly, not puts being added
+    if (r >= TH.momMove && slope <= -TH.momSlope && e1 < 0) {
       out.push({ id: "momentum", i, at: f.c[i]!.label, direction: "bearish", strength: clamp01(Math.abs(slope) / (TH.momSlope * 4)), state: "confirmed", title: "Momentum divergence",
-        text: `Price ${pct(r)} over ${f.w * f.tf} minutes while the smoothed Smart OI is falling (${slope.toFixed(2)} robust deviations): the flow is fading behind the rise.`, evidence: { priceChange: r, slope } });
-    } else if (r <= -TH.momMove && slope >= TH.momSlope) {
+        text: `Price ${pct(r)} over ${f.w * f.tf} minutes while the smoothed Smart OI is negative and falling further (${slope.toFixed(2)} robust deviations): calls are being added faster as the index rises.`, evidence: { priceChange: r, slope } });
+    } else if (r <= -TH.momMove && slope >= TH.momSlope && e1 > 0) {
       out.push({ id: "momentum", i, at: f.c[i]!.label, direction: "bullish", strength: clamp01(Math.abs(slope) / (TH.momSlope * 4)), state: "confirmed", title: "Momentum divergence",
-        text: `Price ${pct(r)} over ${f.w * f.tf} minutes while the smoothed Smart OI is rising (+${slope.toFixed(2)} robust deviations): the flow is turning up under the fall.`, evidence: { priceChange: r, slope } });
+        text: `Price ${pct(r)} over ${f.w * f.tf} minutes while the smoothed Smart OI is positive and rising (+${slope.toFixed(2)} robust deviations): puts are being added faster as the index falls.`, evidence: { priceChange: r, slope } });
     }
     const p = f.p[i];
     const z = p == null ? null : (p - med) / scale;

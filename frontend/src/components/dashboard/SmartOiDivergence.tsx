@@ -57,6 +57,7 @@ export function SmartOiDivergence({ res, tf, since, expiry, listed, openAtm }: {
         <div>
           <h3 className="text-base font-semibold text-paper">Divergence indicators <span className="text-xs font-normal text-muted">· {tf}-minute candles · indicator, not validated</span></h3>
           <p className={`text-sm font-semibold ${tone(c.direction)}`} data-testid="div-composite">{arrow(c.direction)} {c.text}</p>
+          <p className="mt-0.5 text-xs text-muted" data-testid="div-contrarian">A divergence is a disagreement with price. A bullish one during a fall means something under the fall is turning up; a bearish one during a rise means the rise is losing support. It is a warning to look closer, not a forecast of direction.</p>
         </div>
         <span className="rounded-full border border-rule bg-slate-2 px-3 py-1 text-xs font-semibold text-paper" title={gradeTip[c.grade]} data-testid="div-grade">Evidence {c.grade}<span className="ml-1 font-normal text-muted">{gradeTip[c.grade]!.split(" (")[0]}</span></span>
       </header>
@@ -65,7 +66,7 @@ export function SmartOiDivergence({ res, tf, since, expiry, listed, openAtm }: {
           <li key={r.id} className={`rounded-sm border px-3 py-2 ${r.active ? "border-rule bg-slate-2" : "border-rule/60"}`} data-testid={`div-${r.id}`} data-active={r.active ? "true" : "false"}>
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-semibold text-paper">{INDICATOR_NAMES[r.id]}</span>
-              {r.active ? <span className={`num text-sm font-semibold ${tone(r.direction)}`}>{arrow(r.direction)} {r.direction} · {Math.round(r.strength * 100)}% · {r.at}</span> : <span className="text-xs text-muted">quiet</span>}
+              {r.active ? <span className={`num text-sm font-semibold ${tone(r.direction)}`}>{arrow(r.direction)} {r.direction} divergence · {Math.round(r.strength * 100)}% · {r.at}</span> : <span className="text-xs text-muted">quiet</span>}
             </div>
             <p className={`mt-0.5 text-xs ${r.active ? "text-paper" : "text-muted"}`}>{r.text}</p>
             {r.active && <div className="mt-1 h-1 overflow-hidden rounded-full bg-rule" aria-hidden><div className={`h-full ${r.direction === "bullish" ? "bg-up" : r.direction === "bearish" ? "bg-down" : "bg-muted"}`} style={{ width: `${Math.round(r.strength * 100)}%` }} /></div>}
@@ -76,7 +77,7 @@ export function SmartOiDivergence({ res, tf, since, expiry, listed, openAtm }: {
         <div>
           <EChart className="echart-fixed !h-[300px]" hoverGroup="smart-oi" option={option} ariaLabel="NIFTY close with the divergence signals marked" />
           <p className="mt-1 text-xs text-muted" data-testid="div-chart-note">
-            <span className="text-up">▲</span> under the price line: something other than price leans bullish, <span className="text-down">▼</span> above it: bearish, <span>●</span> a notable reading with no direction. One marker is the <b>start</b> of a run of the same signal (hover it for how long it lasted and why). Markers at the same time are different indicators agreeing or disagreeing, which is what the composite line above counts. A hollow marker failed.
+            <span className="text-up">▲</span> under the price line: something other than price leans bullish, <span className="text-down">▼</span> above it: bearish, <span>●</span> a notable reading with no direction. One marker is the <b>start</b> of a run of the same signal (hover it for how long it lasted and why). One marker per candle: when several indicators start on the same candle they share one marker (hover to list them), and when they disagree it is a neutral dot. A hollow marker failed.
           </p>
         </div>
       )}
@@ -100,7 +101,7 @@ export function SmartOiDivergence({ res, tf, since, expiry, listed, openAtm }: {
         <summary className="cursor-pointer text-info">How to read these, and what they cannot tell you</summary>
         <ul className="mt-1 list-disc space-y-1 pl-4">
           <li><b>Flow</b>: at confirmed swing highs and lows (a swing needs {TH.pivotK[tf] ?? 2} candles each side, so it is known {TH.pivotK[tf] ?? 2} candles late) price and the day's cumulative Smart OI are compared. Regular: they disagree about the new extreme. Hidden: price makes a smaller extreme while flow makes a larger one. Failed: price later went beyond the swing.</li>
-          <li><b>Writing or buying</b>: each strike's OI change read with its premium change after taking out what the index move explains (premium change minus delta times the index move). OI up with the premium down is writing, up with the premium up is buying; OI down with the premium up is covering, down with the premium down is unwinding. Two candles in a row where this contradicts the Smart OI label.</li>
+          <li><b>Writing or buying</b>: each strike's OI change read with its premium change after taking out what the index move explains (each premium is re-priced for the new index level and the time that passed; what the whole chain did together, a forward shift and a volatility move, is fitted and removed, so only what a strike did on its own counts). OI up with the premium down is writing, up with the premium up is buying; OI down with the premium up is covering, down with the premium down is unwinding. Two candles in a row where this contradicts the Smart OI label.</li>
           <li><b>Conviction</b>: new OI per option contract traded against the day's usual level. A move with plenty of volume and little new OI is churn; new OI building without a move is absorption.</li>
           <li><b>PCR</b>: what is held (OI PCR) against what is traded (volume PCR) and against price over {TH.windowMin} minutes.</li>
           <li><b>Future against options</b>: the future's price and OI (long build-up, short build-up, short covering, long unwinding) against the direction of Smart OI over {TH.windowMin} minutes.</li>
@@ -118,14 +119,26 @@ export function SmartOiDivergence({ res, tf, since, expiry, listed, openAtm }: {
 }
 
 /** The price line with one marker per signal: triangles up (bullish) and down (bearish), a dot for neutral, a hollow marker once a flow divergence failed, and a dashed line between the two swings of a flow divergence. */
+/** Signals that start on the same candle become one marker: the direction they share, or neutral when they disagree. */
+export function markerGroups(bursts: Burst[]): { direction: Direction; lead: Burst; all: Burst[] }[] {
+  const by = new Map<number, Burst[]>();
+  for (const b of bursts) by.set(b.i, [...(by.get(b.i) ?? []), b]);
+  return [...by.values()].map((all) => {
+    const dirs = new Set(all.map((x) => x.direction).filter((d) => d !== "neutral"));
+    const direction: Direction = dirs.size === 1 ? [...dirs][0]! : "neutral";
+    return { direction, lead: all.find((x) => x.direction === direction) ?? all[0]!, all };
+  });
+}
 function markerOption(res: SmartOiResult, rep: DivergenceReport, bursts: Burst[], c: ChartColors): EChartsCoreOption {
   const labels = res.candles.map((x) => x.label);
   const close = res.candles.map((x) => x.spot?.close ?? null);
   const at = (s: Signal) => close[s.i] ?? null;
   // bullish markers sit just under the price line and bearish ones just above it, so they never cover the line; one marker per burst
+  // one marker per candle: signals starting on the same candle are merged (the tooltip lists them all); when they disagree the marker is neutral
+  const groups = markerGroups(bursts).filter((g) => at(g.lead) != null);
   const mark = (dir: Direction, symbol: string, color: string, dy: number) => ({
     name: dir, type: "scatter", symbol, symbolSize: 10, symbolOffset: [0, dy], itemStyle: { color }, z: 5,
-    data: bursts.filter((s) => s.direction === dir && at(s) != null).map((s) => ({ value: [s.i, at(s)], signal: s, itemStyle: s.state === "failed" ? { color: "transparent", borderColor: color, borderWidth: 2 } : undefined })),
+    data: groups.filter((g) => g.direction === dir).map((g) => ({ value: [g.lead.i, at(g.lead)], signal: g.lead, all: g.all, itemStyle: g.lead.state === "failed" && g.all.length === 1 ? { color: "transparent", borderColor: color, borderWidth: 2 } : undefined })),
   });
   const links = rep.signals.filter((s) => s.link && at(s) != null).map((s) => {
     const l = s.link!, series = res.candles.map((x) => (l.price === "high" ? x.spot?.high : x.spot?.low) ?? null);
@@ -136,10 +149,12 @@ function markerOption(res: SmartOiResult, rep: DivergenceReport, bursts: Burst[]
     legend: { top: 0, data: ["NIFTY close", "bullish", "bearish", "neutral"], textStyle: { color: c.paper, fontSize: 12 } },
     tooltip: {
       trigger: "item", confine: true,
-      formatter: (p: { data?: { signal?: Signal }; dataIndex?: number }) => {
-        const s = p.data?.signal;
-        const run = (s as Burst | undefined)?.count ?? 1;
-        return s ? `<b>${INDICATOR_NAMES[s.id]}</b> · ${s.at}${run > 1 ? ` to ${(s as Burst).lastAt} (${run} candles)` : ""}${s.state === "failed" ? " · failed" : ""}<br/>${s.text}` : "";
+      formatter: (p: { data?: { signal?: Signal; all?: Burst[] } }) => {
+        const all = p.data?.all ?? (p.data?.signal ? [p.data.signal as Burst] : []);
+        return all.map((s) => {
+          const run = s.count ?? 1;
+          return `<b>${INDICATOR_NAMES[s.id]}</b> (${s.direction}) · ${s.at}${run > 1 ? ` to ${s.lastAt} (${run} candles)` : ""}${s.state === "failed" ? " · failed" : ""}<br/>${s.text}`;
+        }).join("<hr/>");
       },
     },
     xAxis: { type: "value", min: 0, max: Math.max(1, labels.length - 1), axisLabel: { color: c.muted, formatter: (v: number) => labels[Math.round(v)] ?? "" }, splitLine: { show: false }, axisLine: { lineStyle: { color: c.rule } } },
