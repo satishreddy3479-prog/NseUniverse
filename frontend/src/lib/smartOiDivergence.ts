@@ -17,7 +17,8 @@
  * ``TH`` and provisional: these are indicators, not validated predictions. They never produce an order or a target.
  */
 import { RISK_FREE_RATE } from "./assumptions";
-import { contractDelta } from "./optionModel";
+import { contractDelta, expiryEnd } from "./optionModel";
+import { optRisk } from "./advancedGreeks";
 import type { SmartOiCandle, SmartOiResult } from "./optionTools";
 import type { FuturesSeries, StrikeSeries } from "./types";
 
@@ -213,6 +214,7 @@ export function buildStrikeFlow(res: SmartOiResult, ss: StrikeSeries, openMin: n
     const nowMs = Date.parse(ss.times[a]!);
     const out: StrikeFlow = { put: kinds(), call: kinds(), unclassified: 0, supportDelta: 0, resistDelta: 0, supportStrike: null, resistStrike: null, strikes: 0 };
     let bestPut = 0, bestCall = 0;
+    const rows: { side: "CE" | "PE"; dOi: number; p0: number; resid: number }[] = [];
     for (const strike of ss.strikes) {
       for (const side of ["CE", "PE"] as const) {
         const oi = side === "CE" ? ss.ce_oi : ss.pe_oi, px = side === "CE" ? ss.ce_price : ss.pe_price;
@@ -225,12 +227,21 @@ export function buildStrikeFlow(res: SmartOiResult, ss: StrikeSeries, openMin: n
         const p0 = get(px, strike, a), p1 = get(px, strike, b);
         const cd = fnum(p0) && p0 > 0 ? contractDelta(side, p0, s0, strike, ss.expiry, nowMs, RISK_FREE_RATE) : null;
         if (!cd || !fnum(p1) || !(p1 > 0)) { out.unclassified += Math.abs(dOi); continue; }
-        const resid = p1 - (p0 as number) - cd.delta * (s1 - s0); // the premium change that the move of the index does not explain
-        if (Math.abs(resid) < Math.max(TH.writingPremiumTick, TH.writingPremiumPct * (p0 as number))) { out.unclassified += Math.abs(dOi); continue; }
-        const kind: FlowKind = dOi > 0 ? (resid < 0 ? "writing" : "buying") : resid > 0 ? "covering" : "unwinding";
-        (side === "PE" ? out.put : out.call)[kind] += Math.abs(dOi);
-        out.strikes++;
+        // the premium change the index move explains: delta x move plus the curvature, 1/2 gamma x move^2 (without it a big move makes every option look bought)
+        const g = optRisk(side, s0, strike, (expiryEnd(ss.expiry) - nowMs) / (365 * 86_400_000), cd.iv, RISK_FREE_RATE, RISK_FREE_RATE);
+        const expl = cd.delta * (s1 - s0) + (g ? 0.5 * g.gamma * (s1 - s0) ** 2 : 0);
+        rows.push({ side, dOi, p0: p0 as number, resid: p1 - (p0 as number) - expl });
       }
+    }
+    // a repricing common to calls and puts (volatility rising or falling as the market moves) says nothing about who is writing or buying: remove the median relative change (needs six or more contracts; with fewer there is no market to compare with)
+    const rel = rows.map((r) => r.resid / r.p0).sort((x, y) => x - y);
+    const common = rel.length >= 6 ? (rel.length % 2 ? rel[(rel.length - 1) / 2]! : (rel[rel.length / 2 - 1]! + rel[rel.length / 2]!) / 2) : 0;
+    for (const r of rows) {
+      const resid = r.resid - common * r.p0;
+      if (Math.abs(resid) < Math.max(TH.writingPremiumTick, TH.writingPremiumPct * r.p0)) { out.unclassified += Math.abs(r.dOi); continue; }
+      const kind: FlowKind = r.dOi > 0 ? (resid < 0 ? "writing" : "buying") : resid > 0 ? "covering" : "unwinding";
+      (r.side === "PE" ? out.put : out.call)[kind] += Math.abs(r.dOi);
+      out.strikes++;
     }
     return out;
   });

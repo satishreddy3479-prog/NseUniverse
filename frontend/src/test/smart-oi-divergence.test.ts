@@ -1,3 +1,5 @@
+import { black76 } from "../lib/optionModel";
+import { RISK_FREE_RATE } from "../lib/assumptions";
 // Smart OI divergence indicators, checked by hand on small series built for the purpose. Expected values are counted, not read back from the code.
 import { describe, expect, it } from "vitest";
 import {
@@ -135,6 +137,24 @@ describe("2 writing or buying", () => {
     expect(flat.call.buying).toBe(500);
     const down = buildStrikeFlow(res, mk(25800, 90), 555)[1]!;
     expect(down.call.writing).toBe(500);
+  });
+});
+
+describe("2b a fast fall is not read as buying", () => {
+  it("every call and put re-priced by the 100-point fall and a 2-point rise of volatility, with three times as much call OI added as put OI, leaves the flow unclassified and the bias near zero", () => {
+    const S0 = 25800, S1 = 25700, strikes = [25500, 25600, 25700, 25800, 25900, 26000, 26100];
+    const T = (Date.parse("2026-11-24T10:10:00Z") - Date.parse("2026-11-20T03:45:00Z")) / (365 * 86_400_000);
+    const px = (ty: "CE" | "PE", S: number, k: number, iv: number) => black76(ty, S * Math.exp(RISK_FREE_RATE * T), k, T, iv, RISK_FREE_RATE);
+    const times = ["2026-11-20T03:45:00Z", "2026-11-20T03:48:00Z"];
+    const ce_price: Record<string, number[]> = {}, pe_price: Record<string, number[]> = {}, ce_oi: Record<string, number[]> = {}, pe_oi: Record<string, number[]> = {};
+    for (const k of strikes) {
+      ce_price[k] = [px("CE", S0, k, 0.16), px("CE", S1, k, 0.18)]; pe_price[k] = [px("PE", S0, k, 0.16), px("PE", S1, k, 0.18)];
+      ce_oi[k] = [1000, 1600]; pe_oi[k] = [1000, 1200];
+    }
+    const ss = { underlying: "NIFTY", expiry: "2026-11-24", strikes, atm_strike: 25800, times, spot: [S0, S1], ce_price, pe_price, ce_oi, pe_oi, ce_change: {}, pe_change: {} } as unknown as StrikeSeries;
+    const x = buildStrikeFlow(result(3, [{ high: 1, low: 1 }, { high: 1, low: 1 }]), ss, 555)[1]!;
+    const p = pressureOf(x);
+    expect(p.bias === null || Math.abs(p.bias) < 0.25).toBe(true); // below the 0.25 the indicator needs
   });
 });
 
