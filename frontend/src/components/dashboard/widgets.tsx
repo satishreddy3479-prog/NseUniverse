@@ -17,7 +17,7 @@ import {
   oiExplorerOption, futuresOption, sessionize, totalsBarOption, type FuturesKind, type StrikeMetric } from "../../lib/chartOptions";
 import { ageSeconds, fmtDateTimeIST, fmtExpiry, fmtTimeIST, fmtInt, fmtPct, fmtPrice, fmtSigned } from "../../lib/format";
 import { smartOiCandles } from "../../lib/optionTools";
-import { SmartOiDivergence } from "./SmartOiDivergence";
+import { SmartOiDivergence, useDivergence } from "./SmartOiDivergence";
 import { useSpotDisplay } from "../../lib/useLive";
 import type { BaselineKind, Observation, OiChange, OptionChainRow } from "../../lib/types";
 import { Loading } from "../../components/Loading";
@@ -356,13 +356,17 @@ function SmartOiChartWidget() {
     return bars.data && bars.data.day === rp.day ? bars.data.bars.filter((b) => Date.parse(b.at) <= rp.cutMs!) : undefined;
   }, [bars.data, rp.cutMs, rp.day]);
   const res = useMemo(() => (series ? smartOiCandles(series, tf, { openMin: sessionOpenMin(), closeMin: sessionCloseMin(), bars: barList }) : null), [series, tf, barList]);
-  const main = useMemo(() => (res ? smartOiOption(res, colors) : null), [res, colors]);
+  const listedStrikes = useMemo(() => [...new Set(d.rows.map((r) => r.strike))].sort((a, b) => a - b), [d.rows]);
+  const openAtmStrike = useMemo(() => (all && since ? (all.find((o) => o.retrieved_at === since)?.atm_strike ?? null) : null), [all, since]);
+  // the divergence signals follow the candle length chosen (1, 3 and 5 minutes) and, with the volume bars, share the chart's lower panel: one or the other
+  const dv = useDivergence(res, tf, since, d.expiry ?? null, listedStrikes, openAtmStrike);
+  const [lowerLeft, setLowerLeft] = useState<"signals" | "volume">("signals");
+  const showSignals = dv.on && dv.report != null && lowerLeft === "signals";
+  const main = useMemo(() => (res ? smartOiOption(res, colors, showSignals && dv.report ? { bursts: dv.bursts, signals: dv.report.signals } : null) : null), [res, colors, showSignals, dv.bursts, dv.report]);
   const dayOpt = useMemo(() => (res ? smartOiDayOption(res, colors) : null), [res, colors]);
   const [lower, setLower] = useState<"pcr" | "volume">("pcr");
   const ratioOpt = useMemo(() => (res ? (lower === "volume" ? smartOiVolumeOption(res, colors) : smartOiRatioOption(res, colors)) : null), [res, colors, lower]);
   const last = res?.candles[res.candles.length - 1];
-  const listedStrikes = useMemo(() => [...new Set(d.rows.map((r) => r.strike))].sort((a, b) => a - b), [d.rows]);
-  const openAtmStrike = useMemo(() => (all && since ? (all.find((o) => o.retrieved_at === since)?.atm_strike ?? null) : null), [all, since]);
   return (
     <ChainGuard>
       <Body footer={
@@ -437,7 +441,17 @@ function SmartOiChartWidget() {
             </EmptyState>
           ) : (
             <div className="grid min-h-0 flex-1 gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-              <div><EChart className="echart-fixed !h-[720px]" hoverGroup="smart-oi" option={main} ariaLabel="NIFTY candles, Smart OI candles and option volume" /></div>
+              <div>
+                {dv.on && (
+                  <div role="group" aria-label="Lower panel of the chart" className="mb-1 flex flex-wrap items-center justify-end gap-0.5" data-testid="smart-oi-lower-left">
+                    <span className="mr-1 text-xs text-muted">Lower panel</span>
+                    {([["signals", "Divergence signals"], ["volume", "Volume"]] as const).map(([k, l]) => (
+                      <button key={k} type="button" aria-pressed={lowerLeft === k} onClick={() => setLowerLeft(k)} className={`widget-nodrag min-h-6 rounded-sm border px-2 text-xs ${lowerLeft === k ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{l}</button>
+                    ))}
+                  </div>
+                )}
+                <EChart className={`echart-fixed ${showSignals ? "!h-[800px]" : "!h-[720px]"}`} hoverGroup="smart-oi" option={main} ariaLabel={showSignals ? "NIFTY candles, Smart OI candles and the divergence signals on the NIFTY close" : "NIFTY candles, Smart OI candles and option volume"} />
+              </div>
               <div className="grid min-h-0 grid-rows-2 gap-2">
                 <div><EChart className="echart-fixed !h-[350px]" hoverGroup="smart-oi" option={dayOpt} ariaLabel="Put, call and put minus call OI change since the first candle" /></div>
                 <div>
@@ -451,7 +465,7 @@ function SmartOiChartWidget() {
               </div>
             </div>
           )}
-          <SmartOiDivergence res={res} tf={tf} since={since} expiry={d.expiry ?? null} listed={listedStrikes} openAtm={openAtmStrike} />
+          <SmartOiDivergence res={res} tf={tf} d={dv} />
         </div>
       </Body>
     </ChainGuard>

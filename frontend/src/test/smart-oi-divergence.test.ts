@@ -1,10 +1,9 @@
-import { markerGroups } from "../components/dashboard/SmartOiDivergence";
 import { black76 } from "../lib/optionModel";
 import { RISK_FREE_RATE } from "../lib/assumptions";
 // Smart OI divergence indicators, checked by hand on small series built for the purpose. Expected values are counted, not read back from the code.
 import { describe, expect, it } from "vitest";
 import {
-  alignFuture, analyseSmartOi, buildStrikeFlow, candlesFor, collapseBursts, composeOf, scoreBursts, ema, gradeOf, pressureOf, qualityOf, TH,
+  alignFuture, analyseSmartOi, buildStrikeFlow, candlesFor, collapseBursts, composeOf, markerGroups, scoreBursts, tfp, ema, gradeOf, pressureOf, qualityOf, TH,
   type FutureLeg, type Reading, type Signal, type StrikeFlow,
 } from "../lib/smartOiDivergence";
 import type { SmartOiCandle, SmartOiResult } from "../lib/optionTools";
@@ -24,9 +23,18 @@ const result = (tf: number, cs: C[], extra: Partial<SmartOiResult> = {}): SmartO
 const only = (r: ReturnType<typeof analyseSmartOi>, id: string) => r.signals.filter((s) => s.id === id);
 
 describe("windows", () => {
-  it("30 minutes is 10 candles of 3 minutes or 6 of 5; a pivot needs 3 or 2 candles each side", () => {
-    expect(candlesFor(3, TH.windowMin)).toBe(10); expect(candlesFor(5, TH.windowMin)).toBe(6);
-    expect(TH.pivotK[3]).toBe(3); expect(TH.pivotK[5]).toBe(2);
+  it("30 minutes is 30 candles of 1 minute, 10 of 3 minutes or 6 of 5; a pivot needs 8, 3 or 2 candles each side", () => {
+    expect(candlesFor(1, TH.windowMin)).toBe(30); expect(candlesFor(3, TH.windowMin)).toBe(10); expect(candlesFor(5, TH.windowMin)).toBe(6);
+    expect(tfp(1).pivotK).toBe(8); expect(tfp(3).pivotK).toBe(3); expect(tfp(5).pivotK).toBe(2);
+  });
+  it("the 1-minute values mean the same stretch of time as the 3-minute ones they were built with: swing 8 min (3 min: 9), spacing 9 (9), average 15 (15), writing streak 6 (6), conviction history 24 (24)", () => {
+    const one = tfp(1), three = tfp(3);
+    expect(one.pivotK * 1).toBeLessThanOrEqual(three.pivotK * 3); expect(one.pivotK * 1).toBeGreaterThanOrEqual(three.pivotK * 3 - 2);
+    expect(one.minSwing * 1).toBe(three.minSwing * 3);
+    expect(one.emaSpan * 1).toBe(three.emaSpan * 3);
+    expect(one.streak * 1).toBe(three.streak * 3);
+    expect(one.convMin * 1).toBe(three.convMin * 3);
+    expect(tfp(15)).toEqual(tfp(3)); // an unsupported length falls back; the page does not run the indicators on it
   });
 });
 
@@ -220,6 +228,22 @@ describe("the scorecard of the day's signals", () => {
   it("an unchanged index is flat, not right", () => {
     const sc = scoreBursts([b("zone", 0, "bullish")], [100, 100, 100, 100, 100, 100], 5, 3);
     expect(sc.bullish).toMatchObject({ judged: 1, right: 0, wrong: 0, flat: 1 });
+  });
+});
+
+describe("1-minute candles", () => {
+  const alt = Array.from({ length: 30 }, (_, i) => (i % 2 === 0 ? 100 : -100));
+  it("momentum on 1-minute candles: a rise of 0.3 % over 30 candles while the smoothed Smart OI keeps falling below zero is bearish, as on 3 minutes", () => {
+    const p = [...alt, ...Array.from({ length: 30 }, (_, i) => -50 * i)];
+    const cs = p.map((v, i) => ({ high: 100 + 0.01 * i + 0.05, low: 100 + 0.01 * i - 0.05, close: 100 + 0.01 * i, p: v }));
+    const s = only(analyseSmartOi(result(1, cs)), "momentum").filter((x) => x.direction === "bearish" && x.text.includes("falling further"));
+    expect(s.length).toBeGreaterThan(0);
+    expect(s[0]!.text).toContain("over 30 minutes"); // the window is 30 minutes on every candle length
+  });
+  it("a flow divergence needs a swing of 8 candles each side on 1-minute candles: 3-candle wiggles are not swings", () => {
+    const wiggle = [100, 101, 103, 101, 100, 101, 102, 104, 102, 101].map((h, i) => ({ high: h, low: h - 1, csoi: [0, 100, 500, 400, 300, 250, 220, 200, 150, 100][i] }));
+    expect(only(analyseSmartOi(result(1, wiggle)), "flow")).toHaveLength(0);
+    expect(only(analyseSmartOi(result(5, wiggle)), "flow")).toHaveLength(1); // the same series is a divergence on 5-minute candles (pivot of 2)
   });
 });
 

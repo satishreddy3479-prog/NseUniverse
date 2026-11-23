@@ -36,17 +36,31 @@ export const INDICATOR_NAMES: Record<IndicatorId | "composite", string> = {
 /** Provisional thresholds. Read by the tests and by the research script; change them only with a stored-session test behind it. */
 export const TH = {
   /** minutes: a window of recent candles for the rolling indicators, and the longest distance between two swings */
-  windowMin: 30, maxSwingMin: 180, minSwingCandles: 3,
-  pivotK: { 3: 3, 5: 2 } as Record<number, number>,
+  windowMin: 30, maxSwingMin: 180,
   flowMinPriceMove: 0.0005, flowMinCsoiShare: 0.1,
   writingMinBias: 0.5, writingMinClassified: 0.5, writingPremiumTick: 0.05, writingPremiumPct: 0.002,
-  convMinMove: 0.0015, convLow: 0.5, convHigh: 1.5, convFlatMove: 0.0005, convMinCandles: 8,
+  convMinMove: 0.0015, convLow: 0.5, convHigh: 1.5, convFlatMove: 0.0005,
   pcrMin: 0.03, pcrPriceMin: 0.0015, pcrVsPrice: 0.05,
   futPriceMove: 0.001, futOiMove: 0.005, futConsistency: 0.2,
   zoneMove: 0.0015, zoneShare: 0.3,
-  momMove: 0.001, momSlope: 0.3, momZ: 2.5, emaSpan: 5,
+  momMove: 0.001, momSlope: 0.3, momZ: 2.5,
   composite: { minAgree: 3, minLead: 2 },
 } as const;
+
+/** The candle lengths the indicators are built for. */
+export const DIVERGENCE_TIMEFRAMES = [1, 3, 5] as const;
+/**
+ * What counts in candles differs by candle length, so that the same stretch of time is meant on every one. 3 and 5 minutes are the values the indicators were built and tested with.
+ * One minute keeps the same minutes: a swing needs 8 candles each side (3 minutes: 3 candles = 9 minutes), two swings at least 9 candles apart, the momentum average spans 15 candles
+ * (3 minutes: 5), writing or buying must hold for 6 candles in a row (3 minutes: 2 = 6 minutes), conviction needs 24 candles of the day's history (3 minutes: 8). The window of 30 minutes,
+ * the longest swing of 180 and the percentages of price move are in minutes or per window already and are not touched.
+ */
+export const TFP: Record<number, { pivotK: number; minSwing: number; emaSpan: number; streak: number; convMin: number }> = {
+  1: { pivotK: 8, minSwing: 9, emaSpan: 15, streak: 6, convMin: 24 },
+  3: { pivotK: 3, minSwing: 3, emaSpan: 5, streak: 2, convMin: 8 },
+  5: { pivotK: 2, minSwing: 3, emaSpan: 5, streak: 2, convMin: 8 },
+};
+export const tfp = (tf: number) => TFP[tf] ?? TFP[3]!;
 
 export interface Signal {
   id: IndicatorId;
@@ -116,7 +130,7 @@ const units = (v: number) => `${v >= 0 ? "+" : "−"}${Math.abs(Math.round(v)).t
 // ---------------------------------------------------------------- 1 flow divergence
 function flow(f: Frame): Signal[] {
   const out: Signal[] = [];
-  const k = TH.pivotK[f.tf] ?? 2;
+  const k = tfp(f.tf).pivotK;
   const maxGap = candlesFor(f.tf, TH.maxSwingMin);
   const csoiOk = f.csoi.filter(fnum);
   if (csoiOk.length < 2 * k + 2) return out;
@@ -141,7 +155,7 @@ function flow(f: Frame): Signal[] {
     const pv = pivots(kind);
     for (let t = 1; t < pv.length; t++) {
       const a = pv[t - 1]!, b = pv[t]!;
-      if (b - a < TH.minSwingCandles || b - a > maxGap) continue;
+      if (b - a < tfp(f.tf).minSwing || b - a > maxGap) continue;
       const pa = series[a]!, pb = series[b]!, ca = f.csoi[a]!, cb = f.csoi[b]!;
       const upTo = f.csoi.slice(0, b + k + 1).filter(fnum);
       const range = Math.max(...upTo) - Math.min(...upTo);
@@ -287,11 +301,11 @@ function writing(f: Frame, sfs: (StrikeFlow | null)[]): Signal[] {
     const pr = sf ? pressureOf(sf) : null;
     const conflict = !!pr && pr.bias != null && pr.share != null && p != null && p !== 0 && Math.abs(pr.bias) >= TH.writingMinBias && pr.share >= TH.writingMinClassified && sgn(p) !== sgn(pr.bias);
     streak = conflict ? streak + 1 : 0;
-    if (conflict && streak >= 2) {
+    if (conflict && streak >= tfp(f.tf).streak) {
       const bias = pr!.bias!;
       out.push({
         id: "writing", i, at: f.c[i]!.label, direction: dirOf(bias), strength: clamp01(Math.abs(bias)), state: "confirmed", title: "Writing or buying",
-        text: `Smart OI reads ${p! > 0 ? "bullish (puts added faster)" : "bearish (calls added faster)"} but the premiums say the money is ${bias > 0 ? "bullish" : "bearish"}: ${bias > 0 ? "puts written or calls bought" : "calls written or puts bought"} (two candles in a row).`,
+        text: `Smart OI reads ${p! > 0 ? "bullish (puts added faster)" : "bearish (calls added faster)"} but the premiums say the money is ${bias > 0 ? "bullish" : "bearish"}: ${bias > 0 ? "puts written or calls bought" : "calls written or puts bought"} (${tfp(f.tf).streak * f.tf} minutes in a row).`,
         evidence: { smartOi: p!, bias, classifiedShare: pr!.share!, putWriting: sf!.put.writing, putBuying: sf!.put.buying, callWriting: sf!.call.writing, callBuying: sf!.call.buying },
       });
     }
@@ -311,7 +325,7 @@ function conviction(f: Frame): Signal[] {
   for (let i = f.w; i < f.n; i++) {
     // the day's usual level is read from the candles before the window, so the window being judged does not pull its own yardstick toward itself
     const hist = conv.slice(0, i - f.w + 1).filter(fnum), vh = vols.slice(0, i - f.w + 1).filter(fnum);
-    if (hist.length < TH.convMinCandles) continue;
+    if (hist.length < tfp(f.tf).convMin) continue;
     const mc = median(hist)!, mv = median(vh)!;
     const win = conv.slice(i - f.w + 1, i + 1).filter(fnum), wv = vols.slice(i - f.w + 1, i + 1).filter(fnum);
     if (win.length < Math.ceil(f.w / 2) || wv.length < Math.ceil(f.w / 2) || mc <= 0) continue;
@@ -439,7 +453,7 @@ export function ema(xs: (number | null)[], span: number): (number | null)[] {
 }
 function momentum(f: Frame): Signal[] {
   const out: Signal[] = [];
-  const e = ema(f.p, TH.emaSpan);
+  const e = ema(f.p, tfp(f.tf).emaSpan);
   const h = Math.max(2, Math.floor(f.w / 2));
   for (let i = Math.max(f.w, 10); i < f.n; i++) {
     const hist = f.p.slice(0, i).filter(fnum); // the candles before this one: a spike does not raise its own yardstick
@@ -581,4 +595,15 @@ export function analyseSmartOi(res: SmartOiResult, opts: { strikeFlow?: (StrikeF
   const q = qualityOf(res);
   const composite = composeOf(readings, gradeOf(q, last, f.w, res.stalls.length > 0));
   return { day: res.day, timeframe: res.timeframe, candles: f.n, signals, readings, composite, quality: q, missing: { strikes: !hasStrikes, future: !hasFut } };
+}
+
+/** Signals that start on the same candle become one marker: the direction they share, or neutral when they disagree. */
+export function markerGroups(bursts: readonly Burst[]): { direction: Direction; lead: Burst; all: Burst[] }[] {
+  const by = new Map<number, Burst[]>();
+  for (const b of bursts) by.set(b.i, [...(by.get(b.i) ?? []), b]);
+  return [...by.values()].map((all) => {
+    const dirs = new Set(all.map((x) => x.direction).filter((d) => d !== "neutral"));
+    const direction: Direction = dirs.size === 1 ? [...dirs][0]! : "neutral";
+    return { direction, lead: all.find((x) => x.direction === direction) ?? all[0]!, all };
+  });
 }

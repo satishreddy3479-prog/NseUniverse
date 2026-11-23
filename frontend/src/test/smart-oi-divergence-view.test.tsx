@@ -1,8 +1,8 @@
 // The divergence panel: what it says for 3 and 5 minute candles, and that it stays quiet and honest otherwise.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SmartOiDivergence } from "../components/dashboard/SmartOiDivergence";
+import { SmartOiDivergence, useDivergence } from "../components/dashboard/SmartOiDivergence";
 import type { SmartOiCandle, SmartOiResult } from "../lib/optionTools";
 
 vi.mock("../components/EChart", () => ({
@@ -24,9 +24,13 @@ const res = (tf: number, n = 12): SmartOiResult => ({
 
 beforeEach(() => vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 404 }))));
 afterEach(() => vi.unstubAllGlobals());
+function Host({ r, tf }: { r: SmartOiResult | null; tf: number }) {
+  const d = useDivergence(r, tf, "2026-11-20T03:45:00Z", "2026-11-24", [25800], 25800);
+  return <SmartOiDivergence res={r} tf={tf} d={d} />;
+}
 const mount = (r: SmartOiResult | null, tf: number) => render(
   <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-    <SmartOiDivergence res={r} tf={tf} since="2026-11-20T03:45:00Z" expiry="2026-11-24" listed={[25800]} openAtm={25800} />
+    <Host r={r} tf={tf} />
   </QueryClientProvider>,
 );
 
@@ -42,7 +46,6 @@ describe("Smart OI divergence panel", () => {
     for (const id of ["flow", "conviction", "momentum"]) expect(within(panel).getByTestId(`div-${id}`)).toHaveAttribute("data-active", "false");
     expect(screen.getByTestId("div-composite")).toHaveTextContent("Mixed: 1 bullish and 0 bearish divergence active."); // one indicator is not a consensus
     expect(screen.getByTestId("div-grade")).toHaveTextContent("Evidence A");
-    expect(screen.getByRole("img", { name: "NIFTY close with the divergence signals marked" }).getAttribute("data-series")).toContain("NIFTY close:12");
     expect(within(panel).getByTestId("div-events").textContent).toContain("PCR divergence");
     const card = within(panel).getByTestId("div-scorecard"); // how the day's signals fared, with the one bullish signal counted
     expect(within(card).getByTestId("score-bullish")).toHaveTextContent(/Bullish divergences\s*1/);
@@ -55,9 +58,13 @@ describe("Smart OI divergence panel", () => {
     expect(screen.getByTestId("div-writing")).toHaveTextContent("No stored per-strike series.");
     expect(screen.getByTestId("div-future")).toHaveTextContent("No stored NIFTY future series.");
   });
-  it("is off on 1 and 15 minute candles, and waits for enough candles", () => {
-    mount(res(1), 1);
-    expect(screen.getByTestId("div-off")).toHaveTextContent("3 and 5 minute candles");
+  it("is off on 15 minute candles, runs on 1 minute ones, and waits for enough candles", () => {
+    mount(res(15), 15);
+    expect(screen.getByTestId("div-off")).toHaveTextContent("1, 3 and 5 minute candles");
+    cleanup();
+    mount(res(1, 40), 1);
+    expect(screen.getByTestId("divergence")).toHaveTextContent("1-minute candles");
+    cleanup();
     mount(res(5, 3), 5);
     expect(screen.getByTestId("div-wait")).toBeInTheDocument();
   });

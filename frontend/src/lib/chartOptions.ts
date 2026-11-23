@@ -2,6 +2,7 @@
 // what each chart shows. Missing values become gaps (null), never zero.
 import type { EChartsCoreOption } from "echarts/core";
 import type { SmartOiResult } from "./optionTools";
+import { INDICATOR_NAMES, markerGroups, type Burst, type Direction, type Signal } from "./smartOiDivergence";
 import { compactIN, isSessionMs, type Totals } from "./analytics";
 import { fmtDateTimeIST, fmtInt, fmtPrice, fmtTimeIST } from "./format";
 import type { FuturesSeries, IntradayScoreRow, Observation, OiChange, OiHeatmap, OiSeries, OptionChainRow, PremiumDecay } from "./types";
@@ -767,8 +768,40 @@ function volumeLines(k: SmartOiResult["candles"][number]): string {
     `<br/>Day so far: Put ${u(k.peVol)} · Call ${u(k.ceVol)}`;
 }
 
-export function smartOiOption(r: SmartOiResult, c: ChartColors): EChartsCoreOption {
+/** The lines of a tooltip for the signals that started on one candle. */
+function signalLines(all: readonly Burst[] | undefined): string {
+  if (!all || all.length === 0) return "";
+  return "<br/><b>Signals started here</b>" + all.map((s) => `<br/>${s.direction === "bullish" ? "▲" : s.direction === "bearish" ? "▼" : "●"} <b>${INDICATOR_NAMES[s.id]}</b>${s.count > 1 ? ` ×${s.count}` : ""}${s.state === "failed" ? " · failed" : ""}: ${s.text}`).join("");
+}
+/** The NIFTY close line with one marker per candle that started a signal (bullish under the line, bearish above it, neutral on it, hollow once a flow divergence failed) and a dashed line between the two swings of a flow divergence. Markers sit on the candles' own axis, so the panel lines up with the two above it. A signal on a candle with no index price (after the cash close) has nowhere to sit and is listed under the chart instead. */
+function signalSeries(r: SmartOiResult, c: ChartColors, closes: readonly (number | null)[], groups: ReturnType<typeof markerGroups>, signals: readonly Signal[]) {
+  const mark = (dir: Direction, symbol: string, color: string, dy: number, rotate = 0) => ({
+    name: dir, type: "scatter", xAxisIndex: 2, yAxisIndex: 2, symbol, symbolSize: 10, symbolOffset: [0, dy], symbolRotate: rotate, itemStyle: { color }, z: 5,
+    data: groups.filter((g) => g.direction === dir && closes[g.lead.i] != null).map((g) => ({ value: [g.lead.i, closes[g.lead.i]], itemStyle: g.lead.state === "failed" && g.all.length === 1 ? { color: "transparent", borderColor: color, borderWidth: 2 } : undefined })),
+  });
+  const links = signals.filter((s) => s.link && closes[s.i] != null).map((s) => {
+    const l = s.link!, line = r.candles.map((x) => (l.price === "high" ? x.spot?.high : x.spot?.low) ?? null);
+    return { name: "link", type: "line", xAxisIndex: 2, yAxisIndex: 2, showSymbol: false, silent: true, lineStyle: { color: s.direction === "bullish" ? c.up : c.down, type: "dashed", width: 1.5 }, tooltip: { show: false }, data: [[l.a, line[l.a] ?? null], [l.b, line[l.b] ?? null]] };
+  });
+  return [
+    { name: "NIFTY close", type: "line", xAxisIndex: 2, yAxisIndex: 2, showSymbol: false, data: closes.map((v, i) => [i, v]), lineStyle: { color: c.brass, width: 1.8 }, itemStyle: { color: c.brass }, connectNulls: false, z: 3 },
+    mark("bullish", "triangle", c.up, 9), mark("bearish", "triangle", c.down, -9, 180), mark("neutral", "circle", c.muted, 0),
+    ...links,
+  ];
+}
+
+/** The divergence signals drawn in the lower panel of the Smart OI chart, in place of the volume bars: what the indicators found (bursts) and the flow divergences' two swings (signals with a link). */
+export interface SignalsPanel { bursts: readonly Burst[]; signals: readonly Signal[] }
+
+export function smartOiOption(r: SmartOiResult, c: ChartColors, panel: SignalsPanel | null = null): EChartsCoreOption {
   const cs = r.candles;
+  const sg = panel != null;
+  // the panels' rows: price, Smart OI bars, then the volume bars or, when signals are shown, the NIFTY close with the divergence markers (taller: it carries a price scale)
+  const rows = sg ? { g: [["4%", "31%"], ["42%", "18%"], ["71%", "20%"]], t2: "38.5%", t3: "64%", legend: "66.5%" } : { g: [["4%", "34%"], ["45%", "22%"], ["76%", "15%"]], t2: "41%", t3: "69.5%", legend: "72.5%" };
+  const closes = cs.map((k) => k.spot?.close ?? null);
+  const groups = panel ? markerGroups(panel.bursts) : [];
+  const sigAt = new Map<number, Burst[]>();
+  for (const g of groups) sigAt.set(g.lead.i, g.all);
   const labels = cs.map((x) => x.label);
   const axis = (i: number, show: boolean) => ({
     type: "category", gridIndex: i, data: labels, boundaryGap: true, axisTick: { show: false },
@@ -794,28 +827,24 @@ export function smartOiOption(r: SmartOiResult, c: ChartColors): EChartsCoreOpti
             `ΔPut ${upTxt(k.dPe)} · ΔCall ${upTxt(k.dCe)}<br/><b>Smart OI ${upTxt(k.p)}</b> ${k.p >= 0 ? "(puts added faster)" : "(calls added faster)"}` +
             (k.span > 1 ? `<br/>spans ${k.span} candles: samples missing in between` : "") +
             (k.strikesChanged ? "<br/>⚠ the number of strikes behind the totals changed, so this bar is not like for like" : "")) +
-          volumeLines(k);
+          (sg ? signalLines(sigAt.get(i)) : volumeLines(k));
       },
     },
     // panel titles sit inside the top-left of each panel so the three charts read without a legend
     title: [
       { text: cs.length > 0 && cs.every((k) => k.spotFromBars || !k.spot) ? "NIFTY (1-minute bars from the live index feed)" : cs.some((k) => k.spotFromBars) ? "NIFTY (1-minute index bars where recorded, stored samples before)" : "NIFTY (from stored 1-min samples: no real highs and lows)", left: 66, top: "1%", textStyle: { color: c.muted, fontSize: 11, fontWeight: "normal" } },
-      { text: "Smart OI = ΔPut − ΔCall per candle", left: 66, top: "41%", textStyle: { color: c.muted, fontSize: 12, fontWeight: "normal" } },
-      { text: "Volume per candle: put (green) + call (red)", left: 66, top: "69.5%", textStyle: { color: c.muted, fontSize: 12, fontWeight: "normal" } },
+      { text: "Smart OI = ΔPut − ΔCall per candle", left: 66, top: rows.t2, textStyle: { color: c.muted, fontSize: 12, fontWeight: "normal" } },
+      { text: sg ? "Divergence signals on the NIFTY close (▲ bullish under the line, ▼ bearish above it, ● no direction)" : "Volume per candle: put (green) + call (red)", left: 66, top: rows.t3, textStyle: { color: c.muted, fontSize: 12, fontWeight: "normal" } },
     ],
-    grid: [
-      { left: 60, right: 12, top: "4%", height: "34%" },
-      { left: 60, right: 12, top: "45%", height: "22%" }, // the Smart OI bars are the point of the chart: the tallest panel after the price
-      { left: 60, right: 12, top: "76%", height: "15%" },
-    ],
+    grid: rows.g.map(([top, height]) => ({ left: 60, right: 12, top, height })), // the Smart OI bars are the point of the chart: the tallest panel after the price
     xAxis: [axis(0, false), axis(1, false), axis(2, true)],
     yAxis: [
       val(0, { axisLabel: { ...axisText(c), formatter: (v: number) => v.toLocaleString("en-IN") } }),
       val(1, { scale: false, axisLabel: { ...axisText(c), formatter: (v: number) => upTxt(v) } }),
-      val(2, { scale: false, splitNumber: 3, axisLabel: { ...axisText(c), formatter: (v: number) => compactIN(v) } }),
+      sg ? val(2, { axisLabel: { ...axisText(c), formatter: (v: number) => v.toLocaleString("en-IN") } }) : val(2, { scale: false, splitNumber: 3, axisLabel: { ...axisText(c), formatter: (v: number) => compactIN(v) } }),
     ],
     // a small legend for the volume panel only (the other two panels are named by their titles); it also switches puts or calls off to read one side
-    legend: { data: [{ name: "Put volume", itemStyle: { color: c.up } }, { name: "Call volume", itemStyle: { color: c.down } }], top: "72.5%", left: 62, itemWidth: 12, itemHeight: 8, itemGap: 12, textStyle: { color: c.paper, fontSize: 11 } },
+    legend: { data: sg ? ["NIFTY close", "bullish", "bearish", "neutral"] : [{ name: "Put volume", itemStyle: { color: c.up } }, { name: "Call volume", itemStyle: { color: c.down } }], top: rows.legend, left: 62, itemWidth: 12, itemHeight: 8, itemGap: 12, textStyle: { color: c.paper, fontSize: 11 } },
     dataZoom: [{ type: "inside", xAxisIndex: [0, 1, 2], filterMode: "none" }],
     series: [
       // a candle that is partly the future minus its basis (the closing session, when the index is not published) is outlined in grey, not filled: it is not the index
@@ -825,8 +854,10 @@ export function smartOiOption(r: SmartOiResult, c: ChartColors): EChartsCoreOpti
         ...candleSeries("Smart OI", 1, 1, cs.map((k) => (k.p == null ? null : { o: 0, c: k.p, l: Math.min(0, k.p), h: Math.max(0, k.p) })), c, false),
         markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: c.muted, width: 1 }, data: [{ yAxis: 0 }] },
       },
-      { name: "Put volume", type: "bar", stack: "v", xAxisIndex: 2, yAxisIndex: 2, data: cs.map((k) => k.peVolDelta), itemStyle: { color: c.up, opacity: 0.85 } },
-      { name: "Call volume", type: "bar", stack: "v", xAxisIndex: 2, yAxisIndex: 2, data: cs.map((k) => k.ceVolDelta), itemStyle: { color: c.down, opacity: 0.85 } },
+      ...(panel ? signalSeries(r, c, closes, groups, panel.signals) : [
+        { name: "Put volume", type: "bar", stack: "v", xAxisIndex: 2, yAxisIndex: 2, data: cs.map((k) => k.peVolDelta), itemStyle: { color: c.up, opacity: 0.85 } },
+        { name: "Call volume", type: "bar", stack: "v", xAxisIndex: 2, yAxisIndex: 2, data: cs.map((k) => k.ceVolDelta), itemStyle: { color: c.down, opacity: 0.85 } },
+      ]),
     ],
   };
 }
