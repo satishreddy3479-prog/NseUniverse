@@ -42,15 +42,15 @@ describe("MTM tab", () => {
     const chart = await screen.findByRole("img", { name: "Strategy mark-to-market through time" });
     const pts = JSON.parse(chart.getAttribute("data-points")!) as [number, number][];
     // the stored samples, with one point at exactly zero added where the line crosses it between -1950 and +845 (at 1950 / 2795 of the way)
-    expect(pts.map((p) => p[1])).toEqual([0, -650, -1950, 0, 845, 900]); // the last point is the live value
-    expect(pts[3]![0]).toBeCloseTo(pts[2]![0] + (1950 / 2795) * (pts[4]![0] - pts[2]![0]), 3);
+    expect(pts.map((p) => p[1])).toEqual([0, 0, -650, -1950, 0, 845, 900]); // from the first entry (09:20); the last point is the live value
+    expect(pts[4]![0]).toBeCloseTo(pts[3]![0] + (1950 / 2795) * (pts[5]![0] - pts[3]![0]), 3);
     const opt = JSON.parse(chart.getAttribute("data-series") ?? "[]") as string[];
     expect(opt).toEqual(["above zero", "below zero", "line above zero", "line below zero", "MTM"]); // green and red areas, the line in two colours, the tooltip series
     const box = within(await screen.findByTestId("mtm"));
     expect(box.getByText("Live MTM").nextElementSibling).toHaveTextContent("+₹900");
     expect(box.getByText("Max high").nextElementSibling).toHaveTextContent("+₹900"); // the live tick is the highest
     expect(box.getByText("Max low").nextElementSibling).toHaveTextContent("−₹1,950 · 09:23");
-    expect(box.getByText("Drawdown").nextElementSibling).toHaveTextContent(/−₹1,950 · 09:21:\d\d→09:23:\d\d/);
+    expect(box.getByText("Drawdown").nextElementSibling).toHaveTextContent(/−₹1,950 · 09:20:\d\d→09:23:\d\d/);
     expect(screen.getByTestId("mtm-note")).toHaveTextContent("The future is priced from its own live quote");
   });
 

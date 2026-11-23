@@ -1,5 +1,5 @@
 /**
- * Mark-to-market (MTM) of a built strategy through time: its P&L at every stored one-minute sample, from the moment the last leg was entered.
+ * Mark-to-market (MTM) of a built strategy through time: its P&L at every stored one-minute sample, from the moment the first leg was entered; a leg counts from its own entry (a leg added later adds to the line from then on, not before).
  *
  * Per leg and instant t:
  *   - before the leg was entered: not part of the strategy yet; the strategy has no MTM until every ticked leg is in (a partial book would mislead);
@@ -97,12 +97,12 @@ export function buildMtm(legsIn: readonly Leg[], lotSize: number, byExpiry: Reco
   const entered = legs.map((l) => (l.enteredAt ? Date.parse(l.enteredAt) : NaN));
   const untimed = entered.filter((x) => Number.isNaN(x)).length;
   if (untimed > 0) return empty(`${untimed} leg${untimed === 1 ? " has" : "s have"} no recorded entry time (built before the time was kept): the mark-to-market cannot say when the position began. Enter the leg again to start it.`, { untimed });
-  const from = Math.max(...entered);
+  const from = Math.min(...entered);
   // the sample grid: the option series of the first leg that has one, else the future's
   const firstOpt = legs.find((l) => !isFuture(l) && byExpiry[l.expiry]);
   const gridSrc = firstOpt ? byExpiry[firstOpt.expiry]!.times : fut?.times ?? [];
   const grid = gridSrc.map((x) => Date.parse(x)).filter((x) => Number.isFinite(x) && x >= from);
-  if (grid.length === 0) return empty("No stored sample since the last leg was entered yet. The sampler stores one a minute in market hours.", { from });
+  if (grid.length === 0) return empty("No stored sample since the first leg was entered yet. The sampler stores one a minute in market hours.", { from });
   const tol = opts.tolMs ?? 90_000;
   const px = legs.map((l) => legPrices(l, grid, byExpiry, fut, tol));
   const t: number[] = [], pnl: (number | null)[] = [];
@@ -111,6 +111,7 @@ export function buildMtm(legsIn: readonly Leg[], lotSize: number, byExpiry: Reco
     let total = 0, ok = true;
     for (let k = 0; k < legs.length; k++) {
       const l = legs[k]!;
+      if (grid[i]! < entered[k]!) continue; // not in the market yet: it adds nothing before its own entry
       const exitedAt = isExited(l) && l.exitedAt ? Date.parse(l.exitedAt) : null;
       if (isExited(l) && (exitedAt == null || grid[i]! >= exitedAt)) { total += l.realised ?? 0; continue; } // out: what it booked
       const p = px[k]![i];

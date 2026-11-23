@@ -20,20 +20,21 @@ const FUT = [25800, 25800, 25790, 25770, 25810];
 const legs = [leg({ id: "ce", enteredAt: at("03:50") }), leg({ id: "pe", type: "PE", premium: 90, enteredAt: at("03:51") }), leg({ id: "f", type: "FUT", strike: 0, action: "BUY", premium: 25800, enteredAt: at("03:51") })];
 
 describe("strategy mark-to-market", () => {
-  it("short straddle + long future: starts when the last leg is in, and every value is the hand sum", () => {
+  it("short straddle + long future: starts at the first entry, each leg counts from its own entry, and every value is the hand sum", () => {
     const m = buildMtm(legs, LOT, { [EXP]: ss(CE, PE) }, fs(FUT));
     expect(m.reason).toBeNull();
-    expect(m.from).toBe(Date.parse(at("03:51")));
-    expect(m.t).toHaveLength(4); // 09:20 is before the last leg was entered
+    expect(m.from).toBe(Date.parse(at("03:50")));
+    expect(m.t).toHaveLength(5);
+    // 09:20 only the call is in (entered 09:20), at its entry price: 0
     // 09:21 all at entry: 0
     // 09:22 CE -(105-100)*65 = -325, PE -(85-90)*65 = +325, FUT (25790-25800)*65 = -650  => -650
     // 09:23 CE -650, PE +650, FUT -30*65 = -1950                                         => -1950
     // 09:24 CE +325 (95), PE -(92-90)*65 = -130, FUT +10*65 = +650                       => +845
-    expect(m.pnl).toEqual([0, -650, -1950, 845]);
+    expect(m.pnl).toEqual([0, 0, -650, -1950, 845]);
     expect(m.now).toBe(845);
     expect(m.peak).toEqual({ pnl: 845, t: Date.parse(at("03:54")) });
     expect(m.trough).toEqual({ pnl: -1950, t: Date.parse(at("03:53")) });
-    expect(m.drawdown).toEqual({ amount: 1950, from: Date.parse(at("03:51")), to: Date.parse(at("03:53")) }); // from the high of 0 to the low of -1950
+    expect(m.drawdown).toEqual({ amount: 1950, from: Date.parse(at("03:50")), to: Date.parse(at("03:53")) }); // from the high of 0 to the low of -1950
   });
 
   it("a leg that has exited keeps what it booked: the call stopped at 110 (-650) is a constant afterwards", () => {
@@ -41,12 +42,12 @@ describe("strategy mark-to-market", () => {
     const m = buildMtm(out, LOT, { [EXP]: ss(CE, PE) }, fs(FUT));
     // the call exits at 09:22: from then on it is -650 flat. 09:21 is before the exit (0); 09:22: -650 + 325 - 650 = -975
     // 09:23: -650 + 650 - 1950 = -1950 ; 09:24: -650 - 130 + 650 = -130
-    expect(m.pnl).toEqual([0, -975, -1950, -130]);
+    expect(m.pnl).toEqual([0, 0, -975, -1950, -130]);
   });
 
   it("a price that was not stored leaves a gap, counted, never zero or carried forward", () => {
     const m = buildMtm(legs, LOT, { [EXP]: ss(CE, [90, 90, null, 80, 92]) }, fs(FUT));
-    expect(m.pnl).toEqual([0, null, -1950, 845]);
+    expect(m.pnl).toEqual([0, 0, null, -1950, 845]);
     expect(m.missing).toBe(1);
   });
 

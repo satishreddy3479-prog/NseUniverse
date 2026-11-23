@@ -5,15 +5,16 @@ import { api } from "../lib/api";
 import { fmtInt } from "../lib/format";
 import { isFuture, legName, type Leg } from "../lib/strategy";
 import { appendTick, buildMtm, joinLive, mtmStats, splitAtZero, type Mtm } from "../lib/strategyMtm";
+import { liveMtmKey, mtmSince } from "../lib/closedMtm";
 import type { ChartColors } from "../lib/chartOptions";
 import { EChart, useChartColors } from "./EChart";
 import { Loading } from "./Loading";
 
-const money = (v: number | null | undefined, signed = true) => (v == null ? "—" : `${v < 0 ? "−" : v > 0 && signed ? "+" : ""}₹${fmtInt(Math.round(Math.abs(v)))}`);
-const tone = (v: number | null | undefined) => (v == null ? "text-muted" : v > 0 ? "text-up" : v < 0 ? "text-down" : "");
-const hhmmss = (ms: number) => new Date(ms + 330 * 60_000).toISOString().slice(11, 19);
+export const money = (v: number | null | undefined, signed = true) => (v == null ? "—" : `${v < 0 ? "−" : v > 0 && signed ? "+" : ""}₹${fmtInt(Math.round(Math.abs(v)))}`);
+export const tone = (v: number | null | undefined) => (v == null ? "text-muted" : v > 0 ? "text-up" : v < 0 ? "text-down" : "");
+export const hhmmss = (ms: number) => new Date(ms + 330 * 60_000).toISOString().slice(11, 19);
 const hhmm = (ms: number) => new Date(ms + 330 * 60_000).toISOString().slice(11, 16);
-const dayHhmm = (ms: number) => `${new Date(ms + 330 * 60_000).toISOString().slice(5, 10).split("-").reverse().join("/")} ${hhmm(ms)}`;
+export const dayHhmm = (ms: number) => `${new Date(ms + 330 * 60_000).toISOString().slice(5, 10).split("-").reverse().join("/")} ${hhmm(ms)}`;
 
 /**
  * Mark-to-market of the strategy through time: its P&L (booked + open, futures included) live, tick by tick. The line starts from the stored one-minute
@@ -25,10 +26,7 @@ export function StrategyMtm({ legs, historyExpiries, lotSize, liveNow }: { legs:
   const on = useMemo(() => legs.filter((l) => l.enabled !== false), [legs]);
   const optionExps = useMemo(() => [...new Set(on.filter((l) => !isFuture(l)).map((l) => l.expiry))].sort(), [on]);
   const noHistory = optionExps.filter((e) => !historyExpiries.includes(e));
-  const since = useMemo(() => {
-    const ts = on.map((l) => (l.enteredAt ? Date.parse(l.enteredAt) : NaN)).filter((x) => Number.isFinite(x));
-    return ts.length ? new Date(Math.min(...ts) - 60_000).toISOString() : null; // from the first entry; the strategy itself starts at the last one
-  }, [on]);
+  const since = useMemo(() => mtmSince(on), [on]); // from the first entry
   const strikesOf = (e: string) => [...new Set(on.filter((l) => !isFuture(l) && l.expiry === e).map((l) => l.strike))].sort((a, b) => a - b).join(",");
   const queries = useQueries({
     queries: optionExps.map((e) => ({
@@ -44,7 +42,7 @@ export function StrategyMtm({ legs, historyExpiries, lotSize, liveNow }: { legs:
   const failed = (queries.find((q) => q.error)?.error ?? fut.error) as Error | null | undefined;
   const byExpiry = useMemo(() => Object.fromEntries(optionExps.map((e, i) => [e, queries[i]?.data])), [optionExps, queries.map((q) => q.dataUpdatedAt).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
   const mtm: Mtm | null = useMemo(() => (lotSize && !pending ? buildMtm(on, lotSize, byExpiry, fut.data) : null), [on, lotSize, pending, byExpiry, fut.data]);
-  const liveKey = `nse.mtm.live.${since ?? "none"}.${on.map((l) => `${l.id}:${l.exitPrice ?? ""}`).join(",")}`;
+  const liveKey = liveMtmKey(on); // by first entry and leg ids, so exits do not change it and the closing page finds the same ticks
   const readLive = (): { t: number; v: number }[] => { try { const v = JSON.parse(sessionStorage.getItem(liveKey) ?? "[]") as unknown; return Array.isArray(v) ? (v as { t: number; v: number }[]) : []; } catch { return []; } };
   const [live, setLive] = useState<{ t: number; v: number }[]>(readLive);
   useEffect(() => { setLive(readLive()); }, [liveKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -77,7 +75,7 @@ export function StrategyMtm({ legs, historyExpiries, lotSize, liveNow }: { legs:
       </dl>
       <div className="h-[340px]"><EChart ariaLabel="Strategy mark-to-market through time" option={option as EChartsCoreOption} /></div>
       <p className="mt-2 text-xs text-muted" data-testid="mtm-note">
-        P&amp;L of the whole strategy (booked + open, before costs), live: every change of the value seen on this page is a point, after the stored one-minute samples from {dayHhmm(shown.from as number)} IST when the last leg was entered. The high, the low and the drawdown are read from this same line. An exited leg stays at what it booked.
+        P&amp;L of the whole strategy (booked + open, before costs), live: every change of the value seen on this page is a point, after the stored one-minute samples from {dayHhmm(shown.from as number)} IST when the first leg was entered; a leg added later counts from its own entry. The high, the low and the drawdown are read from this same line. An exited leg stays at what it booked.
         {mtm.missing > 0 ? ` ${mtm.missing} stored minute${mtm.missing === 1 ? "" : "s"} had no price for some leg and are left as gaps.` : ""}
         {on.some(isFuture) ? " The future is priced from its own live quote." : ""} The stored part can differ slightly from the live part where the last traded price moved between samples.
       </p>
@@ -85,7 +83,7 @@ export function StrategyMtm({ legs, historyExpiries, lotSize, liveNow }: { legs:
   );
 }
 
-function buildOption(m: Mtm, legs: Leg[], c: ChartColors): EChartsCoreOption {
+export function buildOption(m: Mtm, legs: Leg[], c: ChartColors): EChartsCoreOption {
   const z = splitAtZero(m.t, m.pnl);
   const hidden = { lineStyle: { width: 0, opacity: 0 }, showSymbol: false, silent: true, tooltip: { show: false } };
   const events: { xAxis: number; name: string; lineStyle: { color: string; type: string; width: number }; label: { formatter: string; color: string; fontSize: number; position: string } }[] = [];

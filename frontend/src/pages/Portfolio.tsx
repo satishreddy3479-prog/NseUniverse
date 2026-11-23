@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChartInfoToggle } from "../components/ChartInfoToggle";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
 import { mergeRows, type LiveMode } from "../components/ChainTable";
 import { useThrottledVersion } from "../components/dashboard/DashContext";
 import { EChart, useChartColors } from "../components/EChart";
+import { ClosedMtm } from "../components/ClosedMtm";
 import { Info } from "../components/Info";
 import { Panel } from "../components/ui";
 import { api } from "../lib/api";
+import type { StoredMtm } from "../lib/closedMtm";
 import { futurePrice, useFutureContracts } from "../lib/futures";
 import { fmtDateTimeIST, fmtInt } from "../lib/format";
 import { portfolioStats, type PortfolioStats } from "../lib/portfolioStats";
@@ -81,6 +83,14 @@ export function Portfolio() {
     try { await Promise.all(ids.map((id) => api.deleteStrategy("closed", id))); } catch (e) { setDeleteProblem(e instanceof Error ? e.message : "the server did not accept the delete"); }
     await server.refetch();
   };
+  const qc = useQueryClient();
+  const [mtmOpen, setMtmOpen] = useState<string | null>(null);
+  /** The graph was built from the stored history for a record that did not have one: save it with the record, on the server and in this browser. */
+  const saveMtm = (c: Closed, mtm: StoredMtm) => {
+    const rec = { ...c, mtm };
+    void api.putStrategy("closed", c.id, rec).then(() => qc.invalidateQueries({ queryKey: ["portfolio-strategies"] })).catch(() => { /* kept in this browser; the builder saves it again */ });
+    try { localStorage.setItem(CLOSED_KEY, JSON.stringify(readLocal<Closed>(CLOSED_KEY).map((x) => (x.id === c.id ? rec : x)))); } catch { /* storage unavailable */ }
+  };
   const openClosed = (id: string) => { try { sessionStorage.setItem(OPEN_CLOSED_KEY, id); } catch { /* the builder opens without it */ } navigate("/strategy"); };
   const [capital, setCapital] = useState<number | null>(() => { try { const v = Number(localStorage.getItem("nse.portfolio.capital.v1")); return v > 0 ? v : null; } catch { return null; } });
   const stats = useMemo(() => portfolioStats(closed.map((c) => ({ id: c.id, name: c.name, closedAt: c.closedAt, pnl: c.pnl })), capital), [closed, capital]);
@@ -147,11 +157,13 @@ export function Portfolio() {
               <thead className="text-xs text-muted"><tr>{["Strategy", "Closed", "Legs", "Realised P&L", "Cumulative"].map((h) => <th key={h} className="px-2 py-1 text-left font-normal first:pl-0">{h}</th>)}</tr></thead>
               <tbody>
                 {closed.map((c) => (
-                  <tr key={c.id} className="border-t border-rule/50">
+                  <Fragment key={c.id}>
+                  <tr className="border-t border-rule/50">
                     <td className="py-2 pr-2 text-paper">
                       {c.name}
                       <div className="mt-1 flex gap-2">
                         <button type="button" className="min-h-9 rounded-sm border border-rule bg-slate-2 px-3 text-xs text-paper hover:border-info" aria-label={`Open closed trade ${c.name} in the strategy builder`} onClick={() => openClosed(c.id)}>Open</button>
+                        <button type="button" aria-pressed={mtmOpen === c.id} data-testid={`mtm-btn-${c.id}`} className={`min-h-9 rounded-sm border px-3 text-xs hover:border-info ${mtmOpen === c.id ? "border-info bg-info/15 text-info" : "border-rule bg-slate-2 text-paper"}`} aria-label={`MTM graph of ${c.name}`} onClick={() => setMtmOpen(mtmOpen === c.id ? null : c.id)}>MTM graph</button>
                         <button type="button" className="min-h-9 rounded-sm border border-rule bg-slate-2 px-3 text-xs text-down hover:border-down" aria-label={`Delete closed trade ${c.name}`} onClick={() => { if (window.confirm(`Delete the closed trade "${c.name}"? This cannot be undone.`)) void deleteClosed([c.id]); }}>Delete</button>
                       </div>
                     </td>
@@ -160,6 +172,8 @@ export function Portfolio() {
                     <td className={`num px-2 font-semibold ${tone(c.pnl)}`}>{money(c.pnl)}{c.stale && <span className="ml-2 text-xs font-normal text-warn" title="Exit prices were stored prices, not live">stale prices</span>}</td>
                     <td className={`num px-2 ${tone(cumulative.get(c.closedAt + c.name) ?? null)}`}>{money(cumulative.get(c.closedAt + c.name) ?? null)}</td>
                   </tr>
+                  {mtmOpen === c.id && <tr><td colSpan={5} className="border-t border-rule/50 bg-slate-2/40"><ClosedMtm c={c} onSaved={(m) => saveMtm(c, m)} /></td></tr>}
+                  </Fragment>
                 ))}
                 <tr className="border-t border-rule"><td colSpan={3} className="py-2 text-right text-xs text-muted">Total</td><td className={`num px-2 font-semibold ${tone(closedTotal)}`}>{money(closedTotal)}</td><td /></tr>
               </tbody>

@@ -3,6 +3,7 @@ import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StrategyTimeChart } from "../components/StrategyTimeChart";
 import { StrategyMtm } from "../components/StrategyMtm";
+import { buildClosedMtm, readLiveTicks, toStored, type StoredMtm } from "../lib/closedMtm";
 import { liveKey, mergeRows, type LiveMode } from "../components/ChainTable";
 import { useThrottledVersion } from "../components/dashboard/DashContext";
 import { useLiveSpot, useStreamStatus } from "../lib/useLive";
@@ -46,7 +47,7 @@ function readTemp(flag: string | null): TempDoc | null {
   } catch { return null; }
 }
 export interface ClosedLeg extends Leg { exit: number }
-export interface Closed { id: string; name: string; closedAt: string; snapshotAt: string; expiry: string; lotSize: number; pnl: number; legs: ClosedLeg[]; /** the stored chain was stale when the exit prices were read */ stale?: boolean }
+export interface Closed { /** the mark-to-market graph kept with the record (live ticks at closing, completed from the stored history) */ mtm?: StoredMtm; id: string; name: string; closedAt: string; snapshotAt: string; expiry: string; lotSize: number; pnl: number; legs: ClosedLeg[]; /** the stored chain was stale when the exit prices were read */ stale?: boolean }
 /** Two lists of legs are the same trade when every enabled leg has the same side, type, strike, expiry, entry premium and exit price. */
 export const sameTrade = (a: Leg[], b: Leg[]): boolean => {
   const sig = (ls: Leg[]) => ls.filter((l) => l.enabled !== false).map((l) => JSON.stringify([l.action, l.type, l.strike, l.expiry, l.premium, l.exitPrice ?? (l as { exit?: number }).exit ?? null])).sort().join("|");
@@ -818,7 +819,9 @@ export default function StrategyBuilder() {
     const lastExit = allOut ? active.map((l) => l.exitedAt ?? "").filter(Boolean).sort().at(-1) : undefined;
     const at = lastExit ? new Date(lastExit) : new Date();
     const closedName = name.trim() || loaded || opened?.name;
-    persistClosed([{ id: opened?.id ?? newLegId(), name: closedName || `Strategy ${at.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`, closedAt: at.toISOString(), snapshotAt: lastExit ?? snap.retrieved_at, expiry: strategyExpiry ?? expiry, lotSize, pnl, legs: out, stale: allOut ? false : !!chain.data?.stale }, ...closed.filter((x) => x.id !== opened?.id && !(sameEntries(x.legs, out) && Math.abs(new Date(x.closedAt).getTime() - at.getTime()) < DUPLICATE_WINDOW_MS))]); // a second Exit all on the same position replaces the first record instead of adding a copy
+    const ticks = readLiveTicks(active); // the graph this page drew live is kept with the record; the stored history completes it (see below)
+    const liveMtm = ticks.length > 0 ? toStored(ticks, false, "live") : undefined;
+    persistClosed([{ id: opened?.id ?? newLegId(), name: closedName || `Strategy ${at.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`, closedAt: at.toISOString(), snapshotAt: lastExit ?? snap.retrieved_at, expiry: strategyExpiry ?? expiry, lotSize, pnl, legs: out, stale: allOut ? false : !!chain.data?.stale, ...(liveMtm ?? opened?.mtm ? { mtm: (liveMtm ?? opened?.mtm) as StoredMtm } : {}) }, ...closed.filter((x) => x.id !== opened?.id && !(sameEntries(x.legs, out) && Math.abs(new Date(x.closedAt).getTime() - at.getTime()) < DUPLICATE_WINDOW_MS))]); // a second Exit all on the same position replaces the first record instead of adding a copy
     if (loaded) persist(saved.filter((x) => x.name !== loaded)); // the strategy moves from Saved to Closed, it is not copied
     setLegs([]); setRearmAt(new Date().toISOString()); setHoldFrom(null); setNote(null); setSel(null); setMult(1); setDays(0); setName(""); setOpened(null); setLoaded(null);
   };
@@ -849,6 +852,19 @@ export default function StrategyBuilder() {
     persist(saved.filter((s) => !done.some((d) => d.name === s.name)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, lotSize, sync, saved, legs, loaded, opened, snap]);
+  const closedRef = useRef(closed);
+  closedRef.current = closed;
+  const mtmTried = useRef(new Set<string>());
+  useEffect(() => {
+    // A closed strategy keeps its mark-to-market graph: one without it (closed before this, or with only the live ticks) is built once from the stored one-minute history up to its close and saved with it.
+    if (!hydrated || sync !== "server" || temp) return;
+    const todo = closed.filter((c) => !c.mtm?.complete && !mtmTried.current.has(c.id) && Date.now() - Date.parse(c.closedAt) < 35 * 86_400_000 && c.legs.some((l) => l.enteredAt));
+    for (const c of todo.slice(0, 2)) {
+      mtmTried.current.add(c.id);
+      void buildClosedMtm(c).then((r) => { if (r.mtm?.complete) persistClosed(closedRef.current.map((x) => (x.id === c.id ? { ...x, mtm: r.mtm as StoredMtm } : x))); });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, sync, closed, temp]);
   const openClosed = (c: Closed) => { setPicked(c.expiry); loadLegs(c.legs.map(({ exit: _e, ...l }) => ({ ...l, id: newLegId() }))); setMult(1); setNote(null); setOpened(c); setLoaded(null); };
   const persist = (s: Saved[]) => { pushDiff("saved", saved, s, (x) => x.name); setSaved(s); try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch { /* storage unavailable: kept for this visit only */ } };
   const net = (k: number, t: OptionType) => legs.filter((l) => l.expiry === expiry && l.strike === k && l.type === t).reduce((s, l) => s + sign(l.action) * l.lots, 0);

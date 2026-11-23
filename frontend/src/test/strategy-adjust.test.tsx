@@ -4,8 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
-import { TEMPLATE_BIAS, TEMPLATES } from "../lib/strategy";
-import { OPEN_CLOSED_KEY } from "../pages/StrategyBuilder";
+import { liveMtmKey } from "../lib/closedMtm";
+import { TEMPLATE_BIAS, TEMPLATES, type Leg } from "../lib/strategy";
+import { OPEN_CLOSED_KEY, WORKING_KEY } from "../pages/StrategyBuilder";
 import { bigChain, expiries, status, summary } from "./fixtures";
 
 vi.mock("../components/EChart", async () => {
@@ -68,6 +69,19 @@ describe("Exit all", () => {
     expect((store.closed[0] as { name: string }).name).toBe("my straddle");
   });
 
+  it("keeps the live graph the page drew with the closed record (the ticks seen while the strategy ran)", async () => {
+    mount();
+    await build("short_straddle");
+    const work = JSON.parse(localStorage.getItem(WORKING_KEY) ?? "{}") as { legs: Leg[] };
+    sessionStorage.setItem(liveMtmKey(work.legs.filter((l) => l.enabled !== false)), JSON.stringify([{ t: 1000, v: 0 }, { t: 2000, v: 450 }, { t: 3000, v: -120 }]));
+    await userEvent.click(screen.getByRole("button", { name: "Exit all" }));
+    await waitFor(() => expect(store.closed).toHaveLength(1));
+    const mtm = (store.closed[0] as { mtm?: { pnl: number[]; complete: boolean; source: string } }).mtm;
+    expect(mtm?.pnl).toEqual([0, 450, -120]);
+    expect(mtm?.source).toBe("live");
+    expect(mtm?.complete).toBe(false); // the stored history completes it afterwards (there is none in this test server)
+  });
+
   it("closing a strategy that was reopened from Closed replaces that record, never adds a second one", async () => {
     mount();
     await build("short_straddle");
@@ -127,6 +141,27 @@ describe("Strategy portfolio: closed strategies", () => {
     await waitFor(() => expect(store.closed.map((c) => c.id)).toEqual(["c2"]));
     expect(JSON.parse(localStorage.getItem("nse.closed.v1") ?? "[]").map((c: { id: string }) => c.id)).toEqual(["c2"]); // not left in the browser copy, or the builder would upload it again
     await waitFor(() => expect(screen.getByTestId("portfolio-closed")).not.toHaveTextContent("first"));
+  });
+
+  it("every closed strategy has an MTM graph button that opens the graph saved with the record, and closes it again", async () => {
+    const mtm = { t: [Date.parse("2026-10-30T04:00:00Z"), Date.parse("2026-10-30T04:10:00Z"), Date.parse("2026-10-30T04:20:00Z")], pnl: [0, 300, -200], complete: true, source: "stored", savedAt: "2026-10-30T10:00:00Z" };
+    store.closed = [{ ...closedDoc("c1", "first", 2250), mtm }];
+    mount("/portfolio");
+    const btn = await screen.findByRole("button", { name: "MTM graph of first" });
+    expect(screen.queryByTestId("closed-mtm")).toBeNull();
+    await userEvent.click(btn);
+    const box = await screen.findByTestId("closed-mtm");
+    expect(box).toHaveTextContent("Max high+₹300");
+    expect(box).toHaveTextContent("At the close−₹200");
+    await userEvent.click(btn);
+    expect(screen.queryByTestId("closed-mtm")).toBeNull();
+  });
+
+  it("a record closed before the graph was kept is built from the stored history when asked, and says so when there is none", async () => {
+    store.closed = [closedDoc("c1", "first", 2250)];
+    mount("/portfolio");
+    await userEvent.click(await screen.findByRole("button", { name: "MTM graph of first" }));
+    expect(await screen.findByTestId("closed-mtm-reason")).toBeInTheDocument(); // the test server has no stored prices for it
   });
 
   it("Delete all closed asks twice", async () => {
