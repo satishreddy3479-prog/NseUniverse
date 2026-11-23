@@ -12,6 +12,9 @@ import { api } from "../lib/api";
 import type { StoredMtm } from "../lib/closedMtm";
 import { futurePrice, useFutureContracts } from "../lib/futures";
 import { fmtDateTimeIST, fmtInt } from "../lib/format";
+import { LayoutBar } from "../components/LayoutBar";
+import { availablePeriods, filterClosed, monthName, normalizePeriod, periodLabel, type Period } from "../lib/portfolioPeriod";
+import { useViewLayout } from "../lib/viewLayout";
 import { portfolioStats, type PortfolioStats } from "../lib/portfolioStats";
 import { EQUITY_HEIGHT, portfolioEquityOption } from "../lib/portfolioCharts";
 import { isExited, strategyPnl, type Leg, type OptionType } from "../lib/strategy";
@@ -34,7 +37,15 @@ export function Portfolio() {
   // the server's list when it answers, otherwise this browser's copy (the builder keeps both in step)
   const saved = (server.data?.saved as unknown as Saved[] | undefined) ?? readLocal<Saved>(SAVE_KEY);
   const closedRaw = (server.data?.closed as unknown as Closed[] | undefined) ?? readLocal<Closed>(CLOSED_KEY);
-  const closed = useMemo(() => sortClosed(closedRaw), [closedRaw]); // newest closed first, whatever order the server lists them in
+  const closedAll = useMemo(() => sortClosed(closedRaw), [closedRaw]); // newest closed first, whatever order the server lists them in
+  // the period filter (overall, a year or a month by the IST date of closing) drives the closed tiles, the performance figures, the curve and the list; running strategies are not a period and stay as they are
+  const L = useViewLayout("portfolio");
+  const [pMode, setPMode] = L.use<string>("period", "overall");
+  const [pYear, setPYear] = L.use<string>("year", "");
+  const [pMonth, setPMonth] = L.use<string>("month", "");
+  const avail = useMemo(() => availablePeriods(closedAll), [closedAll]);
+  const period: Period = useMemo(() => normalizePeriod({ mode: pMode === "year" || pMode === "month" ? pMode : "overall", year: pYear ? Number(pYear) : null, month: pMonth ? Number(pMonth) : null }, closedAll), [pMode, pYear, pMonth, closedAll]);
+  const closed = useMemo(() => filterClosed(closedAll, period), [closedAll, period]);
   const working = readWorking();
   const draft = working && working.expiry && working.legs.some((l) => !isExited(l)) && !working.loaded ? working : null;
 
@@ -108,16 +119,25 @@ export function Portfolio() {
 
   return (
     <div className="mx-auto flex max-w-[1200px] flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2"><h1 className="text-xl font-semibold">Strategy portfolio</h1><ChartInfoToggle /></div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><h1 className="text-xl font-semibold">Strategy portfolio</h1>
+        <div className="flex flex-wrap items-center gap-2" data-testid="portfolio-period">
+          <label className="flex items-center gap-1 text-xs text-muted">Period
+            <select aria-label="Period" value={period.mode} onChange={(e) => { const m = e.target.value; const y = period.year ?? avail.years[0] ?? null; setPMode(m); if (m !== "overall" && y != null) { setPYear(String(y)); if (m === "month") setPMonth(String((avail.months[y] ?? [])[0] ?? "")); } }} className="min-h-8 rounded-sm border border-rule bg-slate-2 px-1 text-paper">
+              <option value="overall">Overall</option><option value="year" disabled={avail.years.length === 0}>Year</option><option value="month" disabled={avail.years.length === 0}>Month</option>
+            </select></label>
+          {period.mode !== "overall" && <select aria-label="Year" value={period.year ?? ""} onChange={(e) => { setPYear(e.target.value); setPMonth(String((avail.months[Number(e.target.value)] ?? [])[0] ?? "")); }} className="min-h-8 rounded-sm border border-rule bg-slate-2 px-1 text-xs text-paper">{avail.years.map((y) => <option key={y} value={y}>{y}</option>)}</select>}
+          {period.mode === "month" && period.year != null && <select aria-label="Month" value={period.month ?? ""} onChange={(e) => setPMonth(e.target.value)} className="min-h-8 rounded-sm border border-rule bg-slate-2 px-1 text-xs text-paper">{(avail.months[period.year] ?? []).map((m) => <option key={m} value={m}>{monthName(m)}</option>)}</select>}
+          <LayoutBar layout={L} /><ChartInfoToggle />
+        </div></div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid="portfolio-tiles">
         <Tile label="Running strategies (live)" value={money(knownTotals.length ? runningTotal : null)} cls={tone(knownTotals.length ? runningTotal : null)}
           sub={`${rows.length} running${rows.length > knownTotals.length ? ` · ${rows.length - knownTotals.length} without a price` : ""}`} />
-        <Tile label="Closed strategies" value={money(closedTotal)} cls={tone(closedTotal)} sub={`${closed.length} closed`} />
-        <Tile label="Total P&L" value={money(knownTotals.length || closed.length ? runningTotal + closedTotal : null)} cls={tone(runningTotal + closedTotal)} sub="running + closed" />
+        <Tile label="Closed strategies" value={money(closedTotal)} cls={tone(closedTotal)} sub={`${closed.length} closed${period.mode === "overall" ? "" : ` in ${periodLabel(period)}`}`} />
+        <Tile label="Total P&L" value={money(knownTotals.length || closed.length ? runningTotal + closedTotal : null)} cls={tone(runningTotal + closedTotal)} sub={period.mode === "overall" ? "running + closed" : `running (now) + closed in ${periodLabel(period)}`} />
         <Tile label="Booked in running" value={money(rows.reduce((t, r) => t + r.booked, 0))} cls={tone(rows.reduce((t, r) => t + r.booked, 0))} sub="exits, stops, targets, rolls" />
       </div>
 
-      <Panel title="Running strategies">
+      <Panel title="Running strategies (all, not filtered by period)">
         {rows.length === 0 ? <p className="text-sm text-muted">No running strategy. Build one in the Strategy builder and save it; it appears here with its live profit or loss.</p> : (
           <div className="overflow-x-auto" data-testid="portfolio-running">
             <table className="w-full text-sm" aria-label="Running strategies">
@@ -148,11 +168,11 @@ export function Portfolio() {
           <input aria-label="Capital for percentage figures" inputMode="numeric" className="num w-28 rounded-sm border border-rule bg-slate-2 px-2 py-1 text-right text-paper"
             placeholder="optional" defaultValue={capital ?? ""} onBlur={(e) => { const v = Number(e.target.value.replace(/,/g, "")); const next = v > 0 ? v : null; setCapital(next); try { next ? localStorage.setItem("nse.portfolio.capital.v1", String(next)) : localStorage.removeItem("nse.portfolio.capital.v1"); } catch { /* this visit only */ } }} />
         </label>}>
-        {stats.count === 0 ? <p className="text-sm text-muted" data-testid="portfolio-stats-empty">No closed strategy yet. These figures are computed only from strategies you have closed (their booked P&L); nothing is estimated.</p> : <PerformancePanel stats={stats} capital={capital} runningTotal={knownTotals.length ? runningTotal : null} />}
+        {stats.count === 0 ? <p className="text-sm text-muted" data-testid="portfolio-stats-empty">{period.mode === "overall" ? "No closed strategy yet." : `No strategy closed in ${periodLabel(period)}.`} These figures are computed only from strategies you have closed (their booked P&L); nothing is estimated.</p> : <PerformancePanel stats={stats} capital={capital} runningTotal={knownTotals.length ? runningTotal : null} />}
       </Panel>
 
       <Panel title="Closed strategies" id="closed">
-        {closed.length === 0 ? <p className="text-sm text-muted">Nothing closed yet. Exit all in the strategy builder moves a strategy here.</p> : (
+        {closed.length === 0 ? <p className="text-sm text-muted">{period.mode === "overall" ? "Nothing closed yet. Exit all in the strategy builder moves a strategy here." : `Nothing closed in ${periodLabel(period)}.`}</p> : (
           <div className="overflow-x-auto" data-testid="portfolio-closed">
             <table className="w-full text-sm" aria-label="Closed strategies">
               <thead className="text-xs text-muted"><tr>{["Strategy", "Closed", "Legs", "Realised P&L", "Cumulative"].map((h) => <th key={h} className="px-2 py-1 text-left font-normal first:pl-0">{h}</th>)}</tr></thead>
@@ -183,7 +203,7 @@ export function Portfolio() {
         )}
         {closed.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-3">
-            <button type="button" className="min-h-9 rounded-sm border border-rule bg-slate-2 px-3 text-xs text-muted hover:border-down hover:text-down" onClick={() => { if (confirmAllClosed) { void deleteClosed(closed.map((c) => c.id)); setConfirmAllClosed(false); } else setConfirmAllClosed(true); }}>{confirmAllClosed ? "Click again to delete all closed" : "Delete all closed"}</button>
+            <button type="button" className="min-h-9 rounded-sm border border-rule bg-slate-2 px-3 text-xs text-muted hover:border-down hover:text-down" onClick={() => { if (confirmAllClosed) { void deleteClosed(closed.map((c) => c.id)); setConfirmAllClosed(false); } else setConfirmAllClosed(true); }}>{confirmAllClosed ? "Click again to delete all closed" : period.mode === "overall" ? "Delete all closed" : `Delete all ${closed.length} closed in ${periodLabel(period)}`}</button>
             {deleteProblem && <span role="alert" className="text-xs text-warn">Not deleted on the server: {deleteProblem}</span>}
           </div>
         )}

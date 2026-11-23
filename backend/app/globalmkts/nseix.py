@@ -8,7 +8,7 @@ its change is computed here against the exchange's previous close for that contr
 from __future__ import annotations
 
 import json
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from app.globalmkts.quotes import LIVE_MAX_AGE_S, Bar, Quote
@@ -16,6 +16,7 @@ from app.globalmkts.symbols import GSymbol, expected_open, session_key
 
 IST = ZoneInfo("Asia/Kolkata")
 DW_URL = "https://www.nseix.com/api/derivatives-watch?inst_type1=IDX&inst_type2=STK&type=live"
+ROLL_GAP = timedelta(minutes=10)
 SOURCE_LABEL = "NSE IX website feed (unofficial endpoint)"
 
 
@@ -31,21 +32,26 @@ def gift_quote(data: bytes, now: datetime, spec: GSymbol) -> tuple[Quote, str] |
     """The near-month NIFTY index future as a quote, and its expiry label; None when the feed has no traded NIFTY future (missing stays missing)."""
     doc = json.loads(data)
     today: date = now.astimezone(IST).date()
-    best: tuple[date, dict[str, object]] | None = None
+    cands: list[tuple[date, datetime, dict[str, object]]] = []
     for r in doc.get("data", []) if isinstance(doc, dict) else []:
         if not isinstance(r, dict) or r.get("INSTRUMENTTYPE") != "FUTIDX" or str(r.get("SYMBOL", "")).upper() != "NIFTY" or _f(r.get("LASTPRICE")) is None:
             continue
         try:
             exp = datetime.strptime(str(r["EXPIRYDATE"]), "%d-%b-%Y").date()
-            datetime.strptime(str(r["TIMESTMP"]), "%d-%b-%Y %H:%M:%S")
+            ts = datetime.strptime(str(r["TIMESTMP"]), "%d-%b-%Y %H:%M:%S").replace(tzinfo=IST).astimezone(UTC)
         except (KeyError, ValueError):
             continue
-        if exp >= today and (best is None or exp < best[0]):
-            best = (exp, r)
-    if best is None:
+        if exp >= today:
+            cands.append((exp, ts, r))
+    if not cands:
         return None
-    exp, r = best
-    traded = datetime.strptime(str(r["TIMESTMP"]), "%d-%b-%Y %H:%M:%S").replace(tzinfo=IST).astimezone(UTC)
+    cands.sort(key=lambda c: c[0])
+    # The nearest expiry is the quote, but a contract stops trading on its expiry day while the next month goes on: when a later contract has traded more than
+    # ROLL_GAP after the nearest one's last trade, the nearest has expired and the quote rolls to that later contract (no waiting for the calendar day to pass).
+    i = 0
+    while i + 1 < len(cands) and cands[i + 1][1] - cands[i][1] > ROLL_GAP:
+        i += 1
+    exp, traded, r = cands[i]
     price = float(r["LASTPRICE"])  # type: ignore[arg-type]
     ref = _f(r.get("CLOSE"))
     bar_ts = traded.replace(second=0, microsecond=0)

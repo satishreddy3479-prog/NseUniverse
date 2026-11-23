@@ -1049,3 +1049,22 @@ def test_the_quotes_are_read_every_minute_in_the_us_session_too(tmp_path: Path) 
     assert s._quote_interval(datetime(2026, 11, 18, 15, 0, tzinfo=UTC)) == 60.0  # 10:00 New York: the ADRs trade  # noqa: SLF001
     assert s._quote_interval(datetime(2026, 11, 18, 22, 0, tzinfo=UTC)) == 300.0  # 17:00 New York, 03:30 IST: neither  # noqa: SLF001
     assert s._quote_interval(datetime(2026, 11, 21, 15, 0, tzinfo=UTC)) == 300.0  # Saturday  # noqa: SLF001
+
+
+def test_gift_nifty_rolls_on_expiry_day_once_the_next_month_trades_past_the_expired_contract() -> None:
+    """23 Nov 2026 (expiry day): the November contract's last trade was 15:30, the December one is trading at 17:00 IST: the quote is December's, not the dead November price."""
+    def row(exp: str, price: float, ts: str, close: float) -> dict[str, object]:
+        return {"INSTRUMENTTYPE": "FUTIDX", "SYMBOL": "NIFTY", "LASTPRICE": price, "EXPIRYDATE": exp, "TIMESTMP": ts, "CLOSE": close}
+    nov = row("23-Nov-2026", 25351.0, "23-Nov-2026 15:30:00", 25854.5)
+    dec = row("29-Dec-2026", 25420.0, "23-Nov-2026 17:00:00", 25900.0)
+    now = datetime(2026, 11, 23, 11, 31, tzinfo=UTC)  # 17:01 IST
+    got = nseix.gift_quote(json.dumps({"data": [nov, dec]}).encode(), now, BY_KEY["GIFT"])
+    assert got and got[1] == "29 Dec 2026" and got[0].price == 25420.0 and got[0].prev_close == 25900.0
+    # while both last traded within minutes of each other (the near month is still the live one), it stays on the nearest
+    near = row("29-Dec-2026", 25420.0, "23-Nov-2026 15:35:00", 25900.0)
+    still = nseix.gift_quote(json.dumps({"data": [nov, near]}).encode(), now, BY_KEY["GIFT"])
+    assert still and still[1] == "23 Nov 2026"
+    # a feed with only the expired contract keeps showing it (stale), not nothing
+    only = nseix.gift_quote(json.dumps({"data": [nov]}).encode(), now, BY_KEY["GIFT"])
+    assert only and only[1] == "23 Nov 2026"
+
