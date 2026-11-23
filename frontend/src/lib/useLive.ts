@@ -5,9 +5,38 @@ import { INDEX_KEY, liveStore, type LiveState } from "./liveStore";
 import { startLiveSocket } from "./liveSocket";
 import { isStreamStatus, type LiveTick, type StreamStatus } from "./types";
 import { useStatus } from "./hooks";
+import { closingSchedule } from "./session";
 
 const LINK_GRACE_MS = 8000;
 const noopSubscribe = () => () => {};
+const toMin = (hhmm: string): number => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+const istOf = (ms: number): { ymd: string; min: number; weekday: boolean } => { const d = new Date(ms + 330 * 60_000); return { ymd: d.toISOString().slice(0, 10), min: d.getUTCHours() * 60 + d.getUTCMinutes(), weekday: d.getUTCDay() >= 1 && d.getUTCDay() <= 5 }; };
+/** Whether ``ms`` falls in the closing auction session's indicative window (15:20-15:30 until 4 Dec 2026, 15:31-15:40 from 7 Dec): the index then shows the exchange's indicative closing value, not a traded price. */
+export function inIndicativeWindow(ms: number): boolean {
+  const p = istOf(ms), sch = closingSchedule(p.ymd);
+  return p.weekday && p.min >= toMin(sch.indicativeFrom) && p.min < toMin(sch.indexEnd);
+}
+/** The last index level traded in the continuous session of a day (seen before the auction began): what a broker keeps showing while the exchange publishes indicative values. */
+let lastTraded: { ymd: string; ltp: number; prevClose: number | null; at: number } | null = null;
+/**
+ * The index reading to show for a live tick. In the indicative window the tick is an auction estimate (19 and 23 Nov 2026: 24,853 against a traded 25,366 for several minutes,
+ * converging to the close), so it is returned as ``indicative`` and the displayed level stays the last traded one (null when this browser never saw one that day).
+ */
+export function tradedIndex(tick: LiveTick | undefined): { ltp: number | null; prevClose: number | null; at: number | null; indicative: number | null } | null {
+  if (tick?.ltp == null) return null;
+  const ms = Date.parse(tick.received_at);
+  if (!Number.isFinite(ms)) return { ltp: tick.ltp, prevClose: tick.prev_close, at: null, indicative: null };
+  const p = istOf(ms);
+  if (inIndicativeWindow(ms)) {
+    const lt = lastTraded && lastTraded.ymd === p.ymd ? lastTraded : null;
+    return { ltp: lt?.ltp ?? null, prevClose: lt?.prevClose ?? tick.prev_close, at: lt?.at ?? null, indicative: tick.ltp };
+  }
+  if (p.weekday && p.min >= 9 * 60 && p.min < toMin(closingSchedule(p.ymd).indicativeFrom)) lastTraded = { ymd: p.ymd, ltp: tick.ltp, prevClose: tick.prev_close, at: ms };
+  return { ltp: tick.ltp, prevClose: tick.prev_close, at: ms, indicative: null };
+}
+/** Test hook. */
+export const resetLastTraded = (): void => { lastTraded = null; };
+
 
 export function useLiveState(): LiveState {
   return useSyncExternalStore(liveStore.subscribeState, liveStore.getState);
@@ -51,8 +80,9 @@ export function useLiveAtmStrike(strikes: number[], enabled: boolean): number | 
 export function useLiveSpot(): { ltp: number | null; prevClose: number | null; live: boolean } {
   const tick = useLiveTick(INDEX_KEY);
   const { stream } = useStreamStatus();
-  const live = stream?.effective_state === "streaming" && tick?.ltp != null;
-  return live ? { ltp: tick!.ltp, prevClose: tick!.prev_close, live: true } : { ltp: null, prevClose: null, live: false };
+  const ti = tradedIndex(tick);
+  const live = stream?.effective_state === "streaming" && ti?.ltp != null && ti.indicative == null; // an indicative auction value is not a live price
+  return live ? { ltp: ti!.ltp, prevClose: ti!.prevClose, live: true } : { ltp: null, prevClose: null, live: false };
 }
 
 /** The NIFTY level a screen shows, and what it is. */
@@ -61,6 +91,8 @@ export interface SpotDisplay {
   prevClose: number | null;
   /** live: the stream is moving; held: the last live tick, kept because it is newer than the fallback; snapshot: the fallback (a stored value) */
   kind: "live" | "held" | "snapshot";
+  /** the exchange's indicative closing value while the closing auction runs (not a traded price): shown beside the level, never as it; null otherwise */
+  indicative: number | null;
   /** when the value was taken (epoch ms): the tick's receipt for live and held, the fallback's time for a snapshot */
   at: number | null;
 }
@@ -84,13 +116,18 @@ export function isLiveTickTime(ms: number): boolean {
 export function useSpotDisplay(fallback: { ltp: number | null; prevClose: number | null; at: string | null }): SpotDisplay {
   const tick = useLiveTick(INDEX_KEY);
   const { stream } = useStreamStatus();
-  const tickMs = tick?.ltp != null ? Date.parse(tick.received_at) : Number.NaN;
-  if (stream?.effective_state === "streaming" && tick?.ltp != null) return { ltp: tick.ltp, prevClose: tick.prev_close, kind: "live", at: Number.isFinite(tickMs) ? tickMs : null };
+  const ti = tradedIndex(tick);
+  const tickMs = ti?.at ?? (tick?.ltp != null ? Date.parse(tick.received_at) : Number.NaN);
   const fbMs = fallback.at ? Date.parse(fallback.at) : Number.NaN;
+  const snapshot = (indicative: number | null): SpotDisplay => ({ ltp: fallback.ltp, prevClose: fallback.prevClose, kind: "snapshot", at: Number.isFinite(fbMs) ? fbMs : null, indicative });
+  if (stream?.effective_state === "streaming" && ti) {
+    if (ti.indicative != null) return ti.ltp != null ? { ltp: ti.ltp, prevClose: ti.prevClose, kind: "held", at: ti.at, indicative: ti.indicative } : snapshot(ti.indicative); // the auction estimate is not the price
+    if (ti.ltp != null) return { ltp: ti.ltp, prevClose: ti.prevClose, kind: "live", at: Number.isFinite(tickMs) ? tickMs : null, indicative: null };
+  }
   // a replayed last quote is not held: outside the session, or while the exchange says the market is closed (a holiday), the stored snapshot is shown with its own time
   const replay = !isLiveTickTime(tickMs) || stream?.effective_state === "market_closed";
-  if (tick?.ltp != null && Number.isFinite(tickMs) && !replay && (!Number.isFinite(fbMs) || tickMs > fbMs)) return { ltp: tick.ltp, prevClose: tick.prev_close ?? fallback.prevClose, kind: "held", at: tickMs };
-  return { ltp: fallback.ltp, prevClose: fallback.prevClose, kind: "snapshot", at: Number.isFinite(fbMs) ? fbMs : null };
+  if (ti?.ltp != null && Number.isFinite(tickMs) && !replay && (!Number.isFinite(fbMs) || tickMs > fbMs)) return { ltp: ti.ltp, prevClose: ti.prevClose ?? fallback.prevClose, kind: "held", at: tickMs, indicative: null };
+  return snapshot(null);
 }
 
 /** Mount once near the root: owns the single browser WebSocket. */

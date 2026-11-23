@@ -16,7 +16,7 @@ export { INDEX_KEY };
 export function SpotBadge({ latest, className = "" }: { latest: SnapshotSummary | undefined; className?: string }) {
   const spot = useSpotDisplay({ ltp: latest?.underlying_ltp ?? null, prevClose: latest?.underlying_prev_close ?? null, at: latest?.retrieved_at ?? null });
   const useLive = spot.kind === "live";
-  const held = spot.kind === "held";
+  const held = spot.kind === "held" && spot.indicative == null;
   const ltp = spot.ltp;
   const prev = spot.prevClose;
   if (ltp == null) return null;
@@ -30,6 +30,7 @@ export function SpotBadge({ latest, className = "" }: { latest: SnapshotSummary 
         <span className="flex items-center gap-1.5 text-xs text-muted">NIFTY 50 {held ? <><span className="inline-flex items-center rounded-sm border border-warn/50 px-1.5 py-px text-xs font-medium text-warn" data-testid="spot-held">Held {spot.at ? fmtTimeIST(new Date(spot.at).toISOString()) : ""}</span> <Info term="held price" /></> : <SourceTag source={source} />}</span>
         {spot.kind === "snapshot" && latest && <span className="num text-[11px] text-muted" title={`Stored snapshot of the ${latest.expiry} expiry; each expiry reads the index on its own, so the other expiry can differ by a point or so`}>{sameIstDay(latest.retrieved_at) ? fmtTimeIST(latest.retrieved_at) : fmtDateTimeIST(latest.retrieved_at)} · {latest.expiry.slice(5)}</span>}
       </div>
+      {spot.indicative != null && <span className="inline-flex flex-col rounded-sm border border-warn/50 px-1.5 py-0.5 text-[10px] font-medium leading-tight text-warn" data-testid="spot-indicative" title="The closing auction is running. The exchange publishes an indicative closing value that can sit far from the traded price while the order book fills; it is not a traded price. The level shown is the last traded one.">Closing auction<span className="num">indicative {fmtPrice(spot.indicative)}</span></span>}
       <div className="flex flex-col items-start gap-px leading-none min-[520px]:items-end min-[520px]:gap-0.5 min-[520px]:leading-tight">
         <span className="text-[10px] font-medium tracking-wide text-muted min-[520px]:hidden">NIFTY</span>
         <span className="num text-[17px] font-semibold leading-tight text-paper md:text-[15px]">{fmtPrice(ltp)}</span>
