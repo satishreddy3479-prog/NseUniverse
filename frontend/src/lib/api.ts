@@ -9,7 +9,7 @@ import type {
   ConfigStatus,
   ErrorEvent,
   ExpirySelection,
-  FlowsLatest, StorageStatus, IntradayScoreRow, IntradaySummary, FlowsStatus, HistoryFetchStatus, HistoryResponse, OiChange, OiHeatmap, OiSeries, StrikeSeries, FuturesSeries, HvReport, IvChart, IvSkew, IvSeries, IndexBars, PremiumDecay, SamplerStatus, SwingReport, SwingPaperView, SwingLiveView,
+  FlowsLatest, StorageStatus, IntradayScoreRow, IntradaySummary, FlowsStatus, HistoryFetchStatus, HistoryResponse, OiChange, OiHeatmap, OiSeries, StrikeSeries, FuturesSeries, HvReport, IvChart, IvSkew, IvSeries, IndexBars, DailyRegime, PremiumDecay, SamplerStatus, SwingReport, SwingPaperView, SwingLiveView,
   SessionInfo,
   SnapshotSummary,
 } from "./types";
@@ -225,7 +225,8 @@ export const api = {
       `/api/oi/change?expiry=${encodeURIComponent(expiry)}&baseline=${baseline}&strikes=${strikes}` +
         (at ? `&at=${encodeURIComponent(at)}` : "") + (until ? `&until=${encodeURIComponent(until)}` : ""),
     ),
-  indexBars: () => request<IndexBars>("/api/market/index-bars"),
+  indexBars: (day?: string) => request<IndexBars>(`/api/market/index-bars${day ? `?day=${day}` : ""}`),
+  intradayRegimeDaily: () => request<DailyRegime>("/api/intraday/regime-daily"),
   intradayHv: () => request<HvReport>("/api/intraday/hv"),
   intradayIvChart: (hv: number) => request<IvChart>(`/api/intraday/iv-chart?hv=${hv}`),
   intradayIvSeries: (expiry: string, o: { session?: string; tf?: number; maxPoints?: number } = {}) =>

@@ -793,7 +793,23 @@ function signalSeries(r: SmartOiResult, c: ChartColors, closes: readonly (number
 /** The divergence signals drawn in the lower panel of the Smart OI chart, in place of the volume bars: what the indicators found (bursts) and the flow divergences' two swings (signals with a link). */
 export interface SignalsPanel { bursts: readonly Burst[]; signals: readonly Signal[] }
 
-export function smartOiOption(r: SmartOiResult, c: ChartColors, panel: SignalsPanel | null = null): EChartsCoreOption {
+/** Contiguous runs of the same trend regime label over the candles, as shaded areas on the price panel (the "Warming up" stretch is left unshaded). */
+function regimeAreas(labels: readonly (string | null)[], x: readonly string[], c: ChartColors) {
+  const colorOf = (l: string) => (l === "Trending up" ? c.up : l === "Trending down" ? c.down : l === "Range-bound" ? c.info : c.muted);
+  const out: [{ xAxis: string; name: string; itemStyle: { color: string; opacity: number } }, { xAxis: string }][] = [];
+  let s = 0;
+  for (let i = 1; i <= labels.length; i++) {
+    if (i === labels.length || labels[i] !== labels[s]) {
+      const l = labels[s];
+      if (l && l !== "Warming up") out.push([{ xAxis: x[s]!, name: l, itemStyle: { color: colorOf(l), opacity: 0.16 } }, { xAxis: x[i - 1]! }]);
+      s = i;
+    }
+  }
+  return out;
+}
+
+/** ``regime``: the shown trend / range label of each candle (see lib/trendRegime.ts), drawn as shading behind the NIFTY candles and switchable in the legend as "Regime". Descriptive, not validated. */
+export function smartOiOption(r: SmartOiResult, c: ChartColors, panel: SignalsPanel | null = null, regime: readonly (string | null)[] | null = null): EChartsCoreOption {
   const cs = r.candles;
   const sg = panel != null;
   // the panels' rows: price, Smart OI bars, then the volume bars or, when signals are shown, the NIFTY close with the divergence markers (taller: it carries a price scale)
@@ -844,11 +860,12 @@ export function smartOiOption(r: SmartOiResult, c: ChartColors, panel: SignalsPa
       sg ? val(2, { axisLabel: { ...axisText(c), formatter: (v: number) => v.toLocaleString("en-IN") } }) : val(2, { scale: false, splitNumber: 3, axisLabel: { ...axisText(c), formatter: (v: number) => compactIN(v) } }),
     ],
     // a small legend for the volume panel only (the other two panels are named by their titles); it also switches puts or calls off to read one side
-    legend: { data: sg ? ["NIFTY close", "bullish", "bearish", "neutral"] : [{ name: "Put volume", itemStyle: { color: c.up } }, { name: "Call volume", itemStyle: { color: c.down } }], top: rows.legend, left: 62, itemWidth: 12, itemHeight: 8, itemGap: 12, textStyle: { color: c.paper, fontSize: 11 } },
+    legend: { data: [...(sg ? ["NIFTY close", "bullish", "bearish", "neutral"] : [{ name: "Put volume", itemStyle: { color: c.up } }, { name: "Call volume", itemStyle: { color: c.down } }]), ...(regime && regime.some((l) => l && l !== "Warming up") ? [{ name: "Regime", itemStyle: { color: c.info } }] : [])], top: rows.legend, left: 62, itemWidth: 12, itemHeight: 8, itemGap: 12, textStyle: { color: c.paper, fontSize: 11 } },
     dataZoom: [{ type: "inside", xAxisIndex: [0, 1, 2], filterMode: "none" }],
     series: [
       // a candle that is partly the future minus its basis (the closing session, when the index is not published) is outlined in grey, not filled: it is not the index
       candleSeries("NIFTY", 0, 0, cs.map((k) => (k.spot ? { o: k.spot.open, c: k.spot.close, l: k.spot.low, h: k.spot.high, outline: k.spotProxy } : null)), c),
+      ...(regime && regime.some((l) => l && l !== "Warming up") ? [{ name: "Regime", type: "line", xAxisIndex: 0, yAxisIndex: 0, data: [], silent: true, markArea: { silent: true, label: { show: false }, data: regimeAreas(regime, labels, c) } }] : []),
       {
         // open is always 0: the bar starts on the zero line and ends at ΔPE − ΔCE; the baseline candle has no bar.
         ...candleSeries("Smart OI", 1, 1, cs.map((k) => (k.p == null ? null : { o: 0, c: k.p, l: Math.min(0, k.p), h: Math.max(0, k.p) })), c, false),

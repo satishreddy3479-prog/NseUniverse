@@ -18,6 +18,7 @@ import {
 import { ageSeconds, fmtDateTimeIST, fmtExpiry, fmtTimeIST, fmtInt, fmtPct, fmtPrice, fmtSigned } from "../../lib/format";
 import { smartOiCandles } from "../../lib/optionTools";
 import { SmartOiDivergence, useDivergence } from "./SmartOiDivergence";
+import { fromIndexBars, regimeForCandles, regimeSeries } from "../../lib/trendRegime";
 import { clearLayout, DEFAULT_LAYOUT, loadLayout, mergeOff, sameLayout, saveLayout, type ChartKey, type SmartOiLayout } from "../../lib/smartOiLayout";
 import { useSpotDisplay } from "../../lib/useLive";
 import type { BaselineKind, Observation, OiChange, OptionChainRow } from "../../lib/types";
@@ -368,7 +369,9 @@ function SmartOiChartWidget() {
   const dv = useDivergence(res, tf, since, d.expiry ?? null, listedStrikes, openAtmStrike);
   const [lowerLeft, setLowerLeft] = useState<"signals" | "volume">(start.lowerLeft);
   const showSignals = dv.on && dv.report != null && lowerLeft === "signals";
-  const main = useMemo(() => (res ? smartOiOption(res, colors, showSignals && dv.report ? { bursts: dv.bursts, signals: dv.report.signals } : null) : null), [res, colors, showSignals, dv.bursts, dv.report]);
+  // the trend / range regime of the session (price only, descriptive, not validated), shaded behind the candles; switch it off in the legend ("Regime")
+  const regime = useMemo(() => (res && barList && barList.length > 0 ? regimeForCandles(regimeSeries(fromIndexBars(barList), { tf }), res.candles.map((k) => k.label), tf) : null), [res, barList, tf]);
+  const main = useMemo(() => (res ? smartOiOption(res, colors, showSignals && dv.report ? { bursts: dv.bursts, signals: dv.report.signals } : null, regime) : null), [res, colors, showSignals, dv.bursts, dv.report, regime]);
   const dayOpt = useMemo(() => (res ? smartOiDayOption(res, colors) : null), [res, colors]);
   const [lower, setLower] = useState<"pcr" | "volume">(start.lower);
   const ratioOpt = useMemo(() => (res ? (lower === "volume" ? smartOiVolumeOption(res, colors) : smartOiRatioOption(res, colors)) : null), [res, colors, lower]);

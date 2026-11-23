@@ -887,7 +887,7 @@ export interface IvSeries {
 // ---- One-minute NIFTY 50 bars from the live index feed (/api/market/index-bars)
 /** `off`: points between this bar and where the NIFTY future says the index was (set only when far off: the bar is unconfirmed). */
 export interface IndexBar { at: string; o: number; h: number; l: number; c: number; n: number | null; off?: number | null; proxy?: boolean; ind?: boolean }
-export interface IndexBars { day: string | null; bars: IndexBar[]; note: string }
+export interface IndexBars { day: string | null; days?: string[]; bars: IndexBar[]; note: string }
 
 
 /** Daily India VIX (implied volatility), NIFTY close and rolling HV, /api/intraday/iv-chart */
@@ -987,3 +987,18 @@ export interface PremiumBaskets {
   age_seconds: number; latest_at: string; basket: string;
 }
 
+
+// ---- Daily trend / range regime and its validation study (/api/intraday/regime-daily)
+export interface RegimeGroupStats { n: number; forward_er: number | null; forward_return_pct: number | null; forward_rv: number | null }
+export interface DailyRegime {
+  status: string; bars?: number; as_of?: string; today?: string; from?: string; validated?: boolean; method?: string;
+  current?: { label: string; raw: string; votes: { trend: number; range: number; evaluable: number }; er: number | null; adx: number | null; plus_di: number | null; minus_di: number | null; r2: number | null; slope: number | null; chop: number | null };
+  series?: { dates: string[]; close: number[]; label: string[] };
+  study?: {
+    horizon_days: number; window_days: number; permutations: number; samples: number; from: string | null; to: string | null;
+    groups: Record<string, RegimeGroupStats>;
+    claim: { diff_forward_er: number | null; p_value: number | null; validated: boolean; criterion: string; thirds: { from: string | null; to: string | null; n_trending: number; n_range: number; diff: number | null }[] };
+    direction: { diff_forward_return_pct: number | null; p_value: number | null; information_only: boolean };
+    thresholds: Record<string, number>;
+  };
+}

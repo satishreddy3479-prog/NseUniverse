@@ -542,14 +542,14 @@ async def market_summary(request: Request) -> dict[str, Any]:
 
 
 @router.get("/market/index-bars")
-async def market_index_bars(request: Request) -> dict[str, Any]:
-    """One-minute NIFTY 50 bars of the newest stored day, from the live index feed."""
+async def market_index_bars(request: Request, day: date | None = None) -> dict[str, Any]:
+    """One-minute NIFTY 50 bars of the newest stored day, or of ``day`` if stored."""
     mk = request.app.state.market
     if not mk.enabled:
         raise HTTPException(
             status_code=404, detail={"code": "disabled", "message": "stock breadth is turned off"}
         )
-    return await asyncio.to_thread(mk.index_bars)
+    return await asyncio.to_thread(mk.index_bars, day)
 
 
 @router.get("/market/status")
@@ -948,6 +948,12 @@ async def intraday_summary(request: Request, expiry: date) -> dict[str, Any]:
 async def intraday_hv(request: Request) -> dict[str, Any]:
     """Historical volatility of NIFTY 50 from stored daily closes."""
     return await asyncio.to_thread(request.app.state.intraday.hv)
+
+
+@router.get("/intraday/regime-daily")
+async def intraday_regime_daily(request: Request) -> dict[str, Any]:
+    """Daily trend / range regime of NIFTY 50 with its validation study."""
+    return await asyncio.to_thread(request.app.state.intraday.daily_regime)
 
 
 @router.get("/intraday/iv-chart")

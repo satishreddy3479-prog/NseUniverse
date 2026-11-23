@@ -508,6 +508,19 @@ class IntradayService:
         )
         return report
 
+    def daily_regime(self) -> dict[str, Any]:
+        """Trend / range regime of NIFTY 50 on the stored final daily closes, with its validation study (cached until a new daily bar arrives)."""
+        from app.intraday import regime as regmod
+
+        bars = self.history.bars("NIFTY50")
+        key = (len(bars), bars[-1].session if bars else None)
+        cached = getattr(self, "_daily_regime_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]  # type: ignore[no-any-return]
+        out = regmod.daily_regime(bars, self._clock().astimezone(IST).date(), exclude=self._muhurat_dates())
+        self._daily_regime_cache = (key, out)
+        return out
+
     @staticmethod
     def _muhurat_dates() -> frozenset[date]:
         """Short (Muhurat) sessions the trading calendar knows of, added to the built-in list in ``hv.SHORT_SESSIONS`` (a year entered in Settings is picked up here)."""

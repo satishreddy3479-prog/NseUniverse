@@ -55,3 +55,18 @@ describe("Smart OI chart: lower panel", () => {
     expect(link.xAxisIndex).toBe(2);
   });
 });
+
+describe("Smart OI chart: trend regime shading", () => {
+  const areas = (o: Opt) => (o.series.find((x) => x.name === "Regime") as unknown as { markArea: { data: { xAxis: string; name?: string }[][] } } | undefined)?.markArea.data;
+  it("shades each run of the same label from its first to its last candle, leaves the warm-up unshaded, and offers a legend entry", () => {
+    const o = smartOiOption(res(3), colors, null, ["Warming up", "Range-bound", "Range-bound", "Trending up", "Trending up", null]) as unknown as Opt;
+    expect(areas(o)!.map(([a, b]) => [a!.name, a!.xAxis, b!.xAxis])).toEqual([["Range-bound", "09:18", "09:21"], ["Trending up", "09:24", "09:27"]]);
+    expect(o.legend.data).toContainEqual({ name: "Regime", itemStyle: { color: colors.info } });
+  });
+  it("with no regime (no index bars) there is nothing to shade and no legend entry", () => {
+    const o = smartOiOption(res(3), colors) as unknown as Opt;
+    expect(areas(o)).toBeUndefined();
+    expect(o.legend.data).not.toContainEqual(expect.objectContaining({ name: "Regime" }));
+  });
+});
+

@@ -136,3 +136,23 @@ def test_the_first_read_after_minutes_of_silence_starts_a_new_stretch_instead_of
     t3 = t_c + timedelta(seconds=30)  # only 30 s of silence: the neighbour is fresh and a far lone read is a glitch
     c.observe(t3, 25666.75, t3)
     assert c.cur is not None and c.cur.h == 25504.3 and c.cur.x == 1  # held back and counted
+
+
+def test_a_stored_day_can_be_asked_for_and_the_days_are_listed(tmp_path: Path) -> None:
+    from datetime import date
+
+    clock = {"t": T0}
+    svc = MarketService(MarketStore(tmp_path), clock=lambda: clock["t"])
+    feed = {"t": idx(100.0, T0)}
+    svc._index_tick = lambda: feed["t"]
+    for day_offset, base in ((0, 25000.0), (1, 25200.0)):  # 29 and 30 Oct 2026, two minutes each
+        for s, price in ((0, base), (59, base + 1), (60, base + 2), (125, base + 3)):
+            at = T0 + timedelta(days=day_offset, seconds=s)
+            clock["t"] = at
+            feed["t"] = idx(price, at)
+            svc.observe_index(at)
+    newest = svc.index_bars()
+    assert newest["day"] == "2026-10-30" and newest["days"] == ["2026-10-29", "2026-10-30"]
+    older = svc.index_bars(date(2026, 10, 29))
+    assert older["day"] == "2026-10-29" and older["bars"][0]["o"] == 25000.0
+    assert svc.index_bars(date(2026, 10, 1))["day"] == "2026-10-30"  # a day not stored falls back to the newest
