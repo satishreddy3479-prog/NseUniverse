@@ -1,6 +1,6 @@
 // Mark-to-market of a strategy through the stored samples. Every expected number is a hand calculation (lot 65).
 import { describe, expect, it } from "vitest";
-import { buildMtm, splitAtZero } from "../lib/strategyMtm";
+import { appendTick, buildMtm, joinLive, mtmStats, splitAtZero } from "../lib/strategyMtm";
 import type { Leg } from "../lib/strategy";
 import type { FuturesSeries, StrikeSeries } from "../lib/types";
 
@@ -86,5 +86,30 @@ describe("splitAtZero: green above, red below", () => {
     const g = splitAtZero([0, 1, 2], [-5, null, 5]);
     expect(g.full).toEqual([[0, -5], [1, null], [2, 5]]); // no crossing is invented across a missing minute
     expect(g.pos[1]).toEqual([1, null]);
+  });
+});
+
+describe("live ticks", () => {
+  it("a point is kept only when the value changed", () => {
+    let s = appendTick([], 1000, 50);
+    s = appendTick(s, 2000, 50); s = appendTick(s, 3000, 70);
+    expect(s).toEqual([{ t: 1000, v: 50 }, { t: 3000, v: 70 }]);
+  });
+  it("past the cap the oldest are thinned and the newest point is kept", () => {
+    let s: { t: number; v: number }[] = [];
+    for (let i = 0; i < 11; i++) s = appendTick(s, i, i + 1, 10);
+    expect(s.length).toBeLessThanOrEqual(7); expect(s[s.length - 1]).toEqual({ t: 10, v: 11 });
+  });
+  it("stored samples before the first live tick, then the live ticks; a missing stored value is left out", () => {
+    const j = joinLive([{ t: 1, pnl: 10 }, { t: 2, pnl: null }, { t: 3, pnl: -5 }, { t: 9, pnl: 99 }], [{ t: 5, v: 20 }, { t: 6, v: 15 }]);
+    expect(j).toEqual([{ t: 1, v: 10 }, { t: 3, v: -5 }, { t: 5, v: 20 }, { t: 6, v: 15 }]);
+    expect(joinLive([], [{ t: 5, v: 20 }])).toEqual([{ t: 5, v: 20 }]);
+  });
+  it("high, low and the largest fall from a high, by hand: 0, 300, 100, 250, -50, 80 gives high 300, low -50, drawdown 350 from 300 to -50", () => {
+    const st = mtmStats([0, 300, 100, 250, -50, 80].map((v, i) => ({ t: i, v })));
+    expect(st.high).toEqual({ v: 300, t: 1 }); expect(st.low).toEqual({ v: -50, t: 4 }); expect(st.now).toBe(80);
+    expect(st.drawdown).toEqual({ amount: 350, from: 1, to: 4 });
+    expect(mtmStats([]).high).toBeNull();
+    expect(mtmStats([{ t: 0, v: 5 }, { t: 1, v: 9 }]).drawdown).toBeNull(); // only rising: no fall
   });
 });

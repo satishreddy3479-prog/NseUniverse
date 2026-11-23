@@ -135,3 +135,32 @@ export function buildMtm(legsIn: readonly Leg[], lotSize: number, byExpiry: Reco
   }
   return { from, t, pnl, missing, now: have[have.length - 1]!.v, peak: { pnl: peak.v, t: peak.t }, trough: { pnl: trough.v, t: trough.t }, drawdown: dd, reason: null, untimed: 0 };
 }
+
+// ---------------------------------------------------------------- live ticks
+/** The P&L seen live, tick by tick: a point is kept only when the value changed, and the oldest are thinned (every second one dropped) past ``cap`` so a long day stays small. */
+export function appendTick(series: readonly { t: number; v: number }[], t: number, v: number, cap = 6000): { t: number; v: number }[] {
+  const last = series[series.length - 1];
+  if (last && last.v === v) return series as { t: number; v: number }[];
+  let out = [...series, { t, v }];
+  if (out.length > cap) out = out.filter((_, i) => i % 2 === 0 || i === out.length - 1);
+  return out;
+}
+/** Stored samples up to the first live tick, then the live ticks: the stored part is the history from before the page was open, the rest is what was seen live. */
+export function joinLive(stored: readonly MtmPoint[], live: readonly { t: number; v: number }[]): { t: number; v: number }[] {
+  const first = live[0]?.t ?? Infinity;
+  const old = stored.filter((p): p is { t: number; pnl: number } => p.pnl != null && p.t < first).map((p) => ({ t: p.t, v: p.pnl }));
+  return [...old, ...live];
+}
+export interface MtmStats { now: number | null; high: { v: number; t: number } | null; low: { v: number; t: number } | null; drawdown: { amount: number; from: number; to: number } | null; points: number }
+/** Latest value, highest and lowest value, and the largest fall from a running high to a later low, over a series of points. */
+export function mtmStats(pts: readonly { t: number; v: number }[]): MtmStats {
+  if (pts.length === 0) return { now: null, high: null, low: null, drawdown: null, points: 0 };
+  let high = pts[0]!, low = pts[0]!, run = pts[0]!, dd: MtmStats["drawdown"] = null;
+  for (const p of pts) {
+    if (p.v > high.v) high = p;
+    if (p.v < low.v) low = p;
+    if (p.v > run.v) run = p;
+    if (run.v - p.v > (dd?.amount ?? 0)) dd = { amount: run.v - p.v, from: run.t, to: p.t };
+  }
+  return { now: pts[pts.length - 1]!.v, high: { v: high.v, t: high.t }, low: { v: low.v, t: low.t }, drawdown: dd, points: pts.length };
+}

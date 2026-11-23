@@ -19,6 +19,7 @@ const leg = (o: Partial<Leg>): Leg => ({ id: "x", expiry: EXP, strike: 25800, ty
 const legs = [leg({ id: "ce", enteredAt: at("03:50") }), leg({ id: "pe", type: "PE", premium: 90 }), leg({ id: "f", type: "FUT", strike: 0, action: "BUY", premium: 25800 })];
 
 beforeEach(() => {
+  sessionStorage.clear();
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -28,30 +29,45 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function mount(ls: Leg[], hist = [EXP]) {
+function mount(ls: Leg[], hist = [EXP], liveNow: number | null = 900) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={qc}><StrategyMtm legs={ls} historyExpiries={hist} lotSize={65} liveNow={900} /></QueryClientProvider>);
+  const ui = (v: number | null) => <QueryClientProvider client={qc}><StrategyMtm legs={ls} historyExpiries={hist} lotSize={65} liveNow={v} /></QueryClientProvider>;
+  const r = render(ui(liveNow));
+  return { ...r, setLive: (v: number | null) => r.rerender(ui(v)) };
 }
 
 describe("MTM tab", () => {
-  it("draws the strategy P&L from the stored series and states peak, trough and drawdown (hand sums 0, -650, -1950, +845)", async () => {
+  it("draws the strategy P&L from the stored series and continues it with the live value and reads high, low and drawdown from that line (hand sums 0, -650, -1950, +845, then live +900)", async () => {
     mount(legs);
     const chart = await screen.findByRole("img", { name: "Strategy mark-to-market through time" });
     const pts = JSON.parse(chart.getAttribute("data-points")!) as [number, number][];
     // the stored samples, with one point at exactly zero added where the line crosses it between -1950 and +845 (at 1950 / 2795 of the way)
-    expect(pts.map((p) => p[1])).toEqual([0, -650, -1950, 0, 845]);
+    expect(pts.map((p) => p[1])).toEqual([0, -650, -1950, 0, 845, 900]); // the last point is the live value
     expect(pts[3]![0]).toBeCloseTo(pts[2]![0] + (1950 / 2795) * (pts[4]![0] - pts[2]![0]), 3);
     const opt = JSON.parse(chart.getAttribute("data-series") ?? "[]") as string[];
     expect(opt).toEqual(["above zero", "below zero", "line above zero", "line below zero", "MTM"]); // green and red areas, the line in two colours, the tooltip series
     const box = within(await screen.findByTestId("mtm"));
-    expect(box.getByText("Now (stored)").nextElementSibling).toHaveTextContent("+₹845");
-    expect(box.getByText("Live now").nextElementSibling).toHaveTextContent("+₹900"); // the builder's own value, shown beside the stored one
-    expect(box.getByText("Peak").nextElementSibling).toHaveTextContent("+₹845 · 09:24");
-    expect(box.getByText("Trough").nextElementSibling).toHaveTextContent("−₹1,950 · 09:23");
-    expect(box.getByText("Max drawdown").nextElementSibling).toHaveTextContent("−₹1,950 · 09:21→09:23");
-    expect(screen.getByTestId("mtm-note")).toHaveTextContent("The future is priced from the stored future series");
+    expect(box.getByText("Live MTM").nextElementSibling).toHaveTextContent("+₹900");
+    expect(box.getByText("Max high").nextElementSibling).toHaveTextContent("+₹900"); // the live tick is the highest
+    expect(box.getByText("Max low").nextElementSibling).toHaveTextContent("−₹1,950 · 09:23");
+    expect(box.getByText("Drawdown").nextElementSibling).toHaveTextContent(/−₹1,950 · 09:21:\d\d→09:23:\d\d/);
+    expect(screen.getByTestId("mtm-note")).toHaveTextContent("The future is priced from its own live quote");
   });
 
+  it("a position entered after the last stored sample is drawn from the live value alone, and every change of it adds a point; high, low and drawdown follow", async () => {
+    const fresh = [leg({ id: "ce", enteredAt: at("05:00") }), leg({ id: "pe", type: "PE", premium: 90, enteredAt: at("05:00") })];
+    const m = mount(fresh, [EXP], 65);
+    const chart = await screen.findByRole("img", { name: "Strategy mark-to-market through time" });
+    expect(within(screen.getByTestId("mtm")).getByText("Live MTM").nextElementSibling).toHaveTextContent("+₹65");
+    m.setLive(-130); m.setLive(-130); m.setLive(200); m.setLive(-20);
+    const pts = JSON.parse(chart.getAttribute("data-points")!) as [number, number][];
+    expect(pts.map((p) => p[1]).filter((v) => v !== 0)).toEqual([65, -130, 200, -20]); // the repeated -130 is one point
+    const box = within(screen.getByTestId("mtm"));
+    expect(box.getByText("Max high").nextElementSibling).toHaveTextContent("+₹200");
+    expect(box.getByText("Max low").nextElementSibling).toHaveTextContent("−₹130");
+    expect(box.getByText("Drawdown").nextElementSibling).toHaveTextContent("−₹220"); // +200 down to -20 (the earlier +65 down to -130 is only 195)
+    expect(screen.getByTestId("mtm-note")).toHaveTextContent("live");
+  });
   it("says so when the expiry's prices are not stored, and when a leg has no entry time", async () => {
     mount(legs, []);
     expect(await screen.findByTestId("mtm-nohistory")).toHaveTextContent(EXP);
