@@ -64,6 +64,8 @@ export const isRefiled = (closed: Closed[], legs: Leg[]): Closed | undefined => 
   return on.length === 0 ? undefined : closed.find((c) => on.every((l) => c.legs.some((x) => x.id === l.id && x.premium === l.premium && x.strike === l.strike && x.type === l.type)));
 };
 const DUPLICATE_WINDOW_MS = 15 * 60_000; // the same position filed again within this long is the same exit clicked twice, not a second trade
+/** Closed strategies newest first by the time they closed. The server lists by the time a record was last written, so a record saved again (its MTM graph attached, say) jumped to the top; the order must not depend on that. */
+export const sortClosed = <T extends { closedAt: string }>(list: readonly T[]): T[] => [...list].sort((a, b) => (Date.parse(b.closedAt) || 0) - (Date.parse(a.closedAt) || 0));
 const loadClosed = (): Closed[] => { try { return JSON.parse(localStorage.getItem(CLOSED_KEY) ?? "[]") as Closed[]; } catch { return []; } };
 /** A number box that commits on blur or Enter, so a half-typed "2" on the way to "2000" never arms a rule. Empty clears it. */
 function NumBox({ value, onCommit, className, ariaLabel }: { value: number | null | undefined; onCommit: (v: number | null) => void; className: string; ariaLabel: string }) {
@@ -237,7 +239,7 @@ export default function StrategyBuilder() {
       }
       if (fresh.length || isNew.length || upClosed.length) got = await api.strategies();
       const sv = got.saved as unknown as Saved[], cl = got.closed as unknown as Closed[];
-      setSaved(sv); setClosed(cl); setSync("server"); setSyncProblem(null);
+      setSaved(sv); setClosed(sortClosed(cl)); setSync("server"); setSyncProblem(null);
       try { localStorage.setItem(SAVE_KEY, JSON.stringify(sv)); localStorage.setItem(CLOSED_KEY, JSON.stringify(cl)); } catch { /* cache only */ }
       return true;
     } catch {

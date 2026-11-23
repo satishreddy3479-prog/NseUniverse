@@ -164,6 +164,16 @@ describe("Strategy portfolio: closed strategies", () => {
     expect(await screen.findByTestId("closed-mtm-reason")).toBeInTheDocument(); // the test server has no stored prices for it
   });
 
+  it("lists closed strategies newest first by the time they closed, whatever order the server returns them in (a record written again, its MTM graph attached, was listed first)", async () => {
+    const at = (name: string, closedAt: string) => ({ ...closedDoc(`id-${name}`, name, 100), closedAt });
+    // the server lists by last write: the oldest was written last
+    store.closed = [at("oldest", "2026-10-28T10:00:00Z"), at("newest", "2026-10-30T10:00:00Z"), at("middle", "2026-10-29T10:00:00Z")];
+    mount("/portfolio");
+    await screen.findByRole("button", { name: "MTM graph of newest" });
+    const names = within(screen.getByTestId("portfolio-closed")).getAllByRole("button", { name: /^Open closed trade / }).map((b) => b.getAttribute("aria-label")!.replace("Open closed trade ", "").replace(" in the strategy builder", ""));
+    expect(names).toEqual(["newest", "middle", "oldest"]);
+  });
+
   it("Delete all closed asks twice", async () => {
     store.closed = [closedDoc("c1", "first", 2250), closedDoc("c2", "second", -500)];
     mount("/portfolio");

@@ -16,7 +16,7 @@ import { portfolioStats, type PortfolioStats } from "../lib/portfolioStats";
 import { EQUITY_HEIGHT, portfolioEquityOption } from "../lib/portfolioCharts";
 import { isExited, strategyPnl, type Leg, type OptionType } from "../lib/strategy";
 import { useStreamStatus } from "../lib/useLive";
-import { CLOSED_KEY, OPEN_CLOSED_KEY, SAVE_KEY, WORKING_KEY, type Closed, type Saved } from "./StrategyBuilder";
+import { CLOSED_KEY, OPEN_CLOSED_KEY, SAVE_KEY, sortClosed, WORKING_KEY, type Closed, type Saved } from "./StrategyBuilder";
 
 const money = (v: number | null, signed = true) => (v == null ? "—" : `${v < 0 ? "−" : v > 0 && signed ? "+" : ""}₹${fmtInt(Math.round(Math.abs(v)))}`);
 const tone = (v: number | null) => (v == null || v === 0 ? "text-paper" : v > 0 ? "text-up" : "text-down");
@@ -33,7 +33,8 @@ export function Portfolio() {
   const server = useQuery({ queryKey: ["portfolio-strategies"], queryFn: api.strategies, refetchInterval: 15_000, retry: false });
   // the server's list when it answers, otherwise this browser's copy (the builder keeps both in step)
   const saved = (server.data?.saved as unknown as Saved[] | undefined) ?? readLocal<Saved>(SAVE_KEY);
-  const closed = (server.data?.closed as unknown as Closed[] | undefined) ?? readLocal<Closed>(CLOSED_KEY);
+  const closedRaw = (server.data?.closed as unknown as Closed[] | undefined) ?? readLocal<Closed>(CLOSED_KEY);
+  const closed = useMemo(() => sortClosed(closedRaw), [closedRaw]); // newest closed first, whatever order the server lists them in
   const working = readWorking();
   const draft = working && working.expiry && working.legs.some((l) => !isExited(l)) && !working.loaded ? working : null;
 
