@@ -104,3 +104,17 @@ describe("IV - Intraday with several expiries", () => {
     expect(await screen.findByTestId("ivintraday-term")).toBeInTheDocument();
   });
 });
+
+describe("Volatility Skew: an expiry in its last minutes or past its close", () => {
+  it("says the smile is the last chain that could be solved when the backend fell back to one, and gives the time", async () => {
+    mock({ "/api/intraday/iv-skew": { ...skew, at: "2026-11-23T09:50:00Z", fallback: { reason: "x", newest_at: "2026-11-23T10:09:05Z" } } });
+    wrap(<IvSkewBody expiry="2026-11-10" />);
+    expect(await screen.findByTestId("ivskew-fallback")).toHaveTextContent("last chain that can: 15:20:00 IST");
+  });
+  it("with nothing solvable it explains the expiry is over and where to go next, instead of a bare status", async () => {
+    mock({ "/api/intraday/iv-skew": { status: "not computed: less than 15 minutes to expiry (or expired)", expiry: "2026-11-23", smile: [], term: [] } });
+    wrap(<IvSkewBody expiry="2026-11-23" />);
+    expect(await screen.findByTestId("ivskew-empty")).toHaveTextContent("has expired, or is within 15 minutes of its close");
+    expect(screen.getByTestId("ivskew-empty")).toHaveTextContent("Choose a later expiry");
+  });
+});

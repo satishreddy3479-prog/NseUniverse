@@ -904,6 +904,8 @@ export interface IvSkew {
   status: string; expiry?: string; at?: string; age_seconds?: number; spot?: number; forward?: number; atm_strike?: number; atm_iv?: number | null; days?: number | null;
   term_structure?: TermStructure;
   session?: string; sessions?: string[];
+  /** set when the newest stored chain could not be solved (expiry within 15 minutes or past): the smile shown is the last chain that could */
+  fallback?: { reason: string; newest_at: string } | null;
   cards?: SkewMeasures & { term_slope_per_30d: number | null };
   smile: { strike: number; side: "CE" | "PE"; iv: number | null; delta: number | null }[];
   term: (SkewMeasures & { expiry: string; days: number | null; atm_iv: number | null })[];

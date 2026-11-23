@@ -75,6 +75,7 @@ export function IvMomentumBody({ expiry }: { expiry: string | null }) {
           <div role="group" aria-label="Chart interval" className="flex items-center gap-1">Chart every {TFS.map((t) => <button key={t} type="button" aria-pressed={tf === t} onClick={() => setTf(t)} className={`min-h-8 rounded-sm border px-2 ${tf === t ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{t}m</button>)}</div>
           <LayoutBar layout={L} className="ml-auto" />
         </div>
+        {d.table.now && Date.parse(d.latest_at) - Date.parse(d.table.now) > 120_000 && <p className="mt-1 text-xs text-warn" data-testid="ivmom-asof">The newest chains of {d.expiry} (its last 15 minutes, and after its close) cannot be solved, so the table is read from the last chain that can: {new Date(d.table.now).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false })} IST.</p>}
         {stale && <p className="mt-1 text-xs text-warn" data-testid="ivmom-stale">The newest stored chain is {Math.round(d.age_seconds / 60)} minutes old.</p>}
         <div className="mt-2 overflow-x-auto">
           <table className="w-full min-w-[40rem] text-xs" data-testid="ivmom-table">

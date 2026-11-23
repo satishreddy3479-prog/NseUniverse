@@ -52,3 +52,15 @@ def test_previous_session_close_comparison() -> None:
     assert out["d25"]["ce_change"] == pytest.approx(1.0) and out["d25"]["pe_change"] == pytest.approx(1.0)
     assert out["d25"]["momentum"] == pytest.approx(0.0) and out["spot_change"] == 100
     assert m.momentum_table([now], None, (5,))["previous_close"] is None
+
+
+def test_the_table_reads_from_the_last_snapshot_that_has_volatility_when_the_newest_cannot_be_solved() -> None:
+    """The last minutes of an expiring contract have no solvable chain (less than 15 minutes to expiry): the table is built from the last one that has."""
+    empty = {"at": T0 + timedelta(minutes=12), "spot": 24040.0, "atm": {"ce": None, "pe": None}, "d25": {"ce": None, "pe": None}, "d10": {"ce": None, "pe": None}}
+    points = [pt(0, 24000, 13.0, 15.0), pt(5, 24030, 13.6, 15.2), pt(10, 24020, 14.0, 15.0), empty]
+    table = m.momentum_table(points, None, (5,))
+    assert table["now"] == (T0 + timedelta(minutes=10)).isoformat()  # not the empty 12-minute snapshot
+    row = table["periods"]["5"]  # from 10 to 5 minutes: CE 14.0 - 13.6 = +0.4, PE 15.0 - 15.2 = -0.2, momentum +0.6
+    assert row["d25"]["ce_change"] == pytest.approx(0.4) and row["d25"]["pe_change"] == pytest.approx(-0.2) and row["d25"]["momentum"] == pytest.approx(0.6)
+    assert m.momentum_table([empty], None)["now"] is None  # nothing solvable at all: nothing shown, nothing invented
+    assert m.has_iv(pt(0, 1, None, None)) is True  # the ATM IV is there

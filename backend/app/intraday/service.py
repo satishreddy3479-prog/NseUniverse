@@ -996,6 +996,13 @@ class IntradayService:
             return {"status": "no stored option-chain sample for this expiry", "expiry": expiry, "smile": [], "term": []}
         latest = ss[-1]
         sf = self._surface_of(latest, exp_d, latest.received_at, each_side)
+        fallback: dict[str, Any] | None = None
+        if str(sf.get("status", "")).startswith("not computed: less than"):
+            # an expiring contract in its last minutes (or after its expiry, read later) cannot be solved: the smile of the last chain that can is shown, and says so
+            found = self._last_solvable(ss[:-1], exp_d, each_side)
+            if found is not None:
+                fallback = {"reason": "the newest stored chain is less than 15 minutes from expiry (or past it)", "newest_at": latest.received_at.isoformat()}
+                latest, sf = found
         if sf.get("status") != "ok":
             return {"status": str(sf.get("status")), "expiry": expiry, "smile": [], "term": []}
         rows = sf["rows"]
@@ -1025,8 +1032,20 @@ class IntradayService:
             "spot": latest.spot, "forward": sf["forward"], "atm_strike": sf["atm_strike"], "atm_iv": sf.get("atm_iv"),
             "days": sf.get("time_to_expiry_days"), "cards": {**cards, "term_slope_per_30d": term_slope},
             "smile": smile, "term": term, "term_structure": structure, "session": sday.isoformat(), "sessions": self.expiry_sessions(expiry),
-            "model": "Black-76; forward from put-call parity", "rate_assumed": self.risk_free_rate,
+            "model": "Black-76; forward from put-call parity", "rate_assumed": self.risk_free_rate, "fallback": fallback,
         }
+
+    def _last_solvable(self, samples: list[Any], exp_d: date, each_side: int, limit: int = 900) -> tuple[Any, dict[str, Any]] | None:
+        """The newest of ``samples`` whose chain can be solved (15 minutes or more to expiry), with its surface; None when none can."""
+        for s in reversed(samples[-limit:]):
+            if s.spot is None:
+                continue
+            sf = self._surface_of(s, exp_d, s.received_at, each_side)
+            if sf.get("status") == "ok":
+                return s, sf
+            if not str(sf.get("status", "")).startswith("not computed: less than"):
+                return None  # no prices, not a matter of time: going further back would not help
+        return None
 
     def iv_history(self, sessions: int = 20, min_days_left: int = 2, far: bool = False) -> list[dict[str, Any]]:
         """ATM implied volatility at the end of each stored session, for the IV against HV chart.

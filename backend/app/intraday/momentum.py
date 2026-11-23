@@ -68,17 +68,27 @@ def compare(now: dict[str, Any], then: dict[str, Any] | None) -> dict[str, Any]:
     return out
 
 
+def has_iv(p: dict[str, Any]) -> bool:
+    """Whether a snapshot has any implied volatility at all (its chain could be solved)."""
+    return any(p[b][s] is not None for b in BUCKETS for s in ("ce", "pe"))
+
+
 def momentum_table(
     points: Sequence[dict[str, Any]], prev_close: dict[str, Any] | None, periods: Sequence[int] = PERIODS_MIN
 ) -> dict[str, Any]:
-    """Momentum against each look-back period and the previous session's close, measured from the newest snapshot."""
-    if not points:
+    """Momentum against each look-back period and the previous session's close, measured from the newest snapshot that has implied volatility.
+
+    The last minutes of an expiring contract cannot be solved (less than 15 minutes to expiry), so the newest snapshot of that session has none; the table then reads from the
+    last one that has (its time is ``now``), instead of showing nothing. Nothing is filled: a snapshot without volatility is skipped, not carried."""
+    solved = [i for i, p in enumerate(points) if has_iv(p)]
+    if not points or not solved:
         return {"now": None, "periods": {}, "previous_close": None}
-    now = points[-1]
+    idx = solved[-1]
+    now = points[idx]
     table: dict[str, Any] = {}
     for n in periods:
         tol = timedelta(minutes=2 if n <= 5 else 5)
-        then = nearest_before(points[:-1], now["at"] - timedelta(minutes=n), tol)
+        then = nearest_before(points[:idx], now["at"] - timedelta(minutes=n), tol)
         table[str(n)] = compare(now, then)
     return {"now": now["at"].isoformat(), "periods": table, "previous_close": compare(now, prev_close) if prev_close else None}
 

@@ -58,7 +58,11 @@ export function IvSkewBody({ expiry }: { expiry: string | null }) {
   if (!live && q.isLoading) return <Loading label="Loading" />;
   if (!live && (q.isError || !q.data)) return <p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down">The volatility skew could not be loaded: {q.error instanceof Error ? q.error.message : "unknown error"}.</p>;
   const stored = q.data;
-  if (!live && (!stored || stored.smile.length === 0 || !stored.cards)) return <p className="text-sm text-muted" data-testid="ivskew-empty">{stored?.status ?? "No stored chain"}.</p>;
+  if (!live && (!stored || stored.smile.length === 0 || !stored.cards)) return (
+    <p className="text-sm text-muted" data-testid="ivskew-empty">
+      {stored?.status?.startsWith("not computed: less than") ? `${expiry} has expired, or is within 15 minutes of its close, and no earlier chain of that expiry is stored: a smile cannot be solved. Choose a later expiry above (Weekly, Monthly or Other).` : `${stored?.status ?? "No stored chain"}.`}
+    </p>
+  );
   // one view model for both sources
   const s = {
     expiry, days: stored?.days ?? null, term: stored?.term ?? [], model: stored?.model ?? "Black-76; forward from put-call parity", rate_assumed: stored?.rate_assumed,
@@ -110,6 +114,7 @@ export function IvSkewBody({ expiry }: { expiry: string | null }) {
     <div className="flex flex-col gap-3" data-testid="ivskew-tool">
       <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
         <div className="text-xs text-muted">Expiry {s.expiry} · {s.days == null ? MISSING : s.days.toFixed(1)} days · NIFTY {fmtInt(s.spot ?? null)} · forward {fmtInt(s.forward ?? null)} · ATM strike {fmtInt(s.atm_strike ?? null)} · {live ? "live chain, updating with every tick" : "stored chain"} at {s.at ? fmtTimeIST(s.at) : MISSING} IST</div>
+        {stored?.fallback && !live && <p className="mt-1 text-xs text-warn" data-testid="ivskew-fallback">The chains of {expiry} in its last 15 minutes (and after its close) cannot be solved, so this is the last chain that can: {new Date(s.at ?? 0).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false })} IST. Nothing after it is shown.</p>}
         {stale && <p className="mt-1 text-xs text-warn" data-testid="ivskew-stale">The newest stored chain is {Math.round((s.age_seconds ?? 0) / 60)} minutes old: the sampler may have stopped.</p>}
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5" data-testid="ivskew-cards">
           {card("ATM IV", n2(s.atm_iv, "%"), "Average of the ATM call and put implied volatility")}

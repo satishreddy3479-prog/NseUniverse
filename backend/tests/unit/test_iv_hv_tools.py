@@ -336,3 +336,26 @@ def test_the_backtest_queries_use_the_existing_indexes(tmp_path: Path) -> None:
     text = [" ".join(str(c) for r in p for c in r) for p in plans]
     assert "ix_samples_lookup" in text[0] and "SCAN samples" not in text[0]
     assert "SEARCH contracts" in text[1] and "SCAN contracts" not in text[1]
+
+
+def test_iv_skew_shows_the_last_solvable_chain_when_the_newest_is_too_close_to_expiry(tmp_path: Path) -> None:
+    """23 Nov 2026 (expiry day, read after the close): every chain from 15:25 had less than 15 minutes to expiry, and the page said 'not computed'. The smile of the last chain that can be solved is shown, and says so."""
+    svc = make(tmp_path, 30, 30)
+    real = svc._surface_of
+    newest = ist(9, 44)
+
+    def fake(sample, exp_d, at, each_side=15):  # type: ignore[no-untyped-def]
+        if sample.received_at >= newest:
+            return {"status": "not computed: less than 15 minutes to expiry (or expired)"}
+        return real(sample, exp_d, at, each_side)
+
+    svc._surface_of = fake  # type: ignore[method-assign]
+    out = svc.iv_skew(EXP)
+    assert out["status"] == "ok" and out["smile"]
+    assert out["at"] == ist(9, 43).isoformat() or str(out["at"]).startswith(ist(9, 43).astimezone(UTC).isoformat()[:16])  # the chain before the newest
+    assert out["fallback"]["newest_at"].startswith(newest.astimezone(UTC).isoformat()[:16])
+    # nothing solvable at all: the status stays, nothing is invented
+    svc._surface_of = lambda *a, **k: {"status": "not computed: less than 15 minutes to expiry (or expired)"}  # type: ignore[method-assign]
+    assert svc.iv_skew(EXP)["status"].startswith("not computed: less than") and svc.iv_skew(EXP)["smile"] == []
+    # a normal read has no fallback
+    assert make(tmp_path / "n", 30, 30).iv_skew(EXP)["fallback"] is None
