@@ -80,6 +80,25 @@ describe("Strategy builder with the server keeping the stops and targets", () =>
     expect(JSON.parse(localStorage.getItem(WORKING_KEY) ?? "{}").moveToCost).toBe(false); // and kept across a refresh
   });
 
+  it("an old working copy kept in this browser is not written back when the server's running strategy is empty (20 and 23 Nov 2026: a closed straddle came back)", async () => {
+    // the server closed and reset the strategy: nothing is running; this browser still holds the old straddle, saved only a day ago
+    running = { doc: { rev: 9, auto: true, lotSize: 75, mult: 1, expiry: "2026-11-10", legs: [] } };
+    localStorage.setItem(WORKING_KEY, JSON.stringify({ legs: [leg({ id: "old1" }), leg({ id: "old2", type: "PE" })], expiry: "2026-11-10", name: "", loaded: "straddle s57", baseline: [], rules: { stopLoss: null, target: null, lock: null }, rearmAt: "2026-11-04T05:01:59.334Z", hold: { closeAt: "15:20", mode: "intraday" }, holdFrom: "2026-11-04T05:02:01Z", at: Date.parse("2026-11-04T10:00:00Z") }));
+    mount();
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/strategies/running" && c.method === "GET")).toBe(true));
+    await new Promise((r) => setTimeout(r, 1500)); // longer than the page's pause before it sends an edit
+    expect(screen.queryAllByLabelText("Stop-loss premium")).toHaveLength(0); // the old legs are not shown
+    expect(calls.some((c) => c.method === "PUT" && c.url === "/api/strategies/running")).toBe(false); // and nothing was sent
+    expect(JSON.parse(localStorage.getItem(WORKING_KEY) ?? '{"legs":[]}').legs).toEqual([]);
+  });
+
+  it("with nothing on the server at all, the working copy of this browser still seeds it", async () => {
+    running = { doc: null };
+    localStorage.setItem(WORKING_KEY, JSON.stringify({ legs: [leg({ id: "mine" })], expiry: "2026-11-10", name: "", loaded: null, baseline: [], rearmAt: null, holdFrom: null, at: Date.parse("2026-11-04T10:00:00Z") }));
+    mount();
+    await screen.findAllByLabelText("Stop-loss premium"); // the local legs are shown
+  });
+
   it("moves a working strategy of an expired expiry to the latest weekly expiry instead of staying on it", async () => {
     localStorage.setItem(WORKING_KEY, JSON.stringify({ legs: [leg({ expiry: "2026-11-03" })], expiry: "2026-11-03", name: "old", loaded: null, baseline: [], at: Date.now() }));
     mount();

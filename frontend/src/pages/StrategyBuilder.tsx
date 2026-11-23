@@ -505,6 +505,14 @@ export default function StrategyBuilder() {
       seenEvents.current = last.at;
     }
   };
+  /** This browser's own working copy is dropped when the server holds the truth and it is empty. A phone or a tab that kept a straddle wrote it back every time the server's running strategy
+   *  was empty (20 and 23 Nov 2026: a closed straddle came back, open, and was valued on old prices); the working copy only seeds a server that holds nothing at all. */
+  const clearLocalCopy = () => {
+    skipPush.current = true;
+    setLegs([]); setBaseline([]); setName(""); setLoaded(null); setMult(1);
+    setRules(NO_RULES); setRstate(null); setRearmAt(null); setHold(DEFAULT_HOLD); setHoldFrom(null); setMoveToCost(false); setPicked(null);
+    try { localStorage.removeItem(WORKING_KEY); } catch { /* nothing to remove */ }
+  };
   useEffect(() => {
     if (temp) { setHydrated(true); return; } // the server's running strategy is the user's own: not read, not replaced
     let off = false;
@@ -518,6 +526,7 @@ export default function StrategyBuilder() {
         seenEvents.current = last?.at ?? null;
         // the server's copy is the latest one (the page sends every change): take it unless its expiry has gone
         if (d.legs?.length && d.expiry && d.expiry >= todayIST()) adoptServer(d, false);
+        else clearLocalCopy(); // the server has no running strategy (closed, reset or past): that is the truth, and a copy this browser kept is not written back over it
       }
       setHydrated(true);
     }).catch(() => { if (!off) { setServerAuto(false); setHydrated(true); } });

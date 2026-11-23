@@ -396,3 +396,43 @@ def test_running_pnl_scales_with_the_lot_multiplier_and_says_when_nothing_runs(t
     auto.put(doc(legs=[{**sold(), "exitPrice": 90.0, "realised": 650.0, "key": "c"}]), auto.get()["rev"])  # type: ignore[index]
     done = auto.pnl_now()
     assert done["running"] is False and done["total"] == 650.0  # everything closed: nothing runs, the result is booked
+
+
+def test_a_closed_strategy_cannot_come_back_as_the_running_one(tmp_path: Path) -> None:
+    """20 and 23 Nov 2026: a phone that kept its own copy of a straddle wrote it back after the strategy was closed and the running one was empty; the old open legs were then valued on old prices."""
+    auto, store = make(tmp_path, 100.0)
+    leg = sold(id="s57-ce", enteredAt="2026-11-20T05:01:13.364Z")
+    closed_legs = [{**leg, "exitPrice": 40.1, "exitReason": "strategy", "realised": 7264.0}]
+    store.put("closed", "leg-1", {"name": "straddle s57", "legs": closed_legs})
+    auto.put(doc(legs=[]), None)  # the page closed it and reset: nothing running
+    rev = auto.get()["rev"]  # type: ignore[index]
+    with pytest.raises(RunningConflict) as e:  # the old copy, open legs and all, arrives with the current revision
+        auto.put(doc(legs=[leg]), rev)
+    assert e.value.current["legs"] == []
+    assert auto.get()["legs"] == []  # type: ignore[index]
+    # a new trade (new entry time, even at the same strike and price) and a leg with no recorded entry time are not that copy
+    auto.put(doc(legs=[sold(id="n1", enteredAt="2026-11-23T05:06:56.000Z")]), rev)
+    assert auto.get()["legs"][0]["id"] == "n1"  # type: ignore[index]
+    store.close()
+
+
+def test_the_running_strategys_own_legs_are_not_refused_even_when_a_closed_record_holds_them(tmp_path: Path) -> None:
+    """The page files a strategy under Closed while its legs are still the running document's: writing the same legs again (an edit of another field) must pass."""
+    auto, store = make(tmp_path, 100.0)
+    leg = sold(id="a1", enteredAt="2026-11-23T05:06:56.000Z")
+    first = auto.put(doc(legs=[leg]), None)
+    store.put("closed", "leg-2", {"name": "x", "legs": [{**leg, "exitPrice": 90.0}]})
+    again = auto.put(doc(legs=[leg], name="renamed"), first["rev"])
+    assert again["name"] == "renamed"
+    store.close()
+
+
+def test_a_strategy_past_its_last_expiry_is_not_running_and_has_no_pnl(tmp_path: Path) -> None:
+    """An old straddle left in the running document after its expiry must not show a P&L on the home page."""
+    auto, store = make(tmp_path, 100.0)
+    auto.put(doc(expiry="2026-11-04", legs=[sold()]), None)  # AT is 5 Nov 2026
+    out = auto.pnl_now()
+    assert out["running"] is False and out["total"] is None
+    auto.put(doc(expiry="2026-11-05", legs=[sold()]), auto.get()["rev"])  # type: ignore[index]
+    assert auto.pnl_now()["running"] is True  # the expiry day itself still runs
+    store.close()

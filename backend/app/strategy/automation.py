@@ -445,6 +445,13 @@ def keep_exits(cur: dict[str, Any], doc: dict[str, Any]) -> tuple[dict[str, Any]
     return ({**doc, "legs": legs} if kept else doc), kept
 
 
+def leg_signature(lg: Leg) -> tuple[Any, ...] | None:
+    """One entered leg of one strategy: contract, side, entry price and the moment of entry. None when the entry time is not recorded (it cannot be told from another entry)."""
+    if not lg.get("enteredAt"):
+        return None
+    return (lg.get("expiry"), lg.get("strike"), lg.get("type"), lg.get("action"), lg.get("premium"), lg.get("enteredAt"))
+
+
 class RunningConflict(Exception):
     def __init__(self, current: dict[str, Any] | None) -> None:
         super().__init__("the server's copy changed")
@@ -495,6 +502,7 @@ class StrategyAutomation:
             # trailing profit floor moves the revision every few seconds) is not a conflict: it used to refuse the page's Exit all, which then took the server's open legs back.
             if cur is not None and (base_rev is None or int(cur.get("legsRev", cur_rev)) > base_rev):
                 raise RunningConflict(cur)
+            self._refuse_closed_legs(cur, doc)
             # the state of the strategy rules (profit floor, which rule fired) belongs to the server; a browser edit only
             # replaces it when it asks for a re-arm (a new ``rearmAt``)
             keep = (cur or {}).get("rstate") if doc.get("rearmAt") == (cur or {}).get("rearmAt") else None
@@ -511,6 +519,20 @@ class StrategyAutomation:
             doc = {**doc, "rev": cur_rev + 1, "legsRev": legs_rev, "serverEvents": events, "rstate": keep, "holdFrom": hold_from}
             self.store.put(RUNNING_KIND, RUNNING_KEY, doc)
             return doc
+
+    def _refuse_closed_legs(self, cur: dict[str, Any] | None, doc: dict[str, Any]) -> None:
+        """A strategy that was closed cannot come back as the running one. A browser that kept its own copy of a strategy (a phone, a tab left open) writes it back whenever the server's
+        running strategy is empty: 20 and 23 Nov 2026 an old straddle with open legs came back after its own close, was valued on old prices, and was shown in the builder again. A leg that
+        is still open in the incoming document but is the same entered leg (contract, side, entry price, entry time) as a leg of a Closed strategy is that old copy: refused, and the browser
+        takes the server's state (a re-entry or a new trade has a new entry time and passes). The server's own current legs are exempt: they are the running strategy itself."""
+        mine = {sig for lg in (cur or {}).get("legs") or [] if (sig := leg_signature(lg)) is not None}
+        incoming = [(lg, leg_signature(lg)) for lg in doc.get("legs") or [] if not is_exited(lg)]
+        incoming = [(lg, sig) for lg, sig in incoming if sig is not None and sig not in mine]
+        if not incoming:
+            return
+        closed = {sig for item in self.store.list("closed") for lg in item.get("legs") or [] if (sig := leg_signature(lg)) is not None}
+        if any(sig in closed for _lg, sig in incoming):
+            raise RunningConflict(cur)
 
     def market_open(self, at: datetime) -> bool:
         """Stops, targets and the hold rule act only inside a real session: a trading day (exchange calendar; weekday when it
@@ -569,6 +591,9 @@ class StrategyAutomation:
         out: dict[str, Any] = {"at": at.isoformat(), "running": False, "live": False, "name": None, "booked": None, "open": None, "total": None, "missing": []}
         if not doc or not doc.get("legs"):
             return out
+        exp = doc.get("expiry")
+        if exp and exp < at.astimezone(IST).date().isoformat():
+            return out  # the strategy's last expiry has passed: not running (the server checks skip it too)
         lot = doc.get("lotSize")
         mult = float(doc.get("mult") or 1)
         legs = [lg for lg in doc["legs"] if lg.get("enabled", True) is not False]
