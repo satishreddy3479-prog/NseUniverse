@@ -1068,3 +1068,25 @@ def test_gift_nifty_rolls_on_expiry_day_once_the_next_month_trades_past_the_expi
     only = nseix.gift_quote(json.dumps({"data": [nov]}).encode(), now, BY_KEY["GIFT"])
     assert only and only[1] == "23 Nov 2026"
 
+
+
+def test_gift_nifty_rolls_every_month_across_a_run_of_expiries() -> None:
+    """Three consecutive monthly expiries (synthetic dates and prices): on each expiry day the dead contract is replaced once the next month trades past it; the day before it is still the quote; the day after it is gone by date."""
+    exps = ["23-Nov-2026", "29-Dec-2026", "28-Jan-2027", "25-Feb-2027"]
+    d = [datetime.strptime(e, "%d-%b-%Y") for e in exps]
+
+    def feed(last_trade: dict[int, datetime]) -> bytes:
+        rows = [{"INSTRUMENTTYPE": "FUTIDX", "SYMBOL": "NIFTY", "LASTPRICE": 25000.0 + i, "EXPIRYDATE": exps[i], "CLOSE": 25000.0, "TIMESTMP": t.strftime("%d-%b-%Y %H:%M:%S")} for i, t in last_trade.items()]
+        return json.dumps({"data": rows}).encode()
+
+    for i in range(3):
+        day = d[i]
+        dead = day.replace(hour=15, minute=30)  # the expiring contract's last trade on its expiry day
+        live = day.replace(hour=17, minute=0)
+        now = datetime(day.year, day.month, day.day, 11, 31, tzinfo=UTC)  # 17:01 IST
+        before = nseix.gift_quote(feed({i: live - timedelta(days=1), i + 1: live - timedelta(days=1)}), now - timedelta(days=1), BY_KEY["GIFT"])
+        assert before and before[1] == day.strftime("%d %b %Y")  # the day before: both trade together, the nearest stays
+        on = nseix.gift_quote(feed({i: dead, i + 1: live}), now, BY_KEY["GIFT"])
+        assert on and on[1] == d[i + 1].strftime("%d %b %Y")  # on expiry day: rolled
+        after = nseix.gift_quote(feed({i: dead, i + 1: live}), now + timedelta(days=1), BY_KEY["GIFT"])
+        assert after and after[1] == d[i + 1].strftime("%d %b %Y")  # the next day: the dead contract is past its date
