@@ -535,6 +535,7 @@ export default function StrategyBuilder() {
   }, []);
   useEffect(() => {
     if (!hydrated || !serverAuto || temp) return;
+    if (opened) return; // a closed trade opened to look at is not the running strategy: writing it would replace the live one on the server (its stops and legs), so it is never sent
     if (skipPush.current) { skipPush.current = false; sentRef.current = coreJson; return; }
     if (coreJson === sentRef.current) return;
     const baseRev = revRef.current; // the revision this payload was built on: if the server moves on before the send, the send is refused
@@ -549,7 +550,7 @@ export default function StrategyBuilder() {
     }, 600);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coreJson, hydrated, serverAuto]);
+  }, [coreJson, hydrated, serverAuto, opened]);
   useEffect(() => {
     if (!hydrated || temp) return;
     const poll = async () => {
@@ -853,7 +854,17 @@ export default function StrategyBuilder() {
   const net = (k: number, t: OptionType) => legs.filter((l) => l.expiry === expiry && l.strike === k && l.type === t).reduce((s, l) => s + sign(l.action) * l.lots, 0);
   const canNew = legs.length > 0 || name !== "" || loaded != null || opened != null;
   /** Reset: forget the strategy on the page entirely and show the default start page: every leg (including ones only being checked and not saved), the name, the what-if controls. Saved and closed strategies are not touched. */
-  const newStrategy = () => { setLegs([]); setRearmAt(new Date().toISOString()); setHoldFrom(null); setBaseline([]); setName(""); setLoaded(null); setOpened(null); setNote(null); setSel(null); setMult(1); setDays(0); setIvPts(0); setWhatPct(0); setZoom(0); };
+  const newStrategy = () => {
+    if (opened) { // leaving a closed trade that was opened to look at: the running strategy comes back from the server; nothing is cleared there
+      skipPush.current = true; setLegs([]); setBaseline([]); setName(""); setOpened(null); setLoaded(null); setNote(null); setSel(null); // the legs go at once, so the closed ones are not filed again while the server answers
+      api.runningGet().then((r) => {
+        if (r.doc?.legs?.length && r.doc.expiry && r.doc.expiry >= todayIST()) adoptServer(r.doc, false);
+        else clearLocalCopy();
+      }).catch(() => clearLocalCopy());
+      return;
+    }
+    setLegs([]); setRearmAt(new Date().toISOString()); setHoldFrom(null); setBaseline([]); setName(""); setLoaded(null); setOpened(null); setNote(null); setSel(null); setMult(1); setDays(0); setIvPts(0); setWhatPct(0); setZoom(0);
+  };
   const savedEntry = loaded ? saved.find((x) => x.name === loaded) : undefined;
   const sig = (ls: Leg[]) => JSON.stringify(ls.map(({ id: _i, ...r }) => r));
   const dirty = !!savedEntry && sig(legs) !== sig(savedEntry.legs);
@@ -1153,14 +1164,14 @@ export default function StrategyBuilder() {
                     <button type="button" disabled={!dirty || legs.length === 0 || !expiry} data-testid="update-saved"
                       title={dirty ? `Overwrite the saved strategy “${loaded}” with what is shown now` : `“${loaded}” already matches what is shown`}
                       onClick={() => { persist(saved.map((x) => (x.name === loaded ? { ...x, updatedAt: new Date().toISOString(), expiry: strategyExpiry!, legs } : x))); setBaseline(legs); }}
-                      className="rounded-sm border border-brass bg-brass/15 px-3 py-1 text-paper hover:bg-brass/25 disabled:opacity-40">Update{dirty && <span className="ml-1 text-warn" aria-label="unsaved changes">●</span>}</button>
+                      className={`rounded-sm border px-3 py-1 text-paper disabled:opacity-40 ${dirty ? "border-warn bg-warn/25 font-semibold ring-1 ring-warn hover:bg-warn/35" : "border-brass bg-brass/15 hover:bg-brass/25"}`}>Update{dirty && <span className="ml-1 text-warn" aria-label="unsaved changes">● unsaved</span>}</button>
                   ) : (
                     // a strategy that is not in the Saved list (a running one, one built from the chain, one the server opened) gets the same Update: it saves the strategy as it is shown, under the name typed
                     // above or a dated one, and from then on Update overwrites that entry. Same button, same place, for one leg or ten.
                     <button type="button" disabled={legs.length === 0 || !expiry} data-testid="update-saved"
                       title="This strategy is not saved yet: Update saves what is shown now (under the name typed above, or a dated name), and later edits are saved to it with Update"
                       onClick={() => { const nm = name.trim() || loaded || `Strategy ${new Date().toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`; persist([{ name: nm, savedAt: new Date().toISOString(), expiry: strategyExpiry!, legs }, ...saved.filter((x) => x.name !== nm)]); setLoaded(nm); setBaseline(legs); setName(""); }}
-                      className="rounded-sm border border-brass bg-brass/15 px-3 py-1 text-paper hover:bg-brass/25 disabled:opacity-40">Update<span className="ml-1 text-warn" aria-label="not saved yet">●</span></button>
+                      className="rounded-sm border border-warn bg-warn/25 px-3 py-1 font-semibold text-paper ring-1 ring-warn hover:bg-warn/35 disabled:opacity-40">Update<span className="ml-1 text-warn" aria-label="not saved yet">● not saved</span></button>
                   ))}
                   <button type="button" onClick={exitAll} disabled={!lotSize || legs.every((l) => l.enabled === false)} title="Exit every ticked leg at its stored price and save the result to Closed. Nothing is sent to a broker." className="rounded-sm border border-down bg-down/15 px-3 py-1 font-semibold text-down hover:bg-down/25 disabled:opacity-40">Exit all</button>
                 </div>

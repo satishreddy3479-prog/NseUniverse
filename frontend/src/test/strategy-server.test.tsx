@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
-import { WORKING_KEY } from "../pages/StrategyBuilder";
+import { OPEN_CLOSED_KEY, WORKING_KEY } from "../pages/StrategyBuilder";
 import { bigChain, expiries, status, summary } from "./fixtures";
 
 vi.mock("../components/EChart", async () => {
@@ -17,11 +17,14 @@ const leg = (over: Record<string, unknown> = {}) => ({
 type Call = { url: string; method: string; body: unknown };
 let calls: Call[];
 let running: { doc: unknown } = { doc: null };
+let strategies: { saved: unknown[]; closed: unknown[] } = { saved: [], closed: [] };
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-05T05:00:00Z"));
   calls = [];
   running = { doc: null };
+  strategies = { saved: [], closed: [] };
+  sessionStorage.clear();
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const full = String(input), url = full.split("?")[0]!, method = init?.method ?? "GET";
     calls.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : null });
@@ -33,7 +36,7 @@ beforeEach(() => {
     chain.snapshot.underlying_ltp = 24050;
     const map: Record<string, unknown> = {
       "/api/status": status(), "/api/expiries": { ...expiries, weekly: "2026-11-10", monthly: "2026-11-24", available: ["2026-11-10", "2026-11-24"] }, "/api/snapshots": [summary()],
-      "/api/option-chain": chain, "/api/strategies": { saved: [], closed: [] },
+      "/api/option-chain": chain, "/api/strategies": strategies,
     };
     return map[url] == null ? new Response("{}", { status: 404 }) : new Response(JSON.stringify(map[url]), { status: 200 });
   }));
@@ -90,6 +93,22 @@ describe("Strategy builder with the server keeping the stops and targets", () =>
     expect(screen.queryAllByLabelText("Stop-loss premium")).toHaveLength(0); // the old legs are not shown
     expect(calls.some((c) => c.method === "PUT" && c.url === "/api/strategies/running")).toBe(false); // and nothing was sent
     expect(JSON.parse(localStorage.getItem(WORKING_KEY) ?? '{"legs":[]}').legs).toEqual([]);
+  });
+
+  it("opening a closed trade to look at it never replaces the running strategy on the server, and leaving the view brings the running strategy back", async () => {
+    running = { doc: { rev: 6, auto: true, lotSize: 75, mult: 1, expiry: "2026-11-10", name: "live", legs: [leg({ id: "live1" })] } };
+    strategies = { saved: [], closed: [{ id: "c1", name: "yesterday", closedAt: "2026-11-04T10:00:00Z", snapshotAt: "2026-11-04T10:00:00Z", expiry: "2026-11-10", lotSize: 75, pnl: 500, legs: [{ ...leg({ id: "old", strike: 23900, exitPrice: 90, exitReason: "strategy", realised: 750 }), exit: 90 }] }] };
+    sessionStorage.setItem(OPEN_CLOSED_KEY, "c1");
+    mount();
+    expect(await screen.findByTestId("opened-closed")).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 1500)); // longer than the page's pause before it sends an edit
+    expect(calls.some((c) => c.method === "PUT" && c.url === "/api/strategies/running")).toBe(false); // the live strategy was not overwritten by the closed one
+    const { fireEvent } = await import("@testing-library/react");
+    fireEvent.click(screen.getByRole("button", { name: "Reset strategy" })); // leave the view
+    await waitFor(() => expect(screen.queryByTestId("opened-closed")).toBeNull());
+    expect(await screen.findAllByLabelText("Stop-loss premium")).toHaveLength(1); // the running strategy is back
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(calls.some((c) => c.method === "PUT" && c.url === "/api/strategies/running")).toBe(false); // and nothing was cleared on the server
   });
 
   it("with nothing on the server at all, the working copy of this browser still seeds it", async () => {
