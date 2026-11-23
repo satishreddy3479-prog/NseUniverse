@@ -40,7 +40,7 @@ const Stat = ({ label, value, tone }: { label: string; value: string; tone?: str
 );
 const Source = ({ text, last, prov }: { text: string; last: string; prov?: { date: string; close: number; note: string } | null }) => (
   <>
-  {prov && <p className="mt-2 text-[11px] text-warn" data-testid="ivchart-provisional">{fmtDay(prov.date)} is provisional: {prov.note}. HV, RV and the NIFTY line include it (close {prov.close.toLocaleString("en-IN")}).</p>}
+  {prov && <p className="mt-2 text-[11px] text-warn" data-testid="ivchart-provisional">{fmtDay(prov.date)} is provisional: {prov.note}. Only the NIFTY line shows it (close {prov.close.toLocaleString("en-IN")}): HV, RV, rank and percentile use final closes, so they stop at the last published day.</p>}
   <p className="mt-2 text-[11px] text-muted">Implied volatility here is {text}. India VIX is stored through {fmtDay(last)}. Our own at-the-money IV exists only for the sessions whose option chains were stored, so a long IV history, IVR and IVP come from India VIX, and that is what is plotted.</p>
   </>
 );
@@ -89,7 +89,8 @@ export function IvChartBody() {
       { name: `IVP ${range}`, type: "line", showSymbol: false, data: rk.ivp.slice(lo), lineStyle: { color: c.down, width: 1.8 }, itemStyle: { color: c.down } },
     ],
   };
-  const hvNow = d.hv[i] ?? null;
+  const hvLast = d.hv.reduce<number>((a, v, k) => (v != null ? k : a), -1); // the newest day with a figure: a provisional day has none
+  const hvNow = hvLast >= 0 ? d.hv[hvLast] ?? null : null;
   const hvAtIv = d.hv[j] ?? null;
   const gap = hvAtIv == null || d.iv[j] == null ? null : d.iv[j]! - hvAtIv;
   return (
@@ -111,7 +112,7 @@ export function IvChartBody() {
         <div style={{ height: 320 }} data-testid="ivchart-top"><EChart option={top} {...L.legend("top")} ariaLabel="India VIX against historical volatility with the NIFTY 50 close" /></div>
         <h2 className="mb-1 mt-3 text-sm font-semibold text-paper">IV rank and IV percentile</h2>
         <div style={{ height: 200 }} data-testid="ivchart-bottom"><EChart option={bottom} {...L.legend("bottom")} ariaLabel="IV rank and IV percentile through time" /></div>
-        <p className="mt-1 text-[11px] text-muted">IVR = (IV − lowest) ÷ (highest − lowest) × 100 over the range. IVP = share of the range&apos;s days with a lower IV than that day. HV is the standard deviation of the window&apos;s daily log returns (divided by n) × √252; RV (dashed green) is the root mean square of the same returns × √252, so it counts the average move itself as volatility too. Both use closes only. Dashed lines at 30 and 70 are our reading thresholds. The first {range} of history has no rank (the range is not full yet); nothing is filled in.</p>
+        <p className="mt-1 text-[11px] text-muted">IVR = (IV − lowest) ÷ (highest − lowest) × 100 over the range. IVP = share of the range&apos;s days with a lower IV than that day. HV is the sample standard deviation (divided by n − 1) of the window&apos;s daily log returns × √252; RV (dashed green) is the root mean square of the same returns × √252, so it counts the average move itself as volatility too. Both use the closes of regular sessions only: the one-hour Diwali Muhurat session is not a day, and a provisional close is never part of a figure. India VIX is annualised on calendar time and HV on trading time; over a window of 21 trading days (about 30 calendar days) that is a difference of under 1 %, not adjusted. Dashed lines at 30 and 70 are our reading thresholds. The first {range} of history has no rank (the range is not full yet); nothing is filled in.</p>
         <Source text={d.iv_source} last={d.dates[Math.max(0, d.iv.reduce<number>((a, v, k) => (v != null ? k : a), -1))]!} prov={d.provisional ?? null} />
         <MethodologyPanel metrics={[METRICS.iv_rank!, METRICS.iv_percentile!, METRICS.hv_rv!, METRICS.iv_minus_hv!]}
           example={rankExample(d.iv[j] ?? null, now, range, d.window, hvAtIv, d.rv[j] ?? null)}

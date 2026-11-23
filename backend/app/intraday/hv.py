@@ -1,11 +1,12 @@
 """Historical (realised) volatility of the index from stored daily closes, to set beside the options' implied volatility.
 
-HV(n) = population standard deviation (divide by n) of the last n daily log returns ln(close_t / close_t-1), times sqrt(252), in percent.
-RV(n) = root mean square of the same returns (no mean taken out), times sqrt(252): the textbook realised volatility.
-252 trading days a year is the usual convention for daily closes; implied volatility from the option model is annualised on
-calendar time to expiry, so the two are comparable but not identical in basis. Only final daily bars are used (the history
-store holds nothing partial); a return that spans more than MAX_GAP_DAYS calendar days (a missing stretch) is counted and
-reported, never hidden.
+HV(n) = sample standard deviation (divide by n - 1, the unbiased estimator of the variance) of the last n daily log returns ln(close_t / close_t-1), times sqrt(252), in percent.
+RV(n) = root mean square of the same returns (no mean taken out, divide by n), times sqrt(252): realised volatility in the sense of a sum of squared returns.
+Statistics use only the regular sessions' final closes: Muhurat (Diwali evening) sessions are one hour long and are left out, so the return across them is the
+full overnight return between two regular closes; a provisional (not yet published) close is never part of a statistic. 252 trading days a year is the usual convention
+for daily closes; India VIX (and the option model's implied volatility) is annualised on calendar time. For a window of n trading days spanning D calendar days the two
+bases differ by the factor sqrt(365 n / (252 D)) in volatility, about +0.7 % for 21 days over 30 (``basis_ratio``): comparable, and the difference is stated, not hidden.
+A return that spans more than MAX_GAP_DAYS calendar days (a missing stretch) is counted and reported, never hidden.
 """
 
 from __future__ import annotations
@@ -19,11 +20,28 @@ from app.prediction.targets import Bar
 TRADING_DAYS = 252
 WINDOWS = (10, 20, 30, 60)
 MAX_GAP_DAYS = 5  # a normal weekend plus one holiday is 4 days; longer means days are missing
+#: Muhurat (Diwali Laxmi Pujan) trading: a one-hour session on a day that is otherwise a holiday (or a weekend). Its bar is not a daily close. The dates from the NSE circulars; later years
+#: come from the trading calendar's special sessions (Settings) named "Muhurat". A full special session such as the Saturday budget day (1 Feb 2025) is a regular day and is kept.
+SHORT_SESSIONS: frozenset[date] = frozenset(
+    date.fromisoformat(d) for d in ("2020-11-14", "2021-11-04", "2022-10-24", "2023-11-12", "2024-11-01", "2025-10-21", "2026-11-08")
+)
 
 
-def log_returns(bars: list[Bar]) -> list[tuple[date, float, int]]:
-    """(date of the later close, ln return, calendar days spanned) for consecutive bars with positive closes."""
+def regular_bars(bars: list[Bar], exclude: frozenset[date] | set[date] = frozenset()) -> list[Bar]:
+    """The bars of regular full sessions: the short (Muhurat) sessions are dropped, so a return runs between two regular closes."""
+    skip = SHORT_SESSIONS | frozenset(exclude)
+    return [b for b in bars if b.session not in skip]
+
+
+def basis_ratio(trading_days: int, calendar_days: int) -> float:
+    """Volatility on the calendar-time basis divided by the same volatility on the trading-time basis for a window of ``trading_days`` returns spanning ``calendar_days``."""
+    return math.sqrt(365 * trading_days / (252 * calendar_days))
+
+
+def log_returns(bars: list[Bar], exclude: frozenset[date] | set[date] = frozenset()) -> list[tuple[date, float, int]]:
+    """(date of the later close, ln return, calendar days spanned) for consecutive regular-session bars with positive closes (short Muhurat sessions are skipped, see ``SHORT_SESSIONS``)."""
     out: list[tuple[date, float, int]] = []
+    bars = regular_bars(bars, exclude)
     for a, b in zip(bars, bars[1:], strict=False):
         if a.close > 0 and b.close > 0:
             out.append((b.session, math.log(b.close / a.close), (b.session - a.session).days))
@@ -35,7 +53,7 @@ def stdev_annual(returns: list[float]) -> float | None:
     if n < 2:
         return None
     mean = sum(returns) / n
-    var = sum((r - mean) ** 2 for r in returns) / n
+    var = sum((r - mean) ** 2 for r in returns) / (n - 1)  # sample variance: the mean is estimated from the same returns
     return math.sqrt(var * TRADING_DAYS) * 100
 
 
@@ -45,8 +63,8 @@ def hv(rets: list[tuple[date, float, int]], window: int) -> float | None:
     return stdev_annual([r for _, r, _ in rets[-window:]])
 
 
-def hv_report(bars: list[Bar], today: date, series_len: int = 120) -> dict[str, Any]:
-    rets = log_returns(bars)
+def hv_report(bars: list[Bar], today: date, series_len: int = 120, exclude: frozenset[date] | set[date] = frozenset()) -> dict[str, Any]:
+    rets = log_returns(bars, exclude)
     windows: dict[str, Any] = {}
     for w in WINDOWS:
         tail = rets[-w:] if len(rets) >= w else []
@@ -69,7 +87,7 @@ def hv_report(bars: list[Bar], today: date, series_len: int = 120) -> dict[str, 
         "bars": len(bars),
         "windows": windows,
         "series": {"window": 20, "dates": dates, "hv": values},
-        "method": "population standard deviation of daily log returns x sqrt(252), percent; final daily closes only",
+        "method": "sample standard deviation (n - 1) of daily log returns x sqrt(252), percent; final closes of regular sessions only",
     }
 
 
@@ -81,22 +99,22 @@ def rv_annual(returns: list[float]) -> float | None:
 
 
 def iv_chart(
-    nifty: list[Bar], vix: list[Bar], window: int, days: int = 750, provisional: Bar | None = None
+    nifty: list[Bar], vix: list[Bar], window: int, days: int = 750, provisional: Bar | None = None, exclude: frozenset[date] | set[date] = frozenset()
 ) -> dict[str, Any]:
     """Daily series for the IV / HV / IV-percentile chart: NIFTY close, India VIX close (the implied-volatility proxy, the
     market's own 30-day figure) and the rolling ``window``-day historical volatility of NIFTY, on the dates both have a bar.
 
     The HV at a date uses the ``window`` returns ending that day (computed over the whole history first, so the first plotted
-    days are not short of returns). A date without enough returns, or without a VIX bar, is dropped rather than filled.
+    days are not short of returns). A date without enough returns, or without a VIX bar, is dropped rather than filled. Short (Muhurat) sessions are not days.
 
-    ``provisional`` is a not-yet-published latest day (close taken from our own stored index feed): it is appended to the
-    NIFTY closes so HV, RV and the price line reach it, and its India VIX is missing (None), never filled."""
+    ``provisional`` is a not-yet-published latest day (close taken from our own stored index feed): it is added to the NIFTY close line only. It is not a final close, so
+    no HV or RV is computed with it and its India VIX is missing (None); both are never filled."""
     base = len(nifty)
     if provisional is not None and (not nifty or provisional.session > nifty[-1].session):
-        nifty = [*nifty, provisional]
+        pass
     else:
         provisional = None
-    rets = log_returns(nifty)
+    rets = log_returns(nifty, exclude)
     hv_at: dict[date, float | None] = {}
     rv_at: dict[date, float | None] = {}
     for i, (d, _r, _g) in enumerate(rets):
@@ -109,27 +127,32 @@ def iv_chart(
     iv: list[float | None] = []
     hvs: list[float | None] = []
     rvs: list[float | None] = []
-    for b in nifty:
+    for b in regular_bars(nifty, exclude):
         v = vix_at.get(b.session)
-        is_prov = provisional is not None and b.session == provisional.session
-        if (v is None and not is_prov) or b.session not in hv_at:
+        if v is None or b.session not in hv_at:
             continue
         dates.append(str(b.session))
         close.append(b.close)
-        iv.append(None if v is None else round(v, 2))
+        iv.append(round(v, 2))
         h = hv_at[b.session]
         hvs.append(None if h is None else round(h, 2))
         r = rv_at.get(b.session)
         rvs.append(None if r is None else round(r, 2))
+    if provisional is not None:
+        dates.append(str(provisional.session))
+        close.append(provisional.close)
+        iv.append(None)
+        hvs.append(None)
+        rvs.append(None)
     lo = max(0, len(dates) - days)
     return {
         "window": window, "dates": dates[lo:], "close": close[lo:], "iv": iv[lo:], "hv": hvs[lo:], "rv": rvs[lo:],
         "nifty_bars": base, "vix_bars": len(vix), "days": len(dates[lo:]),
         "provisional": None if provisional is None else {
             "date": str(provisional.session), "close": provisional.close,
-            "note": "NIFTY close from our own stored index feed (the daily history is published the next morning); India VIX for this day is not published yet and is left empty",
+            "note": "NIFTY close from our own stored index feed (the last level collected before the cash close; the official close is published with the daily history). It is drawn on the price line only: no HV, RV, rank or percentile uses it, and India VIX for this day is not published yet",
         },
         "iv_source": "India VIX daily close (NSE's 30-day implied volatility of NIFTY options); not the ATM IV of one expiry",
         "rv_method": "RV = sqrt(mean of squared daily log returns x 252), percent, same window (no mean subtracted)",
-        "method": "HV = population stdev of daily log returns x sqrt(252), percent; dates present in both series only",
+        "method": "HV = sample stdev (n - 1) of daily log returns x sqrt(252), percent; regular sessions only; dates present in both series only",
     }

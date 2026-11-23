@@ -500,13 +500,23 @@ class IntradayService:
         today = self._clock().astimezone(IST).date()
         bars = self.history.bars("NIFTY50")
         prov = self._provisional_bar(bars)
-        report = hvmod.hv_report([*bars, prov] if prov is not None else bars, today)
+        report = hvmod.hv_report(bars, today, exclude=self._muhurat_dates())  # final closes only: a provisional close is not part of a statistic
         report["provisional"] = None if prov is None else {"date": str(prov.session), "close": prov.close}
         report["iv_by_session"] = self.iv_history()
         report["iv_by_session_note"] = (
             "ATM implied volatility at the end of each stored session, nearest expiry with at least 2 days left (the expiry is named)."
         )
         return report
+
+    @staticmethod
+    def _muhurat_dates() -> frozenset[date]:
+        """Short (Muhurat) sessions the trading calendar knows of, added to the built-in list in ``hv.SHORT_SESSIONS`` (a year entered in Settings is picked up here)."""
+        try:
+            from app.prediction.calendar import TradingCalendar
+
+            return frozenset(d for d, name in TradingCalendar.load().special_sessions.items() if "muhurat" in name.lower())
+        except Exception:  # the calendar is a refinement; the built-in list stands without it
+            return frozenset()
 
     def _provisional_bar(self, bars: list[Any]) -> Any:
         """The newest stored session newer than the last daily bar, as a one-price bar (close = last in-session index level
@@ -534,7 +544,7 @@ class IntradayService:
         """Daily India VIX (implied volatility), NIFTY close and rolling HV / RV from the stored daily history, plus the
         latest session as a flagged provisional day when the daily history is a day behind."""
         nifty = self.history.bars("NIFTY50")
-        out = hvmod.iv_chart(nifty, self.history.bars("INDIAVIX"), window, provisional=self._provisional_bar(nifty))
+        out = hvmod.iv_chart(nifty, self.history.bars("INDIAVIX"), window, provisional=self._provisional_bar(nifty), exclude=self._muhurat_dates())
         own = {r["date"]: r for r in self.iv_history(sessions=60, min_days_left=5, far=True)}
         out["own_iv"] = [own[d]["atm_iv"] if d in own else None for d in out["dates"]]
         out["own_iv_expiry"] = [own[d]["expiry"] if d in own else None for d in out["dates"]]

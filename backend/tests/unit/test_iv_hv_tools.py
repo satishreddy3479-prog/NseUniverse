@@ -13,7 +13,15 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.intraday.hv import MAX_GAP_DAYS, hv, hv_report, iv_chart, log_returns, rv_annual
+from app.intraday.hv import (
+    MAX_GAP_DAYS,
+    basis_ratio,
+    hv,
+    hv_report,
+    iv_chart,
+    log_returns,
+    rv_annual,
+)
 from app.intraday.service import IntradayService
 from app.intraday.store import IntradayStore
 from app.intraday.volatility import skew_metrics
@@ -29,18 +37,18 @@ def bar(d: str, c: float) -> Bar:
 
 def test_hv_matches_the_hand_calculation() -> None:
     # closes 100, 102, 101 -> returns ln(1.02) = 0.0198026, ln(101/102) = -0.0098523
-    # mean 0.0049751; deviations +-0.0148275; population variance (divide by n = 2) = 0.0148275^2
-    # sd = 0.0148275; x sqrt(252) = 0.235380 -> 23.54 %
+    # mean 0.0049751; deviations +-0.0148275; sample variance (divide by n - 1 = 1) = 2 x 0.0148275^2 = 4.3969e-4
+    # sd = 0.0209688; x sqrt(252) = 0.332875 -> 33.29 %
     rets = log_returns([bar("2026-11-02", 100), bar("2026-11-03", 102), bar("2026-11-04", 101)])
     assert [round(r, 7) for _, r, _ in rets] == [0.0198026, -0.0098523]
     got = hv(rets, 2)
-    assert got == pytest.approx(math.sqrt(0.0148275**2 * 252) * 100, rel=1e-4)
-    assert got == pytest.approx(23.54, abs=0.02)
+    assert got == pytest.approx(math.sqrt(2 * 0.0148275**2 * 252) * 100, rel=1e-4)
+    assert got == pytest.approx(33.29, abs=0.02)
     assert hv(rets, 3) is None  # not enough returns: missing, never a shorter window passed off as longer
 
 
 def test_hv_report_windows_gaps_and_series() -> None:
-    days = [date(2026, 9, 1) + timedelta(days=i) for i in range(70)]
+    days = [date(2026, 7, 1) + timedelta(days=i) for i in range(70)]  # 1 Jul to 8 Sep: no short session in it
     bars = [bar(str(d), 100 + (i % 7)) for i, d in enumerate(days)]
     out = hv_report(bars, today=days[-1])
     assert out["as_of"] == str(days[-1]) and out["days_behind"] == 0 and out["bars"] == 70
@@ -111,9 +119,9 @@ def test_iv_chart_aligns_vix_with_rolling_hv_and_drops_unpaired_days() -> None:
     # 2 Nov has no return and no VIX; 3 Nov has one return only, so its 2-day HV is missing (not a shorter window)
     assert out["dates"] == ["2026-11-03", "2026-11-04", "2026-11-05"]
     assert out["hv"][0] is None
-    assert out["hv"][1] == pytest.approx(23.54, abs=0.02)  # the hand calculation above (returns 0.0198026, -0.0098523)
-    # 5 Nov: returns -0.0098523 and 0 -> mean -0.0049262, deviations +-0.0049262, var = 0.0049262^2, HV = 0.0049262 x sqrt(252) x 100
-    assert out["hv"][2] == pytest.approx(0.0049262 * math.sqrt(252) * 100, abs=0.02)  # population sd of -0.0098523 and 0
+    assert out["hv"][1] == pytest.approx(33.29, abs=0.02)  # the hand calculation above (returns 0.0198026, -0.0098523, sample sd)
+    # 5 Nov: returns -0.0098523 and 0 -> mean -0.0049262, deviations +-0.0049262, sample var = 2 x 0.0049262^2, HV = sqrt(2) x 0.0049262 x sqrt(252) x 100
+    assert out["hv"][2] == pytest.approx(math.sqrt(2) * 0.0049262 * math.sqrt(252) * 100, abs=0.02)  # sample sd of -0.0098523 and 0
     assert out["iv"] == [14.5, 15.0, 16.12] and out["close"] == [102, 101, 101]
     assert "India VIX" in out["iv_source"]
 
@@ -184,27 +192,51 @@ def test_iv_skew_after_the_close_still_lists_the_expiries_of_the_session(tmp_pat
     assert out["status"] == "ok" and [t["expiry"] for t in out["term"]] == [EXP]
 
 
-def test_rv_is_the_root_mean_square_of_returns_and_hv_divides_by_n() -> None:
+def test_rv_is_the_root_mean_square_of_returns_and_hv_divides_by_n_minus_1() -> None:
     # returns 0.0198026 and -0.0098523: squares 3.92144e-4 and 9.7068e-5, mean 2.44606e-4; x 252 = 0.061641; sqrt = 0.248277 -> 24.83 %
     rets = [0.0198026, -0.0098523]
     assert rv_annual(rets) == pytest.approx(24.83, abs=0.01)
-    # HV takes the mean out and divides by n: deviations +-0.0148275 -> sd 0.0148275 x sqrt(252) = 23.54 %
-    assert hv([(date(2026, 11, 3), rets[0], 1), (date(2026, 11, 4), rets[1], 1)], 2) == pytest.approx(23.54, abs=0.01)
+    # HV takes the mean out and divides by n - 1: deviations +-0.0148275, sum of squares 4.3969e-4, sd 0.0209688 x sqrt(252) = 33.29 %
+    assert hv([(date(2026, 11, 3), rets[0], 1), (date(2026, 11, 4), rets[1], 1)], 2) == pytest.approx(33.29, abs=0.01)
     assert rv_annual([]) is None
 
 
-def test_iv_chart_reaches_a_provisional_latest_day_with_no_india_vix() -> None:
+def test_a_provisional_latest_day_is_on_the_price_line_only_and_enters_no_statistic() -> None:
     nifty = [bar("2026-11-02", 100), bar("2026-11-03", 102), bar("2026-11-04", 101)]
     vix = [bar("2026-11-03", 14.5), bar("2026-11-04", 15.0)]
     out = iv_chart(nifty, vix, 2, provisional=bar("2026-11-05", 103.02))
     assert out["dates"] == ["2026-11-03", "2026-11-04", "2026-11-05"]
     assert out["iv"] == [14.5, 15.0, None]  # the day's VIX is missing, not copied from the day before
-    # returns 4 Nov -0.0098523 and 5 Nov ln(103.02/101) = 0.0198026: HV is the population sd = 0.0148275 x sqrt(252) = 23.54
-    assert out["hv"][2] == pytest.approx(23.54, abs=0.02)
-    assert out["rv"][2] == pytest.approx(24.83, abs=0.02)  # root mean square of the same two returns
+    # HV, RV and the rank use final closes only: the provisional day has none; the last final day (4 Nov) keeps the figure of its own two returns (33.29 sample sd, 24.83 root mean square on 3 Nov, 4 Nov)
+    assert out["hv"][2] is None and out["rv"][2] is None
+    assert out["hv"][1] == pytest.approx(33.29, abs=0.02)
     assert out["close"][2] == 103.02 and out["provisional"]["date"] == "2026-11-05" and out["nifty_bars"] == 3
+    # the same history without the provisional day gives the same figures for the days it shares
+    base = iv_chart(nifty, vix, 2)
+    assert base["hv"] == out["hv"][:2] and base["rv"] == out["rv"][:2]
     # a provisional day that is not newer than the stored bars is ignored
     assert iv_chart(nifty, vix, 2, provisional=bar("2026-11-04", 99))["provisional"] is None
+
+
+def test_the_muhurat_session_is_not_a_day_and_the_return_runs_between_regular_closes() -> None:
+    """Diwali evening 2025 (21 Oct, a one-hour session on a holiday): the bar is not a daily close. Closes 100 (Fri 17 Oct), 101 (Mon 20 Oct), 101.5 (Tue 21 Oct, Muhurat), 102 (Thu 23 Oct)."""
+    bars = [bar("2025-10-17", 100), bar("2025-10-20", 101), bar("2025-10-21", 101.5), bar("2025-10-23", 102)]
+    rets = log_returns(bars)
+    assert [str(d) for d, _r, _g in rets] == ["2025-10-20", "2025-10-23"]  # the 21st is not a return date
+    assert rets[1][1] == pytest.approx(math.log(102 / 101), rel=1e-12) and rets[1][2] == 3  # 20 Oct to 23 Oct: three calendar days, one return
+    assert [str(d) for d, _r, _g in log_returns(bars, exclude={date(2025, 10, 23)})] == ["2025-10-20"]  # a calendar-supplied short session is skipped too
+    # a full special session (the Saturday budget day, 1 Feb 2025) is a day
+    sat = log_returns([bar("2025-01-31", 100), bar("2025-02-01", 99), bar("2025-02-03", 98)])
+    assert [str(d) for d, _r, _g in sat] == ["2025-02-01", "2025-02-03"]
+    # the bar is also left off the chart's days
+    vix = [bar("2025-10-17", 12), bar("2025-10-20", 12.5), bar("2025-10-21", 12.4), bar("2025-10-23", 12.6)]
+    assert iv_chart(bars, vix, 1)["dates"] == ["2025-10-20", "2025-10-23"]
+
+
+def test_the_basis_gap_between_trading_time_and_calendar_time_is_small_and_stated() -> None:
+    # 21 trading days over 30 calendar days: sqrt(365 x 21 / (252 x 30)) = sqrt(7665 / 7560) = 1.0069; over 32 days (holidays): sqrt(7665 / 8064) = 0.9749
+    assert basis_ratio(21, 30) == pytest.approx(1.0069, abs=1e-4)
+    assert basis_ratio(21, 32) == pytest.approx(0.9749, abs=1e-4)
 
 
 def test_service_adds_the_latest_stored_session_as_a_flagged_provisional_bar(tmp_path: Path) -> None:

@@ -74,7 +74,7 @@ export function IvHvBody({ expiry }: { expiry: string | null }) {
     <div className="flex flex-col gap-3" data-testid="ivhv-tool">
       <IvMinusHvChart />
       <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
-        <div className="text-xs text-muted">NIFTY 50 daily closes through {h.as_of ?? MISSING}{h.provisional ? " (provisional: the close is our own feed's last index level, the daily history is published the next morning)" : ""} ({h.bars} bars){h.days_behind != null && h.days_behind > 3 ? ` · ${h.days_behind} days old` : ""} · implied volatility: {iv == null ? MISSING : `ATM ${iv.toFixed(2)}%`}{vol?.as_of ? ` at ${fmtTimeIST(vol.as_of)}` : ""}</div>
+        <div className="text-xs text-muted">NIFTY 50 daily closes through {h.as_of ?? MISSING}{h.provisional ? " (today is not in the figures until its close is published with the daily history)" : ""} ({h.bars} bars){h.days_behind != null && h.days_behind > 3 ? ` · ${h.days_behind} days old` : ""} · implied volatility: {iv == null ? MISSING : `ATM ${iv.toFixed(2)}%`}{vol?.as_of ? ` at ${fmtTimeIST(vol.as_of)}` : ""}</div>
         {ivNote && <p className="mt-1 text-xs text-warn" data-testid="ivhv-iv-note">{ivNote}</p>}
         <div className="mt-2 overflow-x-auto">
           <table className="w-full min-w-[26rem] max-w-[40rem] text-xs" data-testid="ivhv-table">
@@ -92,7 +92,7 @@ export function IvHvBody({ expiry }: { expiry: string | null }) {
             </tbody>
           </table>
         </div>
-        <p className="mt-2 text-[11px] text-muted">Historical volatility = standard deviation (divided by n) of daily log returns × √252, in percent, from final daily closes. Implied volatility is the at-the-money value of the Black-76 model for the chosen expiry; the two use different time bases, so read the gap as context (options priced rich or cheap against what the index has actually done), not as a signal.</p>
+        <p className="mt-2 text-[11px] text-muted">Historical volatility = sample standard deviation (divided by n − 1) of daily log returns × √252, in percent, from the final closes of regular sessions (the one-hour Muhurat session is not a day, and a provisional close is never used). Implied volatility is the at-the-money value of the Black-76 model for the chosen expiry; the two use different time bases, so read the gap as context (options priced rich or cheap against what the index has actually done), not as a signal.</p>
       </div>
       <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
         <h2 className="mb-1 text-sm font-semibold text-paper">Implied vs historical volatility, latest session</h2>
