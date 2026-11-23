@@ -581,9 +581,12 @@ def analyse(
         ce = [pair(p, held[i])[0] for i, p in enumerate(pts)]
         pe = [pair(p, held[i])[1] for i, p in enumerate(pts)]
 
-        def stored(i: int, side: int) -> float | None:  # a sample the model cannot form (too close to expiry): the stored last traded price
+        def stored(i: int, side: int) -> float | None:
+            """The stored last traded price where the model has no leg: a sample too close to expiry, or a leg whose price is at or below its intrinsic value (a deep in-the-money
+            contract that last traded at an earlier index level, 23 Nov 2026: the 25900 put at 427.0 against an intrinsic of 432.05), for which no implied volatility exists. The price
+            is real and keeps the premium line running; its volatility and Greeks stay empty, never filled."""
             k = held[i]
-            return None if pts[i] is not None or k is None else snaps[i].prices.get((k, side))
+            return None if k is None else snaps[i].prices.get((k, side))
 
         cep = [c.price if c is not None else stored(i, CALL) for i, c in enumerate(ce)]
         pep = [d.price if d is not None else stored(i, PUT) for i, d in enumerate(pe)]
@@ -751,7 +754,7 @@ def analyse(
     age_min = None if now is None else (now - last_at).total_seconds() / 60
     quality = {
         "last_sample_at": last_at.isoformat(), "age_minutes": rd(age_min, 1), "stale": bool(live and age_min is not None and age_min > 10), "live": live,
-        "steps_skipped_fixed": skip_fix, "steps_skipped_rolling": skip_roll, "steps_skipped_managed": skip_man, "forward_fallbacks": sum(1 for p in ok if p.f_src.startswith("spot x carry")),
+        "price_only_samples_fixed": sum(1 for i, p in enumerate(pts) if p is not None and fix["straddle"][i] is not None and (pair(p, fixed_k)[0] is None or pair(p, fixed_k)[1] is None)), "steps_skipped_fixed": skip_fix, "steps_skipped_rolling": skip_roll, "steps_skipped_managed": skip_man, "forward_fallbacks": sum(1 for p in ok if p.f_src.startswith("spot x carry")),
         "estimated": ["implied volatility and Greeks (model, assumed rate)", "forward (put-call parity)", "opening values = first stored sample with both prices"],
         "stride_note": "Samples are about a minute apart; thinned only if a session has more than the page limit.",
     }  # fmt: skip

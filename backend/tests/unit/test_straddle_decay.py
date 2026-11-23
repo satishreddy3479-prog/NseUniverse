@@ -280,3 +280,23 @@ class TestFrozenIndex:
         assert q is not None and sd.atm_reference(q, frozen=True) == 24030.0
         moved, _ = sd.build_point(sd.Snap(at + timedelta(minutes=1), 24005.0, real.prices), EXPIRY, R)
         assert moved is not None and sd.spot_frozen([p, moved, p], 2) is False  # three different levels: not frozen
+
+
+class TestPriceBelowIntrinsic:
+    """23 Nov 2026: the fixed 25900 put, 430 to 530 points in the money on expiry day, last traded below its intrinsic value in some minutes; no implied volatility exists for such a
+    price, and the premium line had a gap at each. The stored price is real: the line keeps it, the volatility stays empty."""
+
+    def test_the_price_is_kept_and_the_vol_left_empty(self) -> None:
+        n = 40
+        snaps = session([24000.0] * 20 + [23800.0] * 20, [0.15] * n)
+        k = 24000.0
+        stale = snaps[30]
+        stale.prices[(k, PUT)] = 195.0  # intrinsic 24000 - 23800 = 200: the last trade was before the index fell the last few points
+        a = sd.analyse(snaps, [(s.at, s.spot) for s in snaps], EXPIRY, rate=R, now=snaps[-1].at, live=True)
+        fx = a["series"]["fixed"]
+        assert fx["strike"][0] == k
+        assert fx["pe"][30] == 195.0 and fx["straddle"][30] is not None
+        assert fx["straddle"][30] == pytest.approx(195.0 + fx["ce"][30], abs=1e-6)
+        assert fx["pe_iv"][30] is None and fx["iv"][30] is None  # no implied volatility for a price below intrinsic: not filled
+        assert fx["pe"][29] is not None and fx["pe_iv"][29] is not None
+        assert a["quality"]["price_only_samples_fixed"] == 1
