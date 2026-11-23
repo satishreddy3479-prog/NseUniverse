@@ -1,5 +1,7 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { LayoutBar } from "./LayoutBar";
+import { useViewLayout } from "../lib/viewLayout";
 import { api } from "../lib/api";
 import { useExpiries } from "../lib/hooks";
 import { fmtTimeIST, MISSING } from "../lib/format";
@@ -18,9 +20,10 @@ export function IvIntradayBody({ expiry }: { expiry: string | null }) {
   const c = useChartColors();
   const exp = useExpiries().data;
   const [picked, setPicked] = useState<string[]>([]);
-  const [tf, setTf] = useState(1);
-  const [session, setSession] = useState("");
-  const [view, setView] = useState<"intraday" | "term">("intraday");
+  const L = useViewLayout("iv-intraday");
+  const [tf, setTf] = L.use("tf", 1);
+  const [session, setSession] = useState(""); // a day, so not part of a saved layout
+  const [view, setView] = L.use<"intraday" | "term">("view", "intraday");
   const sessions = useQuery({ queryKey: ["ivSessions"], queryFn: () => api.intradayIvSessions(), retry: false, staleTime: 300_000 }).data?.sessions ?? [];
   const available = exp?.available?.length ? exp.available : expiry ? [expiry] : [];
   const chosen = picked.length ? picked.filter((e) => available.includes(e) || e === expiry) : expiry ? [expiry] : [];
@@ -101,6 +104,7 @@ export function IvIntradayBody({ expiry }: { expiry: string | null }) {
               {[...sessions].reverse().map((d) => <option key={d} value={d}>{d}</option>)}
             </select>
           </label>
+          <LayoutBar layout={L} className="ml-auto" />
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1 text-xs text-muted" role="group" aria-label="Expiries (up to 5)"><span className="mr-1">Expiries</span>
           {available.slice(0, 12).map((e) => <button key={e} type="button" aria-pressed={chosen.includes(e)} className={btn(chosen.includes(e))} onClick={() => toggle(e)}>{e.slice(5)}</button>)}
@@ -126,13 +130,13 @@ export function IvIntradayBody({ expiry }: { expiry: string | null }) {
           : view === "intraday" ? (
             <>
               <h2 className="mb-1 text-sm font-semibold text-paper">At-the-money implied volatility through the session</h2>
-              <div style={{ height: 340 }}><EChart option={intraday!} ariaLabel="At-the-money implied volatility through the session" /></div>
+              <div style={{ height: 340 }}><EChart option={intraday!} {...L.legend("intraday")} ariaLabel="At-the-money implied volatility through the session" /></div>
               <p className="mt-2 text-[11px] text-muted">{primary?.model}; assumed rate {primary?.rate_assumed == null ? MISSING : `${(primary.rate_assumed * 100).toFixed(2)}%`}. ATM IV is solved from the ATM call and put against the synthetic future (put-call parity), one value per {tf}-minute candle. {loaded.length < chosen.length ? `${chosen.length - loaded.length} chosen expir${chosen.length - loaded.length === 1 ? "y has" : "ies have"} nothing stored for this session. ` : ""}A change in IV is context, not a prediction.</p>
             </>
           ) : termRows.length >= 2 ? (
             <>
               <h2 className="mb-1 text-sm font-semibold text-paper">Term structure at the last snapshot</h2>
-              <div style={{ height: 320 }} data-testid="ivintraday-term"><EChart option={termOpt} ariaLabel="At-the-money implied volatility by expiry" /></div>
+              <div style={{ height: 320 }} data-testid="ivintraday-term"><EChart option={termOpt} {...L.legend("term")} ariaLabel="At-the-money implied volatility by expiry" /></div>
               <p className="mt-2 text-[11px] text-muted">Last computable ATM IV of each chosen expiry in this session ({termRows.map((r) => `${r.expiry.slice(5)} at ${r.at ? fmtTimeIST(r.at) : MISSING}`).join(", ")} IST); expiries are not always sampled at the same minute. Near expiries carry event and expiry-day effects.</p>
             </>
           ) : <p className="text-sm text-muted" data-testid="ivintraday-term-empty">Choose at least two expiries with stored data for a term structure.</p>}

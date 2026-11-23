@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { fmtInt, fmtPct, MISSING } from "../../lib/format";
@@ -19,7 +19,9 @@ import { useDash } from "./DashContext";
 import { useClipped } from "./ReplayContext";
 import { useSessionWindow } from "./PriceBoards";
 import { Card, Section } from "./VegaAnalysis";
-import { TimeframeBar, useTimeframe } from "./Timeframe";
+import { setTimeframe, TIMEFRAMES, TimeframeBar, useTimeframe, type Timeframe } from "./Timeframe";
+import { LayoutBar } from "../LayoutBar";
+import { useViewLayout } from "../../lib/viewLayout";
 import { Loading } from "../../components/Loading";
 import { NoExpiry } from "./NoExpiry";
 
@@ -34,12 +36,17 @@ export function GammaAnalysisBoard() {
   const d = useDash();
   const c = useChartColors();
   const w = useSessionWindow();
-  const [range, setRange] = useState(10);
-  const [type, setType] = useState<"combined" | "ce" | "pe">("combined");
-  const [levelsOn, setLevelsOn] = useState(true);
-  const [absOn, setAbsOn] = useState(true);
-  const [extra, setExtra] = useState(false);
-  const [tf] = useTimeframe();
+  const L = useViewLayout("gamma");
+  const [range, setRange] = L.use("range", 10);
+  const [type, setType] = L.use<"combined" | "ce" | "pe">("type", "combined");
+  const [levelsOn, setLevelsOn] = L.use("levels", true);
+  const [absOn, setAbsOn] = L.use("abs", true);
+  const [extra, setExtra] = L.use("density", false);
+  // the page-wide candle size: the one this device already remembers unless a layout was saved; the tools that read it from the store follow
+  const [storedTf] = useTimeframe();
+  const [tfSaved, setTf] = L.use<Timeframe>("tf", 5, storedTf);
+  const tf: Timeframe = (TIMEFRAMES as readonly number[]).includes(tfSaved) ? tfSaved : 5; // an edited or old saved value that is not a candle size is ignored
+  useEffect(() => { setTimeframe(tf); }, [tf]);
 
   const spot = d.snapshot?.underlying_ltp ?? null;
   const atMs = d.snapshot ? Date.parse(d.snapshot.retrieved_at) : 0;
@@ -185,7 +192,7 @@ export function GammaAnalysisBoard() {
   const bias = lv.flip == null ? "No gamma flip within ±8% of spot: the aggregate keeps one sign across that range." : lv.spot >= lv.flip ? `Spot is ${Math.abs(distFlip!).toFixed(2)}% above the gamma flip (${lvl(lv.flip)}): the ${lv.netTotal >= 0 ? "stabilizing" : "destabilizing"} side of the model.` : `Spot is ${Math.abs(distFlip!).toFixed(2)}% below the gamma flip (${lvl(lv.flip)}): the ${lv.netTotal >= 0 ? "stabilizing" : "destabilizing"} side of the model.`;
   return (
     <div className="flex flex-col gap-3" data-testid="gamma-analysis">
-      <TimeframeBar />
+      <TimeframeBar value={tf} onChange={setTf} right={<LayoutBar layout={L} />} />
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2 text-sm">
         <label className="flex items-center gap-2 text-muted">Strike range
           <select aria-label="Strike range" value={range} onChange={(e) => setRange(Number(e.target.value))} className={field}>{RANGES.map((n) => <option key={n} value={n}>±{n}</option>)}</select>
@@ -233,7 +240,7 @@ export function GammaAnalysisBoard() {
       </Section>
 
       <Section title="GEX profile" right={<span className="text-xs text-muted">bars above zero support reversion, bars below zero add acceleration (under the convention) · spot {fmtInt(Math.round(lv.spot * 10) / 10)}</span>}>
-        <div className="p-2">{profileOpt && <div style={{ height: 380 }}><EChart option={profileOpt} ariaLabel="Gamma exposure by strike" /></div>}</div>
+        <div className="p-2">{profileOpt && <div style={{ height: 380 }}><EChart option={profileOpt} {...L.legend("profile")} ariaLabel="Gamma exposure by strike" /></div>}</div>
       </Section>
 
       <GexUniversesSection rows={d.rows} spot={lv.spot} expiry={d.expiry!} atMs={atMs} openAtm={openAtm} />
@@ -242,7 +249,7 @@ export function GammaAnalysisBoard() {
         <div className="p-2">
           {densityOpt && density ? (
             <>
-              <div style={{ height: 340 }}><EChart option={densityOpt} ariaLabel="Smoothed call, put and total gamma concentration across strikes" /></div>
+              <div style={{ height: 340 }}><EChart option={densityOpt} {...L.legend("density")} ariaLabel="Smoothed call, put and total gamma concentration across strikes" /></div>
               <p className="px-1 pt-1 text-[11px] text-muted" data-testid="gamma-density-note">
                 {profile.rows.filter((r) => r.ce != null || r.pe != null).length} strikes, Gaussian smoothing{extra ? " (extra wide)" : ""}. Sell gamma peaks at {lvl(density.sellPeak)} (call-side concentration), buy gamma at {lvl(density.buyPeak)} (put-side), the total at {lvl(density.neutralPeak)}. Sell × buy intersection: {density.sellBuy.length ? density.sellBuy.map((x) => lvl(x)).join(", ") : "none"}. Smoothing blends neighbouring strikes, so peaks can sit between strikes.
               </p>
@@ -263,7 +270,7 @@ export function GammaAnalysisBoard() {
             : q.error ? <p className="p-3 text-sm text-down">Could not load the stored series: {String((q.error as Error).message)}</p>
             : structOpt ? (
               <>
-                <div style={{ height: 560 }}><EChart option={structOpt} ariaLabel="Spot, walls, peak and gamma flip with net GEX and its change per minute through the session" /></div>
+                <div style={{ height: 560 }}><EChart option={structOpt} {...L.legend("structure")} ariaLabel="Spot, walls, peak and gamma flip with net GEX and its change per minute through the session" /></div>
                 <p className="px-1 pt-1 text-[11px] text-muted" data-testid="gamma-structure-note">
                   Computed from 21 strikes around the open at-the-money strike ({lvl(openAtm)}), one value per {tf}-minute candle (its last stored sample); the profile above uses the whole chain, so totals differ. Lower panel: change of net GEX per minute since the previous candle. A wall, the peak or the flip that moves from candle to candle is less dependable than one that persists.
                 </p>
@@ -305,7 +312,7 @@ export function GammaAnalysisBoard() {
       </Section>
 
       <Section title="GEX by strike" right={<span className="rounded-sm border border-rule px-2 py-0.5 text-[11px] text-muted">{type === "combined" ? "Combined gamma" : type === "ce" ? "Calls" : "Puts"}</span>}>
-        <div className="p-2">{barsOpt && <div style={{ height: Math.max(320, visible.length * 22 + 70) }}><EChart option={barsOpt} ariaLabel="Absolute and net gamma exposure by strike" /></div>}</div>
+        <div className="p-2">{barsOpt && <div style={{ height: Math.max(320, visible.length * 22 + 70) }}><EChart option={barsOpt} {...L.legend("bars")} ariaLabel="Absolute and net gamma exposure by strike" /></div>}</div>
       </Section>
     </div>
   );

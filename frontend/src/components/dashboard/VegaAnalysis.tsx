@@ -1,8 +1,10 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { fmtInt } from "../../lib/format";
-import { TimeframeBar, useTimeframe } from "./Timeframe";
+import { setTimeframe, TIMEFRAMES, TimeframeBar, useTimeframe, type Timeframe } from "./Timeframe";
+import { LayoutBar } from "../LayoutBar";
+import { useViewLayout } from "../../lib/viewLayout";
 import { MISSING } from "../../lib/format";
 import { sessionDays, sessionWindow } from "../../lib/analytics";
 import { strikesAround } from "../../lib/optionTools";
@@ -65,15 +67,20 @@ export function VegaAnalysisBoard() {
   const d = useDash();
   const c = useChartColors();
   const w = useSessionWindow();
-  const [tf] = useTimeframe();
-  const [near, setNear] = useState(1);
-  const [pick, setPick] = useState<number | null>(null);
-  const [perSide, setPerSide] = useState(21);
+  const L = useViewLayout("vega");
+  // the page-wide candle size: the one this device already remembers unless a layout was saved; the tools that read it from the store follow
+  const [storedTf] = useTimeframe();
+  const [tfSaved, setTf] = L.use<Timeframe>("tf", 5, storedTf);
+  const tf: Timeframe = (TIMEFRAMES as readonly number[]).includes(tfSaved) ? tfSaved : 5; // an edited or old saved value that is not a candle size is ignored
+  useEffect(() => { setTimeframe(tf); }, [tf]);
+  const [near, setNear] = L.use("near", 1);
+  const [pick, setPick] = useState<number | null>(null); // a strike and a baseline are of the day, not part of a saved layout
+  const [perSide, setPerSide] = L.use("perSide", 21);
   const [base, setBase] = useState(0);
-  const [normalized, setNormalized] = useState(false);
-  const [showSel, setShowSel] = useState(false);
-  const [showFwd, setShowFwd] = useState(true);
-  const [show, setShow] = useState({ call: true, put: true, price: true, diff: true, range: false, run: false });
+  const [normalized, setNormalized] = L.use("normalized", false);
+  const [showSel, setShowSel] = L.use("showSel", false);
+  const [showFwd, setShowFwd] = L.use("showFwd", true);
+  const [show, setShow] = L.use("show", { call: true, put: true, price: true, diff: true, range: false, run: false });
 
   const listed = useMemo(() => [...new Set(d.rows.map((r) => r.strike))].sort((a, b) => a - b), [d.rows]);
   const all = d.history.data?.observations;
@@ -194,7 +201,7 @@ export function VegaAnalysisBoard() {
   const toggle = (k: keyof typeof show) => setShow((s) => ({ ...s, [k]: !s[k] }));
   return (
     <div className="flex flex-col gap-3" data-testid="vega-analysis">
-      <TimeframeBar />
+      <TimeframeBar value={tf} onChange={setTf} right={<LayoutBar layout={L} />} />
       <div className="flex flex-col gap-2 rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2">
         {w.controls}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
@@ -232,8 +239,8 @@ export function VegaAnalysisBoard() {
           <button type="button" aria-pressed={show.run} onClick={() => toggle("run")} className={pill(show.run)} title="Running average of the average vega since the open">Run avg</button>
         </div>
         <div className="p-2">
-          <div style={{ height: 380 }}><EChart group={GROUP_A} option={optA} ariaLabel="Call vega, put vega and NIFTY through the session" /></div>
-          {show.diff && <div style={{ height: 110 }}><EChart group={GROUP_A} option={optDiff} ariaLabel="Call vega minus put vega" /></div>}
+          <div style={{ height: 380 }}><EChart group={GROUP_A} option={optA} {...L.legend("main")} ariaLabel="Call vega, put vega and NIFTY through the session" /></div>
+          {show.diff && <div style={{ height: 110 }}><EChart group={GROUP_A} option={optDiff} {...L.legend("diff")} ariaLabel="Call vega minus put vega" /></div>}
           <p className="px-1 pt-1 text-[11px] text-muted" data-testid="vega-axes">
             {stamp(now?.t ?? 0)} · CE {v3(now?.ce)} · PE {v3(now?.pe)} · CE − PE {v3(now?.diff)} · Price {now ? rupee(now.spot) : MISSING}. Left axis: NIFTY (dotted). Right axis: vega in rupees per volatility point per unit. Each point is the last stored sample of its {tf}-minute candle.
           </p>
@@ -257,7 +264,7 @@ export function VegaAnalysisBoard() {
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={showSel} onChange={(e) => setShowSel(e.target.checked)} className="accent-[var(--brass)]" /> Selected strike ({sel != null ? fmtInt(sel) : MISSING})</label>
         </div>
         <div className="p-2">
-          <div style={{ height: 380 }}><EChart group={GROUP_B} option={optB} ariaLabel="Change in the summed call and put vega since the baseline" /></div>
+          <div style={{ height: 380 }}><EChart group={GROUP_B} option={optB} {...L.legend("change")} ariaLabel="Change in the summed call and put vega since the baseline" /></div>
           <p className="px-1 pt-1 text-[11px] text-muted" data-testid="vega-change-note">
             Sum of vega over the call strikes from the open ATM upwards and the put strikes from it downwards, minus the same strikes&apos; vega at the baseline sample ({baseOptions[base]?.label ?? MISSING}); a strike counts only if it had a price at both moments. {normalized ? "Normalized: the change as a percentage of the band's vega at the baseline." : "In rupees per volatility point per unit."} Latest: call {signed2(chg?.call, unit)}, put {signed2(chg?.put, unit)}{chg ? ` (${chg.ceN} call and ${chg.peN} put strikes)` : ""}.
           </p>

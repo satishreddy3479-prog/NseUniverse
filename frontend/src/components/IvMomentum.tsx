@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { LayoutBar } from "./LayoutBar";
+import { useViewLayout } from "../lib/viewLayout";
 import { api } from "../lib/api";
 import { hhmmIST, MISSING } from "../lib/format";
 import { METRICS } from "../lib/metricRegistry";
@@ -41,8 +42,9 @@ export function momentumExample(d: Mom): string[] {
 
 export function IvMomentumBody({ expiry }: { expiry: string | null }) {
   const c = useChartColors();
-  const [tf, setTf] = useState<(typeof TFS)[number]>(1);
-  const [bucket, setBucket] = useState<(typeof BUCKETS)[number]["key"]>("d25");
+  const L = useViewLayout("iv-momentum");
+  const [tf, setTf] = L.use<(typeof TFS)[number]>("tf", 1);
+  const [bucket, setBucket] = L.use<(typeof BUCKETS)[number]["key"]>("bucket", "d25");
   const q = useQuery({ queryKey: ["ivMomentum", expiry, tf], queryFn: () => api.intradayIvMomentum(expiry!, tf), enabled: !!expiry, refetchInterval: 30_000, retry: false });
   if (!expiry) return <p className="text-sm text-muted">Waiting for the expiry list from the broker.</p>;
   if (q.isLoading) return <Loading label="Loading" />;
@@ -71,6 +73,7 @@ export function IvMomentumBody({ expiry }: { expiry: string | null }) {
           <span>Expiry {d.expiry} · session {d.session} · {d.samples_in_session} stored samples</span>
           <div role="group" aria-label="Delta" className="flex gap-1">{BUCKETS.map((b) => <button key={b.key} type="button" aria-pressed={bucket === b.key} onClick={() => setBucket(b.key)} className={`min-h-8 rounded-sm border px-2 ${bucket === b.key ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{b.label}</button>)}</div>
           <div role="group" aria-label="Chart interval" className="flex items-center gap-1">Chart every {TFS.map((t) => <button key={t} type="button" aria-pressed={tf === t} onClick={() => setTf(t)} className={`min-h-8 rounded-sm border px-2 ${tf === t ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{t}m</button>)}</div>
+          <LayoutBar layout={L} className="ml-auto" />
         </div>
         {stale && <p className="mt-1 text-xs text-warn" data-testid="ivmom-stale">The newest stored chain is {Math.round(d.age_seconds / 60)} minutes old.</p>}
         <div className="mt-2 overflow-x-auto">
@@ -95,7 +98,7 @@ export function IvMomentumBody({ expiry }: { expiry: string | null }) {
         <p className="mt-2 text-xs text-paper" data-testid="ivmom-reading">Latest 5-minute {BUCKETS.find((b) => b.key === bucket)!.label} momentum: {momentumReading(d.table.periods["5"]?.[bucket].momentum ?? null)}. This compares prices of volatility; it does not say who is buying or selling.</p>
       </div>
       <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
-        <div style={{ height: 300 }} data-testid="ivmom-chart"><EChart option={opt} ariaLabel="Call and put implied volatility through the session" /></div>
+        <div style={{ height: 300 }} data-testid="ivmom-chart"><EChart option={opt} {...L.legend("main")} ariaLabel="Call and put implied volatility through the session" /></div>
         <MethodologyPanel metrics={[METRICS.iv_momentum!]} example={momentumExample(d)}
           freshness={{ updatedAt: d.latest_at, session: d.session, expiry: d.expiry, used, missing: d.excluded, timeframe: `${tf}-minute chart; comparisons against 1, 5, 15, 30, 60 minutes and the previous close` }} />
       </div>

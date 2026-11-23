@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
 
 /** One candle size for every time chart on the Gamma Exposure and Vega pages: choose it once, the whole tool follows. Kept on this device. */
 export const TIMEFRAMES = [1, 3, 5, 15] as const;
@@ -22,8 +22,10 @@ export function useTimeframe(): [Timeframe, (m: Timeframe) => void] {
 
 const pill = (on: boolean) => `widget-nodrag min-h-9 min-w-11 rounded-sm border px-3 text-sm ${on ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`;
 /** The page-wide candle-size switch, shown at the top of the page. */
-export function TimeframeBar() {
-  const [tf, set] = useTimeframe();
+export function TimeframeBar({ value, onChange, right }: { value?: Timeframe; onChange?: (m: Timeframe) => void; right?: ReactNode } = {}) {
+  const [stored, setStored] = useTimeframe();
+  const tf = value ?? stored;
+  const set = onChange ?? setStored;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2 text-sm" data-testid="timeframe-bar">
       <span className="text-muted">Timeframe</span>
@@ -31,6 +33,7 @@ export function TimeframeBar() {
         {TIMEFRAMES.map((m) => <button key={m} type="button" aria-pressed={tf === m} onClick={() => set(m)} className={pill(tf === m)}>{m}m</button>)}
       </div>
       <span className="text-xs text-muted">every time chart and table on this page uses {tf}-minute candles</span>
+      {right && <div className="ml-auto">{right}</div>}
     </div>
   );
 }

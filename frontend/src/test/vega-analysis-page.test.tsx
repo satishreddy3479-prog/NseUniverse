@@ -173,3 +173,30 @@ describe("Vega Analysis page", () => {
     expect(text).not.toMatch(/gained the larger share/);
   });
 });
+
+describe("Vega Analysis: save layout", () => {
+  it("the candle size and what is switched on are saved and come back when the page is opened again; Reset returns the standard view (5 minute candles, normalized off)", async () => {
+    mockApi();
+    const { cleanup } = await import("@testing-library/react");
+    renderPage();
+    let bar = within(await screen.findByTestId("timeframe-bar"));
+    expect(screen.getByTestId("layout-save")).toBeDisabled();
+    await userEvent.click(bar.getByRole("button", { name: "3m" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: /Normalized/ }));
+    expect(screen.getByTestId("layout-save")).toHaveTextContent("Save layout ●");
+    await userEvent.click(screen.getByTestId("layout-save"));
+    expect(JSON.parse(localStorage.getItem("nse.layout.v1.vega")!)).toMatchObject({ tf: 3, normalized: true });
+    cleanup();
+    localStorage.setItem("nse.timeframe.v1", "15"); // the device's own choice differs: the saved layout wins on this page
+    renderPage();
+    bar = within(await screen.findByTestId("timeframe-bar"));
+    expect(bar.getByRole("button", { name: "3m" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("checkbox", { name: /Normalized/ })).toBeChecked();
+    expect(screen.getByTestId("layout-save")).toHaveTextContent("Layout saved ✓");
+    await userEvent.click(screen.getByTestId("layout-reset"));
+    expect(bar.getByRole("button", { name: "5m" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("checkbox", { name: /Normalized/ })).not.toBeChecked();
+    expect(localStorage.getItem("nse.layout.v1.vega")).toBeNull();
+    expect(localStorage.getItem("nse.timeframe.v1")).toBe("5"); // the page-wide choice follows, so the other tools on this device do too
+  });
+});

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { LayoutBar } from "./LayoutBar";
+import { useViewLayout, type ViewLayout } from "../lib/viewLayout";
 import { api } from "../lib/api";
 import { MISSING } from "../lib/format";
 import { fmtDay, HV_WINDOWS, hvLabel, ivpReading, labelEvery, rankAt, rankExample, RANGES, rollingRank } from "../lib/ivChart";
@@ -11,7 +12,7 @@ import { Loading } from "./Loading";
 const pct = (v: number | null | undefined, d = 2) => (v == null ? MISSING : `${v.toFixed(d)}%`);
 const btn = (on: boolean) => `min-h-9 rounded-sm border px-3 text-xs ${on ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`;
 
-function Controls({ hv, setHv, range, setRange, rangeLabel = "IVR / IVP range" }: { hv: number; setHv: (n: number) => void; range?: string; setRange?: (r: string) => void; rangeLabel?: string }) {
+function Controls({ hv, setHv, range, setRange, rangeLabel = "IVR / IVP range", layout }: { hv: number; setHv: (n: number) => void; range?: string; setRange?: (r: string) => void; rangeLabel?: string; layout?: ViewLayout }) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted">
       <div className="flex items-center gap-1" role="group" aria-label="HV window"><span className="mr-1">HV window</span>
@@ -20,6 +21,7 @@ function Controls({ hv, setHv, range, setRange, rangeLabel = "IVR / IVP range" }
       {range != null && setRange && <div className="flex items-center gap-1" role="group" aria-label={rangeLabel}><span className="mr-1">{rangeLabel}</span>
         {RANGES.map((r) => <button key={r.id} type="button" aria-pressed={range === r.id} className={btn(range === r.id)} onClick={() => setRange(r.id)}>{r.id}</button>)}
       </div>}
+      {layout && <LayoutBar layout={layout} className="ml-auto" />}
     </div>
   );
 }
@@ -46,8 +48,9 @@ const Source = ({ text, last, prov }: { text: string; last: string; prov?: { dat
 /** IV (India VIX) against HV with IV rank and IV percentile, and NIFTY as the price line. */
 export function IvChartBody() {
   const c = useChartColors();
-  const [hv, setHv] = useState(21);
-  const [range, setRange] = useState("1Y");
+  const L = useViewLayout("iv-hvp");
+  const [hv, setHv] = L.use("hv", 21);
+  const [range, setRange] = L.use("range", "1Y");
   const q = useChart(hv);
   const blocked = problem(q);
   if (blocked || !q.data) return <div className="flex flex-col gap-3" data-testid="ivchart-tool">{blocked}</div>;
@@ -92,7 +95,7 @@ export function IvChartBody() {
   return (
     <div className="flex flex-col gap-3" data-testid="ivchart-tool">
       <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
-        <Controls hv={hv} setHv={setHv} range={range} setRange={setRange} />
+        <Controls hv={hv} setHv={setHv} range={range} setRange={setRange} layout={L} />
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-6" data-testid="ivchart-cards">
           <Stat label={`IV (India VIX) ${j >= 0 ? fmtDay(d.dates[j]!) : ""}`} value={pct(d.iv[j])} tone="text-brass" />
           <Stat label={`HV ${hvLabel(d.window)}`} value={pct(hvNow)} />
@@ -105,9 +108,9 @@ export function IvChartBody() {
       </div>
       <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
         <h2 className="mb-1 text-sm font-semibold text-paper">IV, HV and NIFTY</h2>
-        <div style={{ height: 320 }} data-testid="ivchart-top"><EChart option={top} ariaLabel="India VIX against historical volatility with the NIFTY 50 close" /></div>
+        <div style={{ height: 320 }} data-testid="ivchart-top"><EChart option={top} {...L.legend("top")} ariaLabel="India VIX against historical volatility with the NIFTY 50 close" /></div>
         <h2 className="mb-1 mt-3 text-sm font-semibold text-paper">IV rank and IV percentile</h2>
-        <div style={{ height: 200 }} data-testid="ivchart-bottom"><EChart option={bottom} ariaLabel="IV rank and IV percentile through time" /></div>
+        <div style={{ height: 200 }} data-testid="ivchart-bottom"><EChart option={bottom} {...L.legend("bottom")} ariaLabel="IV rank and IV percentile through time" /></div>
         <p className="mt-1 text-[11px] text-muted">IVR = (IV − lowest) ÷ (highest − lowest) × 100 over the range. IVP = share of the range&apos;s days with a lower IV than that day. HV is the standard deviation of the window&apos;s daily log returns (divided by n) × √252; RV (dashed green) is the root mean square of the same returns × √252, so it counts the average move itself as volatility too. Both use closes only. Dashed lines at 30 and 70 are our reading thresholds. The first {range} of history has no rank (the range is not full yet); nothing is filled in.</p>
         <Source text={d.iv_source} last={d.dates[Math.max(0, d.iv.reduce<number>((a, v, k) => (v != null ? k : a), -1))]!} prov={d.provisional ?? null} />
         <MethodologyPanel metrics={[METRICS.iv_rank!, METRICS.iv_percentile!, METRICS.hv_rv!, METRICS.iv_minus_hv!]}
@@ -121,8 +124,9 @@ export function IvChartBody() {
 /** IV − HV by day as bars, with the NIFTY close as a line. */
 export function IvMinusHvChart() {
   const c = useChartColors();
-  const [hv, setHv] = useState(21);
-  const [range, setRange] = useState("1Y");
+  const L = useViewLayout("iv-hv");
+  const [hv, setHv] = L.use("hv", 21);
+  const [range, setRange] = L.use("range", "1Y");
   const q = useChart(hv);
   const blocked = problem(q);
   if (blocked || !q.data) return <div data-testid="ivminus-tool">{blocked}</div>;
@@ -150,9 +154,9 @@ export function IvMinusHvChart() {
   };
   return (
     <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3" data-testid="ivminus-tool">
-      <Controls hv={hv} setHv={setHv} range={range} setRange={setRange} rangeLabel="Range" />
+      <Controls hv={hv} setHv={setHv} range={range} setRange={setRange} rangeLabel="Range" layout={L} />
       <h2 className="mb-1 mt-3 text-sm font-semibold text-paper">IV − HV by day, {d.dates[lo]} to {d.dates[d.dates.length - 1]} ({d.dates.length - lo} days)</h2>
-      <div style={{ height: 320 }} data-testid="ivminus-chart"><EChart option={option} ariaLabel="India VIX minus historical volatility by day with the NIFTY 50 close" /></div>
+      <div style={{ height: 320 }} data-testid="ivminus-chart"><EChart option={option} {...L.legend("main")} ariaLabel="India VIX minus historical volatility by day with the NIFTY 50 close" /></div>
       <p className="mt-1 text-[11px] text-muted" data-testid="ivminus-note">{valid.length ? `IV was above HV on ${above} of ${valid.length} days (${((above / valid.length) * 100).toFixed(0)}%). ` : ""}Green bars: India VIX above the realised move; red: below. Diamonds: our own at-the-money IV (monthly expiry) minus the same HV, for the sessions whose option chains we stored. It is context about how rich or cheap options are, not a signal.</p>
       <Source text={d.iv_source} last={d.dates[Math.max(0, d.iv.reduce<number>((a, v, k) => (v != null ? k : a), -1))]!} prov={d.provisional ?? null} />
     </div>

@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { LayoutBar } from "./LayoutBar";
+import { useViewLayout } from "../lib/viewLayout";
 import { api } from "../lib/api";
 import { fmtInt, fmtTimeIST, MISSING } from "../lib/format";
 import { chainGreeks } from "../lib/optionTools";
@@ -30,7 +32,8 @@ export function skewReading(skew25: number | null): string {
 /** Volatility smile, skew measures and term view from the latest stored chain of the chosen expiry. */
 export function IvSkewBody({ expiry }: { expiry: string | null }) {
   const c = useChartColors();
-  const [view, setView] = useState<(typeof VIEWS)[number]>("Smile");
+  const L = useViewLayout("iv-skew");
+  const [view, setView] = L.use<(typeof VIEWS)[number]>("view", "Smile");
   const q = useQuery({ queryKey: ["ivSkew", expiry], queryFn: () => api.intradayIvSkew(expiry!), enabled: !!expiry, refetchInterval: 30_000, retry: false });
   // comparison session: none until the user picks one (an earlier session's dashed curves under today's live smile read as part of today's chart)
   const [picked, setPicked] = useState<string | null>(null);
@@ -123,15 +126,18 @@ export function IvSkewBody({ expiry }: { expiry: string | null }) {
         <p className="mt-2 text-xs text-paper" data-testid="ivskew-reading">{skewReading(k.skew_25d)}</p>
       </div>
       <div className="rounded-[var(--radius-panel)] border border-rule bg-slate p-3">
-        <div className="mb-2 flex gap-1" role="tablist" aria-label="Skew view">
-          {VIEWS.map((v) => (
-            <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => setView(v)}
-              className={`min-h-9 rounded-sm border px-3 text-xs ${view === v ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{v}</button>
-          ))}
+        <div className="mb-2 flex flex-wrap items-center gap-1">
+          <div className="flex gap-1" role="tablist" aria-label="Skew view">
+            {VIEWS.map((v) => (
+              <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => setView(v)}
+                className={`min-h-9 rounded-sm border px-3 text-xs ${view === v ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{v}</button>
+            ))}
+          </div>
+          <LayoutBar layout={L} className="ml-auto" />
         </div>
         {view === "Smile" && (
           <>
-            <div style={{ height: 320 }} data-testid="ivskew-smile"><EChart option={smile} ariaLabel="Implied volatility of the out-of-the-money option at each strike" /></div>
+            <div style={{ height: 320 }} data-testid="ivskew-smile"><EChart option={smile} {...L.legend("smile")} ariaLabel="Implied volatility of the out-of-the-money option at each strike" /></div>
             <p className="mt-1 text-[11px] text-muted">Each strike shows its out-of-the-money option (puts below the ATM strike, calls above, the call at the ATM strike). A gap means that price was missing or no volatility could be solved; nothing is filled in.</p>
             <SmileComparePanel now={{ label: live ? "Live" : "Now", session: live ? null : (stored?.session ?? null), expiry: s.expiry, atmIv: s.atm_iv ?? null, at: s.at ?? null, smile: s.smile.map((p) => ({ strike: p.strike, side: p.side, iv: p.iv, delta: p.delta ?? null })) }}
               then={cmpSession && cmpQ.data?.status === "ok" ? toView(cmpQ.data, cmpSession) : null} sessions={sessionList} value={cmpSession ?? null} onChange={(v) => setPicked(v)}
