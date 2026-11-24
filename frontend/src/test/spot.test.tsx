@@ -97,7 +97,7 @@ describe("spot badge: the pre-open price is held until the market opens", () => 
       feedTick("market_closed", preOpenTick("2026-11-22T17:45:21Z")); // 23:15:21 IST
       expect(screen.queryByTestId("spot-held")).toBeNull();
       expect(screen.getByText("25,800.60")).toBeInTheDocument();
-      expect(screen.getByText(/20 Nov.*15:39:04 IST/)).toBeInTheDocument(); // the real time of the price, with its date
+      expect(screen.getByText(/15:39:04 IST · 20 Nov/)).toBeInTheDocument(); // the real time of the price, with its date
       expect(document.body.textContent).not.toContain("23:15");
     } finally { vi.useRealTimers(); }
   });
@@ -108,12 +108,12 @@ describe("spot badge: the pre-open price is held until the market opens", () => 
     setSessionClock({ open: "09:15", close: "15:40", label: "09:15–15:40", source: "test", holidays: ["2026-11-24"] });
     try {
       const { unmount } = showWith(summary({ underlying_ltp: 25349.65, underlying_prev_close: 25800.6, retrieved_at: "2026-11-24T05:02:38Z" }));
-      expect(screen.getByText(/23 Nov.*15:40:00 IST/)).toBeInTheDocument();
+      expect(screen.getByText(/15:40:00 IST · 23 Nov/)).toBeInTheDocument();
       expect(document.body.textContent).not.toContain("10:32");
       unmount();
       // a later restart the same day: the same close, the badge does not change
       showWith(summary({ underlying_ltp: 25349.65, underlying_prev_close: 25800.6, retrieved_at: "2026-11-24T07:41:09Z" }));
-      expect(screen.getByText(/23 Nov.*15:40:00 IST/)).toBeInTheDocument();
+      expect(screen.getByText(/15:40:00 IST · 23 Nov/)).toBeInTheDocument();
     } finally { vi.useRealTimers(); resetSessionClock(); }
   });
 
@@ -121,10 +121,10 @@ describe("spot badge: the pre-open price is held until the market opens", () => 
     vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-23T11:30:00Z")); // Monday 23 Nov, 17:00 IST
     try {
       const { unmount } = showWith(summary({ underlying_ltp: 25349.65, underlying_prev_close: 25800.6, retrieved_at: "2026-11-23T08:14:10Z" })); // 13:44:10 IST
-      expect(screen.getByText(/^13:44:10 IST/)).toBeInTheDocument();
+      expect(screen.getByText(/^13:44:10 IST · 23 Nov/)).toBeInTheDocument();
       unmount();
       showWith(summary({ underlying_ltp: 25349.65, underlying_prev_close: 25800.6, retrieved_at: "2026-11-23T11:20:00Z" })); // 16:50 IST, after the close
-      expect(screen.getByText(/^15:40:00 IST/)).toBeInTheDocument();
+      expect(screen.getByText(/^15:40:00 IST · 23 Nov/)).toBeInTheDocument();
     } finally { vi.useRealTimers(); }
   });
 
