@@ -82,6 +82,15 @@ describe("Trend & Regime pages", () => {
     expect(screen.getByTestId("regime-check")).toBeInTheDocument();
   });
 
+  it("every chart has a key under it saying what its colours and lines mean", async () => {
+    mock();
+    page("market-regime");
+    await waitFor(() => expect(screen.getByTestId("regime-chart")).toBeInTheDocument());
+    const key = screen.getByTestId("regime-chart").querySelector("[data-testid=chart-key]")!;
+    for (const t of ["Trending down", "Weak uptrend", "Range-bound", "Mixed", "Not shaded", "Dashed brown line", "Beige band", "Blue band", "ADX", "+DI", "−DI"]) expect(key).toHaveTextContent(t);
+    expect(key).toHaveTextContent("a clean fall, score 0.65 or more");
+  });
+
   it("the other intraday views render their figures", async () => {
     mock();
     const cases: [string, string][] = [["trend-strength", "Efficiency ratio"], ["chop-variance", "Variance ratio"], ["opening-range", "Breakouts"], ["session-structure", "Crossings of the mean"]];

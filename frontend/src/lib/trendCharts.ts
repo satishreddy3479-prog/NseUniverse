@@ -6,7 +6,7 @@ import type { RBar } from "./trendStats";
 
 export const labelColor = (c: ChartColors, l: string): string =>
   l === "Trending up" || l === "Weak uptrend" ? c.up : l === "Trending down" || l === "Weak downtrend" ? c.down : l === "Range-bound" ? c.info : c.muted;
-const labelOpacity = (l: string) => (l === "Trending up" || l === "Trending down" ? 0.2 : l === "Weak uptrend" || l === "Weak downtrend" ? 0.1 : l === "Range-bound" ? 0.14 : 0.07);
+export const labelOpacity = (l: string) => (l === "Trending up" || l === "Trending down" ? 0.2 : l === "Weak uptrend" || l === "Weak downtrend" ? 0.1 : l === "Range-bound" ? 0.14 : 0.07);
 
 type Area = [{ xAxis: string; name: string; itemStyle: { color: string; opacity: number } }, { xAxis: string }];
 

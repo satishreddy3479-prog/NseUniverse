@@ -12,7 +12,7 @@ import { gexLevels, gexProfile, regimeFor } from "../lib/gammaAnalysis";
 import { hhmmIST } from "../lib/format";
 import { useExpiries } from "../lib/hooks";
 import { marketClockMs } from "../lib/session";
-import { barSeries, candles, labelColor, line, multiPanelOption, regimeAreas, type PanelSpec } from "../lib/trendCharts";
+import { barSeries, candles, labelColor, labelOpacity, line, multiPanelOption, regimeAreas, type PanelSpec } from "../lib/trendCharts";
 import { TREND_VIEWS, type TrendViewId } from "../lib/trendViews";
 import { BANDS, forwardCheck, fromIndexBars, regimeSeries, regimeSummary, SCALES, type RegimeLabel, type RegimeSeries } from "../lib/trendRegime";
 import {
@@ -37,10 +37,37 @@ const Card = ({ title, children, testid }: { title: string; children: React.Reac
 /** A chart is rebuilt (zoom window reset) when this changes: the zoom window of a category axis is kept as bar numbers, so after dragging or pinching a chart a new candle length or session
  *  would otherwise keep showing bars 2 to 10 of a much longer day. It changes with the candle length, the session and the "Reset zoom" button, never with a new bar arriving. */
 const ChartKey = createContext("");
-const Chart = ({ option, height, label }: { option: EChartsCoreOption; height: number; label: string }) => {
+const Chart = ({ option, height, label, legend }: { option: EChartsCoreOption; height: number; label: string; legend?: KeyItem[] }) => {
   const k = useContext(ChartKey);
-  return <div className="w-full" style={{ height }}><EChart key={k} option={option} ariaLabel={label} className="h-full w-full" /></div>;
+  return <><div className="w-full" style={{ height }}><EChart key={k} option={option} ariaLabel={label} className="h-full w-full" /></div>{legend && legend.length > 0 && <Key items={legend} />}</>;
 };
+
+/** One entry of the colour key under a chart: what a colour, band or line means. */
+interface KeyItem { color: string; label: string; meaning: string; shape?: "box" | "line" | "dash"; opacity?: number }
+const Key = ({ items }: { items: KeyItem[] }) => (
+  <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-muted" data-testid="chart-key" aria-label="What the colours and lines mean">
+    {items.map((k) => (
+      <li key={k.label} className="flex items-center gap-1.5">
+        {k.shape === "line" || k.shape === "dash"
+          ? <span aria-hidden className="inline-block w-4 border-t-2" style={{ borderColor: k.color, borderTopStyle: k.shape === "dash" ? "dashed" : "solid" }} />
+          : <span aria-hidden className="inline-block size-3 rounded-sm border border-rule" style={{ background: k.color, opacity: Math.min(1, (k.opacity ?? 1) * 2.2) }} />}
+        <span><b className="font-semibold text-paper">{k.label}</b> {k.meaning}</span>
+      </li>
+    ))}
+  </ul>
+);
+const regimeKey = (c: ChartColors, daily = false): KeyItem[] => [
+  { l: "Trending up", m: daily ? "a clean rise" : "a clean rise, score 0.65 or more" },
+  { l: "Trending down", m: daily ? "a clean fall" : "a clean fall, score 0.65 or more" },
+  { l: "Weak uptrend", m: daily ? "leaning up, not clean" : "leaning up but not clean, score 0.45 to 0.65" },
+  { l: "Weak downtrend", m: daily ? "leaning down, not clean" : "leaning down but not clean, score 0.45 to 0.65" },
+  { l: "Range-bound", m: daily ? "sideways, no direction" : "sideways with no direction, score below 0.30" },
+  { l: "Mixed", m: daily ? "the signals disagree" : "the readings disagree, score 0.30 to 0.45" },
+].map(({ l, m }) => ({ color: labelColor(c, l), label: l, meaning: m, opacity: labelOpacity(l) }));
+const zoneKey = (c: ChartColors, trend: string, calm: string): KeyItem[] => [
+  { color: c.brass, label: "Beige band", meaning: trend, opacity: 0.12 },
+  { color: c.info, label: "Blue band", meaning: calm, opacity: 0.12 },
+];
 
 /** Shown on every intraday view: what these figures are and are not. */
 const DESCRIPTIVE = "Descriptive and not validated: these figures say how the session has behaved so far, they do not forecast it. Only the daily regime has a validation study on the stored history.";
@@ -139,10 +166,16 @@ function MarketRegimeView({ ctx, stored }: { ctx: Ctx; stored: RegimeSeries[] })
         <Note>{DESCRIPTIVE} Each reading is a ramp between a "no trend" and a "full trend" level (conventional values, none fitted to data), averaged; the label has a 0.05 margin at each boundary and needs {reg.params.minDwell} bars to change. Look-back {last.window} bars, {bars.length} one-minute bars of the session.</Note>
       </Card>
       <Card title="The session on one time axis" testid="regime-chart">
-        <Chart option={chart.option} height={chart.height} label="NIFTY candles, trend score and ADX on one time axis with the regime shaded" />
-        <div className="mt-1 flex flex-wrap gap-3 text-[11px] text-muted">
-          {(["Trending up", "Trending down", "Weak uptrend", "Weak downtrend", "Range-bound", "Mixed"] as const).map((l) => <span key={l}><span className="mr-1 inline-block size-2 rounded-sm" style={{ background: labelColor(c, l), opacity: l.startsWith("Weak") || l === "Mixed" ? 0.5 : 1 }} />{l}</span>)}
-        </div>
+        <Chart option={chart.option} height={chart.height} label="NIFTY candles, trend score and ADX on one time axis with the regime shaded" legend={[
+          ...regimeKey(c),
+          { color: c.muted, label: "Not shaded", meaning: "warm-up: too few bars to judge", opacity: 0.1 },
+          { color: c.brass, label: "Dashed brown line", meaning: "session mean (average price so far)", shape: "dash" },
+          { color: c.muted, label: "Grey dashed lines", meaning: "opening range high and low", shape: "dash" },
+          ...zoneKey(c, "trend score above 65: trending", "trend score below 30: range-bound"),
+          { color: c.paper, label: "ADX", meaning: "trend strength, any direction (25 or more is a real trend)", shape: "line" },
+          { color: c.up, label: "+DI", meaning: "buying pressure", shape: "line" },
+          { color: c.down, label: "−DI", meaning: "selling pressure; whichever is higher shows the direction", shape: "line" },
+        ]} />
       </Card>
       <Card title="Time in each regime today" testid="regime-time">
         <div className="flex h-4 w-full overflow-hidden rounded-sm border border-rule" role="img" aria-label="Share of the session's bars in each regime">
@@ -180,7 +213,7 @@ function TrendStrengthView({ ctx }: { ctx: Ctx }) {
   ], regimeAreas(p.map((q) => q.label), x, c), regimeInfo(reg)), [c, reg, p, x]);
   return (
     <div className="flex flex-col gap-3">
-      <Card title="Trend strength through the session" testid="strength-chart"><Chart option={chart.option} height={chart.height} label="Efficiency ratio, ADX with directional lines, R squared and slope on one time axis" /></Card>
+      <Card title="Trend strength through the session" testid="strength-chart"><Chart option={chart.option} height={chart.height} label="Efficiency ratio, ADX with directional lines, R squared and slope on one time axis" legend={[...regimeKey(c), ...zoneKey(c, "the reading is on the trending side of its scale", "the reading is on the no-trend side of its scale")]} /></Card>
       <Card title="Now">
         <div className="flex flex-wrap gap-6"><Stat label="Efficiency ratio" value={f(last?.er)} /><Stat label="ADX" value={f(last?.adx, 1)} /><Stat label="+DI / −DI" value={`${f(last?.plusDi, 1)} / ${f(last?.minusDi, 1)}`} /><Stat label="R²" value={f(last?.r2)} /><Stat label="Slope" value={last?.slope == null ? "—" : `${pts(last.slope, 2)} pts/bar`} /></div>
         <Note>Dashed lines are the "no trend" and "full trend" levels of each ramp; the regime is shaded behind. {DESCRIPTIVE}</Note>
@@ -208,9 +241,9 @@ function ChopVarianceView({ ctx }: { ctx: Ctx }) {
   }), [c, qs]);
   return (
     <div className="flex flex-col gap-3">
-      <Card title="Choppiness through the session"><Chart option={chop.option} height={chop.height} label="Choppiness index through the session with the regime shaded" /></Card>
+      <Card title="Choppiness through the session"><Chart option={chop.option} height={chop.height} label="Choppiness index through the session with the regime shaded" legend={[...regimeKey(c), ...zoneKey(c, "below 38.2: price is trending", "above 61.8: price is choppy, going nowhere")]} /></Card>
       <Card title="Variance ratio of the session so far" testid="vr-table">
-        <Chart option={vrOpt} height={190} label="Variance ratio by horizon; coloured bars are significant at 5 percent" />
+        <Chart option={vrOpt} height={190} label="Variance ratio by horizon; coloured bars are significant at 5 percent" legend={[{ color: c.up, label: "Green bar", meaning: "above 1 and significant: moves tend to continue (trend)" }, { color: c.down, label: "Red bar", meaning: "below 1 and significant: moves tend to reverse (mean reversion)" }, { color: c.muted, label: "Grey bar", meaning: "not significant at 5 percent: indistinguishable from a random walk" }, { color: c.paper, label: "Dashed line at 1", meaning: "a pure random walk", shape: "dash" }]} />
         <table className="num mt-2 w-full text-xs"><thead><tr className="text-left text-muted"><th>Horizon (bars)</th><th className="text-right">VR</th><th className="text-right">z</th><th className="text-right">robust z*</th><th className="pl-3">Reading (by z*)</th></tr></thead>
           <tbody>{qs.map(({ q, v }) => (
             <tr key={q} className="border-t border-rule/50"><td>{q}</td><td className="text-right">{f(v?.vr)}</td><td className="text-right">{f(v?.z)}</td><td className="text-right">{f(v?.zRobust)}</td>
@@ -254,7 +287,14 @@ function SessionStructureView({ ctx }: { ctx: Ctx }) {
   ], null, regimeInfo(reg)), [c, x, closes, twap, sd, vw, vwap, dist, reg]);
   return (
     <div className="flex flex-col gap-3">
-      <Card title="NIFTY against its session mean" testid="structure-chart"><Chart option={chart.option} height={chart.height} label="NIFTY close, session mean with bands, future VWAP and distance in ATRs" /></Card>
+      <Card title="NIFTY against its session mean" testid="structure-chart"><Chart option={chart.option} height={chart.height} label="NIFTY close, session mean with bands, future VWAP and distance in ATRs" legend={[
+        { color: c.paper, label: "NIFTY close", meaning: "the index", shape: "line" },
+        { color: c.brass, label: "Session mean", meaning: "average price so far (time-weighted)", shape: "line" },
+        { color: c.brass, label: "Dotted ±1σ", meaning: "the normal spread around that mean", shape: "dash" },
+        { color: c.info, label: "Future VWAP", meaning: "volume-weighted average of the NIFTY future, as an index level", shape: "dash" },
+        { color: c.up, label: "Green bar", meaning: "close above the session mean, in ATRs" },
+        { color: c.down, label: "Red bar", meaning: "close below the session mean, in ATRs" },
+      ]} /></Card>
       <Card title="Structure" testid="structure-stats">
         <div className="flex flex-wrap gap-6">
           <Stat label="Close above the session mean" value={sT ? `${sT.pctAbove.toFixed(0)} % of bars` : "—"} />
@@ -289,7 +329,13 @@ function OpeningRangeView({ ctx }: { ctx: Ctx }) {
           {[5, 15, 30].map((m) => <button key={m} type="button" onClick={() => setMins(m)} aria-pressed={mins === m} className={`min-h-8 rounded-sm border px-2 ${mins === m ? "border-brass text-paper" : "border-rule"}`}>{m} min</button>)}</div>
         {!or || !chart ? <Note>No bars yet.</Note> : (
           <>
-            <Chart option={chart.option} height={chart.height} label="NIFTY candles with the opening range and the distance beyond it" />
+            <Chart option={chart.option} height={chart.height} label="NIFTY candles with the opening range and the distance beyond it" legend={[
+              { color: c.brass, label: "Beige band", meaning: "the opening range", opacity: 0.08 },
+              { color: c.muted, label: "Grey dashed lines", meaning: "OR high and OR low", shape: "dash" },
+              { color: c.up, label: "Green bar / candle", meaning: "above the range, or closed up" },
+              { color: c.down, label: "Red bar / candle", meaning: "below the range, or closed down" },
+              { color: c.muted, label: "Zero", meaning: "the close is inside the range" },
+            ]} />
             <div className="mt-2 flex flex-wrap gap-6" data-testid="or-stats">
               <Stat label="Range" value={`${or.low.toFixed(1)} – ${or.high.toFixed(1)}`} sub={`${(or.high - or.low).toFixed(1)} pts`} />
               <Stat label="Now" value={!or.ready ? "range still forming" : or.state === "inside" ? "inside" : `${or.state} the range`} tone={or.state === "above" ? "text-up" : or.state === "below" ? "text-down" : undefined} sub={or.extension ? `${pts(or.extension, 1)} pts beyond the edge` : undefined} />
@@ -341,7 +387,12 @@ function RangeUsedView({ ctx }: { ctx: Ctx }) {
   const used = rangeUsed(hi, lo, prof.spot, iv);
   return (
     <div className="flex flex-col gap-3">
-      {chart && <Card title="Range used through the session" testid="range-chart"><Chart option={chart.option} height={chart.height} label="Range so far against the implied expected range, and the pace" /></Card>}
+      {chart && <Card title="Range used through the session" testid="range-chart"><Chart option={chart.option} height={chart.height} label="Range so far against the implied expected range, and the pace" legend={[
+        { color: c.paper, label: "Range so far", meaning: "high minus low traded today", shape: "line" },
+        { color: c.brass, label: "Dashed brown", meaning: "range the option-implied volatility expects by this time", shape: "dash" },
+        { color: c.down, label: "Red band", meaning: "pace above 1.25: running hotter than implied", opacity: 0.08 },
+        { color: c.info, label: "Blue band", meaning: "pace below 0.75: quieter than implied", opacity: 0.08 },
+      ]} /></Card>}
       <Card title="Range used against the implied move" testid="range-used">
         <div className="flex flex-wrap gap-6">
           <Stat label="Day's range so far" value={`${(hi - lo).toFixed(1)} pts`} sub={`${lo.toFixed(1)} – ${hi.toFixed(1)}`} />
@@ -390,7 +441,7 @@ function GammaRegimeView({ ctx }: { ctx: Ctx }) {
         {rg && <p className="mt-2 text-xs text-paper">{rg.summary} {rg.expectation}</p>}
         <Note>From {snap.expiry}'s chain with Black-76 gamma and each contract's own IV. The sign is a convention (calls positive, puts negative), not an observed position, so this is a model reading. {DESCRIPTIVE}</Note>
       </Card>
-      {opt && <Card title="Net GEX by strike (within 750 points of spot)" testid="gamma-chart"><Chart option={opt} height={240} label="Net gamma exposure by strike with spot and the gamma flip marked" /></Card>}
+      {opt && <Card title="Net GEX by strike (within 750 points of spot)" testid="gamma-chart"><Chart option={opt} height={240} label="Net gamma exposure by strike with spot and the gamma flip marked" legend={[{ color: c.up, label: "Green bar", meaning: "positive net gamma at that strike (dealers damp moves, by convention)" }, { color: c.down, label: "Red bar", meaning: "negative net gamma at that strike (dealers amplify moves, by convention)" }, { color: c.paper, label: "Dashed lines", meaning: "spot and the gamma flip, where net gamma changes sign", shape: "dash" }]} /></Card>}
     </div>
   );
 }
@@ -426,7 +477,7 @@ function DailyRegimeView({ c }: { c: ChartColors }) {
       </Card>
       <Card title={`Validation on ${d.bars?.toLocaleString("en-IN")} daily bars since ${d.from}`} testid="daily-study">
         <p className={`mb-2 text-sm font-semibold ${ok ? "text-up" : "text-warn"}`} data-testid="daily-verdict">{ok ? "Validated: after Trending days the next 10 days moved in straighter lines than after Range-bound days." : "Not validated: the Trending label did not predict a straighter next 10 days than the Range-bound label. It is shown as a description of the last 20 days only."}</p>
-        {bars && <Chart option={bars} height={200} label="Mean efficiency ratio of the next 10 days after each daily label" />}
+        {bars && <Chart option={bars} height={200} label="Mean efficiency ratio of the next 10 days after each daily label" legend={[{ color: c.muted, label: "Bar", meaning: "average efficiency ratio over the next 10 days after a day with that label; taller means a cleaner move followed" }]} />}
         <table className="num mt-2 w-full text-xs"><thead><tr className="text-left text-muted"><th>After a day labelled</th><th className="text-right">Samples</th><th className="text-right">Next-10-day efficiency ratio</th><th className="text-right">Next-10-day return</th><th className="text-right">Next-10-day realised vol</th></tr></thead>
           <tbody>{groups.map((k) => { const g = s.groups[k]; return g ? <tr key={k} className="border-t border-rule/50"><td>{k}</td><td className="text-right">{g.n}</td><td className="text-right">{f(g.forward_er)}</td><td className="text-right">{g.forward_return_pct == null ? "—" : `${g.forward_return_pct.toFixed(2)} %`}</td><td className="text-right">{g.forward_rv == null ? "—" : `${g.forward_rv.toFixed(1)} %`}</td></tr> : null; })}</tbody></table>
         <div className="mt-2 flex flex-wrap gap-6">
@@ -436,7 +487,7 @@ function DailyRegimeView({ c }: { c: ChartColors }) {
         </div>
         <Note>Criterion fixed before the study: {s.claim.criterion}. Thresholds are the textbook values (none tuned on this history); {s.samples} non-overlapping samples every {s.horizon_days} days from {s.from} to {s.to}; {s.permutations.toLocaleString("en-IN")} permutations, fixed seed. A failed test is reported as failed: nothing was adjusted to make it pass. The realised-volatility column is information, not a claim.</Note>
       </Card>
-      {chart && <Card title="Last 250 days"><Chart option={chart.option} height={chart.height} label="NIFTY daily close with the regime shaded" /></Card>}
+      {chart && <Card title="Last 250 days"><Chart option={chart.option} height={chart.height} label="NIFTY daily close with the regime shaded" legend={[...regimeKey(c, true), { color: c.muted, label: "Not shaded", meaning: "warm-up: too few days", opacity: 0.1 }]} /></Card>}
     </div>
   );
 }
