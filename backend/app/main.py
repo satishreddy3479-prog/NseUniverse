@@ -54,6 +54,7 @@ from app.services.snapshot_service import SnapshotService
 from app.services.state import AppState
 from app.services.universe import build_universe
 from app.storage.observations import ObservationStore
+from app.storage.preferences import PreferenceStore
 from app.storage.store import SnapshotStore
 from app.storage.strategies import StrategyStore
 from app.strategy.automation import StrategyAutomation
@@ -230,6 +231,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         )
         app.state.flows = flows
         app.state.strategies = StrategyStore(settings.data_dir)
+        app.state.preferences = PreferenceStore(settings.data_dir)
 
         def _live_price(key: str) -> float | None:
             t = stream.book.get(key)
@@ -463,6 +465,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             await forward.stop()
             flows_store.close()
             app.state.strategies.close()
+            app.state.preferences.close()
             history_store.close()
             await sampler.stop()
             await stream.shutdown()

@@ -2,6 +2,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { useRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TrendRegime } from "../pages/TrendRegime";
 import { menuGroups, TOOLS, toolPath } from "../lib/tools";
@@ -10,8 +11,10 @@ import type { DailyRegime, IndexBars } from "../lib/types";
 
 vi.mock("../components/EChart", () => ({
   useChartColors: () => ({ up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" }),
-  EChart: ({ ariaLabel }: { ariaLabel: string }) => <div role="img" aria-label={ariaLabel} />,
+  // each mount gets a number, so a test can tell a rebuilt chart (zoom reset) from a redrawn one
+  EChart: ({ ariaLabel }: { ariaLabel: string }) => { const id = useRef(++mounts.n); return <div role="img" aria-label={ariaLabel} data-mount={id.current} />; },
 }));
+const mounts = vi.hoisted(() => ({ n: 0 }));
 
 const T0 = Date.UTC(2026, 10, 20, 3, 45); // 09:15 IST on a session
 // a clean rise of 1 point a minute for 90 minutes: every reading says trend
@@ -118,6 +121,22 @@ describe("Trend & Regime pages", () => {
     expect((screen.getByRole("combobox", { name: /Session/ }) as HTMLSelectElement).value).toBe("2026-11-19"); // it does not snap back to the newest
     fireEvent.change(screen.getByRole("combobox", { name: /Session/ }), { target: { value: "2026-11-20" } });
     await waitFor(() => expect(screen.getByText(/2026-11-20 · 90 one-minute bars/)).toBeInTheDocument());
+  });
+
+  it("a new candle length, a new session or Reset zoom rebuilds the charts (the zoom window is kept as bar numbers, so it would otherwise stay on bars 2 to 10), a new bar does not", async () => {
+    mock();
+    page("trend-strength");
+    await waitFor(() => expect(screen.getByTestId("strength-chart")).toBeInTheDocument());
+    const mount = () => screen.getByTestId("strength-chart").querySelector("[data-mount]")!.getAttribute("data-mount");
+    const first = mount();
+    fireEvent.click(screen.getByRole("button", { name: "3 min" }));
+    await waitFor(() => expect(mount()).not.toBe(first));
+    const second = mount();
+    fireEvent.click(screen.getByRole("button", { name: "Reset zoom" }));
+    await waitFor(() => expect(mount()).not.toBe(second));
+    const third = mount();
+    fireEvent.click(screen.getByRole("button", { name: "3 min" })); // the same length again changes nothing
+    expect(mount()).toBe(third);
   });
 
   it("says so when no bars are stored", async () => {

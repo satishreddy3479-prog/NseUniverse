@@ -45,6 +45,7 @@ from app.services.sampler import SamplerStatus
 from app.services.snapshot_service import SnapshotService
 from app.services.state import AppState, ErrorEvent, SnapshotActivity
 from app.storage.observations import ObservationStore
+from app.storage.preferences import PreferenceError, PreferenceStore
 from app.storage.store import SnapshotStore, StorageError
 from app.storage.strategies import StrategyError, StrategyStore
 from app.strategy.automation import RunningConflict, StrategyAutomation
@@ -1198,6 +1199,38 @@ class StrategyDoc(BaseModel):
 class StrategyImport(BaseModel):
     saved: dict[str, dict[str, Any]] = {}
     closed: dict[str, dict[str, Any]] = {}
+
+
+def _prefs(request: Request) -> PreferenceStore:
+    store: PreferenceStore = request.app.state.preferences
+    return store
+
+
+class PrefPut(BaseModel):
+    value: str
+
+
+@router.get("/prefs")
+async def prefs_list(request: Request) -> dict[str, Any]:
+    """The owner display preferences (layouts, theme...) as the server holds them."""
+    return {"prefs": await asyncio.to_thread(_prefs(request).all)}
+
+
+@router.put("/prefs/{key}")
+async def prefs_put(request: Request, key: str, body: PrefPut) -> dict[str, Any]:
+    try:
+        return await asyncio.to_thread(_prefs(request).put, key, body.value)
+    except PreferenceError as e:
+        raise HTTPException(422, {"code": "validation_error", "message": str(e)}) from e
+
+
+@router.delete("/prefs/{key}")
+async def prefs_delete(request: Request, key: str) -> dict[str, Any]:
+    """Removing a preference leaves a dated tombstone, so the removal reaches the other devices."""
+    try:
+        return await asyncio.to_thread(_prefs(request).delete, key)
+    except PreferenceError as e:
+        raise HTTPException(422, {"code": "validation_error", "message": str(e)}) from e
 
 
 def _strategies(request: Request) -> StrategyStore:

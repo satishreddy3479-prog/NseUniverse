@@ -37,16 +37,45 @@ export interface PanelSpec {
   guides?: { y: number; label?: string }[];
 }
 
-const TOP = 28, GAP = 30, SLIDER = 30;
+const TOP = 44, GAP = 30, SLIDER = 30;
 
-/** Stacked panels, one time axis. ``areas`` (the regime) is shaded behind every panel. Returns the option and the pixel height to give its container. */
-export function multiPanelOption(c: ChartColors, x: string[], panels: PanelSpec[], areas: Area[] | null): { option: EChartsCoreOption; height: number } {
+const fmtNum = (v: unknown): string => {
+  if (typeof v !== "number" || !Number.isFinite(v)) return "—";
+  return Math.abs(v) >= 1000 ? v.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : Math.abs(v) >= 100 ? v.toFixed(1) : v.toFixed(2);
+};
+
+interface TipItem { seriesName?: string; value?: unknown; marker?: string; dataIndex?: number }
+
+/** The card that follows the pointer: the time, every visible series' value at that time (a candle as open, high, low, close), then ``info`` lines (the regime and its readings). */
+export function tipFormatter(x: readonly string[], info?: (i: number) => string[]) {
+  return (params: unknown): string => {
+    const arr = (Array.isArray(params) ? params : [params]) as TipItem[];
+    const i = arr[0]?.dataIndex ?? -1;
+    if (i < 0) return "";
+    const seen = new Set<string>();
+    const rows: string[] = [];
+    for (const p of arr) {
+      const name = p.seriesName ?? "";
+      if (name.startsWith("__") || seen.has(name)) continue;
+      seen.add(name);
+      const v = p.value;
+      rows.push(Array.isArray(v) && v.length >= 5
+        ? `${p.marker ?? ""}${name}: O <b>${fmtNum(v[1])}</b> H <b>${fmtNum(v[4])}</b> L <b>${fmtNum(v[3])}</b> C <b>${fmtNum(v[2])}</b>`
+        : `${p.marker ?? ""}${name}: <b>${fmtNum(v)}</b>`);
+    }
+    const extra = info?.(i) ?? [];
+    return `<b>${x[i] ?? ""}</b><br/>${rows.join("<br/>")}${extra.length ? `<br/><span style="opacity:.85">${extra.join("<br/>")}</span>` : ""}`;
+  };
+}
+
+/** Stacked panels, one time axis. ``areas`` (the regime) is shaded behind every panel; ``info`` adds lines to the hover card. Returns the option and the pixel height to give its container. */
+export function multiPanelOption(c: ChartColors, x: string[], panels: PanelSpec[], areas: Area[] | null, info?: (i: number) => string[]): { option: EChartsCoreOption; height: number } {
   const axisText = { color: c.muted, fontSize: 11 };
   const grids: object[] = [], xAxes: object[] = [], yAxes: object[] = [], titles: object[] = [], series: Record<string, unknown>[] = [];
   const legend: string[] = [];
   let y0 = TOP + 6;
   panels.forEach((p, i) => {
-    grids.push({ left: 56, right: 14, top: y0, height: p.height });
+    grids.push({ left: 56, right: 58, top: y0, height: p.height });
     xAxes.push({
       type: "category", gridIndex: i, data: x, boundaryGap: true, axisTick: { show: false }, axisLine: { lineStyle: { color: c.rule } },
       axisLabel: { show: i === panels.length - 1, ...axisText, hideOverlap: true, showMaxLabel: true }, splitLine: { show: false },
@@ -78,7 +107,7 @@ export function multiPanelOption(c: ChartColors, x: string[], panels: PanelSpec[
   const option: EChartsCoreOption = {
     animation: false,
     axisPointer: { link: [{ xAxisIndex: "all" }], lineStyle: { color: c.muted, type: "dashed" } },
-    tooltip: { trigger: "axis", confine: true, axisPointer: { type: "cross" }, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 } },
+    tooltip: { trigger: "axis", confine: true, axisPointer: { type: "cross" }, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 }, formatter: tipFormatter(x, info) },
     legend: { data: [...new Set(legend)], top: 0, left: 52, itemWidth: 14, itemHeight: 8, itemGap: 12, textStyle: { color: c.paper, fontSize: 11 }, type: "scroll" },
     title: titles, grid: grids, xAxis: xAxes, yAxis: yAxes, series,
     dataZoom: [

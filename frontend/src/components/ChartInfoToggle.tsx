@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import { getHideInfo, setHideInfo, subscribeHideInfo } from "../lib/chartInfo";
 
 /**
- * "Hide chart info": one switch for every chart in the app (the choice is kept in this browser). The card that follows the pointer over a chart can
+ * "Hide chart info": one switch for every chart in the app (the choice is kept on the server, so every browser shows the same). The card that follows the pointer over a chart can
  * cover the whole chart on a phone; with this on the cards are not drawn and the line that marks the position stays. Placed beside the heading of a
  * page or section that has charts.
  */

@@ -5,6 +5,9 @@ _Last updated: 2026-11-23_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Preferences on the server (24 Nov 2026, D290)
+Layouts, chosen candle lengths, theme, capital and read marks are stored on the server (`/api/prefs`, `preferences.sqlite3`) and mirrored from every browser, so any PC opens with the same app (`lib/prefs.ts`; `main.tsx` waits up to 2.5 s for the server before loading the pages). The Trend & Regime charts have the chart-info button and a full hover card.
+
 ## Trend & Regime indicators (23 Nov 2026, D286-D287)
 New Analyse group "Trend & Regime" with eight views (Market Regime, Trend Strength, Choppiness & Variance Ratio, Session Structure, Opening Range, Range Used vs Implied Move, Gamma Regime, Daily Regime), a regime shading on the Smart OI chart, an optional `day` on `/api/market/index-bars` (also returns `days`) and `/api/intraday/regime-daily`. The intraday label is descriptive and not validated. The daily label was tested on 18 years of closes against a criterion fixed beforehand and did **not** pass (Trending was followed by a less straight next 10 days than Range-bound, p = 0.98); the page says so. D289 (24 Nov): the intraday label is now a 0-100 trend score with Trending / Weak trend / Mixed / Range-bound classes, margins and a bar-length-aware look-back, plus stacked multi-panel charts (`lib/trendCharts.ts`). Library `lib/trendStats.ts`, `lib/trendRegime.ts`, `lib/trendViews.ts`, `pages/TrendRegime.tsx`; backend `app/intraday/regime.py`. Tests: `trend-stats`, `trend-regime`, `trend-page`, `smart-oi-signals-panel`, `test_daily_regime`, `test_index_bars`. Not seen on the live pages; the live gamma / range-used views need the market open. Not built: straddle-by-regime relevance test.
 

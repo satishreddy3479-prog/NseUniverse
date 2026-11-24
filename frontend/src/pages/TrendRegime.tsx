@@ -1,8 +1,9 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import type { EChartsCoreOption } from "echarts/core";
 import { EChart, useChartColors } from "../components/EChart";
+import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { LayoutBar } from "../components/LayoutBar";
 import { Loading } from "../components/Loading";
 import { api } from "../lib/api";
@@ -33,9 +34,13 @@ const Note = ({ children, tone = "muted" }: { children: React.ReactNode; tone?: 
 const Card = ({ title, children, testid }: { title: string; children: React.ReactNode; testid?: string }) => (
   <section className="rounded-sm border border-rule bg-slate p-3" data-testid={testid}><h2 className="mb-2 text-sm font-semibold text-paper">{title}</h2>{children}</section>
 );
-const Chart = ({ option, height, label }: { option: EChartsCoreOption; height: number; label: string }) => (
-  <div className="w-full" style={{ height }}><EChart option={option} ariaLabel={label} className="h-full w-full" /></div>
-);
+/** A chart is rebuilt (zoom window reset) when this changes: the zoom window of a category axis is kept as bar numbers, so after dragging or pinching a chart a new candle length or session
+ *  would otherwise keep showing bars 2 to 10 of a much longer day. It changes with the candle length, the session and the "Reset zoom" button, never with a new bar arriving. */
+const ChartKey = createContext("");
+const Chart = ({ option, height, label }: { option: EChartsCoreOption; height: number; label: string }) => {
+  const k = useContext(ChartKey);
+  return <div className="w-full" style={{ height }}><EChart key={k} option={option} ariaLabel={label} className="h-full w-full" /></div>;
+};
 
 /** Shown on every intraday view: what these figures are and are not. */
 const DESCRIPTIVE = "Descriptive and not validated: these figures say how the session has behaved so far, they do not forecast it. Only the daily regime has a validation study on the stored history.";
@@ -44,6 +49,13 @@ interface Ctx {
   c: ChartColors; day: string | null; bars: RBar[]; tf: number; reg: RegimeSeries; fut: FuturesSeries | null; futSameDay: boolean;
   L: ReturnType<typeof useViewLayout>; newest: boolean;
 }
+/** The regime lines of the hover card at bar i: label, trend score, agreement and the four readings. */
+const regimeInfo = (reg: RegimeSeries) => (i: number): string[] => {
+  const q = reg.points[i];
+  if (!q) return [];
+  const m = q.metrics;
+  return [`Regime: <b>${q.label}</b>${q.score == null ? "" : ` · score ${Math.round(q.score * 100)}`}${q.agreement ? ` · ${q.agreement.agree} of ${q.agreement.of} readings agree` : ""}`, `ER ${f(m.er)} · ADX ${f(m.adx, 1)} · R² ${f(m.r2)} · choppiness ${f(m.chop, 1)}`];
+};
 const timeLabels = (bars: RBar[]) => bars.map((b) => hhmmIST(new Date(b.t).toISOString()));
 const toneOf = (l: string) => (l.includes("up") || l.includes("Trending up") ? "text-up" : l.includes("down") ? "text-down" : "text-paper");
 
@@ -92,7 +104,7 @@ function MarketRegimeView({ ctx, stored }: { ctx: Ctx; stored: RegimeSeries[] })
       { title: "ADX (strength) with +DI and −DI (direction)", height: 110, y: { min: 0 },
         series: [line("ADX", p.map((q) => q.metrics.adx), c.paper), line("+DI", p.map((q) => q.metrics.plusDi), c.up), line("−DI", p.map((q) => q.metrics.minusDi), c.down)] },
     ];
-    return multiPanelOption(c, x, panels, regimeAreas(p.map((q) => q.label), x, c));
+    return multiPanelOption(c, x, panels, regimeAreas(p.map((q) => q.label), x, c), regimeInfo(reg));
   }, [c, reg, p, x, twap, or]);
   if (!last) return <Note>No bars for this day yet.</Note>;
   const lbl = last.label;
@@ -165,7 +177,7 @@ function TrendStrengthView({ ctx }: { ctx: Ctx }) {
     { title: "R² of a straight-line fit", height: 130, y: { min: 0, max: 1, scale: false },
       series: [line("R²", p.map((q) => q.metrics.r2), c.info)], zones: [{ from: SCALES.r2[1], to: 1, color: c.brass, opacity: 0.12, label: "one clean line" }, { from: 0, to: SCALES.r2[0], color: c.info, opacity: 0.1 }], guides: [{ y: SCALES.r2[0] }, { y: SCALES.r2[1] }] },
     { title: "Slope of the fitted line (points per bar)", height: 100, series: [barSeries("Slope", p.map((q) => q.metrics.slope), (v) => (v >= 0 ? c.up : c.down))], guides: [{ y: 0 }] },
-  ], regimeAreas(p.map((q) => q.label), x, c)), [c, reg, p, x]);
+  ], regimeAreas(p.map((q) => q.label), x, c), regimeInfo(reg)), [c, reg, p, x]);
   return (
     <div className="flex flex-col gap-3">
       <Card title="Trend strength through the session" testid="strength-chart"><Chart option={chart.option} height={chart.height} label="Efficiency ratio, ADX with directional lines, R squared and slope on one time axis" /></Card>
@@ -186,7 +198,7 @@ function ChopVarianceView({ ctx }: { ctx: Ctx }) {
   const chop = useMemo(() => multiPanelOption(c, x, [
     { title: `Choppiness index of the last ${reg.params.window} bars (high = choppy, low = trending)`, height: 150, y: { min: 0, max: 100, scale: false },
       series: [line("Choppiness", p.map((q) => q.metrics.chop), c.brass)], zones: [{ from: SCALES.chop[0], to: 100, color: c.info, opacity: 0.12, label: "choppy" }, { from: 0, to: SCALES.chop[1], color: c.brass, opacity: 0.12, label: "trending" }], guides: [{ y: SCALES.chop[1] }, { y: SCALES.chop[0] }] },
-  ], regimeAreas(p.map((q) => q.label), x, c)), [c, reg, p, x]);
+  ], regimeAreas(p.map((q) => q.label), x, c), regimeInfo(reg)), [c, reg, p, x]);
   const vrOpt = useMemo(() => ({
     animation: false, grid: { left: 52, right: 16, top: 30, bottom: 28 },
     tooltip: { trigger: "axis", confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 } },
@@ -239,7 +251,7 @@ function SessionStructureView({ ctx }: { ctx: Ctx }) {
         line("TWAP −1σ", twap.map((m, i) => m - sd[i]!), c.brass, { lineStyle: { width: 1, color: c.brass, type: "dotted", opacity: 0.8 } }),
         ...(vw ? [line("Future VWAP (index level)", vwap, c.info, { lineStyle: { width: 1.6, color: c.info, type: "dashed" } })] : [])] },
     { title: "Distance from the session mean in ATRs (14 bars)", height: 110, series: [barSeries("Distance (ATR)", dist.map((v) => (v == null ? null : +v.toFixed(2))), (v) => (v >= 0 ? c.up : c.down))], guides: [{ y: 1 }, { y: -1 }, { y: 0 }] },
-  ], null), [c, x, closes, twap, sd, vw, vwap, dist]);
+  ], null, regimeInfo(reg)), [c, x, closes, twap, sd, vw, vwap, dist, reg]);
   return (
     <div className="flex flex-col gap-3">
       <Card title="NIFTY against its session mean" testid="structure-chart"><Chart option={chart.option} height={chart.height} label="NIFTY close, session mean with bands, future VWAP and distance in ATRs" /></Card>
@@ -269,11 +281,11 @@ function OpeningRangeView({ ctx }: { ctx: Ctx }) {
     { title: `NIFTY ${reg.params.tf}-minute candles with the first ${mins} minutes' range`, height: 280, series: [candles("NIFTY", reg.bars, c)],
       zones: [{ from: or.low, to: or.high, color: c.brass, opacity: 0.08, label: "opening range" }], guides: [{ y: or.high, label: "OR high" }, { y: or.low, label: "OR low" }] },
     { title: "Close beyond the range (points; zero = inside)", height: 110, series: [barSeries("Beyond the range", out, (v) => (v >= 0 ? c.up : c.down))], guides: [{ y: 0 }] },
-  ], null) : null), [c, x, or, reg, mins, out]);
+  ], null, regimeInfo(reg)) : null), [c, x, or, reg, mins, out]);
   return (
     <div className="flex flex-col gap-3">
       <Card title="Opening range">
-        <div className="mb-2 flex items-center gap-2 text-xs text-muted">Range length
+        <div className="mb-2 flex items-center gap-2 text-xs text-muted">Opening range length
           {[5, 15, 30].map((m) => <button key={m} type="button" onClick={() => setMins(m)} aria-pressed={mins === m} className={`min-h-8 rounded-sm border px-2 ${mins === m ? "border-brass text-paper" : "border-rule"}`}>{m} min</button>)}</div>
         {!or || !chart ? <Note>No bars yet.</Note> : (
           <>
@@ -321,7 +333,7 @@ function RangeUsedView({ ctx }: { ctx: Ctx }) {
     { title: "Range so far against the range a random walk with the option-implied volatility would have made by this time", height: 220,
       series: [line("Range so far (pts)", rr, c.paper), line("Expected range at this time (pts)", expected, c.brass, { lineStyle: { width: 1.5, color: c.brass, type: "dashed" } })] },
     { title: "Pace: range so far ÷ expected (1 = on the implied path)", height: 110, series: [line("Pace", pace, c.info)], guides: [{ y: 1 }], zones: [{ from: 1.25, to: 5, color: c.down, opacity: 0.08, label: "running hot" }, { from: 0, to: 0.75, color: c.info, opacity: 0.08, label: "quiet" }] },
-  ], null)), [c, x, rr, expected, pace, sigma]);
+  ], null, regimeInfo(reg))), [c, x, rr, expected, pace, sigma, reg]);
   if (!ctx.newest) return <Note tone="warn">The implied move comes from today's live option chain, so this view is for the newest session only.</Note>;
   if (chain.isLoading) return <Loading label="Loading the option chain" />;
   if (!snap || !prof || bars.length === 0) return <Note tone="warn">Needs today's bars and the live option chain.</Note>;
@@ -390,7 +402,7 @@ function DailyRegimeView({ c }: { c: ChartColors }) {
   const d: DailyRegime | undefined = q.data;
   const s = d?.study;
   const ds = d?.series;
-  const chart = useMemo(() => (ds ? multiPanelOption(c, ds.dates, [{ title: "NIFTY daily close with the daily regime shaded", height: 240, series: [line("NIFTY close", ds.close, c.paper)] }], regimeAreas(ds.label, ds.dates, c)) : null), [c, ds]);
+  const chart = useMemo(() => (ds ? multiPanelOption(c, ds.dates, [{ title: "NIFTY daily close with the daily regime shaded", height: 240, series: [line("NIFTY close", ds.close, c.paper)] }], regimeAreas(ds.label, ds.dates, c), (i) => [`Daily regime: <b>${ds.label[i] ?? "—"}</b>`]) : null), [c, ds]);
   const groups = ["Trending up", "Trending down", "Range-bound", "Unclear"];
   const bars = useMemo(() => (s ? {
     animation: false, grid: { left: 52, right: 16, top: 30, bottom: 28 },
@@ -444,19 +456,23 @@ export function TrendRegime() {
   const fq = useQuery({ queryKey: ["trend-fut"], queryFn: () => api.futuresSeries(), refetchInterval: 60_000, retry: false, enabled: id === "session-structure" });
   const bars = useMemo(() => fromIndexBars(idx.data?.bars ?? []), [idx.data]);
   const reg = useMemo(() => regimeSeries(bars, { tf }), [bars, tf]);
+  const [zoomKey, setZoomKey] = useState(0);
+  const chartKey = `${daily ? "daily" : tf}|${idx.data?.day ?? ""}|${zoomKey}`;
   const needStored = id === "market-regime";
   const storedQs = useQueries({ queries: needStored ? days.map((d) => ({ queryKey: ["indexBars", d], queryFn: () => api.indexBars(d), staleTime: 600_000, retry: false })) : [] });
   const stored = useMemo(() => storedQs.flatMap((q) => (q.data?.bars.length ? [regimeSeries(fromIndexBars(q.data.bars), { tf })] : [])), [storedQs, tf]); // eslint-disable-line react-hooks/exhaustive-deps
   const ctx: Ctx = { c, day: idx.data?.day ?? null, bars, tf, reg, fut: fq.data ?? null, futSameDay: !!fq.data && fq.data.day === idx.data?.day, L, newest };
   return (
+    <ChartKey.Provider value={chartKey}>
     <div className="flex flex-col gap-3" data-testid={`trend-${id}`}>
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div><h1 className="text-lg font-semibold text-paper">{spec.label}</h1><p className="max-w-3xl text-xs text-muted">{spec.blurb}</p></div>
-        <LayoutBar layout={L} />
+        <div className="flex flex-wrap items-center gap-2"><LayoutBar layout={L} /><ChartInfoToggle /></div>
       </header>
       {!daily && (
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
-          <span>Bars</span>{TFS.map((t) => <button key={t} type="button" aria-pressed={tf === t} onClick={() => setTf(t)} className={`min-h-8 rounded-sm border px-2 ${tf === t ? "border-brass text-paper" : "border-rule"}`}>{t} min</button>)}
+          <span>Candle length</span>{TFS.map((t) => <button key={t} type="button" aria-pressed={tf === t} onClick={() => setTf(t)} className={`min-h-8 rounded-sm border px-2 ${tf === t ? "border-brass text-paper" : "border-rule"}`}>{t} min</button>)}
+          <button type="button" onClick={() => setZoomKey((k) => k + 1)} className="min-h-8 rounded-sm border border-rule px-2 hover:text-paper" title="Show the whole session again after dragging or pinching a chart">Reset zoom</button>
           {days.length > 1 && <label className="flex items-center gap-1">Session
             <select value={idx.data?.day ?? ""} onChange={(e) => setDayPick(e.target.value === days[days.length - 1] ? null : e.target.value)} className="min-h-8 rounded-sm border border-rule bg-slate-2 px-1 text-paper">{days.map((d) => <option key={d} value={d}>{d}</option>)}</select></label>}
           {idx.data?.day && <span>{idx.data.day} · {bars.length} one-minute bars{bars.length ? ` · last ${hhmmIST(new Date(bars[bars.length - 1]!.t).toISOString())} IST` : ""}</span>}
@@ -478,5 +494,6 @@ export function TrendRegime() {
       )}
       {daily && <DailyRegimeView c={c} />}
     </div>
+    </ChartKey.Provider>
   );
 }

@@ -27,6 +27,7 @@ STORES: dict[str, tuple[str, str, str]] = {
     "market_history.sqlite3": ("Daily prices", "Daily bars of NIFTY and the other instruments used by the volatility, sector and global-market views.", "Append-only; kept forever."),
     "nse_flows.sqlite3": ("Institutional flows", "NSE participant open interest and FII/DII cash files.", "Kept; small."),
     "market.sqlite3": ("Breadth and futures recordings", "Minute aggregates of breadth, sectors and futures flow.", "Append-only; about 1 MB a day."),
+    "preferences.sqlite3": ("Display preferences", "Saved chart layouts, chosen candle lengths, theme and read marks, shared by every device.", "Kept; tiny."),
     "strategies.sqlite3": ("Strategies", "Saved and closed strategies with every revision.", "Kept; deleting a strategy only hides it."),
 }
 

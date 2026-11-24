@@ -26,6 +26,7 @@ CATEGORIES: dict[str, tuple[tuple[str, ...], str, str]] = {
     "institutional flows": (("nse_flows.sqlite3*",), "core", "rolling 7-session windows by approved policy"),
     "market breadth recordings": (("market.sqlite3*",), "core", "append-only minute aggregates, lists, weights, daily files; about 1 MB a day, kept"),
     "strategies": (("strategies.sqlite3*",), "core", "saved and closed strategies; deletes are marks, history kept forever"),
+    "preferences": (("preferences.sqlite3*",), "core", "display preferences (layouts, theme, read marks): tiny, removals are tombstones, kept"),
     "swing paper book": (("swing_paper.sqlite3*",), "core", "append-only forward record; kept forever"),
     "intraday scores and summaries": (("intraday.sqlite3*",), "core", "immutable; kept forever"),
     "archive": (("archive/**/*",), "verified copy", "kept; one verified file per session"),

@@ -1,6 +1,6 @@
 /**
  * "Hide info": whether the card that follows the pointer over a chart (its tooltip) is shown. On a phone that card can cover the whole chart, so
- * every chart has a button to hide it; the crosshair stays, so the position is still marked. One choice for all charts, kept in this browser.
+ * every chart has a button to hide it; the crosshair stays, so the position is still marked. One choice for all charts, kept on the server, so every browser shows the same.
  */
 const KEY = "nse.charts.hideInfo";
 const listeners = new Set<() => void>();

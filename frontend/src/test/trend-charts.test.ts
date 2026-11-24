@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { barSeries, line, multiPanelOption, regimeAreas } from "../lib/trendCharts";
+import { barSeries, line, multiPanelOption, regimeAreas, tipFormatter } from "../lib/trendCharts";
 
 const c = { up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" };
 type Opt = { grid: { top: number; height: number }[]; xAxis: { axisLabel: { show: boolean } }[]; series: { name: string; markArea?: { data: unknown[][] }; markLine?: { data: unknown[] } }[]; legend: { data: string[] }; dataZoom: { type: string; xAxisIndex: number[] }[]; axisPointer: { link: unknown[] } };
@@ -40,4 +40,29 @@ describe("trend charts", () => {
     const s = barSeries("d", [1, null], c.up)(0, 0) as unknown as { data: unknown[] };
     expect(s.data[1]).toBeNull();
   });
+
+  it("the hover card names the time, every visible series (a candle as open, high, low, close), skips the helper series and adds the regime lines", () => {
+    const tip = tipFormatter(["09:15", "09:20"], (i) => [`Regime: <b>R${i}</b>`]);
+    const html = tip([
+      { seriesName: "NIFTY", value: [1, 25500.5, 25510.25, 25490, 25520], marker: "[m]", dataIndex: 1 },
+      { seriesName: "Trend score", value: 92.6, marker: "[m]", dataIndex: 1 },
+      { seriesName: "__panel0", value: undefined, dataIndex: 1 },
+      { seriesName: "ADX", value: null, marker: "[m]", dataIndex: 1 },
+      { seriesName: "Trend score", value: 1, marker: "[m]", dataIndex: 1 },
+    ]);
+    expect(html).toContain("<b>09:20</b>");
+    expect(html).toContain("NIFTY: O <b>25,500.5</b> H <b>25,520</b> L <b>25,490</b> C <b>25,510.25</b>");
+    expect(html).toContain("Trend score: <b>92.60</b>");
+    expect(html).toContain("ADX: <b>—</b>"); // a missing value is a dash, not zero
+    expect(html).not.toContain("__panel");
+    expect((html.match(/Trend score/g) ?? []).length).toBe(1); // a series is listed once
+    expect(html).toContain("Regime: <b>R1</b>");
+    expect(tip([])).toBe("");
+  });
+
+  it("the chart option uses that card", () => {
+    const { option } = multiPanelOption(c, ["a"], [{ title: "t", height: 100, series: [line("p", [1], c.paper)] }], null, () => ["x"]);
+    expect(typeof (option as unknown as { tooltip: { formatter: unknown } }).tooltip.formatter).toBe("function");
+  });
 });
+
