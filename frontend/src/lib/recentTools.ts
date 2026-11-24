@@ -35,7 +35,9 @@ export function recordTool(id: string): void {
 export function useRecordTool(pathname: string): void {
   useEffect(() => {
     const t = toolAt(pathname);
-    if (t) recordTool(t.id);
+    // a tab of a page family is recorded as the family's menu entry
+    const head = t?.tab ? TOOLS.find((x) => x.menu === t.menu && x.group === t.group && !x.tab) : t;
+    if (head) recordTool(head.id);
   }, [pathname]);
 }
 
@@ -48,5 +50,5 @@ export function useRecentTools(n = 3, menu?: string): Tool[] {
     window.addEventListener("storage", sync);
     return () => { window.removeEventListener(EVENT, sync); window.removeEventListener("storage", sync); };
   }, []);
-  return ids.map((id) => TOOLS.find((t) => t.id === id)).filter((t): t is Tool => !!t && toolPath(t) !== null && (!menu || t.menu === menu)).slice(0, n);
+  return ids.map((id) => TOOLS.find((t) => t.id === id)).filter((t): t is Tool => !!t && toolPath(t) !== null && !t.tab && (!menu || t.menu === menu)).slice(0, n);
 }

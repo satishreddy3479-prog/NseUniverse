@@ -3,7 +3,7 @@ export type TrendViewId =
   | "market-regime" | "trend-strength" | "chop-variance" | "session-structure" | "opening-range" | "range-used" | "gamma-regime" | "daily-regime";
 
 export const TREND_VIEWS: { id: TrendViewId; label: string; blurb: string; popular?: boolean }[] = [
-  { id: "market-regime", label: "Market Regime", popular: true, blurb: "Is the session trending or range-bound? Four readings vote; the label, its confidence and the reasons are shown, with the regime shaded behind the NIFTY candles. Descriptive, not validated." },
+  { id: "market-regime", label: "Trend & Regime", popular: true, blurb: "Is the session trending or range-bound? Four readings vote; the label, its confidence and the reasons are shown, with the regime shaded behind the NIFTY candles. Descriptive, not validated." },
   { id: "trend-strength", label: "Trend Strength", blurb: "Efficiency ratio, ADX with +DI / −DI and the R² of a straight-line fit, bar by bar, against the thresholds that make them vote." },
   { id: "chop-variance", label: "Choppiness & Variance Ratio", blurb: "The choppiness index through the session, and the Lo–MacKinlay variance ratio with its z: do moves tend to continue or to reverse?" },
   { id: "session-structure", label: "Session Structure (TWAP / VWAP)", blurb: "NIFTY against its session mean and the future's volume-weighted price: share of time above, crossings, longest stay, distance in ATR." },

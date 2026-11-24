@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TrendRegime } from "../pages/TrendRegime";
-import { menuGroups, toolPath } from "../lib/tools";
+import { menuGroups, TOOLS, toolPath } from "../lib/tools";
 import { TREND_VIEWS } from "../lib/trendViews";
 import type { DailyRegime, IndexBars } from "../lib/types";
 
@@ -46,10 +46,19 @@ const page = (view: string) => render(
 afterEach(() => { vi.unstubAllGlobals(); localStorage.clear(); });
 
 describe("Trend & Regime in the Analyse menu", () => {
-  it("has one ready tool per indicator, each opening its own view", () => {
+  it("is one entry in the menu, and every indicator is a tab of that family opening its own view", () => {
     const g = menuGroups("analyse").find((x) => x.group === "Trend & Regime")!;
-    expect(g.tools.map((t) => t.id)).toEqual(TREND_VIEWS.map((v) => v.id));
-    expect(g.tools.every((t) => t.status === "ready" && toolPath(t) === `/trend/${t.id}`)).toBe(true);
+    expect(g.tools.map((t) => [t.id, t.label])).toEqual([["market-regime", "Trend & Regime"]]);
+    const family = TOOLS.filter((t) => t.menu === "analyse" && t.group === "Trend & Regime");
+    expect(family.map((t) => t.id)).toEqual(TREND_VIEWS.map((v) => v.id));
+    expect(family.every((t) => t.status === "ready" && toolPath(t) === `/trend/${t.id}`)).toBe(true);
+    expect(family.filter((t) => !t.tab).map((t) => t.id)).toEqual(["market-regime"]);
+  });
+  it("the page has no second row of view buttons: the tabs above the page are the one list", async () => {
+    mock();
+    page("trend-strength");
+    await waitFor(() => expect(screen.getByTestId("trend-trend-strength")).toBeInTheDocument());
+    expect(screen.queryByRole("navigation", { name: "Trend and regime views" })).toBeNull();
   });
 });
 

@@ -45,7 +45,7 @@ export function Home() {
   const [only, setOnly] = useState<string>("all");
   const search = useRef<HTMLInputElement>(null);
   const intel = useQuery({ queryKey: ["intelligence"], queryFn: () => api.intelligenceSummary(), refetchInterval: 10_000, retry: false });
-  const ready = TOOLS.filter((t) => t.status === "ready").length;
+  const ready = TOOLS.filter((t) => t.status === "ready" && !t.tab).length;
   const recent = useMemo(() => loadRecent().map((p) => ({ path: p, ...toolByPath(p) })).filter((x): x is { path: string; label: string; blurb: string } => !!x.label), []);
   const match = (t: Tool) => !q.trim() || `${t.label} ${t.blurb} ${t.group}`.toLowerCase().includes(q.trim().toLowerCase());
   const menus = useMemo(() => MENU_ORDER.filter((m) => only === "all" || m === only).map((m) => ({ m, groups: menuGroups(m).map((g) => ({ ...g, tools: g.tools.filter(match) })).filter((g) => g.tools.length) })).filter((x) => x.groups.length), [q, only]); // eslint-disable-line react-hooks/exhaustive-deps

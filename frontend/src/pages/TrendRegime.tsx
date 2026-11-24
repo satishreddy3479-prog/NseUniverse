@@ -1,6 +1,6 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { EChart, useChartColors } from "../components/EChart";
 import { LayoutBar } from "../components/LayoutBar";
 import { Loading } from "../components/Loading";
@@ -364,9 +364,6 @@ export function TrendRegime() {
         <div><h1 className="text-lg font-semibold text-paper">{spec.label}</h1><p className="max-w-3xl text-xs text-muted">{spec.blurb}</p></div>
         <LayoutBar layout={L} />
       </header>
-      <nav className="flex flex-wrap gap-1 text-xs" aria-label="Trend and regime views">
-        {TREND_VIEWS.map((v) => <Link key={v.id} to={`/trend/${v.id}`} aria-current={v.id === id ? "page" : undefined} className={`rounded-sm border px-2 py-1 ${v.id === id ? "border-brass text-paper" : "border-rule text-muted hover:text-paper"}`}>{v.label}</Link>)}
-      </nav>
       {!daily && (
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
           <span>Bars</span>{TFS.map((t) => <button key={t} type="button" aria-pressed={tf === t} onClick={() => setTf(t)} className={`min-h-8 rounded-sm border px-2 ${tf === t ? "border-brass text-paper" : "border-rule"}`}>{t} min</button>)}

@@ -28,6 +28,8 @@ export interface Tool {
   needs?: string;
   isNew?: boolean;
   popular?: boolean;
+  /** a tab of its group's page family: reachable from the tabs above the page, not listed on its own in the menus, the search or the recent tools (the group's first tool stands for the family) */
+  tab?: boolean;
 }
 
 export const MENU_TITLES: Record<MenuId, string> = { fno: "FNO Tools", analyse: "Analyse" };
@@ -69,14 +71,14 @@ export const TOOLS: Tool[] = [
   { id: "future-price-oi", label: "Future Price vs OI", menu: "fno", group: "Futures OI", status: "ready", isNew: true, page: "futbuildup", blurb: "NIFTY future price against open interest: long/short buildup, short covering, long unwinding per 15 minutes and for the session." },
   // ---- Analyse
   { id: "advanced-greeks", label: "Advanced Greeks", menu: "analyse", group: "Risk", status: "ready", to: "/advanced-greeks", isNew: true, popular: true, blurb: "The Greeks of your option legs in rupees by leg, expiry and limit, the gamma map and the volatility surface. Scenarios (index, volatility, time, rates) are in the Strategy Builder." },
-  { id: "market-regime", label: "Market Regime", menu: "analyse", group: "Trend & Regime", status: "ready", to: "/trend/market-regime", isNew: true, popular: true, blurb: "Is the session trending or range-bound? Four readings vote; label, confidence and reasons are shown with the regime shaded behind the NIFTY candles. Descriptive, not validated." },
-  { id: "trend-strength", label: "Trend Strength", menu: "analyse", group: "Trend & Regime", status: "ready", to: "/trend/trend-strength", isNew: true, blurb: "Efficiency ratio, ADX with +DI / −DI and R² of a straight-line fit, bar by bar." },
-  { id: "chop-variance", label: "Choppiness & Variance Ratio", menu: "analyse", group: "Trend & Regime", status: "ready", to: "/trend/chop-variance", isNew: true, blurb: "Choppiness index and the Lo–MacKinlay variance ratio with its z." },
-  { id: "session-structure", label: "Session Structure (TWAP / VWAP)", menu: "analyse", group: "Trend & Regime", status: "ready", to: "/trend/session-structure", isNew: true, blurb: "NIFTY against its session mean and the future's VWAP: time above, crossings, longest stay, distance in ATR." },
-  { id: "opening-range", label: "Opening Range", menu: "analyse", group: "Trend & Regime", status: "ready", to: "/trend/opening-range", isNew: true, blurb: "The opening range and what the price did with it: breakouts and failed breakouts." },
-  { id: "range-used", label: "Range Used vs Implied Move", menu: "analyse", group: "Trend & Regime", status: "ready", to: "/trend/range-used", isNew: true, blurb: "How much of a normal day's range, as the options price it, has been used." },
-  { id: "gamma-regime", label: "Gamma Regime", menu: "analyse", group: "Trend & Regime", status: "ready", to: "/trend/gamma-regime", isNew: true, blurb: "Positive or negative gamma from the live chain: net GEX, flip and walls." },
-  { id: "daily-regime", label: "Daily Regime (validated?)", menu: "analyse", group: "Trend & Regime", status: "ready", to: "/trend/daily-regime", isNew: true, blurb: "The same label on 18 years of daily closes with a pre-registered validation study; the verdict is shown as it came out." },
+  { id: "market-regime", label: "Trend & Regime", menu: "analyse", group: "Trend & Regime", status: "ready", to: "/trend/market-regime", isNew: true, popular: true, blurb: "Is the session trending or range-bound? Four readings vote; label, confidence and reasons are shown with the regime shaded behind the NIFTY candles. Descriptive, not validated." },
+  { id: "trend-strength", tab: true, label: "Trend Strength", menu: "analyse", group: "Trend & Regime", status: "ready", to: "/trend/trend-strength", isNew: true, blurb: "Efficiency ratio, ADX with +DI / −DI and R² of a straight-line fit, bar by bar." },
+  { id: "chop-variance", tab: true, label: "Choppiness & Variance Ratio", menu: "analyse", group: "Trend & Regime", status: "ready", to: "/trend/chop-variance", isNew: true, blurb: "Choppiness index and the Lo–MacKinlay variance ratio with its z." },
+  { id: "session-structure", tab: true, label: "Session Structure (TWAP / VWAP)", menu: "analyse", group: "Trend & Regime", status: "ready", to: "/trend/session-structure", isNew: true, blurb: "NIFTY against its session mean and the future's VWAP: time above, crossings, longest stay, distance in ATR." },
+  { id: "opening-range", tab: true, label: "Opening Range", menu: "analyse", group: "Trend & Regime", status: "ready", to: "/trend/opening-range", isNew: true, blurb: "The opening range and what the price did with it: breakouts and failed breakouts." },
+  { id: "range-used", tab: true, label: "Range Used vs Implied Move", menu: "analyse", group: "Trend & Regime", status: "ready", to: "/trend/range-used", isNew: true, blurb: "How much of a normal day's range, as the options price it, has been used." },
+  { id: "gamma-regime", tab: true, label: "Gamma Regime", menu: "analyse", group: "Trend & Regime", status: "ready", to: "/trend/gamma-regime", isNew: true, blurb: "Positive or negative gamma from the live chain: net GEX, flip and walls." },
+  { id: "daily-regime", tab: true, label: "Daily Regime (validated?)", menu: "analyse", group: "Trend & Regime", status: "ready", to: "/trend/daily-regime", isNew: true, blurb: "The same label on 18 years of daily closes with a pre-registered validation study; the verdict is shown as it came out." },
   { id: "fii-dii-summary", label: "FII/DII Summary", menu: "analyse", group: "FII / DII", status: "ready", page: "flows", blurb: "Institutional derivatives positioning from the exchange's published data." },
   { id: "fii-dii-cash", label: "FII/DII Cash Market", menu: "analyse", group: "FII / DII", status: "ready", page: "cash", blurb: "Cash-market buying and selling by FII and DII, from the data you import." },
   { id: "index-contributors", label: "Index Contributors", menu: "analyse", group: "Index", status: "ready", isNew: true, page: "contributors", blurb: "Which NIFTY 50 stocks are moving the index, in points." },
@@ -96,7 +98,7 @@ export const toolById = (id: string | undefined): Tool | undefined => TOOLS.find
 /** Dropdown content: groups in the order they first appear. */
 export function menuGroups(menu: MenuId): { group: string; tools: Tool[] }[] {
   const out: { group: string; tools: Tool[] }[] = [];
-  for (const t of TOOLS.filter((x) => x.menu === menu)) {
+  for (const t of TOOLS.filter((x) => x.menu === menu && !x.tab)) {
     let g = out.find((x) => x.group === t.group);
     if (!g) out.push((g = { group: t.group, tools: [] }));
     g.tools.push(t);
