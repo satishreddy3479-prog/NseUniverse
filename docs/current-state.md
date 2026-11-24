@@ -5,6 +5,9 @@ _Last updated: 2026-11-23_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Header price time (24 Nov 2026, D292)
+The NIFTY badge in the header shows the market time of the stored snapshot (last session close when the market is closed), no longer the time of the latest restart fetch. Tests: spot.test.tsx (holiday restart, in-session, after close). Not yet deployed.
+
 ## Learn page (24 Nov 2026, D291)
 System > Learn (`/learn`): a searchable course. Seven start-here lessons, then one lesson per tool of the FNO Tools and Analyse menus (51), each with idea, how to read, a worked example in round numbers (not market data) and common mistakes; links open the tool. Text in `frontend/src/lib/learn.ts`; `learn.test.tsx` fails if a tool has no lesson. Not yet reviewed by the owner for wording; examples hand-checked, no live data involved.
 

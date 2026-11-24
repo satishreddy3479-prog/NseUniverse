@@ -3,6 +3,7 @@ import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SpotBadge } from "../components/SpotBadge";
 import { INDEX_KEY, liveStore } from "../lib/liveStore";
+import { resetSessionClock, setSessionClock } from "../lib/session";
 import { isLiveTickTime } from "../lib/useLive";
 import { liveTick, status, streamStatus, summary } from "./fixtures";
 
@@ -98,6 +99,32 @@ describe("spot badge: the pre-open price is held until the market opens", () => 
       expect(screen.getByText("25,800.60")).toBeInTheDocument();
       expect(screen.getByText(/20 Nov.*15:39:04 IST/)).toBeInTheDocument(); // the real time of the price, with its date
       expect(document.body.textContent).not.toContain("23:15");
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("a snapshot fetched again on a holiday morning keeps showing the last session close, not the time of the restart", () => {
+    // Tuesday 24 Nov 2026 was an exchange holiday; each restart stored a new snapshot (10:32:38 IST) holding Monday's closing prices
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-24T08:00:00Z"));
+    setSessionClock({ open: "09:15", close: "15:40", label: "09:15–15:40", source: "test", holidays: ["2026-11-24"] });
+    try {
+      const { unmount } = showWith(summary({ underlying_ltp: 25349.65, underlying_prev_close: 25800.6, retrieved_at: "2026-11-24T05:02:38Z" }));
+      expect(screen.getByText(/23 Nov.*15:40:00 IST/)).toBeInTheDocument();
+      expect(document.body.textContent).not.toContain("10:32");
+      unmount();
+      // a later restart the same day: the same close, the badge does not change
+      showWith(summary({ underlying_ltp: 25349.65, underlying_prev_close: 25800.6, retrieved_at: "2026-11-24T07:41:09Z" }));
+      expect(screen.getByText(/23 Nov.*15:40:00 IST/)).toBeInTheDocument();
+    } finally { vi.useRealTimers(); resetSessionClock(); }
+  });
+
+  it("a snapshot fetched during the session shows its own time; one fetched after the close shows the close", () => {
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-23T11:30:00Z")); // Monday 23 Nov, 17:00 IST
+    try {
+      const { unmount } = showWith(summary({ underlying_ltp: 25349.65, underlying_prev_close: 25800.6, retrieved_at: "2026-11-23T08:14:10Z" })); // 13:44:10 IST
+      expect(screen.getByText(/^13:44:10 IST/)).toBeInTheDocument();
+      unmount();
+      showWith(summary({ underlying_ltp: 25349.65, underlying_prev_close: 25800.6, retrieved_at: "2026-11-23T11:20:00Z" })); // 16:50 IST, after the close
+      expect(screen.getByText(/^15:40:00 IST/)).toBeInTheDocument();
     } finally { vi.useRealTimers(); }
   });
 
