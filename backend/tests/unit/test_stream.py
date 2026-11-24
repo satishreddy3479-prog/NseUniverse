@@ -542,3 +542,34 @@ async def test_a_session_that_ends_in_failure_is_never_retried_when_the_retry_is
     assert 600.0 not in delays and not m.running  # the old behaviour is still available
     await m.stop()
 
+
+async def test_the_nifty_future_is_shown_to_browsers_live_but_other_internal_ticks_are_not() -> None:
+    fut_key, stock_key = "nse_fo|101", "nse_fo|102"
+    universe = Universe(tokens=[IDX], test_tokens=[IDX], expiries=["2026-11-03"], market_tokens=[A, B])
+    feed = FakeFeed()
+    delays: list[float] = []
+
+    async def factory() -> FakeFeed:
+        return feed
+
+    async def provider() -> Universe:
+        return universe
+
+    async def sleep(d: float) -> None:
+        delays.append(d)
+        await asyncio.sleep(0)
+
+    m = StreamManager(feed_factory=factory, universe_provider=provider, config=StreamConfig(test_timeout_s=0.3), clock=Clock(), sleep=sleep)
+    m.public_internal = lambda key: key == fut_key
+    await m.start()
+    await until(lambda: len(feed.subs) >= 1)
+    feed.push(tick("Nifty 50", 25000.0, None))
+    await until(lambda: m.message_count >= 1)
+    feed.push(tick("101", 25820.5))
+    feed.push(tick("102", 1500.0))
+    await until(lambda: m.market_message_count == 2)
+    assert m.book.get_internal(fut_key) is not None and m.book.get_internal(stock_key) is not None  # the server reads both
+    shown = {t.key: t.ltp for t in m.book.snapshot()}
+    assert shown.get(fut_key) == 25820.5  # the future is also in what browsers get
+    assert stock_key not in shown  # the breadth stocks stay off the browser feed
+    await m.stop()

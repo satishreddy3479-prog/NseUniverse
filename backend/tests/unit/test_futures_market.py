@@ -269,3 +269,11 @@ def test_the_token_refresh_is_due_again_while_today_has_no_stock_futures(tmp_pat
 
 def test_unused_imports_are_used() -> None:
     assert MarketStore and parse_index_list and LIST_TEXT and WEIGHTS and NOW
+
+
+def test_only_the_two_nifty_futures_are_shown_to_browsers_tick_by_tick(tmp_path: Path) -> None:
+    svc = build(tmp_path, {s: 101.0 for s in SYMS})
+    fo_tokens(svc)
+    assert svc.is_nifty_future_key("nse_fo|55001") and svc.is_nifty_future_key("nse_fo|55002")  # current and next month
+    assert not svc.is_nifty_future_key("nse_fo|60000")  # a stock future stays server-side
+    assert not svc.is_nifty_future_key("nse_cm|Nifty 50")

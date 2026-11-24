@@ -33,9 +33,9 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
-function mount() {
+function mount(at = "/strategy") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={["/strategy"]}><AppRoutes /></MemoryRouter></QueryClientProvider>);
+  return render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={[at]}><AppRoutes /></MemoryRouter></QueryClientProvider>);
 }
 const pick = async (id: string) => {
   const t = TEMPLATES.find((x) => x.id === id)!;
@@ -549,8 +549,7 @@ describe("Exit all and closed strategies", () => {
     expect(filed[0]!.pnl).toBeCloseTo(2250, 2);
     // the portfolio page hands the record over by id: a fresh builder opens it as a closed trade
     cleanup();
-    sessionStorage.setItem("nse.builder.open-closed.v1", filed[0]!.id);
-    mount();
+    mount(`/strategy?closed=${encodeURIComponent(filed[0]!.id)}`);
     expect(await screen.findByTestId("opened-closed", {}, { timeout: 15000 })).toHaveTextContent("S 24100CE 130 → 100");
     expect(screen.getByRole("table", { name: "Strategy legs" })).toBeInTheDocument();
   });
@@ -560,8 +559,7 @@ describe("Exit all and closed strategies", () => {
     const leg = (type: "CE" | "PE", premium: number, exitPrice: number, realised: number) => ({ id: type, expiry: "2026-11-03", strike: 24050, type, action: "SELL", lots: 1, premium, premiumSource: "market", exitPrice, exitReason: "strategy", exitedAt: "2026-11-02T09:50:00.000Z", realised, reentry: 0, exit: exitPrice });
     const closed = { id: "c1", name: "Straddle score 79", closedAt: "2026-11-02T10:26:00.000Z", snapshotAt: "2026-11-02T10:09:03.000Z", expiry: "2026-11-03", lotSize: 65, pnl: -691.99, stale: true, legs: [leg("CE", 60.85, 122.05, -3978.25), leg("PE", 51.15, 0.6, 3286.25)] };
     localStorage.setItem("nse.closed.v1", JSON.stringify([closed]));
-    sessionStorage.setItem("nse.builder.open-closed.v1", "c1");
-    mount();
+    mount("/strategy?closed=c1");
     await loaded();
     const banner = await screen.findByTestId("opened-closed");
     expect(banner).toHaveTextContent("Realised");

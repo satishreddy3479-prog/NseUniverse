@@ -5,6 +5,12 @@ _Last updated: 2026-11-23_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## NIFTY future live in the browser (24 Nov 2026, D294)
+The server now sends the NIFTY current and next-month future ticks to browsers (they were server-only); the Strategy Builder, Strategy portfolio and Advanced Greeks read the future's price from the stream, tick by tick. Not yet deployed; not seen live (needs market hours).
+
+## Strategy Builder independent of the browser (24 Nov 2026, D293)
+Running strategy, Saved, Closed and the stops/targets were already server-side; now the builder page and the Strategy portfolio also take what is running from the server (this browser's copy is only the offline fallback), open-in-builder travels in the address, and an expired strategy is filed in Saved. See D293 for the audit and the items that stay per browser (live MTM tick buffer, temporary views). Not yet deployed; no real two-device run done.
+
 ## Header price time (24 Nov 2026, D292)
 The NIFTY badge in the header shows the market time of the stored snapshot (last session close when the market is closed), no longer the time of the latest restart fetch. Tests: spot.test.tsx (holiday restart, in-session, after close). Not yet deployed.
 

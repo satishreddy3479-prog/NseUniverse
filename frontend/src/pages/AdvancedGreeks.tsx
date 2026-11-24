@@ -9,7 +9,7 @@ import { SurfaceViewer } from "../components/risk/SurfaceViewer";
 import { api } from "../lib/api";
 import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { buildPosition } from "../lib/builderPosition";
-import { useFutureContracts, futurePrice } from "../lib/futures";
+import { useLiveFutureContracts, futurePrice } from "../lib/futures";
 import { useExpiries } from "../lib/hooks";
 import { marketClockMs } from "../lib/session";
 import type { PLeg } from "../lib/advancedGreeks";
@@ -32,7 +32,7 @@ export function AdvancedGreeks() {
   const legExpiries = useMemo(() => [...new Set((doc?.legs ?? []).filter((l) => l.enabled !== false && l.exitPrice == null).map((l) => l.expiry))].sort(), [doc]);
   const chainQs = useQueries({ queries: legExpiries.map((e) => ({ queryKey: ["adv-chain", e], queryFn: () => (collected.has(e) ? api.optionChain(e) : api.optionChainOnDemand(e)), retry: false, staleTime: 5_000, refetchInterval: 15_000 })) });
   const chainKey = chainQs.map((q) => q.data?.snapshot.snapshot_id ?? "").join("|");
-  const futs = useFutureContracts().data;
+  const futs = useLiveFutureContracts();
   const ivChart = useQuery({ queryKey: ["adv-closes"], queryFn: () => api.intradayIvChart(20), retry: false, staleTime: 300_000 });
   const bars = useQuery({ queryKey: ["indexBars"], queryFn: () => api.indexBars(), retry: false, refetchInterval: 60_000 });
   const closes = useMemo(() => (ivChart.data ? ivChart.data.dates.map((d, i) => ({ day: d, close: ivChart.data!.close[i]! })).filter((x) => Number.isFinite(x.close)) : null), [ivChart.data]);

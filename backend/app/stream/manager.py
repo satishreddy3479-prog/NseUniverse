@@ -138,6 +138,9 @@ class StreamManager:
         # wired once at start-up and kept across every start(), which resets the counters below
         # (resetting it here silently disconnected the futures and heavyweight flow)
         self.on_internal: Callable[[LiveTick], None] | None = None
+        # which internal contracts the browsers also receive live (the NIFTY futures);
+        # set by the market service, which knows their keys
+        self.public_internal: Callable[[str], bool] | None = None
         self._reset(StreamState.STOPPED)
 
     # ------------------------------------------------------------------ state
@@ -544,6 +547,8 @@ class StreamManager:
                     )
         if ev.kind == "tick" and ev.tick is not None and ev.tick.key in self.book.internal_keys:
             self.book.update_internal(ev.tick)
+            if self.public_internal is not None and self.public_internal(ev.tick.key):
+                self.book.publish_internal(ev.tick)
             self.market_message_count += 1
             if self.on_internal is not None:
                 try:

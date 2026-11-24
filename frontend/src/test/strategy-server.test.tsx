@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
-import { OPEN_CLOSED_KEY, WORKING_KEY } from "../pages/StrategyBuilder";
+import { builderUrl, WORKING_KEY } from "../pages/StrategyBuilder";
 import { bigChain, expiries, status, summary } from "./fixtures";
 
 vi.mock("../components/EChart", async () => {
@@ -17,17 +17,20 @@ const leg = (over: Record<string, unknown> = {}) => ({
 type Call = { url: string; method: string; body: unknown };
 let calls: Call[];
 let running: { doc: unknown } = { doc: null };
+let serverDown = false;
 let strategies: { saved: unknown[]; closed: unknown[] } = { saved: [], closed: [] };
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-05T05:00:00Z"));
   calls = [];
   running = { doc: null };
+  serverDown = false;
   strategies = { saved: [], closed: [] };
   sessionStorage.clear();
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const full = String(input), url = full.split("?")[0]!, method = init?.method ?? "GET";
     calls.push({ url, method, body: init?.body ? JSON.parse(String(init.body)) : null });
+    if (serverDown && url.startsWith("/api/strategies")) throw new TypeError("offline");
     if (url === "/api/strategies/running") {
       if (method === "PUT") return new Response(JSON.stringify({ ok: true, rev: 7 }), { status: 200 });
       return new Response(JSON.stringify({ ...running, checking: { live: true, last_check_at: null, error: null } }), { status: 200 });
@@ -44,7 +47,7 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
-const mount = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter initialEntries={["/strategy"]}><AppRoutes /></MemoryRouter></QueryClientProvider>);
+const mount = (at = "/strategy") => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter initialEntries={[at]}><AppRoutes /></MemoryRouter></QueryClientProvider>);
 
 describe("Strategy builder with the server keeping the stops and targets", () => {
   it("takes the server's copy of the running strategy, including a leg the server already closed", async () => {
@@ -98,8 +101,7 @@ describe("Strategy builder with the server keeping the stops and targets", () =>
   it("opening a closed trade to look at it never replaces the running strategy on the server, and leaving the view brings the running strategy back", async () => {
     running = { doc: { rev: 6, auto: true, lotSize: 75, mult: 1, expiry: "2026-11-10", name: "live", legs: [leg({ id: "live1" })] } };
     strategies = { saved: [], closed: [{ id: "c1", name: "yesterday", closedAt: "2026-11-04T10:00:00Z", snapshotAt: "2026-11-04T10:00:00Z", expiry: "2026-11-10", lotSize: 75, pnl: 500, legs: [{ ...leg({ id: "old", strike: 23900, exitPrice: 90, exitReason: "strategy", realised: 750 }), exit: 90 }] }] };
-    sessionStorage.setItem(OPEN_CLOSED_KEY, "c1");
-    mount();
+    mount(builderUrl({ closed: "c1" }));
     expect(await screen.findByTestId("opened-closed")).toBeInTheDocument();
     await new Promise((r) => setTimeout(r, 1500)); // longer than the page's pause before it sends an edit
     expect(calls.some((c) => c.method === "PUT" && c.url === "/api/strategies/running")).toBe(false); // the live strategy was not overwritten by the closed one
@@ -111,18 +113,44 @@ describe("Strategy builder with the server keeping the stops and targets", () =>
     expect(calls.some((c) => c.method === "PUT" && c.url === "/api/strategies/running")).toBe(false); // and nothing was cleared on the server
   });
 
-  it("with nothing on the server at all, the working copy of this browser still seeds it", async () => {
+  it("with nothing on the server at all, the server is the truth: an old copy in this browser is not shown and nothing is sent", async () => {
     running = { doc: null };
     localStorage.setItem(WORKING_KEY, JSON.stringify({ legs: [leg({ id: "mine" })], expiry: "2026-11-10", name: "", loaded: null, baseline: [], rearmAt: null, holdFrom: null, at: Date.parse("2026-11-04T10:00:00Z") }));
     mount();
-    await screen.findAllByLabelText("Stop-loss premium"); // the local legs are shown
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/strategies/running" && c.method === "GET")).toBe(true));
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(screen.queryAllByLabelText("Stop-loss premium")).toHaveLength(0);
+    expect(calls.some((c) => c.method === "PUT" && c.url === "/api/strategies/running")).toBe(false);
   });
 
-  it("moves a working strategy of an expired expiry to the latest weekly expiry instead of staying on it", async () => {
+  it("a second device with nothing stored shows the server's strategy, and whatever it sends back keeps the server's legs", async () => {
+    running = { doc: { rev: 4, auto: true, lotSize: 75, mult: 1, expiry: "2026-11-10", name: "mine", legs: [leg({ id: "server-leg" })] } };
+    mount(); // empty localStorage: a new browser
+    expect(await screen.findAllByLabelText("Stop-loss premium")).toHaveLength(1);
+    await new Promise((r) => setTimeout(r, 1500));
+    for (const c of calls.filter((x) => x.method === "PUT" && x.url === "/api/strategies/running")) expect((c.body as { doc: { legs: { id: string }[] } }).doc.legs.map((l) => l.id)).toEqual(["server-leg"]);
+  });
+
+  it("when the server cannot be reached the page keeps working from this browser's last copy", async () => {
+    serverDown = true;
+    localStorage.setItem(WORKING_KEY, JSON.stringify({ legs: [leg({ id: "mine" })], expiry: "2026-11-10", name: "", loaded: null, baseline: [], rearmAt: null, holdFrom: null, at: Date.now() }));
+    mount();
+    expect(await screen.findAllByLabelText("Stop-loss premium")).toHaveLength(1); // the browser's copy
+  });
+
+  it("opening a saved strategy from the Strategy portfolio page (through the address) loads it into the builder on any device", async () => {
+    strategies = { saved: [{ name: "straddle 30/10/2026", savedAt: "2026-11-04T04:00:00Z", expiry: "2026-11-10", legs: [leg({ id: "s1" }), leg({ id: "s2", type: "PE" })] }], closed: [] };
+    mount(builderUrl({ open: "straddle 30/10/2026" })); // a name with slashes travels in the query string
+    expect(await screen.findAllByLabelText("Stop-loss premium", {}, { timeout: 15000 })).toHaveLength(2);
+  });
+
+  it("an expired working copy kept while the server was away moves to the latest weekly expiry and a copy goes to the Saved list on the server", async () => {
+    serverDown = true;
     localStorage.setItem(WORKING_KEY, JSON.stringify({ legs: [leg({ expiry: "2026-11-03" })], expiry: "2026-11-03", name: "old", loaded: null, baseline: [], at: Date.now() }));
     mount();
     await waitFor(() => expect(screen.getByRole("button", { name: /10 Nov/ })).toHaveAttribute("aria-pressed", "true"));
     expect(await screen.findByText(/which has expired and is no longer listed/)).toBeInTheDocument();
-    expect(localStorage.getItem("nse.builder.expired.v1")).toContain("2026-11-03"); // a copy is kept
+    expect(screen.getByText(/is in your Saved list/)).toBeInTheDocument();
+    expect(localStorage.getItem("nse.strategies.v1")).toContain("old (expired 2026-11-03)");
   });
 });

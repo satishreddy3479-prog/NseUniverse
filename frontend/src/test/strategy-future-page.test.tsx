@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
+import { liveStore } from "../lib/liveStore";
 import { TEMPLATE_BIAS, TEMPLATES } from "../lib/strategy";
-import { bigChain, expiries, status, summary } from "./fixtures";
+import { bigChain, expiries, liveTick, status, streamStatus, summary } from "./fixtures";
 
 vi.mock("../components/EChart", async () => {
   const actual = await vi.importActual<typeof import("../components/EChart")>("../components/EChart");
@@ -38,7 +39,7 @@ beforeEach(() => {
   }));
   localStorage.clear();
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); liveStore.reset(); });
 
 function mount() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -63,6 +64,26 @@ describe("NIFTY future in the Strategy builder", () => {
     expect(row).toHaveTextContent("NIFTY26NOVFUT");
     expect(within(table).getByLabelText("Entry premium")).toHaveValue(24060);
     expect(within(table).queryByLabelText("Strike")).toBeNull(); // a future has no strike to pick
+  });
+
+  it("the future's price follows the stream tick by tick, like the index, between the 5-second polls of the contract", async () => {
+    mount();
+    await loaded();
+    expect(await screen.findByTestId("future-quote")).toHaveTextContent("24,060"); // the polled quote
+    act(() => {
+      liveStore.setConn("open");
+      liveStore.apply({
+        type: "hello", status: streamStatus({ state: "streaming", effective_state: "streaming" }),
+        ticks: [liveTick({ key: "nse_fo|99", kind: "scrip", ltp: 24071.5, received_at: "2026-11-02T05:00:01.000Z", seq: 1 })],
+      });
+    });
+    await waitFor(() => expect(screen.getByTestId("future-quote")).toHaveTextContent("24,071.50"));
+    act(() => { liveStore.apply({ type: "ticks", ticks: [liveTick({ key: "nse_fo|99", kind: "scrip", ltp: 24073.0, received_at: "2026-11-02T05:00:02.000Z", seq: 2 })] }); });
+    await waitFor(() => expect(screen.getByTestId("future-quote")).toHaveTextContent("24,073.00"));
+    // a future added now enters at the live price, not the polled one
+    await userEvent.click(screen.getByRole("button", { name: "Buy future" }));
+    const table = await screen.findByRole("table", { name: "Strategy legs" });
+    expect(within(table).getByLabelText("Entry premium")).toHaveValue(24073);
   });
 
   it("a delta-hedged straddle: short future 24060 + long 24050 straddle (100 + 100), lot 75, hand-calculated payoff", async () => {

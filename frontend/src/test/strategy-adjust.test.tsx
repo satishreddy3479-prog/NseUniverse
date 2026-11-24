@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
 import { liveMtmKey } from "../lib/closedMtm";
 import { TEMPLATE_BIAS, TEMPLATES, type Leg } from "../lib/strategy";
-import { OPEN_CLOSED_KEY, WORKING_KEY } from "../pages/StrategyBuilder";
+import { builderUrl, WORKING_KEY } from "../pages/StrategyBuilder";
 import { bigChain, expiries, status, summary } from "./fixtures";
 
 vi.mock("../components/EChart", async () => {
@@ -89,8 +89,7 @@ describe("Exit all", () => {
     await waitFor(() => expect(screen.getByTestId("closed-menu")).toHaveTextContent("Closed (1)"));
     const id = String((store.closed[0] as { id: string }).id);
     cleanup(); // the Strategy portfolio page hands the closed trade over; the builder opens it
-    sessionStorage.setItem(OPEN_CLOSED_KEY, id);
-    mount();
+    mount(builderUrl({ closed: id }));
     await userEvent.click(await screen.findByRole("button", { name: "Exit all" }, { timeout: 15000 }));
     await waitFor(() => expect(store.closed).toHaveLength(1));
     expect(screen.getByTestId("closed-menu")).toHaveTextContent("Closed (1)");
@@ -190,7 +189,7 @@ describe("Strategy portfolio: closed strategies", () => {
     mount("/portfolio");
     await userEvent.click(await screen.findByRole("button", { name: "Open closed trade first in the strategy builder" }));
     expect(await screen.findByTestId("opened-closed", {}, { timeout: 15000 })).toHaveTextContent("first");
-    expect(sessionStorage.getItem(OPEN_CLOSED_KEY)).toBeNull(); // read once
+    expect(JSON.stringify(localStorage)).not.toContain("open-closed"); // nothing is handed over through this browser's storage: the address carries the request
   });
 });
 

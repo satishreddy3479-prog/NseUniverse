@@ -279,6 +279,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         )
         app.state.market = market
         stream.on_internal = market.on_tick
+        stream.public_internal = market.is_nifty_future_key
         intraday.market = market
         intraday.risk_free_rate = settings.risk_free_rate
         hh, mm = (int(x) for x in settings.risk_cutoff.split(":"))

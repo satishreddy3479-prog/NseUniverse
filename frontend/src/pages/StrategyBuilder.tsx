@@ -22,7 +22,7 @@ import { LegTimes } from "../components/LegTimes";
 import { useExpiries, useThrottledValue } from "../lib/hooks";
 import { marketClockMs, sessionCloseHHMM } from "../lib/session";
 import { buildBook, marketIvOf, type Book } from "../lib/strategyBook";
-import { futureOf, futurePrice, futureToAdd, futureToRollInto, useFutureContracts } from "../lib/futures";
+import { futureOf, futurePrice, futureToAdd, futureToRollInto, useLiveFutureContracts } from "../lib/futures";
 import { analyzeCurve, curveOf, isEstimateAt, legExpiries, pnlAtExpiry } from "../lib/multiExpiry";
 import { carryFromForward, expiryEnd, legGreeks, sdLevel, netGreeks, probabilityOfProfit, probabilityOfProfitFn, scenarioGrid, sdBands, spotAtPremium, theoreticalPnl, type ContractGreeks, type Valuation } from "../lib/optionModel";
 import { adoptExits,
@@ -34,8 +34,8 @@ export const WORKING_KEY = "nse.builder.working.v1";
 export const SAVE_KEY = "nse.strategies.v1";
 export interface Saved { name: string; savedAt: string; updatedAt?: string; expiry: string; legs: Leg[] }
 export const CLOSED_KEY = "nse.closed.v1";
-/** The Strategy portfolio page asks the builder to open a closed trade by leaving its id here (read once, then removed). */
-export const OPEN_CLOSED_KEY = "nse.builder.open-closed.v1";
+/** The Strategy portfolio page asks the builder to open a saved strategy or a closed trade through the address (/strategy?open=NAME, /strategy?closed=ID), so it works from any device and any tab; the builder reads it once and removes it. */
+export const builderUrl = (what: { open?: string; closed?: string }): string => `/strategy${what.open ? `?open=${encodeURIComponent(what.open)}` : what.closed ? `?closed=${encodeURIComponent(what.closed)}` : ""}`;
 /** A strategy shown for a moment (a forward-test position): kept for this tab only, never the working copy and never sent to the server. */
 export const TEMP_KEY = "nse.builder.temp.v1";
 export interface TempDoc { name: string; expiry: string; legs: Leg[]; rules: StrategyRules; moveToCost: boolean; holdFrom: string | null }
@@ -147,7 +147,7 @@ export default function StrategyBuilder() {
   const colors = useChartColors();
   // "?temp=..." opens the strategy handed over in TEMP_KEY as a temporary view: the legs come from it, the builder does not read the server's running strategy, does not send anything to it,
   // does not touch the working copy kept in this browser and does not run the automatic stops, so the user's own strategy is exactly as it was
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const [temp] = useState<TempDoc | null>(() => readTemp(params.get("temp")));
   const ex = useExpiries();
   // Every expiry the exchange lists from today on. The weekly and the monthly are collected by the sampler (stored chains, streamed prices,
@@ -158,9 +158,14 @@ export default function StrategyBuilder() {
   const fetchChain = (e: string) => (collected.has(e) ? api.optionChain(e) : api.optionChainOnDemand(e));
   // The strategy being worked on is kept in this browser, so a refresh does not bring back an older saved copy and
   // repeat exits that already happened. Copies older than three days are ignored.
-  const [work] = useState(() => {
+  type Work = { legs?: Leg[]; expiry?: string | null; name?: string; loaded?: string | null; baseline?: Leg[]; at?: number; rules?: StrategyRules; rstate?: RulesState | null; rearmAt?: string | null; hold?: HoldRule; holdFrom?: string | null; moveToCost?: boolean };
+  // The server holds the strategy being worked on; nothing from this browser seeds the page, so a second device or a stale copy never shows a strategy that is no longer the real one.
+  // Only a temporary view (a forward-test position) seeds the page, and this browser's own copy is read once, here, as the fallback for a server that cannot be reached (see the hydration below).
+  const [work] = useState<Work | null>(() => (temp ? { legs: temp.legs, expiry: temp.expiry, name: temp.name, loaded: null, baseline: temp.legs, rules: temp.rules, rstate: null, rearmAt: temp.holdFrom, holdFrom: temp.holdFrom, moveToCost: temp.moveToCost, at: Date.now() } : null));
+  const [localWork] = useState<Work | null>(() => {
+    if (temp) return null;
     try {
-      const w = (temp ? { legs: temp.legs, expiry: temp.expiry, name: temp.name, loaded: null, baseline: temp.legs, rules: temp.rules, rstate: null, rearmAt: temp.holdFrom, holdFrom: temp.holdFrom, moveToCost: temp.moveToCost, at: Date.now() } : JSON.parse(localStorage.getItem(WORKING_KEY) ?? "null")) as { legs?: Leg[]; expiry?: string | null; name?: string; loaded?: string | null; baseline?: Leg[]; at?: number; rules?: StrategyRules; rstate?: RulesState | null; rearmAt?: string | null; hold?: HoldRule; holdFrom?: string | null; moveToCost?: boolean } | null;
+      const w = JSON.parse(localStorage.getItem(WORKING_KEY) ?? "null") as Work | null;
       return w && Array.isArray(w.legs) && w.at && Date.now() - w.at < 3 * 86_400_000 ? w : null;
     } catch { return null; }
   });
@@ -287,7 +292,7 @@ export default function StrategyBuilder() {
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expiry, rows, otherExpiries, otherKey, collected, spot, snapMs, r, liveMode, liveVersion]);
-  const futs = useFutureContracts().data;
+  const futs = useLiveFutureContracts(); // the contract from the poll, its price tick by tick from the stream, like the index
   /** Last traded price of a contract in its own expiry's chain (the shown expiry unless one is given); for a future, its own live quote. */
   const ltp = (k: number, t: LegType, e: string | null = expiry): number | null => {
     if (t === "FUT") return e ? futurePrice(futs, e) : null;
@@ -476,14 +481,16 @@ export default function StrategyBuilder() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, legs, autoActive, mult, lotSize, settle, rules, hold, holdFrom, moveToCost]);
   useEffect(() => {
-    if (temp) return; // a temporary view is never the working copy
+    if (temp || !hydrated) return; // a temporary view is never the working copy; before the server has answered the page is empty and must not overwrite the copy kept for an unreachable server
     try { localStorage.setItem(WORKING_KEY, JSON.stringify({ legs, expiry, name, loaded, baseline, rules, rstate, rearmAt, hold, holdFrom, moveToCost, at: Date.now() })); } catch { /* this visit only */ }
-  }, [legs, expiry, name, loaded, baseline, rules, rstate, rearmAt, hold, holdFrom, moveToCost]);
+  }, [hydrated, legs, expiry, name, loaded, baseline, rules, rstate, rearmAt, hold, holdFrom, moveToCost]);
 
   // ---- the server keeps this strategy and checks its stops and targets every second, with or without a page open.
   // The browser sends every change (after a short pause) and takes back what the server did; if the server cannot be
   // reached the page checks the levels itself while it is open, as before.
   const revRef = useRef<number | null>(null);
+  /** the server holds no legs: an empty page then has nothing to send (a fresh device, or a default expiry arriving, is not an edit) */
+  const emptyOnServer = useRef(false);
   const sentRef = useRef("");
   const skipPush = useRef(false);
   const seenEvents = useRef<string | null>(null);
@@ -498,6 +505,7 @@ export default function StrategyBuilder() {
   const coreJson = JSON.stringify({ name, loaded, expiry: strategyExpiry, lotSize, mult, auto: autoOn, moveToCost, rules, rearmAt, hold, baseline, legs });
   const adoptServer = (d: RunningDoc, announce: boolean) => {
     revRef.current = d.rev ?? null;
+    emptyOnServer.current = !d.legs?.length;
     skipPush.current = true;
     setLegs(d.legs ?? []); setBaseline(d.baseline ?? d.legs ?? []); setName(d.name ?? ""); setLoaded(d.loaded ?? null); setMult(d.mult ?? 1);
     setRules(d.rules ?? NO_RULES); setRstate(d.rstate ?? null); setRearmAt(d.rearmAt ?? null); setHold(d.hold ?? DEFAULT_HOLD); setHoldFrom(d.holdFrom ?? null); setMoveToCost(d.moveToCost ?? false);
@@ -516,6 +524,12 @@ export default function StrategyBuilder() {
     setRules(NO_RULES); setRstate(null); setRearmAt(null); setHold(DEFAULT_HOLD); setHoldFrom(null); setMoveToCost(false); setPicked(null);
     try { localStorage.removeItem(WORKING_KEY); } catch { /* nothing to remove */ }
   };
+  const adoptLocal = () => {
+    const w = localWork;
+    if (!w) return;
+    setLegs(w.legs ?? []); setPicked(w.expiry ?? null); setBaseline(w.baseline ?? w.legs ?? []); setName(w.name ?? ""); setLoaded(w.loaded ?? null);
+    setRules(w.rules ?? NO_RULES); setRstate(w.rstate ?? null); setRearmAt(w.rearmAt ?? null); setHold(w.hold ?? DEFAULT_HOLD); setHoldFrom(w.holdFrom ?? null); setMoveToCost(w.moveToCost ?? false);
+  };
   useEffect(() => {
     if (temp) { setHydrated(true); return; } // the server's running strategy is the user's own: not read, not replaced
     let off = false;
@@ -525,14 +539,20 @@ export default function StrategyBuilder() {
       setServerAuto(true);
       if (d) {
         revRef.current = d.rev ?? null;
+        emptyOnServer.current = !d.legs?.length;
         const last = d.serverEvents?.[d.serverEvents.length - 1];
         seenEvents.current = last?.at ?? null;
         // the server's copy is the latest one (the page sends every change): take it unless its expiry has gone
         if (d.legs?.length && d.expiry && d.expiry >= todayIST()) adoptServer(d, false);
         else clearLocalCopy(); // the server has no running strategy (closed, reset or past): that is the truth, and a copy this browser kept is not written back over it
-      }
+      } else { emptyOnServer.current = true; clearLocalCopy(); } // the server answered and holds nothing: that is the truth on every device
       setHydrated(true);
-    }).catch(() => { if (!off) { setServerAuto(false); setHydrated(true); } });
+    }).catch(() => {
+      if (off) return;
+      setServerAuto(false);
+      adoptLocal(); // the server cannot be reached: this browser's last copy keeps the page usable (the server's copy wins as soon as it answers)
+      setHydrated(true);
+    });
     return () => { off = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -541,9 +561,10 @@ export default function StrategyBuilder() {
     if (opened) return; // a closed trade opened to look at is not the running strategy: writing it would replace the live one on the server (its stops and legs), so it is never sent
     if (skipPush.current) { skipPush.current = false; sentRef.current = coreJson; return; }
     if (coreJson === sentRef.current) return;
+    if (legs.length === 0 && emptyOnServer.current) { sentRef.current = coreJson; return; } // nothing on the server and nothing here: nothing to send
     const baseRev = revRef.current; // the revision this payload was built on: if the server moves on before the send, the send is refused
     const t = setTimeout(() => {
-      api.runningPut(JSON.parse(payloadJson), baseRev).then((r) => { revRef.current = r.rev; sentRef.current = coreJson; })
+      api.runningPut(JSON.parse(payloadJson), baseRev).then((r) => { revRef.current = r.rev; sentRef.current = coreJson; emptyOnServer.current = legs.length === 0; })
         .catch(async (e: unknown) => {
           if (e instanceof ApiError && e.status === 409) {
             // the server closed or re-entered a leg meanwhile: its state wins, because an exit cannot be undone
@@ -592,23 +613,33 @@ export default function StrategyBuilder() {
     if (expiryChecked.current || !hydrated || available.length === 0 || temp) return; // a past position keeps its expiry in a temporary view
     expiryChecked.current = true;
     if (picked && !available.includes(picked) && !opened) {
-      try { localStorage.setItem("nse.builder.expired.v1", JSON.stringify({ expiry: picked, name, legs, at: Date.now() })); } catch { /* this visit only */ }
+      // a copy goes to the Saved list on the server (it used to stay in this browser only, where no other device and no page could reach it)
+      if (legs.length) {
+        const base = `${name || "Strategy"} (expired ${picked})`;
+        const key = saved.some((x) => x.name === base) ? `${base} ${new Date().toISOString().slice(11, 16)}` : base;
+        persist([...saved, { name: key, savedAt: new Date().toISOString(), expiry: picked, legs }]);
+      }
       setLegs([]); setBaseline([]); setLoaded(null); setName(""); setPicked(null);
-      setNote(`The strategy you were working on was for ${picked}, which has expired and is no longer listed. The builder moved to the latest weekly expiry (${available[0]}); a copy of that strategy is kept in this browser.`);
+      setNote(`The strategy you were working on was for ${picked}, which has expired and is no longer listed. The builder moved to the latest weekly expiry (${available[0]}); a copy of that strategy is in your Saved list.`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, available]);
+  // a saved strategy or a closed trade asked for through the address (from the Strategy portfolio page): opened once the server's lists are here, then the request is removed from the address
   useEffect(() => {
     if (!hydrated || temp) return;
-    let id: string | null = null;
-    try { id = sessionStorage.getItem(OPEN_CLOSED_KEY); } catch { /* no session storage: nothing was handed over */ }
-    if (!id) return;
-    const c = closed.find((x) => x.id === id);
-    if (!c) return; // the closed list may still be loading from the server: tried again when it arrives
-    try { sessionStorage.removeItem(OPEN_CLOSED_KEY); } catch { /* ignore */ }
-    openClosed(c);
+    const wantClosed = params.get("closed"), wantSaved = params.get("open");
+    if (!wantClosed && !wantSaved) return;
+    const done = () => setParams((p) => { const n = new URLSearchParams(p); n.delete("closed"); n.delete("open"); return n; }, { replace: true });
+    if (wantClosed) {
+      const c = closed.find((x) => x.id === wantClosed);
+      if (c) { openClosed(c); done(); } else if (sync === "server") { setNote("That closed trade is no longer in the list."); done(); }
+      return; // otherwise the lists are still loading: tried again when they arrive
+    }
+    const sv = saved.find((x) => x.name === wantSaved);
+    if (sv) { setPicked(sv.expiry); loadLegs(sv.legs.map((l) => ({ ...l, id: newLegId() }))); setOpened(null); setLoaded(sv.name); done(); }
+    else if (sync === "server") { setNote("That saved strategy is no longer in the list."); done(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated, closed]);
+  }, [hydrated, closed, saved, sync, params]);
   const exitNow = (l: Leg) => {
     if (!lotSize) return;
     const typed = exitDraft[l.id];

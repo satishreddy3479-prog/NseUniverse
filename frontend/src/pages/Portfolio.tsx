@@ -10,7 +10,7 @@ import { Info } from "../components/Info";
 import { Panel } from "../components/ui";
 import { api } from "../lib/api";
 import type { StoredMtm } from "../lib/closedMtm";
-import { futurePrice, useFutureContracts } from "../lib/futures";
+import { futurePrice, useLiveFutureContracts } from "../lib/futures";
 import { fmtDateTimeIST, fmtInt } from "../lib/format";
 import { LayoutBar } from "../components/LayoutBar";
 import { availablePeriods, filterClosed, monthName, normalizePeriod, periodLabel, type Period } from "../lib/portfolioPeriod";
@@ -19,7 +19,7 @@ import { portfolioStats, type PortfolioStats } from "../lib/portfolioStats";
 import { EQUITY_HEIGHT, portfolioEquityOption } from "../lib/portfolioCharts";
 import { isExited, strategyPnl, type Leg, type OptionType } from "../lib/strategy";
 import { useStreamStatus } from "../lib/useLive";
-import { CLOSED_KEY, OPEN_CLOSED_KEY, SAVE_KEY, sortClosed, WORKING_KEY, type Closed, type Saved } from "./StrategyBuilder";
+import { builderUrl, CLOSED_KEY, SAVE_KEY, sortClosed, WORKING_KEY, type Closed, type Saved } from "./StrategyBuilder";
 
 const money = (v: number | null, signed = true) => (v == null ? "—" : `${v < 0 ? "−" : v > 0 && signed ? "+" : ""}₹${fmtInt(Math.round(Math.abs(v)))}`);
 const tone = (v: number | null) => (v == null || v === 0 ? "text-paper" : v > 0 ? "text-up" : "text-down");
@@ -46,13 +46,16 @@ export function Portfolio() {
   const avail = useMemo(() => availablePeriods(closedAll), [closedAll]);
   const period: Period = useMemo(() => normalizePeriod({ mode: pMode === "year" || pMode === "month" ? pMode : "overall", year: pYear ? Number(pYear) : null, month: pMonth ? Number(pMonth) : null }, closedAll), [pMode, pYear, pMonth, closedAll]);
   const closed = useMemo(() => filterClosed(closedAll, period), [closedAll, period]);
-  const working = readWorking();
+  // the strategy being worked on is the one the server holds (every device sees the same); this browser's copy is only the fallback when the server cannot be reached
+  const running = useQuery({ queryKey: ["portfolio-running"], queryFn: api.runningGet, refetchInterval: 15_000, retry: false });
+  const rd = running.data?.doc;
+  const working: Working | null = running.data ? (rd && rd.legs?.length && rd.expiry ? { legs: rd.legs as Leg[], expiry: rd.expiry, name: rd.name ?? "", loaded: rd.loaded ?? null, baseline: (rd.baseline ?? rd.legs) as Leg[], at: Date.now() } : null) : running.isError ? readWorking() : null;
   const draft = working && working.expiry && working.legs.some((l) => !isExited(l)) && !working.loaded ? working : null;
 
   const expiries = useMemo(() => [...new Set([...saved.map((s) => s.expiry), ...(draft?.expiry ? [draft.expiry] : [])])].sort(), [saved, draft?.expiry]);
   const chains = useQueries({ queries: expiries.map((e) => ({ queryKey: ["chain", e], queryFn: () => api.optionChain(e), refetchInterval: 15_000, retry: false })) });
   const { stream } = useStreamStatus();
-  const futs = useFutureContracts().data;
+  const futs = useLiveFutureContracts();
   const streamActive = !!stream && ["streaming", "waiting_for_data", "reconnecting"].includes(stream.state);
   const version = useThrottledVersion(400);
   const books = useMemo(() => {
@@ -103,7 +106,7 @@ export function Portfolio() {
     void api.putStrategy("closed", c.id, rec).then(() => qc.invalidateQueries({ queryKey: ["portfolio-strategies"] })).catch(() => { /* kept in this browser; the builder saves it again */ });
     try { localStorage.setItem(CLOSED_KEY, JSON.stringify(readLocal<Closed>(CLOSED_KEY).map((x) => (x.id === c.id ? rec : x)))); } catch { /* storage unavailable */ }
   };
-  const openClosed = (id: string) => { try { sessionStorage.setItem(OPEN_CLOSED_KEY, id); } catch { /* the builder opens without it */ } navigate("/strategy"); };
+  const openClosed = (id: string) => navigate(builderUrl({ closed: id }));
   const [capital, setCapital] = useState<number | null>(() => { try { const v = Number(localStorage.getItem("nse.portfolio.capital.v1")); return v > 0 ? v : null; } catch { return null; } });
   const stats = useMemo(() => portfolioStats(closed.map((c) => ({ id: c.id, name: c.name, closedAt: c.closedAt, pnl: c.pnl })), capital), [closed, capital]);
   const cumulative = useMemo(() => new Map(stats.curve.map((p, i) => [stats.curve[i]!.label + p.name, p.cum])), [stats]);
@@ -112,7 +115,8 @@ export function Portfolio() {
     if (!r.isDraft) {
       const s = saved.find((x) => x.name === r.name)!;
       if (draft && confirm !== r.key) { setConfirm(r.key); return; } // an unsaved strategy is in the builder: ask once before replacing it
-      try { localStorage.setItem(WORKING_KEY, JSON.stringify({ legs: s.legs, expiry: s.expiry, name: "", loaded: s.name, baseline: s.legs, at: Date.now() })); } catch { /* the builder then opens as it was */ }
+      navigate(builderUrl({ open: s.name }));
+      return;
     }
     navigate("/strategy");
   };

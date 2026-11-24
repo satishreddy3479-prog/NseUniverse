@@ -15,6 +15,9 @@ class LiveBook:
         # option-feed activity
         self.internal_keys: set[str] = set()
         self._internal: dict[str, LiveTick] = {}
+        # a server-side contract the browser is also shown live (the NIFTY future),
+        # kept apart from the option feed so it never counts as option-feed activity
+        self._public: dict[str, LiveTick] = {}
 
     @staticmethod
     def _same(a: LiveTick, b: LiveTick) -> bool:
@@ -43,6 +46,20 @@ class LiveBook:
     def update_internal(self, tick: LiveTick) -> None:
         self._internal[tick.key] = tick
 
+    def publish_internal(self, tick: LiveTick) -> LiveTick | None:
+        """Also show an internal contract's tick to the browsers (next broadcast, new clients).
+
+        Returns None for an exact repeat.
+        """
+        prev = self._public.get(tick.key)
+        if prev is not None and self._same(prev, tick):
+            return None
+        self._seq += 1
+        tick = tick.model_copy(update={"seq": self._seq})
+        self._public[tick.key] = tick
+        self._pending[tick.key] = tick
+        return tick
+
     def get_internal(self, key: str) -> LiveTick | None:
         """Latest tick of a server-side contract (a NIFTY future)."""
         return self._internal.get(key)
@@ -56,7 +73,7 @@ class LiveBook:
         return out
 
     def snapshot(self) -> list[LiveTick]:
-        return list(self._ticks.values())
+        return [*self._ticks.values(), *self._public.values()]
 
     def get(self, key: str) -> LiveTick | None:
         return self._ticks.get(key)
@@ -68,3 +85,4 @@ class LiveBook:
         self._ticks.clear()
         self._pending.clear()
         self._internal.clear()
+        self._public.clear()

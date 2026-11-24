@@ -117,6 +117,7 @@ class MarketService:
         self.diag: dict[str, Any] = {"ticks": 0, "matched": 0, "unmatched_keys": [], "future": {"ticks": 0, "last_at": None, "ltp": None, "volume": None, "oi": None, "bid": None, "atp": None, "spot": None}}
         self._roles: tuple[float, dict[str, str]] | None = None
         self._fut_key_cache: tuple[float, str | None] | None = None
+        self._fut_keys_cache: tuple[float, set[str]] | None = None
         self._base_cache: tuple[str, dict[str, Any]] | None = None
         self.future_note = "not looked up yet"
         self._part_cache: tuple[str, dict[str, Any]] | None = None
@@ -380,6 +381,15 @@ class MarketService:
         key = None if tok is None else f"nse_fo|{tok.token}"
         self._fut_key_cache = (now, key)
         return key
+
+    def is_nifty_future_key(self, key: str) -> bool:
+        """The current and next-month NIFTY future: the contracts a strategy can hold, shown to browsers tick by tick (looked up at most once a minute; this runs for every internal tick)."""
+        now = time_mod.monotonic()
+        if self._fut_keys_cache is None or now - self._fut_keys_cache[0] >= 60:
+            tm = self.token_map()
+            keys = {f"nse_fo|{tm[s].token}" for s in (FUT_SYMBOL, FUT_NEXT_SYMBOL) if s in tm}
+            self._fut_keys_cache = (now, keys)
+        return key in self._fut_keys_cache[1]
 
     def on_tick(self, tick: LiveTick) -> None:
         """Called for every breadth/depth tick; only the futures and the five heavyweights are tracked."""
