@@ -1,5 +1,5 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import type { EChartsCoreOption } from "echarts/core";
 import { EChart, useChartColors } from "../components/EChart";
@@ -436,7 +436,7 @@ export function TrendRegime() {
   const c = useChartColors();
   const L = useViewLayout(`trend-${id}`);
   const [tf, setTf] = L.use("tf", 5);
-  const [dayPick, setDayPick] = L.use<string | null>("day", null);
+  const [dayPick, setDayPick] = useState<string | null>(null); // the session being looked at is not part of the saved layout: it is a question of today, not a preference
   const daily = id === "daily-regime";
   const idx = useQuery({ queryKey: ["indexBars", dayPick], queryFn: () => api.indexBars(dayPick ?? undefined), refetchInterval: 60_000, retry: false, enabled: !daily });
   const days = idx.data?.days ?? [];

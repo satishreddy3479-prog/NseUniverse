@@ -5,7 +5,7 @@ The levels are a scripted feed (formula checks), not market data. Hand calculati
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -156,3 +156,20 @@ def test_a_stored_day_can_be_asked_for_and_the_days_are_listed(tmp_path: Path) -
     older = svc.index_bars(date(2026, 10, 29))
     assert older["day"] == "2026-10-29" and older["bars"][0]["o"] == 25000.0
     assert svc.index_bars(date(2026, 10, 1))["day"] == "2026-10-30"  # a day not stored falls back to the newest
+
+
+def test_no_bar_is_made_on_an_exchange_holiday_and_bars_stored_on_one_are_not_served(tmp_path: Path) -> None:
+    """24 Nov 2026 is an NSE holiday (Guru Nanak Jayanti): the live feed still answers with the last close, freshly stamped, and used to be recorded as flat bars."""
+    hol = datetime(2026, 11, 24, 4, 38, tzinfo=UTC)  # 10:08 IST on the holiday
+    svc = MarketService(MarketStore(tmp_path), clock=lambda: hol)
+    svc._index_tick = lambda: idx(25349.65, hol)
+    svc.observe_index(hol)
+    svc.observe_index(hol + timedelta(seconds=61))
+    assert svc.index_bars()["bars"] == []
+    # a trading day stored earlier stays served; flat bars already on disk for the holiday are left on disk but not served
+    svc.store.record_sample("index1m", hol, {"o": 25349.65, "h": 25349.65, "l": 25349.65, "c": 25349.65, "n": 1})
+    monday = datetime(2026, 11, 23, 4, 0, tzinfo=UTC)
+    svc.store.record_sample("index1m", monday, {"o": 25400.0, "h": 25401.0, "l": 25399.0, "c": 25400.5, "n": 3})
+    out = svc.index_bars()
+    assert out["day"] == "2026-11-23" and out["days"] == ["2026-11-23"] and len(out["bars"]) == 1
+    assert svc.index_bars(date(2026, 11, 24))["day"] == "2026-11-23"  # a holiday cannot be asked for

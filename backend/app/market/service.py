@@ -1202,11 +1202,22 @@ class MarketService:
             d -= timedelta(days=1)
         return f"{got} sessions added in {tried} requests"
 
+    @staticmethod
+    def _exchange_holiday(d: date) -> bool:
+        """Whether ``d`` is a listed exchange holiday (the verified calendar plus the owner's additions). A date the calendar does not cover is not assumed to be one."""
+        from app.prediction.calendar import CalendarCoverageError, TradingCalendar
+
+        try:
+            return d.weekday() < 5 and not TradingCalendar.load().is_session(d)
+        except CalendarCoverageError:
+            return False
+
     def observe_index(self, now: datetime) -> None:
         """Read the live index once and extend its one-minute bar; a finished minute is stored (once, append-only)."""
         t = now.astimezone(IST)
         end = spot_end(t.date()) or session_close()  # the index is collected while cash trading runs; the auction's indicative values are not
-        inside = t.weekday() < 5 and SESSION_OPEN <= t.time() < end
+        # on an exchange holiday the feed still answers with the last close, freshly stamped: that is not a session and no bar is made from it
+        inside = t.weekday() < 5 and SESSION_OPEN <= t.time() < end and not self._exchange_holiday(t.date())
         lt = self._index() if inside else None
         fresh = lt is not None and lt.ltp is not None and (now - lt.received_at).total_seconds() <= 15
         done = self._bars.observe(now, float(lt.ltp) if fresh and lt is not None and lt.ltp is not None else None, lt.received_at if fresh and lt is not None else None)
@@ -1222,7 +1233,10 @@ class MarketService:
         rows = [(datetime.fromisoformat(a), p) for a, p in self.store.samples_since("index1m", since)]
         if not rows:
             return {"day": None, "bars": [], "note": "No one-minute index bars are stored yet; they are recorded from the live index feed during the session."}
-        days = sorted({a.astimezone(IST).date() for a, _p in rows})
+        # bars stored on an exchange holiday (the feed repeats the last close: 24 Nov 2026 before this rule) stay on disk and are not served
+        days = sorted({a.astimezone(IST).date() for a, _p in rows if not self._exchange_holiday(a.astimezone(IST).date())})
+        if not days:
+            return {"day": None, "days": [], "bars": [], "note": "No one-minute index bars are stored for a trading day yet; they are recorded from the live index feed during the session."}
         day = day_wanted if day_wanted in days else days[-1]
         end = spot_end(day)
         # bars the closing auction left (indicative values, stored before 24 Nov 2026) stay on disk and are not served: the index is not charted after cash trading ends

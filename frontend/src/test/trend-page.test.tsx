@@ -34,7 +34,7 @@ const daily: DailyRegime = {
 function mock() {
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
-    const body = url.startsWith("/api/market/index-bars") ? rise : url.startsWith("/api/intraday/regime-daily") ? daily : null;
+    const body = url.startsWith("/api/market/index-bars?day=2026-11-19") ? { ...rise, day: "2026-11-19", bars: rise.bars.slice(0, 40) } : url.startsWith("/api/market/index-bars") ? rise : url.startsWith("/api/intraday/regime-daily") ? daily : null;
     return body ? new Response(JSON.stringify(body), { status: 200 }) : new Response(JSON.stringify({ detail: { code: "nf", message: "nf" } }), { status: 404 });
   }));
 }
@@ -106,6 +106,18 @@ describe("Trend & Regime pages", () => {
     await waitFor(() => expect(screen.getByTestId("daily-verdict")).toBeInTheDocument());
     expect(screen.getByTestId("daily-verdict")).toHaveTextContent("Not validated");
     expect(screen.getByTestId("daily-study")).toHaveTextContent("-0.074");
+  });
+
+  it("choosing an earlier session loads that session and stays on it", async () => {
+    mock();
+    page("market-regime");
+    await waitFor(() => expect(screen.getByTestId("regime-now")).toBeInTheDocument());
+    expect(screen.getByText(/2026-11-20 · 90 one-minute bars/)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("combobox", { name: /Session/ }), { target: { value: "2026-11-19" } });
+    await waitFor(() => expect(screen.getByText(/2026-11-19 · 40 one-minute bars/)).toBeInTheDocument());
+    expect((screen.getByRole("combobox", { name: /Session/ }) as HTMLSelectElement).value).toBe("2026-11-19"); // it does not snap back to the newest
+    fireEvent.change(screen.getByRole("combobox", { name: /Session/ }), { target: { value: "2026-11-20" } });
+    await waitFor(() => expect(screen.getByText(/2026-11-20 · 90 one-minute bars/)).toBeInTheDocument());
   });
 
   it("says so when no bars are stored", async () => {
