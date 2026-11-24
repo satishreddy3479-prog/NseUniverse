@@ -15,6 +15,7 @@ export const STRATEGY: { to: string; label: string }[] = [
   { to: "/portfolio", label: "Strategy portfolio" },
 ];
 export const SYSTEM: { to: string; label: string }[] = [
+  { to: "/learn", label: "Learn" },
   { to: "/overview", label: "Platform status" },
   { to: "/data", label: "Data & sessions" },
   { to: "/server", label: "Server Management Centre" },

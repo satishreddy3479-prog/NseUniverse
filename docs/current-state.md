@@ -5,6 +5,9 @@ _Last updated: 2026-11-23_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Learn page (24 Nov 2026, D291)
+System > Learn (`/learn`): a searchable course. Seven start-here lessons, then one lesson per tool of the FNO Tools and Analyse menus (51), each with idea, how to read, a worked example in round numbers (not market data) and common mistakes; links open the tool. Text in `frontend/src/lib/learn.ts`; `learn.test.tsx` fails if a tool has no lesson. Not yet reviewed by the owner for wording; examples hand-checked, no live data involved.
+
 ## Preferences on the server (24 Nov 2026, D290)
 Layouts, chosen candle lengths, theme, capital and read marks are stored on the server (`/api/prefs`, `preferences.sqlite3`) and mirrored from every browser, so any PC opens with the same app (`lib/prefs.ts`; `main.tsx` waits up to 2.5 s for the server before loading the pages). The Trend & Regime charts have the chart-info button and a full hover card.
 

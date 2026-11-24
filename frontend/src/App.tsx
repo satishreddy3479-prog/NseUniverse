@@ -25,6 +25,7 @@ const Portfolio = named(() => import("./pages/Portfolio"), "Portfolio");
 const Diagnostics = named(() => import("./pages/Diagnostics"), "Diagnostics");
 const Settings = named(() => import("./pages/Settings"), "Settings");
 const AdvancedGreeks = named(() => import("./pages/AdvancedGreeks"), "AdvancedGreeks");
+const Learn = named(() => import("./pages/Learn"), "Learn");
 const TrendRegime = named(() => import("./pages/TrendRegime"), "TrendRegime");
 /** The pages that load on demand, most used first. Fetched quietly once the first screen is up (see prefetchPages), so a click on a menu item does not wait for the network. */
 const PAGE_LOADERS: (() => Promise<unknown>)[] = [
@@ -93,6 +94,7 @@ export function AppRoutes() {
         <Route path="cleanup" element={wait("data clean-up", <DataCleanup />)} />
         <Route path="server" element={wait("server management", <ServerManagement />)} />
         <Route path="diagnostics" element={wait("diagnostics", <Diagnostics />)} />
+        <Route path="learn" element={wait("Learn", <Learn />)} />
         <Route path="settings" element={wait("settings", <Settings />)} />
         <Route path="*" element={<p className="text-muted">Page not found.</p>} />
       </Route>
