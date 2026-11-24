@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  adx, aggregate, atr, choppiness, efficiencyRatio, openingRange, rangeUsed, regression, runningMean, runningVwap, structure, varianceRatio,
+  adx, aggregate, atr, choppiness, efficiencyRatio, openingRange, rangeUsed, regression, runningMean, runningRange, runningStd, runningVwap, runningVwapBands, sessionTrend, structure, varianceRatio,
   type RBar,
 } from "../lib/trendStats";
 
@@ -130,4 +130,54 @@ describe("trend statistics (hand calculated)", () => {
     expect(rangeUsed(25150, 25000, 25000, 15)).toBeCloseTo(0.3979, 3);
     expect(rangeUsed(25150, 25000, 25000, null)).toBeNull();
   });
+
+  it("the robust variance-ratio z (Lo-MacKinlay z*)", () => {
+    // same series as above: e^2 = 1/9,1/9,4/9,4/9,1/9,1/9 (sum 4/3); delta_1 = (1/81 + 4/81 + 16/81 + 4/81 + 1/81) / (4/3)^2 = (26/81) / (16/9) = 0.180556
+    // q = 2: theta = [2 x 1 / 2]^2 x delta_1 = 0.180556; z* = sqrt(6) x 0.625 / sqrt(0.180556) = 1.53093 / 0.424918 = 3.6030
+    const v = varianceRatio([0, 1, 2, 4, 6, 7, 8].map(Math.exp), 2)!;
+    expect(v.zRobust).toBeCloseTo(3.603, 2);
+  });
+
+  it("running standard deviation and the volume-weighted bands", () => {
+    // [2,4,9]: 0; mean 3 -> 1; mean 5, deviations -3,-1,4 -> sqrt(26/3) = 2.9439
+    const sd = runningStd([2, 4, 9]);
+    expect(sd[0]).toBe(0);
+    expect(sd[1]).toBeCloseTo(1, 12);
+    expect(sd[2]).toBeCloseTo(2.9439, 3);
+    // prices 100, 102 with volumes 10, 30: vwap 101.5; variance (10 x 100^2 + 30 x 102^2)/40 - 101.5^2 = 10303 - 10302.25 = 0.75
+    const b = runningVwapBands([100, 102, null], [10, 30, 5]);
+    expect(b[0]).toEqual({ vwap: 100, sd: 0 });
+    expect(b[1]!.vwap).toBeCloseTo(101.5, 12);
+    expect(b[1]!.sd).toBeCloseTo(Math.sqrt(0.75), 9);
+    expect(b[2]).toEqual(b[1]); // a missing price adds nothing
+    expect(runningVwapBands([100], [null])).toEqual([{ vwap: null, sd: null }]);
+  });
+
+  it("the session so far: net move, path and the day's efficiency ratio", () => {
+    // 100, 103, 101, 98: net -2, path 3 + 2 + 3 = 8 -> 0.25, down
+    const t = sessionTrend([100, 103, 101, 98])!;
+    expect(t).toMatchObject({ net: -2, path: 8, er: 0.25, direction: -1, bars: 4 });
+    expect(sessionTrend([100])).toBeNull();
+    expect(sessionTrend([5, 5, 5])!.er).toBeNull();
+  });
+
+  it("the running range", () => {
+    const b = [bar(0, 0, 10, 8, 9), bar(1, 0, 12, 9, 11), bar(2, 0, 11, 7, 8)];
+    expect(runningRange(b)).toEqual([2, 4, 5]);
+  });
+
+  it("opening range extension, first break and the furthest excursion", () => {
+    const b = [
+      bar(0, 100, 102, 99, 101), bar(1, 101, 103, 100, 102), bar(2, 102, 104, 101, 103), // range 99 - 104
+      bar(3, 103, 106, 103, 105), // first close above: high 106 is 2 beyond
+      bar(4, 105, 105, 102, 103), // back inside
+      bar(5, 103, 103, 97, 98), // below: low 97 is 2 under the 99 low
+    ];
+    const r = openingRange(b, 3)!;
+    expect(r.firstBreak).toEqual({ t: b[3]!.t, side: "above" });
+    expect(r.maxExtension).toBe(2);
+    expect(r.extension).toBe(-1); // last close 98 against the low 99
+    expect(openingRange(b.slice(0, 4), 3)!.extension).toBe(1); // close 105 against the high 104
+  });
 });
+

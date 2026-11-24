@@ -115,9 +115,10 @@ export function regression(closes: number[], n: number): Regression | null {
   return { slope: sxy / sxx, r2: syy === 0 ? null : (sxy * sxy) / (sxx * syy), n };
 }
 
-export interface VarianceRatio { vr: number; z: number; q: number; n: number }
+export interface VarianceRatio { vr: number; z: number; /** heteroskedasticity-robust z* (Lo-MacKinlay 1988): the one to read, intraday returns are not constant-variance */ zRobust: number; q: number; n: number }
 
-/** Lo-MacKinlay variance ratio of the log price at horizon q (overlapping q-bar returns, small-sample corrected), with the homoskedastic z statistic.
+/** Lo-MacKinlay variance ratio of the log price at horizon q (overlapping q-bar returns, small-sample corrected), with the homoskedastic z and the heteroskedasticity-robust z*:
+ *  z* = sqrt(N) (VR - 1) / sqrt(theta), theta = sum over j = 1..q-1 of [2 (q - j) / q]^2 delta_j, delta_j = sum_{t>j} e_t^2 e_{t-j}^2 / (sum e_t^2)^2, e = return - mean.
  *  Needs at least 3q closes. */
 export function varianceRatio(closes: number[], q: number): VarianceRatio | null {
   const N = closes.length - 1; // one-bar returns
@@ -133,7 +134,15 @@ export function varianceRatio(closes: number[], q: number): VarianceRatio | null
   const m = q * (N - q + 1) * (1 - q / N);
   const vr = sq / m / sa;
   const z = (vr - 1) / Math.sqrt((2 * (2 * q - 1) * (q - 1)) / (3 * q * N));
-  return { vr, z, q, n: N };
+  const e2 = lp.slice(1).map((v, i) => (v - lp[i]! - mu) ** 2);
+  let theta = 0;
+  for (let j = 1; j < q; j++) {
+    let d = 0;
+    for (let t = j; t < N; t++) d += e2[t]! * e2[t - j]!;
+    theta += ((2 * (q - j)) / q) ** 2 * (d / s1 ** 2);
+  }
+  const zRobust = theta > 0 ? (Math.sqrt(N) * (vr - 1)) / Math.sqrt(theta) : Number.NaN;
+  return { vr, z, zRobust, q, n: N };
 }
 
 /** Choppiness Index of the last n bars, 0 to 100. null with fewer than n + 1 bars or a flat window. */
@@ -192,7 +201,13 @@ export function structure(closes: number[], mean: (number | null)[]): Structure 
 }
 
 export interface OpeningRange {
-  high: number; low: number; minutes: number; state: "inside" | "above" | "below"; barsOutside: number; breaks: number; falseBreaks: number; ready: boolean
+  high: number; low: number; minutes: number; state: "inside" | "above" | "below"; barsOutside: number; breaks: number; falseBreaks: number; ready: boolean;
+  /** last close beyond the range, in points (positive above the high, negative below the low, 0 inside) */
+  extension: number;
+  /** the first close outside the range: its time and side (null while it has not left) */
+  firstBreak: { t: number; side: "above" | "below" } | null;
+  /** furthest excursion beyond the range after the open of the range, in points (always >= 0) */
+  maxExtension: number;
 }
 
 /** The opening range (first ``minutes`` minutes from 09:15, by bar time) and the behaviour of the later closes: the side the last close is on, how many closes were outside the range,
@@ -204,15 +219,20 @@ export function openingRange(bars: RBar[], minutes = 15): OpeningRange | null {
   const high = Math.max(...inOr.map((b) => b.h));
   const low = Math.min(...inOr.map((b) => b.l));
   let state: OpeningRange["state"] = "inside";
-  let barsOutside = 0, breaks = 0, falseBreaks = 0;
+  let barsOutside = 0, breaks = 0, falseBreaks = 0, maxExtension = 0;
+  let firstBreak: OpeningRange["firstBreak"] = null;
   for (const b of after) {
     const s = b.c > high ? "above" : b.c < low ? "below" : "inside";
     if (s !== "inside") barsOutside++;
+    if (s !== "inside" && firstBreak == null) firstBreak = { t: b.t, side: s };
+    maxExtension = Math.max(maxExtension, b.h - high, low - b.l);
     if (state === "inside" && s !== "inside") breaks++;
     if (state !== "inside" && s === "inside") falseBreaks++;
     state = s;
   }
-  return { high, low, minutes, state, barsOutside, breaks, falseBreaks, ready: after.length > 0 };
+  const lastClose = after.length ? after[after.length - 1]!.c : null;
+  const extension = lastClose == null ? 0 : lastClose > high ? lastClose - high : lastClose < low ? lastClose - low : 0;
+  return { high, low, minutes, state, barsOutside, breaks, falseBreaks, ready: after.length > 0, extension, firstBreak, maxExtension };
 }
 
 /** The range used so far against a normal day's: (high - low) / (1.5958 sigma_day), where 1.5958 = 2 sqrt(2/pi) is the expected range of a driftless random walk in units of its sigma and
@@ -220,4 +240,39 @@ export function openingRange(bars: RBar[], minutes = 15): OpeningRange | null {
 export function rangeUsed(high: number, low: number, spot: number, ivPct: number | null): number | null {
   if (ivPct == null || !(ivPct > 0) || !(spot > 0) || high < low) return null;
   return (high - low) / ((1.5958 * spot * (ivPct / 100)) / Math.sqrt(252));
+}
+
+/** Running (population) standard deviation of the values up to each step, by Welford's method: the band half-width around a running mean. */
+export function runningStd(values: number[]): number[] {
+  let n = 0, mean = 0, m2 = 0;
+  return values.map((v) => { n++; const d = v - mean; mean += d / n; m2 += d * (v - mean); return Math.sqrt(m2 / n); });
+}
+
+/** Running volume-weighted price and its volume-weighted standard deviation (sqrt(sum w x^2 / sum w - vwap^2)): the VWAP and its bands. Missing or zero volume adds nothing. */
+export function runningVwapBands(prices: (number | null)[], vols: (number | null)[]): { vwap: number | null; sd: number | null }[] {
+  let sw = 0, swx = 0, swx2 = 0;
+  return prices.map((p, i) => {
+    const w = vols[i];
+    if (p != null && w != null && w > 0) { sw += w; swx += w * p; swx2 += w * p * p; }
+    if (sw <= 0) return { vwap: null, sd: null };
+    const vwap = swx / sw;
+    return { vwap, sd: Math.sqrt(Math.max(0, swx2 / sw - vwap * vwap)) };
+  });
+}
+
+export interface SessionTrend { net: number; path: number; er: number | null; direction: 1 | -1 | 0; bars: number }
+
+/** The whole session so far: net change from the first close, the distance travelled bar to bar, and their ratio (the day's efficiency ratio). null with fewer than 2 closes. */
+export function sessionTrend(closes: number[]): SessionTrend | null {
+  if (closes.length < 2) return null;
+  let path = 0;
+  for (let i = 1; i < closes.length; i++) path += Math.abs(closes[i]! - closes[i - 1]!);
+  const net = closes[closes.length - 1]! - closes[0]!;
+  return { net, path, er: path === 0 ? null : Math.abs(net) / path, direction: Math.sign(net) as 1 | -1 | 0, bars: closes.length };
+}
+
+/** Running high-minus-low range of the bars so far (the range used through the session). */
+export function runningRange(bars: RBar[]): number[] {
+  let hi = -Infinity, lo = Infinity;
+  return bars.map((b) => { hi = Math.max(hi, b.h); lo = Math.min(lo, b.l); return hi - lo; });
 }

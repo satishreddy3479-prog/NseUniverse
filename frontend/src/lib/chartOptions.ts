@@ -795,13 +795,14 @@ export interface SignalsPanel { bursts: readonly Burst[]; signals: readonly Sign
 
 /** Contiguous runs of the same trend regime label over the candles, as shaded areas on the price panel (the "Warming up" stretch is left unshaded). */
 function regimeAreas(labels: readonly (string | null)[], x: readonly string[], c: ChartColors) {
-  const colorOf = (l: string) => (l === "Trending up" ? c.up : l === "Trending down" ? c.down : l === "Range-bound" ? c.info : c.muted);
+  const colorOf = (l: string) => (l === "Trending up" || l === "Weak uptrend" ? c.up : l === "Trending down" || l === "Weak downtrend" ? c.down : l === "Range-bound" ? c.info : c.muted);
+  const opacityOf = (l: string) => (l === "Trending up" || l === "Trending down" ? 0.18 : l === "Range-bound" ? 0.14 : 0.08);
   const out: [{ xAxis: string; name: string; itemStyle: { color: string; opacity: number } }, { xAxis: string }][] = [];
   let s = 0;
   for (let i = 1; i <= labels.length; i++) {
     if (i === labels.length || labels[i] !== labels[s]) {
       const l = labels[s];
-      if (l && l !== "Warming up") out.push([{ xAxis: x[s]!, name: l, itemStyle: { color: colorOf(l), opacity: 0.16 } }, { xAxis: x[i - 1]! }]);
+      if (l && l !== "Warming up") out.push([{ xAxis: x[s]!, name: l, itemStyle: { color: colorOf(l), opacity: opacityOf(l) } }, { xAxis: x[i - 1]! }]);
       s = i;
     }
   }

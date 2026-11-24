@@ -63,13 +63,19 @@ describe("Trend & Regime in the Analyse menu", () => {
 });
 
 describe("Trend & Regime pages", () => {
-  it("a clean rise reads Trending up, with the reasons and the descriptive-only warning", async () => {
+  it("a clean rise reads Trending up with a full score, the readings table, the session line and the descriptive-only warning", async () => {
     mock();
     page("market-regime");
     await waitFor(() => expect(screen.getByTestId("regime-now")).toBeInTheDocument());
-    expect(screen.getByTestId("regime-now")).toHaveTextContent("Trending up");
-    expect(screen.getByTestId("regime-reasons").textContent).toContain("efficiency ratio 1.00: trending");
+    expect(screen.getByTestId("regime-label")).toHaveTextContent("Trending up");
+    expect(screen.getByTestId("regime-gauge")).toHaveAttribute("aria-label", "trend score 100 of 100");
+    expect(screen.getByTestId("regime-readings")).toHaveTextContent("Efficiency ratio");
+    expect(screen.getByTestId("regime-readings")).toHaveTextContent("1.00");
+    // 5-minute bars: the first closes at 25004.5 (minute 4), the last at 25089.5 (minute 89): +85.0 points, a straight line
+    expect(screen.getByTestId("regime-session")).toHaveTextContent("+85.0 points");
+    expect(screen.getByTestId("regime-session")).toHaveTextContent("mostly one-directional");
     expect(screen.getByTestId("regime-now")).toHaveTextContent("not validated");
+    expect(screen.getByTestId("regime-chart")).toBeInTheDocument();
     expect(screen.getByTestId("regime-check")).toBeInTheDocument();
   });
 
