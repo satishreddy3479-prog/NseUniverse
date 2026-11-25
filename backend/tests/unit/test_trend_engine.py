@@ -146,3 +146,15 @@ def test_the_group_is_part_of_the_fused_verdict_with_its_weight() -> None:
     withtrend = fz.fuse([*others, {**others[0], "key": "trend", "name": fz.ENGINE_NAMES["trend"], "score": -80.0}], fz.DEFAULT_WEIGHTS)
     without = fz.fuse(others, fz.DEFAULT_WEIGHTS)
     assert withtrend["score"] < without["score"]  # a strongly bearish trend reading pulls the verdict down by its weight
+
+
+def test_early_in_the_session_the_trend_group_says_how_far_off_its_first_readings_are(real: dict) -> None:
+    a = {**te.assess(real["bars"][:32]), "is_today": True}  # 32 one-minute bars: seven five-minute bars, the regime still warming up
+    assert a["bars_5m"] == 7 and a["label"] == "Warming up"
+    e = fz.trend_group({"trend": a}, {})
+    assert e["score"] is None and e["status"] == "UNAVAILABLE"
+    d = [t["detail"] for t in e["terms"]]
+    assert d[0] == "warming up: the regime needs 9 five-minute bars and 7 are stored, about 10 more minutes"
+    assert "the 14-bar ATR needs 15 five-minute bars and 7 are stored, about 40 more minutes" in d[1] and "40 more minutes" in d[2]
+    # the regime label first appears with the ninth five-minute bar, which opens at 09:55 (41 one-minute bars) and the ATR at the fifteenth (10:25): the counts above are those bars
+    assert te.assess(real["bars"][:40])["label"] == "Warming up" and te.assess(real["bars"][:41])["label"] != "Warming up" and te.assess(real["bars"][:70])["atr"] is None and te.assess(real["bars"][:71])["atr"] is not None

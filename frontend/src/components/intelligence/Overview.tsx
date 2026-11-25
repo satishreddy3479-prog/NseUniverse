@@ -94,13 +94,14 @@ export function PulseCards({ d }: { d: Intelligence }) {
 
 function EngineCard({ e }: { e: EngineView }) {
   const lbl = freshLabel(e);
+  const warming = e.score == null && e.terms.some((t) => t.detail.startsWith("warming up")); // the trend group at the start of the session: not missing data, a reading that has not formed yet
   return (
     <article className="flex min-w-0 flex-col rounded-[var(--radius-panel)] border border-rule bg-slate p-3" data-testid={`mi-engine-${e.key}`}>
       <div className="flex items-start justify-between gap-2">
         <h3 className="text-sm font-semibold text-paper">{e.name}</h3>
         <span className="num shrink-0 text-[11px] text-muted" title="provisional weight in the fused score (not statistically calibrated)">w {e.weight}{e.status === "PARTIAL" && e.effective_weight != null ? ` → ${e.effective_weight.toFixed(1)}` : ""}</span>
       </div>
-      <div className="mt-1 flex items-baseline gap-2"><span className={`num text-xl font-semibold ${toneOf(e.score)}`}>{e.score == null ? MISSING : signed(e.score)}</span><span className={`text-xs ${toneOf(e.score)}`}>{e.score == null ? "Unavailable" : e.tilt}</span>{e.status && <span className={`ml-auto rounded-sm border px-1 text-[10px] ${e.status === "AVAILABLE" ? "border-up/40 text-up" : e.status === "PARTIAL" ? "border-warn/40 text-warn" : "border-down/40 text-down"}`} data-testid={`mi-status-${e.key}`}>{e.status}</span>}</div>
+      <div className="mt-1 flex items-baseline gap-2"><span className={`num text-xl font-semibold ${toneOf(e.score)}`}>{e.score == null ? MISSING : signed(e.score)}</span><span className={`text-xs ${toneOf(e.score)}`}>{e.score == null ? (warming ? "Warming up" : "Unavailable") : e.tilt}</span>{e.status && <span className={`ml-auto rounded-sm border px-1 text-[10px] ${warming ? "border-warn/40 text-warn" : e.status === "AVAILABLE" ? "border-up/40 text-up" : e.status === "PARTIAL" ? "border-warn/40 text-warn" : "border-down/40 text-down"}`} data-testid={`mi-status-${e.key}`}>{warming ? "WARMING UP" : e.status}</span>}</div>
       <p className={`text-[11px] ${e.freshness.fresh === false ? "text-warn" : "text-muted"}`}>{lbl}{e.contribution != null && ` · contributes ${signed(e.contribution, 1)}`}</p>
       <ScoreBar score={e.score} />
       <details className="mt-2 text-xs">

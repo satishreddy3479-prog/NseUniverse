@@ -588,3 +588,16 @@ describe("the redesigned page: a reading first, five tabs", () => {
     expect(v).toHaveTextContent("2 engines available (need 3)");
   });
 });
+
+describe("the trend group early in the session", () => {
+  it("reads Warming up with the reason, not Unavailable, while its first bars are still forming", async () => {
+    const warm = { ...base, engines: base.engines.map((e) => (e.key === "trend" ? { ...e, score: null, status: "UNAVAILABLE", terms: [{ ...e.terms[0]!, score: null, available: false, detail: "warming up: the regime needs 9 five-minute bars and 7 are stored, about 10 more minutes" }] } : e)) } as typeof base;
+    view(warm);
+    await openTab(/Evidence/);
+    const card = await screen.findByTestId("mi-engine-trend");
+    expect(card).toHaveTextContent("Warming up");
+    expect(screen.getByTestId("mi-status-trend")).toHaveTextContent("WARMING UP");
+    expect(card).not.toHaveTextContent("Unavailable");
+    window.location.hash = "";
+  });
+});

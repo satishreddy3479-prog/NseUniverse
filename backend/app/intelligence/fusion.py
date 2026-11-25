@@ -638,6 +638,19 @@ def observations(inp: Mapping[str, Any], by: Mapping[str, Mapping[str, Any]], gx
     return out
 
 
+#: five-minute bars the trend reading needs: the regime label leaves "Warming up" at the ninth bar (about 09:55), the 14-bar ATR behind the two price terms exists at the fifteenth (about 10:25)
+WARM_BARS = {"regime": 9, "atr": 15}
+
+
+def _warm(kind: str, t: Any, ok: bool, prefix: str = "") -> str:
+    """Why a trend term has no reading yet, with how far the session is from it (a count of the five-minute bars stored today)."""
+    if not ok or not isinstance(t, Mapping):
+        return prefix + "no trend reading for today yet"
+    n, need = int(num(t.get("bars_5m")) or 0), WARM_BARS[kind]
+    what = "the regime needs" if kind == "regime" else "the 14-bar ATR needs"
+    return prefix + (f"warming up: {what} {need} five-minute bars and {n} are stored, about {max(1, need - n) * 5} more minutes" if n < need else "not available from the bars stored")
+
+
 def trend_group(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[str, Any]:
     """Group F, the trend and regime of the INDEX over the session so far (the Analyse > Trend & Regime reading, see ``trend_engine``). Three terms:
 
@@ -654,17 +667,17 @@ def trend_group(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[str, 
     agree = s("agreement")
     regime_score = None if not ok or st is None or label in (None, "Warming up") else d * 100.0 * st
     regime_detail = (f"{label}: trend score {score * 100:.0f}/100" + (f", {agree['agree']} of {agree['of']} readings agree" if isinstance(agree, Mapping) else "")
-                     + ("" if slope is None else f", fitted slope {slope:+.1f} pts per 5-minute bar") + ("; no direction is called" if d == 0 else "")) if regime_score is not None and score is not None else (f"the newest stored bars are of {t.get('day')}, not today's session: no trend evidence for today yet" if isinstance(t, Mapping) and t.get("available") and not ok else "needs about 30 minutes of bars")
+                     + ("" if slope is None else f", fitted slope {slope:+.1f} pts per 5-minute bar") + ("; no direction is called" if d == 0 else "")) if regime_score is not None and score is not None else (f"the newest stored bars are of {t.get('day')}, not today's session: no trend evidence for today yet" if isinstance(t, Mapping) and t.get("available") and not ok else _warm("regime", t, ok))
     d_mean, mean, last = num(s("from_mean_atr")), num(s("session_mean")), num(s("price"))
     mean_score = squash(d_mean, 2.0)
     orr = s("opening_range")
     beyond = num(g(orr, "beyond_atr")) if isinstance(orr, Mapping) and orr.get("complete") else None
     or_score = squash(beyond, 2.0)
-    or_detail = ("the opening range is not complete (15 minutes) or the ATR is not available yet" if or_score is None else
+    or_detail = (_warm("atr", t, ok, "the opening range needs its 15 minutes and the ATR: ") if or_score is None else
                  f"NIFTY {g(orr, 'state')} the {g(orr, 'low'):.0f} to {g(orr, 'high'):.0f} opening range" + ("" if g(orr, "state") == "inside" else f" by {abs(g(orr, 'beyond_points')):.0f} pts ({abs(beyond or 0):.1f} ATR)"))
     terms = [
         Term("Regime: direction x strength", regime_score, regime_detail, family="regime"),
-        Term("Close against the session mean", mean_score, "not available yet (needs a 14-bar ATR)" if mean_score is None or mean is None or last is None else f"NIFTY {last:.0f} is {d_mean:+.1f} ATR from the session mean {mean:.0f}", family="price", weight=0.5, shares=("index price (group D)",)),
+        Term("Close against the session mean", mean_score, _warm("atr", t, ok) if mean_score is None or mean is None or last is None else f"NIFTY {last:.0f} is {d_mean:+.1f} ATR from the session mean {mean:.0f}", family="price", weight=0.5, shares=("index price (group D)",)),
         Term("Close against the opening range", or_score, or_detail, family="price", weight=0.5, shares=("index price (group D)",)),
     ]
     return engine("trend", terms, ["trend"], status, extra={"owns": "the intraday trend and regime of the index; futures, positioning and breadth are other groups'", "regime": None if not ok else {"label": label, "score": score, "direction": d}})
