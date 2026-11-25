@@ -74,7 +74,9 @@ const loadAuto = (): boolean => { try { return localStorage.getItem(AUTOFIT_KEY)
 const Content = ({ def }: { def: EagleDef }) => <>{def.render()}</>;
 
 /** One box of the board: a title bar to drag it by, copy and remove buttons, and the widget, which fits the box (or scrolls inside it for a whole tool). */
-function Frame({ board, itemKey, def, onRemove, onCopy, height, chartsOnly, onNat }: { board: EagleBoard; itemKey: string; def: EagleDef; onRemove: () => void; onCopy: () => void; height?: number; chartsOnly?: boolean; onNat?: (key: string, rows: number) => void }) {
+function Frame({ board, itemKey, def, onRemove, onCopy, height, chartsOnly, onNat, stacked, onMove, canUp, canDown }: { board: EagleBoard; itemKey: string; def: EagleDef; onRemove: () => void; onCopy: () => void; height?: number; chartsOnly?: boolean; onNat?: (key: string, rows: number) => void;
+  /** on a phone the boxes are one column: no dragging, move buttons instead */ stacked?: boolean; onMove?: (dir: -1 | 1) => void; canUp?: boolean; canDown?: boolean }) {
+  const btn = `widget-nodrag inline-flex items-center justify-center rounded-sm text-muted hover:bg-slate-2 hover:text-paper ${stacked ? "size-10" : "size-7"}`;
   const title = titleOf(board, itemKey, def.title);
   const bodyRef = useRef<HTMLDivElement>(null);
   const noChart = useNoChart(bodyRef, chartsOnly === true && !def.charts);
@@ -82,17 +84,19 @@ function Frame({ board, itemKey, def, onRemove, onCopy, height, chartsOnly, onNa
   useNaturalRows(innerRef, def.kind === "page" ? (rows) => onNat?.(itemKey, rows) : undefined);
   return (
     <section aria-label={title} data-testid={`eagle-box-${itemKey}`} style={height ? { height } : undefined}
-      className="flex h-full flex-col overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate">
-      <header className="eagle-keep widget-drag flex min-h-8 shrink-0 cursor-grab items-center justify-between gap-2 border-b border-rule px-2.5 active:cursor-grabbing">
+      className={`flex flex-col overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate ${stacked && !height ? "" : "h-full"}`}>
+      <header className={`eagle-keep flex shrink-0 items-center justify-between gap-2 border-b border-rule px-2.5 ${stacked ? "min-h-11" : "widget-drag min-h-8 cursor-grab active:cursor-grabbing"}`}>
         <h2 className="min-w-0 truncate text-xs font-semibold text-paper">{title}</h2>
         <div className="flex shrink-0 items-center">
+          {stacked && <button type="button" aria-label={`Move ${title} up`} title="Move up" disabled={!canUp} onClick={() => onMove?.(-1)} className={`${btn} disabled:opacity-30`}>▲</button>}
+          {stacked && <button type="button" aria-label={`Move ${title} down`} title="Move down" disabled={!canDown} onClick={() => onMove?.(1)} className={`${btn} disabled:opacity-30`}>▼</button>}
           <button type="button" aria-label={`Add another ${def.title}`} title="Add another copy of this widget" onMouseDown={(e) => e.stopPropagation()} onClick={onCopy}
-            className="widget-nodrag inline-flex size-7 items-center justify-center rounded-sm text-muted hover:bg-slate-2 hover:text-paper">⧉</button>
+            className={btn}>⧉</button>
           <button type="button" aria-label={`Remove ${title}`} title="Remove from the board" onMouseDown={(e) => e.stopPropagation()} onClick={onRemove}
-            className="widget-nodrag inline-flex size-7 items-center justify-center rounded-sm text-muted hover:bg-slate-2 hover:text-paper">×</button>
+            className={btn}>×</button>
         </div>
       </header>
-      <div ref={bodyRef} className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-2 ${def.kind === "page" ? "overflow-x-auto" : ""}`} data-testid={`eagle-body-${itemKey}`}>
+      <div ref={bodyRef} className={`min-h-0 flex-1 p-2 ${stacked && def.kind === "page" ? "overflow-x-auto overflow-y-visible" : `overflow-x-hidden overflow-y-auto ${def.kind === "page" ? "overflow-x-auto" : ""}`}`} data-testid={`eagle-body-${itemKey}`}>
         <div ref={innerRef} className={def.kind === "page" ? undefined : "h-full"}>
         {noChart && <p className="eagle-keep rounded-sm border border-rule bg-slate-2 p-2 text-xs text-muted" role="status" data-testid={`eagle-nochart-${itemKey}`}>This tool has no chart. Turn off “Charts only” at the top to see it, or remove the box.</p>}
         <ErrorBoundary resetKey={itemKey}><Content def={def} /></ErrorBoundary>
@@ -103,9 +107,11 @@ function Frame({ board, itemKey, def, onRemove, onCopy, height, chartsOnly, onNa
 }
 
 /** The picker: every widget, grouped, searchable. A widget can be added as often as wanted; the number on the board is shown. */
-function Picker({ board, onAdd, onClose, chartsOnly }: { board: EagleBoard; onAdd: (id: string) => void; onClose: () => void; chartsOnly: boolean }) {
+function Picker({ board, onAdd, onAddAll, onClose, chartsOnly }: { board: EagleBoard; onAdd: (id: string) => void; onAddAll: (ids: string[]) => void; onClose: () => void; chartsOnly: boolean }) {
   const [q, setQ] = useState("");
   const groups = useMemo(() => catalogGroups(q, chartsOnly), [q, chartsOnly]);
+  // every widget listed now (the search and Charts only apply) that is not on the board yet
+  const missing = useMemo(() => groups.flatMap((g) => g.defs).filter((d) => countOf(board, d.id) === 0).map((d) => d.id), [groups, board]);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -115,14 +121,15 @@ function Picker({ board, onAdd, onClose, chartsOnly }: { board: EagleBoard; onAd
   useEffect(() => { ref.current?.querySelector("input")?.focus(); }, []);
   return (
     <div ref={ref} role="dialog" aria-label="Add widgets" data-testid="eagle-picker"
-      className="absolute left-0 top-11 z-30 flex max-h-[70vh] w-[min(34rem,calc(100vw-2rem))] flex-col rounded-md border border-rule bg-slate shadow-lg">
+      className="fixed inset-x-2 bottom-2 z-40 flex max-h-[78vh] flex-col rounded-md border border-rule bg-slate shadow-lg sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-11 sm:max-h-[70vh] sm:w-[min(34rem,calc(100vw-2rem))]">
       <div className="flex items-center gap-2 border-b border-rule p-2">
         <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search widgets and tools…" aria-label="Search widgets"
           className="min-h-9 min-w-0 flex-1 rounded-sm border border-rule bg-slate-2 px-2 text-sm text-paper" />
+        <Button onClick={() => onAddAll(missing)} disabled={missing.length === 0} title="Put one of every widget listed here that is not on the board yet">{`Add all (${missing.length})`}</Button>
         <Button onClick={onClose}>Done</Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        {chartsOnly && <p className="px-1 pb-2 text-[11px] text-muted" data-testid="eagle-picker-note">Charts only is on: tools that are only a table or text are not listed.</p>}
+        {chartsOnly && <p className="px-1 pb-2 text-[11px] text-muted" data-testid="eagle-picker-note">Charts only is on: tools that are only a table or text are not listed. Every box loads its own data, so a very large board is slower, most of all on a phone.</p>}
         {groups.length === 0 && <p className="px-2 py-4 text-sm text-muted" role="status">Nothing matches “{q}”.</p>}
         {groups.map((g) => (
           <section key={g.group} aria-label={g.group} className="mb-3">
@@ -186,6 +193,7 @@ function Board() {
   const add = (id: string) => { const s = sizeOf(id); if (s) edit((b) => settle(addItem(b, id, s))); };
   const copy = (key: string) => edit((b) => { const cat = b.items.find((x) => x.key === key)?.cat; const s = cat ? sizeOf(cat) : undefined; return s ? settle(duplicateItem(b, key, s)) : b; });
   const remove = (key: string) => edit((b) => settle(removeItem(b, key)));
+  const addAll = (ids: string[]) => edit((b) => settle(ids.reduce((acc, id) => { const s = sizeOf(id); return s ? addItem(acc, id, s) : acc; }, b)));
   const toggleAuto = (on: boolean) => {
     setAuto(on);
     try { localStorage.setItem(AUTOFIT_KEY, on ? "on" : "off"); } catch { /* the choice lasts for this visit */ }
@@ -194,27 +202,45 @@ function Board() {
 
   const stacked = mounted && width > 0 && width < NARROW;
   const boxes = board.items.map((it) => ({ it, def: CATALOG_BY_ID.get(it.cat)!, box: board.layout.find((l) => l.i === it.key) })).filter((x) => x.def);
+  // one column on a phone, in the order the boxes are read on the board (top to bottom, left to right)
+  const column = [...boxes].sort((a, b) => (a.box?.y ?? 0) - (b.box?.y ?? 0) || (a.box?.x ?? 0) - (b.box?.x ?? 0));
+  const move = (key: string, dir: -1 | 1) => edit((b) => {
+    const order = [...b.layout].sort((x, y) => x.y - y.y || x.x - y.x);
+    const i = order.findIndex((l) => l.i === key), j = i + dir;
+    if (i < 0 || j < 0 || j >= order.length) return b;
+    const a = order[i]!, o = order[j]!;
+    // the two boxes trade places (their sizes stay with them), and the board is fitted again
+    return settle({ ...b, layout: b.layout.map((l) => (l.i === a.i ? { ...l, x: o.x, y: o.y + (dir > 0 ? Math.max(0, o.h - a.h) + 1 : 0) } : l.i === o.i ? { ...l, x: a.x, y: a.y + (dir > 0 ? 0 : 1) } : l)) });
+  });
+  const phoneBox = Math.round(Math.min(420, Math.max(260, (width > 0 ? width : 360) * 0.95)));
+  const [more, setMore] = useState(false);
 
   return (
     <>
       <div className="relative flex flex-wrap items-center gap-2">
         <Button onClick={() => setPicking((p) => !p)} title="Add widgets: any tool, as many times as you like">＋ Add widgets</Button>
-        <label className="flex items-center gap-1.5 text-sm" title="Show only the charts and their controls: no readings, tables or notes"><input type="checkbox" checked={chartsOnly} onChange={(e) => toggleCharts(e.target.checked)} className="accent-[var(--brass)]" data-testid="eagle-charts-only" /> Charts only</label>
-        <label className="flex items-center gap-1.5 text-sm" title="Pack the boxes with no gaps and let them grow into free space"><input type="checkbox" checked={auto} onChange={(e) => toggleAuto(e.target.checked)} className="accent-[var(--brass)]" data-testid="eagle-autofit" /> Auto-fit</label>
-        <Button onClick={() => edit(() => starter())} title="Back to the starting set of widgets">Starter board</Button>
-        <Button onClick={() => edit(() => emptyBoard())} disabled={board.items.length === 0} title="Take every widget off the board">Clear board</Button>
         <Button onClick={save} disabled={!touched} title="Keep this board as your saved layout: it opens like this, here and on your other devices">{touched ? "Save layout ●" : "Save layout"}</Button>
         <Button onClick={reset} disabled={!touched && saved != null} title="Go back to the saved layout (or the starter board if none was saved)">Reset</Button>
+        <button type="button" aria-expanded={more} onClick={() => setMore((m) => !m)} className="min-h-9 rounded-sm border border-rule bg-slate-2 px-3 text-sm text-paper md:hidden">{more ? "Less ▴" : "More ▾"}</button>
+        <div className={`${more ? "flex basis-full flex-wrap items-center gap-2" : "hidden"} md:contents`}>
+          <label className="flex min-h-9 items-center gap-1.5 text-sm" title="Show only the charts and their controls: no readings, tables or notes"><input type="checkbox" checked={chartsOnly} onChange={(e) => toggleCharts(e.target.checked)} className="size-4 accent-[var(--brass)]" data-testid="eagle-charts-only" /> Charts only</label>
+          <label className="hidden items-center gap-1.5 text-sm md:flex" title="Pack the boxes with no gaps and let them grow into free space"><input type="checkbox" checked={auto} onChange={(e) => toggleAuto(e.target.checked)} className="accent-[var(--brass)]" data-testid="eagle-autofit" /> Auto-fit</label>
+          <Button onClick={() => edit(() => starter())} title="Back to the starting set of widgets">Starter board</Button>
+          <Button onClick={() => edit(() => emptyBoard())} disabled={board.items.length === 0} title="Take every widget off the board">Clear board</Button>
+        </div>
         <span className="text-xs text-muted" data-testid="eagle-saved-state">{touched ? "unsaved changes (kept in this browser)" : justSaved ? "saved ✓" : saved ? "saved layout" : "no saved layout yet"}</span>
         <span className="text-xs text-muted" data-testid="eagle-count">{board.items.length} widget{board.items.length === 1 ? "" : "s"}</span>
         <span className="hidden text-xs text-muted md:inline">Drag a title bar to move · drag a corner to resize · ⧉ adds another copy · remembered in this browser</span>
-        {picking && <Picker board={board} onAdd={add} onClose={() => setPicking(false)} chartsOnly={chartsOnly} />}
+        {picking && <Picker board={board} onAdd={add} onAddAll={addAll} onClose={() => setPicking(false)} chartsOnly={chartsOnly} />}
       </div>
       <div ref={containerRef} data-testid="eagle-board" className={chartsOnly ? "eagle-co" : undefined}>
         {stacked && boxes.length > 0 && (
           <div className="flex flex-col gap-3" data-testid="eagle-stacked">
-            {boxes.map(({ it, def, box }) => (
-              <div key={it.key}><Frame board={board} itemKey={it.key} def={def} chartsOnly={chartsOnly} onNat={onNat} onRemove={() => remove(it.key)} onCopy={() => copy(it.key)} height={Math.max(def.kind === "page" ? 420 : 280, (box?.h ?? def.h) * (ROW_HEIGHT + 12) - 12)} /></div>
+            {column.map(({ it, def }, i) => (
+              <div key={it.key}>
+                <Frame board={board} itemKey={it.key} def={def} chartsOnly={chartsOnly} onNat={onNat} stacked onMove={(d) => move(it.key, d)} canUp={i > 0} canDown={i < column.length - 1}
+                  onRemove={() => remove(it.key)} onCopy={() => copy(it.key)} height={def.kind === "page" ? undefined : phoneBox} />
+              </div>
             ))}
           </div>
         )}
@@ -255,16 +281,16 @@ export function EaglesView() {
     <ReplayProvider>
       <DashProvider expiry={expiry} range={range} showCalls={showCalls} showPuts={showPuts}>
         <div className="mx-auto flex max-w-[1900px] flex-col gap-3" data-testid="eagles-view">
-          <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-1">
             <div>
               <h1 className="text-xl font-semibold">Eagles view</h1>
-              <p className="text-sm text-muted">Every tool as a small box on one board. Add the ones you want, as many times as you like, move and resize them, take off what you do not need.</p>
+              <p className="hidden text-sm text-muted sm:block">Every tool as a small box on one board. Add the ones you want, as many times as you like, move and resize them, take off what you do not need.</p>
             </div>
-            <div className="flex flex-wrap items-center gap-2"><ChartInfoToggle /><StreamButtons /></div>
+            <div className="flex max-w-full items-center gap-2 overflow-x-auto"><ChartInfoToggle /><StreamButtons /></div>
           </div>
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2" data-testid="eagle-controls">
+          <div className="flex flex-nowrap items-center gap-x-4 gap-y-2 overflow-x-auto rounded-[var(--radius-panel)] border border-rule bg-slate px-3 py-2 md:flex-wrap md:overflow-visible [&>*]:shrink-0" data-testid="eagle-controls">
             <span className="text-sm font-semibold">NIFTY</span>
-            <div role="group" aria-label="Expiry" className="flex flex-wrap items-center gap-2">
+            <div role="group" aria-label="Expiry" className="flex items-center gap-2 md:flex-wrap">
               {modeBtn("weekly", "Weekly", exp?.weekly)}
               {modeBtn("monthly", "Monthly", exp?.monthly)}
               {modeBtn("manual", "Other")}
@@ -274,7 +300,7 @@ export function EaglesView() {
                 </select>
               )}
             </div>
-            <label className="flex items-center gap-2 text-sm text-muted">
+            <label className="flex items-center gap-2 whitespace-nowrap text-sm text-muted">
               Strikes around ATM
               <select aria-label="Strike range" value={String(range)} onChange={(e) => setRange(e.target.value === "all" ? "all" : Number(e.target.value))} className="min-h-9 rounded-sm border border-rule bg-slate-2 px-2 text-paper">
                 {RANGES.map((n) => <option key={String(n)} value={String(n)}>{n === "all" ? "All" : `±${n}`}</option>)}
@@ -282,7 +308,7 @@ export function EaglesView() {
             </label>
             <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={showCalls} onChange={(e) => setShowCalls(e.target.checked)} className="accent-[var(--brass)]" /> Calls</label>
             <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={showPuts} onChange={(e) => setShowPuts(e.target.checked)} className="accent-[var(--brass)]" /> Puts</label>
-            <span className="text-xs text-muted">The expiry and strikes apply to every box that uses the option chain.</span>
+            <span className="hidden text-xs text-muted md:inline">The expiry and strikes apply to every box that uses the option chain.</span>
           </div>
           <Board />
         </div>

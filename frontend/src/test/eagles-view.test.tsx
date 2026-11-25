@@ -22,9 +22,10 @@ vi.mock("../components/eagle/catalog", async () => {
     },
   };
 });
+const screenWidth = vi.hoisted(() => ({ value: 1400 }));
 vi.mock("react-grid-layout", () => ({
   GridLayout: ({ children }: { children: React.ReactNode }) => <div data-testid="grid">{children}</div>,
-  useContainerWidth: () => ({ width: 1400, containerRef: { current: null }, mounted: true }),
+  useContainerWidth: () => ({ width: screenWidth.value, containerRef: { current: null }, mounted: true }),
   verticalCompactor: {},
 }));
 vi.mock("../components/LiveActivity", () => ({ StreamButtons: () => null }));
@@ -40,7 +41,7 @@ function mount() {
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter><EaglesView /></MemoryRouter></QueryClientProvider>);
 }
 const titles = () => screen.queryAllByTestId(/^eagle-box-/).map((e) => e.getAttribute("aria-label"));
-beforeEach(() => { localStorage.clear(); });
+beforeEach(() => { localStorage.clear(); screenWidth.value = 1400; });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("the Eagles view", () => {
@@ -219,6 +220,57 @@ describe("the Eagles view", () => {
   it("only the saved layout follows the owner to other devices: the working copy stays in this browser", () => {
     expect(isSynced(EAGLE_KEY)).toBe(true);
     expect(isSynced(EAGLE_WORKING_KEY)).toBe(false);
+  });
+
+  it("Add all puts one of every widget listed that is not on the board yet, and respects Charts only and the search", async () => {
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined); // the mock includes a widget that breaks on purpose
+    mount();
+    await userEvent.click(await screen.findByRole("button", { name: /Add widgets/ }));
+    // Charts only is on: the mock has 4 charts (day, oi, pcr, rolling) + 1 broken one with a chart, the table is not listed; 2 are on the board
+    const listed = ["i:day", "w:oi", "w:pcr", "t:rolling", "w:bad"];
+    const missing = listed.filter((id) => !["i:day", "w:oi"].includes(id));
+    await userEvent.click(screen.getByRole("button", { name: `Add all (${missing.length})` }));
+    expect(screen.getByRole("button", { name: "Add all (0)" })).toBeDisabled(); // nothing left to add
+    expect(screen.getByTestId("eagle-count").textContent).toBe(`${2 + missing.length} widgets`);
+    expect(screen.queryByTestId("eagle-n-w:table")).toBeNull(); // the table-only widget was not added
+    await userEvent.click(screen.getByTestId("eagle-charts-only")); // all widgets are listed now: the table-only one is missing
+    await userEvent.click(screen.getByRole("button", { name: "Add all (1)" }));
+    expect(screen.getByTestId("eagle-n-w:table").textContent).toBe("×1");
+    expect(screen.getByTestId("eagle-count").textContent).toBe("6 widgets"); // all six widgets of the mock are on the board once each
+    quiet.mockRestore();
+  });
+
+  it("on a phone the boxes are one column in the order they are read on the board, with move buttons and no dragging", async () => {
+    screenWidth.value = 400;
+    localStorage.setItem(EAGLE_KEY, JSON.stringify({ items: [{ key: "w:oi~1", cat: "w:oi" }, { key: "w:pcr~2", cat: "w:pcr" }, { key: "t:rolling~3", cat: "t:rolling" }], layout: [{ i: "w:oi~1", x: 6, y: 0, w: 6, h: 8 }, { i: "w:pcr~2", x: 0, y: 0, w: 6, h: 8 }, { i: "t:rolling~3", x: 0, y: 8, w: 12, h: 14 }], next: 4 }));
+    mount();
+    await screen.findByRole("heading", { name: "Eagles view" });
+    expect(screen.getByTestId("eagle-stacked")).toBeTruthy();
+    expect(screen.queryByTestId("grid")).toBeNull();
+    // read on the board: Put-call ratio (x 0), Open interest (x 6), then the Rolling Straddle under them
+    expect(titles()).toEqual(["Put-call ratio", "Open interest by strike", "ATM Rolling Straddle"]);
+    expect(screen.getByRole("button", { name: "Move Put-call ratio up" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Move ATM Rolling Straddle down" })).toBeDisabled();
+    const chart = screen.getByTestId("eagle-box-w:oi~1") as HTMLElement, tool = screen.getByTestId("eagle-box-t:rolling~3") as HTMLElement;
+    expect(parseInt(chart.style.height)).toBeGreaterThanOrEqual(260); // a chart box has a height made from the screen width
+    expect(parseInt(chart.style.height)).toBeLessThanOrEqual(420);
+    expect(tool.style.height).toBe(""); // a whole tool is as tall as its content
+    await userEvent.click(screen.getByRole("button", { name: "Move Open interest by strike up" }));
+    expect(titles()).toEqual(["Open interest by strike", "Put-call ratio", "ATM Rolling Straddle"]);
+    await userEvent.click(screen.getByRole("button", { name: "Move Open interest by strike down" }));
+    expect(titles()).toEqual(["Put-call ratio", "Open interest by strike", "ATM Rolling Straddle"]);
+    expect(screen.getByRole("button", { name: "Save layout ●" })).toBeEnabled(); // moving is a change
+  });
+
+  it("on a phone the toolbar keeps Add widgets, Save layout and Reset in view and puts the rest under More", async () => {
+    screenWidth.value = 400;
+    mount();
+    await screen.findByRole("heading", { name: "Eagles view" });
+    const more = screen.getByRole("button", { name: /More/ });
+    expect(more.getAttribute("aria-expanded")).toBe("false");
+    await userEvent.click(more);
+    expect(more.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByTestId("eagle-charts-only")).toBeTruthy();
   });
 
   it("a saved board that names a widget which no longer exists opens without it", async () => {
