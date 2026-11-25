@@ -187,7 +187,8 @@ async def ops_alerts(request: Request) -> dict[str, Any]:
     # NSE revises the NIFTY lot size now and then; the cost model must follow the broker chain's lot
     try:
         cfg = request.app.state.settings
-        stored = _obs(request).latest_lot_size(cfg.underlying)
+        # in a thread: the end-of-day scan can hold this lock for seconds
+        stored = await asyncio.to_thread(_obs(request).latest_lot_size, cfg.underlying)
         configured = cfg.cost_lot_size
         if stored is not None and stored != configured:
             alerts.append({

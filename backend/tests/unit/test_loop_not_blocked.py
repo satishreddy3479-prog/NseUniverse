@@ -80,3 +80,29 @@ async def test_the_broker_sdk_is_built_off_the_event_loop() -> None:
     broker._secret = lambda name: "x"  # type: ignore[method-assign]  # noqa: SLF001
     gap = await worst_gap(broker._client_async)  # noqa: SLF001
     assert broker._client is not None and gap < MAX_LATE_S  # noqa: SLF001
+
+
+async def test_the_ops_alerts_lot_size_read_is_off_the_loop() -> None:
+    """25 Nov 2026: the end-of-day scan held the observations lock for seconds and this
+    handler, reading the lot size on the loop, stalled the live feed for up to 13.8 s."""
+    from types import SimpleNamespace
+
+    from app.api.routes import ops_alerts
+
+    class SlowObs:
+        def latest_lot_size(self, underlying: str) -> int:
+            time.sleep(SLOW_S)  # the lock held by the end-of-day scan
+            return 65
+
+    settings = SimpleNamespace(underlying="NIFTY", cost_lot_size=65)
+    state = SimpleNamespace(settings=settings, observations=SlowObs())
+    request: Any = SimpleNamespace(app=SimpleNamespace(state=state))
+    out: dict[str, Any] = {}
+
+    async def work() -> None:
+        out.update(await ops_alerts(request))
+
+    gap = await worst_gap(work)
+    assert gap < MAX_LATE_S, f"the loop was late by {gap:.2f} s while the lot size was read"
+    assert "alerts" in out
+    assert not any(a["key"] == "lot-size" for a in out["alerts"])  # 65 = configured: no alert
