@@ -32,7 +32,8 @@ import { adoptExits,
 
 export const WORKING_KEY = "nse.builder.working.v1";
 export const SAVE_KEY = "nse.strategies.v1";
-export interface Saved { name: string; savedAt: string; updatedAt?: string; expiry: string; legs: Leg[] }
+/** A saved strategy: its legs and, since 25 Nov 2026, the holding rule, the strategy stop/target/lock rules and the move-to-cost choice (older entries lack them and read as the defaults). */
+export interface Saved { name: string; savedAt: string; updatedAt?: string; expiry: string; legs: Leg[]; hold?: HoldRule; rules?: StrategyRules; moveToCost?: boolean }
 export const CLOSED_KEY = "nse.closed.v1";
 /** The Strategy portfolio page asks the builder to open a saved strategy or a closed trade through the address (/strategy?open=NAME, /strategy?closed=ID), so it works from any device and any tab; the builder reads it once and removes it. */
 export const builderUrl = (what: { open?: string; closed?: string }): string => `/strategy${what.open ? `?open=${encodeURIComponent(what.open)}` : what.closed ? `?closed=${encodeURIComponent(what.closed)}` : ""}`;
@@ -636,7 +637,7 @@ export default function StrategyBuilder() {
       return; // otherwise the lists are still loading: tried again when they arrive
     }
     const sv = saved.find((x) => x.name === wantSaved);
-    if (sv) { setPicked(sv.expiry); loadLegs(sv.legs.map((l) => ({ ...l, id: newLegId() }))); setOpened(null); setLoaded(sv.name); done(); }
+    if (sv) { setPicked(sv.expiry); loadLegs(sv.legs.map((l) => ({ ...l, id: newLegId() }))); adoptSettings(sv); setOpened(null); setLoaded(sv.name); done(); }
     else if (sync === "server") { setNote("That saved strategy is no longer in the list."); done(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, closed, saved, sync, params]);
@@ -916,7 +917,11 @@ export default function StrategyBuilder() {
   };
   const savedEntry = loaded ? saved.find((x) => x.name === loaded) : undefined;
   const sig = (ls: Leg[]) => JSON.stringify(ls.map(({ id: _i, ...r }) => r));
-  const dirty = !!savedEntry && sig(legs) !== sig(savedEntry.legs);
+  const settings = { hold, rules, moveToCost };
+  const settingsSig = (x: { hold?: HoldRule; rules?: StrategyRules; moveToCost?: boolean }) => JSON.stringify([x.hold ?? DEFAULT_HOLD, x.rules ?? NO_RULES, x.moveToCost ?? false]);
+  // the legs and the rules that go with them: changing Intraday to Overnight, or a stop, is an edit of the saved strategy too
+  const dirty = !!savedEntry && (sig(legs) !== sig(savedEntry.legs) || settingsSig(settings) !== settingsSig(savedEntry));
+  const adoptSettings = (x: Saved) => { setHold(x.hold ?? DEFAULT_HOLD); setRules(x.rules ?? NO_RULES); setMoveToCost(x.moveToCost ?? false); };
   const gallery = useMemo(() => TEMPLATES.filter((t) => TEMPLATE_BIAS[t.id] === bias), [bias]);
 
   return (
@@ -933,7 +938,7 @@ export default function StrategyBuilder() {
         <ChartInfoToggle />
         <span className="rounded-sm border border-rule bg-slate-2 px-2 py-1 text-sm text-paper">NIFTY 50</span>
         <input className={`${field} min-w-[10rem] flex-1 sm:w-40 sm:flex-none`} aria-label="Strategy name" value={name} onChange={(e) => setName(e.target.value)} placeholder="name to save" />
-        <Button variant="primary" disabled={!name.trim() || legs.length === 0 || !expiry} onClick={() => { persist([{ name: name.trim(), savedAt: new Date().toISOString(), expiry: strategyExpiry!, legs }, ...saved.filter((s) => s.name !== name.trim())]); setLoaded(name.trim()); setBaseline(legs); setName(""); }}>Save</Button>
+        <Button variant="primary" disabled={!name.trim() || legs.length === 0 || !expiry} onClick={() => { persist([{ name: name.trim(), savedAt: new Date().toISOString(), expiry: strategyExpiry!, legs, ...settings }, ...saved.filter((s) => s.name !== name.trim())]); setLoaded(name.trim()); setBaseline(legs); setName(""); }}>Save</Button>
         <span data-testid="sync-state" className={`text-[11px] ${sync === "browser" || syncProblem ? "text-warn" : "text-muted"}`}
           title={sync === "server" ? "Saved and closed strategies are stored on the server and kept in its nightly backups" : "The server could not be reached: strategies are held in this browser only and move to the server the next time it is reachable"}>
           {temp ? "Temporary view: not saved" : syncProblem ? `Not saved on server: ${syncProblem}` : sync === "server" ? "Stored on server" : sync === "browser" ? "Browser only (server unreachable)" : "Checking server…"}
@@ -946,7 +951,7 @@ export default function StrategyBuilder() {
                 <ul className="max-h-72 overflow-auto">
                   {saved.map((sv) => (
                     <li key={sv.name} className="flex items-center gap-1 border-b border-rule/40 last:border-0">
-                      <button type="button" className="flex-1 rounded-sm p-2 text-left hover:bg-slate-2" onClick={(e) => { setPicked(sv.expiry); loadLegs(sv.legs.map((l) => ({ ...l, id: newLegId() }))); setOpened(null); setLoaded(sv.name); (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open"); }}>
+                      <button type="button" className="flex-1 rounded-sm p-2 text-left hover:bg-slate-2" onClick={(e) => { setPicked(sv.expiry); loadLegs(sv.legs.map((l) => ({ ...l, id: newLegId() }))); adoptSettings(sv); setOpened(null); setLoaded(sv.name); (e.currentTarget.closest("details") as HTMLDetailsElement | null)?.removeAttribute("open"); }}>
                         <div className="text-paper">{sv.name}</div>
                         <div className="text-[11px] text-muted">{sv.legs.length} legs · expiry {sv.expiry}</div>
                       </button>
@@ -1212,14 +1217,14 @@ export default function StrategyBuilder() {
                   {!temp && !opened && (savedEntry ? (
                     <button type="button" disabled={!dirty || legs.length === 0 || !expiry} data-testid="update-saved"
                       title={dirty ? `Overwrite the saved strategy “${loaded}” with what is shown now` : `“${loaded}” already matches what is shown`}
-                      onClick={() => { persist(saved.map((x) => (x.name === loaded ? { ...x, updatedAt: new Date().toISOString(), expiry: strategyExpiry!, legs } : x))); setBaseline(legs); }}
+                      onClick={() => { persist(saved.map((x) => (x.name === loaded ? { ...x, updatedAt: new Date().toISOString(), expiry: strategyExpiry!, legs, ...settings } : x))); setBaseline(legs); }}
                       className={`rounded-sm border px-3 py-1 text-paper disabled:opacity-40 ${dirty ? "border-warn bg-warn/25 font-semibold ring-1 ring-warn hover:bg-warn/35" : "border-brass bg-brass/15 hover:bg-brass/25"}`}>Update{dirty && <span className="ml-1 text-warn" aria-label="unsaved changes">● unsaved</span>}</button>
                   ) : (
                     // a strategy that is not in the Saved list (a running one, one built from the chain, one the server opened) gets the same Update: it saves the strategy as it is shown, under the name typed
                     // above or a dated one, and from then on Update overwrites that entry. Same button, same place, for one leg or ten.
                     <button type="button" disabled={legs.length === 0 || !expiry} data-testid="update-saved"
                       title="This strategy is not saved yet: Update saves what is shown now (under the name typed above, or a dated name), and later edits are saved to it with Update"
-                      onClick={() => { const nm = name.trim() || loaded || `Strategy ${new Date().toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`; persist([{ name: nm, savedAt: new Date().toISOString(), expiry: strategyExpiry!, legs }, ...saved.filter((x) => x.name !== nm)]); setLoaded(nm); setBaseline(legs); setName(""); }}
+                      onClick={() => { const nm = name.trim() || loaded || `Strategy ${new Date().toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}`; persist([{ name: nm, savedAt: new Date().toISOString(), expiry: strategyExpiry!, legs, ...settings }, ...saved.filter((x) => x.name !== nm)]); setLoaded(nm); setBaseline(legs); setName(""); }}
                       className="rounded-sm border border-warn bg-warn/25 px-3 py-1 font-semibold text-paper ring-1 ring-warn hover:bg-warn/35 disabled:opacity-40">Update<span className="ml-1 text-warn" aria-label="not saved yet">● not saved</span></button>
                   ))}
                   <button type="button" onClick={exitAll} disabled={!lotSize || legs.every((l) => l.enabled === false)} title="Exit every ticked leg at its stored price and save the result to Closed. Nothing is sent to a broker." className="rounded-sm border border-down bg-down/15 px-3 py-1 font-semibold text-down hover:bg-down/25 disabled:opacity-40">Exit all</button>

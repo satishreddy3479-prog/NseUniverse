@@ -187,6 +187,29 @@ describe("Updating a saved strategy", () => {
   });
 });
 
+describe("The holding rule belongs to the saved strategy", () => {
+  it("changing Overnight to Intraday flags unsaved changes, Update stores it, and reopening restores it", async () => {
+    mount();
+    await waitFor(() => expect(screen.getByTitle(/instrument data/)).toHaveTextContent("75"));
+    await pick("bull_call_spread");
+    await userEvent.type(await screen.findByLabelText("Strategy name"), "hold me");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    const update = await screen.findByTestId("update-saved");
+    expect(update).toBeDisabled(); // saved with the default rule, Overnight
+    await userEvent.click(screen.getByRole("button", { name: "Intraday" }));
+    expect(update).toBeEnabled();
+    expect(update).toHaveTextContent("●"); // unsaved changes: the rule is part of the saved strategy
+    await userEvent.click(update);
+    expect(update).toBeDisabled();
+    const stored = JSON.parse(localStorage.getItem("nse.strategies.v1") ?? "[]") as { hold?: { mode: string } }[];
+    expect(stored[0]!.hold?.mode).toBe("intraday");
+    await userEvent.click(screen.getByRole("button", { name: "Manual only" })); // away from the saved rule, then reopen the saved strategy
+    expect(update).toBeEnabled();
+    await userEvent.click(within(screen.getByTestId("saved-menu")).getByText(/hold me/));
+    expect(screen.getByRole("button", { name: "Intraday" })).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
 describe("Update for every strategy, one leg or several, saved or not", () => {
   it.each([["short_call", 1], ["bull_call_spread", 2]])("%s (%i leg(s)) has Update before it is saved; Update saves it, and an edited stop then flags unsaved changes", async (id, n) => {
     mount();
