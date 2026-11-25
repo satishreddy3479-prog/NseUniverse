@@ -9,13 +9,14 @@ import { EAGLE_KEY } from "../lib/eagle";
 import { expiries, status } from "./fixtures";
 
 vi.mock("../components/eagle/catalog", async () => {
-  const mk = (id: string, title: string, group: string, kind: "fit" | "page", w = 4, h = 8) => ({ id, title, group, kind, blurb: `${title} blurb`, w, h, minW: 2, minH: 3, render: () => <div data-testid={`content-${id}`}>{title} content</div> });
-  const defs = [mk("w:oi", "Open interest by strike", "Open interest", "fit"), mk("w:pcr", "Put-call ratio", "Put-call ratio", "fit"), mk("t:rolling", "ATM Rolling Straddle", "Price tools", "page", 6, 14), mk("i:day", "Day board", "Market Intelligence", "page", 8, 20), { ...mk("w:bad", "Broken widget", "Open interest", "fit"), render: (): React.ReactNode => { throw new Error("this widget is broken"); } }];
+  const mk = (id: string, title: string, group: string, kind: "fit" | "page", w = 4, h = 8, charts = true) => ({ id, title, group, kind, charts, blurb: `${title} blurb`, w, h, minW: 2, minH: 3, render: () => <div data-testid={`content-${id}`}>{title} content</div> });
+  const defs = [mk("w:table", "Option chain table", "Snapshot and chain", "fit", 4, 8, false), mk("w:oi", "Open interest by strike", "Open interest", "fit"), mk("w:pcr", "Put-call ratio", "Put-call ratio", "fit"), mk("t:rolling", "ATM Rolling Straddle", "Price tools", "page", 6, 14), mk("i:day", "Day board", "Market Intelligence", "page", 8, 20), { ...mk("w:bad", "Broken widget", "Open interest", "fit"), render: (): React.ReactNode => { throw new Error("this widget is broken"); } }];
   const by = new Map(defs.map((d) => [d.id, d]));
   return {
     CATALOG: defs, CATALOG_BY_ID: by, sizeOf: (id: string) => by.get(id), STARTER: ["i:day", "w:oi"],
-    catalogGroups: (q = "") => {
-      const pool = q.trim() ? defs.filter((d) => `${d.title} ${d.group}`.toLowerCase().includes(q.trim().toLowerCase())) : defs;
+    catalogGroups: (q = "", chartsOnly = false) => {
+      const all = chartsOnly ? defs.filter((d) => d.charts) : defs;
+      const pool = q.trim() ? all.filter((d) => `${d.title} ${d.group}`.toLowerCase().includes(q.trim().toLowerCase())) : all;
       return [...new Set(pool.map((d) => d.group))].map((group) => ({ group, defs: pool.filter((d) => d.group === group) }));
     },
   };
@@ -137,6 +138,35 @@ describe("the Eagles view", () => {
     expect(screen.getByTestId("eagle-autofit")).toBeChecked();
     await userEvent.click(screen.getByTestId("eagle-autofit"));
     expect(localStorage.getItem("nse.eagles.autofit.v1")).toBe("off");
+  });
+
+  it("Charts only is on by default: the board is marked for it, the picker lists only widgets with a chart, and the choice is remembered", async () => {
+    mount();
+    await screen.findByRole("heading", { name: "Eagles view" });
+    expect(screen.getByTestId("eagle-board").className).toContain("eagle-co");
+    expect(screen.getByTestId("eagle-charts-only")).toBeChecked();
+    await userEvent.click(screen.getByRole("button", { name: /Add widgets/ }));
+    expect(screen.getByTestId("eagle-picker-note").textContent).toContain("Charts only is on");
+    expect(screen.queryByTestId("eagle-add-w:table")).toBeNull(); // a table-only tool is not offered
+    expect(screen.getByTestId("eagle-add-w:oi")).toBeTruthy();
+    await userEvent.click(screen.getByTestId("eagle-charts-only"));
+    expect(screen.getByTestId("eagle-board").className).not.toContain("eagle-co");
+    expect(localStorage.getItem("nse.eagles.charts.v1")).toBe("off");
+    expect(screen.queryByTestId("eagle-picker-note")).toBeNull();
+    expect(screen.getByTestId("eagle-add-w:table")).toBeTruthy(); // everything is offered again
+    cleanup();
+    mount();
+    await screen.findByRole("heading", { name: "Eagles view" });
+    expect(screen.getByTestId("eagle-charts-only")).not.toBeChecked(); // still off after the page is opened again
+  });
+
+  it("a box with no chart in Charts only mode says so, once its data had time to arrive, and does not when Charts only is off", async () => {
+    localStorage.setItem(EAGLE_KEY, JSON.stringify({ items: [{ key: "w:table~1", cat: "w:table" }], layout: [{ i: "w:table~1", x: 0, y: 0, w: 4, h: 8 }], next: 2 }));
+    mount();
+    await screen.findByRole("heading", { name: "Eagles view" });
+    expect((await screen.findByTestId("eagle-nochart-w:table~1", undefined, { timeout: 4000 })).textContent).toContain("no chart");
+    await userEvent.click(screen.getByTestId("eagle-charts-only"));
+    expect(screen.queryByTestId("eagle-nochart-w:table~1")).toBeNull();
   });
 
   it("a saved board that names a widget which no longer exists opens without it", async () => {

@@ -20,6 +20,8 @@ export interface EagleDef extends Size {
   title: string;
   group: string;
   kind: "fit" | "page";
+  /** whether the widget draws a chart; the board in "Charts only" mode offers only these */
+  charts: boolean;
   /** one line, shown in the picker */
   blurb: string;
   render: () => ReactNode;
@@ -42,26 +44,29 @@ function Body({ tool }: { tool: Tool }) {
   return <ToolBody tool={tool} expiry={d.expiry} />;
 }
 
+/** Widgets and tools that are a table, cards or text with no chart (a chart that turns up in one is still shown: the board also looks at what is drawn). */
+const NO_CHART = new Set(["w:chain", "w:levels", "w:detail", "w:oiConcentration", "w:pcr", "t:signal-backtest", "t:market-structure", "t:strike-positioning", "t:future-flow", "t:future-sectors", "t:economic-calendar", "t:market-news", "t:index-weightage", "t:market-movers", "t:advance-decline"]);
+
 const chainDefs: EagleDef[] = WIDGETS.map((w) => ({
-  id: `w:${w.id}`, title: w.title, group: CHAIN_GROUP[w.id] ?? "Snapshot and chain", kind: "fit", blurb: "Fits its box: resize it and the chart follows.",
+  id: `w:${w.id}`, title: w.title, group: CHAIN_GROUP[w.id] ?? "Snapshot and chain", kind: "fit", charts: !NO_CHART.has(`w:${w.id}`), blurb: "Fits its box: resize it and the chart follows.",
   // small boxes by default: a third of the width at most, unless the widget needs a wide table
   w: Math.min(w.w, w.id === "chain" || w.id === "smartOi" || w.id === "oiBuildup" ? 8 : 4), h: Math.min(w.h, w.id === "smartOi" ? 18 : 9), minW: Math.min(w.minW, 3), minH: Math.min(w.minH, 5), render: w.render,
 }));
 
 const toolDefs: EagleDef[] = TOOLS.filter((t) => t.status === "ready" && !t.to && !t.tab && hasToolBody(t) && toolPath(t)).map((t) => ({
-  id: `t:${t.id}`, title: t.label, group: t.group, kind: "page" as const, blurb: t.blurb,
+  id: `t:${t.id}`, title: t.label, group: t.group, kind: "page" as const, charts: !NO_CHART.has(`t:${t.id}`), blurb: t.blurb,
   w: 6, h: 16, minW: 3, minH: 6, render: () => <Body tool={t} />,
 }));
 
 const trendDefs: EagleDef[] = TREND_VIEWS.map((v) => ({
-  id: `r:${v.id}`, title: v.label, group: "Trend & Regime", kind: "page" as const, blurb: v.blurb,
+  id: `r:${v.id}`, title: v.label, group: "Trend & Regime", kind: "page" as const, charts: true, blurb: v.blurb,
   w: 6, h: 16, minW: 3, minH: 6, render: () => <TrendRegime view={v.id} />,
 }));
 
 const intelDefs: EagleDef[] = [
-  { id: "i:day-board", title: "Market Intelligence: day board", group: "Market Intelligence", kind: "page", blurb: "Sentiment through the day, phases, expected outcome and the track record.", w: 8, h: 22, minW: 4, minH: 8, render: () => <DayBoard /> },
-  { id: "i:edge", title: "Market Intelligence: edge monitor", group: "Market Intelligence", kind: "page", blurb: "Does any indicator beat luck? Scored automatically every night.", w: 6, h: 20, minW: 3, minH: 8, render: () => <EdgeMonitor /> },
-  { id: "i:straddle", title: "Straddle decay summary", group: "Market Intelligence", kind: "page", blurb: "The seller and buyer reading of the ATM straddle, in a card.", w: 4, h: 12, minW: 3, minH: 6, render: () => <StraddleSummaryCard /> },
+  { id: "i:day-board", title: "Market Intelligence: day board", group: "Market Intelligence", kind: "page", charts: true, blurb: "Sentiment through the day, phases, expected outcome and the track record.", w: 8, h: 22, minW: 4, minH: 8, render: () => <DayBoard /> },
+  { id: "i:edge", title: "Market Intelligence: edge monitor", group: "Market Intelligence", kind: "page", charts: true, blurb: "Does any indicator beat luck? Scored automatically every night.", w: 6, h: 20, minW: 3, minH: 8, render: () => <EdgeMonitor /> },
+  { id: "i:straddle", title: "Straddle decay summary", group: "Market Intelligence", kind: "page", charts: true, blurb: "The seller and buyer reading of the ATM straddle, in a card.", w: 4, h: 12, minW: 3, minH: 6, render: () => <StraddleSummaryCard /> },
 ];
 
 export const CATALOG: EagleDef[] = [...chainDefs, ...intelDefs, ...trendDefs, ...toolDefs];
@@ -70,9 +75,10 @@ export const sizeOf = (cat: string): Size | undefined => CATALOG_BY_ID.get(cat);
 
 /** The groups of the picker, in a fixed order that puts the board's own tools first. */
 const ORDER = ["Market Intelligence", "Trend & Regime", "Snapshot and chain", "Open interest", "Put-call ratio", "Price and premium", "Futures", "Greeks and volatility"];
-export function catalogGroups(query = ""): { group: string; defs: EagleDef[] }[] {
+export function catalogGroups(query = "", chartsOnly = false): { group: string; defs: EagleDef[] }[] {
   const q = query.trim().toLowerCase();
-  const pool = q ? CATALOG.filter((d) => `${d.title} ${d.group} ${d.blurb}`.toLowerCase().includes(q)) : CATALOG;
+  const all = chartsOnly ? CATALOG.filter((d) => d.charts) : CATALOG;
+  const pool = q ? all.filter((d) => `${d.title} ${d.group} ${d.blurb}`.toLowerCase().includes(q)) : all;
   const names = [...new Set(pool.map((d) => d.group))].sort((a, b) => {
     const ia = ORDER.indexOf(a), ib = ORDER.indexOf(b);
     return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);

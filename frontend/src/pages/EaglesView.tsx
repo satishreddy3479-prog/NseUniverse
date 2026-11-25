@@ -20,18 +20,33 @@ const RANGES: Range[] = [5, 10, 20, "all"];
 
 const starter = () => fitBoard(starterBoard(STARTER, sizeOf));
 const AUTOFIT_KEY = "nse.eagles.autofit.v1";
+const CHARTS_KEY = "nse.eagles.charts.v1";
+const loadCharts = (): boolean => { try { return localStorage.getItem(CHARTS_KEY) !== "off"; } catch { return true; } };
+
+/** True when a box that is expected to have no chart really shows none (after its data had time to arrive): then it says so instead of staying blank. */
+function useNoChart(ref: React.RefObject<HTMLElement | null>, expect: boolean): boolean {
+  const [none, setNone] = useState(false);
+  useEffect(() => {
+    if (!expect) { setNone(false); return; }
+    const t = setTimeout(() => setNone(!ref.current?.querySelector(".echart-box")), 2500);
+    return () => clearTimeout(t);
+  }, [expect, ref]);
+  return none;
+}
 const loadAuto = (): boolean => { try { return localStorage.getItem(AUTOFIT_KEY) !== "off"; } catch { return true; } };
 
 /** The widget, drawn inside its own error boundary so that one that fails cannot take the board down. */
 const Content = ({ def }: { def: EagleDef }) => <>{def.render()}</>;
 
 /** One box of the board: a title bar to drag it by, copy and remove buttons, and the widget, which fits the box (or scrolls inside it for a whole tool). */
-function Frame({ board, itemKey, def, onRemove, onCopy, height }: { board: EagleBoard; itemKey: string; def: EagleDef; onRemove: () => void; onCopy: () => void; height?: number }) {
+function Frame({ board, itemKey, def, onRemove, onCopy, height, chartsOnly }: { board: EagleBoard; itemKey: string; def: EagleDef; onRemove: () => void; onCopy: () => void; height?: number; chartsOnly?: boolean }) {
   const title = titleOf(board, itemKey, def.title);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const noChart = useNoChart(bodyRef, chartsOnly === true && !def.charts);
   return (
     <section aria-label={title} data-testid={`eagle-box-${itemKey}`} style={height ? { height } : undefined}
       className="flex h-full flex-col overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate">
-      <header className="widget-drag flex min-h-8 shrink-0 cursor-grab items-center justify-between gap-2 border-b border-rule px-2.5 active:cursor-grabbing">
+      <header className="eagle-keep widget-drag flex min-h-8 shrink-0 cursor-grab items-center justify-between gap-2 border-b border-rule px-2.5 active:cursor-grabbing">
         <h2 className="min-w-0 truncate text-xs font-semibold text-paper">{title}</h2>
         <div className="flex shrink-0 items-center">
           <button type="button" aria-label={`Add another ${def.title}`} title="Add another copy of this widget" onMouseDown={(e) => e.stopPropagation()} onClick={onCopy}
@@ -40,7 +55,8 @@ function Frame({ board, itemKey, def, onRemove, onCopy, height }: { board: Eagle
             className="widget-nodrag inline-flex size-7 items-center justify-center rounded-sm text-muted hover:bg-slate-2 hover:text-paper">×</button>
         </div>
       </header>
-      <div className={`min-h-0 flex-1 p-2 ${def.kind === "page" ? "overflow-auto" : ""}`} data-testid={`eagle-body-${itemKey}`}>
+      <div ref={bodyRef} className={`min-h-0 flex-1 p-2 ${def.kind === "page" ? "overflow-auto" : ""}`} data-testid={`eagle-body-${itemKey}`}>
+        {noChart && <p className="eagle-keep rounded-sm border border-rule bg-slate-2 p-2 text-xs text-muted" role="status" data-testid={`eagle-nochart-${itemKey}`}>This tool has no chart. Turn off “Charts only” at the top to see it, or remove the box.</p>}
         <ErrorBoundary resetKey={itemKey}><Content def={def} /></ErrorBoundary>
       </div>
     </section>
@@ -48,9 +64,9 @@ function Frame({ board, itemKey, def, onRemove, onCopy, height }: { board: Eagle
 }
 
 /** The picker: every widget, grouped, searchable. A widget can be added as often as wanted; the number on the board is shown. */
-function Picker({ board, onAdd, onClose }: { board: EagleBoard; onAdd: (id: string) => void; onClose: () => void }) {
+function Picker({ board, onAdd, onClose, chartsOnly }: { board: EagleBoard; onAdd: (id: string) => void; onClose: () => void; chartsOnly: boolean }) {
   const [q, setQ] = useState("");
-  const groups = useMemo(() => catalogGroups(q), [q]);
+  const groups = useMemo(() => catalogGroups(q, chartsOnly), [q, chartsOnly]);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -67,6 +83,7 @@ function Picker({ board, onAdd, onClose }: { board: EagleBoard; onAdd: (id: stri
         <Button onClick={onClose}>Done</Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        {chartsOnly && <p className="px-1 pb-2 text-[11px] text-muted" data-testid="eagle-picker-note">Charts only is on: tools that are only a table or text are not listed.</p>}
         {groups.length === 0 && <p className="px-2 py-4 text-sm text-muted" role="status">Nothing matches “{q}”.</p>}
         {groups.map((g) => (
           <section key={g.group} aria-label={g.group} className="mb-3">
@@ -97,6 +114,8 @@ function Board() {
   const [board, setBoard] = useState<EagleBoard>(() => { const saved = loadBoard(sizeOf); return saved ? (loadAuto() ? fitBoard(saved) : saved) : starter(); });
   const [picking, setPicking] = useState(false);
   const [auto, setAuto] = useState(loadAuto);
+  const [chartsOnly, setChartsOnly] = useState(loadCharts);
+  const toggleCharts = (on: boolean) => { setChartsOnly(on); try { localStorage.setItem(CHARTS_KEY, on ? "on" : "off"); } catch { /* the choice lasts for this visit */ } };
   const first = useRef(true);
   useEffect(() => {
     if (first.current) { first.current = false; return; }
@@ -122,18 +141,19 @@ function Board() {
     <>
       <div className="relative flex flex-wrap items-center gap-2">
         <Button onClick={() => setPicking((p) => !p)} title="Add widgets: any tool, as many times as you like">＋ Add widgets</Button>
+        <label className="flex items-center gap-1.5 text-sm" title="Show only the charts and their controls: no readings, tables or notes"><input type="checkbox" checked={chartsOnly} onChange={(e) => toggleCharts(e.target.checked)} className="accent-[var(--brass)]" data-testid="eagle-charts-only" /> Charts only</label>
         <label className="flex items-center gap-1.5 text-sm" title="Pack the boxes with no gaps and let them grow into free space"><input type="checkbox" checked={auto} onChange={(e) => toggleAuto(e.target.checked)} className="accent-[var(--brass)]" data-testid="eagle-autofit" /> Auto-fit</label>
         <Button onClick={() => setBoard(starter())} title="Back to the starting set of widgets">Starter board</Button>
         <Button onClick={() => setBoard(emptyBoard())} disabled={board.items.length === 0} title="Take every widget off the board">Clear board</Button>
         <span className="text-xs text-muted" data-testid="eagle-count">{board.items.length} widget{board.items.length === 1 ? "" : "s"}</span>
         <span className="hidden text-xs text-muted md:inline">Drag a title bar to move · drag a corner to resize · ⧉ adds another copy · remembered in this browser</span>
-        {picking && <Picker board={board} onAdd={add} onClose={() => setPicking(false)} />}
+        {picking && <Picker board={board} onAdd={add} onClose={() => setPicking(false)} chartsOnly={chartsOnly} />}
       </div>
-      <div ref={containerRef} data-testid="eagle-board">
+      <div ref={containerRef} data-testid="eagle-board" className={chartsOnly ? "eagle-co" : undefined}>
         {stacked && boxes.length > 0 && (
           <div className="flex flex-col gap-3" data-testid="eagle-stacked">
             {boxes.map(({ it, def, box }) => (
-              <div key={it.key}><Frame board={board} itemKey={it.key} def={def} onRemove={() => remove(it.key)} onCopy={() => copy(it.key)} height={Math.max(def.kind === "page" ? 420 : 280, (box?.h ?? def.h) * (ROW_HEIGHT + 12) - 12)} /></div>
+              <div key={it.key}><Frame board={board} itemKey={it.key} def={def} chartsOnly={chartsOnly} onRemove={() => remove(it.key)} onCopy={() => copy(it.key)} height={Math.max(def.kind === "page" ? 420 : 280, (box?.h ?? def.h) * (ROW_HEIGHT + 12) - 12)} /></div>
             ))}
           </div>
         )}
@@ -141,7 +161,7 @@ function Board() {
           <GridLayout width={width} layout={board.layout} gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: [12, 12], containerPadding: [0, 0] }}
             dragConfig={{ handle: ".widget-drag", cancel: ".widget-nodrag" }} compactor={verticalCompactor} onLayoutChange={onLayoutChange}>
             {boxes.map(({ it, def }) => (
-              <div key={it.key}><Frame board={board} itemKey={it.key} def={def} onRemove={() => remove(it.key)} onCopy={() => copy(it.key)} /></div>
+              <div key={it.key}><Frame board={board} itemKey={it.key} def={def} chartsOnly={chartsOnly} onRemove={() => remove(it.key)} onCopy={() => copy(it.key)} /></div>
             ))}
           </GridLayout>
         )}

@@ -129,6 +129,17 @@ describe("the catalogue", () => {
     expect(b.items).toHaveLength(STARTER.length);
     expect(b.layout.every((l) => l.x + l.w <= 12)).toBe(true);
   });
+  it("knows which widgets draw a chart, and Charts only leaves out the ones that are a table or text", () => {
+    expect(CATALOG.every((d) => typeof d.charts === "boolean")).toBe(true);
+    expect(CATALOG_BY_ID.get("w:chain")!.charts).toBe(false);
+    expect(CATALOG_BY_ID.get("t:market-news")!.charts).toBe(false);
+    expect(CATALOG_BY_ID.get("w:oi")!.charts && CATALOG_BY_ID.get("r:market-regime")!.charts && CATALOG_BY_ID.get("t:rolling-straddle")!.charts).toBe(true);
+    const ids = (chartsOnly: boolean) => catalogGroups("", chartsOnly).flatMap((g) => g.defs.map((d) => d.id));
+    expect(ids(true)).not.toContain("w:chain");
+    expect(ids(false)).toContain("w:chain");
+    expect(ids(true).length).toBe(CATALOG.filter((d) => d.charts).length);
+    expect(ids(true).length).toBeGreaterThan(40); // the board stays rich: most tools have a chart
+  });
   it("is searchable by title, group or what the widget says it is, and groups the rest", () => {
     const all = catalogGroups();
     expect(all[0]!.group).toBe("Market Intelligence"); // the board's own tools first
