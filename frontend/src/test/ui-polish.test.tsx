@@ -37,6 +37,23 @@ describe("TopProgress", () => {
   });
 });
 
+describe("TopProgress and background refreshes", () => {
+  afterEach(() => { vi.useRealTimers(); });
+  it("stays hidden while a query that already has data refreshes", async () => {
+    vi.useFakeTimers();
+    const qc = new QueryClient();
+    qc.setQueryData(["poll"], 1);
+    function Poll() {
+      useQuery({ queryKey: ["poll"], queryFn: () => new Promise((r) => setTimeout(() => r(2), 2000)), refetchInterval: 5000, staleTime: 0 });
+      return <TopProgress />;
+    }
+    render(<QueryClientProvider client={qc}><Poll /></QueryClientProvider>);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    expect(qc.isFetching()).toBe(1); // a refresh is running, longer than 300 ms
+    expect(screen.queryByTestId("top-progress")).toBeNull();
+  });
+});
+
 const css = readFileSync(resolve(__dirname, "..", "index.css"), "utf8");
 const tokens = (block: string) => Object.fromEntries([...block.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-fA-F]{6})/g)].map((m) => [m[1]!, m[2]!]));
 const lum = (hex: string) => {
