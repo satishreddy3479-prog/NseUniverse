@@ -328,7 +328,7 @@ class FlowsService:
     async def _loop(self) -> None:
         while True:
             try:
-                if self.enabled and not self.running() and self.due():
+                if self.enabled and not self.running() and await asyncio.to_thread(self.due):
                     self.trigger()
             except Exception:  # noqa: BLE001 - the loop must survive
                 logger.exception("flows loop error")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -116,7 +117,11 @@ async def build_universe(
         raise BrokerError("no verified expiry available to stream", code="no_expiry")
     snaps: list[OptionChainSnapshot] = []
     for exp in targets:
-        snap = svc.store.latest(svc.underlying, exp.isoformat(), prefer_non_empty=True)
+        # the stored chain is a compressed file read and parsed: in a thread, so a feed reconnect
+        # does not hold the event loop (this runs at every reconnect, when live prices wait)
+        snap = await asyncio.to_thread(
+            svc.store.latest, svc.underlying, exp.isoformat(), prefer_non_empty=True
+        )
         too_old = (
             not closed
             and snap is not None
@@ -125,15 +130,18 @@ async def build_universe(
         if snap is None or snap.completeness.value == "empty" or too_old:
             # The snapshot is the base the stream updates, so make sure the base is current.
             await svc.capture(expiry=exp)
-            snap = svc.store.latest(svc.underlying, exp.isoformat(), prefer_non_empty=True)
+            snap = await asyncio.to_thread(
+                svc.store.latest, svc.underlying, exp.isoformat(), prefer_non_empty=True
+            )
         if snap is None or snap.completeness.value == "empty":
             raise BrokerError(f"no usable option chain for {exp}", code="no_snapshot")
         snaps.append(snap)
-    uni = tokens_from_snapshots(snaps, svc.underlying)
+    uni = await asyncio.to_thread(tokens_from_snapshots, snaps, svc.underlying)
     if market_tokens is not None:
         try:
             have = {x.key for x in uni.tokens}
-            uni.market_tokens = [t for t in market_tokens() if t.key not in have]
+            extra = await asyncio.to_thread(market_tokens)
+            uni.market_tokens = [t for t in extra if t.key not in have]
         except Exception:  # noqa: BLE001 - the breadth inputs must never block the option stream
             uni.market_tokens = []
     return uni

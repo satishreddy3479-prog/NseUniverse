@@ -233,7 +233,7 @@ class HistoryService:
         await asyncio.sleep(20)  # let the backend finish starting
         while True:
             try:
-                if self.due():
+                if await asyncio.to_thread(self.due):
                     self.trigger()
             except Exception as e:  # scheduling must not die
                 log_event(logger, logging.ERROR, "history_loop_error", exc_type=type(e).__name__)

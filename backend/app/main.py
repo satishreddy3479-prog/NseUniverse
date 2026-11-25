@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -443,6 +444,9 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         servermgmt = build_servermgmt(settings)
         app.state.servermgmt = servermgmt
         servermgmt.start()
+        # Threads and the event loop share one interpreter lock; a 1 ms slice (default 5 ms) keeps
+        # the live feed's turns close together even while a thread is busy.
+        sys.setswitchinterval(0.001)
         loopwatch = LoopWatch()
         loopwatch.start()
         app.state.loopwatch = loopwatch

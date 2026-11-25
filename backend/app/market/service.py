@@ -1180,7 +1180,7 @@ class MarketService:
             "weights",
             "weights_est",
         ):
-            if not self.due(kind, now):
+            if not await asyncio.to_thread(self.due, kind, now):
                 continue
             self._last_try[kind] = now
             if kind == "lists":

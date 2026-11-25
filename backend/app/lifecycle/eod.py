@@ -346,7 +346,7 @@ class EodService:
         await asyncio.sleep(60)
         while True:
             try:
-                if self.due():
+                if await asyncio.to_thread(self.due):  # it reads the day manifests from disk
                     await asyncio.to_thread(self.run)
             except Exception:  # noqa: BLE001 - the scheduler must survive
                 self.last_result = {"state": "error", "error": "scheduler"}

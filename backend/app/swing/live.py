@@ -152,7 +152,9 @@ class SwingLive:
             return
         self._master_tried = now
         try:
-            self._master = parse_scrip_master_any_series(await self._scrip())
+            raw = await self._scrip()
+            # the file has about 100,000 rows: parsed on the event loop it froze the live stream for seconds
+            self._master = await asyncio.to_thread(parse_scrip_master_any_series, raw)
             self._master_day, self._master_error = today, None
         except Exception as e:  # noqa: BLE001 - the live view degrades, nothing else depends on it
             self._master_error = type(e).__name__

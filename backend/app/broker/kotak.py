@@ -97,12 +97,19 @@ class KotakBroker:
             )
         return self._client
 
+    async def _client_async(self) -> Any:
+        """The SDK client. The first call imports the SDK and builds it (a second or two): that
+        happens in a thread, not on the event loop that carries the live feed."""
+        if self._client is None:
+            await asyncio.to_thread(self._get_client)
+        return self._client
+
     async def _call(self, fn_name: str, *args: Any, **kwargs: Any) -> Any:
         async with self._call_lock:
             wait = MIN_CALL_INTERVAL_S - (time.monotonic() - self._last_call)
             if wait > 0:
                 await asyncio.sleep(wait)
-            client = self._get_client()
+            client = await self._client_async()
             fn = getattr(client, fn_name)
             try:
                 return await asyncio.to_thread(fn, *args, **kwargs)
@@ -238,7 +245,7 @@ class KotakBroker:
         from app.stream.feed import KotakFeed
 
         try:
-            ws = self._get_client().create_websocket()
+            ws = (await self._client_async()).create_websocket()
         except ValueError as exc:  # SDK: no edit_token/edit_sid on the session
             raise BrokerError("broker session is not ready for streaming", code="auth") from exc
         return KotakFeed(ws)
