@@ -31,14 +31,14 @@ from app.intelligence import voleval
 from app.intraday.gex_history import flip_support as gx_flip_support
 
 #: default engine weights (percent); overridable through ``Settings.intelligence_weights``
-DEFAULT_WEIGHTS: dict[str, float] = {"positioning": 30.0, "orderflow": 20.0, "volatility": 10.0, "structure": 20.0, "participation": 20.0}
+DEFAULT_WEIGHTS: dict[str, float] = {"positioning": 25.0, "orderflow": 17.0, "volatility": 8.0, "structure": 17.0, "participation": 17.0, "trend": 16.0}
 ENGINE_NAMES = {
     "positioning": "A. Derivatives positioning", "orderflow": "B. Order-flow proxies", "volatility": "C. Volatility",
-    "structure": "D. Market structure", "participation": "E. Participation and breadth",
+    "structure": "D. Market structure", "participation": "E. Participation and breadth", "trend": "F. Trend and regime",
 }
 ENGINE_LINKS = {
     "positioning": "/tools/strike-positioning", "orderflow": "/tools/future-flow", "volatility": "/tools/volatility-skew",
-    "structure": "/tools/future-dashboard", "participation": "/tools/market-movers",
+    "structure": "/tools/future-dashboard", "participation": "/tools/market-movers", "trend": "/trend/market-regime",
 }
 PROVISIONAL = "Provisional weights – not yet statistically calibrated."
 MIN_COVERAGE = 0.55
@@ -113,7 +113,7 @@ def engine(key: str, terms: Sequence[Term], inputs: Sequence[str], status: Mappi
     score = None if not fam_w else round(sum(fam_score[f] * fam_w[f] for f in fam_w) / sum(fam_w.values()), 1)
     ages = [num(g(status, i, "age_s")) for i in inputs]
     errs = [i for i in inputs if g(status, i, "ok") is False]
-    live = key in ("orderflow", "structure", "participation")
+    live = key in ("orderflow", "structure", "participation", "trend")
     limit = STALE_LIVE_S if live else STALE_STORED_S
     known = [a for a in ages if a is not None]
     worst = max(known) if known else None
@@ -638,8 +638,40 @@ def observations(inp: Mapping[str, Any], by: Mapping[str, Mapping[str, Any]], gx
     return out
 
 
+def trend_group(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[str, Any]:
+    """Group F, the trend and regime of the INDEX over the session so far (the Analyse > Trend & Regime reading, see ``trend_engine``). Three terms:
+
+    * the regime: direction (the sign of the fitted slope, none when the label is Range-bound or Mixed) x strength (the trend score above the 0.30 Mixed floor, rescaled to 0-1) x 100;
+    * the close against the session mean of the 5-minute closes, in ATRs, squashed at 2 ATRs;
+    * the close against the 15-minute opening range, in ATRs beyond it (0 inside), squashed at 2 ATRs.
+
+    The last two read index price, which group D also reads, so they share one family at weight 0.5 (the stated overlap adjustment). Descriptive of the session so far; not a forecast."""
+    t = inp.get("trend")
+    ok = isinstance(t, Mapping) and bool(t.get("available"))
+    s = (lambda *path: g(t, *path)) if ok else (lambda *path: None)
+    label, score, d, st = s("label"), num(s("score")), int(num(s("direction")) or 0), num(s("strength"))
+    slope = num(s("metrics", "slope"))
+    agree = s("agreement")
+    regime_score = None if not ok or st is None or label in (None, "Warming up") else d * 100.0 * st
+    regime_detail = (f"{label}: trend score {score * 100:.0f}/100" + (f", {agree['agree']} of {agree['of']} readings agree" if isinstance(agree, Mapping) else "")
+                     + ("" if slope is None else f", fitted slope {slope:+.1f} pts per 5-minute bar") + ("; no direction is called" if d == 0 else "")) if regime_score is not None and score is not None else "needs about 30 minutes of bars"
+    d_mean, mean, last = num(s("from_mean_atr")), num(s("session_mean")), num(s("price"))
+    mean_score = squash(d_mean, 2.0)
+    orr = s("opening_range")
+    beyond = num(g(orr, "beyond_atr")) if isinstance(orr, Mapping) and orr.get("complete") else None
+    or_score = squash(beyond, 2.0)
+    or_detail = ("the opening range is not complete (15 minutes) or the ATR is not available yet" if or_score is None else
+                 f"NIFTY {g(orr, 'state')} the {g(orr, 'low'):.0f} to {g(orr, 'high'):.0f} opening range" + ("" if g(orr, "state") == "inside" else f" by {abs(g(orr, 'beyond_points')):.0f} pts ({abs(beyond or 0):.1f} ATR)"))
+    terms = [
+        Term("Regime: direction x strength", regime_score, regime_detail, family="regime"),
+        Term("Close against the session mean", mean_score, "not available yet (needs a 14-bar ATR)" if mean_score is None or mean is None or last is None else f"NIFTY {last:.0f} is {d_mean:+.1f} ATR from the session mean {mean:.0f}", family="price", weight=0.5, shares=("index price (group D)",)),
+        Term("Close against the opening range", or_score, or_detail, family="price", weight=0.5, shares=("index price (group D)",)),
+    ]
+    return engine("trend", terms, ["trend"], status, extra={"owns": "the intraday trend and regime of the index; futures, positioning and breadth are other groups'", "regime": None if not ok else {"label": label, "score": score, "direction": d}})
+
+
 def build_engines(inp: Mapping[str, Any], status: Mapping[str, Any]) -> list[dict[str, Any]]:
-    fns: list[Callable[[Mapping[str, Any], Mapping[str, Any]], dict[str, Any]]] = [positioning_engine, orderflow_engine, volatility_engine, structure_engine, participation_engine]
+    fns: list[Callable[[Mapping[str, Any], Mapping[str, Any]], dict[str, Any]]] = [positioning_engine, orderflow_engine, volatility_engine, structure_engine, participation_engine, trend_group]
     return [f(inp, status) for f in fns]
 
 

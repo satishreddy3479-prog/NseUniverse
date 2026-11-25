@@ -7,6 +7,7 @@ import { fmtTimeIST, MISSING } from "../lib/format";
 import { DetailPanels } from "../components/intelligence/Detail";
 import { AlertsPanel, DivergencePanel, ScenarioPanel, TimelinePanel } from "../components/intelligence/Insight";
 import { CommandStrip, EngineMatrix, Interpretation, PulseCards } from "../components/intelligence/Overview";
+import { DayBoard } from "../components/intelligence/DayBoard";
 import { HeavyweightPanel } from "../components/intelligence/Heavyweight";
 import { StockFuturesPanel } from "../components/intelligence/StockFutures";
 import { TurnWatchPanel } from "../components/intelligence/TurnWatch";
@@ -37,7 +38,7 @@ function MiBody({ d }: { d: Intelligence }) {
   const [tab, setTab] = useState<MiTab>(startTab);
   const go = (t: MiTab) => { setTab(t); try { window.history.replaceState(null, "", `#${t}`); } catch { /* the tab still changes without the address */ } };
   const tabs: TabDef[] = [
-    { id: "overview", label: "Overview" }, { id: "evidence", label: "Evidence" },
+    { id: "overview", label: "Day board" }, { id: "evidence", label: "Evidence" },
     { id: "signals", label: `Signals & alerts${d.alerts.length ? ` (${d.alerts.length})` : ""}` }, { id: "timeline", label: "Timeline" }, { id: "method", label: "Data & method" },
   ];
   return (
@@ -49,6 +50,7 @@ function MiBody({ d }: { d: Intelligence }) {
 
       {tab === "overview" && (
         <TabPanel id="overview">
+          <DayBoard />
           <VerdictCard d={d} />
           <TurnWatchPanel d={d} />
           <EngineBars d={d} onMore={() => go("evidence")} />

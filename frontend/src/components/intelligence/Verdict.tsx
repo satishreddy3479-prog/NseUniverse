@@ -72,7 +72,7 @@ export function VerdictCard({ d }: { d: Intelligence }) {
 
 const STATUS_TAG: Record<string, string> = { PARTIAL: "partial", UNAVAILABLE: "no reading" };
 
-/** The five evidence groups as one bar each, from bearish (left) to bullish (right), so the picture is readable at a glance. */
+/** The six evidence groups as one bar each, from bearish (left) to bullish (right), so the picture is readable at a glance. */
 export function EngineBars({ d, onMore }: { d: Intelligence; onMore: () => void }) {
   return (
     <section aria-label="Evidence at a glance" className="rounded-[var(--radius-panel)] border border-rule bg-slate p-4" data-testid="mi-bars">

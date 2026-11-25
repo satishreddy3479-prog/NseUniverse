@@ -18,13 +18,13 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.intelligence import fusion as fz
-from app.intelligence import heavyweights, rolling, turn, validation, voleval
+from app.intelligence import heavyweights, outlook, rolling, turn, validation, voleval
 from app.intelligence.store import IntelligenceStore
 
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
 #: seconds an input is reused before the service is asked again
-TTL = {"market": 5.0, "intraday": 15.0, "futures": 15.0, "skew": 30.0, "momentum": 30.0, "positioning": 30.0, "gex": 30.0, "vix": 300.0, "flow": 15.0, "heavymeta": 300.0}
+TTL = {"market": 5.0, "intraday": 15.0, "futures": 15.0, "skew": 30.0, "momentum": 30.0, "positioning": 30.0, "gex": 30.0, "vix": 300.0, "flow": 15.0, "heavymeta": 300.0, "trend": 15.0}
 ALERT_COOLDOWN_S = 600.0
 
 
@@ -73,6 +73,7 @@ class MarketIntelligence:
         self.enabled, self.live_only = enabled, live_only
         self._cache: dict[tuple[str, str], tuple[float, Any, dict[str, Any]]] = {}
         self._summary_cache: tuple[float, str, dict[str, Any]] | None = None
+        self._outlook_cache: tuple[float, list[dict[str, Any]], dict[str, Any] | None] | None = None
         self._lock = threading.RLock()
         self._task: asyncio.Task[None] | None = None
         self.last_error: str | None = None
@@ -110,7 +111,8 @@ class MarketIntelligence:
         """The source's own timestamp (when its data was produced), not when this service read it."""
         pick = {"market": lambda: fz.g(d, "flow", "futures", "updated") or fz.g(d, "generated_at"), "intraday": lambda: fz.g(d, "market", "last_sample_at"),
                 "futures": lambda: (fz.g(d, "times") or [None])[-1], "skew": lambda: fz.g(d, "at"), "momentum": lambda: fz.g(d, "latest_at"), "positioning": lambda: fz.g(d, "at"),
-                "gex": lambda: (fz.g(d, "points") or [{}])[-1].get("at"), "vix": lambda: (fz.g(d, "dates") or [None])[-1], "flow": lambda: (fz.g(d, "fut") or [[None]])[-1][0]}
+                "gex": lambda: (fz.g(d, "points") or [{}])[-1].get("at"), "vix": lambda: (fz.g(d, "dates") or [None])[-1], "flow": lambda: (fz.g(d, "fut") or [[None]])[-1][0],
+                "trend": lambda: fz.g(d, "last_bar_at")}
         try:
             v = pick[name]()
         except (KeyError, IndexError, TypeError, AttributeError):
@@ -134,6 +136,8 @@ class MarketIntelligence:
         if name == "flow":
             fut = fz.g(d, "fut") or []
             return _age(fut[-1][0], now) if fut else None
+        if name == "trend":
+            return _age(fz.g(d, "last_bar_end"), now) if fz.g(d, "available") else None  # a bar is final a minute after it starts
         return 0.0
 
     def inputs(self, expiry: str | None) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
@@ -301,6 +305,8 @@ class MarketIntelligence:
                             "heavy_cvd": pl["heavyweight_cvd"], "hw15": fz.g(s["heavyweights"], "aggregate", "15", "score"), "vol": {"atm": fz.g(vol_e, "detail", "atm", "avg_change"), "spot": fz.g(vol_e, "detail", "spot_change_pct"), "rr": fz.g(vol_e, "detail", "d25", "rr_change")}, "hw_valid": fz.g(s["heavyweights"], "quality", "valid"), "hw_class": fz.g(s["heavyweights"], "participation", "class"), "vwap_side": fz.g(intraday, "vwap", "side"),
                             "ce_oi_chg": fz.g(s["panels"], "options", "ce_oi_change"), "pe_oi_chg": fz.g(s["panels"], "options", "pe_oi_change")},
                 "divs": [{"id": d["id"], "reading": d["reading"], "direction": d["direction"], "severity": d["severity"]} for d in s["divergences"]]}
+        trend_e: dict[str, Any] = next((e for e in s["engines"] if e["key"] == "trend"), {})
+        snap["metrics"]["trend"] = fz.g(trend_e, "regime")  # {label, score, direction} of the session regime at this minute, or None
         prev = self.store.rows(s["session"], 1, newest_first=True)
         if not self.store.record(s["session"], now, s["expiry"] or "", snap):
             return False
@@ -364,6 +370,32 @@ class MarketIntelligence:
         rows = self.store.rows(session, 500)
         return {"session": session, "sessions": self.store.sessions(), "points": rows, "recorded": len(rows),
                 "note": "Only minutes that were recorded appear here; a minute without a row was not captured and is not reconstructed."}
+
+    def outlook(self, session: str | None = None, expiry: str | None = None) -> dict[str, Any]:
+        """Sentiment through the day and what the evidence says to expect (see ``outlook.py``). Today's session when it has rows, else the newest recorded one (so it reads after the close)."""
+        now = self._clock()
+        today = now.astimezone(IST).date().isoformat()
+        sess = session or today
+        rows = self.store.rows(sess, 500)
+        if not rows and session is None:
+            recorded = self.store.sessions(1)
+            if recorded:
+                sess = recorded[0]
+                rows = self.store.rows(sess, 500)
+        expiry = expiry or self._default_expiry()
+        summary = self.summary(expiry)
+        inp, _status = self.inputs(expiry)
+        live = sess == today and fz.g(inp.get("intraday"), "market", "mode") == "live"
+        hit = self._outlook_cache
+        if hit is None or _time.monotonic() - hit[0] > 300.0:
+            hist_rows: list[dict[str, Any]] = []
+            for s_ in sorted(self.store.sessions(30)):
+                hist_rows += self.store.rows(s_, 500)
+            report = validation.report(hist_rows, weights=self.weights) if hist_rows else None
+            hit = (_time.monotonic(), hist_rows, report)
+            self._outlook_cache = hit
+        at = now if live else (outlook._when(rows[-1]) or now) if rows else now  # noqa: SLF001
+        return outlook.build(now=at, session=sess, live=live, rows=rows, history_rows=hit[1], weights=self.weights, summary=summary, trend=inp.get("trend"), validation_report=hit[2])
 
     def validation(self, sessions: int = 30) -> dict[str, Any]:
         """Walk-forward validation of the stored snapshots (read-only; see ``validation.py``). Uses the live weights to re-score history."""

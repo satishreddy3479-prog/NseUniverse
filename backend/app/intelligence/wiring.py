@@ -6,7 +6,7 @@ from datetime import UTC, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from app.intelligence import voleval
+from app.intelligence import trend_engine, voleval
 from app.intelligence.service import MarketIntelligence, parse_weights
 from app.intelligence.store import IntelligenceStore
 from app.market.futures_series import futures_series
@@ -35,11 +35,15 @@ def create(settings: Any, observations: Any, intraday: Any, market: Any, market_
         start = datetime.combine(datetime.now(IST).date(), time(9, 0), IST).astimezone(UTC).isoformat()
         return {"fut": market_store.samples_since("fut", start), "heavy5": market_store.samples_since("heavy5", start)}
 
+    def trend() -> dict[str, Any]:
+        """The intraday trend and regime of the newest stored session's one-minute index bars (the same reading as the Analyse > Trend & Regime page)."""
+        return trend_engine.assess(market.index_bars().get("bars") or [])
+
     def heavymeta() -> dict[str, Any]:
         return dict(market.heavy_meta())
 
     providers = {
-        "flow": flow, "heavymeta": heavymeta,
+        "flow": flow, "heavymeta": heavymeta, "trend": trend,
         "market": market.summary, "intraday": intraday.summary, "futures": futures,
         "skew": lambda e: intraday.iv_skew(e), "momentum": lambda e: intraday.iv_momentum(e),
         "positioning": lambda e: intraday.strike_positioning(e, "15"),

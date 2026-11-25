@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MarketIntelligence } from "../pages/MarketIntelligence";
+import outlookJson from "./outlook-live.json";
 import { Home } from "../pages/Home";
 import type { EngineView, HeavyStock, Heavyweights, Intelligence, Timeline, VolDetail } from "../lib/intelligence";
 
@@ -77,7 +78,7 @@ const timeline: Timeline = { session: "2026-11-09", sessions: ["2026-11-09"], re
   { session: "2026-11-09", at: "2026-11-09T04:30:00Z", spot: 24100, score: 42, confidence: 68, coverage: 0.85, regime: "Bullish trend", vol_regime: "Contraction", gamma_regime: "positive", engines: { futures: 55, options: 30, gex: null }, metrics: { cvd_pct: 25, net_gex: 42.5, atm_iv: 15.2, heavy_cvd: 31, fut_oi_change: 52000 }, divs: [{ id: "price_cvd" }] }] };
 
 function view(summary: unknown, tl: unknown = timeline, status = 200) {
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/timeline") ? tl : summary), { status })));
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/outlook") ? outlookJson : String(input).includes("/timeline") ? tl : summary), { status })));
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter><MarketIntelligence /></MemoryRouter></QueryClientProvider>);
 }
 
@@ -523,7 +524,7 @@ describe("turn watch", () => {
 });
 
 describe("the redesigned page: a reading first, five tabs", () => {
-  it("opens on the Overview with the reading, the evidence bars and the key numbers, and not the detail panels", async () => {
+  it("opens on the Day board with the reading, the evidence bars and the key numbers, and not the detail panels", async () => {
     view(base);
     const v = await screen.findByTestId("mi-verdict");
     expect(within(v).getByTestId("mi-verdict-label")).toHaveTextContent("Bullish");
@@ -548,7 +549,7 @@ describe("the redesigned page: a reading first, five tabs", () => {
   it("has five tabs, shows the alert count on Signals, and moves between them", async () => {
     view(base);
     await screen.findByTestId("mi-verdict");
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Overview", "Evidence", `Signals & alerts (${base.alerts.length})`, "Timeline", "Data & method"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Day board", "Evidence", `Signals & alerts (${base.alerts.length})`, "Timeline", "Data & method"]);
     await openTab(/Evidence/);
     expect(await screen.findByTestId("mi-engines")).toBeInTheDocument();
     expect(screen.queryByTestId("mi-verdict")).toBeNull();

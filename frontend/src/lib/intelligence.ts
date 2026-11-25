@@ -133,3 +133,30 @@ export function freshLabel(e: { freshness: { fresh: boolean | null; age_s: numbe
   const age = a == null ? "" : a < 90 ? ` · ${Math.round(a)} s old` : ` · ${Math.round(a / 60)} min old`;
   return (e.freshness.fresh ? "fresh" : "STALE") + age;
 }
+
+// ---- the day outlook (backend: GET /api/intelligence/outlook)
+export interface OutlookPoint { at: string; spot: number | null; score: number | null; confidence: number | null; trend_score: number | null; trend_label: string | null; trend_group: number | null }
+export interface OutlookPhase {
+  name: string; from: string; to: string; state: "past" | "now" | "future"; minutes: number; rows?: number; mean_score?: number | null; class?: string | null; last_score?: number | null;
+  move_pct?: number | null; high?: number | null; low?: number | null; trend?: string | null; expected_sd_points?: number | null; expected_minutes?: number; note?: string;
+}
+export interface OutlookHorizon { minutes: number; label: string; sd_points: number | null; low: number | null; high: number | null }
+export interface OutlookLevel { name: string; price: number; distance_points: number | null; distance_atr: number | null; side: "above" | "below" | "at" | null; meaning: string }
+export interface BucketStat { n: number; decided: number; flat: number; up: number; down: number; up_share: number | null; up_ci95: [number, number] | null; mean_pct: number | null; median_pct: number | null }
+export interface ScorecardRow { at: string; spot: number | null; score: number | null; class: string | null; call: -1 | 0 | 1; forward_pct: number | null; result: "hit" | "miss" | "flat" | "no call" | "no verdict" | "pending" }
+export interface Reliability {
+  grade: "Established" | "Early" | "Not established" | "Not measured"; text: string; sessions: number; hit_rate?: number | null; hit_rate_ci95?: [number, number] | null; sessions_above_50?: number;
+  session_rates?: { session: string; hit_rate: number; decided: number }[]; note?: string;
+}
+export interface Outlook {
+  generated_at: string; session: string; live: boolean; spot: number | null; atm_iv: number | null;
+  now: {
+    score: number | null; class: string | null; confidence: number | null; groups_bullish: number | null; groups_bearish: number | null; coverage: number | null; reason: string | null;
+    lean: { call: -1 | 0 | 1; text: string; why: string }; regime: string | null;
+    trend: { label: string | null; score: number | null; direction: number | null; agreement: { agree: number; of: number } | null; session_mean: number | null; from_mean_atr: number | null } | null;
+  };
+  path: OutlookPoint[]; phases: OutlookPhase[]; expected: OutlookHorizon[]; levels: OutlookLevel[];
+  history: { by_class: Record<string, { sessions: number; horizons: Record<string, BucketStat> }>; sessions: number; snapshots: number; flat_band_pct: number; min_decided: number; caution: string };
+  scorecard: { horizon_minutes: number; step_minutes: number; rows: ScorecardRow[]; hits: number; misses: number; decided: number; note: string };
+  reliability: Reliability; read: string[]; limits: string[];
+}

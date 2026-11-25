@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.intelligence import fusion as fz
-from app.intelligence import rolling
+from app.intelligence import rolling, trend_engine
 from app.intelligence.service import MarketIntelligence, parse_weights, rank_percentile
 from app.intelligence.store import IntelligenceStore
 
@@ -24,9 +24,13 @@ def eng(key: str, score: float | None, fresh: bool = True) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------- fusion
+#: the five-group layout the arithmetic below was written for; the fusion maths does not depend on the live default weights
+W5 = {"positioning": 30.0, "orderflow": 20.0, "volatility": 10.0, "structure": 20.0, "participation": 20.0}
+
+
 def test_overall_score_is_the_weighted_average_of_the_groups_that_have_a_score() -> None:
     es = [eng("positioning", 40), eng("orderflow", 20), eng("volatility", -10), eng("structure", None), eng("participation", 31)]
-    f = fz.fuse(es, fz.DEFAULT_WEIGHTS)
+    f = fz.fuse(es, W5)
     # (40x30 + 20x20 - 10x10 + 31x20) / (30 + 20 + 10 + 20) = 2120 / 80 = 26.5 : the missing group is left out, not scored zero
     assert f["score"] == 26.5 and f["class"] == "Mild Bullish"
     assert f["coverage"] == pytest.approx(0.8)
@@ -40,9 +44,9 @@ def test_overall_score_is_the_weighted_average_of_the_groups_that_have_a_score()
 
 
 def test_too_little_data_says_so_instead_of_a_neutral_score() -> None:
-    two = fz.fuse([eng("positioning", 50), eng("orderflow", 40)], dict(fz.DEFAULT_WEIGHTS))
+    two = fz.fuse([eng("positioning", 50), eng("orderflow", 40)], W5)
     assert two["score"] is None and two["class"].startswith("INSUFFICIENT DATA") and two["confidence"] is None
-    lowcov = fz.fuse([eng("volatility", 30), eng("structure", 30), eng("participation", 30), eng("positioning", None), eng("orderflow", None)], fz.DEFAULT_WEIGHTS)
+    lowcov = fz.fuse([eng("volatility", 30), eng("structure", 30), eng("participation", 30), eng("positioning", None), eng("orderflow", None)], W5)
     assert lowcov["score"] is None  # three groups but only 50 % of the weight: coverage below the minimum
     assert "coverage 50%" in lowcov["reason"]
 
@@ -58,15 +62,15 @@ def test_weights_are_configurable_and_invalid_entries_are_ignored() -> None:
     assert w["positioning"] == 40 and w["orderflow"] == fz.DEFAULT_WEIGHTS["orderflow"] and w["volatility"] == fz.DEFAULT_WEIGHTS["volatility"]
     assert "bogus" not in w and "futures" not in w  # the retired six-engine keys are ignored
     assert parse_weights("not json") == fz.DEFAULT_WEIGHTS and parse_weights("") == fz.DEFAULT_WEIGHTS
-    assert set(fz.DEFAULT_WEIGHTS) == {"positioning", "orderflow", "volatility", "structure", "participation"} and sum(fz.DEFAULT_WEIGHTS.values()) == 100
+    assert set(fz.DEFAULT_WEIGHTS) == {"positioning", "orderflow", "volatility", "structure", "participation", "trend"} and sum(fz.DEFAULT_WEIGHTS.values()) == 100
     es = [eng("positioning", 40), eng("orderflow", 20), eng("structure", 30)]
     heavy = fz.fuse(es, {**fz.DEFAULT_WEIGHTS, "positioning": 100})
-    assert heavy["score"] == pytest.approx((40 * 100 + 20 * 20 + 30 * 20) / (100 + 20 + 20), abs=0.1)
+    assert heavy["score"] == pytest.approx((40 * 100 + 20 * 17 + 30 * 17) / (100 + 17 + 17), abs=0.1)
 
 
 def test_stale_groups_lower_the_confidence_but_not_the_score() -> None:
-    fresh = fz.fuse([eng("positioning", 40), eng("orderflow", 40), eng("structure", 40)], fz.DEFAULT_WEIGHTS)
-    stale = fz.fuse([eng("positioning", 40, False), eng("orderflow", 40), eng("structure", 40)], fz.DEFAULT_WEIGHTS)
+    fresh = fz.fuse([eng("positioning", 40), eng("orderflow", 40), eng("structure", 40)], W5)
+    stale = fz.fuse([eng("positioning", 40, False), eng("orderflow", 40), eng("structure", 40)], W5)
     assert fresh["score"] == stale["score"] == 40.0
     assert stale["freshness"] == pytest.approx(40 / 70, abs=1e-3) and stale["confidence"] < fresh["confidence"]
 
@@ -75,23 +79,23 @@ def test_partial_groups_count_for_only_the_share_of_their_evidence_that_is_prese
     half = eng("positioning", 50)
     half["fraction"] = 0.5
     es = [half, eng("orderflow", 50), eng("structure", 50), eng("participation", 50)]
-    f = fz.fuse(es, fz.DEFAULT_WEIGHTS)
+    f = fz.fuse(es, W5)
     assert half["effective_weight"] == 15.0  # 30 x 0.5
     assert f["coverage"] == pytest.approx((15 + 20 + 20 + 20) / 90, abs=1e-3)  # of the 90 weight of the four groups passed in
 
 
 def test_confidence_does_not_come_from_the_size_of_the_score() -> None:
-    mild = fz.fuse([eng("positioning", 20), eng("orderflow", 20), eng("structure", 20), eng("participation", 20), eng("volatility", 20)], fz.DEFAULT_WEIGHTS)
-    strong = fz.fuse([eng("positioning", 95), eng("orderflow", 95), eng("structure", 95), eng("participation", 95), eng("volatility", 95)], fz.DEFAULT_WEIGHTS)
+    mild = fz.fuse([eng("positioning", 20), eng("orderflow", 20), eng("structure", 20), eng("participation", 20), eng("volatility", 20)], W5)
+    strong = fz.fuse([eng("positioning", 95), eng("orderflow", 95), eng("structure", 95), eng("participation", 95), eng("volatility", 95)], W5)
     assert mild["score"] == 20.0 and strong["score"] == 95.0
     assert mild["confidence"] == strong["confidence"] == 100.0 and mild["agreement"] == strong["agreement"] == 1.0  # same coverage, agreement, freshness: same confidence
     # the reverse: a weak score from groups that all agree is not low confidence, and a strong one that is a tug of war is
-    war = fz.fuse([eng("positioning", 100), eng("structure", 100), eng("participation", 100), eng("orderflow", -100), eng("volatility", -100)], fz.DEFAULT_WEIGHTS)
+    war = fz.fuse([eng("positioning", 100), eng("structure", 100), eng("participation", 100), eng("orderflow", -100), eng("volatility", -100)], W5)
     assert war["score"] == 40.0  # (3000 + 2000 + 2000 - 2000 - 1000) / 100: a Bullish score
     assert war["agreement"] == pytest.approx(0.4)  # 70 % bullish weight, 30 % bearish: 1 - 2 x 0.3
     assert war["confidence"] == pytest.approx(40.0) and war["confidence_parts"]["conflict_cap_applied"] is True
     assert war["confidence"] < 60  # never "High"
-    even = fz.fuse([eng("positioning", 90), eng("structure", 90), eng("orderflow", -90), eng("participation", -90), eng("volatility", 0)], fz.DEFAULT_WEIGHTS)
+    even = fz.fuse([eng("positioning", 90), eng("structure", 90), eng("orderflow", -90), eng("participation", -90), eng("volatility", 0)], W5)
     assert even["score"] == 9.0 and even["agreement"] == pytest.approx(0.2) and even["confidence"] == pytest.approx(20.0)
 
 
@@ -403,6 +407,12 @@ def test_rolling_heavyweight_cvd_is_per_stock_and_flags_restarts() -> None:
 
 
 # ---------------------------------------------------------------- service
+def rising_bars() -> list[dict[str, Any]]:
+    """45 one-minute index bars from 09:15 to 09:59 IST rising one point a minute (a clean rise), the last ending at NOW."""
+    start = NOW - timedelta(minutes=45)
+    return [{"at": (start + timedelta(minutes=i)).isoformat(), "o": 24000.0 + i - 0.25, "h": 24000.5 + i, "l": 23999.5 + i, "c": 24000.0 + i} for i in range(45)]
+
+
 class Rig:
     def __init__(self, tmp: Path, fail: set[str] | None = None) -> None:
         self.calls: dict[str, int] = {}
@@ -429,6 +439,7 @@ class Rig:
             "momentum": p("momentum", {"age_seconds": 30, "table": {"periods": {"15": {"atm": {"ce_change": 0.1, "pe_change": 0.1}, "spot_change_pct": 0.3, "d25": {"momentum": 0.2}}}}}),
             "positioning": p("positioning", {"age_seconds": 30, "demand": [], "rows": []}),
             "gex": p("gex", lambda: gex_points([100, 90, 80, 70], [24020, 24050, 24080, 24100])), "vix": p("vix", {"iv": [14.0, 15.0], "dates": ["2026-11-06", "2026-11-09"], "hv": [10.0, 11.0], "rv": [9.0, 10.0]}),
+            "trend": p("trend", lambda: trend_engine.assess(rising_bars())),
             "flow": p("flow", lambda: {"fut": flow_samples(40), "heavy5": []}), "heavymeta": p("heavymeta", {"weights": {"as_of": "2026-09-30", "source": "NSE index tracker", "age_days": 40, "stale": False}, "stocks": []}),
         }
         self.svc = MarketIntelligence(providers=self.providers, store=self.store, default_expiry=lambda: "2026-11-10", clock=lambda: self.clock)
@@ -443,7 +454,7 @@ def test_summary_fuses_the_groups_and_reports_each_input_status(tmp_path: Path) 
     assert vix["label"] == "India VIX – Last Daily Close" and vix["as_of"] == "2026-11-09" and vix["value"] == 15.0 and vix["intraday_signal"] is False and "not a live quote" in vix["note"]
     assert s["pulse"]["spot"] == 24100.0 and s["pulse"]["futures"] == 24048
     c = s["sentiment"]["engine_counts"]
-    assert c["partial"] >= 1 and c["unavailable"] == 0 and sum(c.values()) == 5  # Smart OI and heavyweight terms are missing: PARTIAL, not UNAVAILABLE
+    assert c["partial"] >= 1 and c["unavailable"] == 0 and sum(c.values()) == 6  # Smart OI and heavyweight terms are missing: PARTIAL, not UNAVAILABLE
     assert s["sentiment"]["coverage"] < 1.0  # a partial group counts for the share of its evidence that exists, not as a neutral score
     assert s["panels"]["volatility"]["hv"] == 11.0 and s["scenarios"]["available"] is True and "not probabilities" in s["scenarios"]["label"]
     assert s["panels"]["volatility"]["india_vix_label"] == "India VIX – Last Daily Close" and s["panels"]["volatility"]["india_vix_as_of"] == "2026-11-09"
@@ -563,7 +574,7 @@ def test_the_api_serves_a_partial_dashboard_when_the_underlying_modules_have_no_
         d = r.json()
         assert d["sentiment"]["class"].startswith("INSUFFICIENT DATA") and d["sentiment"]["score"] is None
         assert {"status", "engines", "pulse", "regime", "interpretation", "divergences", "scenarios", "panels", "alerts", "config", "capabilities", "overlap_audit"} <= set(d)
-        assert len(d["engines"]) == 5 and d["config"]["weights"]["positioning"] == 30.0
+        assert len(d["engines"]) == 6 and d["config"]["weights"]["positioning"] == 25.0
         t = c.get("/api/intelligence/timeline")
         assert t.status_code == 200 and t.json()["recorded"] == 0
 

@@ -125,7 +125,7 @@ export function EngineMatrix({ d }: { d: Intelligence }) {
   const by = new Map(d.engines.map((e) => [e.key, e]));
   return (
     <section aria-label="Engine sentiment matrix">
-      <h2 className="mb-2 text-sm font-semibold text-paper">Evidence groups <span className="font-normal text-muted">· five groups, each owning its inputs so none is counted twice; scored −100 to +100 from existing analytics; an unavailable group is left out, not scored neutral</span></h2>
+      <h2 className="mb-2 text-sm font-semibold text-paper">Evidence groups <span className="font-normal text-muted">· six groups, each owning its inputs so none is counted twice; scored −100 to +100 from existing analytics; an unavailable group is left out, not scored neutral</span></h2>
       <div className="grid gap-3 sm:grid-cols-2 sm:[&>*:last-child:nth-child(odd)]:col-span-2 xl:grid-cols-6 xl:[&>*]:col-span-2 xl:[&>*:nth-child(n+4)]:col-span-3 xl:[&>*:last-child:nth-child(odd)]:col-span-3" data-testid="mi-engines">{ENGINE_ORDER.map((k) => by.get(k)).filter((e): e is EngineView => !!e).map((e) => <EngineCard key={e.key} e={e} />)}</div>
     </section>
   );

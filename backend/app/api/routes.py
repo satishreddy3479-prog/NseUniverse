@@ -826,6 +826,24 @@ async def intelligence_timeline(request: Request, session: date | None = None) -
     return await asyncio.to_thread(svc.timeline, None if session is None else session.isoformat())
 
 
+@router.get("/intelligence/outlook")
+async def intelligence_outlook(
+    request: Request, session: date | None = None, expiry: date | None = None
+) -> dict[str, Any]:
+    """Sentiment through the day and the evidence-based outlook of one session.
+
+    Expected-move bands, the lean, the levels, what followed in the stored sessions and
+    today's scorecard.
+    """
+    svc = getattr(request.app.state, "intelligence", None)
+    if svc is None or not svc.enabled:
+        msg = "the market-intelligence dashboard is turned off"
+        raise HTTPException(status_code=404, detail={"code": "disabled", "message": msg})
+    day = None if session is None else session.isoformat()
+    exp = None if expiry is None else expiry.isoformat()
+    return await asyncio.to_thread(svc.outlook, day, exp)
+
+
 @router.get("/intelligence/validation")
 async def intelligence_validation(request: Request, sessions: int = 30) -> dict[str, Any]:
     """Walk-forward validation of stored sentiment snapshots (read-only; not an accuracy claim)."""

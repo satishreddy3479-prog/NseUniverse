@@ -101,6 +101,8 @@ ignore = ["S101"]
 # intelligence: rule texts and evidence strings read better on one line
 "app/intelligence/**" = ["E501"]
 "tests/unit/test_intelligence*.py" = ["E501"]
+"tests/unit/test_trend_engine.py" = ["E501"]
+"tests/unit/test_outlook.py" = ["E501"]
 "tests/unit/test_straddle*.py" = ["E501"]
 "tests/unit/test_flow_restart.py" = ["E501"]
 "tests/unit/test_capabilities_stored.py" = ["E501"]
