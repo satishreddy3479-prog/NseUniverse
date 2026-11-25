@@ -97,6 +97,10 @@ class StreamConfig:
     # message makes the supervisor reconnect. 0 turns the watchdog off.
     silence_reconnect_s: float = 60.0
     silence_check_s: float = 5.0
+    # After the broker closes the connection the SDK reconnects by itself, usually with data
+    # within 1-16 s (9 drops on 25 Nov 2026); twice it came back with nothing. Give it this
+    # long, then reconnect and subscribe again ourselves.
+    recover_after_drop_s: float = 15.0
 
 
 # Fields the browser never reads: market-depth quantities, the average price and the provider's raw
@@ -173,6 +177,10 @@ class StreamManager:
         self.retry_at: datetime | None = None  # when a failed stream will try again
         self.connected_since: datetime | None = None
         self.last_message_at: datetime | None = None
+        # the broker closed the connection; cleared when data flows again
+        self.dropped_at: datetime | None = None
+        # connection drops since the stream was started (each recovery is logged with its gap)
+        self.drops = 0
         self.last_market_data_at: datetime | None = None
         self.subscribed_tokens = 0
         self.market_message_count = 0
@@ -436,6 +444,7 @@ class StreamManager:
     async def _run_session(self, feed: FeedSession, universe: Universe) -> None:
         self._set(StreamState.CONNECTING)
         self._first_data = asyncio.Event()
+        self.dropped_at = None  # a fresh session: the clock of the last drop does not apply to it
         await feed.connect()
         self.connected_since = self._now()
         consumer = asyncio.create_task(self._consume(feed))
@@ -509,6 +518,9 @@ class StreamManager:
                 continue
             last = max(t for t in (self.last_message_at, began) if t is not None)
             if (now - last).total_seconds() >= limit:
+                return
+            drop, wait = self.dropped_at, self.cfg.recover_after_drop_s
+            if drop is not None and wait > 0 and (now - drop).total_seconds() >= wait:
                 return
 
     async def _index_snapshots(self, feed: FeedSession, universe: Universe) -> None:
@@ -612,6 +624,10 @@ class StreamManager:
                 self.duplicate_count += 1
                 return
             self.last_market_data_at = now
+            if self.dropped_at is not None:
+                gap = round((now - self.dropped_at).total_seconds(), 1)
+                log_event(logger, logging.INFO, "feed_recovered", gap_s=gap, drops=self.drops)
+                self.dropped_at = None
             self.acknowledged_tokens = feed.acknowledged_count
             if not self._first_data.is_set():
                 self._first_data.set()
@@ -643,6 +659,8 @@ class StreamManager:
             )
             self.hub.publish({"type": "market", "market": ev.market.model_dump(mode="json")})
         elif ev.kind == "disconnected":
+            self.drops += 1
+            self.dropped_at = self.dropped_at or now
             self.reconnect_count += 1
             self._set(StreamState.RECONNECTING)
             self._error("disconnected", "feed connection dropped; reconnecting")

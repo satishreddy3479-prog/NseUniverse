@@ -90,10 +90,26 @@ def build_quote(spec: GSymbol, bars: Sequence[Bar], now: datetime, earlier: Sequ
         ref = at_close[-1] if at_close else ref
     as_of = last.ts + timedelta(minutes=1)
     age = max(0.0, (now - as_of).total_seconds())
-    status = "live" if age <= LIVE_MAX_AGE_S + spec.delay_min * 60 else ("stale" if expected_open(spec, now) else "closed")
+    status = live_status(spec, age, now)
     change = None if ref is None else last.close - ref.close
     pct = None if ref is None or ref.close <= 0 or change is None else change / ref.close * 100
     return Quote(spec.key, last.close, last.ts, as_of, age, status, session, None if ref is None else ref.close, None if ref is None else ref.ts, change, pct, mine)
+
+
+def live_status(spec: GSymbol, age_s: float, now: datetime) -> str:
+    """"live", "stale" (should be trading but its bars are not updating) or "closed", from the age of the newest bar at ``now``.
+
+    Worked out when the board is read, not when the bar was stored: a symbol that is not polled while its market is shut must not keep the "live" it had at the close."""
+    return "live" if age_s <= LIVE_MAX_AGE_S + spec.delay_min * 60 else ("stale" if expected_open(spec, now) else "closed")
+
+
+def due_for_poll(spec: GSymbol, now: datetime) -> bool:
+    """Whether asking Yahoo for this symbol's bars now can return anything new: its market is open, or shut only recently (the last bars of a delayed feed still arrive).
+
+    A closed market's request returns nothing and makes yfinance log "possibly delisted" on every poll (the US VIX before the US open, seen 25 Nov 2026). The
+    index futures (about 23 hours a day), the dollar and the commodities stay due while they trade; the weekly full download still covers every symbol."""
+    grace = timedelta(minutes=max(45, spec.delay_min + 15))
+    return expected_open(spec, now) or expected_open(spec, now - grace)
 
 
 Downloader = Callable[[list[str], str], Any]

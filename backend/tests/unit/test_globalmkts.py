@@ -141,8 +141,8 @@ def test_a_poll_stores_quotes_and_bars_once_and_reports_what_was_missing(tmp_pat
     latest = s.store.latest_all()
     assert latest["ES"]["price"] == 7583.0 and latest["ES"]["prev_close"] == 7616.25 and latest["ES"]["status"] == "closed"
     again = s.poll_quotes()
-    assert again["new_bars"] == 0  # the same bars are not stored twice
-    assert periods == ["5d", "1d"]  # the first poll reaches back two sessions, the next only today
+    assert again["ok"] and again["new_bars"] == 0  # the same bars are not stored twice
+    assert again["asked"] == 0 and periods == ["5d"]  # the first poll reaches back two sessions; on a Sunday evening every market is shut, so nothing is asked for
 
 
 def test_a_failed_download_is_recorded_and_leaves_the_stored_quotes_alone(tmp_path: Path) -> None:
@@ -633,6 +633,7 @@ def test_price_bars_older_than_seven_days_are_deleted_and_the_latest_quote_stays
     assert res["bars"] == total and sum(s.store.bar_counts().values()) == 0
     assert s.store.latest_all() == latest  # the board still has its last quotes, aged
     s._clock = lambda: datetime(2026, 11, 15, 20, 0, tzinfo=UTC)  # noqa: SLF001 - two days after the bars: all within seven days
+    s._full_at = None  # noqa: SLF001 - a full poll asks for every symbol (on a Sunday evening a cash market is not due)
     s.poll_quotes()
     kept = sum(s.store.bar_counts().values())
     assert kept > 0 and s.cleanup()["bars"] == 0 and sum(s.store.bar_counts().values()) == kept
@@ -713,6 +714,7 @@ def test_a_poll_of_todays_bars_alone_keeps_the_stored_reference_close(tmp_path: 
     frame = yahoo_frame()
     today_only = frame[frame.index >= pd.Timestamp("2026-11-13T00:00:00Z")]
     s._download = lambda tickers, period: today_only  # noqa: SLF001
+    s._full_at = None  # noqa: SLF001 - the full poll asks for every symbol, the weekend's due list would not hold the cash index
     again = s.poll_quotes()
     after = s.store.latest_all()["SPX"]
     assert again["ok"] and after["prev_close"] == before["prev_close"] and after["change"] == pytest.approx(before["change"])
@@ -1090,3 +1092,28 @@ def test_gift_nifty_rolls_every_month_across_a_run_of_expiries() -> None:
         assert on and on[1] == d[i + 1].strftime("%d %b %Y")  # on expiry day: rolled
         after = nseix.gift_quote(feed({i: dead, i + 1: live}), now + timedelta(days=1), BY_KEY["GIFT"])
         assert after and after[1] == d[i + 1].strftime("%d %b %Y")  # the next day: the dead contract is past its date
+
+
+# ------------------------------------------------------------------ polling only what can have new bars
+def test_a_market_that_is_shut_is_not_asked_for_but_the_trading_futures_are() -> None:
+    from app.globalmkts.quotes import due_for_poll
+    from app.globalmkts.symbols import BY_KEY
+
+    pre_us = datetime(2026, 11, 25, 8, 22, tzinfo=UTC)  # 03:22 in New York on a Wednesday: the cash market opens at 09:30
+    assert not due_for_poll(BY_KEY["VIX"], pre_us) and not due_for_poll(BY_KEY["SPX"], pre_us)
+    assert due_for_poll(BY_KEY["ES"], pre_us) and due_for_poll(BY_KEY["GOLD"], pre_us)  # futures trade through the night
+    assert due_for_poll(BY_KEY["N225"], datetime(2026, 11, 25, 3, 0, tzinfo=UTC))  # 12:00 Tokyo: open
+    assert due_for_poll(BY_KEY["SPX"], datetime(2026, 11, 25, 15, 0, tzinfo=UTC))  # 10:00 New York: open
+    assert due_for_poll(BY_KEY["SPX"], datetime(2026, 11, 25, 21, 20, tzinfo=UTC))  # 16:20: closed 20 minutes ago, the late bars still arrive
+    assert not due_for_poll(BY_KEY["SPX"], datetime(2026, 11, 25, 23, 0, tzinfo=UTC))
+    assert not due_for_poll(BY_KEY["ES"], datetime(2026, 11, 28, 15, 0, tzinfo=UTC))  # Saturday: futures shut too
+
+
+def test_a_quote_not_polled_overnight_reads_closed_not_the_live_it_had_at_the_close() -> None:
+    from app.globalmkts.quotes import live_status
+    from app.globalmkts.symbols import BY_KEY
+
+    close = datetime(2026, 11, 24, 21, 0, tzinfo=UTC)  # 16:00 in New York
+    assert live_status(BY_KEY["SPX"], 60.0, close) == "live"
+    assert live_status(BY_KEY["SPX"], 9 * 3600.0, close + timedelta(hours=9)) == "closed"
+    assert live_status(BY_KEY["ES"], 9 * 3600.0, close + timedelta(hours=9)) == "stale"  # a future should be trading: old bars are a fault

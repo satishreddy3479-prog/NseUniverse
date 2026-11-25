@@ -622,3 +622,42 @@ async def test_the_exchange_reporting_closed_stops_the_silence_watch() -> None:
     await asyncio.sleep(0.15)
     assert len(calls) == 1
     await m.stop()
+
+
+async def test_after_a_broker_drop_that_brings_no_data_it_reconnects_in_15_s_not_60() -> None:
+    """25 Nov 2026 13:50 IST: the SDK reconnected but sent nothing for 46 s."""
+    clock = Clock()
+    f1, f2 = FakeFeed(), FakeFeed()
+    m, _, calls = make_manager([f1, f2], clock=clock, cfg=SILENT_CFG)
+    await m.start()
+    await until(lambda: len(f1.subs) >= 1)
+    f1.push(tick("Nifty 50", 22700.0, None))
+    await until(lambda: m.state is StreamState.STREAMING)
+    f1.q.put_nowait(FeedEvent(kind="disconnected"))
+    await until(lambda: m.dropped_at is not None)
+    clock.advance(14)
+    await asyncio.sleep(0.1)
+    assert len(calls) == 1  # the SDK gets its 14 s
+    clock.advance(2)
+    await until(lambda: len(f2.subs) >= 1)
+    assert len(calls) == 2 and m.dropped_at is None and m.drops == 1
+    await m.stop()
+
+
+async def test_a_drop_that_recovers_by_itself_is_counted_and_not_reconnected() -> None:
+    clock = Clock()
+    f1 = FakeFeed()
+    m, _, calls = make_manager([f1], clock=clock, cfg=SILENT_CFG)
+    await m.start()
+    await until(lambda: len(f1.subs) >= 1)
+    f1.push(tick("Nifty 50", 22700.0, None))
+    await until(lambda: m.state is StreamState.STREAMING)
+    f1.q.put_nowait(FeedEvent(kind="disconnected"))
+    await until(lambda: m.dropped_at is not None)
+    clock.advance(5)
+    f1.push(tick("101", 101.0, 70))
+    await until(lambda: m.dropped_at is None)
+    clock.advance(30)
+    await asyncio.sleep(0.1)
+    assert len(calls) == 1 and m.drops == 1
+    await m.stop()

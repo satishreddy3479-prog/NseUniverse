@@ -24,6 +24,8 @@ from app.globalmkts.quotes import (
     bars_from_frame,
     build_quote,
     daily_closes,
+    due_for_poll,
+    live_status,
     yahoo_daily,
     yahoo_download,
 )
@@ -123,7 +125,12 @@ class GlobalService:
         # five days of bars on the first poll and every six hours (they reach the session before the latest one even over a weekend), today's only otherwise
         full = self._full_at is None or _time.monotonic() - self._full_at > FULL_REFRESH_S
         try:
-            frame = self._download([s.yahoo for s in self.symbols if s.source == "yahoo"], "5d" if full else "1d")
+            asked = [s for s in self.symbols if s.source == "yahoo" and (full or due_for_poll(s, now))]
+            if not asked:  # a weekend: every market is shut, nothing can have changed
+                idle = {"symbols": 0, "asked": 0, "missing": [], "new_bars": 0, "ms": 0}
+                self.store.add_run("quotes", now, True, idle)
+                return {"ok": True, **idle}
+            frame = self._download([s.yahoo for s in asked], "5d" if full else "1d")
             if full:
                 self._full_at = _time.monotonic()
         except Exception as e:  # noqa: BLE001 - a failed download is recorded, the old quotes stay (flagged stale by their age)
@@ -133,7 +140,7 @@ class GlobalService:
         self._refresh_official()
         ok, missing, new_bars = 0, [], 0
         stored = self.store.latest_all()
-        for spec in (s for s in self.symbols if s.source == "yahoo"):
+        for spec in asked:
             fresh = bars_from_frame(frame, spec.yahoo)
             older = [Bar(datetime.fromtimestamp(t / 1000, UTC), p) for t, p in self.store.bars_before(spec.key, ms(fresh[0].ts))] if fresh else []
             q = build_quote(spec, fresh, now, older)
@@ -143,7 +150,7 @@ class GlobalService:
             q = _keep_reference(self._official_close(q, spec), stored.get(spec.key))
             new_bars += self.store.save_quote(q, now)
             ok += 1
-        detail: dict[str, Any] = {"symbols": ok, "missing": missing, "new_bars": new_bars, "ms": round((_time.perf_counter() - t0) * 1000)}
+        detail: dict[str, Any] = {"symbols": ok, "asked": len(asked), "missing": missing, "new_bars": new_bars, "ms": round((_time.perf_counter() - t0) * 1000)}
         self.store.add_run("quotes", now, ok > 0, detail)
         return {"ok": ok > 0, **detail}
 
@@ -332,7 +339,7 @@ class GlobalService:
                 age = max(0.0, (now - datetime.fromtimestamp(r["as_of"] / 1000, UTC)).total_seconds())
                 items.append(item | {
                     "price": r["price"], "change": r["change"], "change_pct": r["change_pct"], "bp": None if not s.yield_pct or r["change"] is None else r["change"] * 100,
-                    "prev_close": r["prev_close"], "status": r["status"], "as_of": datetime.fromtimestamp(r["as_of"] / 1000, UTC).isoformat(), "age_s": round(age),
+                    "prev_close": r["prev_close"], "status": live_status(s, age, now), "as_of": datetime.fromtimestamp(r["as_of"] / 1000, UTC).isoformat(), "age_s": round(age),
                     "session": r["session"], "spark": _spark(self.store.series(s.key, 0, 400)),
                 })  # fmt: skip
             groups.append({"key": gkey, "title": title, "items": items})
