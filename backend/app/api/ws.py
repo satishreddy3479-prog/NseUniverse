@@ -35,8 +35,11 @@ async def market_data(ws: WebSocket) -> None:
 
         async def sender() -> None:
             while True:
-                msg = await sub.queue.get()
-                await ws.send_json(msg)
+                batch = await sub.next_batch()
+                if not batch:
+                    return  # dropped by the hub
+                for msg in batch:
+                    await ws.send_json(msg)
 
         async def receiver() -> None:  # clients send nothing meaningful; this detects disconnects
             while True:

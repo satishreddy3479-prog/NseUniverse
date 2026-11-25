@@ -661,3 +661,77 @@ async def test_a_drop_that_recovers_by_itself_is_counted_and_not_reconnected() -
     await asyncio.sleep(0.1)
     assert len(calls) == 1 and m.drops == 1
     await m.stop()
+
+
+# ------------------------------------------------------------ conflation: a slow client sees the newest values
+def _ticks_msg(*pairs: tuple[str, float, int]) -> dict[str, Any]:
+    return {"type": "ticks", "ticks": [{"key": k, "ltp": p, "seq": s} for k, p, s in pairs]}
+
+
+async def test_a_slow_client_gets_the_newest_value_of_each_instrument_not_a_backlog() -> None:
+    hub = Hub(max_clients=2, queue_size=2)
+    slow = hub.subscribe()
+    assert slow is not None
+    for i in range(1, 501):  # 500 batches while the client is busy (125 s of 250 ms batches)
+        hub.publish(_ticks_msg(("A", 100.0 + i, i), ("B", 200.0 + i, i)))
+    assert len(hub) == 1 and not slow.dropped and hub.slow_client_drops == 0  # not dropped
+    batch = await slow.next_batch()
+    assert batch == [{"type": "ticks", "ticks": [{"key": "A", "ltp": 600.0, "seq": 500}, {"key": "B", "ltp": 700.0, "seq": 500}]}]
+    assert slow.conflated == 998  # 1,000 ticks arrived, 2 were sent
+
+
+async def test_an_older_tick_never_replaces_a_newer_one_and_status_keeps_only_the_latest() -> None:
+    hub = Hub()
+    sub = hub.subscribe()
+    assert sub is not None
+    hub.publish(_ticks_msg(("A", 105.0, 7)))
+    hub.publish(_ticks_msg(("A", 99.0, 3)))  # late, lower seq
+    hub.publish({"type": "status", "status": {"n": 1}})
+    hub.publish({"type": "status", "status": {"n": 2}})
+    batch = await sub.next_batch()
+    assert [m["type"] for m in batch] == ["status", "ticks"]
+    assert batch[0]["status"] == {"n": 2} and batch[1]["ticks"][0]["ltp"] == 105.0
+
+
+async def test_a_dropped_client_is_woken_so_its_socket_can_close() -> None:
+    hub = Hub(queue_size=1)
+    sub = hub.subscribe()
+    assert sub is not None
+    hub.publish({"n": 1})
+    hub.publish({"n": 2})  # a message that cannot be conflated and does not fit
+    assert sub.dropped
+    assert await asyncio.wait_for(sub.next_batch(), 1.0) == []
+
+
+async def test_the_loop_watch_names_what_blocks_the_loop() -> None:
+    import time
+
+    from app.stream.loopwatch import LoopWatch
+
+    w = LoopWatch()
+    w.start()
+    await asyncio.sleep(0.6)
+    time.sleep(1.6)  # blocks the loop, as a long synchronous call would
+    await asyncio.sleep(0.6)
+    stats = w.stats()
+    await w.stop()
+    assert stats["stalls"] >= 1 and stats["lag_ms_max_60s"] >= 1000
+    assert any("time.sleep" in line or "sleep" in line for line in stats["last_stall"]["stack"])
+
+
+async def test_the_loop_watch_reports_where_the_loop_spends_its_time() -> None:
+    import time
+
+    from app.stream.loopwatch import LoopWatch
+
+    w = LoopWatch()
+    w.start()
+    await asyncio.sleep(0.5)  # idle
+    end = time.monotonic() + 0.8
+    while time.monotonic() < end:  # busy in this test function
+        sum(range(1000))
+    busy = w.busy()
+    await w.stop()
+    assert busy["samples"] >= 5
+    assert any(r["where"] == "idle (waiting)" for r in busy["top"])
+    assert any("test_the_loop_watch_reports" in r["where"] or "test_stream" in r["where"] or "busy" in r["where"] for r in busy["top"]) or len(busy["top"]) >= 2

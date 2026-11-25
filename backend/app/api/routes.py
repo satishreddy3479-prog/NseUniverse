@@ -393,6 +393,22 @@ async def stream_status(request: Request) -> StreamStatusModel:
     return request.app.state.stream.status()  # type: ignore[no-any-return]
 
 
+@router.get("/stream/health")
+async def stream_health(request: Request) -> dict[str, Any]:
+    """Where live data can be late: the event loop's delay and each browser client's wait."""
+    stream = request.app.state.stream
+    lw = getattr(request.app.state, "loopwatch", None)
+    return {
+        "loop": None if lw is None else lw.stats(),
+        "browser_clients": stream.hub.stats(),
+        "feed": {
+            "drops": stream.drops,
+            "reconnects": stream.reconnect_count,
+            "data_age_s": stream.status().data_age_seconds,
+        },
+    }
+
+
 @router.post(
     "/stream/start", response_model=StreamStatusModel, dependencies=[Depends(require_local_control)]
 )

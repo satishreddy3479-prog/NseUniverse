@@ -59,6 +59,7 @@ from app.storage.store import SnapshotStore
 from app.storage.strategies import StrategyStore
 from app.strategy.automation import StrategyAutomation
 from app.stream.hub import Hub
+from app.stream.loopwatch import LoopWatch
 from app.stream.manager import StreamConfig, StreamManager
 from app.swing.engine import Config as SwingConfig
 from app.swing.fetch import HttpFetcher
@@ -442,9 +443,13 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         servermgmt = build_servermgmt(settings)
         app.state.servermgmt = servermgmt
         servermgmt.start()
+        loopwatch = LoopWatch()
+        loopwatch.start()
+        app.state.loopwatch = loopwatch
         try:
             yield
         finally:
+            await loopwatch.stop()
             await servermgmt.stop()
             if not login_task.done():
                 login_task.cancel()
