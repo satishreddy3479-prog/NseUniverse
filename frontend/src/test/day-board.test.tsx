@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DayBoard } from "../components/intelligence/DayBoard";
-import { classOf, dayBoardChart, horizonName } from "../lib/dayBoard";
+import { applyLiveSpot, classOf, dayBoardChart, horizonName, sigmaPoints } from "../lib/dayBoard";
 import type { Outlook } from "../lib/intelligence";
 import closedJson from "./outlook-closed.json";
 import liveJson from "./outlook-live.json";
@@ -152,5 +152,43 @@ describe("provenance and staleness", () => {
     mount({ ...live, lag_minutes: 1 });
     await screen.findByTestId("day-header");
     expect(screen.queryByTestId("day-lag")).toBeNull();
+  });
+});
+
+describe("the live tick over the outlook", () => {
+  const at = Date.parse(live.path[live.path.length - 1]!.at) + 3 * 60_000; // three minutes after the last recorded minute
+
+  it("re-prices the bands from the tick with the server's implied volatility: spot x IV x sqrt(minutes / 94,500)", () => {
+    const o = applyLiveSpot(live, { ltp: 25400, at });
+    const e30 = o.expected.find((e) => e.minutes === 30)!;
+    // 25,400 x 16.92 % x sqrt(30 / 94,500) = 4297.68 x 0.017817 = 76.57
+    expect(e30.sd_points).toBeCloseTo(76.6, 1);
+    expect(e30.low).toBeCloseTo(25400 - 76.6, 1);
+    expect(e30.high).toBeCloseTo(25400 + 76.6, 1);
+    expect(sigmaPoints(25400, 16.92, 30)).toBeCloseTo(76.57, 1);
+    expect(sigmaPoints(null, 16.92, 30)).toBeNull();
+  });
+
+  it("measures the levels from the tick, nearest first, and appends the tick as the chart's last point with no verdict", () => {
+    const o = applyLiveSpot(live, { ltp: 25400, at });
+    const l0 = o.levels[0]!;
+    expect(l0.distance_points).toBeCloseTo(l0.price - 25400, 1);
+    const d = o.levels.map((l) => Math.abs(l.distance_points ?? 1e9));
+    expect(d).toEqual([...d].sort((a, b) => a - b));
+    const last = o.path[o.path.length - 1]!;
+    expect(o.path).toHaveLength(live.path.length + 1);
+    expect(last.spot).toBe(25400);
+    expect(last.score).toBeNull(); // the tick has a price, not a verdict
+    expect(o.path[o.path.length - 2]).toEqual(live.path[live.path.length - 1]);
+  });
+
+  it("replaces the price of the recorded minute when the tick is in the same minute, and changes nothing when the market is closed or there is no tick", () => {
+    const sameMinute = Date.parse(live.path[live.path.length - 1]!.at) + 20_000;
+    const o = applyLiveSpot(live, { ltp: 25410, at: sameMinute });
+    expect(o.path).toHaveLength(live.path.length);
+    expect(o.path[o.path.length - 1]!.spot).toBe(25410);
+    expect(o.path[o.path.length - 1]!.score).toBe(live.path[live.path.length - 1]!.score); // the recorded verdict stays
+    expect(applyLiveSpot(closed, { ltp: 25400, at })).toBe(closed);
+    expect(applyLiveSpot(live, null)).toBe(live);
   });
 });

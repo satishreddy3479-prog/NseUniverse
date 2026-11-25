@@ -294,7 +294,7 @@ def build(*, now: datetime, session: str, live: bool, rows: Sequence[Mapping[str
                                 "trend": tr_view, "as_of": None if last is None or live else last.get("at")}
     atr = _num((tr or {}).get("atr"))
     return {
-        "generated_at": now.isoformat(timespec="seconds"), "session": session, "live": live, "spot": spot, "atm_iv": iv, "now": now_view,
+        "generated_at": now.isoformat(timespec="seconds"), "session": session, "live": live, "spot": spot, "atm_iv": iv, "atr": atr, "now": now_view,
         "path": path(rows, weights), "phases": phases(rows, weights, now=now, live=live, spot=spot, iv_pct=iv), "expected": horizons, "levels": levels(ref_spot, tr, summary.get("gex"), atr), "last_recorded_at": None if last is None else last.get("at"), "lag_minutes": lag if live else None,
         "history": hist, "scorecard": sc, "reliability": rel, "read": read_lines(now_view, horizons, hist, rel, sc),
         "limits": ["Descriptive evidence, not a forecast: no model here predicts price.", "The bands are one standard deviation of a random walk with the option-implied volatility; they carry no direction.",

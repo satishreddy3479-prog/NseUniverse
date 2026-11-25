@@ -149,7 +149,7 @@ export interface Reliability {
   session_rates?: { session: string; hit_rate: number; decided: number }[]; note?: string;
 }
 export interface Outlook {
-  generated_at: string; session: string; live: boolean; spot: number | null; atm_iv: number | null;
+  generated_at: string; session: string; live: boolean; spot: number | null; atm_iv: number | null; atr?: number | null;
   now: {
     score: number | null; class: string | null; confidence: number | null; groups_bullish: number | null; groups_bearish: number | null; coverage: number | null; reason: string | null;
     lean: { call: -1 | 0 | 1; text: string; why: string }; regime: string | null; as_of?: string | null;

@@ -51,3 +51,26 @@ export function dayBoardChart(c: ChartColors, o: Outlook): { option: EChartsCore
 
 /** A short label for the minutes of a horizon ("Next 30 minutes" stays as the backend wrote it; the close reads in hours when it is far). */
 export const horizonName = (label: string, minutes: number): string => (label === "To the close" ? `To the close (${minutes >= 60 ? `${Math.floor(minutes / 60)} h ${minutes % 60 ? `${minutes % 60} min` : ""}`.trim() : `${minutes} min`})` : label);
+
+/** One standard deviation of the move over ``minutes`` of trading time, in points: spot x IV x sqrt(minutes / (252 x 375)) (the backend's formula, so a live tick can re-price the bands without a request). */
+export const sigmaPoints = (spot: number | null | undefined, ivPct: number | null | undefined, minutes: number): number | null => (!spot || ivPct == null || minutes <= 0 ? null : spot * (ivPct / 100) * Math.sqrt(minutes / (252 * 375)));
+
+/**
+ * The outlook with the live NIFTY tick laid over it: the priced bands and the distances to the levels are measured from the tick (the implied volatility and the verdict stay the server's), and the
+ * last point of the chart is the tick (replacing the recorded minute's price when it is the same minute, else appended with no verdict). Returns the outlook unchanged when the market is not live.
+ */
+export function applyLiveSpot(o: Outlook, tick: { ltp: number; at: number } | null): Outlook {
+  if (!o.live || !tick) return o;
+  const spot = tick.ltp;
+  const expected = o.expected.map((e) => {
+    const sd = sigmaPoints(spot, o.atm_iv, e.minutes);
+    return sd == null ? e : { ...e, sd_points: Math.round(sd * 10) / 10, low: Math.round((spot - sd) * 10) / 10, high: Math.round((spot + sd) * 10) / 10 };
+  });
+  const levels = o.levels.map((l) => { const d = l.price - spot; return { ...l, distance_points: Math.round(d * 10) / 10, distance_atr: o.atr ? Math.round((d / o.atr) * 100) / 100 : l.distance_atr, side: d > 0 ? "above" : d < 0 ? "below" : "at" } as typeof l; })
+    .sort((a, b) => Math.abs(a.distance_points ?? 1e9) - Math.abs(b.distance_points ?? 1e9));
+  const at = new Date(tick.at).toISOString();
+  const last = o.path[o.path.length - 1];
+  const sameMinute = last != null && hhmmIST(last.at) === hhmmIST(at);
+  const path = last == null ? o.path : sameMinute ? [...o.path.slice(0, -1), { ...last, spot }] : [...o.path, { at, spot, score: null, confidence: null, trend_score: null, trend_label: null, trend_group: null }];
+  return { ...o, spot, expected, levels, path };
+}

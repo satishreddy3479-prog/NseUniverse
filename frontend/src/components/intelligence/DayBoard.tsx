@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { api } from "../../lib/api";
-import { CLASS_ORDER, dayBoardChart, horizonName, pctOf, scoreTone, sgn, toneClass } from "../../lib/dayBoard";
+import { applyLiveSpot, CLASS_ORDER, dayBoardChart, horizonName, pctOf, scoreTone, sgn, toneClass } from "../../lib/dayBoard";
 import { fmtPrice, fmtTimeIST, hhmmIST, MISSING } from "../../lib/format";
 import type { BucketStat, Outlook, OutlookPhase, Reliability, ScorecardRow } from "../../lib/intelligence";
+import { useSpotDisplay } from "../../lib/useLive";
 import { EChart, useChartColors } from "../EChart";
 
 const Tile = ({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) => (
@@ -175,8 +176,11 @@ function TrackRecord({ o }: { o: Outlook }) {
 
 /** The redesigned top of Market Intelligence: sentiment through the day, the five phases, the expected outcome and the track record. */
 export function DayBoard({ why }: { why?: React.ReactNode }) {
-  const q = useQuery({ queryKey: ["intelligence-outlook"], queryFn: () => api.intelligenceOutlook(), refetchInterval: 15_000, retry: false });
-  const o = q.data;
+  const q = useQuery({ queryKey: ["intelligence-outlook"], queryFn: () => api.intelligenceOutlook(), refetchInterval: 5_000, retry: false });
+  const spot = useSpotDisplay({ ltp: q.data?.spot ?? null, prevClose: null, at: q.data?.generated_at ?? null });
+  const tick = spot.kind === "live" && spot.ltp != null && spot.at != null ? { ltp: spot.ltp, at: spot.at } : null;
+  const served = q.data;
+  const o = useMemo(() => (served ? applyLiveSpot(served, tick) : served), [served, tick?.ltp, tick?.at]); // eslint-disable-line react-hooks/exhaustive-deps
   // three fixed slots (what the outlook says, the evidence sections passed in, the rest of the day board): the evidence sections stay mounted while the outlook loads, fails or refreshes
   const top = q.isPending ? <div className="space-y-2" aria-label="Loading the day board"><div className="h-24 animate-pulse rounded-md border border-rule bg-slate" /><div className="h-72 animate-pulse rounded-md border border-rule bg-slate" /></div>
     : q.isError || !o ? <p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down" data-testid="day-error">The day board could not be loaded: {q.error instanceof Error ? q.error.message : "the server did not answer"}. The evidence below does not depend on it.</p>
@@ -185,6 +189,7 @@ export function DayBoard({ why }: { why?: React.ReactNode }) {
         {!o.live && <p className="rounded-sm border border-warn/40 px-3 py-1.5 text-xs text-warn" role="status" data-testid="day-closed">The market is not live. Showing the recorded session of {o.session}{o.generated_at ? ` (read ${fmtTimeIST(o.generated_at)})` : ""}; nothing is priced for the minutes ahead.</p>}
         {o.live && o.lag_minutes != null && o.lag_minutes >= 3 && <p className="rounded-sm border border-warn/40 px-3 py-1.5 text-xs text-warn" role="status" data-testid="day-lag">The newest recorded minute is {o.lag_minutes.toFixed(0)} minutes old{o.last_recorded_at ? ` (${hhmmIST(o.last_recorded_at)})` : ""}: the chart and the track record stop there while the tiles above read the live data.</p>}
         <Header o={o} />
+        {o.live && <p className="text-[11px] text-muted" data-testid="day-live">{tick ? <><span className="text-up">●</span> NIFTY {fmtPrice(tick.ltp)} from the live tick ({fmtTimeIST(new Date(tick.at).toISOString())}): the bands, the levels and the last point of the chart follow it.</> : <><span className="text-warn">●</span> No live tick reaches this page: the price shown is the server's last read.</>} The verdict, trend and evidence are re-read from the server about every 5 seconds (the inputs refresh every 5 to 15 seconds); the chart records one point a minute.</p>}
       </>
     );
   return (
