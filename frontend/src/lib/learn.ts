@@ -300,6 +300,13 @@ export const LESSONS: Lesson[] = [
   },
   // ---------------- Analyse
   {
+    id: "eagles-view",
+    idea: "One board for everything you watch. Every tool of the app is a small box you can add, move, resize and remove, and the same tool can be on the board as many times as you like. It answers: what do all my tools say at the same time?",
+    read: ["Press Add widgets, search or pick from the groups, and press the same one again for a second copy. The number next to a tool says how many are on the board.", "Drag a title bar to move a box, drag a corner to resize it. Chart widgets redraw to fit the box; a whole tool (its controls and charts) scrolls inside its box.", "Auto-fit packs the boxes with no gaps and lets them grow into free space; switch it off to place boxes exactly where you drop them.", "The expiry and strikes at the top apply to every box that reads the option chain. The board is remembered in this browser."],
+    example: { setup: "You put the Market Intelligence day board, Trend & Regime, the ATM straddle and Smart OI side by side.", reading: "At a turn you can see the verdict, the regime label, the premium and the OI change on one screen, and judge whether two or three of them agree, instead of opening four pages." },
+    watch: ["More boxes is not more evidence: tools that read the same prices and open interest move together.", "A box shows what its own page shows, with the same limits: the regime labels describe the last hour and do not predict.", "Every open box fetches its own data: a very large board is slower on a phone."],
+  },
+  {
     id: "advanced-greeks",
     idea: "The Greeks of your own option legs in rupees by leg, expiry and limit, the gamma map and the volatility surface. It answers: what is my position's real exposure right now?",
     read: ["Delta in rupees: gain or loss per index point. Gamma: how that changes. Theta: rupees per day. Vega: rupees per IV point.", "Check the limits: the page compares exposure with the limits you set.", "The gamma map shows how total gamma changes if NIFTY moves; the surface shows IV by strike and expiry."],

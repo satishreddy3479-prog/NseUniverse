@@ -5,26 +5,9 @@ import { DashProvider, type Range } from "../components/dashboard/DashContext";
 import { ReplayProvider } from "../components/dashboard/ReplayContext";
 import { ReplayBar } from "../components/dashboard/ReplayBar";
 import { WIDGETS } from "../components/dashboard/widgets";
-import { MultiStrikeBoard, PriceOiBoard } from "../components/dashboard/PriceBoards";
-import { RollingStraddleBoard } from "../components/dashboard/RollingStraddle";
-import { VegaAnalysisBoard } from "../components/dashboard/VegaAnalysis";
-import { GammaAnalysisBoard } from "../components/dashboard/GammaAnalysis";
 import { StreamButtons } from "../components/LiveActivity";
+import { ToolBody } from "../components/ToolBody";
 import { ChartInfoToggle } from "../components/ChartInfoToggle";
-import { IndexToolBody } from "../components/IndexTools";
-import { FlowsPanel } from "../components/FlowsPanel";
-import { CashPanel } from "../components/CashPanel";
-import { FuturesFlowBody } from "../components/FuturesFlowTools";
-import { FuturesBuildupBody } from "../components/FuturesBuildupTool";
-import { IvChartBody } from "../components/IvChartPages";
-import { SignalBacktestBody } from "../components/SignalBacktest";
-import { MarketStructureBody } from "../components/MarketStructure";
-import { StrikePositioningBody } from "../components/StrikePositioning";
-import { IvMomentumBody } from "../components/IvMomentum";
-import { IvSkewBody } from "../components/IvSkew";
-import { IvHvBody, IvIntradayBody } from "../components/IvTools";
-import { CalendarBody, GlobalBody, NewsBody } from "../components/GlobalPages";
-import { ForwardBody } from "../components/ForwardTest";
 import { fmtExpiry } from "../lib/format";
 import { useExpiries } from "../lib/hooks";
 import { toolById, toolPath } from "../lib/tools";
@@ -131,31 +114,7 @@ export default function ToolPage() {
             })}
           </div>
         )}
-        {tool.board === "vega" && <VegaAnalysisBoard />}
-        {tool.board === "gamma" && <GammaAnalysisBoard />}
-        {tool.board === "priceOi" && <PriceOiBoard />}
-        {tool.board === "multiStrike" && <MultiStrikeBoard straddle={false} />}
-        {tool.board === "multiStraddle" && <MultiStrikeBoard straddle />}
-        {tool.board === "rollingStraddle" && <RollingStraddleBoard />}
-        {tool.page === "flows" && <FlowsPanel />}
-        {tool.page === "cash" && <CashPanel />}
-        {tool.page === "futflow" && <FuturesFlowBody expiry={expiry} part="flow" />}
-        {tool.page === "futsectors" && <FuturesFlowBody expiry={expiry} part="sectors" />}
-        {tool.page === "futbuildup" && <FuturesBuildupBody />}
-        {tool.page === "ivhv" && <IvHvBody expiry={expiry} />}
-        {tool.page === "ivintraday" && <IvIntradayBody expiry={expiry} />}
-        {tool.page === "ivchart" && <IvChartBody />}
-        {tool.page === "ivskew" && <IvSkewBody expiry={expiry} />}
-        {tool.page === "ivmomentum" && <IvMomentumBody expiry={expiry} />}
-        {tool.page === "strikepos" && <StrikePositioningBody expiry={expiry} />}
-        {tool.page === "marketstructure" && <MarketStructureBody expiry={expiry} />}
-        {tool.page === "backtest" && <SignalBacktestBody expiry={expiry} />}
-        {tool.page === "global" && <GlobalBody />}
-        {tool.page === "calendar" && <CalendarBody />}
-        {tool.page === "news" && <NewsBody />}
-        {tool.page === "forward" && <ForwardBody family="plain" />}
-        {tool.page === "forwardcost" && <ForwardBody family="cost" />}
-        {tool.page && tool.page !== "flows" && tool.page !== "cash" && tool.page !== "futflow" && tool.page !== "futsectors" && tool.page !== "futbuildup" && tool.page !== "ivhv" && tool.page !== "ivchart" && tool.page !== "ivskew" && tool.page !== "ivmomentum" && tool.page !== "strikepos" && tool.page !== "marketstructure" && tool.page !== "backtest" && tool.page !== "ivintraday" && tool.page !== "global" && tool.page !== "calendar" && tool.page !== "news" && tool.page !== "forward" && tool.page !== "forwardcost" && <IndexToolBody page={tool.page} />}
+        <ToolBody tool={tool} expiry={expiry} />
       </div>
     </DashProvider>
     </ReplayProvider>

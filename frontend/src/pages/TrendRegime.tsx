@@ -492,8 +492,10 @@ function DailyRegimeView({ c }: { c: ChartColors }) {
   );
 }
 
-export function TrendRegime() {
-  const { view } = useParams<{ view: string }>();
+/** One of the Trend & Regime views: the one in the address, or ``view`` when the page is shown as a widget (the Eagles view). */
+export function TrendRegime({ view: forced }: { view?: string } = {}) {
+  const routed = useParams<{ view: string }>().view;
+  const view = forced ?? routed;
   const id = (TREND_VIEWS.some((v) => v.id === view) ? view : "market-regime") as TrendViewId;
   const spec = TREND_VIEWS.find((v) => v.id === id)!;
   const c = useChartColors();
