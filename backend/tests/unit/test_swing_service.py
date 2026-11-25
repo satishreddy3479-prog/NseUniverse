@@ -317,7 +317,7 @@ def test_run_now_endpoint_is_local_only_and_runs_the_scan(tmp_path: Path) -> Non
         r = c.post("/api/swing/paper/run")
         assert r.status_code == 200 and r.json()["started"] is True
         body = {}
-        for _ in range(1200)  # up to 60 s: the full suite loads the machine:
+        for _ in range(1200):  # up to 60 s: the full suite loads the machine
             body = c.get("/api/swing/paper").json()
             if not body["status"]["running"] and body["book"]["sessions"] == 1:
                 break
