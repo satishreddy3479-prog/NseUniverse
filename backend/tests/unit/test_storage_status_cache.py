@@ -71,7 +71,11 @@ def test_a_slow_read_only_answer_is_built_once_for_calls_that_overlap_and_again_
     for t in ts:
         t.join()
     assert built["n"] == 1 and all(o == {"n": 1} for o in out)  # four overlapping callers, one build
-    assert routes._cached("k", 0.0, slow) == {"n": 2}  # noqa: SLF001 - expired: built again
+    assert routes._cached("k", 0.0, slow) == {"n": 1}  # noqa: SLF001 - expired: the old answer at once
+    end = time.time() + 3  # ...and a new one is built behind it
+    while routes._ttl_cache["k"][1] != {"n": 2} and time.time() < end:  # noqa: SLF001
+        time.sleep(0.01)
+    assert routes._ttl_cache["k"][1] == {"n": 2}  # noqa: SLF001
 
 
 def test_cleaning_up_data_drops_the_cached_overview(tmp_path: Path) -> None:

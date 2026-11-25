@@ -496,7 +496,7 @@ class StreamManager:
                     await consumer
 
     async def _watch_silence(self) -> None:
-        """Return (ending the session, so it reconnects) when an open feed is quiet in market hours."""
+        """Return once an open feed is quiet in market hours (the session then reconnects)."""
         limit = self.cfg.silence_reconnect_s
         if limit <= 0:
             await asyncio.Event().wait()

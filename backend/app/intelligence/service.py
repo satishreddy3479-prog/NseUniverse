@@ -75,6 +75,7 @@ class MarketIntelligence:
         self._summary_cache: tuple[float, str, dict[str, Any]] | None = None
         self._outlook_cache: tuple[float, list[dict[str, Any]], dict[str, Any] | None, dict[str, Any]] | None = None
         self._lock = threading.RLock()
+        self._hist_lock = threading.Lock()
         self._task: asyncio.Task[None] | None = None
         self.last_error: str | None = None
 
@@ -386,16 +387,23 @@ class MarketIntelligence:
         summary = self.summary(expiry)
         inp, _status = self.inputs(expiry)
         live = sess == today and fz.g(inp.get("intraday"), "market", "mode") == "live"
-        hit = self._outlook_cache
-        if hit is None or _time.monotonic() - hit[0] > 300.0:
+        hit = self._outlook_cache or self._refresh_outlook_history()
+        at = now if live else (outlook._when(rows[-1]) or now) if rows else now  # noqa: SLF001
+        return outlook.build(now=at, session=sess, live=live, rows=rows, history_rows=hit[1], weights=self.weights, summary=summary, trend=inp.get("trend"), validation_report=hit[2], hist=hit[3], clock=now)
+
+    def _refresh_outlook_history(self) -> tuple[float, list[dict[str, Any]], dict[str, Any] | None, dict[str, Any]]:
+        """The 30-session history behind the outlook (rows, report, class table): seconds of work on the server, so it is rebuilt by the minute loop and a request only ever reads the stored copy."""
+        with self._hist_lock:
+            hit = self._outlook_cache
+            if hit is not None and _time.monotonic() - hit[0] < 240.0:
+                return hit
             hist_rows: list[dict[str, Any]] = []
             for s_ in sorted(self.store.sessions(30)):
                 hist_rows += self.store.rows(s_, 500)
             report = validation.report(hist_rows, weights=self.weights) if hist_rows else None
-            hit = (_time.monotonic(), hist_rows, report, outlook.history(hist_rows, self.weights))  # the history table costs ~0.6 s on 30 sessions: computed once per cache life, not per request
+            hit = (_time.monotonic(), hist_rows, report, outlook.history(hist_rows, self.weights))
             self._outlook_cache = hit
-        at = now if live else (outlook._when(rows[-1]) or now) if rows else now  # noqa: SLF001
-        return outlook.build(now=at, session=sess, live=live, rows=rows, history_rows=hit[1], weights=self.weights, summary=summary, trend=inp.get("trend"), validation_report=hit[2], hist=hit[3], clock=now)
+            return hit
 
     def validation(self, sessions: int = 30) -> dict[str, Any]:
         """Walk-forward validation of the stored snapshots (read-only; see ``validation.py``). Uses the live weights to re-score history."""
@@ -409,6 +417,7 @@ class MarketIntelligence:
         while True:
             try:
                 await asyncio.to_thread(self.record)
+                await asyncio.to_thread(self._refresh_outlook_history)  # a page never waits for it
                 self.last_error = None
             except asyncio.CancelledError:
                 raise

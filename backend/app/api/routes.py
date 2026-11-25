@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from collections.abc import Callable
 from datetime import UTC, date, datetime
@@ -51,6 +52,7 @@ from app.storage.strategies import StrategyError, StrategyStore
 from app.strategy.automation import RunningConflict, StrategyAutomation
 from app.stream.models import StreamStatusModel
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 UNDERLYING_Q = Query(pattern=r"^[A-Za-z0-9]{1,20}$")
 
@@ -613,8 +615,10 @@ _ttl_locks: dict[str, Any] = {}
 def _cached(key: str, ttl: float, build: Callable[[], Any]) -> Any:
     """Reuse a slow, read-only answer for ``ttl`` seconds.
 
-    Calls that arrive while it is being built wait for it instead of repeating the work. The server
-    has one CPU core: two copies of a 20-second job would make everything else wait twice as long.
+    Calls that arrive while the first one is being built wait for it instead of repeating the work.
+    After that an expired answer is served at once while a new one is built in the background.
+The server
+    has one CPU core: two copies of a 20-second job would make everything else wait twice.
     """
     import threading
     import time as _time
@@ -623,6 +627,20 @@ def _cached(key: str, ttl: float, build: Callable[[], Any]) -> Any:
     if hit is not None and _time.monotonic() - hit[0] < ttl:
         return hit[1]
     lock = _ttl_locks.setdefault(key, threading.Lock())
+    if hit is not None:
+        # Past its time but an older answer exists: show that one now and rebuild behind it, so no
+        # page waits 20-30 s every ``ttl`` seconds (a rebuild already running is not repeated).
+        if lock.acquire(blocking=False):
+            def refresh() -> None:
+                try:
+                    _ttl_cache[key] = (_time.monotonic(), build())
+                except Exception:  # noqa: BLE001 - the older answer stays
+                    logger.warning("cached_refresh_failed", extra={"fields": {"key": key[:40]}})
+                finally:
+                    lock.release()
+
+            threading.Thread(target=refresh, name="cache-refresh", daemon=True).start()
+        return hit[1]
     with lock:
         hit = _ttl_cache.get(key)
         if hit is not None and _time.monotonic() - hit[0] < ttl:
