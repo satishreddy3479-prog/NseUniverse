@@ -49,7 +49,7 @@ describe("buyer and seller scores beside the NIFTY price", () => {
     payload = { ...base, seller_15m: null, buyer_15m: null };
     mount();
     const chip = await screen.findByTestId("score-chips");
-    expect(chip.getAttribute("title")).toContain("Seller environment 73\n");
+    expect(chip.getAttribute("title")).toContain("Seller environment 73 (Favourable)\n");
     expect(chip.getAttribute("title")).not.toContain("in 15 min");
   });
 });
