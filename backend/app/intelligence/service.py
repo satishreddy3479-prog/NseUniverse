@@ -76,6 +76,9 @@ class MarketIntelligence:
         self._outlook_cache: tuple[float, list[dict[str, Any]], dict[str, Any] | None, dict[str, Any]] | None = None
         self._lock = threading.RLock()
         self._hist_lock = threading.Lock()
+        self.background_refresh = False  # on once the minute loop runs (the app); tests compute in the call
+        self._inflight: set[tuple[str, str]] = set()
+        self._inflight_lock = threading.Lock()
         self._task: asyncio.Task[None] | None = None
         self.last_error: str | None = None
 
@@ -85,6 +88,27 @@ class MarketIntelligence:
         hit = self._cache.get(key)
         if hit is not None and _time.monotonic() - hit[0] < TTL[name]:
             return hit[1], hit[2]
+        if hit is not None and self.background_refresh:
+            # The input is past its time: answer with the stored one (its own age is in the status, so
+            # the engines still see how old it is) and recompute behind the request. Computing here
+            # put 1-6 s on the page whenever several inputs expired together (measured 25 Nov 2026).
+            with self._inflight_lock:
+                start = key not in self._inflight
+                self._inflight.add(key)
+            if start:
+                def refresh() -> None:
+                    try:
+                        self._compute(name, expiry, self._clock(), hit)
+                    finally:
+                        with self._inflight_lock:
+                            self._inflight.discard(key)
+
+                threading.Thread(target=refresh, name=f"mi-{name}", daemon=True).start()
+            return hit[1], hit[2]
+        return self._compute(name, expiry, now, hit)
+
+    def _compute(self, name: str, expiry: str | None, now: datetime, hit: tuple[float, Any, dict[str, Any]] | None) -> tuple[Any, dict[str, Any]]:
+        key = (name, expiry or "")
         t0 = _time.perf_counter()
         fn = self.providers.get(name)
         data: Any = None
@@ -429,6 +453,7 @@ class MarketIntelligence:
 
     def start(self) -> None:
         if self._task is None and self.enabled:
+            self.background_refresh = True
             self._task = asyncio.create_task(self._loop(), name="market-intelligence")
 
     async def stop(self) -> None:
