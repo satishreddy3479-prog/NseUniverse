@@ -5,7 +5,8 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { EAGLE_KEY } from "../lib/eagle";
+import { EAGLE_KEY, EAGLE_WORKING_KEY } from "../lib/eagle";
+import { isSynced } from "../lib/prefs";
 import { expiries, status } from "./fixtures";
 
 vi.mock("../components/eagle/catalog", async () => {
@@ -94,7 +95,7 @@ describe("the Eagles view", () => {
     await screen.findByRole("heading", { name: "Eagles view" });
     expect(screen.getByTestId("content-i:day")).toBeTruthy();
     expect(screen.getByTestId("content-w:oi")).toBeTruthy();
-    const key = (id: string) => (JSON.parse(localStorage.getItem(EAGLE_KEY) ?? "null") as { items: { key: string; cat: string }[] } | null)?.items.find((x) => x.cat === id)?.key;
+    const key = (id: string) => (JSON.parse(localStorage.getItem(EAGLE_WORKING_KEY) ?? "null") as { board: { items: { key: string; cat: string }[] } } | null)?.board.items.find((x) => x.cat === id)?.key;
     await userEvent.click(screen.getByRole("button", { name: "Add another Day board" }));
     expect(screen.getByTestId(`eagle-body-${key("i:day")}`).className).toContain("overflow-x-auto"); // a whole tool scrolls sideways too
     expect(screen.getByTestId(`eagle-body-${key("w:oi")}`).className).not.toContain("overflow-x-auto"); // a chart widget fits its width
@@ -127,7 +128,7 @@ describe("the Eagles view", () => {
   it("Auto-fit leaves no gap: the boxes cover the board with no hole, and it can be switched off", async () => {
     mount();
     await screen.findByRole("heading", { name: "Eagles view" });
-    const layout = () => (JSON.parse(localStorage.getItem(EAGLE_KEY) ?? "null") as { layout: { i: string; x: number; y: number; w: number; h: number }[] } | null)?.layout ?? [];
+    const layout = () => (JSON.parse(localStorage.getItem(EAGLE_WORKING_KEY) ?? "null") as { board: { layout: { i: string; x: number; y: number; w: number; h: number }[] } } | null)?.board.layout ?? [];
     await userEvent.click(screen.getByRole("button", { name: "Add another Open interest by strike" })); // a change settles the board
     const before = layout();
     // no gap anywhere: the boxes together cover every cell of the 12-column board down to its bottom, each cell once
@@ -168,6 +169,56 @@ describe("the Eagles view", () => {
     expect((await screen.findByTestId("eagle-nochart-w:table~1", undefined, { timeout: 4000 })).textContent).toContain("no chart");
     await userEvent.click(screen.getByTestId("eagle-charts-only"));
     expect(screen.queryByTestId("eagle-nochart-w:table~1")).toBeNull();
+  });
+
+  it("Save layout keeps the board as the saved layout: it lights up on a change, saves, and the saved board opens after the page is opened again", async () => {
+    mount();
+    await screen.findByRole("heading", { name: "Eagles view" });
+    expect(screen.getByRole("button", { name: "Save layout" })).toBeDisabled(); // nothing changed yet
+    expect(screen.getByTestId("eagle-saved-state").textContent).toBe("no saved layout yet");
+    await userEvent.click(screen.getByRole("button", { name: /Add widgets/ }));
+    await userEvent.click(screen.getByTestId("eagle-add-w:pcr"));
+    await userEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.getByRole("button", { name: "Save layout ●" })).toBeEnabled();
+    expect(screen.getByTestId("eagle-saved-state").textContent).toContain("unsaved changes");
+    expect(localStorage.getItem(EAGLE_KEY)).toBeNull(); // not saved yet
+    await userEvent.click(screen.getByRole("button", { name: "Save layout ●" }));
+    const saved = JSON.parse(localStorage.getItem(EAGLE_KEY)!) as { items: { cat: string }[] };
+    expect(saved.items.map((x) => x.cat)).toEqual(["i:day", "w:oi", "w:pcr"]); // the added chart is in the saved layout
+    expect(screen.getByTestId("eagle-saved-state").textContent).toBe("saved ✓");
+    expect(screen.getByRole("button", { name: "Save layout" })).toBeDisabled();
+    cleanup();
+    localStorage.removeItem(EAGLE_WORKING_KEY); // as on another device: no working copy, only the saved layout
+    mount();
+    await screen.findByRole("heading", { name: "Eagles view" });
+    expect(titles()).toEqual(["Day board", "Open interest by strike", "Put-call ratio"]);
+    expect(screen.getByTestId("eagle-saved-state").textContent).toBe("saved layout");
+  });
+
+  it("changes that were not saved are kept in this browser, and Reset goes back to the saved layout", async () => {
+    mount();
+    await userEvent.click(await screen.findByRole("button", { name: "Remove Day board" }));
+    expect(titles()).toEqual(["Open interest by strike"]);
+    cleanup();
+    mount(); // reopened without saving: the working board is still there, and still marked unsaved
+    await screen.findByRole("heading", { name: "Eagles view" });
+    expect(titles()).toEqual(["Open interest by strike"]);
+    expect(screen.getByRole("button", { name: "Save layout ●" })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "Reset" })); // nothing was ever saved: the starter board
+    expect(titles()).toEqual(["Day board", "Open interest by strike"]);
+    expect(screen.getByRole("button", { name: "Save layout" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Remove Day board" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save layout ●" }));
+    await userEvent.click(screen.getByRole("button", { name: /Add widgets/ }));
+    await userEvent.click(screen.getByTestId("eagle-add-w:pcr"));
+    expect(titles()).toEqual(["Open interest by strike", "Put-call ratio"]);
+    await userEvent.click(screen.getByRole("button", { name: "Reset" })); // back to what was saved
+    expect(titles()).toEqual(["Open interest by strike"]);
+  });
+
+  it("only the saved layout follows the owner to other devices: the working copy stays in this browser", () => {
+    expect(isSynced(EAGLE_KEY)).toBe(true);
+    expect(isSynced(EAGLE_WORKING_KEY)).toBe(false);
   });
 
   it("a saved board that names a widget which no longer exists opens without it", async () => {

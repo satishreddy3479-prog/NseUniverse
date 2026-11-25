@@ -8,7 +8,7 @@ import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { StreamButtons } from "../components/LiveActivity";
 import { Button } from "../components/ui";
-import { addItem, countOf, duplicateItem, emptyBoard, fitBoard, loadBoard, type EagleItem, type LimitOf, removeItem, saveBoard, starterBoard, titleOf, withLayout, type EagleBoard } from "../lib/eagle";
+import { addItem, clearWorking, countOf, duplicateItem, emptyBoard, fitBoard, loadBoard, loadWorking, saveWorking, type EagleItem, type LimitOf, removeItem, saveBoard, starterBoard, titleOf, withLayout, type EagleBoard } from "../lib/eagle";
 import { fmtExpiry } from "../lib/format";
 import { useExpiries } from "../lib/hooks";
 
@@ -150,7 +150,19 @@ function Picker({ board, onAdd, onClose, chartsOnly }: { board: EagleBoard; onAd
 
 function Board() {
   const { width, containerRef, mounted } = useContainerWidth();
-  const [board, setBoard] = useState<EagleBoard>(() => { const saved = loadBoard(sizeOf); return saved ? (loadAuto() ? fitWith(saved) : saved) : starter(); });
+  // The saved layout (shared with the owner's other browsers) and the board being worked on here: a change is kept in this browser at once, "Save layout" makes it the saved one.
+  const [saved, setSaved] = useState<EagleBoard | null>(() => loadBoard(sizeOf));
+  const [board, setBoardRaw] = useState<EagleBoard>(() => {
+    const work = loadWorking(sizeOf);
+    if (work) return work.board;
+    const s = loadBoard(sizeOf);
+    return s ? (loadAuto() ? fitWith(s) : s) : starter();
+  });
+  const [touched, setTouched] = useState<boolean>(() => loadWorking(sizeOf)?.touched ?? false);
+  const [justSaved, setJustSaved] = useState(false);
+  // every change the person makes (a widget added, copied, removed, moved, resized, the starter or an empty board) counts as unsaved; the board re-fitting itself does not
+  const setBoard: typeof setBoardRaw = useCallback((v) => { setBoardRaw(v); }, []);
+  const edit = useCallback((fn: (b: EagleBoard) => EagleBoard) => { setTouched(true); setJustSaved(false); setBoardRaw(fn); }, []);
   const [picking, setPicking] = useState(false);
   const [auto, setAuto] = useState(loadAuto);
   const [chartsOnly, setChartsOnly] = useState(loadCharts);
@@ -162,20 +174,18 @@ function Board() {
   const widthRef = useRef(width);
   widthRef.current = width;
   const pinned = useRef(new Set<string>()); // boxes the person has resized by hand: auto-fit leaves their height alone
-  const first = useRef(true);
-  useEffect(() => {
-    if (first.current) { first.current = false; return; }
-    saveBoard(board);
-  }, [board]);
+  useEffect(() => { saveWorking(board, touched); }, [board, touched]);
+  const save = () => { if (saveBoard(board)) { setSaved(board); setTouched(false); setJustSaved(true); } };
+  const reset = () => { clearWorking(); const s = saved ?? starter(); setBoardRaw(loadAuto() ? fitWith(s, natRef.current, widthRef.current, pinned.current) : s); setTouched(false); setJustSaved(false); };
 
   // with auto-fit on, every change of the board (a box added, copied, removed, moved or resized) ends with the boxes fitted: no gaps
   const settle = useCallback((b: EagleBoard) => (auto ? fitWith(b, natRef.current, widthRef.current, pinned.current) : b), [auto]);
   // a tool's measured height or the width of the board changed: fit again
   useEffect(() => { if (auto) setBoard((b) => fitWith(b, natRef.current, widthRef.current, pinned.current)); }, [auto, nat, Math.round(width / 40)]); // eslint-disable-line react-hooks/exhaustive-deps
-  const onLayoutChange = useCallback((next: Layout) => setBoard((b) => settle(withLayout(b, next))), [settle]);
-  const add = (id: string) => { const s = sizeOf(id); if (s) setBoard((b) => settle(addItem(b, id, s))); };
-  const copy = (key: string) => setBoard((b) => { const cat = b.items.find((x) => x.key === key)?.cat; const s = cat ? sizeOf(cat) : undefined; return s ? settle(duplicateItem(b, key, s)) : b; });
-  const remove = (key: string) => setBoard((b) => settle(removeItem(b, key)));
+  const onLayoutChange = useCallback((next: Layout) => setBoardRaw((b) => { const nb = settle(withLayout(b, next)); return nb; }), [settle]);
+  const add = (id: string) => { const s = sizeOf(id); if (s) edit((b) => settle(addItem(b, id, s))); };
+  const copy = (key: string) => edit((b) => { const cat = b.items.find((x) => x.key === key)?.cat; const s = cat ? sizeOf(cat) : undefined; return s ? settle(duplicateItem(b, key, s)) : b; });
+  const remove = (key: string) => edit((b) => settle(removeItem(b, key)));
   const toggleAuto = (on: boolean) => {
     setAuto(on);
     try { localStorage.setItem(AUTOFIT_KEY, on ? "on" : "off"); } catch { /* the choice lasts for this visit */ }
@@ -191,8 +201,11 @@ function Board() {
         <Button onClick={() => setPicking((p) => !p)} title="Add widgets: any tool, as many times as you like">＋ Add widgets</Button>
         <label className="flex items-center gap-1.5 text-sm" title="Show only the charts and their controls: no readings, tables or notes"><input type="checkbox" checked={chartsOnly} onChange={(e) => toggleCharts(e.target.checked)} className="accent-[var(--brass)]" data-testid="eagle-charts-only" /> Charts only</label>
         <label className="flex items-center gap-1.5 text-sm" title="Pack the boxes with no gaps and let them grow into free space"><input type="checkbox" checked={auto} onChange={(e) => toggleAuto(e.target.checked)} className="accent-[var(--brass)]" data-testid="eagle-autofit" /> Auto-fit</label>
-        <Button onClick={() => setBoard(starter())} title="Back to the starting set of widgets">Starter board</Button>
-        <Button onClick={() => setBoard(emptyBoard())} disabled={board.items.length === 0} title="Take every widget off the board">Clear board</Button>
+        <Button onClick={() => edit(() => starter())} title="Back to the starting set of widgets">Starter board</Button>
+        <Button onClick={() => edit(() => emptyBoard())} disabled={board.items.length === 0} title="Take every widget off the board">Clear board</Button>
+        <Button onClick={save} disabled={!touched} title="Keep this board as your saved layout: it opens like this, here and on your other devices">{touched ? "Save layout ●" : "Save layout"}</Button>
+        <Button onClick={reset} disabled={!touched && saved != null} title="Go back to the saved layout (or the starter board if none was saved)">Reset</Button>
+        <span className="text-xs text-muted" data-testid="eagle-saved-state">{touched ? "unsaved changes (kept in this browser)" : justSaved ? "saved ✓" : saved ? "saved layout" : "no saved layout yet"}</span>
         <span className="text-xs text-muted" data-testid="eagle-count">{board.items.length} widget{board.items.length === 1 ? "" : "s"}</span>
         <span className="hidden text-xs text-muted md:inline">Drag a title bar to move · drag a corner to resize · ⧉ adds another copy · remembered in this browser</span>
         {picking && <Picker board={board} onAdd={add} onClose={() => setPicking(false)} chartsOnly={chartsOnly} />}
@@ -207,7 +220,7 @@ function Board() {
         )}
         {mounted && !stacked && boxes.length > 0 && width > 0 && (
           <GridLayout width={width} layout={board.layout} gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: [12, 12], containerPadding: [0, 0] }}
-            dragConfig={{ handle: ".widget-drag", cancel: ".widget-nodrag" }} compactor={verticalCompactor} onLayoutChange={onLayoutChange} onResizeStop={(_l, _old, item) => { if (item) pinned.current.add(item.i); }}>
+            dragConfig={{ handle: ".widget-drag", cancel: ".widget-nodrag" }} compactor={verticalCompactor} onLayoutChange={onLayoutChange} onResizeStop={(_l, _old, item) => { if (item) pinned.current.add(item.i); setTouched(true); setJustSaved(false); }} onDragStop={() => { setTouched(true); setJustSaved(false); }}>
             {boxes.map(({ it, def }) => (
               <div key={it.key}><Frame board={board} itemKey={it.key} def={def} chartsOnly={chartsOnly} onNat={onNat} onRemove={() => remove(it.key)} onCopy={() => copy(it.key)} /></div>
             ))}

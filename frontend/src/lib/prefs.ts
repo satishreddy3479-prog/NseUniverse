@@ -12,7 +12,7 @@
  *  - Offline: the app opens with this browser's values after a short wait, keeps its unsent changes and sends them when the server answers again.
  */
 const META_KEY = "nse.prefs.sync.v1";
-const DENY = ["nse.prefs.", "nse.builder.working", "nse.strategies", "nse.closed", "nse.builder.temp", "nse.builder.open-closed", "nse.builder.expired", "nse.layout.v1.probe"];
+const DENY = ["nse.prefs.", "nse.eagles.working", "nse.builder.working", "nse.strategies", "nse.closed", "nse.builder.temp", "nse.builder.open-closed", "nse.builder.expired", "nse.layout.v1.probe"];
 const FLUSH_MS = 600;
 const RETRY_MS = 20_000;
 

@@ -3,7 +3,10 @@
  * so every box has its own key (``<widget>~<n>``) and the widget it shows is ``cat``. A layout that was saved is read back field by field; a widget that no longer
  * exists is dropped, a box that is missing is made, nothing else is guessed. Only the view is kept (in this browser), never any data.
  */
+/** The SAVED layout (it follows the owner to other browsers: lib/prefs.ts mirrors every ``nse.`` key). */
 export const EAGLE_KEY = "nse.eagles.layout.v1";
+/** The board as it is being worked on in this browser, kept at every change so nothing added is lost before "Save layout" is pressed (not shared: denied in lib/prefs.ts). */
+export const EAGLE_WORKING_KEY = "nse.eagles.working.v1";
 export const GRID_COLS = 12;
 
 export interface EagleItem { key: string; cat: string }
@@ -186,4 +189,21 @@ function fitOnce(layout: readonly Box[], cols: number, byOrder: Order, limit?: L
 export function fitBoard(b: EagleBoard, limit?: LimitOf): EagleBoard {
   const layout = fitLayout(b.layout, GRID_COLS, limit);
   return JSON.stringify(layout) === JSON.stringify(b.layout) ? b : { ...b, layout };
+}
+
+/** The working copy of the board and whether it has changes that were not saved; null when there is none. */
+export function loadWorking(sizeOf: (cat: string) => Size | undefined): { board: EagleBoard; touched: boolean } | null {
+  try {
+    const raw = localStorage.getItem(EAGLE_WORKING_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as { board?: unknown; touched?: unknown };
+    const board = parseBoard(JSON.stringify(v.board ?? null), sizeOf);
+    return board ? { board, touched: v.touched === true } : null;
+  } catch { return null; }
+}
+export function saveWorking(board: EagleBoard, touched: boolean): void {
+  try { localStorage.setItem(EAGLE_WORKING_KEY, JSON.stringify({ board, touched })); } catch { /* the board lasts for this visit */ }
+}
+export function clearWorking(): void {
+  try { localStorage.removeItem(EAGLE_WORKING_KEY); } catch { /* nothing to remove */ }
 }
