@@ -23,6 +23,7 @@ from statistics import median
 from typing import Any
 
 from app.intelligence import fusion as fz
+from app.intelligence import pullback as pb
 from app.intelligence import validation as val
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -73,18 +74,29 @@ def lean(score: float | None, quality: float | None) -> dict[str, Any]:
 
 # ------------------------------------------------------------------------------------------------ sentiment through the day
 def path(rows: Sequence[Mapping[str, Any]], weights: Mapping[str, float]) -> list[dict[str, Any]]:
-    """The recorded minutes of the session as chart points: time, spot, the verdict re-scored with today's weights, confidence and the trend reading (when it was recorded)."""
-    keep = list(rows)
-    if len(keep) > MAX_PATH_POINTS:
-        step = math.ceil(len(keep) / MAX_PATH_POINTS)
-        keep = [r for i, r in enumerate(keep) if i % step == 0 or i == len(keep) - 1]
+    """The recorded minutes of the session as chart points: time, spot, the verdict re-scored with today's weights (capped when a strong price turn opposes it: ``raw_score`` and
+    ``cap`` then say so), confidence and the trend reading (when it was recorded)."""
+    fl = pb.flags(rows)
+    idx = list(range(len(rows)))
+    if len(idx) > MAX_PATH_POINTS:
+        step = math.ceil(len(idx) / MAX_PATH_POINTS)
+        idx = [i for i in idx if i % step == 0 or i == len(rows) - 1]
     out = []
-    for r in keep:
+    for i in idx:
+        r = rows[i]
         m = r.get("metrics") or {}
         tr = m.get("trend") or {}
         eng = r.get("engines") or {}
-        out.append({"at": r.get("at"), "spot": _num(r.get("spot")), "score": _round(val.rescore(r, weights)), "confidence": _num(r.get("confidence")),
-                    "trend_score": _num(tr.get("score")), "trend_label": tr.get("label"), "trend_group": _round(_num(eng.get("trend")))})
+        raw = val.rescore(r, weights)
+        sc, why = pb.cap(raw, fl[i])
+        pt = {"at": r.get("at"), "spot": _num(r.get("spot")), "score": _round(sc), "confidence": _num(r.get("confidence")),
+              "trend_score": _num(tr.get("score")), "trend_label": tr.get("label"), "trend_group": _round(_num(eng.get("trend")))}
+        flag = fl[i]
+        if flag is not None:
+            pt["pullback"] = {"id": flag["id"], "severity": flag["severity"], "drop_atr": flag["drop_atr"]}
+        if why is not None:
+            pt["raw_score"], pt["cap"] = _round(raw), why["reason"]
+        out.append(pt)
     return out
 
 
@@ -155,6 +167,7 @@ def history(rows: Sequence[Mapping[str, Any]], weights: Mapping[str, float]) -> 
 def scorecard(rows: Sequence[Mapping[str, Any]], weights: Mapping[str, float], *, step_min: int = 15, horizon: str = "30m") -> dict[str, Any]:
     """Today's own calls against what price then did: one row every ``step_min`` minutes, the verdict then and the move over the next 30 minutes (pending until the 30 minutes have passed)."""
     outs = val.outcomes(rows, horizon)
+    flag_at = {r.get("at"): f for r, f in zip(rows, pb.flags(rows), strict=True)}
     keep: list[dict[str, Any]] = []
     last_t: datetime | None = None
     for o in outs:
@@ -162,7 +175,7 @@ def scorecard(rows: Sequence[Mapping[str, Any]], weights: Mapping[str, float], *
         if t is None or (last_t is not None and (t - last_t).total_seconds() < step_min * 60):
             continue
         last_t = t
-        score = val.rescore(o["row"], weights)
+        score, _ = pb.cap(val.rescore(o["row"], weights), flag_at.get(o["row"].get("at")))
         call = 0 if score is None or abs(score) < LEAN_MIN_SCORE else (1 if score > 0 else -1)
         f = o["forward_pct"]
         if score is None:
@@ -292,6 +305,11 @@ def build(*, now: datetime, session: str, live: bool, rows: Sequence[Mapping[str
     now_view: dict[str, Any] = {"score": score, "class": sent.get("class"), "confidence": conf, "groups_bullish": _num(sent.get("groups_bullish")), "groups_bearish": _num(sent.get("groups_bearish")),
                                 "coverage": _num(sent.get("coverage")), "reason": sent.get("reason"), "lean": lean(score, conf), "regime": (summary.get("regime") or {}).get("name") if live else None,
                                 "trend": tr_view, "as_of": None if last is None or live else last.get("at")}
+    flag = pb.assess_at(rows)["signal"] if rows else None
+    capped, why = pb.cap(score, flag)
+    if why is not None:
+        now_view.update(score=capped, **{"class": fz.classify(capped), "lean": lean(capped, conf), "raw_score": why["raw_score"], "cap": why["reason"]})
+    now_view["pullback"] = flag
     atr = _num((tr or {}).get("atr"))
     return {
         "generated_at": now.isoformat(timespec="seconds"), "session": session, "live": live, "spot": spot, "atm_iv": iv, "atr": atr, "now": now_view,

@@ -28,6 +28,8 @@ TF = 5
 WINDOW = 12
 ADX_N = 14
 MIN_DWELL = 3
+FADE_BARS = 3  # a trend label whose last this-many 5-minute closes are all FADE_ATR under the window's high (over its low) is 'fading'
+FADE_ATR = 2.0
 MIN_WINDOW = 6
 OR_MINUTES = 15
 ATR_N = 14
@@ -180,7 +182,27 @@ def regime_series(bars1m: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
         vals = [x for x in r["scores"].values() if x is not None]
         r["agreement"] = None if lab in ("Mixed", "Warming up") else {
             "agree": sum(1 for x in vals if (x < 0.5 if lab == "Range-bound" else x > 0.5)), "of": len(vals)}
+        r["fading"] = False
+    for i, r in enumerate(rows):
+        if fading(bars, i, r["label"]):
+            r["label"], r["fading"], r["agreement"] = f"{r['label']} (fading)", True, None
     return rows
+
+
+def fading(bars: Sequence[Mapping[str, Any]], i: int, label: str) -> bool:
+    """A trend label that price has already walked back from: the last ``FADE_BARS`` 5-minute closes are all at least ``FADE_ATR`` ATR under the ``WINDOW``-bar high (an up label) or over its
+    low (a down label). The label is late by construction (it reads the last 60 minutes), so this says so instead of waiting for the score to fall. Uses bars 0..i only."""
+    up, down = label in UP_LABELS, label in DOWN_LABELS
+    if not (up or down) or i < FADE_BARS:
+        return False
+    atr = _atr(bars[: i + 1])
+    if atr is None or atr <= 0:
+        return False
+    window = bars[max(0, i + 1 - WINDOW): i + 1]
+    last = [b["c"] for b in bars[i + 1 - FADE_BARS: i + 1]]
+    if up:
+        return bool(max(last) <= max(b["h"] for b in window) - FADE_ATR * atr)
+    return bool(min(last) >= min(b["l"] for b in window) + FADE_ATR * atr)
 
 
 def direction_of(label: str | None) -> int:

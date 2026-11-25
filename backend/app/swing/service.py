@@ -185,6 +185,7 @@ class SwingPaperService:
             log_event(logger, logging.ERROR, "swing_paper_error", error=type(e).__name__)
             result = {"state": "error", "detail": type(e).__name__}
         finally:
+            self.progress = None  # cleared before 'running' drops, so status never shows a finished run with a phase still on it
             self._running = False
         self.last_result = f"{result['state']}" + (f": {result['detail']}" if result.get("detail") else "")
         with contextlib.suppress(Exception):

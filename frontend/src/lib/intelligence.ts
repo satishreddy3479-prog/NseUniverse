@@ -135,7 +135,9 @@ export function freshLabel(e: { freshness: { fresh: boolean | null; age_s: numbe
 }
 
 // ---- the day outlook (backend: GET /api/intelligence/outlook)
-export interface OutlookPoint { at: string; spot: number | null; score: number | null; confidence: number | null; trend_score: number | null; trend_label: string | null; trend_group: number | null }
+/** A price-structure turn flag: spot is `drop_atr` ATRs under the session high (bearish) or over the session low (bullish). Only a strong one caps the verdict. */
+export interface PullbackFlag { id: "pullback_from_high" | "bounce_from_low"; severity: "mild" | "strong"; drop_atr: number; direction?: "bearish" | "bullish"; title?: string; drop_points?: number; evidence?: string[]; invalidation?: string }
+export interface OutlookPoint { at: string; spot: number | null; score: number | null; confidence: number | null; trend_score: number | null; trend_label: string | null; trend_group: number | null; pullback?: Pick<PullbackFlag, "id" | "severity" | "drop_atr">; raw_score?: number | null; cap?: string }
 export interface OutlookPhase {
   name: string; from: string; to: string; state: "past" | "now" | "future"; minutes: number; rows?: number; mean_score?: number | null; class?: string | null; last_score?: number | null;
   move_pct?: number | null; high?: number | null; low?: number | null; trend?: string | null; expected_sd_points?: number | null; expected_minutes?: number; note?: string;
@@ -153,6 +155,7 @@ export interface Outlook {
   now: {
     score: number | null; class: string | null; confidence: number | null; groups_bullish: number | null; groups_bearish: number | null; coverage: number | null; reason: string | null;
     lean: { call: -1 | 0 | 1; text: string; why: string }; regime: string | null; as_of?: string | null;
+    raw_score?: number | null; cap?: string; pullback?: PullbackFlag | null;
     trend: { label: string | null; score: number | null; direction: number | null; agreement: { agree: number; of: number } | null; session_mean: number | null; from_mean_atr: number | null } | null;
   };
   path: OutlookPoint[]; phases: OutlookPhase[]; expected: OutlookHorizon[]; levels: OutlookLevel[];

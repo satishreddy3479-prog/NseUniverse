@@ -24,6 +24,27 @@ function mount(body: unknown, status = 200) {
 }
 afterEach(() => vi.unstubAllGlobals());
 
+describe("the turn cap and the price warning", () => {
+  const withNow = (extra: Partial<Outlook["now"]>): Outlook => ({ ...closed, now: { ...closed.now, ...extra } });
+  it("says when a strong price turn capped the verdict, with the raw score", async () => {
+    mount(withNow({ score: 14, class: "Neutral", raw_score: 37.4, cap: "capped from +37: price is 53 points (2.6 ATR) under the session high" }));
+    const note = await screen.findByTestId("tile-note");
+    expect(note.textContent).toContain("capped from +37");
+    expect(note.textContent).toContain("raw +37");
+  });
+  it("shows a mild price warning without changing the verdict", async () => {
+    mount(withNow({ pullback: { id: "pullback_from_high", severity: "mild", drop_atr: 1.7, title: "Price is pulling back from the session high" } }));
+    const note = await screen.findByTestId("tile-note");
+    expect(note.textContent).toContain("1.7 ATR");
+    expect(note.textContent).toContain("warning only");
+  });
+  it("shows no note when there is neither a cap nor a flag", async () => {
+    mount(withNow({ cap: undefined, pullback: null }));
+    await screen.findByTestId("day-header");
+    expect(screen.queryByTestId("tile-note")).toBeNull();
+  });
+});
+
 describe("the day chart", () => {
   it("has the index, the fused sentiment with the trend group, and the evidence quality on one time axis, with the verdict zones named", () => {
     const { option, height } = dayBoardChart(colors, live);

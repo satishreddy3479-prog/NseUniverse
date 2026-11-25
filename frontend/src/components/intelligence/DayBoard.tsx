@@ -7,11 +7,12 @@ import type { BucketStat, Outlook, OutlookPhase, Reliability, ScorecardRow } fro
 import { useSpotDisplay } from "../../lib/useLive";
 import { EChart, useChartColors } from "../EChart";
 
-const Tile = ({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) => (
+const Tile = ({ label, value, sub, tone, note }: { label: string; value: string; sub?: string; tone?: string; note?: string }) => (
   <div className="min-w-0 rounded-md bg-slate-2 px-3 py-2">
     <div className="text-[11px] uppercase tracking-wide text-muted">{label}</div>
     <div className={`text-lg font-semibold leading-tight ${tone ?? "text-paper"}`}>{value}</div>
     {sub && <div className="text-xs leading-snug text-muted">{sub}</div>}
+    {note && <div className="mt-1 text-xs leading-snug text-brass" data-testid="tile-note">{note}</div>}
   </div>
 );
 const Panel = ({ title, hint, children, testid }: { title: string; hint?: string; children: React.ReactNode; testid?: string }) => (
@@ -30,7 +31,8 @@ function Header({ o }: { o: Outlook }) {
     <section aria-label="The day in four answers" data-testid="day-header">
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
         <Tile label={o.live ? "Sentiment now" : "Sentiment at the last recorded minute"} value={n.score == null ? "No verdict" : `${n.class} (${sgn(n.score)})`} tone={toneClass(scoreTone(n.score))}
-          sub={n.score == null ? (n.reason ?? "not enough evidence") : `evidence quality ${n.confidence?.toFixed(0) ?? MISSING}/100 · ${pctOf(n.groups_bullish)} of the weight bullish, ${pctOf(n.groups_bearish)} bearish`} />
+          sub={n.score == null ? (n.reason ?? "not enough evidence") : `evidence quality ${n.confidence?.toFixed(0) ?? MISSING}/100 · ${pctOf(n.groups_bullish)} of the weight bullish, ${pctOf(n.groups_bearish)} bearish`}
+          note={n.cap ? `${n.cap} (raw ${sgn(n.raw_score ?? null)})` : n.pullback ? `Price warning: ${n.pullback.title ?? n.pullback.id.replace(/_/g, " ")}, ${n.pullback.drop_atr.toFixed(1)} ATR (a warning only until 2.5 ATR)` : undefined} />
         <Tile label="Session regime" value={tr?.label ?? "Warming up"} tone={tr?.direction === 1 ? "text-up" : tr?.direction === -1 ? "text-down" : "text-paper"}
           sub={tr?.score == null ? "the first half hour has no regime yet" : `trend score ${Math.round(tr.score * 100)}/100${tr.agreement ? ` · ${tr.agreement.agree} of ${tr.agreement.of} readings agree` : ""}`} />
         <Tile label="Lean" value={n.lean.text} tone={n.lean.call === 1 ? "text-up" : n.lean.call === -1 ? "text-down" : "text-paper"} sub={n.lean.why} />

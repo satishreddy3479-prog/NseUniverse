@@ -5,6 +5,9 @@ _Last updated: 2026-11-23_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Market Intelligence: turn detection (25 Nov 2026, D309)
+Built and tested on the ten stored sessions, not committed to the server yet and not seen live. A price-pullback flag (`intelligence/pullback.py`), a verdict cap (strong flag only, to Neutral, raw score shown) and a "(fading)" trend label (2 ATR rule). The mild flag is a warning only because the stored sessions showed no benefit. The cross-session history table is still uncapped. Thresholds are provisional; read the decision for the numbers and the limits.
+
 ## Market Intelligence: Day board (25 Nov 2026, D295)
 New first tab: sentiment through the day (chart with the fused score, the trend-and-regime group and the evidence quality), five session phases, the expected outcome (priced 1-sigma bands, lean, levels, what followed each verdict in the stored sessions) and the track record with a grade (Early until 20 out-of-sample sessions). The fused verdict has a sixth group F "Trend and regime" (weights re-set to sum 100; ARCH not bumped, history re-scored with today's weights); each recorded minute now stores the trend reading. Endpoint `/api/intelligence/outlook`. Not yet deployed; not seen live (first session Wed 25 Nov).
 
