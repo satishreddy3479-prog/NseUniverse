@@ -108,14 +108,18 @@ export const countOf = (b: EagleBoard, cat: string): number => b.items.filter((x
  * then each box is widened into free space on its right and heightened into free space under it, up to the bottom of the board. A hole that no box can grow into (a gap
  * with an item on every side that is blocked) is left; nothing is ever made smaller than a box's own minimum, and nothing overlaps. Running it on its own result changes nothing.
  */
-export function fitLayout(layout: readonly Box[], cols = GRID_COLS): Box[] {
+/** How tall a box may be, in grid rows, at its current width: it is not made taller than ``soft`` to fill a hole unless nothing else can, and never taller than ``hard``. */
+export interface Limit { soft: number; hard: number }
+export type LimitOf = (b: Box) => Limit | undefined;
+
+export function fitLayout(layout: readonly Box[], cols = GRID_COLS, limit?: LimitOf): Box[] {
   // The boxes are packed in several orders (as they are read, tallest first, widest first, biggest first) and the packing with the fewest empty cells wins, the shortest on a tie.
   // A box that grew may pack differently the next time, so the result is fitted again until it stops changing (or comes back to one already seen): fitting a fitted layout changes nothing.
   const score = (l: readonly Box[]) => { const bottom = l.reduce((m, b) => Math.max(m, b.y + b.h), 0); return [cols * bottom - l.reduce((n, b) => n + b.w * b.h, 0), bottom]; };
   const best = (l: readonly Box[]): Box[] => {
     let top: Box[] | null = null, topScore: number[] = [];
     for (const order of ORDERS) {
-      const got = fitOnce(l, cols, order);
+      const got = fitOnce(l, cols, order, limit);
       const sc = score(got);
       if (!top || sc[0]! < topScore[0]! || (sc[0] === topScore[0] && sc[1]! < topScore[1]!)) { top = got; topScore = sc; }
     }
@@ -142,7 +146,7 @@ const ORDERS: Order[] = [
   (a, b) => b.w - a.w || b.h - a.h || reading(a, b), (a, b) => a.x - b.x || a.y - b.y || a.i.localeCompare(b.i),
 ];
 
-function fitOnce(layout: readonly Box[], cols: number, byOrder: Order): Box[] {
+function fitOnce(layout: readonly Box[], cols: number, byOrder: Order, limit?: LimitOf): Box[] {
   const order = [...layout].sort(byOrder);
   const taken: boolean[][] = [];
   const free = (x: number, y: number, w: number, h: number) => {
@@ -154,7 +158,10 @@ function fitOnce(layout: readonly Box[], cols: number, byOrder: Order): Box[] {
   };
   const out: Box[] = [];
   for (const l of order) {
-    const w = Math.min(cols, Math.max(1, l.w)), h = Math.max(1, l.h);
+    const w = Math.min(cols, Math.max(1, l.w));
+    const lim = limit?.({ ...l, w });
+    // a box whose height is fixed (soft = hard: a whole tool as tall as its content, or one the person sized) takes exactly that; any other is cut back to the most it may be. Its own minimum wins.
+    const h = Math.max(1, l.minH ?? 1, lim == null ? l.h : lim.soft === lim.hard ? lim.hard : Math.min(l.h, lim.hard));
     let placed = false;
     for (let y = 0; !placed; y++) {
       for (let x = 0; x + w <= cols; x++) if (free(x, y, w, h)) { out.push({ ...l, x, y, w, h }); mark(x, y, w, h); placed = true; break; }
@@ -164,14 +171,19 @@ function fitOnce(layout: readonly Box[], cols: number, byOrder: Order): Box[] {
     while (b.x + b.w < cols && free(b.x + b.w, b.y, 1, b.h)) { mark(b.x + b.w, b.y, 1, b.h); b.w += 1; }
   }
   const end = out.reduce((m, b) => Math.max(m, b.y + b.h), 0);
-  for (const b of out) { // heighten into the free cells under, over the box's whole width, up to the bottom of the board
-    while (b.y + b.h < end && free(b.x, b.y + b.h, b.w, 1)) { mark(b.x, b.y + b.h, b.w, 1); b.h += 1; }
+  // heighten into the free cells under, over the box's whole width, up to the bottom of the board: first every box up to its comfortable height, then, only where a hole is still
+  // there, up to the most it may be (a chart box is never stretched past that, a whole tool is never taller than its content)
+  for (const stage of ["soft", "hard"] as const) {
+    for (const b of out) {
+      const max = () => limit?.(b)?.[stage];
+      while (b.y + b.h < end && (max() == null || b.h < max()!) && free(b.x, b.y + b.h, b.w, 1)) { mark(b.x, b.y + b.h, b.w, 1); b.h += 1; }
+    }
   }
   return out.sort((a, b) => layout.findIndex((l) => l.i === a.i) - layout.findIndex((l) => l.i === b.i));
 }
 
 /** The board with its boxes fitted (see ``fitLayout``); the same board when they already fit. */
-export function fitBoard(b: EagleBoard): EagleBoard {
-  const layout = fitLayout(b.layout);
+export function fitBoard(b: EagleBoard, limit?: LimitOf): EagleBoard {
+  const layout = fitLayout(b.layout, GRID_COLS, limit);
   return JSON.stringify(layout) === JSON.stringify(b.layout) ? b : { ...b, layout };
 }

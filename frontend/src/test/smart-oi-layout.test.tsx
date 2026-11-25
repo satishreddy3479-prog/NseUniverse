@@ -146,3 +146,21 @@ describe("a saved view with a graph switched on that the chart starts without", 
     expect(JSON.parse((await ratio()).getAttribute("data-legend-on")!)).toEqual(["PE − CE per candle (right)"]);
   });
 });
+
+import { legendToShow } from "../lib/legendHeal";
+describe("a saved view never opens a chart with every graph off (the layout saved before graphs could be switched on)", () => {
+  const names = ["Put volume (day)", "Call volume (day)", "PE − CE volume (day, right)", "PE − CE per candle (right)"];
+  const defaults = { "Put volume (day)": true, "Call volume (day)": true, "PE − CE volume (day, right)": true, "PE − CE per candle (right)": false };
+  it("the exact case: three graphs saved as off, the fourth starts off and was never saved as on -> the fourth is shown", () => {
+    expect(legendToShow(names, defaults, ["Put volume (day)", "Call volume (day)", "PE − CE volume (day, right)"])).toEqual(["PE − CE per candle (right)"]);
+  });
+  it("leaves a chart alone when something is already shown, or a graph the view switched on is in the list", () => {
+    expect(legendToShow(names, defaults, ["Put volume (day)"])).toEqual([]); // two default-on graphs are still shown
+    expect(legendToShow(names, defaults, ["Put volume (day)", "Call volume (day)", "PE − CE volume (day, right)"], ["PE − CE per candle (right)"])).toEqual([]);
+    expect(legendToShow(names, defaults, [])).toEqual([]);
+  });
+  it("shows everything when the view switched every graph off, and nothing when the chart has no legend", () => {
+    expect(legendToShow(names, defaults, names)).toEqual(names);
+    expect(legendToShow([], {}, [])).toEqual([]);
+  });
+});

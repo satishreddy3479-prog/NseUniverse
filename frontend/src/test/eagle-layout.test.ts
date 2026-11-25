@@ -212,4 +212,36 @@ describe("auto-fit: no gaps", () => {
     expect(fitBoard(b)).toBe(b);
     expect(b.layout.map((l) => [l.i, l.x, l.y])).toEqual([["a~1", 0, 0], ["b~2", 4, 0]]);
   });
+
+  it("height limits: a box is cut back to what it may be, grows to the comfortable height first and past it only to fill a hole, never past the most", () => {
+    const limit = (b: { i: string }) => (b.i === "page" ? { soft: 6, hard: 6 } : { soft: 8, hard: 14 });
+    // a whole tool of 6 rows beside a chart box of 4 rows and one 30 rows tall: the tall one is cut to 14, the page box stays 6, the chart box grows
+    const got = fitLayout([box("page", 0, 0, 4, 20), box("chartA", 4, 0, 4, 4), box("chartB", 8, 0, 4, 30)], 12, limit);
+    expect(got.find((b) => b.i === "page")!.h).toBe(6); // 20 -> its content height
+    expect(got.find((b) => b.i === "chartB")!.h).toBe(14); // 30 -> the most it may be
+    expect(got.find((b) => b.i === "chartA")!.h).toBeLessThanOrEqual(14);
+  });
+
+  it("a column beside a tall box is filled exactly: the lower box takes what the upper one is blocked from (comfortable height first, then up to the most)", () => {
+    const limit = () => ({ soft: 6, hard: 12 });
+    const got = fitLayout([box("tall", 0, 0, 6, 12), box("a", 6, 0, 6, 3), box("b", 6, 3, 6, 3)], 12, limit);
+    const a = got.find((x) => x.i === "a")!, b = got.find((x) => x.i === "b")!;
+    // a cannot grow (b is right under it); b grows to 6 (comfortable) and then to 9 (hard stage) so that the 12-row column has no hole
+    expect([a.h, b.y, b.h]).toEqual([3, 3, 9]);
+    expect(a.h + b.h).toBe(12);
+  });
+
+  it("never overlaps and stays stable with limits on random boards", () => {
+    let seed = 11;
+    const rnd = (n: number) => { seed = (seed * 48271) % 2147483647; return (seed % n) + 1; };
+    const limit = (b: { w: number }) => ({ soft: 2 * b.w + 2, hard: 4 * b.w + 4 });
+    for (let round = 0; round < 40; round++) {
+      const input = Array.from({ length: 1 + rnd(10) }, (_, k) => ({ ...box(`k${k}`, rnd(12) - 1, rnd(30) - 1, rnd(8), rnd(12)), minH: 2 }));
+      const got = fitLayout(input, 12, limit);
+      const all = cells(got);
+      expect(new Set(all).size, `round ${round}`).toBe(all.length);
+      for (const g of got) expect(g.h, `round ${round}`).toBeLessThanOrEqual(Math.max(limit(g).hard, input.find((b) => b.i === g.i)!.minH));
+      expect(fitLayout(got, 12, limit)).toEqual(got);
+    }
+  });
 });

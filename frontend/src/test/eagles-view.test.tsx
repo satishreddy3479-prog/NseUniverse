@@ -96,8 +96,9 @@ describe("the Eagles view", () => {
     expect(screen.getByTestId("content-w:oi")).toBeTruthy();
     const key = (id: string) => (JSON.parse(localStorage.getItem(EAGLE_KEY) ?? "null") as { items: { key: string; cat: string }[] } | null)?.items.find((x) => x.cat === id)?.key;
     await userEvent.click(screen.getByRole("button", { name: "Add another Day board" }));
-    expect(screen.getByTestId(`eagle-body-${key("i:day")}`).className).toContain("overflow-auto"); // a page: scrolls
-    expect(screen.getByTestId(`eagle-body-${key("w:oi")}`).className).not.toContain("overflow-auto"); // a chart widget: fits
+    expect(screen.getByTestId(`eagle-body-${key("i:day")}`).className).toContain("overflow-x-auto"); // a whole tool scrolls sideways too
+    expect(screen.getByTestId(`eagle-body-${key("w:oi")}`).className).not.toContain("overflow-x-auto"); // a chart widget fits its width
+    for (const id of ["i:day", "w:oi"]) expect(screen.getByTestId(`eagle-body-${key(id)}`).className).toContain("overflow-y-auto"); // every box scrolls up and down when its content is taller than it
   });
 
   it("remembers the board in this browser: what was added and removed is there after the page is opened again", async () => {

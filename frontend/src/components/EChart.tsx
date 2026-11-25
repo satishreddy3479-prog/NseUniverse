@@ -12,6 +12,7 @@ import type { ChartColors } from "../lib/chartOptions";
 import { getHideInfo, subscribeHideInfo, withInfoHidden } from "../lib/chartInfo";
 import { withChartTheme, type ThemeTokens } from "../lib/chartTheme";
 import { hideHover, syncHover, syncLegend, syncZoom, type LinkChart } from "../lib/hoverSync";
+import { legendToShow } from "../lib/legendHeal";
 
 /** The charts of each link group (see ``group`` and ``hoverGroup`` on EChart). */
 const LINK_GROUPS = new Map<string, Set<LinkChart>>();
@@ -413,6 +414,10 @@ export function EChart({ option, onClick, ariaLabel, className = "", group, hove
       for (const n of appliedOn.current) if (!legendOn.includes(n) && legendDefaults.current[n] === false) chart.current?.dispatchAction({ type: "legendUnSelect", name: n });
       for (const n of legendOn) if (!legendOff?.includes(n)) chart.current?.dispatchAction({ type: "legendSelect", name: n });
       appliedOn.current = [...legendOn];
+    }
+    // A saved view must never open a chart with every graph switched off (see legendToShow). Only before the person has touched this legend: a choice made by hand is theirs.
+    if (legendOff && Object.keys(userLegend.current).length === 0) {
+      for (const n of legendToShow(Object.keys(legendDefaults.current), legendDefaults.current, legendOff, legendOn)) chart.current?.dispatchAction({ type: "legendSelect", name: n });
     }
   }, [option, width, height, hideInfo, offKey, onKey]); // eslint-disable-line react-hooks/exhaustive-deps
 

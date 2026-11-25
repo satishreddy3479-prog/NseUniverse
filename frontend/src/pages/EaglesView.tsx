@@ -8,7 +8,7 @@ import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { StreamButtons } from "../components/LiveActivity";
 import { Button } from "../components/ui";
-import { addItem, countOf, duplicateItem, emptyBoard, fitBoard, loadBoard, removeItem, saveBoard, starterBoard, titleOf, withLayout, type EagleBoard } from "../lib/eagle";
+import { addItem, countOf, duplicateItem, emptyBoard, fitBoard, loadBoard, type EagleItem, type LimitOf, removeItem, saveBoard, starterBoard, titleOf, withLayout, type EagleBoard } from "../lib/eagle";
 import { fmtExpiry } from "../lib/format";
 import { useExpiries } from "../lib/hooks";
 
@@ -18,9 +18,44 @@ const NARROW = 820; // below this width the boxes stack in one full-width column
 type Mode = "weekly" | "monthly" | "manual";
 const RANGES: Range[] = [5, 10, 20, "all"];
 
-const starter = () => fitBoard(starterBoard(STARTER, sizeOf));
+const ROW_UNIT = ROW_HEIGHT + 12; // a grid row and the gap under it
+
+/**
+ * How tall each box may be. A whole tool is exactly as tall as its content (measured): any more and there would be empty space under its charts. A chart widget fills its box, so
+ * it may grow into a hole, but not into a long thin strip: comfortably up to 0.8 times its width, and past that (to 1.4 times) only where a hole is left that nothing else can fill.
+ */
+function limitFor(items: readonly EagleItem[], nat: Readonly<Record<string, number>>, width: number, pinned: ReadonlySet<string> = new Set()): LimitOf {
+  return (b) => {
+    if (pinned.has(b.i)) return { soft: b.h, hard: b.h }; // the person sized this box: it stays as they made it
+    const def = CATALOG_BY_ID.get(items.find((x) => x.key === b.i)?.cat ?? "");
+    if (!def) return undefined;
+    if (def.kind === "page") { const n = nat[b.i]; return n ? { soft: n, hard: n } : undefined; }
+    const wpx = ((width > 0 ? width : 1200) / COLS) * b.w;
+    return { soft: Math.ceil((0.8 * wpx + 12) / ROW_UNIT), hard: Math.ceil((1.4 * wpx + 12) / ROW_UNIT) };
+  };
+}
+const fitWith = (b: EagleBoard, nat: Readonly<Record<string, number>> = {}, width = 0, pinned?: ReadonlySet<string>): EagleBoard => fitBoard(b, limitFor(b.items, nat, width, pinned));
+
+const starter = () => fitWith(starterBoard(STARTER, sizeOf));
 const AUTOFIT_KEY = "nse.eagles.autofit.v1";
 const CHARTS_KEY = "nse.eagles.charts.v1";
+const CHROME_PX = 33 + 16; // a box's title bar (with its border) and the padding round its body
+
+/** A whole tool's own height in grid rows: what its content needs, measured, so the box can be sized to it (no empty space under its charts). */
+function useNaturalRows(ref: React.RefObject<HTMLElement | null>, report: ((rows: number) => void) | undefined) {
+  const cb = useRef(report);
+  cb.current = report;
+  const on = report !== undefined;
+  useEffect(() => {
+    const el = ref.current;
+    if (!on || !el || typeof ResizeObserver === "undefined") return;
+    const measure = () => { const h = el.offsetHeight; if (h > 0) cb.current?.(Math.ceil((h + CHROME_PX + 12) / ROW_UNIT)); };
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, [on, ref]);
+}
 const loadCharts = (): boolean => { try { return localStorage.getItem(CHARTS_KEY) !== "off"; } catch { return true; } };
 
 /** True when a box that is expected to have no chart really shows none (after its data had time to arrive): then it says so instead of staying blank. */
@@ -39,10 +74,12 @@ const loadAuto = (): boolean => { try { return localStorage.getItem(AUTOFIT_KEY)
 const Content = ({ def }: { def: EagleDef }) => <>{def.render()}</>;
 
 /** One box of the board: a title bar to drag it by, copy and remove buttons, and the widget, which fits the box (or scrolls inside it for a whole tool). */
-function Frame({ board, itemKey, def, onRemove, onCopy, height, chartsOnly }: { board: EagleBoard; itemKey: string; def: EagleDef; onRemove: () => void; onCopy: () => void; height?: number; chartsOnly?: boolean }) {
+function Frame({ board, itemKey, def, onRemove, onCopy, height, chartsOnly, onNat }: { board: EagleBoard; itemKey: string; def: EagleDef; onRemove: () => void; onCopy: () => void; height?: number; chartsOnly?: boolean; onNat?: (key: string, rows: number) => void }) {
   const title = titleOf(board, itemKey, def.title);
   const bodyRef = useRef<HTMLDivElement>(null);
   const noChart = useNoChart(bodyRef, chartsOnly === true && !def.charts);
+  const innerRef = useRef<HTMLDivElement>(null);
+  useNaturalRows(innerRef, def.kind === "page" ? (rows) => onNat?.(itemKey, rows) : undefined);
   return (
     <section aria-label={title} data-testid={`eagle-box-${itemKey}`} style={height ? { height } : undefined}
       className="flex h-full flex-col overflow-hidden rounded-[var(--radius-panel)] border border-rule bg-slate">
@@ -55,9 +92,11 @@ function Frame({ board, itemKey, def, onRemove, onCopy, height, chartsOnly }: { 
             className="widget-nodrag inline-flex size-7 items-center justify-center rounded-sm text-muted hover:bg-slate-2 hover:text-paper">×</button>
         </div>
       </header>
-      <div ref={bodyRef} className={`min-h-0 flex-1 p-2 ${def.kind === "page" ? "overflow-auto" : ""}`} data-testid={`eagle-body-${itemKey}`}>
+      <div ref={bodyRef} className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-2 ${def.kind === "page" ? "overflow-x-auto" : ""}`} data-testid={`eagle-body-${itemKey}`}>
+        <div ref={innerRef} className={def.kind === "page" ? undefined : "h-full"}>
         {noChart && <p className="eagle-keep rounded-sm border border-rule bg-slate-2 p-2 text-xs text-muted" role="status" data-testid={`eagle-nochart-${itemKey}`}>This tool has no chart. Turn off “Charts only” at the top to see it, or remove the box.</p>}
         <ErrorBoundary resetKey={itemKey}><Content def={def} /></ErrorBoundary>
+        </div>
       </div>
     </section>
   );
@@ -111,11 +150,18 @@ function Picker({ board, onAdd, onClose, chartsOnly }: { board: EagleBoard; onAd
 
 function Board() {
   const { width, containerRef, mounted } = useContainerWidth();
-  const [board, setBoard] = useState<EagleBoard>(() => { const saved = loadBoard(sizeOf); return saved ? (loadAuto() ? fitBoard(saved) : saved) : starter(); });
+  const [board, setBoard] = useState<EagleBoard>(() => { const saved = loadBoard(sizeOf); return saved ? (loadAuto() ? fitWith(saved) : saved) : starter(); });
   const [picking, setPicking] = useState(false);
   const [auto, setAuto] = useState(loadAuto);
   const [chartsOnly, setChartsOnly] = useState(loadCharts);
+  const [nat, setNat] = useState<Record<string, number>>({});
+  const onNat = useCallback((key: string, rows: number) => setNat((n) => (n[key] === rows ? n : { ...n, [key]: rows })), []);
   const toggleCharts = (on: boolean) => { setChartsOnly(on); try { localStorage.setItem(CHARTS_KEY, on ? "on" : "off"); } catch { /* the choice lasts for this visit */ } };
+  const natRef = useRef(nat);
+  natRef.current = nat;
+  const widthRef = useRef(width);
+  widthRef.current = width;
+  const pinned = useRef(new Set<string>()); // boxes the person has resized by hand: auto-fit leaves their height alone
   const first = useRef(true);
   useEffect(() => {
     if (first.current) { first.current = false; return; }
@@ -123,7 +169,9 @@ function Board() {
   }, [board]);
 
   // with auto-fit on, every change of the board (a box added, copied, removed, moved or resized) ends with the boxes fitted: no gaps
-  const settle = useCallback((b: EagleBoard) => (auto ? fitBoard(b) : b), [auto]);
+  const settle = useCallback((b: EagleBoard) => (auto ? fitWith(b, natRef.current, widthRef.current, pinned.current) : b), [auto]);
+  // a tool's measured height or the width of the board changed: fit again
+  useEffect(() => { if (auto) setBoard((b) => fitWith(b, natRef.current, widthRef.current, pinned.current)); }, [auto, nat, Math.round(width / 40)]); // eslint-disable-line react-hooks/exhaustive-deps
   const onLayoutChange = useCallback((next: Layout) => setBoard((b) => settle(withLayout(b, next))), [settle]);
   const add = (id: string) => { const s = sizeOf(id); if (s) setBoard((b) => settle(addItem(b, id, s))); };
   const copy = (key: string) => setBoard((b) => { const cat = b.items.find((x) => x.key === key)?.cat; const s = cat ? sizeOf(cat) : undefined; return s ? settle(duplicateItem(b, key, s)) : b; });
@@ -131,7 +179,7 @@ function Board() {
   const toggleAuto = (on: boolean) => {
     setAuto(on);
     try { localStorage.setItem(AUTOFIT_KEY, on ? "on" : "off"); } catch { /* the choice lasts for this visit */ }
-    if (on) setBoard((b) => fitBoard(b));
+    if (on) setBoard((b) => fitWith(b, natRef.current, widthRef.current, pinned.current));
   };
 
   const stacked = mounted && width > 0 && width < NARROW;
@@ -153,15 +201,15 @@ function Board() {
         {stacked && boxes.length > 0 && (
           <div className="flex flex-col gap-3" data-testid="eagle-stacked">
             {boxes.map(({ it, def, box }) => (
-              <div key={it.key}><Frame board={board} itemKey={it.key} def={def} chartsOnly={chartsOnly} onRemove={() => remove(it.key)} onCopy={() => copy(it.key)} height={Math.max(def.kind === "page" ? 420 : 280, (box?.h ?? def.h) * (ROW_HEIGHT + 12) - 12)} /></div>
+              <div key={it.key}><Frame board={board} itemKey={it.key} def={def} chartsOnly={chartsOnly} onNat={onNat} onRemove={() => remove(it.key)} onCopy={() => copy(it.key)} height={Math.max(def.kind === "page" ? 420 : 280, (box?.h ?? def.h) * (ROW_HEIGHT + 12) - 12)} /></div>
             ))}
           </div>
         )}
         {mounted && !stacked && boxes.length > 0 && width > 0 && (
           <GridLayout width={width} layout={board.layout} gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: [12, 12], containerPadding: [0, 0] }}
-            dragConfig={{ handle: ".widget-drag", cancel: ".widget-nodrag" }} compactor={verticalCompactor} onLayoutChange={onLayoutChange}>
+            dragConfig={{ handle: ".widget-drag", cancel: ".widget-nodrag" }} compactor={verticalCompactor} onLayoutChange={onLayoutChange} onResizeStop={(_l, _old, item) => { if (item) pinned.current.add(item.i); }}>
             {boxes.map(({ it, def }) => (
-              <div key={it.key}><Frame board={board} itemKey={it.key} def={def} chartsOnly={chartsOnly} onRemove={() => remove(it.key)} onCopy={() => copy(it.key)} /></div>
+              <div key={it.key}><Frame board={board} itemKey={it.key} def={def} chartsOnly={chartsOnly} onNat={onNat} onRemove={() => remove(it.key)} onCopy={() => copy(it.key)} /></div>
             ))}
           </GridLayout>
         )}
