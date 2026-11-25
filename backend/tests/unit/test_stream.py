@@ -573,3 +573,52 @@ async def test_the_nifty_future_is_shown_to_browsers_live_but_other_internal_tic
     assert shown.get(fut_key) == 25820.5  # the future is also in what browsers get
     assert stock_key not in shown  # the breadth stocks stay off the browser feed
     await m.stop()
+
+
+# ----------------------------------------------------------------- silent connection watchdog
+SILENT_CFG = StreamConfig(test_timeout_s=0.05, silence_reconnect_s=60.0, silence_check_s=0.01)
+
+
+async def test_a_silent_open_feed_in_market_hours_is_reconnected() -> None:
+    """25 Nov 2026: the feed stayed 'streaming' but sent nothing from 11:10 IST; nothing reconnected it."""
+    clock = Clock()  # 09:30 IST on a Thursday
+    f1, f2 = FakeFeed(), FakeFeed()
+    m, _, calls = make_manager([f1, f2], clock=clock, cfg=SILENT_CFG)
+    await m.start()
+    await until(lambda: len(f1.subs) >= 1)
+    f1.push(tick("Nifty 50", 22700.0, None))
+    await until(lambda: m.state is StreamState.STREAMING)
+    clock.advance(59)
+    await asyncio.sleep(0.1)
+    assert len(calls) == 1  # 59 s of quiet is still normal
+    clock.advance(2)
+    await until(lambda: len(f2.subs) >= 1)
+    assert len(calls) == 2 and f1.closed
+    assert any(e.code == "feed_silent" for e in m.errors)
+    await m.stop()
+
+
+async def test_silence_outside_the_trading_window_is_not_a_fault() -> None:
+    clock = Clock()
+    f1, f2 = FakeFeed(), FakeFeed()
+    m, _, calls = make_manager([f1, f2], clock=clock, cfg=SILENT_CFG)
+    await m.start()
+    await until(lambda: len(f1.subs) >= 1)
+    clock.advance(11 * 3600)  # 20:30 IST: the market has closed
+    await asyncio.sleep(0.15)
+    assert len(calls) == 1 and not any(e.code == "feed_silent" for e in m.errors)
+    await m.stop()
+
+
+async def test_the_exchange_reporting_closed_stops_the_silence_watch() -> None:
+    clock = Clock()
+    f1, f2 = FakeFeed(), FakeFeed()
+    m, _, calls = make_manager([f1, f2], clock=clock, cfg=SILENT_CFG)
+    await m.start()
+    await until(lambda: len(f1.subs) >= 1)
+    f1.q.put_nowait(_mkt("closed", 2, "nse_fo"))
+    await until(lambda: m.market.state == "closed")
+    clock.advance(600)  # a trading-day holiday: quiet all day, in the clock window
+    await asyncio.sleep(0.15)
+    assert len(calls) == 1
+    await m.stop()

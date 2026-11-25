@@ -57,6 +57,19 @@ class Universe:
     market_tokens: list[FeedToken] = field(default_factory=list)
 
 
+class FeedSilentError(Exception):
+    """The connection is open but no message arrived for too long in the trading window."""
+
+    code = "feed_silent"
+    message = "no market data for too long during market hours; reconnecting"
+
+
+def in_trading_window(now: datetime) -> bool:
+    """Weekdays 09:16-15:29 IST: the minutes in which a quiet NIFTY option feed is a fault."""
+    t = now.astimezone(ZoneInfo("Asia/Kolkata"))
+    return t.weekday() < 5 and (9, 16) <= (t.hour, t.minute) <= (15, 29)
+
+
 class FeedAuthError(Exception):
     """Authentication with the feed failed; a fresh broker login may fix it."""
 
@@ -79,6 +92,11 @@ class StreamConfig:
     # After the retries are used up, wait this long, then start a fresh round instead of
     # staying stopped until the app restarts. 0 keeps the old behaviour (the app sets 600).
     failed_retry_s: float = 0.0
+    # A connection that says "streaming" but delivers nothing is dead (seen 25 Nov 2026: silent from
+    # 11:10 IST with no disconnect event). In the trading window, this many seconds without any
+    # message makes the supervisor reconnect. 0 turns the watchdog off.
+    silence_reconnect_s: float = 60.0
+    silence_check_s: float = 5.0
 
 
 # Fields the browser never reads: market-depth quantities, the average price and the provider's raw
@@ -457,9 +475,17 @@ class StreamManager:
                 test=self.test_result,
             )
             snapshots = asyncio.create_task(self._index_snapshots(feed, universe))
+            dog = asyncio.create_task(self._watch_silence())
             try:
-                await consumer
+                await asyncio.wait({consumer, dog}, return_when=asyncio.FIRST_COMPLETED)
+                if consumer.done():
+                    consumer.result()
+                else:
+                    raise FeedSilentError
             finally:
+                dog.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await dog
                 snapshots.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await snapshots
@@ -468,6 +494,22 @@ class StreamManager:
                 consumer.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await consumer
+
+    async def _watch_silence(self) -> None:
+        """Return (ending the session, so it reconnects) when an open feed is quiet in market hours."""
+        limit = self.cfg.silence_reconnect_s
+        if limit <= 0:
+            await asyncio.Event().wait()
+        began = self._now()
+        while True:
+            await asyncio.sleep(self.cfg.silence_check_s)
+            now = self._now()
+            if not in_trading_window(now) or self.market.state == "closed":
+                began = now  # outside the window the silence does not count
+                continue
+            last = max(t for t in (self.last_message_at, began) if t is not None)
+            if (now - last).total_seconds() >= limit:
+                return
 
     async def _index_snapshots(self, feed: FeedSession, universe: Universe) -> None:
         """While the pushed index is silent (15:15-15:21, closing-auction transition) ask for it.
