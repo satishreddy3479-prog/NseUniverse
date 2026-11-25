@@ -185,7 +185,7 @@ def test_the_job_scores_finished_sessions_once_and_only_finished_ones(tmp_path: 
     rep = svc.report()
     assert rep["sessions_scored"] == 10 and rep["first_session"] == "2026-11-11" and rep["last_session"] == "2026-11-25"
     ids = [i["id"] for i in rep["indicators"]]
-    assert ids == ["verdict", "rules", "momentum", "orb", "seller"]
+    assert ids == ["verdict", "rules", "momentum", "orb", "regime", "divergence", "seller"]
     by = {i["id"]: i for i in rep["indicators"]}
     assert by["verdict"]["horizons"]["30"]["sessions"] == 10 and by["verdict"]["status"] == "too_early"
     assert by["verdict"]["horizons"]["30"]["fresh"]["sessions"] == 0 and "cannot prove it" in by["verdict"]["status_text"]
@@ -239,4 +239,4 @@ def test_report_endpoint_serves_the_report_and_says_when_the_job_is_off(tmp_path
         r = c.get("/api/edge/report")
         assert r.status_code == 200
         body = r.json()
-        assert body["sessions_scored"] == 10 and len(body["indicators"]) == 5 and body["job"]["enabled"] is True
+        assert body["sessions_scored"] == 10 and len(body["indicators"]) == 7 and body["job"]["enabled"] is True

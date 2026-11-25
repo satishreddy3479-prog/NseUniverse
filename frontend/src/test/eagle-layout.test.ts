@@ -117,6 +117,7 @@ describe("the catalogue", () => {
     const own = TOOLS.filter((t) => t.status === "ready" && !t.to && !t.tab && (t.board || t.page));
     expect(own.length).toBeGreaterThan(20);
     for (const t of own) expect(CATALOG_BY_ID.has(`t:${t.id}`), t.id).toBe(true);
+    for (const id of ["s:mtm", "s:time"]) expect(CATALOG_BY_ID.get(id)?.charts, id).toBe(true);
     for (const id of ["i:day-board", "i:edge", "i:straddle"]) expect(CATALOG_BY_ID.has(id), id).toBe(true);
   });
   it("lists the chain widgets as fit-to-box and the whole tools as scrolling pages", () => {
@@ -142,7 +143,7 @@ describe("the catalogue", () => {
   });
   it("is searchable by title, group or what the widget says it is, and groups the rest", () => {
     const all = catalogGroups();
-    expect(all[0]!.group).toBe("Market Intelligence"); // the board's own tools first
+    expect(all[0]!.group).toBe("My strategy"); // the board's own tools first: the strategy that is running, then the intelligence
     expect(all.reduce((n, g) => n + g.defs.length, 0)).toBe(CATALOG.length);
     const hit = catalogGroups("rolling straddle").flatMap((g) => g.defs.map((d) => d.id));
     expect(hit).toContain("t:rolling-straddle");

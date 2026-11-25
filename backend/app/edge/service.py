@@ -71,7 +71,7 @@ class EdgeService:
             return None
         out: list[dict[str, Any]] = []
         have: dict[str, int] = {}
-        for key, rows, fn in (("verdict", intel, ec.verdict_calls), ("rules", rules, ec.rules_calls), ("momentum", base, ec.momentum_calls), ("orb", base, ec.orb_calls), ("seller", strad, ec.seller_calls)):
+        for key, rows, fn in (("verdict", intel, ec.verdict_calls), ("rules", rules, ec.rules_calls), ("momentum", base, ec.momentum_calls), ("orb", base, ec.orb_calls), ("regime", base, ec.regime_calls), ("divergence", intel, ec.divergence_calls), ("seller", strad, ec.seller_calls)):
             if len(ec.series(rows)) < MIN_POINTS:
                 continue
             got = fn(session, rows)

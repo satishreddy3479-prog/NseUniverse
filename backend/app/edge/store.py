@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-VERSION = "edge-1"
+VERSION = "edge-2"
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS calls (
   session TEXT NOT NULL, indicator TEXT NOT NULL, horizon INTEGER NOT NULL, at TEXT NOT NULL, side INTEGER NOT NULL, spot REAL, fwd_pct REAL, result TEXT NOT NULL,

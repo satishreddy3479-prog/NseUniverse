@@ -4,6 +4,7 @@ import { WIDGETS } from "../dashboard/widgets";
 import { DayBoard } from "../intelligence/DayBoard";
 import { EdgeMonitor } from "../intelligence/EdgeMonitor";
 import { StraddleSummaryCard } from "../intelligence/StraddleDecay";
+import { RunningMtmChart, RunningTimeChart } from "../RunningStrategy";
 import { ToolBody, hasToolBody } from "../ToolBody";
 import { TrendRegime } from "../../pages/TrendRegime";
 import { TOOLS, toolPath, type Tool } from "../../lib/tools";
@@ -69,12 +70,17 @@ const intelDefs: EagleDef[] = [
   { id: "i:straddle", title: "Straddle decay summary", group: "Market Intelligence", kind: "page", charts: true, blurb: "The seller and buyer reading of the ATM straddle, in a card.", w: 4, h: 12, minW: 3, minH: 6, render: () => <StraddleSummaryCard /> },
 ];
 
-export const CATALOG: EagleDef[] = [...chainDefs, ...intelDefs, ...trendDefs, ...toolDefs];
+const strategyDefs: EagleDef[] = [
+  { id: "s:mtm", title: "Running strategy: mark-to-market", group: "My strategy", kind: "page", charts: true, blurb: "The P&L of the strategy running now (booked + open) through the day, from the stored one-minute prices and then live.", w: 6, h: 14, minW: 3, minH: 6, render: () => <RunningMtmChart /> },
+  { id: "s:time", title: "Running strategy: price and P&L vs NIFTY", group: "My strategy", kind: "page", charts: true, blurb: "The running strategy as one price through the day against NIFTY, with its averages, bands and what moved it.", w: 6, h: 16, minW: 3, minH: 6, render: () => <RunningTimeChart /> },
+];
+
+export const CATALOG: EagleDef[] = [...strategyDefs, ...chainDefs, ...intelDefs, ...trendDefs, ...toolDefs];
 export const CATALOG_BY_ID: ReadonlyMap<string, EagleDef> = new Map(CATALOG.map((d) => [d.id, d]));
 export const sizeOf = (cat: string): Size | undefined => CATALOG_BY_ID.get(cat);
 
 /** The groups of the picker, in a fixed order that puts the board's own tools first. */
-const ORDER = ["Market Intelligence", "Trend & Regime", "Snapshot and chain", "Open interest", "Put-call ratio", "Price and premium", "Futures", "Greeks and volatility"];
+const ORDER = ["My strategy", "Market Intelligence", "Trend & Regime", "Snapshot and chain", "Open interest", "Put-call ratio", "Price and premium", "Futures", "Greeks and volatility"];
 export function catalogGroups(query = "", chartsOnly = false): { group: string; defs: EagleDef[] }[] {
   const q = query.trim().toLowerCase();
   const all = chartsOnly ? CATALOG.filter((d) => d.charts) : CATALOG;

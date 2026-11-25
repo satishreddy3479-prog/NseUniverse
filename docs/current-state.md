@@ -5,6 +5,9 @@ _Last updated: 2026-11-23_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Edge monitor and Eagles view additions (25 Nov 2026, D317)
+Trend regime and flow divergence are scored nightly with the other indicators (7 now); the Eagles view has running-strategy MTM and price/P&L chart widgets. Built and tested locally; not yet on the server.
+
 ## Eagles view (25 Nov 2026, D315)
 New Analyse page: every tool as a movable, resizable box on one board, the same tool as many times as wanted, auto-fit with no gaps. Built and tested locally; not yet on the server.
 

@@ -17,6 +17,7 @@ from typing import Any
 
 from app.intelligence import fusion as fz
 from app.intelligence import pullback as pb
+from app.intelligence import trend_engine as te
 from app.intelligence import validation as val
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -39,6 +40,8 @@ INDICATORS: dict[str, dict[str, str]] = {
     "rules": {"name": "Intraday rules score", "kind": "direction", "claim": "Price moves the way the rules score leans (outside +-0.2)."},
     "momentum": {"name": "30-minute momentum", "kind": "direction", "claim": "The next window continues the last 30 minutes' move (at least 0.03 %).", "tuned_through": "2026-11-25"},
     "orb": {"name": "Opening-range break", "kind": "direction", "claim": "After price first leaves the 09:15-09:30 range it keeps going that way.", "tuned_through": "2026-11-25"},
+    "regime": {"name": "Trend regime label", "kind": "direction", "claim": "After the page's regime reads Trending (or Weak trend) up or down, the next window keeps going that way."},
+    "divergence": {"name": "Flow divergence (price against Smart OI)", "kind": "direction", "claim": "After price and cumulative Smart OI disagree at two swings, price moves the way the divergence says (regular and hidden)."},
     "seller": {"name": "Straddle seller score", "kind": "calm", "claim": "With the seller score at 60 or more, the next window moves little."},
 }
 
@@ -178,4 +181,114 @@ def seller_calls(session: str, rows: Sequence[Mapping[str, Any]]) -> list[dict[s
         s = _num(rows[pts[k][2]].get("seller"))
         if s is not None and s >= SELLER_MIN:
             out += _emit(session, "seller", rows, pts, k, 0)
+    return out
+
+
+TREND_BAR_MIN = 5  # the regime is read on 5-minute bars of the minute spots, as the Trend & Regime page does
+
+
+def regime_calls(session: str, rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """The Trend & Regime label (the page's own rules, ``trend_engine``) read on 5-minute bars made of the stored minute spots (a spot is a close, so high and low are the spots'
+    own: the real one-minute highs and lows are not stored for most days). At each call minute the label of the last COMPLETE bar is read: up labels call up, down labels down;
+    Range-bound, Mixed, Warming up and a label already marked fading make no call."""
+    pts = series(rows)
+    bars = te.parse_bars([{"at": rows[i]["at"], "o": s, "h": s, "l": s, "c": s} for _m, s, i in pts])
+    labels = [(ist_minute(b["t"].isoformat()), b["label"]) for b in te.regime_series(bars)]
+    out: list[dict[str, Any]] = []
+    for k in _steps(pts):
+        done = [lab for start, lab in labels if start is not None and start + TREND_BAR_MIN <= pts[k][0]]
+        if not done:
+            continue
+        side = te.direction_of(done[-1])
+        if side:
+            out += _emit(session, "regime", rows, pts, k, side)
+    return out
+
+
+def _oi_gap(r: Mapping[str, Any]) -> float | None:
+    """Put OI day change minus call OI day change: the cumulative Smart OI of the page, from the totals stored each minute."""
+    m = r.get("metrics") or {}
+    pe, ce = _num(r.get("pe_oi_chg", m.get("pe_oi_chg"))), _num(r.get("ce_oi_chg", m.get("ce_oi_chg")))
+    return None if pe is None or ce is None else pe - ce
+
+
+DIV_TF = 3  # minutes per candle (the page's default for the divergence indicators)
+DIV_PIVOT_K = 3  # candles each side that make a swing (3-minute candles)
+DIV_MIN_SWING = 3  # candles at least between the two swings
+DIV_MAX_SWING_MIN = 180  # minutes at most between them
+DIV_MIN_PRICE_MOVE = 0.0005  # the two swings must differ by this share in price
+DIV_MIN_FLOW_SHARE = 0.1  # and by this share of the day's range of cumulative Smart OI
+
+
+def divergence_calls(session: str, rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """The flow divergence of the Smart OI page (frontend ``smartOiDivergence.ts``, indicator 1) on 3-minute candles: price against cumulative Smart OI at confirmed swing
+    highs and lows. Regular bearish (higher high, lower OI), hidden bearish, regular bullish (lower low, higher OI) and hidden bullish each make one call, at the end of the candle
+    in which the right-hand swing is confirmed (``DIV_PIVOT_K`` candles after it), in the direction of the divergence. The seven other indicators of the page are not scored here."""
+    pts = series(rows)
+    if not pts:
+        return []
+    first, last = (pts[0][0] - OPEN_MIN) // DIV_TF, (pts[-1][0] - OPEN_MIN) // DIV_TF
+    n = last - first + 1
+    hi: list[float | None] = [None] * n
+    lo: list[float | None] = [None] * n
+    cs: list[float | None] = [None] * n
+    for m, spot, i in pts:
+        c = (m - OPEN_MIN) // DIV_TF - first
+        hi[c] = spot if hi[c] is None else max(hi[c], spot)  # type: ignore[type-var]
+        lo[c] = spot if lo[c] is None else min(lo[c], spot)  # type: ignore[type-var]
+        gap = _oi_gap(rows[i])
+        if gap is not None:
+            cs[c] = gap
+    k = DIV_PIVOT_K
+    ok = [v for v in cs if v is not None]
+    if len(ok) < 2 * k + 2:
+        return []
+    max_gap = max(2, -(-DIV_MAX_SWING_MIN // DIV_TF))
+
+    def pivots(kind: str) -> list[int]:
+        ser = hi if kind == "high" else lo
+        idx = []
+        for j in range(k, n - k):
+            v = ser[j]
+            if v is None or cs[j] is None:
+                continue
+            good = True
+            for q in range(1, k + 1):
+                left, right = ser[j - q], ser[j + q]
+                if left is None or right is None or not ((v >= left and v > right) if kind == "high" else (v <= left and v < right)):
+                    good = False
+                    break
+            if good:
+                idx.append(j)
+        return idx
+
+    out: list[dict[str, Any]] = []
+    for kind in ("high", "low"):
+        ser = hi if kind == "high" else lo
+        pv = pivots(kind)
+        for t in range(1, len(pv)):
+            a, b = pv[t - 1], pv[t]
+            if b - a < DIV_MIN_SWING or b - a > max_gap:
+                continue
+            pa, pb, ca, cb = ser[a], ser[b], cs[a], cs[b]
+            if pa is None or pb is None or ca is None or cb is None:
+                continue
+            upto = [v for v in cs[: b + k + 1] if v is not None]
+            rng = max(upto) - min(upto)
+            if rng <= 0:
+                continue
+            d_price, d_flow = pb / pa - 1, cb - ca
+            if abs(d_price) < DIV_MIN_PRICE_MOVE or abs(d_flow) < DIV_MIN_FLOW_SHARE * rng:
+                continue
+            side = 0
+            if kind == "high":
+                side = -1 if (d_price > 0 and d_flow < 0) or (d_price < 0 and d_flow > 0) else 0
+            else:
+                side = 1 if (d_price < 0 and d_flow > 0) or (d_price > 0 and d_flow < 0) else 0
+            if not side:
+                continue
+            ready = OPEN_MIN + (first + b + k + 1) * DIV_TF  # the minute the candle that confirms the swing is complete
+            at = next((j for j, p in enumerate(pts) if p[0] >= ready), None)
+            if at is not None:
+                out += _emit(session, "divergence", rows, pts, at, side)
     return out
