@@ -28,8 +28,7 @@ export function VerdictCard({ d }: { d: Intelligence }) {
   const changeTone = v.changed.lean === "bullish" ? "text-up" : v.changed.lean === "bearish" ? "text-down" : "text-paper";
   return (
     <section aria-label="Market reading" className={`rounded-[var(--radius-panel)] border bg-slate p-4 md:p-5 ${t.ring}`} data-testid="mi-verdict">
-      <div className="text-[11px] uppercase tracking-wide text-muted">NIFTY 50 right now</div>
-      <h2 className={`mt-0.5 text-3xl font-semibold ${t.text}`} data-testid="mi-verdict-label">{v.label}</h2>
+      <h2 className="text-sm font-semibold text-paper">Why, and how far to trust it <span className="font-normal text-muted">· the evidence behind the sentiment above</span></h2>
       <div className="mt-2 max-w-[34rem]" aria-hidden>
         <div className="relative h-2.5 rounded-full bg-slate-2" style={{ backgroundImage: "linear-gradient(90deg, color-mix(in srgb, var(--down) 28%, transparent), transparent 50%, color-mix(in srgb, var(--up) 28%, transparent))" }}>
           <div className={`absolute inset-y-0 rounded-full opacity-60 ${t.bar}`} style={{ left: `${Math.min(pos, 50)}%`, width: `${Math.abs(pos - 50)}%` }} />
@@ -38,7 +37,7 @@ export function VerdictCard({ d }: { d: Intelligence }) {
         </div>
         <div className="mt-0.5 flex justify-between text-[10px] text-muted"><span>bearish −100</span><span>0</span><span>+100 bullish</span></div>
       </div>
-      <p className="mt-3 max-w-[70ch] text-[15px] leading-snug text-paper" data-testid="mi-verdict-headline">{v.headline}</p>
+      <p className={`mt-3 max-w-[70ch] text-[15px] leading-snug ${t.text}`} data-testid="mi-verdict-headline">{v.headline}</p>
 
       <div className="mt-3 grid gap-2 md:grid-cols-3">
         <Answer q="How far can I trust it?" a={v.trust.level === "Unknown" ? "Unknown" : `${v.trust.level} trust`} sub={v.trust.text || "No quality figure is available."} tone={trustTone} />

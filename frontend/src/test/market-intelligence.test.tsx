@@ -45,7 +45,7 @@ const base: Intelligence = {
   status: { market: { ok: true, age_s: 2, ms: 3 }, gex: { ok: false, age_s: null, ms: 1, error: "RuntimeError: module down" }, intraday: { ok: true, age_s: 20, ms: 40 } },
   sentiment: { score: 42, class: "Bullish", coverage: 0.85, engines_available: 4, engine_counts: { available: 3, partial: 1, unavailable: 1 }, weights_note: "Provisional weights – not yet statistically calibrated.", agreement: 0.8, freshness: 1, confidence: 68, confidence_parts: { coverage_factor: 1, agreement: 0.8, freshness: 0.85 }, reason: null, trend_strength: 41, signal_quality: "High", data_completeness: 0.85, volatility_regime: "Contraction (Normal realised)" },
   regime: { name: "Bullish trend", evidence: ["score +42 with 80% agreement"], volatility: "Contraction", gamma: "positive", previous: "Sideways / Range", changed_at: "2026-11-09T04:10:00Z" },
-  engines: [eng("positioning", "A. Derivatives positioning", 55), eng("orderflow", "B. Order-flow proxies", 30), eng("volatility", "C. Volatility", null), eng("structure", "D. Market structure", 25), eng("participation", "E. Participation and breadth", 40)],
+  engines: [eng("positioning", "A. Derivatives positioning", 55), eng("orderflow", "B. Order-flow proxies", 30), eng("volatility", "C. Volatility", null), eng("structure", "D. Market structure", 25), eng("participation", "E. Participation and breadth", 40), eng("trend", "F. Trend and regime", -60)],
   pulse: { spot: 24100, change_pct: 0.3, futures: 24148, basis: 48, basis_pct: 0.2, atm_strike: 24100, expiry: "2026-11-10", atm_ce_premium: 95.5, atm_pe_premium: 88.0, atm_iv: 15.2, india_vix: { value: 14.1, as_of: "2026-11-06", label: "India VIX – Last Daily Close", intraday_signal: false, note: "A daily close dated 2026-11-06, not a live quote." }, pcr: 1.12, net_gex: 42.5, gamma_flip: 24000, futures_oi_change: 52000, futures_cvd_pct: 25, futures_vwap: 24050, heavyweight_cvd: 31 },
   gex: { available: true, net: 42.5, flip: 24000, flip_distance_pct: 0.41, regime: "positive", call_wall: 24200, put_wall: 23800, peak: 24000, near_net: 5, relationship: "stabilising", net_change_pct: 12, net_change_15m: 4.5, ce: 60, pe: -17.5, universe: "dynamic", session: "2026-11-09" },
   interpretation: "Market sentiment is bullish (score +42, confidence 68); regime: bullish trend. Futures positioning and order flow lean bullish (+55).",
@@ -527,7 +527,7 @@ describe("the redesigned page: a reading first, five tabs", () => {
   it("opens on the Day board with the reading, the evidence bars and the key numbers, and not the detail panels", async () => {
     view(base);
     const v = await screen.findByTestId("mi-verdict");
-    expect(within(v).getByTestId("mi-verdict-label")).toHaveTextContent("Bullish");
+    expect(within(v).getByTestId("mi-verdict-headline")).toHaveTextContent("Bullish");
     expect(within(v).getByTestId("mi-verdict-headline")).toHaveTextContent("score +42 out of 100");
     expect(v).toHaveTextContent("How far can I trust it?");
     expect(v).toHaveTextContent("What changed in 20 minutes?");
@@ -561,6 +561,18 @@ describe("the redesigned page: a reading first, five tabs", () => {
     window.location.hash = "";
   });
 
+  it("is one page: a single verdict lead, the sixth group (trend and regime) listed under Evidence", async () => {
+    view(base);
+    await screen.findByTestId("mi-verdict");
+    expect(screen.getAllByTestId("mi-verdict")).toHaveLength(1);
+    expect(screen.queryByTestId("mi-verdict-label")).toBeNull(); // the big label lives in the Day board header only
+    expect(screen.getByTestId("mi-bars")).toBeInTheDocument();
+    await openTab(/Evidence/);
+    const trend = await screen.findByTestId("mi-engine-trend");
+    expect(trend).toHaveTextContent("Trend and regime");
+    window.location.hash = "";
+  });
+
   it("the evidence bars link on to the Evidence tab", async () => {
     view(base);
     await userEvent.click(await screen.findByRole("button", { name: /See the evidence behind each/ }));
@@ -571,7 +583,7 @@ describe("the redesigned page: a reading first, five tabs", () => {
   it("says there is no reading, instead of inventing a direction, when coverage is too low", async () => {
     view({ ...base, sentiment: { ...base.sentiment, score: null, class: "INSUFFICIENT DATA – SENTIMENT UNRELIABLE", confidence: null, signal_quality: null, reason: "2 engines available (need 3)" } });
     const v = await screen.findByTestId("mi-verdict");
-    expect(within(v).getByTestId("mi-verdict-label")).toHaveTextContent("No reading");
+    expect(within(v).getByTestId("mi-verdict-headline")).toHaveTextContent("too little data");
     expect(within(v).getByTestId("mi-verdict-headline")).toHaveTextContent("too little data to read a direction");
     expect(v).toHaveTextContent("2 engines available (need 3)");
   });

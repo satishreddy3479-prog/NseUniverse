@@ -117,7 +117,7 @@ export interface Timeline { session: string; sessions: string[]; points: Timelin
 /** Colour class of a signed score: green bullish, red bearish, grey neutral, amber when unavailable. */
 export const toneOf = (s: number | null | undefined): string => (s == null ? "text-warn" : s >= 15 ? "text-up" : s <= -15 ? "text-down" : "text-muted");
 export const signed = (v: number | null | undefined, d = 0): string => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(d)}`);
-export const ENGINE_ORDER = ["positioning", "orderflow", "volatility", "structure", "participation"] as const;
+export const ENGINE_ORDER = ["positioning", "orderflow", "volatility", "structure", "participation", "trend"] as const;
 /** Tooltip for every CVD figure: what the number is and what it is not. */
 export const CVD_TIP = "Estimated from the quote stream: each trade is classified buyer- or seller-initiated by the quote rule (against the prevailing best bid and ask) and then the tick rule. The feed carries no aggressor-side trade tape, so buyer and seller volume are not observed. A proxy, not genuine aggressor-side CVD.";
 export const GEX_TIP = "Modelled exposure: gamma x open interest x spot^2 x 1% with an ASSUMED sign (calls +, puts -). Dealer positioning is not observed.";

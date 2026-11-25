@@ -647,14 +647,14 @@ def trend_group(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[str, 
 
     The last two read index price, which group D also reads, so they share one family at weight 0.5 (the stated overlap adjustment). Descriptive of the session so far; not a forecast."""
     t = inp.get("trend")
-    ok = isinstance(t, Mapping) and bool(t.get("available"))
+    ok = isinstance(t, Mapping) and bool(t.get("available")) and t.get("is_today", True) is not False  # the bars of an earlier session are not evidence for today
     s = (lambda *path: g(t, *path)) if ok else (lambda *path: None)
     label, score, d, st = s("label"), num(s("score")), int(num(s("direction")) or 0), num(s("strength"))
     slope = num(s("metrics", "slope"))
     agree = s("agreement")
     regime_score = None if not ok or st is None or label in (None, "Warming up") else d * 100.0 * st
     regime_detail = (f"{label}: trend score {score * 100:.0f}/100" + (f", {agree['agree']} of {agree['of']} readings agree" if isinstance(agree, Mapping) else "")
-                     + ("" if slope is None else f", fitted slope {slope:+.1f} pts per 5-minute bar") + ("; no direction is called" if d == 0 else "")) if regime_score is not None and score is not None else "needs about 30 minutes of bars"
+                     + ("" if slope is None else f", fitted slope {slope:+.1f} pts per 5-minute bar") + ("; no direction is called" if d == 0 else "")) if regime_score is not None and score is not None else (f"the newest stored bars are of {t.get('day')}, not today's session: no trend evidence for today yet" if isinstance(t, Mapping) and t.get("available") and not ok else "needs about 30 minutes of bars")
     d_mean, mean, last = num(s("from_mean_atr")), num(s("session_mean")), num(s("price"))
     mean_score = squash(d_mean, 2.0)
     orr = s("opening_range")

@@ -131,6 +131,6 @@ describe("the day board when the market is closed, empty or unreachable", () => 
   it("an unreachable server shows an error that says the rest of the page does not depend on it", async () => {
     mount({ detail: "x" }, 500);
     await waitFor(() => expect(screen.getByTestId("day-error")).toBeInTheDocument());
-    expect(screen.getByRole("alert")).toHaveTextContent("The rest of the page below does not depend on it");
+    expect(screen.getByRole("alert")).toHaveTextContent("The evidence below does not depend on it");
   });
 });

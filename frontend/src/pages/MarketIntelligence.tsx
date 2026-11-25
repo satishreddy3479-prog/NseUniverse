@@ -50,10 +50,7 @@ function MiBody({ d }: { d: Intelligence }) {
 
       {tab === "overview" && (
         <TabPanel id="overview">
-          <DayBoard />
-          <VerdictCard d={d} />
-          <TurnWatchPanel d={d} />
-          <EngineBars d={d} onMore={() => go("evidence")} />
+          <DayBoard why={<><VerdictCard d={d} /><TurnWatchPanel d={d} /><EngineBars d={d} onMore={() => go("evidence")} /></>} />
           <div id="mi-straddle"><StraddleSummaryCard /></div>
           <div><h2 className="mb-2 text-sm font-semibold text-paper">Key numbers <span className="font-normal text-muted">· the readings behind the verdict</span></h2><PulseCards d={d} /></div>
         </TabPanel>

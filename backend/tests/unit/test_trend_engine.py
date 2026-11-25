@@ -18,6 +18,15 @@ def real() -> dict:
     return json.loads(FIXTURE.read_text(encoding="utf-8"))
 
 
+def test_bars_of_an_earlier_session_are_no_evidence_for_today(real: dict) -> None:
+    a = te.assess(real["bars"])
+    today = fz.trend_group({"trend": {**a, "is_today": True}}, {})
+    earlier = fz.trend_group({"trend": {**a, "is_today": False, "day": "2026-11-23"}}, {})
+    assert today["score"] is not None and today["status"] != "UNAVAILABLE"
+    assert earlier["score"] is None and earlier["status"] == "UNAVAILABLE"
+    assert "not today's session" in earlier["terms"][0]["detail"] and "2026-11-23" in earlier["terms"][0]["detail"]
+
+
 def test_real_session_gives_the_page_s_numbers(real: dict) -> None:
     a = te.assess(real["bars"])
     assert a["available"] and a["bars_1m"] == 360 and a["bars_5m"] == 72

@@ -37,7 +37,12 @@ def create(settings: Any, observations: Any, intraday: Any, market: Any, market_
 
     def trend() -> dict[str, Any]:
         """The intraday trend and regime of the newest stored session's one-minute index bars (the same reading as the Analyse > Trend & Regime page)."""
-        return trend_engine.assess(market.index_bars().get("bars") or [])
+        ib = market.index_bars()
+        out = trend_engine.assess(ib.get("bars") or [])
+        # a reading of an earlier session is shown on the Day board but is no evidence for today (before the open, or on a day with no bars yet)
+        out["is_today"] = ib.get("day") == datetime.now(IST).date().isoformat()
+        out["day"] = ib.get("day")
+        return out
 
     def heavymeta() -> dict[str, Any]:
         return dict(market.heavy_meta())

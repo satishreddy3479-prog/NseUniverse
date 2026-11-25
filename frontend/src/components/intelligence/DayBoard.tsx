@@ -174,15 +174,16 @@ function TrackRecord({ o }: { o: Outlook }) {
 }
 
 /** The redesigned top of Market Intelligence: sentiment through the day, the five phases, the expected outcome and the track record. */
-export function DayBoard() {
+export function DayBoard({ why }: { why?: React.ReactNode }) {
   const q = useQuery({ queryKey: ["intelligence-outlook"], queryFn: () => api.intelligenceOutlook(), refetchInterval: 15_000, retry: false });
-  if (q.isPending) return <div className="space-y-2" aria-label="Loading the day board"><div className="h-24 animate-pulse rounded-md border border-rule bg-slate" /><div className="h-72 animate-pulse rounded-md border border-rule bg-slate" /></div>;
-  if (q.isError || !q.data) return <p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down" data-testid="day-error">The day board could not be loaded: {q.error instanceof Error ? q.error.message : "the server did not answer"}. The rest of the page below does not depend on it.</p>;
+  if (q.isPending) return <div className="space-y-2" aria-label="Loading the day board"><div className="h-24 animate-pulse rounded-md border border-rule bg-slate" /><div className="h-72 animate-pulse rounded-md border border-rule bg-slate" />{why}</div>;
+  if (q.isError || !q.data) return <div className="flex flex-col gap-3"><p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down" data-testid="day-error">The day board could not be loaded: {q.error instanceof Error ? q.error.message : "the server did not answer"}. The evidence below does not depend on it.</p>{why}</div>;
   const o = q.data;
   return (
     <div className="flex flex-col gap-3" data-testid="day-board">
       {!o.live && <p className="rounded-sm border border-warn/40 px-3 py-1.5 text-xs text-warn" role="status" data-testid="day-closed">The market is not live. Showing the recorded session of {o.session}{o.generated_at ? ` (read ${fmtTimeIST(o.generated_at)})` : ""}; nothing is priced for the minutes ahead.</p>}
       <Header o={o} />
+      {why}
       <Panel title="Sentiment through the day" hint={`${o.session} · ${o.path.length} recorded points`} testid="day-chart"><DayChart o={o} /></Panel>
       <section aria-label="The session in phases">
         <ul className="grid gap-2 md:grid-cols-3 xl:grid-cols-5" data-testid="day-phases">{o.phases.map((p) => <PhaseCard key={p.name} p={p} />)}</ul>
