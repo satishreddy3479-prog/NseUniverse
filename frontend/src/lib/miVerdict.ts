@@ -19,7 +19,7 @@ export interface Verdict {
 
 const signed = (v: number) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(0)}`;
 /** "A. Derivatives positioning" -> "Derivatives positioning" */
-export const plainName = (name: string): string => name.replace(/^[A-E]\.\s*/, "");
+export const plainName = (name: string): string => name.replace(/^[A-F]\.\s*/, "");
 
 function toneOf(score: number | null): Tone {
   if (score == null) return "unknown";

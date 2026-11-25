@@ -73,7 +73,7 @@ class MarketIntelligence:
         self.enabled, self.live_only = enabled, live_only
         self._cache: dict[tuple[str, str], tuple[float, Any, dict[str, Any]]] = {}
         self._summary_cache: tuple[float, str, dict[str, Any]] | None = None
-        self._outlook_cache: tuple[float, list[dict[str, Any]], dict[str, Any] | None] | None = None
+        self._outlook_cache: tuple[float, list[dict[str, Any]], dict[str, Any] | None, dict[str, Any]] | None = None
         self._lock = threading.RLock()
         self._task: asyncio.Task[None] | None = None
         self.last_error: str | None = None
@@ -392,10 +392,10 @@ class MarketIntelligence:
             for s_ in sorted(self.store.sessions(30)):
                 hist_rows += self.store.rows(s_, 500)
             report = validation.report(hist_rows, weights=self.weights) if hist_rows else None
-            hit = (_time.monotonic(), hist_rows, report)
+            hit = (_time.monotonic(), hist_rows, report, outlook.history(hist_rows, self.weights))  # the history table costs ~0.6 s on 30 sessions: computed once per cache life, not per request
             self._outlook_cache = hit
         at = now if live else (outlook._when(rows[-1]) or now) if rows else now  # noqa: SLF001
-        return outlook.build(now=at, session=sess, live=live, rows=rows, history_rows=hit[1], weights=self.weights, summary=summary, trend=inp.get("trend"), validation_report=hit[2])
+        return outlook.build(now=at, session=sess, live=live, rows=rows, history_rows=hit[1], weights=self.weights, summary=summary, trend=inp.get("trend"), validation_report=hit[2], hist=hit[3], clock=now)
 
     def validation(self, sessions: int = 30) -> dict[str, Any]:
         """Walk-forward validation of the stored snapshots (read-only; see ``validation.py``). Uses the live weights to re-score history."""

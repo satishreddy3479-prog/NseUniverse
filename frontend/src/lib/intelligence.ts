@@ -152,11 +152,11 @@ export interface Outlook {
   generated_at: string; session: string; live: boolean; spot: number | null; atm_iv: number | null;
   now: {
     score: number | null; class: string | null; confidence: number | null; groups_bullish: number | null; groups_bearish: number | null; coverage: number | null; reason: string | null;
-    lean: { call: -1 | 0 | 1; text: string; why: string }; regime: string | null;
+    lean: { call: -1 | 0 | 1; text: string; why: string }; regime: string | null; as_of?: string | null;
     trend: { label: string | null; score: number | null; direction: number | null; agreement: { agree: number; of: number } | null; session_mean: number | null; from_mean_atr: number | null } | null;
   };
   path: OutlookPoint[]; phases: OutlookPhase[]; expected: OutlookHorizon[]; levels: OutlookLevel[];
   history: { by_class: Record<string, { sessions: number; horizons: Record<string, BucketStat> }>; sessions: number; snapshots: number; flat_band_pct: number; min_decided: number; caution: string };
   scorecard: { horizon_minutes: number; step_minutes: number; rows: ScorecardRow[]; hits: number; misses: number; decided: number; note: string };
-  reliability: Reliability; read: string[]; limits: string[];
+  reliability: Reliability; read: string[]; limits: string[]; last_recorded_at?: string | null; lag_minutes?: number | null;
 }

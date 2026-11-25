@@ -28,7 +28,7 @@ function Header({ o }: { o: Outlook }) {
   return (
     <section aria-label="The day in four answers" data-testid="day-header">
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-        <Tile label="Sentiment now" value={n.score == null ? "No verdict" : `${n.class} (${sgn(n.score)})`} tone={toneClass(scoreTone(n.score))}
+        <Tile label={o.live ? "Sentiment now" : "Sentiment at the last recorded minute"} value={n.score == null ? "No verdict" : `${n.class} (${sgn(n.score)})`} tone={toneClass(scoreTone(n.score))}
           sub={n.score == null ? (n.reason ?? "not enough evidence") : `evidence quality ${n.confidence?.toFixed(0) ?? MISSING}/100 · ${pctOf(n.groups_bullish)} of the weight bullish, ${pctOf(n.groups_bearish)} bearish`} />
         <Tile label="Session regime" value={tr?.label ?? "Warming up"} tone={tr?.direction === 1 ? "text-up" : tr?.direction === -1 ? "text-down" : "text-paper"}
           sub={tr?.score == null ? "the first half hour has no regime yet" : `trend score ${Math.round(tr.score * 100)}/100${tr.agreement ? ` · ${tr.agreement.agree} of ${tr.agreement.of} readings agree` : ""}`} />
@@ -77,7 +77,7 @@ function Expected({ o }: { o: Outlook }) {
         <table className="w-full text-sm">
           <thead className="bg-slate-2 text-xs text-muted"><tr><th className="px-2 py-1.5 text-left">Horizon</th><th className="px-2 py-1.5 text-right">Priced move (1σ)</th><th className="px-2 py-1.5 text-right">Band</th><th className="px-2 py-1.5 text-right" title={`After a ${cls} verdict in the stored sessions: the share of decided snapshots after which NIFTY was higher`}>After a {cls || "—"} verdict, history</th></tr></thead>
           <tbody>
-            {o.expected.map((e) => (
+            {o.expected.filter((e) => o.live || e.label !== "To the close").map((e) => (
               <tr key={e.label} className="border-t border-rule/50" data-testid={`expected-${e.minutes}`}>
                 <td className="px-2 py-1.5 text-left text-paper">{horizonName(e.label, e.minutes)}</td>
                 <td className="num px-2 py-1.5 text-right">{e.sd_points == null ? MISSING : `±${e.sd_points.toFixed(0)} pts`}</td>
@@ -176,22 +176,32 @@ function TrackRecord({ o }: { o: Outlook }) {
 /** The redesigned top of Market Intelligence: sentiment through the day, the five phases, the expected outcome and the track record. */
 export function DayBoard({ why }: { why?: React.ReactNode }) {
   const q = useQuery({ queryKey: ["intelligence-outlook"], queryFn: () => api.intelligenceOutlook(), refetchInterval: 15_000, retry: false });
-  if (q.isPending) return <div className="space-y-2" aria-label="Loading the day board"><div className="h-24 animate-pulse rounded-md border border-rule bg-slate" /><div className="h-72 animate-pulse rounded-md border border-rule bg-slate" />{why}</div>;
-  if (q.isError || !q.data) return <div className="flex flex-col gap-3"><p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down" data-testid="day-error">The day board could not be loaded: {q.error instanceof Error ? q.error.message : "the server did not answer"}. The evidence below does not depend on it.</p>{why}</div>;
   const o = q.data;
+  // three fixed slots (what the outlook says, the evidence sections passed in, the rest of the day board): the evidence sections stay mounted while the outlook loads, fails or refreshes
+  const top = q.isPending ? <div className="space-y-2" aria-label="Loading the day board"><div className="h-24 animate-pulse rounded-md border border-rule bg-slate" /><div className="h-72 animate-pulse rounded-md border border-rule bg-slate" /></div>
+    : q.isError || !o ? <p role="alert" className="rounded-sm border border-down/50 p-3 text-sm text-down" data-testid="day-error">The day board could not be loaded: {q.error instanceof Error ? q.error.message : "the server did not answer"}. The evidence below does not depend on it.</p>
+    : (
+      <>
+        {!o.live && <p className="rounded-sm border border-warn/40 px-3 py-1.5 text-xs text-warn" role="status" data-testid="day-closed">The market is not live. Showing the recorded session of {o.session}{o.generated_at ? ` (read ${fmtTimeIST(o.generated_at)})` : ""}; nothing is priced for the minutes ahead.</p>}
+        {o.live && o.lag_minutes != null && o.lag_minutes >= 3 && <p className="rounded-sm border border-warn/40 px-3 py-1.5 text-xs text-warn" role="status" data-testid="day-lag">The newest recorded minute is {o.lag_minutes.toFixed(0)} minutes old{o.last_recorded_at ? ` (${hhmmIST(o.last_recorded_at)})` : ""}: the chart and the track record stop there while the tiles above read the live data.</p>}
+        <Header o={o} />
+      </>
+    );
   return (
     <div className="flex flex-col gap-3" data-testid="day-board">
-      {!o.live && <p className="rounded-sm border border-warn/40 px-3 py-1.5 text-xs text-warn" role="status" data-testid="day-closed">The market is not live. Showing the recorded session of {o.session}{o.generated_at ? ` (read ${fmtTimeIST(o.generated_at)})` : ""}; nothing is priced for the minutes ahead.</p>}
-      <Header o={o} />
+      {top}
       {why}
-      <Panel title="Sentiment through the day" hint={`${o.session} · ${o.path.length} recorded points`} testid="day-chart"><DayChart o={o} /></Panel>
-      <section aria-label="The session in phases">
-        <ul className="grid gap-2 md:grid-cols-3 xl:grid-cols-5" data-testid="day-phases">{o.phases.map((p) => <PhaseCard key={p.name} p={p} />)}</ul>
-      </section>
-      <Expected o={o} />
-      <TrackRecord o={o} />
-      <ul className="list-disc space-y-0.5 pl-5 text-[11px] text-muted" data-testid="day-limits">{o.limits.map((l) => <li key={l}>{l}</li>)}</ul>
+      {o && !q.isError && (
+        <>
+          <Panel title="Sentiment through the day" hint={`${o.session} · ${o.path.length} recorded points`} testid="day-chart"><DayChart o={o} /></Panel>
+          <section aria-label="The session in phases">
+            <ul className="grid gap-2 md:grid-cols-3 xl:grid-cols-5" data-testid="day-phases">{o.phases.map((p) => <PhaseCard key={p.name} p={p} />)}</ul>
+          </section>
+          <Expected o={o} />
+          <TrackRecord o={o} />
+          <ul className="list-disc space-y-0.5 pl-5 text-[11px] text-muted" data-testid="day-limits">{o.limits.map((l) => <li key={l}>{l}</li>)}</ul>
+        </>
+      )}
     </div>
   );
 }
-

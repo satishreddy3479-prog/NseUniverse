@@ -75,3 +75,10 @@ describe("verdict", () => {
     expect(plainName("Volatility")).toBe("Volatility");
   });
 });
+
+describe("plainName", () => {
+  it("drops the group letter of every group, including the sixth", async () => {
+    const { plainName } = await import("../lib/miVerdict");
+    expect(["A. Derivatives positioning", "E. Participation and breadth", "F. Trend and regime"].map(plainName)).toEqual(["Derivatives positioning", "Participation and breadth", "Trend and regime"]);
+  });
+});

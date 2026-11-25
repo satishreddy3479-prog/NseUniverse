@@ -203,7 +203,8 @@ def reliability(report: Mapping[str, Any] | None) -> dict[str, Any]:
         grade = "Established" if lo is not None and lo > 0.5 and above / max(1, len(folds)) >= 0.6 else "Not established"
         text = f"over {n_sessions} out-of-sample sessions: {rate:.0%} right ({above} of {len(folds)} sessions above 50 %)"
     return {"grade": grade, "text": text, "sessions": n_sessions, "hit_rate": rate, "hit_rate_ci95": ci, "sessions_above_50": above, "session_rates": [{"session": f.get("test_session"), "hit_rate": f["hit_rate"], "decided": f.get("decided")} for f in folds],
-            "note": "Overlapping snapshots make the pooled range narrower than it should be; the per-session rates show the real spread."}
+            "note": "Overlapping snapshots make the pooled range narrower than it should be; the per-session rates show the real spread. "
+                                                                                          "Stored minutes before 25 Nov 2026 have no trend-and-regime group, so the record was measured on the other five groups; the sixth has no record yet."}
 
 
 # ------------------------------------------------------------------------------------------------ levels and the plain reading
@@ -233,7 +234,8 @@ def read_lines(now: Mapping[str, Any], expected: Sequence[Mapping[str, Any]], hi
     s = now.get("score")
     if s is None:
         return ["There is not enough evidence for a verdict right now: " + str(now.get("reason") or "too few groups are available") + "."]
-    out.append(f"Sentiment is {now['class']} ({s:+.0f}) with evidence quality {now.get('confidence') or 0:.0f}/100; {now.get('groups_bullish', 0):.0%} of the weight is bullish and {now.get('groups_bearish', 0):.0%} bearish.")
+    conf, gb, gr = now.get("confidence"), now.get("groups_bullish"), now.get("groups_bearish")
+    out.append(f"Sentiment is {now['class']} ({s:+.0f})" + ("" if conf is None else f" with evidence quality {conf:.0f}/100") + ("" if gb is None or gr is None else f"; {gb:.0%} of the weight is bullish and {gr:.0%} bearish") + ".")
     tr = now.get("trend")
     if tr and tr.get("label"):
         out.append(f"The session regime is {tr['label']} (trend score {round((tr.get('score') or 0) * 100)}/100).")
@@ -256,10 +258,16 @@ def read_lines(now: Mapping[str, Any], expected: Sequence[Mapping[str, Any]], hi
 
 # ------------------------------------------------------------------------------------------------ assembly
 def build(*, now: datetime, session: str, live: bool, rows: Sequence[Mapping[str, Any]], history_rows: Sequence[Mapping[str, Any]], weights: Mapping[str, float], summary: Mapping[str, Any],
-          trend: Mapping[str, Any] | None, validation_report: Mapping[str, Any] | None) -> dict[str, Any]:
+          trend: Mapping[str, Any] | None, validation_report: Mapping[str, Any] | None, hist: dict[str, Any] | None = None, clock: datetime | None = None) -> dict[str, Any]:
     sent = summary.get("sentiment") or {}
     pulse = summary.get("pulse") or {}
     spot = _num(pulse.get("spot"))
+    last = rows[-1] if rows else None
+    if not live and last is not None:
+        # a closed (or pre-open) page shows the session it is about: its last recorded minute, not today's empty live read
+        sent = {"score": val.rescore(last, weights), "class": None, "confidence": last.get("confidence"), "coverage": last.get("coverage"), "groups_bullish": None, "groups_bearish": None, "reason": None}
+        sent["class"] = fz.classify(sent["score"]) if sent["score"] is not None else "INSUFFICIENT DATA"
+    ref_spot = spot if spot is not None else (_num(last.get("spot")) if last is not None and not live else None)
     iv = _num(pulse.get("atm_iv"))
     score, conf = _num(sent.get("score")), _num(sent.get("confidence"))
     minutes_left = max(1.0, CLOSE_MIN - _ist_min(now)) if live else 0.0
@@ -270,17 +278,24 @@ def build(*, now: datetime, session: str, live: bool, rows: Sequence[Mapping[str
     sd_close = sigma_points(spot, iv, minutes_left) if live else None
     horizons.append({"minutes": round(minutes_left), "label": "To the close", "sd_points": None if sd_close is None else round(sd_close, 1), "low": None if sd_close is None or spot is None else round(spot - sd_close, 1),
                      "high": None if sd_close is None or spot is None else round(spot + sd_close, 1)})
-    hist = history(history_rows, weights)
+    hist = hist if hist is not None else history(history_rows, weights)
     rel = reliability(validation_report)
     sc = scorecard(rows, weights)
     tr = trend if isinstance(trend, Mapping) and trend.get("available") else None
+    rec_tr = ((last.get("metrics") or {}).get("trend") if last is not None else None) or None
+    if not live and rec_tr:
+        tr_view: dict[str, Any] | None = {"label": rec_tr.get("label"), "score": rec_tr.get("score"), "direction": rec_tr.get("direction"), "agreement": None, "session_mean": None, "from_mean_atr": None}
+    else:
+        tr_view = None if tr is None else {"label": tr.get("label"), "score": tr.get("score"), "direction": tr.get("direction"), "agreement": tr.get("agreement"), "session_mean": tr.get("session_mean"), "from_mean_atr": tr.get("from_mean_atr")}
+    last_at = _when(last) if last is not None else None
+    lag = None if last_at is None or clock is None else max(0.0, round((clock - last_at).total_seconds() / 60, 1))
     now_view: dict[str, Any] = {"score": score, "class": sent.get("class"), "confidence": conf, "groups_bullish": _num(sent.get("groups_bullish")), "groups_bearish": _num(sent.get("groups_bearish")),
-                                "coverage": _num(sent.get("coverage")), "reason": sent.get("reason"), "lean": lean(score, conf), "regime": (summary.get("regime") or {}).get("name"),
-                                "trend": None if tr is None else {"label": tr.get("label"), "score": tr.get("score"), "direction": tr.get("direction"), "agreement": tr.get("agreement"), "session_mean": tr.get("session_mean"), "from_mean_atr": tr.get("from_mean_atr")}}
+                                "coverage": _num(sent.get("coverage")), "reason": sent.get("reason"), "lean": lean(score, conf), "regime": (summary.get("regime") or {}).get("name") if live else None,
+                                "trend": tr_view, "as_of": None if last is None or live else last.get("at")}
     atr = _num((tr or {}).get("atr"))
     return {
         "generated_at": now.isoformat(timespec="seconds"), "session": session, "live": live, "spot": spot, "atm_iv": iv, "now": now_view,
-        "path": path(rows, weights), "phases": phases(rows, weights, now=now, live=live, spot=spot, iv_pct=iv), "expected": horizons, "levels": levels(spot, tr, summary.get("gex"), atr),
+        "path": path(rows, weights), "phases": phases(rows, weights, now=now, live=live, spot=spot, iv_pct=iv), "expected": horizons, "levels": levels(ref_spot, tr, summary.get("gex"), atr), "last_recorded_at": None if last is None else last.get("at"), "lag_minutes": lag if live else None,
         "history": hist, "scorecard": sc, "reliability": rel, "read": read_lines(now_view, horizons, hist, rel, sc),
         "limits": ["Descriptive evidence, not a forecast: no model here predicts price.", "The bands are one standard deviation of a random walk with the option-implied volatility; they carry no direction.",
                    "History is re-scored with today's provisional weights and overlaps (one snapshot a minute); read the number of sessions.", "A group with no data is left out, never scored neutral."],

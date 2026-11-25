@@ -134,3 +134,23 @@ describe("the day board when the market is closed, empty or unreachable", () => 
     expect(screen.getByRole("alert")).toHaveTextContent("The evidence below does not depend on it");
   });
 });
+
+describe("provenance and staleness", () => {
+  it("a closed page labels its verdict as the last recorded minute and does not price the close", async () => {
+    mount(closed);
+    expect(await screen.findByText("Sentiment at the last recorded minute")).toBeInTheDocument();
+    expect(screen.queryByText(/To the close/)).toBeNull();
+  });
+
+  it("warns when the newest recorded minute is old while the market is live", async () => {
+    mount({ ...live, lag_minutes: 8, last_recorded_at: live.path[live.path.length - 1]!.at });
+    expect(await screen.findByTestId("day-lag")).toHaveTextContent("8 minutes old");
+    expect(screen.getByTestId("day-lag")).toHaveTextContent("tiles above read the live data");
+  });
+
+  it("shows no lag warning when the record is current", async () => {
+    mount({ ...live, lag_minutes: 1 });
+    await screen.findByTestId("day-header");
+    expect(screen.queryByTestId("day-lag")).toBeNull();
+  });
+});

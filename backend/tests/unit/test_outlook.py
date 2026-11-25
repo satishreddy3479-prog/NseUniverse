@@ -151,3 +151,24 @@ def test_the_full_outlook_for_a_finished_real_session_is_complete_and_says_what_
     assert e[30]["sd_points"] == pytest.approx(ol.sigma_points(last["spot"], 16.9, 30), abs=0.06) and e[30]["low"] == pytest.approx(last["spot"] - e[30]["sd_points"], abs=0.06)
     assert live["expected"][-1]["label"] == "To the close" and live["expected"][-1]["minutes"] == 210  # 12:00 IST is 210 minutes before 15:30
     assert live["reliability"]["grade"] == "Not measured"
+
+
+def test_a_closed_page_reads_the_last_recorded_minute_of_its_session_not_todays_empty_live_summary(real: dict) -> None:
+    rows = real["2026-11-23"]
+    last = rows[-1]
+    empty_live = {"sentiment": {"score": None, "class": "INSUFFICIENT DATA", "confidence": None, "coverage": 0.49, "reason": "3 engines available (need 3)"}, "pulse": {"spot": None, "atm_iv": None}, "gex": {"flip": 25221.0}}
+    out = ol.build(now=datetime.fromisoformat(last["at"]), session="2026-11-23", live=False, rows=rows, history_rows=rows, weights=W, summary=empty_live, trend=None, validation_report=None)
+    expected = val.rescore(last, W)
+    assert out["now"]["score"] == pytest.approx(expected) and out["now"]["class"] == fz.classify(expected) and out["now"]["as_of"] == last["at"]
+    assert out["now"]["groups_bullish"] is None and not any("None" in x for x in out["read"])  # a figure the row does not carry is left out, never printed as 0 %
+    flip = next(x for x in out["levels"] if x["name"] == "Gamma flip")
+    assert flip["distance_points"] == pytest.approx(25221.0 - last["spot"], abs=0.06)  # distances are measured from the session's last recorded spot
+    assert out["lag_minutes"] is None
+
+
+def test_a_live_page_says_how_old_the_newest_recorded_minute_is(real: dict) -> None:
+    rows = real["2026-11-23"][:160]
+    at = datetime.fromisoformat(rows[-1]["at"])
+    summary = {"sentiment": {"score": 20.0, "class": "Mild Bullish", "confidence": 50.0, "coverage": 0.9, "groups_bullish": 0.5, "groups_bearish": 0.1, "reason": None}, "pulse": {"spot": 25000.0, "atm_iv": 16.0}}
+    out = ol.build(now=at + timedelta(minutes=7), session="2026-11-23", live=True, rows=rows, history_rows=rows, weights=W, summary=summary, trend=None, validation_report=None, clock=at + timedelta(minutes=7))
+    assert out["lag_minutes"] == 7.0 and out["last_recorded_at"] == rows[-1]["at"] and out["now"]["score"] == 20.0  # live tiles keep the live summary
