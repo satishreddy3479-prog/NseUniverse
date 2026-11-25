@@ -5,15 +5,16 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppRoutes } from "../App";
-import { DEFAULT_LAYOUT, LAYOUT_KEY, mergeOff, parseLayout, sameLayout, type SmartOiLayout } from "../lib/smartOiLayout";
+import { DEFAULT_LAYOUT, LAYOUT_KEY, mergeOff, mergeOn, parseLayout, sameLayout, type SmartOiLayout } from "../lib/smartOiLayout";
 import { liveStore } from "../lib/liveStore";
 import { bigChain, expiries, status } from "./fixtures";
 
 vi.mock("../components/EChart", () => ({
   useChartColors: () => ({ up: "#0f0", down: "#f00", brass: "#cb4", info: "#09f", muted: "#999", rule: "#333", paper: "#fff", slate: "#111" }),
-  EChart: ({ ariaLabel, legendOff, onLegendChange }: { ariaLabel: string; legendOff?: string[]; onLegendChange?: (s: Record<string, boolean>) => void }) => (
-    <div role="img" aria-label={ariaLabel} data-legend-off={JSON.stringify(legendOff ?? null)}>
+  EChart: ({ ariaLabel, legendOff, legendOn, onLegendChange }: { ariaLabel: string; legendOff?: string[]; legendOn?: string[]; onLegendChange?: (s: Record<string, boolean>, d?: Record<string, boolean>) => void }) => (
+    <div role="img" aria-label={ariaLabel} data-legend-off={JSON.stringify(legendOff ?? null)} data-legend-on={JSON.stringify(legendOn ?? null)}>
       <button type="button" aria-label={`switch Put volume off in ${ariaLabel}`} onClick={() => onLegendChange?.({ "Put volume": false, "Call volume": true })} />
+      <button type="button" aria-label={`switch the per-candle bars on in ${ariaLabel}`} onClick={() => onLegendChange?.({ "Put volume": false, "Call volume": false, "PE − CE per candle (right)": true }, { "Put volume": true, "Call volume": true, "PE − CE per candle (right)": false })} />
     </div>
   ),
 }));
@@ -39,17 +40,30 @@ beforeEach(() => { vi.stubGlobal("ResizeObserver", RO); localStorage.clear(); li
 afterEach(() => vi.unstubAllGlobals());
 
 describe("the saved layout, as data", () => {
-  const L: SmartOiLayout = { tf: 5, strikes: 10, lower: "volume", lowerLeft: "volume", off: { main: ["Put volume"], day: [], ratio: ["PCR"] } };
+  const L: SmartOiLayout = { tf: 5, strikes: 10, lower: "volume", lowerLeft: "volume", off: { main: ["Put volume"], day: [], ratio: ["PCR"] }, on: { main: [], day: [], ratio: ["PE − CE per candle (right)"] } };
   it("is read back field by field, and anything unusable falls back to the standard value", () => {
     expect(parseLayout(JSON.stringify(L))).toEqual(L);
     expect(parseLayout(null)).toBeNull();
     expect(parseLayout("not json")).toBeNull();
     expect(parseLayout(JSON.stringify({ tf: 7, strikes: -3, lower: "x", lowerLeft: 5, off: { main: ["a", 3, ""], day: "no" } }))).toEqual({ ...DEFAULT_LAYOUT, off: { main: ["a"], day: [], ratio: [] } }); // a bad field is the standard one; only text entries survive in a list
   });
+  it("a layout saved before graphs could be switched on is read back with none switched on", () => {
+    const old = { tf: 5, strikes: 10, lower: "volume", lowerLeft: "volume", off: { main: ["Put volume"], day: [], ratio: ["PCR"] } };
+    expect(parseLayout(JSON.stringify(old))).toEqual({ ...old, on: { main: [], day: [], ratio: [] } });
+  });
+  it("a graph that is off by default and was switched on is remembered as ON (the saved view used to lose it and show a blank chart)", () => {
+    const defaults = { "Put volume": true, "Call volume": true, "PE − CE per candle (right)": false };
+    expect(mergeOn([], { "Put volume": false, "Call volume": false, "PE − CE per candle (right)": true }, defaults)).toEqual(["PE − CE per candle (right)"]);
+    expect(mergeOn(["PE − CE per candle (right)"], { "Put volume": true, "Call volume": true, "PE − CE per candle (right)": false }, defaults)).toEqual([]); // switched off again
+    expect(mergeOn([], { "Put volume": true, "Call volume": true, "PE − CE per candle (right)": false }, defaults)).toEqual([]); // a default-on graph is never listed
+    expect(mergeOn(["Other mode graph"], { "Put volume": true }, defaults)).toEqual(["Other mode graph"]); // an entry this legend does not have keeps what it had
+    expect(mergeOn([], { a: true }, {})).toEqual([]); // no defaults known: nothing is claimed
+  });
   it("two layouts are the same view whatever the order of the graphs switched off", () => {
     expect(sameLayout({ ...L, off: { main: ["a", "b"], day: [], ratio: [] } }, { ...L, off: { main: ["b", "a"], day: [], ratio: [] } })).toBe(true);
     expect(sameLayout(L, { ...L, tf: 3 })).toBe(false);
     expect(sameLayout(DEFAULT_LAYOUT, { ...DEFAULT_LAYOUT, off: { ...DEFAULT_LAYOUT.off, day: ["x"] } })).toBe(false);
+    expect(sameLayout(DEFAULT_LAYOUT, { ...DEFAULT_LAYOUT, on: { ...DEFAULT_LAYOUT.on, ratio: ["x"] } })).toBe(false); // a graph switched on is a different view
   });
   it("a legend change keeps the graphs that are off in the other mode: Put volume off while the signals show stays off", () => {
     expect(mergeOff(["Put volume"], { "NIFTY close": true, bullish: false })).toEqual(["Put volume", "bullish"]);
@@ -103,5 +117,32 @@ describe("the Smart OI widget", () => {
     expect(w.getByRole("button", { name: "3 min" })).toHaveAttribute("aria-pressed", "true");
     expect(w.getByTestId("smart-oi-save-layout")).toHaveTextContent("Save layout");
     expect((await w.findByRole("img", { name: /NIFTY candles, Smart OI candles and the divergence signals/ })).getAttribute("data-legend-off")).toBe(JSON.stringify([]));
+  });
+});
+
+describe("a saved view with a graph switched on that the chart starts without", () => {
+  const box = async () => within(await screen.findByRole("region", { name: "Smart OI: change per candle" }));
+  const ratio = () => screen.findByRole("img", { name: /Put and call volume today/ });
+  it("is handed to the chart again after the page is opened again, together with the graphs that were switched off", async () => {
+    const saved: SmartOiLayout = { ...DEFAULT_LAYOUT, lower: "volume", off: { main: [], day: [], ratio: ["Put volume", "Call volume", "PE − CE volume (day, right)"] }, on: { main: [], day: [], ratio: ["PE − CE per candle (right)"] } };
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify(saved));
+    mount();
+    await box();
+    expect(JSON.parse((await ratio()).getAttribute("data-legend-on")!)).toEqual(["PE − CE per candle (right)"]);
+    expect(JSON.parse((await ratio()).getAttribute("data-legend-off")!)).toEqual(["Put volume", "Call volume", "PE − CE volume (day, right)"]);
+  });
+  it("switching the per-candle bars on and saving keeps them: the layout carries them in `on`", async () => {
+    mount();
+    let w = await box();
+    await userEvent.click(await w.findByRole("button", { name: "PE, CE & PE − CE volume" }));
+    await userEvent.click(await w.findByRole("button", { name: /switch the per-candle bars on in Put and call volume today/ }));
+    await userEvent.click(w.getByTestId("smart-oi-save-layout"));
+    const stored = JSON.parse(localStorage.getItem(LAYOUT_KEY)!) as SmartOiLayout;
+    expect(stored.on.ratio).toEqual(["PE − CE per candle (right)"]);
+    expect(stored.off.ratio).toEqual(expect.arrayContaining(["Put volume", "Call volume"]));
+    cleanup();
+    mount();
+    w = await box();
+    expect(JSON.parse((await ratio()).getAttribute("data-legend-on")!)).toEqual(["PE − CE per candle (right)"]);
   });
 });

@@ -19,7 +19,7 @@ import { ageSeconds, fmtDateTimeIST, fmtExpiry, fmtTimeIST, fmtInt, fmtPct, fmtP
 import { smartOiCandles } from "../../lib/optionTools";
 import { SmartOiDivergence, useDivergence } from "./SmartOiDivergence";
 import { fromIndexBars, regimeForCandles, regimeSeries } from "../../lib/trendRegime";
-import { clearLayout, DEFAULT_LAYOUT, loadLayout, mergeOff, sameLayout, saveLayout, type ChartKey, type SmartOiLayout } from "../../lib/smartOiLayout";
+import { clearLayout, DEFAULT_LAYOUT, loadLayout, mergeOff, mergeOn, sameLayout, saveLayout, type ChartKey, type SmartOiLayout } from "../../lib/smartOiLayout";
 import { useSpotDisplay } from "../../lib/useLive";
 import type { BaselineKind, Observation, OiChange, OptionChainRow } from "../../lib/types";
 import { Loading } from "../../components/Loading";
@@ -339,7 +339,11 @@ function SmartOiChartWidget() {
   const [tf, setTf] = useState<number>(start.tf);
   const [strikes, setStrikes] = useState<number | "all">(start.strikes); // whole chain by default, like the totals other platforms show
   const [off, setOff] = useState<SmartOiLayout["off"]>(start.off);
-  const legendOf = (k: ChartKey) => (sel: Record<string, boolean>) => setOff((o) => { const next = mergeOff(o[k], sel); return next.join("\u0001") === [...o[k]].sort().join("\u0001") ? o : { ...o, [k]: next }; });
+  const [on, setOn] = useState<SmartOiLayout["on"]>(start.on);
+  const legendOf = (k: ChartKey) => (sel: Record<string, boolean>, defaults?: Record<string, boolean>) => {
+    setOff((o) => { const next = mergeOff(o[k], sel); return next.join("\u0001") === [...o[k]].sort().join("\u0001") ? o : { ...o, [k]: next }; });
+    setOn((o) => { const next = mergeOn(o[k], sel, defaults); return next.join("\u0001") === [...o[k]].sort().join("\u0001") ? o : { ...o, [k]: next }; });
+  };
   const all = d.history.data?.observations;
   // Newest IST day with stored samples; its first sample is where the series starts, so no change ever crosses a night.
   const since = useMemo(() => {
@@ -376,7 +380,7 @@ function SmartOiChartWidget() {
   const [lower, setLower] = useState<"pcr" | "volume">(start.lower);
   const ratioOpt = useMemo(() => (res ? (lower === "volume" ? smartOiVolumeOption(res, colors) : smartOiRatioOption(res, colors)) : null), [res, colors, lower]);
   const last = res?.candles[res.candles.length - 1];
-  const layoutNow: SmartOiLayout = { tf, strikes, lower, lowerLeft, off };
+  const layoutNow: SmartOiLayout = { tf, strikes, lower, lowerLeft, off, on };
   const layoutSaved = savedLayout != null;
   const layoutDirty = !sameLayout(layoutNow, savedLayout ?? DEFAULT_LAYOUT);
   return (
@@ -409,10 +413,10 @@ function SmartOiChartWidget() {
             </div>
             <StrikePicker value={strikes} onChange={setStrikes} />
             <div role="group" aria-label="Layout" className="flex items-center gap-0.5" data-testid="smart-oi-layout">
-              <button type="button" onClick={() => { const l: SmartOiLayout = { tf, strikes, lower, lowerLeft, off }; if (saveLayout(l)) setSavedLayout(l); }} disabled={!layoutDirty} data-testid="smart-oi-save-layout"
+              <button type="button" onClick={() => { const l: SmartOiLayout = { tf, strikes, lower, lowerLeft, off, on }; if (saveLayout(l)) setSavedLayout(l); }} disabled={!layoutDirty} data-testid="smart-oi-save-layout"
                 title={layoutDirty ? "Save this view: the candle length, the strikes, the two lower panels and the graphs switched off come back the next time" : layoutSaved ? "This view is saved" : "The view is the standard one"}
                 className={`widget-nodrag min-h-6 rounded-sm border px-2 text-xs disabled:opacity-60 ${layoutDirty ? "border-warn bg-warn/20 font-semibold text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{layoutDirty ? "Save layout ●" : layoutSaved ? "Layout saved ✓" : "Save layout"}</button>
-              <button type="button" onClick={() => { clearLayout(); setSavedLayout(null); setTf(DEFAULT_LAYOUT.tf); setStrikes(DEFAULT_LAYOUT.strikes); setLower(DEFAULT_LAYOUT.lower); setLowerLeft(DEFAULT_LAYOUT.lowerLeft); setOff(DEFAULT_LAYOUT.off); }} disabled={!layoutSaved && sameLayout(layoutNow, DEFAULT_LAYOUT)} data-testid="smart-oi-reset-layout"
+              <button type="button" onClick={() => { clearLayout(); setSavedLayout(null); setTf(DEFAULT_LAYOUT.tf); setStrikes(DEFAULT_LAYOUT.strikes); setLower(DEFAULT_LAYOUT.lower); setLowerLeft(DEFAULT_LAYOUT.lowerLeft); setOff(DEFAULT_LAYOUT.off); setOn(DEFAULT_LAYOUT.on); }} disabled={!layoutSaved && sameLayout(layoutNow, DEFAULT_LAYOUT)} data-testid="smart-oi-reset-layout"
                 title="Back to the standard view (3 minute candles, the whole chain, signals and PCR panels, every graph on) and forget the saved layout"
                 className="widget-nodrag min-h-6 rounded-sm border border-rule bg-slate-2 px-2 text-xs text-muted hover:text-paper disabled:opacity-40">Reset</button>
             </div>
@@ -470,17 +474,17 @@ function SmartOiChartWidget() {
                     ))}
                   </div>
                 )}
-                <EChart className={`echart-fixed ${showSignals ? "!h-[800px]" : "!h-[720px]"}`} hoverGroup="smart-oi" option={main} legendOff={off.main} onLegendChange={legendOf("main")} ariaLabel={showSignals ? "NIFTY candles, Smart OI candles and the divergence signals on the NIFTY close" : "NIFTY candles, Smart OI candles and option volume"} />
+                <EChart className={`echart-fixed ${showSignals ? "!h-[800px]" : "!h-[720px]"}`} hoverGroup="smart-oi" option={main} legendOff={off.main} legendOn={on.main} onLegendChange={legendOf("main")} ariaLabel={showSignals ? "NIFTY candles, Smart OI candles and the divergence signals on the NIFTY close" : "NIFTY candles, Smart OI candles and option volume"} />
               </div>
               <div className="grid min-h-0 grid-rows-2 gap-2">
-                <div><EChart className="echart-fixed !h-[350px]" hoverGroup="smart-oi" option={dayOpt} legendOff={off.day} onLegendChange={legendOf("day")} ariaLabel="Put, call and put minus call OI change since the first candle" /></div>
+                <div><EChart className="echart-fixed !h-[350px]" hoverGroup="smart-oi" option={dayOpt} legendOff={off.day} legendOn={on.day} onLegendChange={legendOf("day")} ariaLabel="Put, call and put minus call OI change since the first candle" /></div>
                 <div>
                   <div role="group" aria-label="Lower right chart" className="mb-1 flex flex-wrap justify-end gap-0.5">
                     {([["pcr", "PCR"], ["volume", "PE, CE & PE − CE volume"]] as const).map(([k, l]) => (
                       <button key={k} type="button" aria-pressed={lower === k} onClick={() => setLower(k)} className={`widget-nodrag min-h-6 rounded-sm border px-2 text-xs ${lower === k ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted hover:text-paper"}`}>{l}</button>
                     ))}
                   </div>
-                  <EChart className="echart-fixed !h-[350px]" hoverGroup="smart-oi" option={ratioOpt} legendOff={off.ratio} onLegendChange={legendOf("ratio")} ariaLabel={lower === "volume" ? "Put and call volume today with the put minus call difference on the right axis" : "OI put-call ratio and volume put-call ratio"} />
+                  <EChart className="echart-fixed !h-[350px]" hoverGroup="smart-oi" option={ratioOpt} legendOff={off.ratio} legendOn={on.ratio} onLegendChange={legendOf("ratio")} ariaLabel={lower === "volume" ? "Put and call volume today with the put minus call difference on the right axis" : "OI put-call ratio and volume put-call ratio"} />
                 </div>
               </div>
             </div>

@@ -52,7 +52,7 @@ describe("the layout hook", () => {
     expect(screen.getByTestId("layout-save")).toHaveTextContent("Save layout ●");
     fireEvent.click(screen.getByTestId("layout-save"));
     expect(screen.getByTestId("layout-save")).toHaveTextContent("Layout saved ✓");
-    expect(readSaved("probe")).toEqual({ window: 30, on: false, shown: { a: true, b: true }, "off:main": ["Put volume"] });
+    expect(readSaved("probe")).toEqual({ window: 30, on: false, shown: { a: true, b: true }, "off:main": ["Put volume"], "on:main": [] });
     cleanup();
     render(<Probe />);
     expect(state()).toEqual({ win: 30, on: false, shown: { a: true, b: true }, off: ["Put volume"] });

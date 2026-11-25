@@ -5,7 +5,7 @@
  * is ignored when read back, so an old or edited entry cannot break a page. Things that name a day (an expiry, a session) are not meant to be saved: the page does not ask for them.
  */
 import { useCallback, useRef, useState } from "react";
-import { mergeOff } from "./smartOiLayout";
+import { mergeOff, mergeOn } from "./smartOiLayout";
 
 type Rec = Record<string, unknown>;
 const keyOf = (page: string) => `nse.layout.v1.${page}`;
@@ -70,13 +70,20 @@ export function useViewLayout(page: string): ViewLayout {
 
   const legend = useCallback((chart: string) => {
     const name = `off:${chart}`;
+    const onName = `on:${chart}`;
     const [off] = use<string[]>(name, []);
+    const [on] = use<string[]>(onName, []);
     return {
       legendOff: off,
-      onLegendChange: (sel: Record<string, boolean>) => setVals((o) => {
+      legendOn: on,
+      onLegendChange: (sel: Record<string, boolean>, defaults?: Record<string, boolean>) => setVals((o) => {
         const cur = Array.isArray(o[name]) ? (o[name] as string[]) : [];
+        const curOn = Array.isArray(o[onName]) ? (o[onName] as string[]) : [];
         const next = mergeOff(cur, sel);
-        return same(next, [...cur].sort()) ? o : { ...o, [name]: next };
+        const nextOn = mergeOn(curOn, sel, defaults);
+        const offSame = same(next, [...cur].sort());
+        const onSame = same(nextOn, [...curOn].sort());
+        return offSame && onSame ? o : { ...o, ...(offSame ? {} : { [name]: next }), ...(onSame ? {} : { [onName]: nextOn }) };
       }),
     };
   }, [use]);

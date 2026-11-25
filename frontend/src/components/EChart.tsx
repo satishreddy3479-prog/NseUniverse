@@ -290,7 +290,7 @@ function themeTokens(): ThemeTokens {
 }
 
 /** Thin ECharts wrapper: owns the instance, resizes with its container, keeps zoom and the user's legend choices across updates. */
-export function EChart({ option, onClick, ariaLabel, className = "", group, hoverGroup, legendOff, onLegendChange }: {
+export function EChart({ option, onClick, ariaLabel, className = "", group, hoverGroup, legendOff, legendOn, onLegendChange }: {
   option: EChartsCoreOption;
   onClick?: (p: PointClick) => void;
   ariaLabel: string;
@@ -308,8 +308,11 @@ export function EChart({ option, onClick, ariaLabel, className = "", group, hove
   hoverGroup?: string;
   /** Legend entries to keep switched off (a saved view): applied after every update, and an entry that leaves the list is switched on again. Leave undefined to leave the legend alone. */
   legendOff?: readonly string[];
+  /** graphs a saved view switched ON that the chart starts without (a legend entry that is off by default), kept on through every refresh */
+  legendOn?: readonly string[];
   /** Told what the legend now holds (entry name to on or off) after the user clicks it. */
-  onLegendChange?: (selected: Record<string, boolean>) => void;
+  /** `defaults` are the legend own starting states, so a view can tell a choice from a default */
+  onLegendChange?: (selected: Record<string, boolean>, defaults?: Record<string, boolean>) => void;
 }) {
   const el = useRef<HTMLDivElement>(null);
   const chart = useRef<ECharts | null>(null);
@@ -321,7 +324,9 @@ export function EChart({ option, onClick, ariaLabel, className = "", group, hove
   const legendChangeRef = useRef(onLegendChange);
   legendChangeRef.current = onLegendChange;
   const appliedOff = useRef<string[]>([]);
+  const appliedOn = useRef<string[]>([]);
   const offKey = legendOff?.join("\u0001");
+  const onKey = legendOn?.join("\u0001");
   const legendDefaults = useRef<Record<string, boolean>>({});
   const [width, setWidth] = useState(0);
   const [height, setHeight] = useState(0);
@@ -373,7 +378,7 @@ export function EChart({ option, onClick, ariaLabel, className = "", group, hove
       };
     }
     // remember what the user toggles in the legend (one series, all, or invert) so the next data refresh does not undo it
-    for (const ev of ["legendselectchanged", "legendselectall", "legendinverseselect"]) c.on(ev, (e) => { const sel = (e as { selected?: Record<string, boolean> }).selected ?? {}; Object.assign(userLegend.current, sel); legendChangeRef.current?.(sel); });
+    for (const ev of ["legendselectchanged", "legendselectall", "legendinverseselect"]) c.on(ev, (e) => { const sel = (e as { selected?: Record<string, boolean> }).selected ?? {}; Object.assign(userLegend.current, sel); legendChangeRef.current?.(sel, { ...legendDefaults.current }); });
     const ro = new ResizeObserver(() => { c.resize(); setWidth(node.clientWidth); setHeight(node.clientHeight); });
     setWidth(node.clientWidth);
     setHeight(node.clientHeight);
@@ -404,7 +409,12 @@ export function EChart({ option, onClick, ariaLabel, className = "", group, hove
       for (const n of legendOff) chart.current?.dispatchAction({ type: "legendUnSelect", name: n });
       appliedOff.current = [...legendOff];
     }
-  }, [option, width, height, hideInfo, offKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (legendOn) { // a saved view that switched on a graph the chart starts without: it is on again after every reload and refresh
+      for (const n of appliedOn.current) if (!legendOn.includes(n) && legendDefaults.current[n] === false) chart.current?.dispatchAction({ type: "legendUnSelect", name: n });
+      for (const n of legendOn) if (!legendOff?.includes(n)) chart.current?.dispatchAction({ type: "legendSelect", name: n });
+      appliedOn.current = [...legendOn];
+    }
+  }, [option, width, height, hideInfo, offKey, onKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <div ref={el} role="img" aria-label={ariaLabel} className={`echart-box chart-in h-full min-h-[120px] w-full ${className}`} />;
 }
