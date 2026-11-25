@@ -8,6 +8,7 @@ import { DetailPanels } from "../components/intelligence/Detail";
 import { AlertsPanel, DivergencePanel, ScenarioPanel, TimelinePanel } from "../components/intelligence/Insight";
 import { CommandStrip, EngineMatrix, Interpretation, PulseCards } from "../components/intelligence/Overview";
 import { DayBoard } from "../components/intelligence/DayBoard";
+import { EdgeMonitor } from "../components/intelligence/EdgeMonitor";
 import { HeavyweightPanel } from "../components/intelligence/Heavyweight";
 import { StockFuturesPanel } from "../components/intelligence/StockFutures";
 import { TurnWatchPanel } from "../components/intelligence/TurnWatch";
@@ -17,8 +18,8 @@ import { EngineBars, VerdictCard } from "../components/intelligence/Verdict";
 import { TabPanel, Tabs, type TabDef } from "../components/swing/shared";
 
 const LABELS: Record<string, string> = { flow: "Stored per-minute flow (rolling CVD)", market: "Market flow, breadth and heavyweights", intraday: "Command centre (stored chain)", futures: "Futures series", skew: "Volatility skew", momentum: "IV momentum", positioning: "Strike positioning", gex: "GEX (rebuilt)", vix: "India VIX, HV and RV (daily closes)", heavymeta: "Heavyweight index weights", ml: "Intraday ML research" };
-type MiTab = "overview" | "evidence" | "signals" | "timeline" | "method";
-const TAB_IDS: MiTab[] = ["overview", "evidence", "signals", "timeline", "method"];
+type MiTab = "overview" | "evidence" | "signals" | "timeline" | "edge" | "method";
+const TAB_IDS: MiTab[] = ["overview", "evidence", "signals", "timeline", "edge", "method"];
 const startTab = (): MiTab => {
   const h = typeof window === "undefined" ? "" : window.location.hash.replace("#", "");
   return (TAB_IDS as string[]).includes(h) ? (h as MiTab) : "overview";
@@ -39,7 +40,7 @@ function MiBody({ d }: { d: Intelligence }) {
   const go = (t: MiTab) => { setTab(t); try { window.history.replaceState(null, "", `#${t}`); } catch { /* the tab still changes without the address */ } };
   const tabs: TabDef[] = [
     { id: "overview", label: "Day board" }, { id: "evidence", label: "Evidence" },
-    { id: "signals", label: `Signals & alerts${d.alerts.length ? ` (${d.alerts.length})` : ""}` }, { id: "timeline", label: "Timeline" }, { id: "method", label: "Data & method" },
+    { id: "signals", label: `Signals & alerts${d.alerts.length ? ` (${d.alerts.length})` : ""}` }, { id: "timeline", label: "Timeline" }, { id: "edge", label: "Edge monitor" }, { id: "method", label: "Data & method" },
   ];
   return (
     <div className="mx-auto flex max-w-[1500px] flex-col gap-3" data-testid="mi-page">
@@ -78,6 +79,7 @@ function MiBody({ d }: { d: Intelligence }) {
         </TabPanel>
       )}
       {tab === "timeline" && <TabPanel id="timeline"><div id="mi-timeline"><TimelinePanel /></div></TabPanel>}
+      {tab === "edge" && <TabPanel id="edge"><EdgeMonitor /></TabPanel>}
       {tab === "method" && (
         <TabPanel id="method">
           <CommandStrip d={d} />

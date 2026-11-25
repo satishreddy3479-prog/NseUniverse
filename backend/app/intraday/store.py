@@ -129,6 +129,17 @@ class IntradayStore:
             r["components"] = json.loads(r["components"])
         return out
 
+    def all_score_sessions(self) -> list[str]:
+        """Every session that has stored rules scores (any expiry), oldest first."""
+        with self._lock:
+            return [r[0] for r in self._db.execute("SELECT DISTINCT session FROM scores ORDER BY session").fetchall()]
+
+    def session_scores(self, session: str) -> list[dict[str, Any]]:
+        """The stored rules scores of one session, one per sample, oldest first: time, spot, score (the Edge monitor's input; read-only)."""
+        with self._lock:
+            rows = self._db.execute("SELECT sample_utc, spot, score FROM scores WHERE session=? ORDER BY sample_utc", (session,)).fetchall()
+        return [{"at": r[0], "spot": r[1], "score": r[2]} for r in rows]
+
     def score_sessions(self, expiry: str) -> list[str]:
         with self._lock:
             rows = self._db.execute("SELECT DISTINCT session FROM scores WHERE expiry=? ORDER BY session", (expiry,)).fetchall()

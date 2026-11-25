@@ -523,7 +523,7 @@ describe("turn watch", () => {
   });
 });
 
-describe("the redesigned page: a reading first, five tabs", () => {
+describe("the redesigned page: a reading first, six tabs", () => {
   it("opens on the Day board with the reading, the evidence bars and the key numbers, and not the detail panels", async () => {
     view(base);
     const v = await screen.findByTestId("mi-verdict");
@@ -546,10 +546,10 @@ describe("the redesigned page: a reading first, five tabs", () => {
     expect(screen.queryByTestId("mi-sources")).toBeNull();
   });
 
-  it("has five tabs, shows the alert count on Signals, and moves between them", async () => {
+  it("has six tabs, shows the alert count on Signals, and moves between them", async () => {
     view(base);
     await screen.findByTestId("mi-verdict");
-    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Day board", "Evidence", `Signals & alerts (${base.alerts.length})`, "Timeline", "Data & method"]);
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Day board", "Evidence", `Signals & alerts (${base.alerts.length})`, "Timeline", "Edge monitor", "Data & method"]);
     await openTab(/Evidence/);
     expect(await screen.findByTestId("mi-engines")).toBeInTheDocument();
     expect(screen.queryByTestId("mi-verdict")).toBeNull();

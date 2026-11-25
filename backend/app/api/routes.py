@@ -1580,6 +1580,15 @@ async def headsup_trades(request: Request) -> dict[str, Any]:
     return await asyncio.to_thread(collect)
 
 
+@router.get("/edge/report")
+async def edge_report(request: Request) -> dict[str, Any]:
+    """Do the indicators have an edge? Every call scored against what price then did (read-only)."""
+    edge = getattr(request.app.state, "edge", None)
+    if edge is None:
+        raise HTTPException(status_code=503, detail="the edge scoring job is not running")
+    return await asyncio.to_thread(edge.report)
+
+
 @router.get("/forward/overview")
 async def forward_overview(
     request: Request, structure: Annotated[str, Query(pattern="^(all|straddle|strangle)$")] = "all",

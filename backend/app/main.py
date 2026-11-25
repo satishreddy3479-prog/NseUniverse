@@ -23,6 +23,8 @@ from app.api.routes import router
 from app.api.ws import router as ws_router
 from app.broker.base import MarketDataBroker
 from app.config import Settings, get_settings
+from app.edge.service import EdgeService
+from app.edge.store import EdgeStore
 from app.forward.service import ForwardService
 from app.forward.store import ForwardStore
 from app.globalmkts.service import GlobalService
@@ -391,6 +393,17 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         )
         app.state.forward = forward
         forward.start()
+        edge = EdgeService(
+            EdgeStore(settings.data_dir),
+            sessions=lambda: sorted(
+                {*intelligence.store.sessions(400), *intraday_store.all_score_sessions()}),
+            intel_rows=lambda s: intelligence.store.rows(s, 1000),
+            rules_rows=intraday_store.session_scores,
+            straddle_rows=lambda s: app.state.straddle.store.rows(s, 1000),
+            enabled=settings.edge_enabled and settings.intelligence_enabled,
+        )
+        app.state.edge = edge
+        edge.start()
         swing_paper = SwingPaperService(
             PaperStore(settings.data_dir), HttpFetcher(), enabled=settings.swing_paper_enabled,
             run_after=time(sh, sm),
@@ -473,6 +486,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             await flows.stop()
             await globalmkts.stop()
             await forward.stop()
+            await edge.stop()
             flows_store.close()
             app.state.strategies.close()
             app.state.preferences.close()

@@ -5,6 +5,9 @@ _Last updated: 2026-11-23_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Edge monitor (25 Nov 2026, D312)
+Built and tested locally, not yet on the server. A nightly job scores five indicators against what price then did and a tab on Market Intelligence shows whether any has an edge over luck (the verdict, rules score, 30-minute momentum, opening-range break, straddle seller score). First reading: nothing can be called proven yet; the patterns found in the stored month start counting from 26 Nov. New database `scoring.sqlite3`; setting `edge_enabled`.
+
 ## Market Intelligence: turn detection (25 Nov 2026, D309)
 Built and tested on the ten stored sessions, not committed to the server yet and not seen live. A price-pullback flag (`intelligence/pullback.py`), a verdict cap (strong flag only, to Neutral, raw score shown) and a "(fading)" trend label (2 ATR rule). The mild flag is a warning only because the stored sessions showed no benefit. The cross-session history table is still uncapped. Thresholds are provisional; read the decision for the numbers and the limits.
 
