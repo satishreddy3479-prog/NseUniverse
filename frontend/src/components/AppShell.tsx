@@ -9,7 +9,7 @@ import { useSignals } from "../lib/useSignals";
 import { Link } from "react-router-dom";
 import { MobileNav, TopNav } from "./TopNav";
 import { ThemeSwitch } from "./ThemeSwitch";
-import { SpotBadge } from "./SpotBadge";
+import { SpotBadge, AuctionStrip } from "./SpotBadge";
 import { StatusPill } from "./StatusPill";
 import { AlertStrip } from "./AlertStrip";
 import { OfflineStrip } from "./OfflineStrip";
@@ -70,6 +70,7 @@ export function AppShell() {
           </div>
         </div>
       </header>
+      <AuctionStrip latest={spotSnapshot ?? latest} />
       {menuOpen && (
         <div id="mobile-nav" className="z-20 border-b border-rule bg-slate md:hidden">
           <MobileNav onNavigate={() => setMenuOpen(false)} />

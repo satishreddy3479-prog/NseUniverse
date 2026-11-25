@@ -40,12 +40,23 @@ export function SpotBadge({ latest, className = "" }: { latest: SnapshotSummary 
         <span className="flex items-center gap-1.5 text-xs text-muted">NIFTY 50 {held ? <><span className="inline-flex items-center rounded-sm border border-warn/50 px-1.5 py-px text-xs font-medium text-warn" data-testid="spot-held">Held {spot.at ? fmtTimeIST(new Date(spot.at).toISOString()) : ""}</span> <Info term="held price" /></> : <SourceTag source={source} />}</span>
         {spot.kind === "snapshot" && latest && <span className="num text-[11px] text-muted" title={asOfTitle(latest)}>{asOfText(latest)}</span>}
       </div>
-      {spot.indicative != null && <span className="inline-flex flex-col rounded-sm border border-warn/50 px-1.5 py-0.5 text-[10px] font-medium leading-tight text-warn" data-testid="spot-indicative" title="The closing auction is running. The exchange publishes an indicative closing value that can sit far from the traded price while the order book fills; it is not a traded price. The level shown is the last traded one.">Closing auction<span className="num">indicative {fmtPrice(spot.indicative)}</span></span>}
+      {spot.indicative != null && <span aria-label={`Closing auction, indicative value ${fmtPrice(spot.indicative)}`} className="hidden shrink-0 flex-col rounded-sm border border-warn/50 px-1.5 py-0.5 text-[10px] min-[520px]:inline-flex font-medium leading-tight text-warn" data-testid="spot-indicative" title="The closing auction is running. The exchange publishes an indicative closing value that can sit far from the traded price while the order book fills; it is not a traded price. The level shown is the last traded one.">Closing auction<span className="num">indicative {fmtPrice(spot.indicative)}</span></span>}
       <div className="flex flex-col items-start gap-px leading-none min-[520px]:items-end min-[520px]:gap-0.5 min-[520px]:leading-tight">
         <span className="text-[10px] font-medium tracking-wide text-muted min-[520px]:hidden">NIFTY</span>
         <span className="num text-[17px] font-semibold leading-tight text-paper md:text-[15px]">{fmtPrice(ltp)}</span>
         <span className={`num text-[11px] font-medium min-[520px]:text-xs ${tone}`}>{chg == null ? "" : `${fmtSigned(Math.round(chg * 100) / 100)} (${fmtPct(pct)})`}</span>
       </div>
+    </div>
+  );
+}
+
+/** On a phone the header has no room for the closing-auction value (it pushed the price, the scores and the buttons off the screen at 15:23 on 25 Nov 2026): it gets its own thin line under the header instead. */
+export function AuctionStrip({ latest }: { latest: SnapshotSummary | undefined }) {
+  const spot = useSpotDisplay({ ltp: latest?.underlying_ltp ?? null, prevClose: latest?.underlying_prev_close ?? null, at: latest?.retrieved_at ?? null });
+  if (spot.indicative == null) return null;
+  return (
+    <div role="status" data-testid="auction-strip" className="border-b border-warn/40 bg-warn/10 px-3 py-1 text-xs text-warn min-[520px]:hidden">
+      Closing auction: indicative value <span className="num font-semibold">{fmtPrice(spot.indicative)}</span> (not a traded price; the level above is the last trade)
     </div>
   );
 }

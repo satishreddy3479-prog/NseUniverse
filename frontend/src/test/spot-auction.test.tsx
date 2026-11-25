@@ -2,7 +2,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SpotBadge } from "../components/SpotBadge";
+import { AuctionStrip, SpotBadge } from "../components/SpotBadge";
 import { INDEX_KEY, liveStore } from "../lib/liveStore";
 import { inIndicativeWindow, resetLastTraded } from "../lib/useLive";
 import { liveTick, status, streamStatus, summary } from "./fixtures";
@@ -13,7 +13,7 @@ const at = (hm: string) => `2026-11-23T${hm}:00Z`; // UTC: 09:40Z is 15:10 IST
 function show() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(status()), { status: 200 })));
-  return render(<QueryClientProvider client={qc}><div className="xl:flex"><SpotBadge latest={latest} /></div></QueryClientProvider>);
+  return render(<QueryClientProvider client={qc}><div className="xl:flex"><SpotBadge latest={latest} /><AuctionStrip latest={latest} /></div></QueryClientProvider>);
 }
 function feed(ltp: number, received_at: string, seq: number) {
   act(() => {
@@ -46,6 +46,14 @@ describe("spot badge in the closing auction", () => {
     expect(screen.queryByText("24,855.85", { selector: ".text-paper" })).toBeNull();
     expect(screen.getByTestId("spot-indicative")).toHaveTextContent("indicative 24,855.85");
     expect(screen.getByTestId("spot-indicative")).toHaveTextContent("Closing auction");
+  });
+  it("on a phone the value gets its own line under the header, so the header keeps the price, the scores and the buttons", () => {
+    show();
+    expect(screen.queryByTestId("auction-strip")).toBeNull();
+    feed(24855.85, at("09:51"), 1);
+    expect(screen.getByTestId("auction-strip")).toHaveTextContent("indicative value 24,855.85");
+    expect(screen.getByTestId("spot-indicative").className).toContain("hidden"); // the header pill shows from 520 px up only
+    expect(screen.getByTestId("auction-strip").className).toContain("min-[520px]:hidden");
   });
   it("opened inside the auction with no traded level seen, it shows the stored snapshot (not the auction estimate) and still labels the estimate", () => {
     show();
