@@ -233,6 +233,6 @@ def test_the_service_computes_the_track_the_regime_and_the_radar_and_stores_the_
     out = s.summary()
     assert out["live_regime"]["track"]["vwap_side"] == "above" and out["live_regime"]["ib"]["status"] in ("ok", "unknown")
     pf = out["preflight"]
-    assert set(pf["gates"]) == {"premium_decay", "volatility_shock", "regime_squeeze", "structure_flip"} and pf["verdict"] in ("ALL_CLEAR_TO_SELL", "SELECTIVE", "BLOCKED", "INCOMPLETE")
+    assert set(pf["gates"]) == {"premium_decay", "volatility_shock", "regime_squeeze", "structure_flip", "seller_environment"} and pf["verdict"] in ("ALL_CLEAR_TO_SELL", "SELECTIVE", "BLOCKED", "INCOMPLETE")
     assert pf["regime"]["label"] == out["live_regime"]["label"] and pf["trade_setup"]["re_strike_pts"] == 35.0
     pytest.importorskip("app")  # keeps the import used: the regime module is part of the service

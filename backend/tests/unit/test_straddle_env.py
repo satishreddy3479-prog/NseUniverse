@@ -450,5 +450,5 @@ class TestPreflightVerdicts:
         from tests.unit.test_straddle_preflight import analysis, regime
 
         a = analysis(prem15=-4.2, iv15=-0.2)
-        out = env.evaluate_preflight(a, {"seller": {"flags": env.flags(env.evidence(a, {}))}}, regime(label="UNCLEAR"))
+        out = env.evaluate_preflight(a, {"seller": {"flags": env.flags(env.evidence(a, {})), "score": 55.0, "class": "Neutral", "components": []}}, regime(label="UNCLEAR"))
         assert out["verdict"] == "ALL_CLEAR_TO_SELL" and out["badge"] == "GREEN" and out["reasons"] == [] and out["gates"]["premium_decay"]["label"] == "Decaying (-4.2 pts)"

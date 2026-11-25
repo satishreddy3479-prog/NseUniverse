@@ -19,6 +19,7 @@ from app.intraday.volatility import CALL, PUT, TRADING_MINUTES_PER_YEAR, price, 
 IST = ZoneInfo("Asia/Kolkata")
 EXPIRY = date(2026, 11, 12)
 OPEN = datetime(2026, 11, 11, 9, 16, tzinfo=IST)
+LATE = datetime(2026, 11, 11, 10, 0, tzinfo=IST)  # after the opening minutes that realised vol leaves out
 STRIKES = [23800.0 + 50 * i for i in range(13)]
 R = 0.06
 
@@ -125,19 +126,19 @@ class TestEfficiency:
 class TestRealised:
     def test_constant_return(self) -> None:
         spots = [24000 * math.exp(0.001 * i) for i in range(70)]
-        times = [OPEN + timedelta(minutes=i) for i in range(70)]
+        times = [LATE + timedelta(minutes=i) for i in range(70)]
         r = sd.realised(times, spots, 30)
         assert r["returns"] == 30
         assert r["vol_pct"] == pytest.approx(0.001 * math.sqrt(TRADING_MINUTES_PER_YEAR) * 100, abs=0.01)  # 0.001 x sqrt(94500) = 30.74 %
         assert r["sum_sq"] == pytest.approx(30 * 1e-6)
 
     def test_window_not_covered_is_missing(self) -> None:
-        times = [OPEN + timedelta(minutes=i) for i in range(10)]
+        times = [LATE + timedelta(minutes=i) for i in range(10)]
         r = sd.realised(times, [24000 + i for i in range(10)], 60)
         assert r["vol_pct"] is None and "covered" in r["note"]
 
     def test_gaps_are_skipped_not_filled(self) -> None:
-        times = [OPEN, OPEN + timedelta(minutes=1), OPEN + timedelta(minutes=2), OPEN + timedelta(minutes=30), OPEN + timedelta(minutes=31), OPEN + timedelta(minutes=32)]
+        times = [LATE, LATE + timedelta(minutes=1), LATE + timedelta(minutes=2), LATE + timedelta(minutes=30), LATE + timedelta(minutes=31), LATE + timedelta(minutes=32)]
         r = sd.realised(times, [24000, 24010, 24020, 24100, 24110, 24120], None)
         assert r["gaps_skipped"] == 1 and r["returns"] == 4
 
@@ -300,3 +301,39 @@ class TestPriceBelowIntrinsic:
         assert fx["pe_iv"][30] is None and fx["iv"][30] is None  # no implied volatility for a price below intrinsic: not filled
         assert fx["pe"][29] is not None and fx["pe_iv"][29] is not None
         assert a["quality"]["price_only_samples_fixed"] == 1
+
+
+class TestOpeningMinutes:
+    """25 Nov 2026, the first 37 stored minutes of NIFTY (09:15 to 09:51): the opening jump was 55 % of the squared movement and made realised vol look like 24.9 % against an implied 17.3 %."""
+
+    def real(self) -> tuple[list[datetime], list[float]]:
+        import json
+        from pathlib import Path
+
+        d = json.loads((Path(__file__).resolve().parents[1] / "fixtures" / "spot_minutes_2026-11-25_0951.json").read_text(encoding="utf-8"))
+        return [datetime.fromisoformat(t) for t in d["times"]], d["spot"]
+
+    def test_returns_ending_before_0920_are_counted_and_left_out(self) -> None:
+        times, spots = self.real()
+        r = sd.realised(times, spots, None)
+        assert r["opening_skipped"] == 4 and r["returns"] == 32 and r["thin"] is False  # 36 returns, the four ending 09:16 to 09:19 left out; 32 is not under the 30 that make a reading thin
+        # independent hand calculation: sum of squared log returns of the remaining 32, annualised on 375 x 252 trading minutes
+        ss = dt = 0.0
+        for i in range(1, len(spots)):
+            end = times[i].astimezone(IST)
+            if end.hour * 60 + end.minute < 9 * 60 + 20:
+                continue
+            ss += math.log(spots[i] / spots[i - 1]) ** 2
+            dt += (times[i] - times[i - 1]).total_seconds() / 60
+        assert r["vol_pct"] == pytest.approx(math.sqrt(ss / dt * TRADING_MINUTES_PER_YEAR) * 100, abs=0.01)
+        assert 17.0 < r["vol_pct"] < 18.0  # not the 24.9 % that the opening jump gave
+
+    def test_a_session_that_starts_after_the_opening_minutes_loses_nothing(self) -> None:
+        times = [LATE + timedelta(minutes=i) for i in range(40)]
+        r = sd.realised(times, [24000 * math.exp(0.001 * i) for i in range(40)], None)
+        assert r["opening_skipped"] == 0 and r["returns"] == 39 and r["thin"] is False
+
+    def test_a_reading_from_under_thirty_returns_is_thin(self) -> None:
+        times = [LATE + timedelta(minutes=i) for i in range(12)]
+        r = sd.realised(times, [24000 * math.exp(0.001 * i) for i in range(12)], None)
+        assert r["returns"] == 11 and r["thin"] is True and r["vol_pct"] is not None

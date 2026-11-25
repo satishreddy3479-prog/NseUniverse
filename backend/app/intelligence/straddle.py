@@ -28,7 +28,7 @@ import itertools
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.intraday.volatility import (
@@ -58,6 +58,12 @@ MEANINGFUL_PCT = 20.0  # below this share (and above EXPANSION_PCT) the premium 
 EXPANSION_PCT = -10.0  # premium rose by more than a tenth of the theta decay
 IV_MOVE_PTS = 0.3  # a vol change smaller than this is "flat"
 MAX_RETURN_GAP_MIN = 10.0
+IST = timezone(timedelta(hours=5, minutes=30))
+#: the returns that end before 09:20 IST are the opening auction and the first minutes of price discovery (25 Nov 2026: 25,664.7 -> 25,749.8 in the first minute was 55 % of all the squared
+#: movement of the first 36 minutes). They are a gap, not the diffusion that implied volatility prices, so they are left out of every realised-volatility window and counted
+OPEN_SKIP_END = 9 * 60 + 20
+#: a realised-vol figure from fewer returns than this is reported as thin (early in the session)
+THIN_RETURNS = 30
 # A decay efficiency is a RATIO (actual decay / theta decay). Early in a session, or on a far expiry, the theta of a window is a fraction of a point
 # while last-traded prices move by a point or more on a tick, so the ratio read -1000 % or +8000 % from one tick and swung the environment scores
 # between 30 and 77 in a minute (12 Nov 2026). Below MIN_EXPECTED_PTS of expected decay the ratio is not computed; between that and FULL_CONFIDENCE_PTS
@@ -356,16 +362,20 @@ def realised(times: Sequence[datetime], spots: Sequence[float | None], minutes: 
     """Annualised realised vol (percent, trading-minute basis) from log returns of consecutive stored spots over the last ``minutes`` (None = whole session).
     Returns need at least 3 and the window must be at least 80 % covered; gaps over 10 minutes are skipped and counted."""
     pts = [(t, s) for t, s in zip(times, spots, strict=True) if s is not None and s > 0 and (end is None or t <= end)]
-    out: dict[str, Any] = {"minutes": minutes, "vol_pct": None, "sum_sq": None, "returns": 0, "gaps_skipped": 0}
+    out: dict[str, Any] = {"minutes": minutes, "vol_pct": None, "sum_sq": None, "returns": 0, "gaps_skipped": 0, "opening_skipped": 0, "thin": True}
     if len(pts) < 2:
         return out
     end = pts[-1][0]
     cut = None if minutes is None else end.timestamp() - minutes * 60
     use = [(t, s) for t, s in pts if cut is None or t.timestamp() >= cut]
-    ss, dt, n, gaps = 0.0, 0.0, 0, 0
+    ss, dt, n, gaps, opening = 0.0, 0.0, 0, 0, 0
     for (t0, s0), (t1, s1) in itertools.pairwise(use):
         m = (t1 - t0).total_seconds() / 60
         if m <= 0:
+            continue
+        t1i = t1.astimezone(IST)
+        if t1i.hour * 60 + t1i.minute < OPEN_SKIP_END:
+            opening += 1
             continue
         if m > MAX_RETURN_GAP_MIN:
             gaps += 1
@@ -373,7 +383,7 @@ def realised(times: Sequence[datetime], spots: Sequence[float | None], minutes: 
         ss += math.log(s1 / s0) ** 2
         dt += m
         n += 1
-    out |= {"returns": n, "gaps_skipped": gaps}
+    out |= {"returns": n, "gaps_skipped": gaps, "opening_skipped": opening, "thin": n < THIN_RETURNS}
     if n < 3 or dt <= 0:
         return out
     if minutes is not None and dt < 0.8 * minutes:
@@ -708,7 +718,7 @@ def analyse(
         "actual_move_pts": rd(hi_lo[-1] - hi_lo[0]), "actual_range_pts": rd(max(hi_lo) - min(hi_lo)),
         "move_vs_daily_sd": None if not daily_sd else rd(abs(hi_lo[-1] - hi_lo[0]) / daily_sd, 2),
         "realised_variance": {"sum_sq_returns": None if ro["sum_sq"] is None else round(ro["sum_sq"], 8), "session_move_sd_pct": None if ro["sum_sq"] is None else rd(math.sqrt(ro["sum_sq"]) * 100, 3), "returns": ro["returns"]},
-        "note": "Realised vol is annualised on trading minutes (375 x 252 a year); the quoted implied vol is on calendar time, the usual way the two are compared. The gap is IV minus RV in vol points.",
+        "note": "Realised vol is annualised on trading minutes (375 x 252 a year); the quoted implied vol is on calendar time, the usual way the two are compared. The gap is IV minus RV in vol points. Returns that end before 09:20 IST (the opening auction and first minutes) are left out; a figure from under 30 returns is marked thin.",
     }  # fmt: skip
     last_time = times[last_ok]
     prev_end = last_time.fromtimestamp(last_time.timestamp() - 15 * 60, last_time.tzinfo)

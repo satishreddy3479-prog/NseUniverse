@@ -4,6 +4,8 @@ import { api } from "../lib/api";
 import { fmtTimeIST } from "../lib/format";
 
 const STALE_S = 15 * 60; // a score older than this is not shown: nothing is recorded outside market hours
+/** The seller class by the backend's bands (80 / 60 / 40 / 25), so the tooltip names what the number means. */
+const sellerClass = (v: number) => (v >= 80 ? "Highly favourable" : v >= 60 ? "Favourable" : v >= 40 ? "Neutral" : v >= 25 ? "Unfavourable" : "High risk");
 const tone = (v: number) => (v >= 60 ? "text-up font-semibold" : v >= 45 ? "text-paper" : "text-muted");
 const move = (now: number, before: number | null | undefined) => (before == null ? "" : `, ${now - before >= 0 ? "up" : "down"} ${Math.abs(Math.round(now - before))} in 15 min`);
 
@@ -15,7 +17,7 @@ export function ScoreChips() {
   if (!d?.available || d.seller == null || d.buyer == null || d.age_s == null || d.age_s > STALE_S) return null;
   const title = [
     `Straddle engine, expiry ${d.expiry ?? "—"}, recorded ${fmtTimeIST(d.at)}`,
-    `Seller environment ${Math.round(d.seller)}${move(d.seller, d.seller_15m)}`,
+    `Seller environment ${Math.round(d.seller)} (${sellerClass(d.seller)})${move(d.seller, d.seller_15m)}`,
     `Buyer environment ${Math.round(d.buyer)}${move(d.buyer, d.buyer_15m)}`,
     `Reads: the rolling at-the-money straddle (re-centred, last 60 min), volatility, flow and positioning; the opening strike is not scored`,
     `${d.regime ?? "no regime"} · 60 or more is favourable for that side's premium behaviour; not a trade signal`,

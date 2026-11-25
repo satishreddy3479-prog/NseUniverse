@@ -20,13 +20,14 @@ const STATUS = {
   UNKNOWN: { label: "NO DATA", cls: "bg-slate-2 text-muted" },
 } as const;
 
-function Gate({ title, gate, value, testid }: { title: string; gate: PreflightGate | undefined; value: string; testid: string }) {
+function Gate({ title, gate, value, testid, extra }: { title: string; gate: PreflightGate | undefined; value: string; testid: string; extra?: string[] }) {
   const st = STATUS[gate?.status ?? "UNKNOWN"];
   return (
     <div className="min-w-0 rounded-sm border border-rule/60 bg-slate-2 px-2.5 py-2" data-testid={testid}>
       <div className="flex items-center justify-between gap-2"><span className="text-[11px] text-muted">{title}</span><span className={`rounded-sm px-1.5 py-0.5 text-[10px] font-semibold ${st.cls}`} data-testid={`${testid}-status`}>{st.label}</span></div>
       <div className="num mt-0.5 text-sm font-semibold text-paper">{value}</div>
       <div className="text-[11px] leading-snug text-muted" data-testid={`${testid}-label`}>{gate?.label ?? "no reading"}</div>
+      {extra && extra.length > 0 && <div className="text-[11px] leading-snug text-muted" data-testid={`${testid}-top`}>Costs most: {extra.join("; ")}</div>}
     </div>
   );
 }
@@ -59,6 +60,7 @@ export function StraddlePreflightCard({ d }: { d: StraddleDecay }) {
               <Gate testid="pf-premium" title="Premium momentum (15m)" gate={g.premium_decay} value={g.premium_decay?.val_15m == null ? MISSING : `${sg(g.premium_decay.val_15m)} pts`} />
               <Gate testid="pf-iv" title="Volatility velocity (15m)" gate={g.volatility_shock} value={g.volatility_shock?.val_15m == null ? MISSING : `${sg(g.volatility_shock.val_15m, 2)} vol pts`} />
               <Gate testid="pf-regime" title="09:45 regime / squeeze" gate={g.regime_squeeze} value={regimeValue(p)} />
+              {g.seller_environment && <Gate testid="pf-seller" title="Seller environment score" gate={g.seller_environment} value={g.seller_environment.score == null ? MISSING : `${Math.round(g.seller_environment.score)} / 100`} extra={g.seller_environment.top} />}
               <Gate testid="pf-gamma" title="Gamma flip distance (modelled)" gate={g.structure_flip} value={g.structure_flip?.flip == null || g.structure_flip.spot == null ? MISSING : `${sg(g.structure_flip.spot - g.structure_flip.flip, 0)} pts`} />
             </div>
           )}

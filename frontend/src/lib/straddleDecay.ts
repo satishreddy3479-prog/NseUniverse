@@ -61,6 +61,8 @@ export interface PreflightGate {
   flip?: number | null;
   spot?: number | null;
   flags?: string[];
+  score?: number | null;
+  top?: string[];
 }
 
 export interface PreflightRegimeFlag { id: string; severity: string; message: string }
@@ -70,7 +72,7 @@ export interface PreflightRadar {
   badge: "GREEN" | "YELLOW" | "RED" | "GREY";
   headline: string;
   summary: string;
-  gates: { premium_decay?: PreflightGate; volatility_shock?: PreflightGate; regime_squeeze?: PreflightGate; structure_flip?: PreflightGate };
+  gates: { premium_decay?: PreflightGate; volatility_shock?: PreflightGate; regime_squeeze?: PreflightGate; structure_flip?: PreflightGate; seller_environment?: PreflightGate };
   reasons: string[];
   unknown: string[];
   regime: { label: string | null; ib_ratio: number | null; flags: PreflightRegimeFlag[] };

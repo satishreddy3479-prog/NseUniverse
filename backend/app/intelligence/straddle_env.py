@@ -104,6 +104,8 @@ def evidence(a: Mapping[str, Any], mi: Mapping[str, Any]) -> dict[str, Any]:
     rvs = a.get("realised_vs_implied") or {}
     gap = (rvs.get("gap") or {})
     rv_gap = gap.get("60") if gap.get("60") is not None else gap.get("open")
+    rv_src = "60" if gap.get("60") is not None else "open"
+    rv_thin, rv_n = g(rvs, "windows", rv_src, "thin"), g(rvs, "windows", rv_src, "returns")
     rv_val = g(rvs, "windows", "60", "vol_pct") if g(rvs, "windows", "60", "vol_pct") is not None else g(rvs, "windows", "open", "vol_pct")
     st = a.get("structure") or {}
     regimes = iv.get("regimes") or {}
@@ -116,7 +118,7 @@ def evidence(a: Mapping[str, Any], mi: Mapping[str, Any]) -> dict[str, Any]:
     pulse = mi.get("pulse") or {}
     opt = g(mi, "panels", "options") or {}
     return {
-        "eff": eff, "iv_atm_30": atm30, "iv_atm_15": atm15, "reg30": reg30, "dce30": dce30, "dpe30": dpe30, "rv_gap": rv_gap, "rv": rv_val, "ratio": st.get("realised_vs_breakeven"),
+        "eff": eff, "iv_atm_30": atm30, "iv_atm_15": atm15, "reg30": reg30, "dce30": dce30, "dpe30": dpe30, "rv_gap": rv_gap, "rv_thin": rv_thin, "rv_n": rv_n, "rv": rv_val, "ratio": st.get("realised_vs_breakeven"),
         "config": [x["tag"] for x in (st.get("config") or [])], "gex": st.get("gex") or {}, "gex_session": st.get("gex_session") or {}, "skew_change": sk,
         "skew25": g(iv, "levels", "pe25", "current"), "ce25": g(iv, "levels", "ce25", "current"),
         "accel": g(rvs, "acceleration", "ratio"), "regime": (a.get("regime") or {}).get("label"), "eff30": g(a, "regime", "path_efficiency_30m"), "move30": rvs.get("move_30m_pts"),
@@ -180,9 +182,9 @@ def seller_components(ev: Mapping[str, Any]) -> list[dict[str, Any]]:
     v = -1.0 if "both_expanding" in tags else 0.7 if "both_contracting" in tags else -0.5 if any(t in tags for t in ("put_expanding_faster", "call_expanding_faster")) else 0.0
     c.append(comp("iv_sides", "Call/put IV behaviour", 6, v if ev["dce30"] is not None else None, (("; ".join(tags) or "no clear call/put IV pattern") + " (30 min)") if ev["dce30"] is not None else "needs a 30-minute window of call and put IV (not enough samples yet)", "straddle IV"))
     gp = ev["rv_gap"]
-    c.append(comp("rv_gap", "Realised versus implied vol", 12, None if gp is None else gp / 6, f"implied minus realised {gp:+.1f} vol points (positive: the premium is rich against actual movement)" if gp is not None else "no realised window", "straddle realised vs implied"))
+    c.append(comp("rv_gap", "Realised versus implied vol", 12, None if gp is None else gp / 6, f"implied minus realised {gp:+.1f} vol points (positive: the premium is rich against actual movement)" + _thin(ev) if gp is not None else "no realised window", "straddle realised vs implied"))
     r = ev["ratio"]
-    c.append(comp("movement", "Underlying movement vs break-even", 10, None if r is None else (1 - r) / 0.5, f"realised daily-equivalent move is {r:.2f}x the straddle's break-even move" if r is not None else "no break-even", "straddle structure"))
+    c.append(comp("movement", "Underlying movement vs break-even", 10, None if r is None else (1 - r) / 0.5, f"realised daily-equivalent move is {r:.2f}x the straddle's break-even move" + _thin(ev) if r is not None else "no break-even", "straddle structure"))
     cfg = ev["config"]
     gv = [{"suppressed movement": 0.6, "price stabilisation around gamma concentration": 0.6, "increasing movement": -0.6, "potential gamma-driven acceleration": -1.0}.get(t) for t in cfg]
     gvf = [x for x in gv if x is not None]
@@ -450,6 +452,17 @@ _CONVEXITY_KEY = "gamma exposure (realised convexity)"
 _REASON_NAMES = {"ACTIVE_SHORT_SQUEEZE": "SHORT SQUEEZE", "VWAP_TREND_DETACHMENT": "VWAP TREND RUNAWAY", "IB_EXPANSION_TREND": "WIDE OPENING RANGE"}
 
 
+def _worst(sel: Mapping[str, Any], n: int = 2) -> list[str]:
+    """The names of the seller-score readings that cost the most points (the two largest negative contributions), with their points."""
+    cs = [c for c in sel.get("components") or [] if isinstance(c, Mapping) and isinstance(c.get("contribution"), (int, float)) and c["contribution"] < 0]
+    return [f"{c['name']} {c['contribution']:+.1f}" for c in sorted(cs, key=lambda c: c["contribution"])[:n]]
+
+
+def _thin(ev: Mapping[str, Any]) -> str:
+    """A caution for a realised-vol reading made from few returns (early in the session; the opening minutes are not counted)."""
+    return f" (early in the session: only {ev.get('rv_n')} minutes of returns, the opening minutes before 09:20 not counted)" if ev.get("rv_thin") and ev.get("rv_n") is not None else ""
+
+
 def _gate(status: str, label: str, **extra: Any) -> dict[str, Any]:
     return {"status": status, "label": label, **extra}
 
@@ -531,7 +544,19 @@ def evaluate_preflight(a: Mapping[str, Any], env: Mapping[str, Any], live_regime
         label = f"Spot {spot - flip:+.0f} pts from flip ({flip:.0f})"
         gates["structure_flip"] = _gate("PASS" if spot >= flip - RADAR_FLIP_BUFFER_PTS else "WARN", label, flip=flip, spot=spot)
 
+    sel = env.get("seller") or {}
+    sscore, sclass = num(sel.get("score")), sel.get("class")
+    if sscore is None:
+        gates["seller_environment"] = _gate("UNKNOWN", "No seller score yet")
+    elif sclass == "High risk":
+        gates["seller_environment"] = _gate("FAIL", f"Seller environment {sclass} ({sscore:.0f})", score=sscore, top=_worst(sel))
+    elif sclass == "Unfavourable":
+        gates["seller_environment"] = _gate("WARN", f"Seller environment {sclass} ({sscore:.0f})", score=sscore, top=_worst(sel))
+    else:
+        gates["seller_environment"] = _gate("PASS", f"Seller environment {sclass} ({sscore:.0f})", score=sscore, top=[])
     reasons: list[str] = [_REASON_NAMES[i] for i in hard]
+    if gates["seller_environment"]["status"] == "FAIL":
+        reasons.append("SELLER ENVIRONMENT HIGH RISK")
     if gates["premium_decay"]["status"] == "FAIL" or "premium_expansion" in flags_:
         reasons.append("PREMIUM EXPANSION")
     if gates["volatility_shock"]["status"] == "FAIL":
@@ -543,6 +568,8 @@ def evaluate_preflight(a: Mapping[str, Any], env: Mapping[str, Any], live_regime
         detail.append(f"Premiums are expanding ({prem:+.1f} pts in 15 min).")
     if gates["volatility_shock"]["status"] == "FAIL":
         detail.append(f"ATM IV is spiking ({iv15:+.2f} vol points in 15 min).")
+    if gates["seller_environment"]["status"] == "FAIL":
+        detail.append(f"The seller environment score is {sscore:.0f} (High risk): " + "; ".join(gates["seller_environment"]["top"]) + ".")
     if "convexity_blowout" in flags_ and gamma_pts is not None and theta_pts is not None:
         detail.append(f"Realised convexity (+{gamma_pts:.1f} pts) is overwhelming theta ({theta_pts:.1f} pts).")
     unknown = [k for k, v in gates.items() if v["status"] == "UNKNOWN"]
@@ -557,7 +584,8 @@ def evaluate_preflight(a: Mapping[str, Any], env: Mapping[str, Any], live_regime
         soft = [f["message"] for f in regime["flags"] if f["id"] in trend_on and f["id"] not in hard]
         put_floor = "PUT_FLOOR_ADVANCING" in on
         summary = " ".join(
-            ["Spot is below the modelled gamma flip, where moves tend to amplify." if "structure_flip" in warns else "", *soft,
+            ["Spot is below the modelled gamma flip, where moves tend to amplify." if "structure_flip" in warns else "",
+             f"The seller environment score is {sscore:.0f} (Unfavourable): " + "; ".join(gates["seller_environment"]["top"]) + "." if "seller_environment" in warns else "", *soft,
              "Put open interest is being added much faster than call open interest while the index rises." if put_floor else ""]).strip()  # fmt: skip
     elif unknown:
         verdict, badge = "INCOMPLETE", "GREY"
@@ -566,5 +594,5 @@ def evaluate_preflight(a: Mapping[str, Any], env: Mapping[str, Any], live_regime
     else:
         verdict, badge = "ALL_CLEAR_TO_SELL", "GREEN"
         headline = "ALL CLEAR — PREMIUMS DECAYING (OK TO SELL MANUALLY)"
-        summary = "Premiums are decaying, IV is calm, no squeeze or trend flag is on and spot is above the modelled gamma flip."
+        summary = f"Premiums are decaying, IV is calm, no squeeze or trend flag is on, spot is above the modelled gamma flip and the seller environment is {sclass} ({sscore:.0f})."
     return {"verdict": verdict, "badge": badge, "headline": headline, "summary": summary, "gates": gates, "reasons": reasons, "unknown": unknown, "regime": regime, "trade_setup": setup, "note": RADAR_NOTE}

@@ -27,7 +27,7 @@ describe("buyer and seller scores beside the NIFTY price", () => {
     expect(within(chip).getByText("38")).toHaveClass("text-muted"); // under 45
     expect(chip).toHaveAttribute("aria-label", "Buyer environment 38, seller environment 73: open the straddle intelligence");
     const title = chip.getAttribute("title")!;
-    expect(title).toContain("Seller environment 73, up 8 in 15 min");
+    expect(title).toContain("Seller environment 73 (Favourable), up 8 in 15 min");
     expect(title).toContain("Buyer environment 38, down 0 in 15 min");
     expect(title).toContain("expiry 2026-11-17");
     expect(title).toContain("not a trade signal");

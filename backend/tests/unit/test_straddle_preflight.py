@@ -83,14 +83,14 @@ def regime(*flags: dict[str, str], label: str = "UNCLEAR", ib_ratio: float | Non
 
 def radar(a: dict[str, Any], lr: dict[str, Any] | None = None) -> dict[str, Any]:
     ev = env.evidence(a, {})
-    return env.evaluate_preflight(a, {"seller": {"flags": env.flags(ev)}}, lr)
+    return env.evaluate_preflight(a, {"seller": {"flags": env.flags(ev), "score": 55.0, "class": "Neutral", "components": []}}, lr)
 
 
 def test_all_four_gates_passing_in_a_mean_reverting_box_is_green_and_the_levels_are_by_hand() -> None:
     r = radar(analysis(), regime(label="DECAY_FAVOURED", ib_ratio=0.30))
     assert r["verdict"] == "ALL_CLEAR_TO_SELL" and r["badge"] == "GREEN" and r["reasons"] == [] and r["unknown"] == []
     assert r["headline"] == "ALL CLEAR — PREMIUMS DECAYING (OK TO SELL MANUALLY)"
-    assert {k: v["status"] for k, v in r["gates"].items()} == {"premium_decay": "PASS", "volatility_shock": "PASS", "regime_squeeze": "PASS", "structure_flip": "PASS"}
+    assert {k: v["status"] for k, v in r["gates"].items()} == {"premium_decay": "PASS", "volatility_shock": "PASS", "regime_squeeze": "PASS", "structure_flip": "PASS", "seller_environment": "PASS"}
     assert r["gates"]["premium_decay"]["label"] == "Decaying (-2.0 pts)" and r["gates"]["volatility_shock"]["label"] == "Stable (+0.10 vol)"
     assert r["gates"]["regime_squeeze"]["label"] == "Mean-reverting box (opening range 0.30x the daily move)"
     assert r["gates"]["structure_flip"]["label"] == "Spot +100 pts from flip (25400)"
@@ -190,5 +190,26 @@ def test_the_real_19_nov_premium_series_is_blocked_for_a_premium_that_rose_over_
     a = {**FIX, "quality": {"live": True, "stale": False, "age_minutes": 1.0}, "spot": [25385.0]}
     r = env.evaluate_preflight(a, {}, None)
     assert r["verdict"] == "BLOCKED" and r["badge"] == "RED" and r["reasons"] == ["PREMIUM EXPANSION"] and r["headline"] == "DO NOT SELL — PREMIUM EXPANSION DETECTED"
-    assert r["gates"]["premium_decay"]["val_15m"] == 1.75 and set(r["unknown"]) == {"volatility_shock", "regime_squeeze", "structure_flip"}
+    assert r["gates"]["premium_decay"]["val_15m"] == 1.75 and set(r["unknown"]) == {"volatility_shock", "regime_squeeze", "structure_flip", "seller_environment"}
     assert r["trade_setup"]["combined_premium"] == 268.0 and r["trade_setup"]["stop_loss_pts"] == pytest.approx(268.0 * 1.18, abs=0.05)
+
+
+# ------------------------------------------------------------------ the seller environment gate and the opening minutes (25 Nov 2026)
+def _seller(score: float | None, cls: str | None, comps: list | None = None) -> dict:
+    return {"flags": [], "score": score, "class": cls, "components": comps or []}
+
+
+def test_a_green_card_needs_the_seller_environment_not_to_be_unfavourable() -> None:
+    a = analysis(prem15=-2.0)
+    comps = [{"name": "Realised versus implied vol", "contribution": -6.4}, {"name": "Underlying movement vs break-even", "contribution": -5.3}, {"name": "ATM IV trend", "contribution": 0.1}, {"name": "Skew changes", "contribution": -0.4}]
+    lr = regime(label="UNCLEAR")
+    ok = env.evaluate_preflight(a, {"seller": _seller(55.0, "Neutral")}, lr)
+    assert ok["verdict"] == "ALL_CLEAR_TO_SELL" and "Neutral (55)" in ok["summary"]
+    warn = env.evaluate_preflight(a, {"seller": _seller(35.5, "Unfavourable", comps)}, lr)  # the 25 Nov 09:50 case: four green gates, seller score 36
+    assert warn["verdict"] == "SELECTIVE" and warn["badge"] == "YELLOW"
+    assert warn["gates"]["seller_environment"]["status"] == "WARN" and warn["gates"]["seller_environment"]["top"] == ["Realised versus implied vol -6.4", "Underlying movement vs break-even -5.3"]
+    assert "Unfavourable" in warn["summary"] and "Realised versus implied vol -6.4" in warn["summary"]
+    bad = env.evaluate_preflight(a, {"seller": _seller(20.0, "High risk", comps)}, lr)
+    assert bad["verdict"] == "BLOCKED" and "SELLER ENVIRONMENT HIGH RISK" in bad["headline"]
+    none = env.evaluate_preflight(a, {"seller": _seller(None, None)}, lr)
+    assert none["verdict"] == "INCOMPLETE" and "seller_environment" in none["unknown"]  # no score is never a pass

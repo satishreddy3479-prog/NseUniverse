@@ -120,3 +120,22 @@ describe("pre-flight entry radar", () => {
     expect(none.container.textContent).toBe("");
   });
 });
+
+describe("the seller environment tile", () => {
+  it("shows the score, the class and what costs the most points when the card is yellow because of it", () => {
+    show(radar({
+      verdict: "SELECTIVE", badge: "YELLOW", headline: "SELECTIVE / CAUTION", summary: "The seller environment score is 36 (Unfavourable): Realised versus implied vol -6.4; Underlying movement vs break-even -5.3.",
+      gates: { ...radar().gates, seller_environment: { status: "WARN", label: "Seller environment Unfavourable (36)", score: 35.5, top: ["Realised versus implied vol -6.4", "Underlying movement vs break-even -5.3"] } },
+    }));
+    expect(screen.getByTestId("preflight-badge")).toHaveAttribute("data-badge", "YELLOW");
+    expect(screen.getByTestId("pf-seller-status")).toHaveTextContent("WARN");
+    expect(screen.getByTestId("pf-seller")).toHaveTextContent("36 / 100");
+    expect(screen.getByTestId("pf-seller-label")).toHaveTextContent("Unfavourable");
+    expect(screen.getByTestId("pf-seller-top")).toHaveTextContent("Costs most: Realised versus implied vol -6.4; Underlying movement vs break-even -5.3");
+  });
+
+  it("an older payload without the gate shows the four tiles as before", () => {
+    show(radar());
+    expect(screen.queryByTestId("pf-seller")).toBeNull();
+  });
+});
