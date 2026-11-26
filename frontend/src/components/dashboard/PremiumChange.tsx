@@ -5,7 +5,7 @@ import { LayoutBar } from "../LayoutBar";
 import { useViewLayout } from "../../lib/viewLayout";
 import { strikesAround } from "../../lib/optionTools";
 import { changeWindows, readout } from "../../lib/premiumChange";
-import { PARTS, runningOption, spotOption, strikesOption, windowsOption } from "../../lib/premiumChangeCharts";
+import { PARTS, partColors, runningOption, spotOption, strikesOption, windowsOption } from "../../lib/premiumChangeCharts";
 import { EChart, useChartColors } from "../EChart";
 import { EmptyState } from "../ui";
 import { Loading } from "../Loading";
@@ -101,7 +101,7 @@ export function PremiumChangeBoard() {
         {sentence ?? `At ${labels[sel]} the straddle could not be split: a price or an implied volatility was missing in this window.`}
       </p>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted" aria-label="Key">
-        {PARTS.map((p, k) => <span key={p.key} className="flex items-center gap-1.5"><span className="inline-block size-3 rounded-[2px]" style={{ background: [c.muted, c.info, c.brass][k] }} aria-hidden="true" />{p.name}</span>)}
+        {PARTS.map((p, k) => <span key={p.key} className="flex items-center gap-1.5"><span className="inline-block size-3 rounded-[2px]" style={{ background: partColors()[k] }} aria-hidden="true" />{p.name}</span>)}
       </div>
 
       <Section title={`ATM straddle: change in every ${mins}-minute window and what drove it`}>

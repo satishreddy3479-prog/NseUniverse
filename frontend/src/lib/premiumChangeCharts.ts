@@ -9,7 +9,15 @@ export const PARTS = [
   { key: "vol", name: "Volatility and the rest" },
 ] as const;
 
-const colorOf = (c: ChartColors): [string, string, string] => [c.muted, c.info, c.brass];
+/**
+ * The three parts' colours: grey, blue and orange (the chart palette's blue and orange, so the two causes that matter are told apart at a glance), one set for each theme.
+ * The theme's own muted, info and brass colours were too close together and too dark on the light theme.
+ */
+export function partColors(): [string, string, string] {
+  const dark = typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "dark";
+  return dark ? ["#898781", "#3987e5", "#d95926"] : ["#b4b2a9", "#2a78d6", "#eb6834"];
+}
+const colorOf = (_c: ChartColors) => partColors();
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const val = (s: Split | null | undefined, k: (typeof PARTS)[number]["key"]) => (s ? r2(s[k]) : null);
 const tipBase = (c: ChartColors) => ({ confine: true, backgroundColor: c.slate, borderColor: c.rule, textStyle: { color: c.paper, fontSize: 12 } });
