@@ -7,3 +7,4 @@
 - 26 Nov 2026: D324 premium-speed study files and D325 Premium Change tool (frontend only: lib, board, tool entry, Learn lesson, tests). Committed locally, not pushed.
 - 26 Nov 2026: D326 global futures live price from Yahoo's chart answer (backend). Committed locally, not pushed.
 - 26 Nov 2026: D327 Eagles view saved layout no longer hidden by an untouched working copy (frontend). Committed locally, not pushed.
+- 26 Nov 2026: D328 audit report (docs only). Committed locally, not pushed.
