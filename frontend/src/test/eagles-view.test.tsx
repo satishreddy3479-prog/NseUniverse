@@ -233,6 +233,28 @@ describe("the Eagles view", () => {
     expect(titles()).toEqual(["Open interest by strike"]);
   });
 
+  it("a working copy without unsaved changes never hides the saved layout (it came back as the starter board on a second device), but unsaved changes still win", async () => {
+    // this browser opened once before and remembers the starter board as its untouched working copy; the saved layout arrives later (from the server, or another device)
+    mount();
+    await screen.findByRole("heading", { name: "Eagles view" });
+    expect(titles()).toEqual(["Day board", "Open interest by strike"]);
+    expect(JSON.parse(localStorage.getItem(EAGLE_WORKING_KEY)!).touched).toBe(false);
+    cleanup();
+    const board = { items: [{ key: "w:pcr~1", cat: "w:pcr" }, { key: "t:rolling~2", cat: "t:rolling" }], layout: [{ i: "w:pcr~1", x: 0, y: 0, w: 6, h: 8 }, { i: "t:rolling~2", x: 6, y: 0, w: 6, h: 8 }], next: 3 };
+    localStorage.setItem(EAGLE_KEY, JSON.stringify(board));
+    mount();
+    await screen.findByRole("heading", { name: "Eagles view" });
+    expect(titles()).toEqual(["Put-call ratio", "ATM Rolling Straddle"]); // the saved layout, not the remembered starter board
+    expect(screen.getByTestId("eagle-saved-state").textContent).toBe("saved layout");
+    // a change made here and not saved is kept over the saved layout, and the page says so
+    await userEvent.click(screen.getByRole("button", { name: "Remove Put-call ratio" }));
+    cleanup();
+    mount();
+    await screen.findByRole("heading", { name: "Eagles view" });
+    expect(titles()).toEqual(["ATM Rolling Straddle"]);
+    expect(screen.getByTestId("eagle-saved-state").textContent).toContain("unsaved changes");
+  });
+
   it("only the saved layout follows the owner to other devices: the working copy stays in this browser", () => {
     expect(isSynced(EAGLE_KEY)).toBe(true);
     expect(isSynced(EAGLE_WORKING_KEY)).toBe(false);

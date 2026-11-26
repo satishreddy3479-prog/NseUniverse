@@ -160,13 +160,16 @@ function Board() {
   const { width, containerRef, mounted } = useContainerWidth();
   // The saved layout (shared with the owner's other browsers) and the board being worked on here: a change is kept in this browser at once, "Save layout" makes it the saved one.
   const [saved, setSaved] = useState<EagleBoard | null>(() => loadBoard(sizeOf));
-  const [board, setBoardRaw] = useState<EagleBoard>(() => {
-    const work = loadWorking(sizeOf);
-    if (work) return work.board;
-    const s = loadBoard(sizeOf);
-    return s ? (loadAuto() ? fitWith(s) : s) : starter();
+  // What opens: the working copy of this browser only when it holds changes that were not saved (or when nothing was ever saved). A working copy WITHOUT unsaved changes is just
+  // a remembered view of an older saved layout (or of the starter board): it must not hide the layout the owner saved here or on another device (26 Nov 2026: a layout saved in the
+  // morning came back as the starter board on the PC, because that browser's untouched working copy of the starter board was shown instead of the saved layout).
+  const [initial] = useState(() => {
+    const work = loadWorking(sizeOf), s = loadBoard(sizeOf);
+    if (work && (work.touched || s == null)) return { board: work.board, touched: work.touched };
+    return { board: s ? (loadAuto() ? fitWith(s) : s) : starter(), touched: false };
   });
-  const [touched, setTouched] = useState<boolean>(() => loadWorking(sizeOf)?.touched ?? false);
+  const [board, setBoardRaw] = useState<EagleBoard>(initial.board);
+  const [touched, setTouched] = useState<boolean>(initial.touched);
   const [justSaved, setJustSaved] = useState(false);
   // every change the person makes (a widget added, copied, removed, moved, resized, the starter or an empty board) counts as unsaved; the board re-fitting itself does not
   const setBoard: typeof setBoardRaw = useCallback((v) => { setBoardRaw(v); }, []);
