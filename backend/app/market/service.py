@@ -1277,7 +1277,8 @@ class MarketService:
             try:
                 await self.run_due()
                 stamp = self._clock().astimezone(IST).strftime("%Y%m%d%H%M")
-                if stamp != last_min and self.sample():
+                # the minute sample reads the stores and computes the whole market summary: in a thread, so the loop (live ticks, the browsers' sockets) never waits for it or for a database lock
+                if stamp != last_min and await asyncio.to_thread(self.sample):
                     last_min = stamp
                     self.last_sample_note = f"stored {stamp[8:10]}:{stamp[10:12]} IST"
             except Exception as e:  # noqa: BLE001 - the loop must survive

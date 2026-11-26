@@ -34,3 +34,18 @@ def test_an_older_repeat_never_moves_the_receive_time_back() -> None:
     assert book.update(tick(1.0, T0)) is None
     stored = book.get("nse_cm|Nifty 50")
     assert stored is not None and stored.received_at == T0 + timedelta(seconds=10)
+
+
+def test_same_compares_every_field_except_the_two_that_always_differ() -> None:
+    """``_same`` runs for every tick on the event loop and compares field by field (the dump of both ticks cost 12.9 us, this 4.7 us); it must keep the meaning of the dump comparison."""
+    full = {"key": "nse_fo|1", "kind": "scrip", "exchange_segment": "nse_fo", "instrument_token": "1", "trading_symbol": "X", "ltp": 100.5, "open": 1.0, "high": 2.0, "low": 0.5, "prev_close": 99.0,
+            "volume": 1000, "oi": 5000, "bid": 100.0, "ask": 101.0, "bid_qty": 10, "ask_qty": 12}
+    a = LiveTick(**full, received_at=T0)
+    assert LiveBook._same(a, LiveTick(**full, received_at=T0 + timedelta(seconds=9), seq=7))  # time and sequence do not count
+    for f in LiveBook._COMPARED:
+        assert f in LiveTick.model_fields
+    for field, other in (("ltp", 100.55), ("oi", 5001), ("bid", None), ("bid_qty", 11), ("trading_symbol", "Y")):
+        changed = LiveTick(**{**full, field: other}, received_at=T0)
+        assert not LiveBook._same(a, changed), field
+    assert "received_at" not in LiveBook._COMPARED and "seq" not in LiveBook._COMPARED
+

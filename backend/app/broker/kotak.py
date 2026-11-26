@@ -91,6 +91,10 @@ class KotakBroker:
             if factory is None:
                 from neo_api_client.neo_api import NeoAPI  # lazy: after logging setup
 
+                from app.broker.sdk_logging import quiet_sdk_logging
+
+                quiet_sdk_logging()  # SDK logs each packet at INFO; see sdk_logging.py
+
                 factory = NeoAPI
             self._client = factory(
                 consumer_key=self._secret("kotak_consumer_key"), environment="prod"

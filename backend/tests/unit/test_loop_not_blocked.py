@@ -11,6 +11,8 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 import app.swing.live as swing_live
 from app.broker.kotak import KotakBroker
 from app.services.universe import build_universe
@@ -106,3 +108,44 @@ async def test_the_ops_alerts_lot_size_read_is_off_the_loop() -> None:
     assert gap < MAX_LATE_S, f"the loop was late by {gap:.2f} s while the lot size was read"
     assert "alerts" in out
     assert not any(a["key"] == "lot-size" for a in out["alerts"])  # 65 = configured: no alert
+
+
+def test_the_market_minute_sample_runs_in_a_thread_not_on_the_event_loop(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """26 Nov 2026: ``MarketService._loop`` called ``sample()`` (the whole market summary: many database reads behind one lock) on the loop thread, and the server's loop profile showed
+    one-second stalls inside it at the open. The sample must run in a worker thread."""
+    import asyncio
+    import threading
+    from datetime import UTC, datetime
+
+    from app.market.service import MarketService
+    from app.market.store import MarketStore
+
+    svc = MarketService(MarketStore(tmp_path), clock=lambda: datetime(2026, 11, 26, 3, 50, tzinfo=UTC))
+    seen: dict[str, int] = {}
+
+    def fake_sample() -> bool:
+        seen["sample"] = threading.get_ident()
+        return True
+
+    async def no_due() -> dict[str, str]:
+        return {}
+
+    sleeps = {"n": 0}
+
+    async def fake_sleep(_s: float) -> None:
+        sleeps["n"] += 1
+        if sleeps["n"] >= 2:  # the start-up wait, then one pass of the loop
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(svc, "sample", fake_sample)
+    monkeypatch.setattr(svc, "run_due", no_due)
+    monkeypatch.setattr("app.market.service.asyncio.sleep", fake_sleep)
+
+    async def run() -> int:
+        loop_thread = threading.get_ident()
+        with pytest.raises(asyncio.CancelledError):
+            await svc._loop()  # noqa: SLF001
+        return loop_thread
+
+    loop_thread = asyncio.run(run())
+    assert "sample" in seen and seen["sample"] != loop_thread
