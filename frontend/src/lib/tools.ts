@@ -19,7 +19,7 @@ export interface Tool {
   /** dashboard widgets (ids in components/dashboard/widgets.tsx) stacked on the tool page */
   widgets?: string[];
   /** chart boards built from the stored per-strike series (components/dashboard/PriceBoards.tsx) */
-  board?: "priceOi" | "multiStrike" | "multiStraddle" | "rollingStraddle" | "vega" | "gamma";
+  board?: "priceOi" | "multiStrike" | "multiStraddle" | "rollingStraddle" | "vega" | "gamma" | "premiumChange";
   /** the page can replay a stored session on one shared clock (components/dashboard/ReplayBar.tsx) */
   replay?: boolean;
   /** a special page body (see pages/ToolPage.tsx) */
@@ -52,6 +52,7 @@ export const TOOLS: Tool[] = [
   { id: "price-vs-oi", label: "Price vs OI", menu: "fno", group: "Price tools", status: "ready", board: "priceOi", blurb: "One strike's call and put price against its open interest and OI change through the session." },
   { id: "multistrike-chart", label: "MultiStrike Chart", menu: "fno", group: "Price tools", status: "ready", isNew: true, board: "multiStrike", blurb: "Price, OI or OI change of several strikes on one chart, calls and puts side by side." },
   { id: "rolling-straddle", replay: true, label: "ATM Rolling Straddle", menu: "fno", group: "Price tools", status: "ready", isNew: true, popular: true, board: "rollingStraddle", blurb: "The straddle of the strike you would hold as spot moves: rolling versus fixed premium, a roll-adjusted premium with no jumps, implied move, break-even band, every roll and its credit." },
+  { id: "premium-change", replay: true, label: "Premium Change", menu: "fno", group: "Price tools", status: "ready", isNew: true, popular: true, board: "premiumChange", blurb: "What drove the change of the ATM straddle (and of every strike) in each window: time passing, NIFTY moving, or volatility and the rest, split so the parts add up to the real change." },
   { id: "multi-straddle", label: "Multi-Straddle Chart", menu: "fno", group: "Price tools", status: "ready", isNew: true, board: "multiStraddle", blurb: "The straddle price of several strikes on one chart." },
   { id: "signal-backtest", label: "Signal Backtest", menu: "fno", group: "Positioning", status: "ready", isNew: true, page: "backtest", blurb: "Chronological out-of-sample tests of skew, IV momentum, OI and butterfly signals against what NIFTY did next, with sample sizes and intervals." },
   { id: "market-structure", label: "Market Structure", menu: "fno", group: "Positioning", status: "ready", isNew: true, page: "marketstructure", blurb: "One view of regime, volatility, positioning and gamma, with the evidence for and against each reading." },

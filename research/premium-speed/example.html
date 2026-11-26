@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Premium speed: example on 25 Nov 2026 (real stored data)</title>
+<style>
+:root{--bg-neutral:#f1efe8}
+body{font-family:Segoe UI,system-ui,sans-serif;color:#0b0b0b;max-width:760px;margin:16px auto;padding:0 12px;background:#fcfcfb}
+h1{font-size:20px;font-weight:600;margin:0 0 4px}p.s{font-size:13px;color:#52514e;margin:0 0 14px}
+button{border:1px solid #c3c2b7;background:#fff;border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer}
+input[type=range]{accent-color:#2a78d6}
+</style></head><body>
+<h1>Premium speed tool: example on 25 Nov 2026</h1>
+<p class="s">Built from real stored option prices (weekly expiry, 6 days out). Speed = change of each strike's straddle premium over 5 minutes, as a multiple of normal for that time of day and distance from ATM. Example only, not the real tool. Drag the slider or press the buttons.</p>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:0 0 12px;">
+  <div style="background:var(--bg-neutral);border-radius:8px;padding:10px 12px;"><div style="font-size:12px;color:#52514e;">Time</div><div id="m-time" style="font-size:20px;font-weight:500;">--</div></div>
+  <div style="background:var(--bg-neutral);border-radius:8px;padding:10px 12px;"><div style="font-size:12px;color:#52514e;">NIFTY</div><div id="m-spot" style="font-size:20px;font-weight:500;">--</div></div>
+  <div style="background:var(--bg-neutral);border-radius:8px;padding:10px 12px;"><div style="font-size:12px;color:#52514e;">ATM straddle</div><div id="m-str" style="font-size:20px;font-weight:500;">--</div></div>
+  <div style="background:var(--bg-neutral);border-radius:8px;padding:10px 12px;"><div style="font-size:12px;color:#52514e;">Premium speed (5 min)</div><div id="m-sp" style="font-size:20px;font-weight:500;">--</div></div>
+</div>
+<div style="display:flex;align-items:center;gap:10px;margin:0 0 6px;flex-wrap:wrap;">
+  <input type="range" id="sl" min="0" max="73" step="1" value="30" style="flex:1;min-width:200px;" aria-label="Time of day">
+  <button id="b1">Before the high</button><button id="b2">The drop</button><button id="b3">The low</button>
+</div>
+<div style="font-size:12px;color:#52514e;margin:8px 0 2px;">Heatmap: strike (up) by time (across)</div>
+<canvas id="hm" style="width:100%;height:240px;display:block;"></canvas>
+<div style="display:flex;gap:14px;align-items:center;font-size:12px;color:#52514e;margin:4px 0 12px;flex-wrap:wrap;">
+  <span><b style="display:inline-block;width:12px;height:12px;background:#2a78d6;border-radius:2px;vertical-align:-2px"></b> half of normal</span>
+  <span><b id="sw-n" style="display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px"></b> normal</span>
+  <span><b style="display:inline-block;width:12px;height:12px;background:#e8837f;border-radius:2px;vertical-align:-2px"></b> 2 times</span>
+  <span><b style="display:inline-block;width:12px;height:12px;background:#e34948;border-radius:2px;vertical-align:-2px"></b> 4 times or more</span>
+</div>
+<div style="font-size:12px;color:#52514e;margin:0 0 2px;">ATM premium speed through the day (times normal); dashed line = normal</div>
+<canvas id="ln" style="width:100%;height:130px;display:block;"></canvas>
+<div style="font-size:12px;color:#52514e;margin:10px 0 2px;">NIFTY</div>
+<canvas id="sp" style="width:100%;height:90px;display:block;"></canvas>
+<div style="font-size:12px;color:#52514e;margin:10px 0 2px;">Across strikes at the chosen time (times normal)</div>
+<canvas id="br" style="width:100%;height:210px;display:block;"></canvas>
+<script>
+const D={"times": ["09:20", "09:25", "09:30", "09:35", "09:40", "09:45", "09:50", "09:55", "10:00", "10:05", "10:10", "10:15", "10:20", "10:25", "10:30", "10:35", "10:40", "10:45", "10:50", "10:55", "11:00", "11:05", "11:10", "11:15", "11:20", "11:25", "11:30", "11:35", "11:40", "11:45", "11:50", "11:55", "12:00", "12:05", "12:10", "12:15", "12:20", "12:25", "12:30", "12:35", "12:40", "12:45", "12:55", "13:00", "13:05", "13:10", "13:15", "13:20", "13:25", "13:30", "13:35", "13:40", "13:45", "13:50", "13:55", "14:00", "14:05", "14:10", "14:15", "14:20", "14:25", "14:30", "14:35", "14:40", "14:45", "14:50", "14:55", "15:00", "15:05", "15:10", "15:15", "15:20", "15:25", "15:30"], "strikes": [25600, 25650, 25700, 25750, 25800, 25850, 25900, 25950, 26000, 26050], "heat": [[3.9, 3.09, 1.16, 2.74, 0.61, 2.26, null, null, null, null], [0.13, 0.1, 0.1, 0.22, 0.19, 0.01, 0.03, 0.09, null, null], [2.99, 2.67, 2.67, 1.63, 0.57, 0.19, 0.62, 0.97, null, null], [0.34, 0.31, 0.09, 0.4, 0.71, 0.78, 0.89, 0.95, null, null], [1.25, 0.99, 0.94, 0.59, 0.25, 0.15, 0.41, 0.56, null, null], [0.19, 0.36, 0.02, 0.23, 0.66, 0.5, 0.27, 0.45, null, null], [0.37, 0.21, 0.81, 0.49, 0.43, 0.55, 0.48, 0.23, null, null], [1.8, 1.94, 2.1, 1.4, 0.48, 0.05, 0.23, 0.51, null, null], [0.25, 0.19, 0.25, 0.16, 0.66, 0.44, 0.28, 0.6, null, null], [1.93, 1.76, 1.12, 0.49, 1.94, 2.24, 2.11, 2.6, null, null], [0.86, 1.34, 1.49, 2.24, 1.53, 1.23, 0.52, 0.8, null, null], [0.98, 0.52, 0.58, 1.82, 3.01, 2.17, 2.39, 2.44, null, null], [3.14, 2.89, 3.31, 3.72, 2.86, 0.94, 0.05, 0.64, null, null], [2.0, 1.82, 2.16, 2.53, 1.92, 1.06, 0.51, 0.04, 0.63, null], [1.36, 1.33, 1.35, 1.56, 0.64, 0.08, 0.04, 0.35, 0.94, null], [0.32, 0.65, 0.7, 0.95, 1.67, 1.08, 0.68, 0.33, 0.47, null], [null, 1.5, 1.38, 1.0, 0.21, 1.12, 2.33, 2.11, 2.31, null], [null, 0.34, 0.25, 0.39, 0.54, 0.49, 0.4, 0.08, 0.19, 0.06], [null, 0.44, 0.58, 0.2, 0.19, 0.21, 0.69, 0.8, 0.78, 0.92], [null, 0.64, 0.63, 0.82, 0.83, 1.2, 1.0, 0.67, 0.51, 0.32], [null, null, 3.12, 3.55, 3.8, 4.36, 3.6, 2.27, 0.75, 0.22], [null, null, 4.14, 4.23, 5.37, 6.88, 7.07, 6.27, 3.26, 2.23], [null, null, 1.31, 1.5, 1.67, 1.72, 1.6, 1.81, 0.97, 0.38], [null, null, 0.1, 0.19, 0.32, 0.65, 0.7, 0.43, 0.12, 0.21], [null, null, null, 1.35, 1.34, 1.55, 1.36, 1.89, 0.85, 0.49], [null, null, null, 1.24, 1.46, 1.64, 0.6, 0.8, 0.57, 0.17], [null, null, 1.35, 1.57, 1.85, 2.59, 2.86, 2.31, 0.89, 0.44], [null, null, 1.45, 1.42, 1.51, 2.09, 1.91, 1.29, 0.83, 0.29], [null, null, 2.74, 2.96, 3.17, 3.83, 3.65, 2.54, 0.94, 0.54], [null, null, null, 1.18, 1.15, 1.32, 0.29, 0.38, 0.95, 1.89], [null, null, null, 0.78, 0.96, 1.04, 0.72, 0.8, 0.72, 0.17], [null, null, null, 2.28, 2.66, 3.29, 2.88, 1.71, 0.63, 0.26], [null, null, 0.21, 0.47, 0.84, 0.95, 1.28, 1.27, 1.42, 1.19], [null, null, 0.37, 0.51, 0.43, 0.43, 0.35, 0.52, 0.32, 0.21], [null, null, 3.42, 3.21, 3.76, 3.82, 3.86, 2.69, 1.04, 0.07], [null, null, 1.26, 1.1, 1.07, 1.05, 0.79, 0.02, 0.44, 0.8], [null, null, 0.1, 0.09, 0.21, 0.04, 0.29, 0.43, 0.41, 0.18], [null, null, 0.14, 0.61, 0.21, 0.42, 0.19, 0.12, 0.27, 0.23], [null, null, 0.26, 0.61, 0.06, 0.6, 0.81, 0.91, 1.04, 1.03], [null, null, 5.53, 5.11, 3.29, 0.76, 1.82, 3.34, 4.18, null], [2.01, 1.53, 2.1, 2.22, 2.14, 1.33, 0.59, 0.09, 0.26, null], [0.23, 0.3, 0.21, 0.33, 1.76, 1.54, 1.73, 1.41, null, null], [null, null, null, null, null, null, null, null, null, null], [1.88, 1.36, 2.04, 0.47, 0.81, 1.0, 1.61, null, null, null], [0.83, 1.88, 2.22, 2.16, 1.22, 1.26, 1.26, null, null, null], [4.31, 2.06, 0.16, 0.89, 1.55, 2.35, null, null, null, null], [1.73, 2.24, 1.08, 0.24, 0.13, 0.22, null, null, null, null], [3.93, 3.76, 2.02, 0.15, 0.53, 0.84, null, null, null, null], [0.03, 0.77, 0.74, 0.65, 0.63, 0.49, null, null, null, null], [2.32, 2.55, 0.88, 0.31, 0.82, 1.5, 1.57, null, null, null], [0.32, 0.33, 0.25, 0.2, 0.03, 0.28, 0.24, null, null, null], [0.82, 1.48, 1.54, 1.45, 1.3, 0.92, 1.02, null, null, null], [0.57, 1.02, 2.29, 2.87, 2.87, 2.22, 2.18, null, null, null], [0.6, 0.67, 0.39, 0.6, 0.47, 0.39, 0.04, null, null, null], [0.74, 1.05, 0.26, 0.02, 0.57, 0.86, 0.61, null, null, null], [1.74, 1.28, 0.82, 0.49, 1.57, 1.88, 1.84, null, null, null], [0.18, 0.13, 0.96, 1.64, 1.84, 2.14, 1.75, 2.22, null, null], [0.32, 0.04, 0.0, 0.33, 0.93, 0.55, 0.39, 0.53, null, null], [0.92, 1.48, 2.61, 2.45, 1.21, 1.22, 0.9, 0.47, null, null], [0.23, 0.35, 0.49, 0.48, 0.04, 0.29, 0.48, 0.19, null, null], [0.63, 0.47, 0.32, 0.67, 1.47, 1.25, 1.05, 1.25, null, null], [0.1, 0.06, 0.23, 0.86, 0.75, 1.52, 1.15, 1.08, null, null], [0.59, 0.33, 0.07, 1.15, 1.82, 2.31, 2.16, 1.9, null, null], [1.39, 0.74, 0.12, 0.86, 1.6, 2.24, 2.06, 2.29, null, null], [0.94, 1.19, 0.79, 1.19, 0.97, 0.49, 0.34, 0.58, null, null], [0.11, 0.48, 0.3, 0.85, 0.91, 1.18, 0.78, 1.42, null, null], [1.36, 1.37, 0.58, 0.06, 1.06, 1.74, 1.96, 1.92, null, null], [1.14, 1.07, 0.61, 0.39, 0.21, 0.7, 0.72, 0.67, null, null], [0.26, 0.61, 1.51, 1.81, 2.3, 1.89, 2.01, 1.78, null, null], [0.37, 0.47, 0.97, 1.9, 2.95, 3.64, 3.42, 3.13, null, null], [0.88, 0.63, 0.76, 0.76, 0.26, 0.13, 0.14, 0.0, 0.45, null], [0.85, 1.04, 1.71, 1.99, 2.2, 2.06, 1.63, 1.57, 1.67, null], [0.49, 0.46, 0.2, 0.5, 0.41, 0.39, 0.34, 0.08, 0.23, null], [0.48, 0.73, 0.79, 0.54, 0.8, 0.78, 0.63, 0.89, 0.36, null]], "atm": [2.74, 0.22, 1.63, 0.71, 0.59, 0.23, 0.49, 1.4, 0.16, 0.49, 2.24, 1.82, 2.86, 1.92, 0.64, 1.67, 1.12, 0.49, 0.21, 1.2, 3.6, 7.07, 1.6, 0.7, 1.89, 0.6, 2.86, 1.91, 3.65, 0.38, 0.8, 2.88, 1.28, 0.35, 3.86, 0.79, 0.29, 0.19, 0.81, 3.29, 2.14, 0.33, null, 2.04, 2.22, 2.06, 2.24, 3.76, 0.74, 0.88, 0.25, 1.54, 2.87, 0.39, 0.26, 0.49, 1.64, 0.33, 2.45, 0.48, 0.67, 0.86, 1.15, 0.86, 1.19, 0.85, 0.06, 0.39, 1.81, 2.95, 0.26, 2.2, 0.41, 0.8], "spot": [25727.4, 25727.7, 25772.5, 25778.2, 25756.3, 25746.5, 25749.7, 25773.0, 25773.9, 25732.6, 25734.9, 25772.6, 25807.2, 25784.5, 25806.8, 25807.7, 25842.2, 25833.2, 25847.6, 25853.7, 25880.4, 25908.4, 25920.9, 25915.8, 25933.2, 25922.8, 25910.0, 25901.0, 25920.0, 25948.3, 25938.7, 25921.7, 25907.4, 25897.5, 25875.3, 25895.6, 25900.5, 25896.0, 25882.8, 25809.0, 25786.2, 25772.0, 25742.8, 25711.0, 25715.9, 25664.2, 25648.8, 25672.3, 25685.8, 25715.5, 25712.3, 25705.5, 25727.3, 25724.7, 25703.8, 25737.1, 25755.0, 25756.7, 25756.8, 25762.2, 25743.7, 25731.7, 25759.9, 25733.9, 25728.3, 25743.5, 25771.6, 25759.5, 25768.9, 25788.2, 25796.3, 25796.3, 25796.3, 25796.3], "straddle": [460.5, 461.4, 468.6, 464.4, 464.2, 464.7, 463.6, 466.7, 466.3, 467.4, 462.5, 458.6, 462.9, 458.8, 460.1, 463.7, 460.4, 461.5, 461.1, 463.6, 468.6, 483.1, 486.6, 488.1, 486.5, 490.0, 483.9, 479.8, 487.6, 481.8, 480.0, 480.4, 483.1, 483.8, 475.6, 477.2, 477.8, 478.2, 479.9, 484.1, 479.6, 483.9, 474.2, 474.2, 469.4, 470.4, 465.5, 473.6, 469.9, 471.8, 472.3, 475.6, 468.1, 469.0, 468.4, 465.4, 461.9, 461.2, 456.0, 457.0, 458.4, 460.6, 457.6, 459.9, 462.9, 460.7, 460.6, 459.5, 454.9, 444.1, 443.5, 438.0, 437.0, 435.1]};
+const INK='#52514e', GRID='#e1e0d9', MID=[240,239,236];
+document.getElementById('sw-n').style.background='rgb('+MID.join(',')+')';
+const N=D.times.length, S=D.strikes.length;
+function col(r){ if(r==null) return null; const t=Math.max(-1,Math.min(2,Math.log2(Math.max(r,0.01)))); const tgt=t<0?[42,120,214]:[227,73,72]; const a=Math.abs(t)/(t<0?1:2); return 'rgb('+MID.map((m,i)=>Math.round(m+(tgt[i]-m)*a)).join(',')+')'; }
+function setup(c){ const r=c.getBoundingClientRect(),d=window.devicePixelRatio||1; c.width=r.width*d; c.height=r.height*d; const g=c.getContext('2d'); g.scale(d,d); return [g,r.width,r.height]; }
+const f1=v=>v==null?'--':(Math.round(v*10)/10).toFixed(1);
+let sel=30;
+function draw(){
+  const L=46,B=20;
+  {const [g,w,h]=setup(document.getElementById('hm')); g.clearRect(0,0,w,h); const cw=(w-L-4)/N, ch=(h-B-4)/S; g.font='11px sans-serif';
+   for(let j=0;j<S;j++){ const y=4+(S-1-j)*ch; g.fillStyle=INK; g.textAlign='right'; g.fillText(D.strikes[j],L-6,y+ch/2+4);
+     for(let i=0;i<N;i++){ const c=col(D.heat[i][j]); g.fillStyle=c||'#f7f6f3'; g.fillRect(L+i*cw+0.5,y+0.5,cw-1,ch-1);} }
+   g.textAlign='center'; g.fillStyle=INK; for(let i=0;i<N;i+=12){ g.fillText(D.times[i],L+i*cw+cw/2,h-5); }
+   g.strokeStyle='#0b0b0b'; g.lineWidth=1.5; g.strokeRect(L+sel*cw-0.5,3,cw+1,h-B-2); }
+  {const [g,w,h]=setup(document.getElementById('ln')); g.clearRect(0,0,w,h); const L2=46,T=8,Bt=18,mx=Math.max(4,Math.ceil(Math.max(...D.atm.filter(x=>x!=null)))), X=i=>L2+(w-L2-6)*i/(N-1), Y=v=>T+(h-T-Bt)*(1-v/mx);
+   g.strokeStyle=GRID; g.lineWidth=1; g.font='11px sans-serif'; g.fillStyle=INK; g.textAlign='right';
+   for(let v=0;v<=mx;v+=2){ g.beginPath(); g.moveTo(L2,Y(v)); g.lineTo(w-6,Y(v)); g.stroke(); g.fillText(v+'x',L2-6,Y(v)+4); }
+   g.setLineDash([5,4]); g.strokeStyle='#898781'; g.beginPath(); g.moveTo(L2,Y(1)); g.lineTo(w-6,Y(1)); g.stroke(); g.setLineDash([]);
+   g.strokeStyle='#2a78d6'; g.lineWidth=2; g.lineJoin='round'; g.beginPath(); let st=false; D.atm.forEach((v,i)=>{ if(v==null){st=false;return;} st?g.lineTo(X(i),Y(v)):g.moveTo(X(i),Y(v)); st=true; }); g.stroke();
+   const v=D.atm[sel]; if(v!=null){ g.fillStyle='#2a78d6'; g.beginPath(); g.arc(X(sel),Y(v),5,0,7); g.fill(); g.strokeStyle='#fcfcfb'; g.lineWidth=2; g.stroke(); }
+   g.fillStyle=INK; g.textAlign='center'; for(let i=0;i<N;i+=12) g.fillText(D.times[i],X(i),h-4); }
+  {const [g,w,h]=setup(document.getElementById('sp')); g.clearRect(0,0,w,h); const L2=46,T=6,Bt=6,lo=Math.min(...D.spot),hi=Math.max(...D.spot), X=i=>L2+(w-L2-6)*i/(N-1), Y=v=>T+(h-T-Bt)*(1-(v-lo)/(hi-lo));
+   g.font='11px sans-serif'; g.fillStyle=INK; g.textAlign='right'; g.fillText(Math.round(hi),L2-6,T+8); g.fillText(Math.round(lo),L2-6,h-Bt);
+   g.strokeStyle='#52514e'; g.lineWidth=2; g.lineJoin='round'; g.beginPath(); D.spot.forEach((v,i)=>{ i?g.lineTo(X(i),Y(v)):g.moveTo(X(i),Y(v)); }); g.stroke();
+   g.strokeStyle='#0b0b0b'; g.lineWidth=1; g.beginPath(); g.moveTo(X(sel),T); g.lineTo(X(sel),h-Bt); g.stroke(); }
+  {const [g,w,h]=setup(document.getElementById('br')); g.clearRect(0,0,w,h); const L2=56,T=4, rh=(h-T-4)/S, mx=Math.max(4,...D.heat[sel].filter(x=>x!=null)); g.font='11px sans-serif';
+   for(let j=0;j<S;j++){ const y=T+(S-1-j)*rh, v=D.heat[sel][j]; g.fillStyle=INK; g.textAlign='right'; g.fillText(D.strikes[j],L2-8,y+rh/2+4);
+     if(v==null){ g.fillStyle=GRID; g.fillRect(L2,y+rh/2-1,20,2); continue; }
+     const bw=(w-L2-50)*v/mx; g.fillStyle=col(v); g.fillRect(L2,y+3,Math.max(2,bw),rh-6);
+     g.fillStyle=INK; g.textAlign='left'; g.fillText(f1(v)+'x',L2+bw+6,y+rh/2+4); }
+   const x1=L2+(w-L2-50)/mx; g.setLineDash([4,3]); g.strokeStyle='#898781'; g.beginPath(); g.moveTo(x1,T); g.lineTo(x1,h-4); g.stroke(); g.setLineDash([]); }
+  document.getElementById('m-time').textContent=D.times[sel];
+  document.getElementById('m-spot').textContent=D.spot[sel].toLocaleString('en-IN');
+  document.getElementById('m-str').textContent='Rs '+f1(D.straddle[sel]);
+  const a=D.atm[sel]; document.getElementById('m-sp').textContent=a==null?'--':f1(a)+'x normal';
+}
+document.getElementById('sl').addEventListener('input',e=>{sel=+e.target.value;draw();});
+const jump=t=>{sel=D.times.indexOf(t);document.getElementById('sl').value=sel;draw();};
+document.getElementById('b1').onclick=()=>jump('11:40');
+document.getElementById('b2').onclick=()=>jump('12:10');
+document.getElementById('b3').onclick=()=>jump('13:20');
+jump('11:40');
+addEventListener('resize',draw);
+</script></body></html>

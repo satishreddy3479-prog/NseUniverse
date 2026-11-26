@@ -5,6 +5,9 @@ _Last updated: 2026-11-23_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Premium Change tool (26 Nov 2026, D325)
+New FNO tool (Price tools): the straddle's change per window split into time decay, NIFTY moving, and volatility and the rest, with a sentence, three charts and NIFTY. Built and tested on real stored minutes; committed locally, not deployed (D325 lists what is unverified).
+
 ## Open of the day (26 Nov 2026, D321)
 The day board answered 500 for the first minutes of a session (null trend in the first stored minute): fixed and tested on the real captured minutes. From 09:15 the index-bars default session is today (empty, then filling), and the whole app refreshes together at open -30 s, +20 s, +90 s. Committed locally (market hours); the server holds deploys until 15:50 IST. Event-loop stalls at the open (85 by 09:45) traced from the server's own loop profile and fixed in code (D322: SDK per-packet logging filtered early, cheaper tick compare, market sample in a thread); not deployed (held until 15:50). First real open with these fixes is 27 Nov: compare `/api/stream/health` loop.stalls (85) and lag p99 (650 ms) at 09:45.
 

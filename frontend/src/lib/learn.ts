@@ -184,6 +184,13 @@ export const LESSONS: Lesson[] = [
     watch: ["A position that is far from spot is a directional bet, not a decay trade.", "Rolling has costs not shown here (spread, slippage, charges)."],
   },
   {
+    id: "premium-change",
+    idea: "Why did the straddle's price change? In every window (1, 3, 5 or 15 minutes) the real change of the ATM straddle, and of every strike's straddle, is split into three parts that always add up to it: time decay (the price the same options would lose from time passing), NIFTY moving (the index's move, delta and gamma together) and volatility and the rest (what is left).",
+    read: ["Start with the sentence at the top: it says what the straddle did in the chosen window and how many rupees each part contributed. Move the slider, or click a bar, to read another window.", "The first chart shows every window: bars up are a premium that rose, bars down one that fell, coloured by cause.", "The second chart adds the windows up from the first one of the day, so you can see whether the day's change came from decay, from NIFTY moving or from volatility.", "The third chart does the same for every strike in the chosen window."],
+    example: { setup: "At 11:40 the 25,850 straddle (487.6) went up by 7.7 in 5 minutes while NIFTY rose 19 points. The page shows -0.1 from time decay, +1.8 from NIFTY moving and +6.1 from volatility and the rest.", reading: "Most of the rise was not the index moving: a 19 point move explains under 2 rupees. The bulk is in the last part, which is mostly implied volatility rising. A straddle seller reads this as the premium swelling because the market became more nervous, not because NIFTY ran." },
+    watch: ["Volatility and the rest is a remainder: it holds the change of implied volatility but also quote noise, a slightly wrong forward and skew moving. Treat a single window with care and look at several in a row.", "Over 5 minutes time decay is tiny (a day's decay is spread over the hours); it only matters in the running total.", "The running total adds the straddle that was at the money in each window, so it is not the price of one straddle.", "It describes what happened. It does not say which way premiums will go next."],
+  },
+  {
     id: "multi-straddle",
     idea: "Overlays the straddle prices of several strikes on one chart.",
     read: ["Each line is one strike's call + put.", "Lines normally keep a gap that equals the difference in distance from spot.", "A line that crosses another shows IV changing unevenly by strike."],
