@@ -6,6 +6,7 @@ a few KB per session (a few MB a year). Backed up with the other databases by th
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 from collections.abc import Mapping, Sequence
@@ -22,6 +23,8 @@ CREATE TABLE IF NOT EXISTS calls (
 CREATE TABLE IF NOT EXISTS windows (
   session TEXT NOT NULL, horizon INTEGER NOT NULL, hour INTEGER NOT NULL, n INTEGER NOT NULL, up INTEGER NOT NULL, down INTEGER NOT NULL, calm INTEGER NOT NULL,
   PRIMARY KEY (session, horizon, hour));
+CREATE TABLE IF NOT EXISTS report (
+  id INTEGER PRIMARY KEY CHECK (id = 1), version TEXT NOT NULL, sessions INTEGER NOT NULL, built_at TEXT NOT NULL, body TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS scored (
   session TEXT NOT NULL, indicator TEXT NOT NULL, version TEXT NOT NULL, scored_at TEXT NOT NULL, n_calls INTEGER NOT NULL, PRIMARY KEY (session, indicator));
 """
@@ -63,6 +66,18 @@ class EdgeStore:
     def windows(self) -> list[dict[str, Any]]:
         with self._lock, closing(self._conn()) as c:
             return [dict(r) for r in c.execute("SELECT * FROM windows")]
+
+    def save_report(self, body: Mapping[str, Any], sessions: int, now: datetime | None = None) -> None:
+        """Keep the built report (the statistics of every scored call): it is computed after scoring, never while a page waits for it."""
+        stamp = (now or datetime.now(UTC)).isoformat(timespec="seconds")
+        with self._lock, closing(self._conn()) as c, c:
+            c.execute("INSERT OR REPLACE INTO report VALUES (1, ?, ?, ?, ?)", (VERSION, sessions, stamp, json.dumps(body, separators=(",", ":"), default=str)))
+
+    def load_report(self) -> dict[str, Any] | None:
+        """The kept report with the scoring version and session count it was built from, or None."""
+        with self._lock, closing(self._conn()) as c:
+            r = c.execute("SELECT version, sessions, built_at, body FROM report WHERE id = 1").fetchone()
+        return None if r is None else {"version": r["version"], "sessions": r["sessions"], "built_at": r["built_at"], "body": json.loads(r["body"])}
 
     def sessions(self) -> list[str]:
         with self._lock, closing(self._conn()) as c:

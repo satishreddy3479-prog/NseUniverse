@@ -240,3 +240,55 @@ def test_report_endpoint_serves_the_report_and_says_when_the_job_is_off(tmp_path
         assert r.status_code == 200
         body = r.json()
         assert body["sessions_scored"] == 10 and len(body["indicators"]) == 7 and body["job"]["enabled"] is True
+
+
+# ------------------------------------------------------------------------------------------------ the report is built after scoring, never while a request waits
+def test_a_request_never_computes_the_statistics_it_reads_the_kept_report(tmp_path: Path) -> None:
+    """26 Nov 2026: the first request after a restart computed the statistics itself: 156 s on the busy server at the open."""
+    import threading
+    import time
+
+    svc = _service(tmp_path, datetime(2026, 11, 26, 9, 0, tzinfo=IST))
+    built = threading.Event()
+    real = svc._build_body
+    calls = {"n": 0}
+
+    def slow() -> Any:
+        calls["n"] += 1
+        built.wait(5)  # a build that takes its time: the request must not wait for it
+        return real()
+
+    svc._build_body = slow  # type: ignore[method-assign]
+    t0 = time.perf_counter()
+    rep = svc.report()  # nothing is kept yet
+    assert time.perf_counter() - t0 < 1.0  # answered at once with what it has
+    assert "being prepared" in rep["headline"] and rep["indicators"] and rep["sessions_scored"] == 0
+    built.set()
+    for _ in range(100):  # the build runs in the background and keeps its result
+        if svc.store.load_report() is not None:
+            break
+        time.sleep(0.2)
+    assert calls["n"] >= 1 and svc.store.load_report() is not None
+    svc._build_body = real  # type: ignore[method-assign]
+
+
+def test_scoring_builds_the_report_and_a_restart_reads_it_back_without_computing(tmp_path: Path) -> None:
+    svc = _service(tmp_path, datetime(2026, 11, 26, 9, 0, tzinfo=IST))
+    assert len(svc.catch_up()) == 10  # scoring ends by building the report, in the job's own thread
+    kept = svc.store.load_report()
+    assert kept is not None and kept["version"] == VERSION and kept["sessions"] == 10
+    again = EdgeService(EdgeStore(tmp_path), sessions=lambda: sorted(SESSIONS), intel_rows=lambda s: [], rules_rows=lambda s: [], straddle_rows=lambda s: [], clock=lambda: datetime(2026, 11, 26, 9, 5, tzinfo=IST))
+    again._build_body = lambda: (_ for _ in ()).throw(AssertionError("computed on request"))  # type: ignore[method-assign]
+    rep = again.report()  # a new process: the kept report, no computation
+    assert rep["sessions_scored"] == 10 and rep["job"]["pending"] == [] and "being prepared" not in rep["headline"]
+    assert [i["id"] for i in rep["indicators"]][0] == "verdict"
+
+
+def test_a_failed_build_keeps_the_previous_report_and_says_so(tmp_path: Path) -> None:
+    svc = _service(tmp_path, datetime(2026, 11, 26, 9, 0, tzinfo=IST))
+    svc.catch_up()
+    good = svc.store.load_report()
+    svc._build_body = lambda: (_ for _ in ()).throw(RuntimeError("disk full"))  # type: ignore[method-assign]
+    svc.refresh_report()
+    assert svc.store.load_report() == good and "disk full" in (svc.last_error or "")
+    assert svc.report()["sessions_scored"] == 10

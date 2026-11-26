@@ -10,7 +10,6 @@ import asyncio
 import contextlib
 import logging
 import threading
-import time as _time
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
@@ -36,8 +35,11 @@ class EdgeService:
         self._sessions, self._intel, self._rules, self._straddle = sessions, intel_rows, rules_rows, straddle_rows
         self._clock = clock or (lambda: datetime.now(IST))
         self._lock = threading.Lock()
+        self._lock_build = threading.Lock()
         self._task: asyncio.Task[None] | None = None
-        self._cache: tuple[float, dict[str, Any]] | None = None
+        self._built: dict[str, Any] | None = None  # the statistics of every scored call, built after scoring (see ``refresh_report``), not on request
+        self._built_sessions = -1
+        self._building = False
         self._empty: set[str] = set()  # sessions found to have too few recorded minutes (not asked again until a restart)
         self.last_run: str | None = None
         self.last_error: str | None = None
@@ -78,7 +80,7 @@ class EdgeService:
             out += got
             have[key] = len(got)
         self.store.replace_session(session, out, ec.windows(pts), have)
-        self._cache = None
+        self._built_sessions = -1  # the kept report is behind now
         return have
 
     def catch_up(self) -> list[str]:
@@ -104,33 +106,75 @@ class EdgeService:
                 log_event(logger, logging.INFO, "edge_scored", sessions=done)
         finally:
             self._lock.release()
+        self.ensure_report()  # still in the job's thread: a new session is in the report before anyone asks
         return done
 
-    def report(self) -> dict[str, Any]:
-        if self._cache is not None and _time.monotonic() - self._cache[0] < 120:
-            return self._cache[1]
+    def _build_body(self) -> tuple[dict[str, Any], int]:
+        """The heavy part: the statistics (bootstrap intervals over sessions) of every stored call. Seconds of CPU, and 156 s once on the busy server at the open of 26 Nov 2026."""
         calls, wins, sessions = self.store.calls(), self.store.windows(), self.store.sessions()
         body = stats.summarise(calls, wins)
-        rep = {
-            "generated_at": self._clock().isoformat(timespec="seconds"), "version": VERSION, "sessions_scored": len(sessions), "first_session": sessions[0] if sessions else None,
-            "last_session": sessions[-1] if sessions else None, "headline": stats.headline(body["indicators"], len(sessions)), **body,
-            "job": {"enabled": self.enabled, "last_run": self.last_run, "last_error": self.last_error, "last_scored": self.last_scored, "pending": self.pending(),
-                    "runs": f"after {self.run_after().strftime('%H:%M')} IST each trading day and on every start; checks every {CHECK_EVERY_S // 60} minutes"},
-            "method": [
-                "Each indicator's calls are taken every 15 minutes from 09:30 and compared with the stored price 15, 30 and 60 minutes later; moves under 0.02 % are flat.",
-                "Luck is measured from the same stored windows: a coin with the indicator's long / short mix, given how often NIFTY rose. 'Edge over drift' is hit rate minus that.",
-                "'Timing edge' uses each day's own up share, so it only counts when the indicator is right about WHEN within a day, not just which way the day went.",
-                f"The interval is a bootstrap over sessions (minutes of one day overlap). Nothing is called an edge before {stats.MIN_SESSIONS} sessions and {stats.MIN_CALLS} decided calls.",
-                "A description of the past, not a forecast and not advice; the stored sessions started on 29 Oct 2026 and the market has mostly risen since.",
-            ],
-        }
-        self._cache = (_time.monotonic(), rep)
-        return rep
+        body.update({"sessions_scored": len(sessions), "first_session": sessions[0] if sessions else None, "last_session": sessions[-1] if sessions else None,
+                     "headline": stats.headline(body["indicators"], len(sessions))})
+        return body, len(sessions)
+
+    def refresh_report(self) -> None:
+        """Build the report and keep it (memory and database). One build at a time; call it from a thread."""
+        with self._lock_build:
+            if self._building:
+                return
+            self._building = True
+        try:
+            body, n = self._build_body()
+            body["built_at"] = self._clock().isoformat(timespec="seconds")
+            self.store.save_report(body, n, self._clock())
+            self._built, self._built_sessions = body, n
+        except Exception as e:  # noqa: BLE001 - the page keeps showing the report it had; the error is shown beside it
+            self.last_error = f"report: {type(e).__name__}: {e}"
+            log_event(logger, logging.ERROR, "edge_report_failed", error=type(e).__name__)
+        finally:
+            self._building = False
+
+    def ensure_report(self) -> None:
+        """Build the report unless the kept one already covers every scored session of this scoring version."""
+        stored = self._built if self._built is not None else None
+        if stored is None:
+            kept = self.store.load_report()
+            if kept is not None and kept["version"] == VERSION:
+                self._built, self._built_sessions = kept["body"], kept["sessions"]
+        if self._built is None or self._built_sessions != len(self.store.sessions()):
+            self.refresh_report()
+
+    def _job(self) -> dict[str, Any]:
+        return {"enabled": self.enabled, "last_run": self.last_run, "last_error": self.last_error, "last_scored": self.last_scored, "pending": self.pending(),
+                "runs": f"after {self.run_after().strftime('%H:%M')} IST each trading day and on every start; checks every {CHECK_EVERY_S // 60} minutes"}
+
+    def report(self) -> dict[str, Any]:
+        """The page's report: the kept statistics plus the live job state. It never computes the statistics itself (that is ``refresh_report``'s job), so it answers at once whatever the
+        server is doing; when none has been built yet (the first minute after a start) it says so and a background build starts."""
+        body = self._built
+        if body is None:
+            kept = self.store.load_report()
+            if kept is not None and kept["version"] == VERSION:
+                body, self._built, self._built_sessions = kept["body"], kept["body"], kept["sessions"]
+        if body is None or self._built_sessions != len(self.store.sessions()):
+            if not self._building:
+                threading.Thread(target=self.refresh_report, name="edge-report", daemon=True).start()
+        if body is None:
+            body = {**stats.summarise([], []), "sessions_scored": 0, "first_session": None, "last_session": None,
+                    "headline": "The report is being prepared: it is built after scoring and a few seconds after a start. Refresh the page in a minute."}
+        return {"generated_at": self._clock().isoformat(timespec="seconds"), "version": VERSION, **body, "job": self._job(),
+                "method": [
+                    "Each indicator's calls are taken every 15 minutes from 09:30 and compared with the stored price 15, 30 and 60 minutes later; moves under 0.02 % are flat.",
+                    "Luck is measured from the same stored windows: a coin with the indicator's long / short mix, given how often NIFTY rose. 'Edge over drift' is hit rate minus that.",
+                    "'Timing edge' uses each day's own up share, so it only counts when the indicator is right about WHEN within a day, not just which way the day went.",
+                    f"The interval is a bootstrap over sessions (minutes of one day overlap). Nothing is called an edge before {stats.MIN_SESSIONS} sessions and {stats.MIN_CALLS} decided calls."
+                    "A description of the past, not a forecast and not advice; the stored sessions started on 29 Oct 2026 and the market has mostly risen since.",
+                ]}
 
     async def _loop(self) -> None:
         await asyncio.sleep(45)
         while True:
-            await asyncio.to_thread(self.catch_up)
+            await asyncio.to_thread(self.catch_up)  # scores what is pending and builds the report afterwards
             await asyncio.sleep(CHECK_EVERY_S)
 
     def start(self) -> None:
