@@ -1,7 +1,7 @@
 // The Eagles view page: the board, the picker, copies, removal and what is remembered. The widgets themselves are stood in for by small boxes (each is tested where it lives);
 // the board logic, the persistence and the controls are the real ones.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -30,7 +30,7 @@ vi.mock("react-grid-layout", () => ({
 }));
 vi.mock("../components/LiveActivity", () => ({ StreamButtons: () => null }));
 
-import { EaglesView } from "../pages/EaglesView";
+import { EaglesView, FIRST_BOXES, MORE_BOXES, STEP_MS } from "../pages/EaglesView";
 
 function mount() {
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -253,6 +253,39 @@ describe("the Eagles view", () => {
     await screen.findByRole("heading", { name: "Eagles view" });
     expect(titles()).toEqual(["ATM Rolling Straddle"]);
     expect(screen.getByTestId("eagle-saved-state").textContent).toContain("unsaved changes");
+  });
+
+  it("a board that opens with many boxes starts them in steps, and a box added later starts at once", async () => {
+    // fourteen saved boxes: only the first few start; every box loads its own data, so all of them asking at once is what a phone and the server feel
+    const items = Array.from({ length: 14 }, (_v, i) => ({ key: `w:oi~${i + 1}`, cat: "w:oi" }));
+    const layout = items.map((it, i) => ({ i: it.key, x: (i % 3) * 4, y: Math.floor(i / 3) * 8, w: 4, h: 8 }));
+    localStorage.setItem(EAGLE_KEY, JSON.stringify({ items, layout, next: 15 }));
+    vi.useFakeTimers();
+    try {
+      mount();
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(screen.queryAllByTestId(/^eagle-waiting-/)).toHaveLength(14 - FIRST_BOXES); // the first six started, the rest wait their turn
+      await act(async () => { await vi.advanceTimersByTimeAsync(STEP_MS + 10); });
+      expect(screen.queryAllByTestId(/^eagle-waiting-/)).toHaveLength(14 - FIRST_BOXES - MORE_BOXES);
+      await act(async () => { await vi.advanceTimersByTimeAsync(STEP_MS * 3); });
+      expect(screen.queryAllByTestId(/^eagle-waiting-/)).toHaveLength(0); // all of them started, one step at a time
+      expect(screen.getAllByTestId(/^eagle-box-/)).toHaveLength(14);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a box added after the board opened starts at once, however many are waiting", async () => {
+    const items = Array.from({ length: 10 }, (_v, i) => ({ key: `w:oi~${i + 1}`, cat: "w:oi" }));
+    const layout = items.map((it, i) => ({ i: it.key, x: (i % 3) * 4, y: Math.floor(i / 3) * 8, w: 4, h: 8 }));
+    localStorage.setItem(EAGLE_KEY, JSON.stringify({ items, layout, next: 11 }));
+    mount();
+    await screen.findByRole("heading", { name: "Eagles view" });
+    expect(screen.queryAllByTestId(/^eagle-waiting-/).length).toBeGreaterThan(0); // some still waiting right after opening
+    await userEvent.click(screen.getByRole("button", { name: /Add widgets/ }));
+    await userEvent.click(screen.getByTestId("eagle-add-w:pcr"));
+    expect(screen.queryByTestId(/^eagle-waiting-w:pcr/)).toBeNull(); // the new box is not in the queue
+    expect(screen.getByTestId(/^eagle-box-w:pcr/)).toBeTruthy();
   });
 
   it("only the saved layout follows the owner to other devices: the working copy stays in this browser", () => {

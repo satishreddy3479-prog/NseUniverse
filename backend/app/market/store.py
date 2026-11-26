@@ -11,11 +11,13 @@ import hashlib
 import json
 import sqlite3
 import threading
+from contextlib import AbstractContextManager
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
 from app.market.sources import BhavRow, Constituent, TokenInfo
+from app.storage.readers import Readers
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS raw_files (
@@ -73,6 +75,7 @@ class MarketStore:
         data_dir.mkdir(parents=True, exist_ok=True)
         self.path = data_dir / "market.sqlite3"
         self._lock = threading.Lock()
+        self._readers = Readers(self.path)
         self._db = sqlite3.connect(self.path, check_same_thread=False)
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA busy_timeout=5000")
@@ -84,7 +87,12 @@ class MarketStore:
             )
         self._db.commit()
 
+    def _reader(self) -> AbstractContextManager[sqlite3.Connection]:
+        """A read-only connection of this thread: reads do not wait for the writer or each other."""
+        return self._readers()
+
     def close(self) -> None:
+        self._readers.close()
         with self._lock:
             self._db.close()
 
@@ -98,8 +106,8 @@ class MarketStore:
             self._db.commit()
 
     def last_attempt(self, kind: str) -> dict[str, Any] | None:
-        with self._lock:
-            r = self._db.execute(
+        with self._reader() as _db:
+            r = _db.execute(
                 "SELECT at_utc, ok, note FROM attempts WHERE kind=? ORDER BY id DESC LIMIT 1",
                 (kind,),
             ).fetchone()
@@ -129,14 +137,14 @@ class MarketStore:
         return True
 
     def current_list(self, index: str) -> tuple[list[Constituent], dict[str, str]] | None:
-        with self._lock:
-            r = self._db.execute(
+        with self._reader() as _db:
+            r = _db.execute(
                 "SELECT list_sha, fetched_utc FROM constituents WHERE index_name=? ORDER BY fetched_utc DESC LIMIT 1",
                 (index,),
             ).fetchone()
             if r is None:
                 return None
-            rows = self._db.execute(
+            rows = _db.execute(
                 "SELECT symbol, name, industry, isin FROM constituents WHERE index_name=? AND list_sha=? ORDER BY symbol",
                 (index, r[0]),
             ).fetchall()
@@ -165,31 +173,31 @@ class MarketStore:
             return self._db.total_changes - before
 
     def bhav_sessions(self) -> list[str]:
-        with self._lock:
+        with self._reader() as _db:
             return [
-                r[0] for r in self._db.execute("SELECT DISTINCT session FROM bhav ORDER BY session")
+                r[0] for r in _db.execute("SELECT DISTINCT session FROM bhav ORDER BY session")
             ]
 
     def daily_sessions(self) -> list[str]:
-        with self._lock:
+        with self._reader() as _db:
             return [
                 r[0]
-                for r in self._db.execute("SELECT DISTINCT session FROM daily ORDER BY session")
+                for r in _db.execute("SELECT DISTINCT session FROM daily ORDER BY session")
             ]
 
     def daily_bars(
         self, symbol: str, n: int = 80
     ) -> list[tuple[str, float | None, float | None, float | None, float | None, int | None]]:
-        with self._lock:
-            rows = self._db.execute(
+        with self._reader() as _db:
+            rows = _db.execute(
                 "SELECT session, open, high, low, close, volume FROM daily WHERE symbol=? ORDER BY session DESC LIMIT ?",
                 (symbol, n),
             ).fetchall()
         return list(reversed(rows))
 
     def closes_on(self, session: str, symbols: list[str]) -> dict[str, float]:
-        with self._lock:
-            rows = self._db.execute(
+        with self._reader() as _db:
+            rows = _db.execute(
                 "SELECT symbol, close FROM daily WHERE session=? AND close IS NOT NULL", (session,)
             ).fetchall()
         want = set(symbols)
@@ -197,11 +205,11 @@ class MarketStore:
 
     def last_traded_value(self, symbols: list[str]) -> dict[str, float]:
         """close x volume of the newest session for each symbol (a liquidity ranking, not an index weight)."""
-        with self._lock:
-            r = self._db.execute("SELECT MAX(session) FROM bhav").fetchone()
+        with self._reader() as _db:
+            r = _db.execute("SELECT MAX(session) FROM bhav").fetchone()
             if not r or r[0] is None:
                 return {}
-            rows = self._db.execute(
+            rows = _db.execute(
                 "SELECT symbol, close, volume FROM bhav WHERE session=?", (r[0],)
             ).fetchall()
         want = set(symbols)
@@ -215,8 +223,8 @@ class MarketStore:
         if len(days) < min_sessions:
             return {}
         marks = ",".join("?" for _ in days)
-        with self._lock:
-            rows = self._db.execute(
+        with self._reader() as _db:
+            rows = _db.execute(
                 f"SELECT symbol, AVG(volume), COUNT(volume) FROM bhav WHERE session IN ({marks}) AND volume IS NOT NULL GROUP BY symbol",  # noqa: S608 - placeholders only
                 days,
             ).fetchall()
@@ -244,14 +252,14 @@ class MarketStore:
 
     def latest_weights(self, index: str) -> tuple[dict[str, float], str, str] | None:
         """(symbol -> weight %, as_of, source) of the newest weight set; official sources beat approximate ones of the same date."""
-        with self._lock:
-            r = self._db.execute(
+        with self._reader() as _db:
+            r = _db.execute(
                 "SELECT as_of, source FROM weights WHERE index_name=? GROUP BY as_of, source ORDER BY (source LIKE 'approx%') ASC, as_of DESC, source DESC LIMIT 1",
                 (index,),
             ).fetchone()
             if r is None:
                 return None
-            rows = self._db.execute(
+            rows = _db.execute(
                 "SELECT symbol, weight_pct FROM weights WHERE index_name=? AND as_of=? AND source=?",
                 (index, r[0], r[1]),
             ).fetchall()
@@ -259,19 +267,19 @@ class MarketStore:
 
     def weights_loaded_utc(self, index: str, as_of: str, source: str) -> str | None:
         """When this weight set was loaded into the store (the time it was last verified by being read from its file); not a re-check against NSE."""
-        with self._lock:
-            r = self._db.execute("SELECT MAX(imported_utc) FROM weights WHERE index_name=? AND as_of=? AND source=?", (index, as_of, source)).fetchone()
+        with self._reader() as _db:
+            r = _db.execute("SELECT MAX(imported_utc) FROM weights WHERE index_name=? AND as_of=? AND source=?", (index, as_of, source)).fetchone()
         return None if r is None else r[0]
 
     def weights_before(self, index: str, as_of: str) -> tuple[dict[str, float], str] | None:
         """The official weight set that preceded ``as_of`` (symbol -> weight %, its as_of), or None."""
-        with self._lock:
-            r = self._db.execute(
+        with self._reader() as _db:
+            r = _db.execute(
                 "SELECT as_of, source FROM weights WHERE index_name=? AND as_of<? AND source NOT LIKE 'approx%' GROUP BY as_of, source ORDER BY as_of DESC LIMIT 1", (index, as_of)
             ).fetchone()
             if r is None:
                 return None
-            rows = self._db.execute("SELECT symbol, weight_pct FROM weights WHERE index_name=? AND as_of=? AND source=?", (index, r[0], r[1])).fetchall()
+            rows = _db.execute("SELECT symbol, weight_pct FROM weights WHERE index_name=? AND as_of=? AND source=?", (index, r[0], r[1])).fetchall()
         return {s: float(w) for s, w in rows}, r[0]
 
     # ---------------------------------------------------------------- tokens
@@ -286,11 +294,11 @@ class MarketStore:
             return self._db.total_changes - before
 
     def latest_tokens(self) -> tuple[dict[str, TokenInfo], str] | None:
-        with self._lock:
-            r = self._db.execute("SELECT MAX(day) FROM tokens").fetchone()
+        with self._reader() as _db:
+            r = _db.execute("SELECT MAX(day) FROM tokens").fetchone()
             if not r or r[0] is None:
                 return None
-            rows = self._db.execute(
+            rows = _db.execute(
                 "SELECT symbol, token, trading_symbol FROM tokens WHERE day=?", (r[0],)
             ).fetchall()
         return {s: TokenInfo(s, t, ts) for s, t, ts in rows}, r[0]
@@ -306,16 +314,16 @@ class MarketStore:
             return cur.rowcount > 0
 
     def recent_samples(self, kind: str, limit: int = 120) -> list[dict[str, Any]]:
-        with self._lock:
-            rows = self._db.execute(
+        with self._reader() as _db:
+            rows = _db.execute(
                 "SELECT sample_utc, payload FROM samples WHERE kind=? ORDER BY sample_utc DESC LIMIT ?",
                 (kind, limit),
             ).fetchall()
         return [{"sample_utc": a, **json.loads(b)} for a, b in reversed(rows)]
 
     def samples_since(self, kind: str, since_utc: str) -> list[tuple[str, dict[str, Any]]]:
-        with self._lock:
-            rows = self._db.execute(
+        with self._reader() as _db:
+            rows = _db.execute(
                 "SELECT sample_utc, payload FROM samples WHERE kind=? AND sample_utc>=? ORDER BY sample_utc",
                 (kind, since_utc),
             ).fetchall()
@@ -332,8 +340,8 @@ class MarketStore:
             self._db.commit()
 
     def list_changes(self, limit: int = 10) -> list[dict[str, Any]]:
-        with self._lock:
-            rows = self._db.execute(
+        with self._reader() as _db:
+            rows = _db.execute(
                 "SELECT index_name, detected_utc, added, removed FROM list_changes ORDER BY detected_utc DESC LIMIT ?",
                 (limit,),
             ).fetchall()
@@ -348,8 +356,8 @@ class MarketStore:
         ]
 
     def counts(self) -> dict[str, int]:
-        with self._lock:
+        with self._reader() as _db:
             return {
-                t: int(self._db.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0])  # noqa: S608 - fixed names
+                t: int(_db.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0])  # noqa: S608 - fixed names
                 for t in (*_IMMUTABLE, "attempts")
             }

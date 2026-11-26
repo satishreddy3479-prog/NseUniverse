@@ -74,7 +74,24 @@ const loadAuto = (): boolean => { try { return localStorage.getItem(AUTOFIT_KEY)
 const Content = ({ def }: { def: EagleDef }) => <>{def.render()}</>;
 
 /** One box of the board: a title bar to drag it by, copy and remove buttons, and the widget, which fits the box (or scrolls inside it for a whole tool). */
-function Frame({ board, itemKey, def, onRemove, onCopy, height, chartsOnly, onNat, stacked, onMove, canUp, canDown }: { board: EagleBoard; itemKey: string; def: EagleDef; onRemove: () => void; onCopy: () => void; height?: number; chartsOnly?: boolean; onNat?: (key: string, rows: number) => void;
+/** A board that opens with many boxes starts them in steps: every box loads its own data, and 49 of them asking at once (and again at every refresh interval, in step) is what a phone and a small server feel. */
+export const FIRST_BOXES = 6, MORE_BOXES = 4, STEP_MS = 300;
+export function useStagger(order: readonly string[]): (key: string) => boolean {
+  const first = useRef<Map<string, number> | null>(null);
+  if (first.current === null) first.current = new Map(order.map((k, i) => [k, i])); // the boxes the board opened with, in reading order
+  const total = first.current.size;
+  const [n, setN] = useState(FIRST_BOXES);
+  useEffect(() => {
+    if (n >= total) return;
+    const t = setTimeout(() => setN((x) => x + MORE_BOXES), STEP_MS);
+    return () => clearTimeout(t);
+  }, [n, total]);
+  // a box added later (a click on Add widgets) starts at once
+  return (key) => { const r = first.current!.get(key); return r === undefined || r < n; };
+}
+
+function Frame({ board, itemKey, def, onRemove, onCopy, height, chartsOnly, onNat, stacked, onMove, canUp, canDown, live = true }: { board: EagleBoard; itemKey: string; def: EagleDef; onRemove: () => void; onCopy: () => void; height?: number; chartsOnly?: boolean; onNat?: (key: string, rows: number) => void;
+  /** false while the box waits its turn to start (see useStagger) */ live?: boolean;
   /** on a phone the boxes are one column: no dragging, move buttons instead */ stacked?: boolean; onMove?: (dir: -1 | 1) => void; canUp?: boolean; canDown?: boolean }) {
   const btn = `widget-nodrag inline-flex items-center justify-center rounded-sm text-muted hover:bg-slate-2 hover:text-paper ${stacked ? "size-10" : "size-7"}`;
   const title = titleOf(board, itemKey, def.title);
@@ -99,7 +116,9 @@ function Frame({ board, itemKey, def, onRemove, onCopy, height, chartsOnly, onNa
       <div ref={bodyRef} className={`min-h-0 flex-1 p-2 ${stacked && def.kind === "page" ? "overflow-x-auto overflow-y-visible" : `overflow-x-hidden overflow-y-auto ${def.kind === "page" ? "overflow-x-auto" : ""}`}`} data-testid={`eagle-body-${itemKey}`}>
         <div ref={innerRef} className={def.kind === "page" ? undefined : "h-full"}>
         {noChart && <p className="eagle-keep rounded-sm border border-rule bg-slate-2 p-2 text-xs text-muted" role="status" data-testid={`eagle-nochart-${itemKey}`}>This tool has no chart. Turn off “Charts only” at the top to see it, or remove the box.</p>}
-        <ErrorBoundary resetKey={itemKey}><Content def={def} /></ErrorBoundary>
+        {live
+          ? <ErrorBoundary resetKey={itemKey}><Content def={def} /></ErrorBoundary>
+          : <p className="p-3 text-xs text-muted" role="status" data-testid={`eagle-waiting-${itemKey}`}>Starting…</p>}
         </div>
       </div>
     </section>
@@ -216,6 +235,7 @@ function Board() {
     // the two boxes trade places (their sizes stay with them), and the board is fitted again
     return settle({ ...b, layout: b.layout.map((l) => (l.i === a.i ? { ...l, x: o.x, y: o.y + (dir > 0 ? Math.max(0, o.h - a.h) + 1 : 0) } : l.i === o.i ? { ...l, x: a.x, y: a.y + (dir > 0 ? 0 : 1) } : l)) });
   });
+  const isLive = useStagger(column.map((x) => x.it.key));
   const phoneBox = Math.round(Math.min(420, Math.max(260, (width > 0 ? width : 360) * 0.95)));
   const [more, setMore] = useState(false);
 
@@ -242,7 +262,7 @@ function Board() {
           <div className="flex flex-col gap-3" data-testid="eagle-stacked">
             {column.map(({ it, def }, i) => (
               <div key={it.key}>
-                <Frame board={board} itemKey={it.key} def={def} chartsOnly={chartsOnly} onNat={onNat} stacked onMove={(d) => move(it.key, d)} canUp={i > 0} canDown={i < column.length - 1}
+                <Frame board={board} itemKey={it.key} def={def} chartsOnly={chartsOnly} onNat={onNat} live={isLive(it.key)} stacked onMove={(d) => move(it.key, d)} canUp={i > 0} canDown={i < column.length - 1}
                   onRemove={() => remove(it.key)} onCopy={() => copy(it.key)} height={def.kind === "page" ? undefined : phoneBox} />
               </div>
             ))}
@@ -252,7 +272,7 @@ function Board() {
           <GridLayout width={width} layout={board.layout} gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: [12, 12], containerPadding: [0, 0] }}
             resizeConfig={{ enabled: true, handles: ["se", "e", "s", "sw", "w"] }} dragConfig={{ handle: ".widget-drag", cancel: ".widget-nodrag" }} compactor={verticalCompactor} onLayoutChange={onLayoutChange} onResizeStop={(_l, _old, item) => { if (item) pinned.current.add(item.i); setTouched(true); setJustSaved(false); }} onDragStop={() => { setTouched(true); setJustSaved(false); }}>
             {boxes.map(({ it, def }) => (
-              <div key={it.key}><Frame board={board} itemKey={it.key} def={def} chartsOnly={chartsOnly} onNat={onNat} onRemove={() => remove(it.key)} onCopy={() => copy(it.key)} /></div>
+              <div key={it.key}><Frame board={board} itemKey={it.key} def={def} chartsOnly={chartsOnly} onNat={onNat} live={isLive(it.key)} onRemove={() => remove(it.key)} onCopy={() => copy(it.key)} /></div>
             ))}
           </GridLayout>
         )}

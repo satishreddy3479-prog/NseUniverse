@@ -17,6 +17,7 @@ import sqlite3
 import threading
 from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,6 +25,7 @@ from typing import Any
 
 from app.domain.models import OptionChainSnapshot, OptionQuote
 from app.domain.session import session_close
+from app.storage.readers import Readers
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS samples (
@@ -120,6 +122,7 @@ class ObservationStore:
         data_dir.mkdir(parents=True, exist_ok=True)
         self.path = data_dir / "observations.sqlite3"
         self._lock = threading.Lock()
+        self._readers = Readers(self.path)
         self._db = sqlite3.connect(self.path, check_same_thread=False)
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA synchronous=NORMAL")
@@ -127,7 +130,12 @@ class ObservationStore:
         self._db.executescript(_SCHEMA)
         self._db.commit()
 
+    def _reader(self) -> AbstractContextManager[sqlite3.Connection]:
+        """A read-only connection of this thread: reads do not wait for the writer or each other."""
+        return self._readers()
+
     def close(self) -> None:
+        self._readers.close()
         with self._lock:
             self._db.close()
 
@@ -215,13 +223,13 @@ class ObservationStore:
             args.append(to_ms(until))
         q += " ORDER BY received_ms DESC, sample_id DESC LIMIT ?"
         args.append(limit)
-        with self._lock:
-            rows = self._db.execute(q, args).fetchall()
+        with self._reader() as _db:
+            rows = _db.execute(q, args).fetchall()
             first_ms = rows[-1][1] if rows else None
             carry: int | None = None
             if first_ms is not None and rows[-1][4]:
                 # the oldest sample in range is 'unchanged': find the sample that holds its values
-                prev = self._db.execute(
+                prev = _db.execute(
                     "SELECT sample_id FROM samples WHERE underlying=? AND expiry=? AND unchanged=0"
                     " AND (received_ms<? OR (received_ms=? AND sample_id<?))"
                     " ORDER BY received_ms DESC, sample_id DESC LIMIT 1",
@@ -250,8 +258,8 @@ class ObservationStore:
         return out
 
     def contracts(self, sample_id: int) -> dict[tuple[float, int], Contract]:
-        with self._lock:
-            rows = self._db.execute(
+        with self._reader() as _db:
+            rows = _db.execute(
                 "SELECT strike, side, ltp_p, oi, oi_prev, volume FROM contracts WHERE sample_id=?",
                 (sample_id,),
             ).fetchall()
@@ -261,8 +269,8 @@ class ObservationStore:
         }
 
     def events(self, limit: int = 100) -> list[dict[str, Any]]:
-        with self._lock:
-            rows = self._db.execute(
+        with self._reader() as _db:
+            rows = _db.execute(
                 "SELECT ts_ms, session_id, kind, detail FROM events ORDER BY event_id DESC LIMIT ?",
                 (limit,),
             ).fetchall()
@@ -273,8 +281,8 @@ class ObservationStore:
 
     def spot_near(self, underlying: str, at_ms: int, tolerance_ms: int = 90_000) -> tuple[float, int] | None:
         """(spot, distance in ms) of the stored sample closest to a moment, within the tolerance; None when none is near."""
-        with self._lock:
-            row = self._db.execute(
+        with self._reader() as _db:
+            row = _db.execute(
                 "SELECT spot_p, received_ms FROM samples WHERE underlying=? AND spot_p IS NOT NULL"
                 " AND received_ms BETWEEN ? AND ? ORDER BY ABS(received_ms - ?) LIMIT 1",
                 (underlying, at_ms - tolerance_ms, at_ms + tolerance_ms, at_ms),
@@ -283,14 +291,14 @@ class ObservationStore:
 
     def day_summary(self, start_ms: int, end_ms: int) -> dict[str, Any]:
         """What one day holds (read-only): samples per expiry, stored contract rows, first and last sample."""
-        with self._lock:
-            per = self._db.execute(
+        with self._reader() as _db:
+            per = _db.execute(
                 "SELECT expiry, COUNT(*), SUM(unchanged), MIN(received_ms), MAX(received_ms) FROM samples"
                 " WHERE received_ms BETWEEN ? AND ? GROUP BY expiry ORDER BY expiry", (start_ms, end_ms)).fetchall()
-            rows = self._db.execute(
+            rows = _db.execute(
                 "SELECT COUNT(*) FROM contracts c JOIN samples s USING(sample_id) WHERE s.received_ms BETWEEN ? AND ?",
                 (start_ms, end_ms)).fetchone()[0]
-            total_rows = self._db.execute("SELECT COUNT(*) FROM contracts").fetchone()[0]
+            total_rows = _db.execute("SELECT COUNT(*) FROM contracts").fetchone()[0]
         return {
             "expiries": [{"expiry": e, "samples": n, "unchanged": int(u or 0), "first": from_ms(a).isoformat(), "last": from_ms(b).isoformat()}
                          for e, n, u, a, b in per],
@@ -299,8 +307,8 @@ class ObservationStore:
 
     def events_of(self, kind: str, since: datetime, limit: int = 5000) -> list[dict[str, Any]]:
         """Logged events of one kind since a time, oldest first."""
-        with self._lock:
-            rows = self._db.execute(
+        with self._reader() as _db:
+            rows = _db.execute(
                 "SELECT ts_ms, detail FROM events WHERE kind=? AND ts_ms>=? ORDER BY ts_ms LIMIT ?",
                 (kind, to_ms(since), limit),
             ).fetchall()
@@ -354,18 +362,18 @@ class ObservationStore:
         return out
 
     def known_snapshot_ids(self) -> set[str]:
-        with self._lock:
+        with self._reader() as _db:
             return {
                 r[0]
-                for r in self._db.execute(
+                for r in _db.execute(
                     "SELECT snapshot_id FROM samples WHERE snapshot_id IS NOT NULL"
                 )
             }
 
     def day_counts(self, underlying: str, start_ms: int, end_ms: int) -> list[tuple[str, int]]:
         """(expiry, sample count) of samples received in [start_ms, end_ms] (read-only)."""
-        with self._lock:
-            rows = self._db.execute(
+        with self._reader() as _db:
+            rows = _db.execute(
                 "SELECT expiry, COUNT(*) FROM samples"
                 " WHERE underlying=? AND received_ms BETWEEN ? AND ?"
                 " GROUP BY expiry ORDER BY expiry",
@@ -375,8 +383,8 @@ class ObservationStore:
 
     def latest_lot_size(self, underlying: str) -> int | None:
         """The lot size carried by the newest stored sample that has one (None when none does)."""
-        with self._lock:
-            row = self._db.execute(
+        with self._reader() as _db:
+            row = _db.execute(
                 "SELECT lot_size FROM samples WHERE underlying=? AND lot_size IS NOT NULL"
                 " ORDER BY received_ms DESC, sample_id DESC LIMIT 1",
                 (underlying,),
@@ -391,8 +399,8 @@ class ObservationStore:
         The maximum over expiries, not the sum: two half-covered expiries must not look like one full
         session (read-only).
         """
-        with self._lock:
-            rows = self._db.execute(
+        with self._reader() as _db:
+            rows = _db.execute(
                 "SELECT date(received_ms/1000 + 19800, 'unixepoch') AS d, expiry, COUNT(*) FROM samples"
                 " WHERE underlying=? AND unchanged=0"
                 " AND time(received_ms/1000 + 19800, 'unixepoch') BETWEEN '09:15:00' AND ?"
@@ -407,8 +415,8 @@ class ObservationStore:
     def last_session_by_expiry(self, underlying: str, min_samples: int = 10) -> dict[str, str]:
         """expiry -> IST date of the latest session (09:15 to the close) with at least ``min_samples`` stored samples of that expiry.
         An expiry that was only ever sampled after hours is absent: it has no session to show (read-only)."""
-        with self._lock:
-            rows = self._db.execute(
+        with self._reader() as _db:
+            rows = _db.execute(
                 "SELECT expiry, date(received_ms/1000 + 19800, 'unixepoch') AS d, COUNT(*) FROM samples"
                 " WHERE underlying=? AND unchanged=0"
                 " AND time(received_ms/1000 + 19800, 'unixepoch') BETWEEN '09:15:00' AND ?"
@@ -423,12 +431,12 @@ class ObservationStore:
 
     def window_counts(self, underlying: str, start_ms: int, end_ms: int) -> tuple[int, int]:
         """(samples, contract rows) received in [start_ms, end_ms) (read-only; used to verify archives)."""
-        with self._lock:
-            n_s = self._db.execute(
+        with self._reader() as _db:
+            n_s = _db.execute(
                 "SELECT COUNT(*) FROM samples WHERE underlying=? AND received_ms>=? AND received_ms<?",
                 (underlying, start_ms, end_ms),
             ).fetchone()[0]
-            n_c = self._db.execute(
+            n_c = _db.execute(
                 "SELECT COUNT(*) FROM contracts WHERE sample_id IN (SELECT sample_id FROM samples"
                 " WHERE underlying=? AND received_ms>=? AND received_ms<?)",
                 (underlying, start_ms, end_ms),
@@ -441,8 +449,8 @@ class ObservationStore:
         Contracts are read one sample at a time so memory stays small and writers are never blocked
         for long. Values are exactly as stored (prices in paise, missing = None).
         """
-        with self._lock:
-            heads = self._db.execute(
+        with self._reader() as _db:
+            heads = _db.execute(
                 "SELECT sample_id, snapshot_id, session_id, underlying, expiry, received_ms, provider_ms,"
                 " spot_p, prev_close_p, lot_size, unchanged, source, fp FROM samples"
                 " WHERE underlying=? AND received_ms>=? AND received_ms<? ORDER BY received_ms, sample_id",
@@ -452,8 +460,8 @@ class ObservationStore:
                 "spot_p", "prev_close_p", "lot_size", "unchanged", "source", "fp")  # fmt: skip
         for h in heads:
             yield {"t": "sample", **dict(zip(keys, h, strict=True))}
-            with self._lock:
-                cs = self._db.execute(
+            with self._reader() as _db:
+                cs = _db.execute(
                     "SELECT strike, side, ltp_p, oi, oi_prev, volume FROM contracts WHERE sample_id=?"
                     " ORDER BY strike, side",
                     (h[0],),
@@ -469,12 +477,12 @@ class ObservationStore:
             self._db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     def stats(self) -> dict[str, Any]:
-        with self._lock:
-            n_s, n_c, first, last = self._db.execute(
+        with self._reader() as _db:
+            n_s, n_c, first, last = _db.execute(
                 "SELECT (SELECT COUNT(*) FROM samples), (SELECT COUNT(*) FROM contracts),"
                 " (SELECT MIN(received_ms) FROM samples), (SELECT MAX(received_ms) FROM samples)"
             ).fetchone()
-            n_e = self._db.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+            n_e = _db.execute("SELECT COUNT(*) FROM events").fetchone()[0]
         wal = Path(str(self.path) + "-wal")
         return {
             "samples": n_s,
