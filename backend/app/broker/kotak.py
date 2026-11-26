@@ -252,7 +252,12 @@ class KotakBroker:
             ws = (await self._client_async()).create_websocket()
         except ValueError as exc:  # SDK: no edit_token/edit_sid on the session
             raise BrokerError("broker session is not ready for streaming", code="auth") from exc
-        return KotakFeed(ws)
+        feed = KotakFeed(ws)
+        if self._settings.feed_thread:
+            from app.stream.threaded_feed import ThreadedFeed
+
+            return ThreadedFeed(feed)  # the SDK's decoding runs in its own thread
+        return feed
 
     async def close(self) -> None:
         self._client = None

@@ -105,6 +105,10 @@ class Settings(BaseSettings):
     swing_paper_enabled: bool = True  # after-close swing scan + paper trades (paper only)
     swing_live_enabled: bool = True  # live prices for the swing paper book (shadow decisions only)
     edge_enabled: bool = True  # nightly scoring of the indicators (Edge monitor)
+    # Run the broker feed (websocket, decoding) in a thread of its own so a burst of ticks cannot
+    # hold the event loop (app/stream/threaded_feed.py). Off by default: turn it on deliberately,
+    # outside market hours, and watch /api/runtime/metrics.
+    feed_thread: bool = False
     # how long heavy read answers are kept, as a share of their usual few seconds
     # (0: only callers at the same moment share one computation)
     read_cache_scale: float = 1.0
