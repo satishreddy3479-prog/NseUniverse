@@ -1158,3 +1158,17 @@ def test_when_the_chart_answer_cannot_be_read_the_old_bars_stand_and_the_quote_i
     es = s.store.latest_all()["ES"]
     assert es["status"] == "stale" and es["price"] != 7251.5
 
+
+
+# ------------------------------------------------------------------ untrusted feeds: no entity expansion
+def test_a_feed_that_declares_entities_or_is_huge_is_refused_before_parsing() -> None:
+    bomb = b'<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">]><rss><channel><item><title>&b;</title></item></channel></rss>'
+    with pytest.raises(ValueError, match="DOCTYPE or entities"):
+        news.guard_xml(bomb)
+    with pytest.raises(ValueError, match="larger than"):
+        news.guard_xml(b"<rss>" + b"x" * (news.MAX_FEED_BYTES + 1))
+    ok = (FIX / "bbc_business.xml").read_bytes()  # a real feed passes untouched
+    assert news.guard_xml(ok) == ok
+    feed = next(iter(news.FEEDS))
+    with pytest.raises(ValueError):
+        news.parse_rss(bomb, feed)

@@ -76,7 +76,7 @@ def parse_ff(data: bytes) -> list[dict[str, Any]]:
             continue
         ts = int(when.astimezone(UTC).timestamp() * 1000)
         out.append({
-            "id": "ff:" + hashlib.sha1(f"{ts}|{cur}|{title}".encode()).hexdigest()[:16],  # noqa: S324 - an identifier, not security
+            "id": "ff:" + hashlib.sha1(f"{ts}|{cur}|{title}".encode(), usedforsecurity=False).hexdigest()[:16],  # noqa: S324 - an identifier, not security
             "source": FF_LABEL, "ts": ts, "date_ist": when.astimezone(IST).date().isoformat(), "all_day": False,
             "country": CURRENCY_COUNTRY.get(cur, cur), "name": title, "impact": IMPACT[impact],
             "actual": (str(r.get("actual")) or None) if r.get("actual") not in (None, "") else None,
@@ -126,7 +126,7 @@ def parse_local(data: bytes) -> list[dict[str, Any]]:
 
         ts = int(when.astimezone(UTC).timestamp() * 1000)
         out.append({
-            "id": "local:" + hashlib.sha1(f"{ts}|{country}|{name}".encode()).hexdigest()[:16],  # noqa: S324 - an identifier, not security
+            "id": "local:" + hashlib.sha1(f"{ts}|{country}|{name}".encode(), usedforsecurity=False).hexdigest()[:16],  # noqa: S324 - an identifier, not security
             "source": LOCAL_LABEL, "ts": ts, "date_ist": when.date().isoformat(), "all_day": all_day, "country": country, "name": name, "impact": impact,
             "actual": val("actual"), "forecast": val("consensus") or val("forecast"), "previous": val("previous"), "note": None,
         })  # fmt: skip
@@ -203,7 +203,7 @@ def parse_biquote(data: bytes) -> list[dict[str, Any]]:
         exact = e.get("timeMode", "exact") == "exact"
         ts = int(when.astimezone(UTC).timestamp() * 1000)
         out.append({
-            "id": "bq:" + str(e.get("id") or hashlib.sha1(f"{ts}|{e['countryCode']}|{e['name']}".encode()).hexdigest()[:16]),  # noqa: S324 - an identifier, not security
+            "id": "bq:" + str(e.get("id") or hashlib.sha1(f"{ts}|{e['countryCode']}|{e['name']}".encode(), usedforsecurity=False).hexdigest()[:16]),  # noqa: S324 - an identifier, not security
             "source": BQ_LABEL, "ts": ts, "date_ist": when.astimezone(IST).date().isoformat(), "all_day": not exact, "country": BQ_COUNTRIES[e["countryCode"]], "name": str(e["name"]).strip(),
             "impact": impact, "actual": _bq_value(e.get("actual"), e), "forecast": _bq_value(e.get("forecast"), e), "previous": _bq_value(e.get("previous"), e),
             "note": None if exact else "time not set by the source",

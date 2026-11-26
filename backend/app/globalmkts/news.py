@@ -110,9 +110,25 @@ def _short(text: str) -> str:
     return text if len(text) <= SUMMARY_MAX else text[: SUMMARY_MAX - 1].rsplit(" ", 1)[0] + "…"
 
 
+MAX_FEED_BYTES = 4_000_000
+
+
+def guard_xml(data: bytes) -> bytes:
+    """Refuse a feed that could expand into something huge when parsed (the standard XML parser follows entity declarations: the "billion laughs" attack).
+
+    A news feed has no use for a DOCTYPE or entity declarations, so any document that declares one, or that is far bigger than a feed is, is refused as malformed
+    (the feed's error is shown and the headlines already stored stay).
+    """
+    if len(data) > MAX_FEED_BYTES:
+        raise ValueError(f"feed is {len(data)} bytes: larger than {MAX_FEED_BYTES}, refused")
+    if b"<!DOCTYPE" in data or b"<!ENTITY" in data:
+        raise ValueError("feed declares a DOCTYPE or entities: refused")
+    return data
+
+
 def parse_rss(data: bytes, feed: Feed) -> tuple[list[dict[str, Any]], int]:
     """The items of one RSS document and how many were skipped (no title, link or usable date). Never raises on a malformed item."""
-    root = ET.fromstring(data)  # noqa: S314
+    root = ET.fromstring(guard_xml(data))  # noqa: S314 - refused above when it declares entities
     items: list[dict[str, Any]] = []
     skipped = 0
     for it in root.iter("item"):
@@ -133,7 +149,7 @@ def parse_rss(data: bytes, feed: Feed) -> tuple[list[dict[str, Any]], int]:
         if summary.lower().startswith(title.lower()[:40]) and len(summary) <= len(title) + 5:
             summary = ""  # a feed that repeats the headline as its summary
         items.append({
-            "id": hashlib.sha1(link.encode()).hexdigest()[:20],  # noqa: S324 - an identifier, not security
+            "id": hashlib.sha1(link.encode(), usedforsecurity=False).hexdigest()[:20],  # noqa: S324 - an identifier, not security
             "source": feed.source, "region": feed.region, "section": feed.section, "title": title, "link": link, "summary": summary,
             "published": int(when.astimezone(UTC).timestamp() * 1000),
         })  # fmt: skip
