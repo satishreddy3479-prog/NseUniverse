@@ -403,7 +403,7 @@ function SmartOiChartWidget() {
           </details>
         </Meta>
       }>
-        <div className="flex h-full min-h-0 flex-col gap-2">
+        <div className="@container flex h-full min-h-0 flex-col gap-2">
           <div className="flex flex-wrap items-center gap-3">
             <div role="group" aria-label="Candle length" className="flex items-center gap-0.5">
               {SMART_TF.map((m) => (
@@ -464,7 +464,7 @@ function SmartOiChartWidget() {
               Smart OI needs at least two {tf}-minute candles with stored call and put OI today ({res?.candles.length ?? 0} so far). During market hours the sampler stores one sample a minute.
             </EmptyState>
           ) : (
-            <div className="grid min-h-0 flex-1 gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+            <div className="grid min-h-0 flex-1 gap-2 @3xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
               <div>
                 {dv.on && (
                   <div role="group" aria-label="Lower panel of the chart" className="mb-1 flex flex-wrap items-center justify-end gap-0.5" data-testid="smart-oi-lower-left">
