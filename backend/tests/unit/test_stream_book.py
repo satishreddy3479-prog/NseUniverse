@@ -49,3 +49,21 @@ def test_same_compares_every_field_except_the_two_that_always_differ() -> None:
         assert not LiveBook._same(a, changed), field
     assert "received_at" not in LiveBook._COMPARED and "seq" not in LiveBook._COMPARED
 
+
+
+def test_the_acknowledged_count_is_not_recomputed_for_every_tick() -> None:
+    """The SDK's ``trading_symbols`` copies about 900 entries on every read, and the stream manager asked for it with every tick."""
+    from app.stream.feed import KotakFeed
+
+    class Ws:
+        reads = 0
+        on_connect = on_disconnect = on_error = on_message = None
+
+        @property
+        def trading_symbols(self) -> dict[str, str]:
+            Ws.reads += 1
+            return {f"nse_fo|{i}": "X" for i in range(900)}
+
+    feed = KotakFeed(Ws())
+    counts = {feed.acknowledged_count for _ in range(5000)}
+    assert counts == {900} and Ws.reads == 1  # one copy for five thousand ticks

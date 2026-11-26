@@ -19,6 +19,7 @@ import logging
 import math
 import time as time_mod
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
@@ -78,6 +79,24 @@ def _rank_key(r: dict[str, Any]) -> float:
     return -abs(float(r["change_pct"] or 0.0)) / 1000
 
 
+@dataclass(frozen=True)
+class Roles:
+    """What each stream key means to the market service, built OFF the event loop and replaced whole (never edited), so the per-tick handler only reads it.
+
+    Rebuilding these needs the token tables, the index lists and the weights: several database reads and scans. They used to be rebuilt by the first tick after a 60 s timer ran
+    out, on the event loop, and showed up as a stall every minute (26 Nov 2026: 24 of 216 stalls exactly 60 s apart, stacks inside ``token_map``, ``weights_now``, ``closes_on``).
+    """
+
+    flow: dict[str, str] = field(default_factory=dict)  # stream key -> "NIFTYFUT" or the heavyweight's symbol
+    fo: dict[str, tuple[str, str]] = field(default_factory=dict)  # stream key -> (symbol or "NIFTY", "cur" | "next")
+    fut_key: str | None = None  # the current-month NIFTY future
+    fut_keys: frozenset[str] = frozenset()  # that and the next-month future: the contracts shown to browsers tick by tick
+
+
+ROLES_MAX_AGE_S = 60.0
+EMPTY_ROLES = Roles()
+
+
 class MarketService:
     def __init__(
         self,
@@ -115,9 +134,10 @@ class MarketService:
         # what the feed really delivered for the future and the heavyweights, kept separately from the flow classification so
         # a missing field or a key that does not match shows up here instead of as silence
         self.diag: dict[str, Any] = {"ticks": 0, "matched": 0, "unmatched_keys": [], "future": {"ticks": 0, "last_at": None, "ltp": None, "volume": None, "oi": None, "bid": None, "atp": None, "spot": None}}
-        self._roles: tuple[float, dict[str, str]] | None = None
-        self._fut_key_cache: tuple[float, str | None] | None = None
-        self._fut_keys_cache: tuple[float, set[str]] | None = None
+        self._roles_task: asyncio.Task[None] | None = None
+        self._roles_snap: Roles | None = None
+        self._roles_at = 0.0
+        self._roles_stale = False
         self._base_cache: tuple[str, dict[str, Any]] | None = None
         self.future_note = "not looked up yet"
         self._part_cache: tuple[str, dict[str, Any]] | None = None
@@ -125,7 +145,6 @@ class MarketService:
         self.fo_cur: dict[str, FoQuote] = {}
         self.fo_next: dict[str, FoQuote] = {}
         self.fo_nifty_next = FoQuote()
-        self._fo_roles_cache: tuple[float, dict[str, tuple[str, str]]] | None = None
         self._fo_first: dict[tuple[str, str], tuple[str, int, datetime]] = {}  # (symbol or NIFTY, cur|next) -> (day, first open interest this app saw today, when)
         self._fo_base_at: str | None = None  # when the open interest baseline was read
         self._fo_base_cache: tuple[str, dict[str, dict[str, int | None]]] | None = None
@@ -256,40 +275,58 @@ class MarketService:
         ], "previous-session traded value (a liquidity proxy until weights exist)"
 
     # ----------------------------------------------------------------------------- order flow (futures and top-5 stocks)
-    def _flow_roles(self) -> dict[str, str]:
-        now = time_mod.monotonic()
-        if self._roles and now - self._roles[0] < 60:
-            return self._roles[1]
-        roles = {
-            f"{t.exchange_segment}|{t.instrument_token}": (
-                "NIFTYFUT" if t.exchange_segment == "nse_fo" else ""
-            )
+    def _build_roles(self) -> Roles:
+        """Read the tables and build the role maps (several database reads: call it from a thread, never from the tick handler)."""
+        tm = self.token_map()
+        flow = {
+            f"{t.exchange_segment}|{t.instrument_token}": ("NIFTYFUT" if t.exchange_segment == "nse_fo" else "")
             for t in self.stream_tokens()
             if t.depth
         }
-        by_token = {t.token: sym for sym, t in self.token_map().items()}
-        for k in list(roles):
-            if not roles[k]:
-                roles[k] = by_token.get(k.split("|", 1)[1], "")
-        roles = {k: v for k, v in roles.items() if v}
-        self._roles = (now, roles)
-        return roles
-
-    def _fo_roles(self) -> dict[str, tuple[str, str]]:
-        """Stream key -> (symbol, 'cur' | 'next') of every stock future and the NIFTY next-month future, rebuilt at most once a minute."""
-        now = time_mod.monotonic()
-        if self._fo_roles_cache and now - self._fo_roles_cache[0] < 60:
-            return self._fo_roles_cache[1]
-        roles: dict[str, tuple[str, str]] = {}
-        for k, t in self.token_map().items():
+        by_token = {t.token: sym for sym, t in tm.items()}
+        for k in list(flow):
+            if not flow[k]:
+                flow[k] = by_token.get(k.split("|", 1)[1], "")
+        flow = {k: v for k, v in flow.items() if v}
+        fo: dict[str, tuple[str, str]] = {}
+        for k, t in tm.items():
             key = f"nse_fo|{t.token}"
             if k == FUT_NEXT_SYMBOL:
-                roles[key] = ("NIFTY", "next")
+                fo[key] = ("NIFTY", "next")
             elif k.startswith(STK_PREFIX):
                 rest = k[len(STK_PREFIX):]
-                roles[key] = (rest[:-5], "next") if rest.endswith(":NEXT") else (rest, "cur")
-        self._fo_roles_cache = (now, roles)
-        return roles
+                fo[key] = (rest[:-5], "next") if rest.endswith(":NEXT") else (rest, "cur")
+        cur = tm.get(FUT_SYMBOL)
+        fut_key = None if cur is None else f"nse_fo|{cur.token}"
+        fut_keys = frozenset(f"nse_fo|{tm[x].token}" for x in (FUT_SYMBOL, FUT_NEXT_SYMBOL) if x in tm)
+        return Roles(flow, fo, fut_key, fut_keys)
+
+    def refresh_roles(self) -> Roles:
+        """Rebuild the role maps and publish them whole. Called by the minute loop in a thread, after the tokens or lists change, and (for a service that was never started) on first use."""
+        built = self._build_roles()
+        self._roles_snap, self._roles_at, self._roles_stale = built, time_mod.monotonic(), False
+        return built
+
+    def invalidate_roles(self) -> None:
+        """The tokens, lists or weights changed: the minute loop rebuilds the maps at its next pass."""
+        self._roles_stale = True
+
+    def roles_due(self) -> bool:
+        return self._roles_snap is None or self._roles_stale or time_mod.monotonic() - self._roles_at >= ROLES_MAX_AGE_S
+
+    def _roles(self) -> Roles:
+        """The current role maps; never reads a database while the service is running (the loop builds the first set within seconds of start; until then nothing matches)."""
+        snap = self._roles_snap
+        if snap is not None:
+            return snap
+        return self.refresh_roles() if self._task is None else EMPTY_ROLES  # not started (tests, one-off use): build on demand
+
+    def _flow_roles(self) -> dict[str, str]:
+        return self._roles().flow
+
+    def _fo_roles(self) -> dict[str, tuple[str, str]]:
+        """Stream key -> (symbol, 'cur' | 'next') of every stock future and the NIFTY next-month future."""
+        return self._roles().fo
 
     def _on_fo_tick(self, role: tuple[str, str], tick: LiveTick) -> None:
         sym, which = role
@@ -373,23 +410,12 @@ class MarketService:
         return out
 
     def _fut_key(self) -> str | None:
-        """Stream key of the NIFTY future, looked up at most once a minute (this runs for every tick)."""
-        now = time_mod.monotonic()
-        if self._fut_key_cache and now - self._fut_key_cache[0] < 60:
-            return self._fut_key_cache[1]
-        tok = self.token_map().get(FUT_SYMBOL)
-        key = None if tok is None else f"nse_fo|{tok.token}"
-        self._fut_key_cache = (now, key)
-        return key
+        """Stream key of the NIFTY future (this runs for every tick: a read of the published maps)."""
+        return self._roles().fut_key
 
     def is_nifty_future_key(self, key: str) -> bool:
-        """The current and next-month NIFTY future: the contracts a strategy can hold, shown to browsers tick by tick (looked up at most once a minute; this runs for every internal tick)."""
-        now = time_mod.monotonic()
-        if self._fut_keys_cache is None or now - self._fut_keys_cache[0] >= 60:
-            tm = self.token_map()
-            keys = {f"nse_fo|{tm[s].token}" for s in (FUT_SYMBOL, FUT_NEXT_SYMBOL) if s in tm}
-            self._fut_keys_cache = (now, keys)
-        return key in self._fut_keys_cache[1]
+        """The current and next-month NIFTY future: the contracts a strategy can hold, shown to browsers tick by tick (this runs for every internal tick)."""
+        return key in self._roles().fut_keys
 
     def on_tick(self, tick: LiveTick) -> None:
         """Called for every breadth/depth tick; only the futures and the five heavyweights are tracked."""
@@ -953,7 +979,7 @@ class MarketService:
         if nf:
             keep[FUT_NEXT_SYMBOL] = TokenInfo(FUT_NEXT_SYMBOL, nf.token, nf.trading_symbol)
         self.fo_note = f"stock futures subscribed: {len(cur)} of {len(syms)} current-month and {len(nxt)} next-month contracts; NIFTY next-month future {'found' if nf else 'not found'}"
-        self._fo_roles_cache = None
+        self.invalidate_roles()
 
     def import_weights(self, csv_text: str, as_of: date, source: str) -> dict[str, Any]:
         """Official weights supplied by the owner: columns symbol,weight (percent of the index). Must sum to ~100."""
@@ -1276,6 +1302,8 @@ class MarketService:
         while True:
             try:
                 await self.run_due()
+                if self.roles_due():
+                    await asyncio.to_thread(self.refresh_roles)  # off the loop: the tick handler only reads the published maps
                 stamp = self._clock().astimezone(IST).strftime("%Y%m%d%H%M")
                 # the minute sample reads the stores and computes the whole market summary: in a thread, so the loop (live ticks, the browsers' sockets) never waits for it or for a database lock
                 if stamp != last_min and await asyncio.to_thread(self.sample):
@@ -1286,9 +1314,17 @@ class MarketService:
                 log_event(logger, logging.WARNING, "market_loop_error", error=type(e).__name__)
             await asyncio.sleep(5)  # the minute's futures sample is taken within 5 s of the minute starting (it was 20 s)
 
+    async def _first_roles(self) -> None:
+        """The first role maps, built in a thread at start-up so the first ticks of a restart in market hours already match (the minute loop itself waits 45 s)."""
+        try:
+            await asyncio.to_thread(self.refresh_roles)
+        except Exception as e:  # noqa: BLE001 - the minute loop tries again at its next pass
+            log_event(logger, logging.WARNING, "market_roles_failed", error=type(e).__name__)
+
     def start(self) -> None:
         if self._task is None and self.enabled:
             self._task = asyncio.create_task(self._loop())
+            self._roles_task = asyncio.create_task(self._first_roles(), name="market-roles")
         if self._bars_task is None and self.enabled:
             self._bars_task = asyncio.create_task(self._bars_loop(), name="index-bars")
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -277,3 +278,59 @@ def test_only_the_two_nifty_futures_are_shown_to_browsers_tick_by_tick(tmp_path:
     assert svc.is_nifty_future_key("nse_fo|55001") and svc.is_nifty_future_key("nse_fo|55002")  # current and next month
     assert not svc.is_nifty_future_key("nse_fo|60000")  # a stock future stays server-side
     assert not svc.is_nifty_future_key("nse_cm|Nifty 50")
+
+
+# ------------------------------------------------------------------ the per-tick lookups never read a database on the event loop
+class _NoReads:
+    """Stands in for the token store while a service is running: any read from the tick path fails the test."""
+
+    def __getattr__(self, name: str) -> Any:
+        raise AssertionError(f"the tick handler read the store ({name})")
+
+
+def test_once_started_the_tick_handler_only_reads_the_published_role_maps(tmp_path: Path) -> None:
+    """26 Nov 2026: the maps were rebuilt by the first tick after a 60 s timer, on the event loop, and stalled it once a minute."""
+    svc = build(tmp_path, {s: 101.0 for s in SYMS})
+    fo_tokens(svc)
+    svc.refresh_roles()  # what the minute loop does, in a thread
+    real = svc.store
+    svc.store = _NoReads()  # type: ignore[assignment]
+    svc._task = object()  # type: ignore[assignment] - the service counts as started
+    svc._roles_at = 0.0  # the maps are far older than 60 s: the old code rebuilt them here, on the next tick
+    svc.on_tick(fo_tick("55002", 25_400.0, 900_000))  # the NIFTY next-month future (a stock-future role)
+    svc.on_tick(fo_tick("60000", 1_000.0, 5_000))  # a stock future
+    assert svc.is_nifty_future_key("nse_fo|55001") and not svc.is_nifty_future_key("nse_fo|60000")
+    assert svc.diag["ticks"] == 2 and svc.roles_due()  # old, so the minute loop will rebuild them, in a thread
+    svc.store = real
+    svc._task = None
+
+
+def test_before_the_first_build_a_running_service_matches_nothing_instead_of_reading(tmp_path: Path) -> None:
+    svc = build(tmp_path, {s: 101.0 for s in SYMS})
+    fo_tokens(svc)
+    svc.store = _NoReads()  # type: ignore[assignment]
+    svc._task = object()  # type: ignore[assignment]
+    assert svc._roles_snap is None and svc.roles_due()
+    svc.on_tick(fo_tick("55002", 25_400.0, 900_000))  # no maps yet: not matched, and no read
+    assert not svc.is_nifty_future_key("nse_fo|55001")
+    svc._task = None
+
+
+def test_the_role_maps_follow_new_tokens_after_invalidation_and_a_failed_build_keeps_the_old_ones(tmp_path: Path) -> None:
+    svc = build(tmp_path, {s: 101.0 for s in SYMS})
+    fo_tokens(svc)
+    first = svc.refresh_roles()
+    assert "nse_fo|55001" in first.fut_keys and first.fut_key == "nse_fo|55001"
+    assert not svc.roles_due()
+    svc.invalidate_roles()
+    assert svc.roles_due()
+    toks = {s: TokenInfo(s, t, f"{s}-EQ") for s, t in TOKENS.items()}
+    toks["FUT:NIFTY"] = TokenInfo("FUT:NIFTY", "77001", "NIFTY26DECFUT")  # a rollover to a new contract
+    svc.store.save_tokens(toks, date(2026, 10, 30))
+    assert svc.refresh_roles().fut_key == "nse_fo|77001" and not svc.roles_due()
+    kept = svc._roles_snap
+    svc.invalidate_roles()
+    svc._build_roles = lambda: (_ for _ in ()).throw(OSError("db busy"))  # type: ignore[method-assign]
+    with pytest.raises(OSError):
+        svc.refresh_roles()
+    assert svc._roles_snap is kept and svc.roles_due()  # the old maps stand and a new attempt is due

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
@@ -167,6 +168,7 @@ class KotakFeed:
         self._ws = ws
         self._now = now
         self._queue: asyncio.Queue[FeedEvent] = asyncio.Queue(maxsize=20000)
+        self._ack_count, self._ack_at = 0, -1e9
         self._pump: asyncio.Task[None] | None = None
         # SDK messages that became no event, by message type (e.g. "cas_change", the
         # closing-auction messages), and events discarded because the queue was full.
@@ -257,7 +259,16 @@ class KotakFeed:
 
     @property
     def acknowledged_count(self) -> int:
-        return len(self._ws.trading_symbols)
+        """How many instruments the broker acknowledged.
+
+        The SDK's ``trading_symbols`` copies its whole map (about 900 entries) on every read,
+        and this property is read for every tick, so the count is refreshed at most once a second.
+        """
+        now = time.monotonic()
+        if now - self._ack_at >= 1.0:
+            self._ack_count = len(self._ws.trading_symbols)
+            self._ack_at = now
+        return self._ack_count
 
     async def close(self) -> None:
         if self._pump:
