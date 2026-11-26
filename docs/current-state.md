@@ -5,6 +5,9 @@ _Last updated: 2026-11-23_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Live-data robustness (26 Nov 2026, D329)
+Seven audit fixes committed, not deployed: per-tick lookups off the event loop, the Edge report kept instead of computed on request, small blocking calls moved to threads, a per-minute runtime record (`/api/runtime/metrics`), shared computation for heavy reads, a shadow comparison of the live feed with every stored chain (`/api/runtime/shadow`), and the feed in its own thread behind `FEED_THREAD` (off). First check after a deploy: stalls and p99 loop lag at 09:45 against 26 Nov (340 stalls in the session, 217 after the 10:07 fix).
+
 ## Premium Change tool (26 Nov 2026, D325)
 New FNO tool (Price tools): the straddle's change per window split into time decay, NIFTY moving, and volatility and the rest, with a sentence, three charts and NIFTY. Built and tested on real stored minutes; committed locally, not deployed (D325 lists what is unverified).
 

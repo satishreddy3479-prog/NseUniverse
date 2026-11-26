@@ -8,3 +8,4 @@
 - 26 Nov 2026: D326 global futures live price from Yahoo's chart answer (backend). Committed locally, not pushed.
 - 26 Nov 2026: D327 Eagles view saved layout no longer hidden by an untouched working copy (frontend). Committed locally, not pushed.
 - 26 Nov 2026: D328 audit report (docs only). Committed locally, not pushed.
+- 26 Nov 2026: D329 audit fixes 1 to 7 (backend). Committed locally, not pushed; the deploy restarts the backend, so push after the close. Two behaviours change at the next open (role maps off the loop, shared reads); the shadow comparison and the runtime record only measure; FEED_THREAD stays off until switched on deliberately.
