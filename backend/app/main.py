@@ -24,6 +24,7 @@ from app.api.routes import router
 from app.api.ws import router as ws_router
 from app.broker.base import MarketDataBroker
 from app.config import Settings, get_settings
+from app.domain.models import OptionChainSnapshot
 from app.edge.service import EdgeService
 from app.edge.store import EdgeStore
 from app.forward.service import ForwardService
@@ -54,6 +55,7 @@ from app.servermgmt.store import MgmtStore
 from app.services.backfill import backfill_observations
 from app.services.daily_login import DailyLogin
 from app.services.sampler import SnapshotSampler
+from app.services.shadow import ShadowStore, compare
 from app.services.snapshot_service import SnapshotService
 from app.services.state import AppState
 from app.services.universe import build_universe
@@ -216,6 +218,15 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             on_event=event_writer(observations, session_id),
         )
         app.state.stream = stream
+        shadow_store = ShadowStore(settings.data_dir)
+        app.state.shadow_store = shadow_store
+
+        def shadow_compare(snap: OptionChainSnapshot) -> None:
+            row = compare(snap, stream.book.get, snap.retrieved_at)
+            if row["with_tick"]:  # no ticks at all means the stream is off: nothing to compare
+                shadow_store.add(row)
+
+        snapshot_service.shadow = shadow_compare
         history_store = HistoryStore(settings.data_dir)
         history = HistoryService(
             history_store,

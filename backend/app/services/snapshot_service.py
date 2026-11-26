@@ -79,6 +79,9 @@ class SnapshotService:
         # the index level of the last capture while cash trading ran, and its day
         self._last_traded: tuple[date, float, datetime] | None = None
         self.skipped_unchanged = 0
+        # Called with each stored capture, in a thread, to measure the live feed against it
+        # (set by the application; see app/services/shadow.py).
+        self.shadow: Callable[[OptionChainSnapshot], None] | None = None
 
     @property
     def snapshot_source(self) -> DataSource:
@@ -368,6 +371,11 @@ class SnapshotService:
         if self.observations is not None:
             await asyncio.to_thread(self.observations.record_snapshot, snap, unchanged=False)
         self.state.snapshots.captured_count += 1
+        if self.shadow is not None:  # measures the feed against this capture; stores nothing
+            try:
+                await asyncio.to_thread(self.shadow, snap)
+            except Exception as e:  # noqa: BLE001 - a measurement must never disturb a capture
+                log_event(logger, logging.WARNING, "shadow_compare_failed", error=type(e).__name__)
         log_event(
             logger,
             logging.INFO,

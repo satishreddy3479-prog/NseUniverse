@@ -423,6 +423,22 @@ async def runtime_metrics(
     return await asyncio.to_thread(rm.view, minutes)
 
 
+@router.get("/runtime/shadow")
+async def runtime_shadow(
+    request: Request, minutes: Annotated[int, Query(ge=1, le=4320)] = 390
+) -> dict[str, Any]:
+    """How the live feed compared with each stored one-minute chain (measurement only)."""
+    from datetime import timedelta
+
+    from app.services.shadow import summarise
+
+    store = getattr(request.app.state, "shadow_store", None)
+    if store is None:
+        raise HTTPException(status_code=503, detail="the shadow comparison is not running")
+    rows = await asyncio.to_thread(store.rows, datetime.now(UTC) - timedelta(minutes=minutes))
+    return {"summary": summarise(rows), "rows": rows[-200:]}
+
+
 @router.get("/stream/health")
 async def stream_health(request: Request) -> dict[str, Any]:
     """Where live data can be late: the event loop's delay and each browser client's wait."""
