@@ -444,7 +444,7 @@ def regime(fused: Mapping[str, Any], engines: Mapping[str, Mapping[str, Any]], i
     bu, pc = fut.get("buildup"), fut.get("price_change_15m_pct")
     vol = engines.get("volatility", {})
     iv_chg = vol.get("atm_iv_change_15m")
-    cvd_terms = [t for t in engines.get("orderflow", {}).get("terms", []) if t["name"].startswith("Futures CVD") and t["available"]]
+    cvd_terms = [t for t in (engines.get("orderflow") or {}).get("terms") or [] if t["name"].startswith("Futures CVD") and t["available"]]
     cvd = cvd_terms[0]["score"] if cvd_terms else None
     evid: list[str] = []
     if score is None:

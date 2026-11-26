@@ -173,3 +173,26 @@ def test_no_bar_is_made_on_an_exchange_holiday_and_bars_stored_on_one_are_not_se
     out = svc.index_bars()
     assert out["day"] == "2026-11-23" and out["days"] == ["2026-11-23"] and len(out["bars"]) == 1
     assert svc.index_bars(date(2026, 11, 24))["day"] == "2026-11-23"  # a holiday cannot be asked for
+
+
+def test_from_the_open_the_session_is_today_even_before_its_first_bar_is_stored(tmp_path: Path) -> None:
+    """26 Nov 2026: at 09:16 the Session Structure and Opening Range pages still showed yesterday's whole day under yesterday's date, because the newest stored day was yesterday until the first
+    bar of today closed. From 09:15 of a trading day today is the session (empty, then filling); before 09:15, on a weekend or for a day asked for, nothing changes."""
+    clock = {"now": T0}
+    svc = MarketService(MarketStore(tmp_path), clock=lambda: clock["now"])
+    svc._index_tick = lambda: idx(100.0, clock["now"])
+    for s_ in (0, 61, 122):  # two finished minutes on Thursday 29 Oct
+        clock["now"] = T0 + timedelta(seconds=s_)
+        svc.observe_index(clock["now"])
+    assert svc.index_bars()["day"] == "2026-10-29" and len(svc.index_bars()["bars"]) == 2
+    n_bars = len(svc.index_bars()["bars"])
+    fri_open = datetime(2026, 10, 30, 3, 45, 20, tzinfo=UTC)  # Friday 09:15:20 IST: nothing of today is stored yet
+    clock["now"] = fri_open
+    out = svc.index_bars()
+    assert out["day"] == "2026-10-30" and out["bars"] == [] and out["days"] == ["2026-10-29", "2026-10-30"]  # today, empty: the page resets instead of showing yesterday
+    assert len(svc.index_bars(date(2026, 10, 29))["bars"]) == n_bars  # yesterday is still one pick away
+    clock["now"] = datetime(2026, 10, 30, 3, 44, tzinfo=UTC)  # 09:14 IST: not open yet, yesterday stays
+    assert svc.index_bars()["day"] == "2026-10-29"
+    clock["now"] = datetime(2026, 10, 31, 4, 0, tzinfo=UTC)  # Saturday: no session
+    assert svc.index_bars()["day"] == "2026-10-29"
+

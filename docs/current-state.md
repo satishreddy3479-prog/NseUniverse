@@ -5,6 +5,9 @@ _Last updated: 2026-11-23_
 - **Phase:** Phase 1 (Kotak Neo + NIFTY option chain + dashboard). **Milestone:** Checkpoint 1 built; awaiting the user's Windows setup and live check.
 - **Stage:** local-only; no Git repo, no GitHub, no deploy (decision #13).
 
+## Open of the day (26 Nov 2026, D321)
+The day board answered 500 for the first minutes of a session (null trend in the first stored minute): fixed and tested on the real captured minutes. From 09:15 the index-bars default session is today (empty, then filling), and the whole app refreshes together at open -30 s, +20 s, +90 s. Committed locally (market hours); the server holds deploys until 15:50 IST. Open: about 28 one-second event-loop stalls at 09:00-09:20 from the opening tick burst, needs a profile of one open before any change; first real open with these fixes is 27 Nov.
+
 ## Edge monitor and Eagles view additions (25 Nov 2026, D317)
 Trend regime and flow divergence are scored nightly with the other indicators (7 now); the Eagles view has running-strategy MTM and price/P&L chart widgets. Built and tested locally; not yet on the server.
 

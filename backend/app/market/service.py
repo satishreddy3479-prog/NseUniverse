@@ -1247,6 +1247,12 @@ class MarketService:
         days = sorted({a.astimezone(IST).date() for a, _p in rows if not self._exchange_holiday(a.astimezone(IST).date())})
         if not days:
             return {"day": None, "days": [], "bars": [], "note": "No one-minute index bars are stored for a trading day yet; they are recorded from the live index feed during the session."}
+        # From 09:15 of a trading day the newest session is TODAY, even before its first bar is stored (a bar is stored when its minute closes): the page then starts empty and fills, rather
+        # than going on showing yesterday's whole day under today's date for the first minute or two (26 Nov 2026: "nothing is reset at the open").
+        now_ist = self._clock().astimezone(IST)
+        today = now_ist.date()
+        if today not in days and today.weekday() < 5 and now_ist.time() >= SESSION_OPEN and not self._exchange_holiday(today) and day_wanted in (None, today):
+            days = [*days, today]
         day = day_wanted if day_wanted in days else days[-1]
         end = spot_end(day)
         # bars the closing auction left (indicative values, stored before 24 Nov 2026) stay on disk and are not served: the index is not charted after cash trading ends

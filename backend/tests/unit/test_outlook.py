@@ -172,3 +172,21 @@ def test_a_live_page_says_how_old_the_newest_recorded_minute_is(real: dict) -> N
     summary = {"sentiment": {"score": 20.0, "class": "Mild Bullish", "confidence": 50.0, "coverage": 0.9, "groups_bullish": 0.5, "groups_bearish": 0.1, "reason": None}, "pulse": {"spot": 25000.0, "atm_iv": 16.0}}
     out = ol.build(now=at + timedelta(minutes=7), session="2026-11-23", live=True, rows=rows, history_rows=rows, weights=W, summary=summary, trend=None, validation_report=None, clock=at + timedelta(minutes=7))
     assert out["lag_minutes"] == 7.0 and out["last_recorded_at"] == rows[-1]["at"] and out["now"]["score"] == 20.0  # live tiles keep the live summary
+
+
+def test_the_first_minutes_of_a_live_session_do_not_break_the_outlook() -> None:
+    """26 Nov 2026, 09:16 IST: the day board answered 500 for the first minutes of the session. The stored first minute carries ``"trend": None`` (the trend engine has no bars yet) and
+    the phase summary read ``None.get``. These are the real first seven minutes stored that morning; every prefix of them, with and without a live summary, must build."""
+    rows = json.loads((Path(__file__).resolve().parent.parent / "fixtures" / "intelligence_rows_open_2026-11-26.json").read_text(encoding="utf-8"))
+    assert rows[0]["metrics"]["trend"] is None  # the captured case itself
+    now = datetime(2026, 11, 26, 3, 52, tzinfo=UTC)
+    summaries = ({}, {"sentiment": None, "pulse": None, "regime": None, "gex": None}, {"pulse": {"spot": rows[-1]["spot"], "atm_iv": 15.2}, "sentiment": {"score": rows[-1]["score"]}})
+    for n in range(0, len(rows) + 1):
+        for summary in summaries:
+            out = ol.build(now=now, session="2026-11-26", live=True, rows=rows[:n], history_rows=rows[:n], weights=W, summary=summary, trend=None, validation_report=None, clock=now)
+            assert out["session"] == "2026-11-26" and out["live"] is True
+            first = out["phases"][0]
+            if n == 1:
+                assert first.get("trend") is None  # the one minute stored so far has no trend label: missing stays missing
+            elif n > 1:
+                assert first["trend"] == "Warming up"  # later minutes carry one; the label of the first is not counted

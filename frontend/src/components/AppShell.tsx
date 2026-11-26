@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Outlet, useLocation } from "react-router-dom";
 import { ToolTabs } from "./ToolTabs";
 import { api } from "../lib/api";
@@ -15,6 +15,7 @@ import { AlertStrip } from "./AlertStrip";
 import { OfflineStrip } from "./OfflineStrip";
 import { UpdateBanner } from "./UpdateBanner";
 import { rememberPage } from "../lib/recent";
+import { startOpenRoll } from "../lib/openRoll";
 import { HeadsUpStrip } from "./HeadsUp";
 import { ScoreChips } from "./ScoreChips";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -28,6 +29,8 @@ export function AppShell() {
   const { pathname } = useLocation();
   useEffect(() => { rememberPage(pathname); }, [pathname]); // Home offers the pages opened last
   useLiveConnection();
+  const queryClient = useQueryClient();
+  useEffect(() => startOpenRoll(queryClient), [queryClient]); // the whole app starts the day from the server's current answer (see lib/openRoll.ts)
   // The session's open, close and holidays come from the backend, which follows the exchange feed; pages are
   // redrawn once when they differ from the defaults.
   const clock = useQuery({ queryKey: ["market-session"], queryFn: api.marketSession, refetchInterval: 30 * 60_000, staleTime: 10 * 60_000, retry: false });

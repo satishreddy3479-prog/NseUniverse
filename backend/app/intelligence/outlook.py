@@ -114,7 +114,8 @@ def phases(rows: Sequence[Mapping[str, Any]], weights: Mapping[str, float], *, n
         item: dict[str, Any] = {"name": name, "from": f"{a // 60:02d}:{a % 60:02d}", "to": f"{b // 60:02d}:{b % 60:02d}", "state": state, "minutes": b - a}
         scores = [s for r in inside if (s := val.rescore(r, weights)) is not None]
         spots = [s for r in inside if (s := _num(r.get("spot"))) is not None]
-        labels = [(r.get("metrics") or {}).get("trend", {}).get("label") for r in inside]
+        # a stored minute can carry ``"trend": None`` (the first minutes of a session, before the trend engine has bars): that is no label, not a failure
+        labels = [((r.get("metrics") or {}).get("trend") or {}).get("label") for r in inside]
         labels = [x for x in labels if x]
         if state != "future" and inside:
             mean = sum(scores) / len(scores) if scores else None
@@ -257,7 +258,7 @@ def read_lines(now: Mapping[str, Any], expected: Sequence[Mapping[str, Any]], hi
     if e30 and e30.get("sd_points") is not None:
         out.append(f"The options market prices about ±{e30['sd_points']:.0f} points over the next 30 minutes (one standard deviation, no direction); the verdict {ln.get('text', 'has no lean')} ({ln.get('why', '')}).")
     cls = now.get("class")
-    h = ((hist.get("by_class") or {}).get(cls) or {}).get("horizons", {}).get("30")
+    h = (((hist.get("by_class") or {}).get(cls) or {}).get("horizons") or {}).get("30")
     if h and h.get("up_share") is not None:
         lo, hi = h["up_ci95"]
         out.append(f"In the stored sessions, after a {cls} verdict price was higher 30 minutes later in {h['up_share']:.0%} of {h['decided']} decided snapshots (range {lo:.0%} to {hi:.0%}, {(hist['by_class'][cls]['sessions'])} sessions; the snapshots overlap).")
