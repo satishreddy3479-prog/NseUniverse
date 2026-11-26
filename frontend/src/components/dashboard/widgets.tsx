@@ -476,7 +476,7 @@ function SmartOiChartWidget() {
                 )}
                 <EChart className={`echart-fixed ${showSignals ? "!h-[800px]" : "!h-[720px]"}`} hoverGroup="smart-oi" option={main} legendOff={off.main} legendOn={on.main} onLegendChange={legendOf("main")} ariaLabel={showSignals ? "NIFTY candles, Smart OI candles and the divergence signals on the NIFTY close" : "NIFTY candles, Smart OI candles and option volume"} />
               </div>
-              <div className="grid min-h-0 grid-rows-2 gap-2">
+              <div className="flex min-h-0 flex-col gap-2">
                 <div><EChart className="echart-fixed !h-[350px]" hoverGroup="smart-oi" option={dayOpt} legendOff={off.day} legendOn={on.day} onLegendChange={legendOf("day")} ariaLabel="Put, call and put minus call OI change since the first candle" /></div>
                 <div>
                   <div role="group" aria-label="Lower right chart" className="mb-1 flex flex-wrap justify-end gap-0.5">
