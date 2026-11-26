@@ -394,6 +394,17 @@ async def stream_status(request: Request) -> StreamStatusModel:
     return request.app.state.stream.status()  # type: ignore[no-any-return]
 
 
+@router.get("/runtime/metrics")
+async def runtime_metrics(
+    request: Request, minutes: Annotated[int, Query(ge=1, le=4320)] = 120
+) -> dict[str, Any]:
+    """How the server did, one row a minute: CPU, memory, loop delay, message rates, summarised."""
+    rm = getattr(request.app.state, "runtime_metrics", None)
+    if rm is None:
+        raise HTTPException(status_code=503, detail="the runtime recorder is not running")
+    return await asyncio.to_thread(rm.view, minutes)
+
+
 @router.get("/stream/health")
 async def stream_health(request: Request) -> dict[str, Any]:
     """Where live data can be late: the event loop's delay and each browser client's wait."""

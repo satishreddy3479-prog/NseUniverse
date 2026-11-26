@@ -64,6 +64,7 @@ from app.strategy.automation import StrategyAutomation
 from app.stream.hub import Hub
 from app.stream.loopwatch import LoopWatch
 from app.stream.manager import StreamConfig, StreamManager
+from app.stream.runtime_metrics import MetricsStore, RuntimeMetrics
 from app.swing.engine import Config as SwingConfig
 from app.swing.fetch import HttpFetcher
 from app.swing.live import SwingLive, previous_session
@@ -463,9 +464,13 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         loopwatch = LoopWatch()
         loopwatch.start()
         app.state.loopwatch = loopwatch
+        runtime_metrics = RuntimeMetrics(MetricsStore(settings.data_dir), loopwatch, stream)
+        runtime_metrics.start()  # one row a minute (GET /api/runtime/metrics)
+        app.state.runtime_metrics = runtime_metrics
         try:
             yield
         finally:
+            await runtime_metrics.stop()
             await loopwatch.stop()
             await servermgmt.stop()
             if not login_task.done():
