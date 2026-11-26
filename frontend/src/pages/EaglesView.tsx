@@ -233,7 +233,7 @@ function Board() {
         <span className="hidden text-xs text-muted md:inline">Drag a title bar to move · drag a corner to resize · ⧉ adds another copy · remembered in this browser</span>
         {picking && <Picker board={board} onAdd={add} onAddAll={addAll} onClose={() => setPicking(false)} chartsOnly={chartsOnly} />}
       </div>
-      <div ref={containerRef} data-testid="eagle-board" className={chartsOnly ? "eagle-co" : undefined}>
+      <div ref={containerRef} data-testid="eagle-board" className={chartsOnly ? "eagle-board eagle-co" : "eagle-board"}>
         {stacked && boxes.length > 0 && (
           <div className="flex flex-col gap-3" data-testid="eagle-stacked">
             {column.map(({ it, def }, i) => (
@@ -246,7 +246,7 @@ function Board() {
         )}
         {mounted && !stacked && boxes.length > 0 && width > 0 && (
           <GridLayout width={width} layout={board.layout} gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: [12, 12], containerPadding: [0, 0] }}
-            dragConfig={{ handle: ".widget-drag", cancel: ".widget-nodrag" }} compactor={verticalCompactor} onLayoutChange={onLayoutChange} onResizeStop={(_l, _old, item) => { if (item) pinned.current.add(item.i); setTouched(true); setJustSaved(false); }} onDragStop={() => { setTouched(true); setJustSaved(false); }}>
+            resizeConfig={{ enabled: true, handles: ["se", "e", "s", "sw", "w"] }} dragConfig={{ handle: ".widget-drag", cancel: ".widget-nodrag" }} compactor={verticalCompactor} onLayoutChange={onLayoutChange} onResizeStop={(_l, _old, item) => { if (item) pinned.current.add(item.i); setTouched(true); setJustSaved(false); }} onDragStop={() => { setTouched(true); setJustSaved(false); }}>
             {boxes.map(({ it, def }) => (
               <div key={it.key}><Frame board={board} itemKey={it.key} def={def} chartsOnly={chartsOnly} onNat={onNat} onRemove={() => remove(it.key)} onCopy={() => copy(it.key)} /></div>
             ))}

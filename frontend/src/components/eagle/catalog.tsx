@@ -50,8 +50,8 @@ const NO_CHART = new Set(["w:chain", "w:levels", "w:detail", "w:oiConcentration"
 
 const chainDefs: EagleDef[] = WIDGETS.map((w) => ({
   id: `w:${w.id}`, title: w.title, group: CHAIN_GROUP[w.id] ?? "Snapshot and chain", kind: "fit", charts: !NO_CHART.has(`w:${w.id}`), blurb: "Fits its box: resize it and the chart follows.",
-  // small boxes by default: a third of the width at most, unless the widget needs a wide table
-  w: Math.min(w.w, w.id === "smartOi" ? 12 : w.id === "chain" || w.id === "oiBuildup" ? 8 : 4), h: Math.min(w.h, w.id === "smartOi" ? 18 : 9), minW: Math.min(w.minW, 3), minH: Math.min(w.minH, 5), render: w.render,
+  // half the width by default (two charts side by side, wide enough to read), more for a wide table or Smart OI, unless the widget needs a wide table
+  w: Math.min(w.w, w.id === "smartOi" ? 12 : w.id === "chain" || w.id === "oiBuildup" ? 8 : 6), h: Math.min(w.h, w.id === "smartOi" ? 18 : 10), minW: Math.min(w.minW, 3), minH: Math.min(w.minH, 5), render: w.render,
 }));
 
 const toolDefs: EagleDef[] = TOOLS.filter((t) => t.status === "ready" && !t.to && !t.tab && hasToolBody(t) && toolPath(t)).map((t) => ({

@@ -410,3 +410,11 @@ dd { font-weight: 600; }
    readings, tables, notes, headings. An element stays when it holds a chart or a control, is one, or is inside one; errors and empty-state messages (role alert / status) stay. */
 .eagle-co :is(p, ul, ol, dl, table, h1, h2, h3, h4, h5, h6, details, figure, blockquote):not(:has(.echart-box, [role="alert"], [role="status"])):not([role="alert"], [role="status"], .eagle-keep, .eagle-keep *) { display: none !important; }
 .eagle-co :is(div, span, section, article, header, footer, li, a, td, th, small, strong, em, b, i, svg, caption, label):not(:has(.echart-box, button, select, input, textarea, [role="tab"], [role="alert"], [role="status"], .eagle-keep)):not(.echart-box, .echart-box *, button, button *, select, select *, input, textarea, label:has(input, select), label:has(input, select) *, [role="alert"], [role="alert"] *, [role="status"], [role="status"] *, .eagle-keep, .eagle-keep *) { display: none !important; }
+
+/* Eagles view: resize handles that can be found and grabbed (corner and edges), not a faint 10 px triangle */
+.eagle-board .react-grid-item > .react-resizable-handle { opacity: 0.9; }
+.eagle-board .react-grid-item > .react-resizable-handle-se { width: 22px; height: 22px; }
+.eagle-board .react-grid-item > .react-resizable-handle-se::after { width: 10px; height: 10px; border-color: var(--brass); border-width: 0 3px 3px 0; right: 4px; bottom: 4px; }
+.eagle-board .react-grid-item > .react-resizable-handle-e, .eagle-board .react-grid-item > .react-resizable-handle-w { width: 10px; }
+.eagle-board .react-grid-item > .react-resizable-handle-s { height: 10px; }
+.eagle-board .react-grid-item > .react-resizable-handle-e:hover, .eagle-board .react-grid-item > .react-resizable-handle-w:hover, .eagle-board .react-grid-item > .react-resizable-handle-s:hover { background: color-mix(in srgb, var(--brass) 35%, transparent); }
