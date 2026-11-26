@@ -8,8 +8,9 @@ surface is rebuilt only when due, so polling faster costs nothing.
 from __future__ import annotations
 
 import asyncio
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated, Any, Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
@@ -86,8 +87,8 @@ async def _default_expiries(request: Request) -> list[str]:
             return list(dict.fromkeys(out))
     except BrokerError:
         pass
-    today = date.today().isoformat()
-    stored = request.app.state.store.list(underlying=svc.underlying, limit=200)
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()  # the exchange's day: the server clock is UTC, a day behind until 05:30 IST
+    stored = await asyncio.to_thread(request.app.state.store.list, underlying=svc.underlying, limit=200)
     return sorted({s.expiry.isoformat() for s in stored if s.expiry.isoformat() >= today})[:2]
 
 

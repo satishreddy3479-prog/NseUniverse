@@ -190,7 +190,7 @@ class SnapshotSampler:
             delay = min(MAX_BACKOFF_S, 5.0 * (2 ** min(self._failures, 6)))
             obs = self.service.observations
             if obs is not None:
-                obs.record_event("sample_failed", self.last_error)
+                await asyncio.to_thread(obs.record_event, "sample_failed", self.last_error)
             log_event(
                 logger, logging.WARNING, "sample_failed", failures=self._failures, retry_in_s=delay
             )

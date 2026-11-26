@@ -124,10 +124,10 @@ async def storage_csv(request: Request) -> PlainTextResponse:
 @router.get("/storage/snapshot/{sid}")
 async def storage_snapshot(request: Request, sid: int) -> dict[str, Any]:
     sm = _sm(request)
-    s = sm.store.snapshot(sid)
+    s = await asyncio.to_thread(sm.store.snapshot, sid)
     if s is None:
         raise HTTPException(404, {"code": "not_found", "message": "no such snapshot"})
-    return {"snapshot": s, "dirs": sm.store.dirs(sid), "files": sm.store.files(sid)[:200]}
+    return {"snapshot": s, "dirs": await asyncio.to_thread(sm.store.dirs, sid), "files": (await asyncio.to_thread(sm.store.files, sid))[:200]}
 
 
 @router.get("/storage/compare")

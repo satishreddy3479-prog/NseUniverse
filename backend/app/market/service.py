@@ -925,11 +925,11 @@ class MarketService:
             return "no broker"
         try:
             rows = await self._scrip_master()
-            tokens = parse_scrip_master(rows)
+            tokens = await asyncio.to_thread(parse_scrip_master, rows)  # tens of thousands of rows: not on the event loop
         except Exception as e:  # noqa: BLE001 - reported as an unavailable source
-            self.store.attempt("tokens", False, type(e).__name__, self._clock())
+            await asyncio.to_thread(self.store.attempt, "tokens", False, type(e).__name__, self._clock())
             return f"failed: {type(e).__name__}"
-        want = {s.symbol for idx in ("nifty500", "nifty50") for s in self.universe(idx)}
+        want = await asyncio.to_thread(lambda: {s.symbol for idx in ("nifty500", "nifty50") for s in self.universe(idx)})
         keep = {k: v for k, v in tokens.items() if not want or k in want}
         n_stocks = len(keep)
         exp = self._monthly_expiry()
@@ -937,7 +937,7 @@ class MarketService:
             self.future_note = "NIFTY futures not subscribed: the monthly expiry is not known yet"
         else:
             try:
-                fut = parse_nifty_future(await self._scrip_master("nse_fo"), exp.year, exp.month)
+                fut = await asyncio.to_thread(parse_nifty_future, await self._scrip_master("nse_fo"), exp.year, exp.month)
             except Exception as e:  # noqa: BLE001
                 fut, self.future_note = None, f"NIFTY futures lookup failed: {type(e).__name__}"
             else:
@@ -949,14 +949,15 @@ class MarketService:
             if fut:
                 keep[FUT_SYMBOL] = fut
             await self._refresh_futures_tokens(keep, exp)
-        self.store.save_tokens(keep, self._clock().astimezone(IST).date())
+        await asyncio.to_thread(self.store.save_tokens, keep, self._clock().astimezone(IST).date())
+        self.invalidate_roles()  # new tokens: the role maps are rebuilt (in a thread) at the minute loop's next pass
         if self._add_tokens is not None:
             futures = [FeedToken(exchange_segment="nse_fo", instrument_token=v.token, kind="scrip", depth=False) for k, v in keep.items() if k.startswith(STK_PREFIX) or k == FUT_NEXT_SYMBOL]
             if futures:
                 with contextlib.suppress(Exception):  # best effort: the next (re)connect subscribes them from the store anyway
                     await self._add_tokens(futures)
-        self.store.attempt(
-            "tokens", bool(keep), f"{n_stocks} of {len(want)} stocks have a token", self._clock()
+        await asyncio.to_thread(
+            self.store.attempt, "tokens", bool(keep), f"{n_stocks} of {len(want)} stocks have a token", self._clock()
         )
         return f"{len(keep)} tokens"
 
@@ -967,15 +968,15 @@ class MarketService:
         except Exception as e:  # noqa: BLE001
             self.fo_note = f"stock futures lookup failed: {type(e).__name__}"
             return
-        syms = [s.symbol for s in self.universe("nifty50")]
+        syms = await asyncio.to_thread(lambda: [s.symbol for s in self.universe("nifty50")])
         ny, nm = next_month(exp.year, exp.month)
-        cur = parse_stock_futures(rows, exp.year, exp.month, syms)
-        nxt = parse_stock_futures(rows, ny, nm, syms)
+        cur = await asyncio.to_thread(parse_stock_futures, rows, exp.year, exp.month, syms)
+        nxt = await asyncio.to_thread(parse_stock_futures, rows, ny, nm, syms)
         for s, t in cur.items():
             keep[f"{STK_PREFIX}{s}"] = t
         for s, t in nxt.items():
             keep[f"{STK_PREFIX}{s}:NEXT"] = TokenInfo(f"{STK_PREFIX}{s}:NEXT", t.token, t.trading_symbol)
-        nf = parse_nifty_future(rows, ny, nm)
+        nf = await asyncio.to_thread(parse_nifty_future, rows, ny, nm)
         if nf:
             keep[FUT_NEXT_SYMBOL] = TokenInfo(FUT_NEXT_SYMBOL, nf.token, nf.trading_symbol)
         self.fo_note = f"stock futures subscribed: {len(cur)} of {len(syms)} current-month and {len(nxt)} next-month contracts; NIFTY next-month future {'found' if nf else 'not found'}"

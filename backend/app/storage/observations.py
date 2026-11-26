@@ -11,10 +11,12 @@ nothing is deleted here (retention is a user-approved task). Single writer (the 
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import sqlite3
 import threading
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -489,3 +491,23 @@ def quote_values(q: OptionQuote | None) -> Contract | None:
     if q is None:
         return None
     return Contract(q.ltp, _int(q.oi), _int(q.oi_previous), _int(q.volume))
+
+
+def event_writer(store: ObservationStore, session_id: str) -> Callable[[str, str], None]:
+    """A hook that records connection events without making the caller wait for the database.
+
+    The stream manager reports its events from the event loop, and an insert with a commit
+    can take tens of milliseconds on a busy disk. One worker thread keeps them in order.
+    Called with no running loop (tests, scripts) it writes at once.
+    """
+    pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="obs-events")
+
+    def write(kind: str, detail: str) -> None:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            store.record_event(kind, detail, session_id)
+            return
+        pool.submit(store.record_event, kind, detail, session_id)
+
+    return write

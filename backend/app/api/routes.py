@@ -977,7 +977,7 @@ async def swing_paper_run(request: Request) -> dict[str, Any]:
     """
     svc = request.app.state.swing_paper
     started = svc.trigger()
-    return {"started": started, "status": svc.status()}
+    return {"started": started, "status": await asyncio.to_thread(svc.status)}
 
 
 @router.post("/storage/eod/run", dependencies=[Depends(require_local_control)])

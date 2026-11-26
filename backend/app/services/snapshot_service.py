@@ -8,7 +8,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime
-from typing import TypeVar
+from typing import Any, TypeVar
 from zoneinfo import ZoneInfo
 
 from app.broker.base import BrokerError, MarketDataBroker
@@ -309,6 +309,30 @@ class SnapshotService:
                 self.state.snapshots.in_progress = False
             return results
 
+    def _normalise(
+        self, got: Any, exp: date, kinds: list[ExpiryKind], received: datetime
+    ) -> tuple[OptionChainSnapshot, int]:
+        one = normalize_option_chain(
+            got,
+            snapshot_id=new_snapshot_id(self.underlying, exp, received),
+            session_id=self.state.session_id,
+            underlying=self.underlying,
+            expiry=exp,
+            expiry_kinds=kinds,
+            source=self.snapshot_source,
+            retrieved_at=received,
+            requested_strike_count=self.strike_count,
+        )
+        return one, core_holes(one)
+
+    def _finish(self, snap: OptionChainSnapshot) -> tuple[OptionChainSnapshot, str]:
+        """The index-level check and the fingerprint.
+
+        Captures are serialised by ``_capture_lock``, so nothing else touches the state they read.
+        """
+        snap = self._checked(snap)
+        return snap, fingerprint(snap)
+
     async def _capture_one(
         self, exp: date, kinds: list[ExpiryKind], skip_unchanged: bool = False
     ) -> SnapshotSummary | None:
@@ -319,18 +343,9 @@ class SnapshotService:
                 lambda: self.broker.get_option_chain(self.underlying, exp_s, self.strike_count)
             )
             received = datetime.now(UTC)
-            one = normalize_option_chain(
-                got,
-                snapshot_id=new_snapshot_id(self.underlying, exp, received),
-                session_id=self.state.session_id,
-                underlying=self.underlying,
-                expiry=exp,
-                expiry_kinds=kinds,
-                source=self.snapshot_source,
-                retrieved_at=received,
-                requested_strike_count=self.strike_count,
-            )
-            n = core_holes(one)
+            # Parsing the answer into models and counting its holes is CPU work (two chains
+            # a minute, 80 strikes each): in a thread, not on the loop the live ticks share.
+            one, n = await asyncio.to_thread(self._normalise, got, exp, kinds, received)
             if snap is None or n < holes:  # keep the more complete answer
                 raw, snap, holes = got, one, n
             if holes == 0:
@@ -341,8 +356,8 @@ class SnapshotService:
             )
             await asyncio.sleep(CORE_RETRY_S)
         assert snap is not None and raw is not None
-        snap = self._checked(snap)
-        fp = fingerprint(snap)
+        final, fp = await asyncio.to_thread(self._finish, snap)
+        snap = final
         if skip_unchanged and self._last_fingerprint.get(exp) == fp:
             self.skipped_unchanged += 1
             if self.observations is not None:  # the time is covered: fetched, and identical

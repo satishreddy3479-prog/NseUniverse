@@ -149,3 +149,31 @@ def test_the_market_minute_sample_runs_in_a_thread_not_on_the_event_loop(tmp_pat
 
     loop_thread = asyncio.run(run())
     assert "sample" in seen and seen["sample"] != loop_thread
+
+
+def test_stream_events_are_written_by_a_worker_thread_in_order_and_at_once_without_a_loop(tmp_path: Path) -> None:
+    """The stream manager reports connection events from the event loop; the insert and commit must not run there."""
+    import threading
+
+    from app.storage.observations import event_writer
+
+    seen: list[tuple[str, str, str, int]] = []
+
+    class Store:
+        def record_event(self, kind: str, detail: str, session: str) -> None:
+            seen.append((kind, detail, session, threading.get_ident()))
+
+    write = event_writer(Store(), "s1")  # type: ignore[arg-type]
+    write("a", "no loop yet")  # a script or a test: written at once, in this thread
+    assert seen == [("a", "no loop yet", "s1", threading.get_ident())]
+
+    async def burst() -> int:
+        for i in range(50):
+            write("stream_state", f"change {i}")
+        await asyncio.sleep(0.5)
+        return threading.get_ident()
+
+    loop_thread = asyncio.run(burst())
+    later = seen[1:]
+    assert [d for _k, d, _s, _t in later] == [f"change {i}" for i in range(50)]  # in order
+    assert all(t != loop_thread for *_x, t in later) and len({t for *_x, t in later}) == 1  # one worker, never the loop thread

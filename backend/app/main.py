@@ -56,7 +56,7 @@ from app.services.sampler import SnapshotSampler
 from app.services.snapshot_service import SnapshotService
 from app.services.state import AppState
 from app.services.universe import build_universe
-from app.storage.observations import ObservationStore
+from app.storage.observations import ObservationStore, event_writer
 from app.storage.preferences import PreferenceStore
 from app.storage.store import SnapshotStore
 from app.storage.strategies import StrategyStore
@@ -211,7 +211,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             ),
             hub=Hub(max_clients=settings.ws_max_clients),
             relogin=b.login,
-            on_event=lambda kind, detail: observations.record_event(kind, detail, session_id),
+            on_event=event_writer(observations, session_id),
         )
         app.state.stream = stream
         history_store = HistoryStore(settings.data_dir)

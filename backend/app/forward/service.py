@@ -290,13 +290,13 @@ class ForwardService:
             res = await asyncio.to_thread(self.run_once, now, weekly, monthly)
             self.last_error = None
             if res["opened"] or res["settled"]:
-                self.store.add_run(now, True, res)
+                await asyncio.to_thread(self.store.add_run, now, True, res)
         except asyncio.CancelledError:
             raise
         except Exception as e:  # noqa: BLE001 - the forward test must never stop the application
             self.last_error = f"{type(e).__name__}: {str(e)[:160]}"
             logger.warning("forward_test_tick_failed", extra={"fields": {"error": self.last_error}})
-            self.store.add_run(now, False, {"error": self.last_error})
+            await asyncio.to_thread(self.store.add_run, now, False, {"error": self.last_error})
         self.last_tick = now
 
     async def _loop(self) -> None:
