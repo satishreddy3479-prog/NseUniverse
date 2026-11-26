@@ -619,6 +619,13 @@ async def market_index_bars(request: Request, day: date | None = None) -> dict[s
     return await _shared(request, ("index-bars", day), 5.0, mk.index_bars, day)
 
 
+    """The last NIFTY 50 closing-auction value (the close brokers show); day is null if none."""
+async def market_index_close(request: Request) -> dict[str, Any]:
+    """The last NIFTY 50 closing-auction value (what brokers show as the close), its day and receipt time; ``day`` is null if none was seen. Not a traded price, not a bar."""
+    ic = request.app.state.stream.index_close
+    return (ic.latest() if ic is not None else None) or {"day": None}
+
+
 @router.get("/market/status")
 async def market_status(request: Request) -> dict[str, Any]:
     """Sources, counts and the live subscription of the breadth analysis."""

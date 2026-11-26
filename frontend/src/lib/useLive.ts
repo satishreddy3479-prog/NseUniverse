@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import { INDEX_KEY, liveStore, type LiveState } from "./liveStore";
 import { startLiveSocket } from "./liveSocket";
@@ -89,8 +89,8 @@ export function useLiveSpot(): { ltp: number | null; prevClose: number | null; l
 export interface SpotDisplay {
   ltp: number | null;
   prevClose: number | null;
-  /** live: the stream is moving; held: the last live tick, kept because it is newer than the fallback; snapshot: the fallback (a stored value) */
-  kind: "live" | "held" | "snapshot";
+  /** live: the stream is moving; held: the last live tick, kept because it is newer than the fallback; snapshot: the fallback (a stored value); close: the last value of the closing auction, kept by the server (what brokers show as the close: an auction value, not a traded price) */
+  kind: "live" | "held" | "snapshot" | "close";
   /** the exchange's indicative closing value while the closing auction runs (not a traded price): shown beside the level, never as it; null otherwise */
   indicative: number | null;
   /** when the value was taken (epoch ms): the tick's receipt for live and held, the fallback's time for a snapshot */
@@ -116,6 +116,7 @@ export function isLiveTickTime(ms: number): boolean {
 export function useSpotDisplay(fallback: { ltp: number | null; prevClose: number | null; at: string | null }): SpotDisplay {
   const tick = useLiveTick(INDEX_KEY);
   const { stream } = useStreamStatus();
+  const closeQ = useQuery({ queryKey: ["indexClose"], queryFn: api.indexClose, refetchInterval: 60_000, staleTime: 30_000, retry: false });
   const ti = tradedIndex(tick);
   const tickMs = ti?.at ?? (tick?.ltp != null ? Date.parse(tick.received_at) : Number.NaN);
   const fbMs = fallback.at ? Date.parse(fallback.at) : Number.NaN;
@@ -127,6 +128,11 @@ export function useSpotDisplay(fallback: { ltp: number | null; prevClose: number
   // a replayed last quote is not held: outside the session, or while the exchange says the market is closed (a holiday), the stored snapshot is shown with its own time
   const replay = !isLiveTickTime(tickMs) || stream?.effective_state === "market_closed";
   if (ti?.ltp != null && Number.isFinite(tickMs) && !replay && (!Number.isFinite(fbMs) || tickMs > fbMs)) return { ltp: ti.ltp, prevClose: ti.prevClose ?? fallback.prevClose, kind: "held", at: tickMs, indicative: null };
+  // the stored chain's index level freezes at 15:15, and the browser's held tick is gone after a reload: the server's record of the auction's last value is the close of the session the fallback belongs to
+  const c = closeQ.data;
+  const cMs = c?.received_at ? Date.parse(c.received_at) : Number.NaN;
+  if (c?.day && c.ltp != null && Number.isFinite(cMs) && (!Number.isFinite(fbMs) || c.day >= istOf(fbMs).ymd))
+    return { ltp: c.ltp, prevClose: c.prev_close ?? fallback.prevClose, kind: "close", at: cMs, indicative: null };
   return snapshot(null);
 }
 

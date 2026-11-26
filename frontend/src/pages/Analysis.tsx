@@ -90,12 +90,13 @@ function SpotBox() {
   const sd = useSpotDisplay({ ltp: d.snapshot?.underlying_ltp ?? null, prevClose: d.snapshot?.underlying_prev_close ?? null, at: d.snapshot?.retrieved_at ?? null });
   const live = sd.kind === "live";
   const held = sd.kind === "held";
+  const closed = sd.kind === "close";
   const spot = sd.ltp;
   const prev = sd.prevClose;
   const chg = spot != null && prev != null && prev > 0 ? spot - prev : null;
   return (
     <div className="flex items-baseline gap-2 rounded-sm border border-rule bg-slate-2 px-3 py-1.5" aria-label="Spot price">
-      <span className="text-xs text-muted" title={live ? "From the live stream" : held ? "The last live price, held until the market opens" : "From the latest stored snapshot"}>Spot {live ? "(live)" : held ? `(held ${sd.at ? fmtTimeIST(new Date(sd.at).toISOString()) : ""})` : d.snapshot ? `(snapshot ${fmtTimeIST(d.snapshot.retrieved_at)} · ${d.snapshot.expiry.slice(5)})` : "(snapshot)"}</span>
+      <span className="text-xs text-muted" title={live ? "From the live stream" : held ? "The last live price, held until the market opens" : closed ? "The last value of the closing auction (the close brokers show)" : "From the latest stored snapshot"}>Spot {live ? "(live)" : closed ? `(close ${sd.at ? fmtTimeIST(new Date(sd.at).toISOString()) : ""})` : held ? `(held ${sd.at ? fmtTimeIST(new Date(sd.at).toISOString()) : ""})` : d.snapshot ? `(snapshot ${fmtTimeIST(d.snapshot.retrieved_at)} · ${d.snapshot.expiry.slice(5)})` : "(snapshot)"}</span>
       <span className="num text-base font-semibold text-paper">{fmtPrice(spot)}</span>
       {chg != null && (
         <span className={`num text-xs font-medium ${chg >= 0 ? "text-up" : "text-down"}`}>

@@ -21,6 +21,7 @@ from app.logging_setup import log_event
 from app.stream.book import LiveBook
 from app.stream.feed import FeedSession
 from app.stream.hub import Hub
+from app.stream.index_close import IndexClose
 from app.stream.index_watch import IndexWatch, in_snapshot_window
 from app.stream.models import (
     AUCTION_PHASES,
@@ -148,6 +149,7 @@ class StreamManager:
         self._relogin = relogin
         self._now = clock
         self._index_watch = IndexWatch()
+        self.index_close: IndexClose | None = None  # set by the application
         self.index_snapshots_asked = 0
         self._sleep = sleep
         self._on_event = on_event
@@ -593,6 +595,8 @@ class StreamManager:
         if ev.kind == "tick" and ev.tick is not None and ev.tick.kind == "index":
             ev = ev.model_copy(update={"tick": self._internal_alias(ev.tick)})
             if ev.tick is not None and ev.tick.key == "nse_cm|Nifty 50":
+                if self.index_close is not None:
+                    self.index_close.observe(now, ev.tick.ltp, ev.tick.prev_close)
                 dropped = dict(getattr(feed, "dropped_by_kind", None) or {})
                 for account in self._index_watch.observe(now, ev.tick.ltp):
                     log_event(

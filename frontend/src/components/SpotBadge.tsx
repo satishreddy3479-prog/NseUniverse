@@ -27,6 +27,7 @@ export function SpotBadge({ latest, className = "" }: { latest: SnapshotSummary 
   const spot = useSpotDisplay({ ltp: latest?.underlying_ltp ?? null, prevClose: latest?.underlying_prev_close ?? null, at: latest?.retrieved_at ?? null });
   const useLive = spot.kind === "live";
   const held = spot.kind === "held" && spot.indicative == null;
+  const closed = spot.kind === "close";
   const ltp = spot.ltp;
   const prev = spot.prevClose;
   if (ltp == null) return null;
@@ -35,9 +36,9 @@ export function SpotBadge({ latest, className = "" }: { latest: SnapshotSummary 
   const source = useLive ? "live" : (latest?.source ?? "snapshot");
   const tone = chg == null || chg === 0 ? "" : chg > 0 ? "text-up" : "text-down";
   return (
-    <div className={`flex shrink-0 items-center gap-x-3 whitespace-nowrap leading-tight ${className}`} title={useLive ? "Live from the exchange feed" : held ? `Held: the last price from the exchange feed, ${spot.at ? fmtTimeIST(new Date(spot.at).toISOString()) : ""}. Live prices resume when the market opens.` : "From the latest snapshot, not live"}>
+    <div className={`flex shrink-0 items-center gap-x-3 whitespace-nowrap leading-tight ${className}`} title={useLive ? "Live from the exchange feed" : closed ? "The last value of the closing auction, which brokers show as the close. It is an auction value, not a traded price." : held ? `Held: the last price from the exchange feed, ${spot.at ? fmtTimeIST(new Date(spot.at).toISOString()) : ""}. Live prices resume when the market opens.` : "From the latest snapshot, not live"}>
       <div className="hidden flex-col items-start gap-0.5 min-[520px]:flex">
-        <span className="flex items-center gap-1.5 text-xs text-muted">NIFTY 50 {held ? <><span className="inline-flex items-center rounded-sm border border-warn/50 px-1.5 py-px text-xs font-medium text-warn" data-testid="spot-held">Held {spot.at ? fmtTimeIST(new Date(spot.at).toISOString()) : ""}</span> <Info term="held price" /></> : <SourceTag source={source} />}</span>
+        <span className="flex items-center gap-1.5 text-xs text-muted">NIFTY 50 {closed ? <span className="inline-flex items-center rounded-sm border border-rule px-1.5 py-px text-xs font-medium text-muted" data-testid="spot-close">Close {spot.at ? fmtTimeIST(new Date(spot.at).toISOString()) : ""}</span> : held ? <><span className="inline-flex items-center rounded-sm border border-warn/50 px-1.5 py-px text-xs font-medium text-warn" data-testid="spot-held">Held {spot.at ? fmtTimeIST(new Date(spot.at).toISOString()) : ""}</span> <Info term="held price" /></> : <SourceTag source={source} />}</span>
         {spot.kind === "snapshot" && latest && <span className="num text-[11px] text-muted" title={asOfTitle(latest)}>{asOfText(latest)}</span>}
       </div>
       {spot.indicative != null && <span aria-label={`Closing auction, indicative value ${fmtPrice(spot.indicative)}`} className="hidden shrink-0 flex-col rounded-sm border border-warn/50 px-1.5 py-0.5 text-[10px] min-[520px]:inline-flex font-medium leading-tight text-warn" data-testid="spot-indicative" title="The closing auction is running. The exchange publishes an indicative closing value that can sit far from the traded price while the order book fills; it is not a traded price. The level shown is the last traded one.">Closing auction<span className="num">indicative {fmtPrice(spot.indicative)}</span></span>}

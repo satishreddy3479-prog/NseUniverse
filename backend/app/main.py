@@ -65,6 +65,7 @@ from app.storage.store import SnapshotStore
 from app.storage.strategies import StrategyStore
 from app.strategy.automation import StrategyAutomation
 from app.stream.hub import Hub
+from app.stream.index_close import IndexClose
 from app.stream.loopwatch import LoopWatch
 from app.stream.manager import StreamConfig, StreamManager
 from app.stream.runtime_metrics import MetricsStore, RuntimeMetrics
@@ -217,6 +218,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             relogin=b.login,
             on_event=event_writer(observations, session_id),
         )
+        stream.index_close = IndexClose(settings.data_dir)
         app.state.stream = stream
         shadow_store = ShadowStore(settings.data_dir)
         app.state.shadow_store = shadow_store

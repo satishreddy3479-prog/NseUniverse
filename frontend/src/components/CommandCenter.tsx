@@ -107,7 +107,8 @@ function Header({ d }: { d: IntradaySummary }) {
   const sd = useSpotDisplay({ ltp: d.price.last, prevClose: d.price.prev_close, at: d.price.last_at });
   const live = sd.kind === "live" && sd.ltp != null;
   const held = sd.kind === "held";
-  const spot = live || held ? sd.ltp : d.price.last;
+  const closed = sd.kind === "close";
+  const spot = live || held || closed ? sd.ltp : d.price.last;
   const prev = d.price.prev_close ?? sd.prevClose;
   const chg = spot != null && prev ? spot - prev : null;
   const m = MODE[d.market.mode] ?? MODE.unavailable!;
@@ -115,7 +116,7 @@ function Header({ d }: { d: IntradaySummary }) {
     <div className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-[var(--radius-panel)] border border-rule bg-slate p-3 sm:grid-cols-4 lg:grid-cols-8" data-testid="cc-header">
       <div className="col-span-2 min-w-0">
         <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-muted">
-          NIFTY 50 <Chip cls={live ? "border-up/60 text-up" : held ? "border-warn/50 text-warn" : m.cls}>{live ? "Live stream" : held ? "Held (last live price)" : m.text}</Chip>
+          NIFTY 50 <Chip cls={live ? "border-up/60 text-up" : held ? "border-warn/50 text-warn" : m.cls}>{live ? "Live stream" : held ? "Held (last live price)" : closed ? "Close (auction)" : m.text}</Chip>
         </div>
         <div className="flex flex-wrap items-baseline gap-2">
           <span className="num text-2xl font-semibold text-paper">{fmtPrice(spot)}</span>
@@ -124,7 +125,7 @@ function Header({ d }: { d: IntradaySummary }) {
           </span>
         </div>
         <div className="text-[11px] text-muted">
-          {live ? "Kotak live tick" : held ? `Held from the live feed ${sd.at ? fmtTimeIST(new Date(sd.at).toISOString()) : ""}` : d.price.last_at ? `Sampled ${fmtTimeIST(d.price.last_at)}` : "No sample today"} · prev close {fmtPrice(prev)}
+          {live ? "Kotak live tick" : closed ? `Last auction value ${sd.at ? fmtTimeIST(new Date(sd.at).toISOString()) : ""}` : held ? `Held from the live feed ${sd.at ? fmtTimeIST(new Date(sd.at).toISOString()) : ""}` : d.price.last_at ? `Sampled ${fmtTimeIST(d.price.last_at)}` : "No sample today"} · prev close {fmtPrice(prev)}
         </div>
       </div>
       <Stat label="First sample" value={fmtPrice(d.price.first)} sub={d.price.first_at ? `${fmtTimeIST(d.price.first_at)} (not official open)` : "—"} />

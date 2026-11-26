@@ -590,7 +590,7 @@ export function LevelsWidget() {
     <ChainGuard>
       <Body footer={<Meta kind="chain" />}>
         <dl className="grid h-full grid-cols-2 content-start gap-x-4 overflow-auto sm:grid-cols-3">
-          <Stat label="NIFTY 50" value={fmtPrice(spot)} hint={liveSpot ? "Live" : sd.kind === "held" ? "Last live price, held until the market opens" : "From the snapshot"} />
+          <Stat label="NIFTY 50" value={fmtPrice(spot)} hint={liveSpot ? "Live" : sd.kind === "close" ? "Last closing-auction value" : sd.kind === "held" ? "Last live price, held until the market opens" : "From the snapshot"} />
           <Stat label="Change vs prev close" tone={tone}
             value={chg == null ? "—" : `${fmtSigned(Math.round(chg * 100) / 100)} (${fmtPct((chg / (prev as number)) * 100)})`} />
           <Stat label="Previous close" value={fmtPrice(prev)} />
