@@ -18,7 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.globalmkts import calendar_feed, headsup, news, nseix
-from app.globalmkts.quotes import Bar, bars_from_frame, build_quote
+from app.globalmkts.quotes import Bar, bars_from_frame, build_quote, meta_bar, meta_url
 from app.globalmkts.service import GlobalService
 from app.globalmkts.store import GlobalStore
 from app.globalmkts.symbols import BY_KEY, BY_YAHOO, chart_url, expected_open, session_key
@@ -1117,3 +1117,44 @@ def test_a_quote_not_polled_overnight_reads_closed_not_the_live_it_had_at_the_cl
     assert live_status(BY_KEY["SPX"], 60.0, close) == "live"
     assert live_status(BY_KEY["SPX"], 9 * 3600.0, close + timedelta(hours=9)) == "closed"
     assert live_status(BY_KEY["ES"], 9 * 3600.0, close + timedelta(hours=9)) == "stale"  # a future should be trading: old bars are a fault
+
+
+# ------------------------------------------------------------------ a price that moves while Yahoo's one-minute bars have stopped
+META = (FIX / "yahoo_chart_ES_meta_2026-11-26.json").read_bytes()  # real: Yahoo's chart answer for ES=F on US Thanksgiving, 26 Nov 2026 (the last bar was 10:28 IST, the price was updating)
+META_T = json.loads(META)["chart"]["result"][0]["meta"]["regularMarketTime"]
+THANKSGIVING_EVENING = datetime.fromtimestamp(META_T + 90, UTC)  # 19:23 IST: the futures should be trading, the cash indices are shut
+
+
+def test_the_last_price_in_yahoos_chart_answer_becomes_a_bar_of_its_own_minute() -> None:
+    b = meta_bar(META, THANKSGIVING_EVENING)
+    assert b is not None and b.close == 7251.5
+    assert b.ts == datetime.fromtimestamp(META_T, UTC).replace(second=0, microsecond=0) and b.ts.second == 0
+    assert meta_bar(META, datetime.fromtimestamp(META_T - 600, UTC)) is None  # a time in the future is not taken
+    assert meta_bar(b"not json", THANKSGIVING_EVENING) is None
+    assert meta_bar(b'{"chart": {"result": [{"meta": {"regularMarketPrice": 0, "regularMarketTime": %d}}]}}' % META_T, THANKSGIVING_EVENING) is None  # no price: no bar
+    assert meta_bar(b'{"chart": {"result": [{"meta": {}}]}}', THANKSGIVING_EVENING) is None
+    assert meta_url("ES=F").endswith("/ES%3DF?interval=1m&range=1d")
+
+
+def test_futures_whose_bars_stopped_show_yahoos_last_price_and_are_live_again(tmp_path: Path) -> None:
+    def fetch(url: str) -> bytes:
+        if meta_url("ES=F") == url:
+            return META
+        raise OSError("not available: " + url)
+
+    s, _ = service(tmp_path, fetch=fetch, now=THANKSGIVING_EVENING)
+    r = s.poll_quotes()
+    assert r["ok"]
+    es = s.store.latest_all()["ES"]
+    assert es["price"] == 7251.5 and es["status"] == "live"  # without the chart answer its newest bar (captured on 15 Nov) would make it stale
+
+
+def test_when_the_chart_answer_cannot_be_read_the_old_bars_stand_and_the_quote_is_stale(tmp_path: Path) -> None:
+    def broken(url: str) -> bytes:
+        raise OSError("blocked")
+
+    s, _ = service(tmp_path, fetch=broken, now=THANKSGIVING_EVENING)
+    assert s.poll_quotes()["ok"]
+    es = s.store.latest_all()["ES"]
+    assert es["status"] == "stale" and es["price"] != 7251.5
+

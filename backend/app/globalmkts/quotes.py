@@ -7,11 +7,13 @@ so a bar is final one minute later; ``as_of`` is that moment and ``age_s`` how o
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from urllib.parse import quote as urlquote
 from zoneinfo import ZoneInfo
 
 from app.globalmkts.symbols import GSymbol, expected_open, session_key
@@ -68,6 +70,28 @@ def bars_from_frame(frame: Any, yahoo: str) -> list[Bar]:
         out.append(Bar(t.astimezone(UTC), price))
     out.sort(key=lambda b: b.ts)
     return out
+
+
+def meta_url(yahoo: str) -> str:
+    """Yahoo's chart answer for one symbol: its one-minute bars and, in ``meta``, the last price with its time."""
+    return f"https://query1.finance.yahoo.com/v8/finance/chart/{urlquote(yahoo, safe='')}?interval=1m&range=1d"
+
+
+def meta_bar(raw: bytes | str, now: datetime) -> Bar | None:
+    """The last price Yahoo reports for a symbol (``meta.regularMarketPrice`` at ``meta.regularMarketTime``) as a bar stamped at the start of that minute, or None.
+
+    Yahoo's one-minute bars can stop for hours while the price is still moving (S&P 500 futures on US Thanksgiving, 26 Nov 2026: the last bar was 10:28 IST, the price in the same answer
+    was updating), so a symbol whose bars are old is checked against this. It is a real quote with the source's own time, never an estimate; a missing, non-positive or future value gives None.
+    """
+    try:
+        meta = json.loads(raw)["chart"]["result"][0]["meta"]
+        price, t = _num(meta.get("regularMarketPrice")), meta.get("regularMarketTime")
+        if price is None or not isinstance(t, int | float) or isinstance(t, bool):
+            return None
+        ts = datetime.fromtimestamp(t, UTC).replace(second=0, microsecond=0)
+    except (ValueError, KeyError, IndexError, TypeError, OSError):
+        return None
+    return None if ts > now else Bar(ts, price)
 
 
 def build_quote(spec: GSymbol, bars: Sequence[Bar], now: datetime, earlier: Sequence[Bar] = ()) -> Quote | None:

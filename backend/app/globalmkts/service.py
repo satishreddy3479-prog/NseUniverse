@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 from app.globalmkts import calendar_feed, headsup, news, nseix
 from app.globalmkts.quotes import (
+    LIVE_MAX_AGE_S,
     Bar,
     Downloader,
     Quote,
@@ -26,6 +27,8 @@ from app.globalmkts.quotes import (
     daily_closes,
     due_for_poll,
     live_status,
+    meta_bar,
+    meta_url,
     yahoo_daily,
     yahoo_download,
 )
@@ -141,7 +144,7 @@ class GlobalService:
         ok, missing, new_bars = 0, [], 0
         stored = self.store.latest_all()
         for spec in asked:
-            fresh = bars_from_frame(frame, spec.yahoo)
+            fresh = self._with_live_price(spec, bars_from_frame(frame, spec.yahoo), now)
             older = [Bar(datetime.fromtimestamp(t / 1000, UTC), p) for t, p in self.store.bars_before(spec.key, ms(fresh[0].ts))] if fresh else []
             q = build_quote(spec, fresh, now, older)
             if q is None:
@@ -153,6 +156,21 @@ class GlobalService:
         detail: dict[str, Any] = {"symbols": ok, "asked": len(asked), "missing": missing, "new_bars": new_bars, "ms": round((_time.perf_counter() - t0) * 1000)}
         self.store.add_run("quotes", now, ok > 0, detail)
         return {"ok": ok > 0, **detail}
+
+    def _with_live_price(self, spec: GSymbol, fresh: list[Bar], now: datetime) -> list[Bar]:
+        """A symbol that should be trading but whose newest one-minute bar is old is checked against the last price in Yahoo's chart answer: when that is newer, it is added as
+        a bar of its own minute (see ``meta_bar``). A failed request leaves the bars as they were (the quote then shows as stale, as before)."""
+        if not fresh or not expected_open(spec, now):
+            return fresh
+        age = (now - (fresh[-1].ts + timedelta(minutes=1))).total_seconds()
+        if age <= LIVE_MAX_AGE_S + spec.delay_min * 60:
+            return fresh
+        try:
+            bar = meta_bar(self._fetch(meta_url(spec.yahoo)), now)
+        except Exception as e:  # noqa: BLE001 - the bars still stand without it
+            logger.warning("global_live_price_failed", extra={"symbol": spec.key, "error": f"{type(e).__name__}: {str(e)[:120]}"})
+            return fresh
+        return [*fresh, bar] if bar is not None and bar.ts > fresh[-1].ts else fresh
 
     def _refresh_official(self) -> None:
         """The official daily closes of the cash indices (what Yahoo's own page shows after the close), re-read every 30 minutes; a failure keeps the last ones."""

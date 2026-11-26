@@ -5,3 +5,4 @@
 - 26 Nov 2026: D322 event-loop stall fixes (SDK per-packet logging, tick compare, market sample in a thread). Committed locally, not pushed (market hours). Safe to push after 15:40; it restarts the backend, so only outside market hours.
 - 26 Nov 2026: D323 Strategy Builder what-if sliders (frontend only). Committed locally, not pushed.
 - 26 Nov 2026: D324 premium-speed study files and D325 Premium Change tool (frontend only: lib, board, tool entry, Learn lesson, tests). Committed locally, not pushed.
+- 26 Nov 2026: D326 global futures live price from Yahoo's chart answer (backend). Committed locally, not pushed.
