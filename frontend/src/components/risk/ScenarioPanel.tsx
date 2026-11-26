@@ -4,6 +4,35 @@ import { num, PRESET_LABELS, PRESET_ORDER, type RiskPresets, rupees, type Scenar
 
 export const ZERO_SCENARIO = (rule: StickyRule): ScenarioParams => ({ spot_shock: 0, iv_shock: 0, time_elapsed_hours: 0, sticky_rule: rule, rate_shock: 0 });
 const input = "min-h-9 w-full rounded-sm border border-rule bg-slate-2 px-1.5 text-sm text-paper";
+
+/**
+ * One scenario value as a slider with a readout and exact step buttons (a slider alone is hard to set precisely on a phone). The slider covers ``base`` either side of the starting point; a value
+ * beyond it (a preset such as a 2 sigma move) widens the track just enough to hold it, and the track does not change while the thumb is dragged inside it.
+ */
+function SliderField({ label, value, onChange, unit, step, base, min, signed = true, testid, digits = 0 }: {
+  label: string; value: number; onChange: (v: number) => void; unit: string; step: number; base: number; min?: number; signed?: boolean; testid: string; digits?: number;
+}) {
+  const lo = min ?? -Math.max(base, Math.ceil((Math.abs(Math.min(0, value)) * 1.2) / step) * step);
+  const hi = Math.max(base, Math.ceil((Math.max(0, value) * 1.2) / step) * step);
+  const clamp = (v: number) => Math.min(hi, Math.max(lo, +v.toFixed(4)));
+  const text = `${signed && value > 0 ? "+" : value < 0 ? "−" : ""}${Math.abs(value).toFixed(digits)} ${unit}`;
+  const stepBtn = "inline-flex size-9 shrink-0 items-center justify-center rounded-sm border border-rule bg-slate-2 text-base text-paper hover:border-brass disabled:opacity-40";
+  return (
+    <div className="text-xs text-muted" data-testid={`${testid}-field`}>
+      <div className="flex items-baseline justify-between gap-2">
+        <label htmlFor={testid}>{label}</label>
+        <output htmlFor={testid} className={`num text-sm font-medium ${signed ? tone(value) : "text-paper"}`} data-testid={`${testid}-value`}>{text}</output>
+      </div>
+      <div className="mt-1 flex items-center gap-1.5">
+        <button type="button" className={stepBtn} aria-label={`${label}: one step down`} disabled={value <= lo} onClick={() => onChange(clamp(value - step))}>−</button>
+        <input id={testid} type="range" min={lo} max={hi} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} data-testid={testid}
+          className="h-9 min-w-0 flex-1 cursor-pointer accent-[var(--brass)]" />
+        <button type="button" className={stepBtn} aria-label={`${label}: one step up`} disabled={value >= hi} onClick={() => onChange(clamp(value + step))}>＋</button>
+      </div>
+    </div>
+  );
+}
+
 const tone = (v: number | null) => (v == null ? "text-muted" : v > 0 ? "text-up" : v < 0 ? "text-down" : "text-paper");
 const sameScenario = (a: ScenarioParams, b: ScenarioParams) =>
   Math.abs(a.spot_shock - b.spot_shock) < 1e-6 && a.iv_shock === b.iv_shock && Math.abs(a.time_elapsed_hours - b.time_elapsed_hours) < 1e-6 && a.sticky_rule === b.sticky_rule && a.rate_shock === b.rate_shock;
@@ -37,11 +66,11 @@ export function ScenarioPanel({ scenario, onChange, presets, result, defaultRule
         <button type="button" onClick={() => onChange(ZERO_SCENARIO(defaultRule))} className="min-h-9 rounded-sm border border-rule bg-slate px-2.5 text-xs text-muted hover:text-paper" data-testid="risk-reset">Reset</button>
       </div>
       {presets == null && <p className="mt-1 text-[11px] text-muted">Presets appear once the surface is ready.</p>}
-      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-        <label className="text-xs text-muted">Spot move (points)<input className={input} type="number" inputMode="decimal" step={25} value={scenario.spot_shock} onChange={(e) => set({ spot_shock: Number(e.target.value) || 0 })} data-testid="risk-spot" /></label>
-        <label className="text-xs text-muted">Volatility move (vol points)<input className={input} type="number" inputMode="decimal" step={0.5} value={scenario.iv_shock} onChange={(e) => set({ iv_shock: Number(e.target.value) || 0 })} data-testid="risk-iv" /></label>
-        <label className="text-xs text-muted">Time passing (hours)<input className={input} type="number" inputMode="decimal" min={0} step={1} value={scenario.time_elapsed_hours} onChange={(e) => set({ time_elapsed_hours: Math.max(0, Number(e.target.value) || 0) })} data-testid="risk-hours" /></label>
-        <label className="text-xs text-muted">Rate move (percentage points)<input className={input} type="number" inputMode="decimal" step={0.25} value={+(scenario.rate_shock * 100).toFixed(4)} onChange={(e) => set({ rate_shock: (Number(e.target.value) || 0) / 100 })} data-testid="risk-rate" /></label>
+      <div className="mt-3 grid gap-x-4 gap-y-3 sm:grid-cols-2 xl:grid-cols-3">
+        <SliderField label="Spot move (points)" unit="pts" step={5} base={1000} value={scenario.spot_shock} onChange={(v) => set({ spot_shock: v })} testid="risk-spot" />
+        <SliderField label="Volatility move (vol points)" unit="vol pts" step={0.5} base={15} digits={1} value={scenario.iv_shock} onChange={(v) => set({ iv_shock: v })} testid="risk-iv" />
+        <SliderField label="Time passing (hours)" unit="h" step={1} base={72} min={0} signed={false} value={scenario.time_elapsed_hours} onChange={(v) => set({ time_elapsed_hours: Math.max(0, v) })} testid="risk-hours" />
+        <SliderField label="Rate move (percentage points)" unit="pp" step={0.25} base={2} digits={2} value={+(scenario.rate_shock * 100).toFixed(4)} onChange={(v) => set({ rate_shock: v / 100 })} testid="risk-rate" />
         <label className="text-xs text-muted">Volatility follows<select className={input} value={scenario.sticky_rule} onChange={(e) => set({ sticky_rule: e.target.value as StickyRule })} data-testid="risk-rule">
           {STICKY_RULES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
         </select></label>

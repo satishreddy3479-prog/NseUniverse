@@ -82,15 +82,41 @@ describe("What-if on the surface, in the Strategy Builder", () => {
     expect(screen.getByTestId("risk-preset-expiry_crush")).toHaveTextContent("+₹12,499");
     expect(gap).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(gap);
-    await waitFor(() => expect(screen.getByTestId("risk-spot")).toHaveValue(-510));
+    await waitFor(() => expect(screen.getByTestId("risk-spot")).toHaveValue("-510")); // a slider: its value is text
+    expect(screen.getByTestId("risk-spot-value")).toHaveTextContent("−510 pts");
     expect(screen.getByTestId("risk-preset-gap_down")).toHaveAttribute("aria-pressed", "true");
     await waitFor(() => expect(calls.some((c) => c.url === "/api/risk/scenario" && (c.body!.scenario as { spot_shock: number }).spot_shock === -510)).toBe(true));
     fireEvent.click(screen.getByTestId("risk-reset"));
-    await waitFor(() => expect(screen.getByTestId("risk-spot")).toHaveValue(0));
+    await waitFor(() => expect(screen.getByTestId("risk-spot")).toHaveValue("0"));
     fireEvent.change(screen.getByTestId("risk-rule"), { target: { value: "delta" } });
     expect(screen.getByTestId("risk-rule-hint")).toHaveTextContent("function of delta");
     fireEvent.change(screen.getByTestId("risk-rate"), { target: { value: "0.5" } });
     await waitFor(() => expect(calls.some((c) => c.url === "/api/risk/scenario" && (c.body!.scenario as { rate_shock: number; sticky_rule: string }).rate_shock === 0.005 && (c.body!.scenario as { sticky_rule: string }).sticky_rule === "delta")).toBe(true)); // percentage points become an absolute rate
+  });
+
+  it("the scenario values are sliders with a readout and exact step buttons, and a preset beyond the usual range widens the track instead of being cut", async () => {
+    install();
+    mount();
+    const spot = await screen.findByTestId("risk-spot");
+    expect(spot).toHaveAttribute("type", "range");
+    expect(spot).toHaveAttribute("min", "-1000");
+    expect(spot).toHaveAttribute("max", "1000");
+    fireEvent.change(spot, { target: { value: "120" } }); // dragged
+    await waitFor(() => expect(screen.getByTestId("risk-spot-value")).toHaveTextContent("+120 pts"));
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/risk/scenario" && (c.body!.scenario as { spot_shock: number }).spot_shock === 120)).toBe(true));
+    fireEvent.click(screen.getByRole("button", { name: "Spot move (points): one step up" }));
+    expect(screen.getByTestId("risk-spot-value")).toHaveTextContent("+125 pts"); // one step is 5 points
+    fireEvent.click(screen.getByRole("button", { name: "Spot move (points): one step down" }));
+    fireEvent.click(screen.getByRole("button", { name: "Spot move (points): one step down" }));
+    expect(screen.getByTestId("risk-spot-value")).toHaveTextContent("+115 pts");
+    // volatility in half points, time never below zero, rate in quarter points
+    fireEvent.change(screen.getByTestId("risk-iv"), { target: { value: "-2.5" } });
+    expect(screen.getByTestId("risk-iv-value")).toHaveTextContent("−2.5 vol pts");
+    expect(screen.getByTestId("risk-hours")).toHaveAttribute("min", "0");
+    fireEvent.click(screen.getByRole("button", { name: "Time passing (hours): one step down" }));
+    expect(screen.getByTestId("risk-hours-value")).toHaveTextContent("0 h"); // already 0: the button is disabled
+    fireEvent.change(screen.getByTestId("risk-rate"), { target: { value: "0.75" } });
+    expect(screen.getByTestId("risk-rate-value")).toHaveTextContent("+0.75 pp");
   });
 
   it("the risk matrix is the grid the engine returned, with the surface version, and can switch to time", async () => {
