@@ -980,9 +980,9 @@ export default function StrategyBuilder() {
             <span className="text-xs text-muted" title="From the broker's instrument data in the stored chain">LOT <span className="num text-paper">{lotSize ?? "—"}</span></span>
             <button type="button" aria-pressed={chainHidden} aria-expanded={!chainHidden} onClick={toggleChain} className="ml-auto rounded-sm border border-rule px-2 py-0.5 text-xs text-muted hover:text-paper" title={chainHidden ? "Show the option chain again" : "Hide the option chain for a larger payoff chart"}>{chainHidden ? "Show chain" : "Hide chain"}</button>
             {!chainHidden && <button type="button" aria-pressed={wide} onClick={() => setWide((w) => !w)} className="rounded-sm border border-rule px-2 py-0.5 text-xs text-muted hover:text-paper" title="Give the option chain the full width, useful with several Greeks columns">{wide ? "⤡ Narrow" : "⤢ Wide"}</button>}
-            <details className="text-xs">
+            <details className="relative text-xs">
               <summary className="cursor-pointer text-info">Settings</summary>
-              <div className="absolute z-10 mt-1 flex w-64 flex-col gap-2 rounded-sm border border-rule bg-slate p-3 shadow-lg">
+              <div className="absolute right-0 z-10 mt-1 flex w-64 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-sm border border-rule bg-slate p-3 shadow-lg">
                 <div role="group" aria-label="Strikes shown" className="flex flex-wrap items-center gap-1"><span className="text-muted">Strikes</span>
                   {WIDTHS.map((w) => <button key={String(w)} type="button" aria-pressed={width === w} onClick={() => setWidth(w)} className={`min-h-7 rounded-sm border px-2 ${width === w ? "border-brass bg-brass/15 text-paper" : "border-rule bg-slate-2 text-muted"}`}>{w === "all" ? "All" : `±${w}`}</button>)}</div>
                 <div role="group" aria-label="Greeks columns" className="flex flex-wrap items-center gap-2"><span className="text-muted">Greeks</span>
