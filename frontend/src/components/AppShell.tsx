@@ -13,6 +13,7 @@ import { SpotBadge, AuctionStrip } from "./SpotBadge";
 import { StatusPill } from "./StatusPill";
 import { AlertStrip } from "./AlertStrip";
 import { OfflineStrip } from "./OfflineStrip";
+import { UpdateBanner } from "./UpdateBanner";
 import { rememberPage } from "../lib/recent";
 import { HeadsUpStrip } from "./HeadsUp";
 import { ScoreChips } from "./ScoreChips";
@@ -77,6 +78,7 @@ export function AppShell() {
         </div>
       )}
       <TopProgress />
+      <UpdateBanner />
       <OfflineStrip />
       <AlertStrip />
       <HeadsUpStrip />

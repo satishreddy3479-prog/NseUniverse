@@ -107,7 +107,7 @@ function Frame({ board, itemKey, def, onRemove, onCopy, height, chartsOnly, onNa
 }
 
 /** The picker: every widget, grouped, searchable. A widget can be added as often as wanted; the number on the board is shown. */
-function Picker({ board, onAdd, onAddAll, onClose, chartsOnly }: { board: EagleBoard; onAdd: (id: string) => void; onAddAll: (ids: string[]) => void; onClose: () => void; chartsOnly: boolean }) {
+function Picker({ board, onAdd, onRemove, onAddAll, onClose, chartsOnly }: { board: EagleBoard; onAdd: (id: string) => void; onRemove: (key: string) => void; onAddAll: (ids: string[]) => void; onClose: () => void; chartsOnly: boolean }) {
   const [q, setQ] = useState("");
   const groups = useMemo(() => catalogGroups(q, chartsOnly), [q, chartsOnly]);
   // every widget listed now (the search and Charts only apply) that is not on the board yet
@@ -122,6 +122,7 @@ function Picker({ board, onAdd, onAddAll, onClose, chartsOnly }: { board: EagleB
   return (
     <div ref={ref} role="dialog" aria-label="Add widgets" data-testid="eagle-picker"
       className="fixed inset-x-2 bottom-2 z-40 flex max-h-[78vh] flex-col rounded-md border border-rule bg-slate shadow-lg sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-11 sm:max-h-[70vh] sm:w-[min(34rem,calc(100vw-2rem))]">
+      <p className="border-b border-rule px-3 py-1.5 text-xs font-medium text-paper" data-testid="eagle-picker-total">{`${board.items.length} widget${board.items.length === 1 ? "" : "s"} on the board`}<span className="font-normal text-muted"> · click a widget to add it, click again to take it off</span></p>
       <div className="flex items-center gap-2 border-b border-rule p-2">
         <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search widgets and tools…" aria-label="Search widgets"
           className="min-h-9 min-w-0 flex-1 rounded-sm border border-rule bg-slate-2 px-2 text-sm text-paper" />
@@ -139,10 +140,10 @@ function Picker({ board, onAdd, onAddAll, onClose, chartsOnly }: { board: EagleB
                 const n = countOf(board, d.id);
                 return (
                   <li key={d.id}>
-                    <button type="button" onClick={() => onAdd(d.id)} title={d.blurb} data-testid={`eagle-add-${d.id}`}
-                      className="flex min-h-9 w-full items-center justify-between gap-2 rounded-sm border border-rule bg-slate-2 px-2 text-left text-xs text-paper hover:border-brass">
+                    <button type="button" aria-pressed={n > 0} onClick={() => { const last = [...board.items].reverse().find((x) => x.cat === d.id); if (last) onRemove(last.key); else onAdd(d.id); }} title={n > 0 ? `On the board: click to take it off. ${d.blurb}` : d.blurb} data-testid={`eagle-add-${d.id}`}
+                      className={`flex min-h-9 w-full items-center justify-between gap-2 rounded-sm border px-2 text-left text-xs text-paper hover:border-brass ${n > 0 ? "border-brass bg-brass/15" : "border-rule bg-slate-2"}`}>
                       <span className="min-w-0 truncate">{d.title}</span>
-                      <span className="shrink-0 text-muted" aria-label={n > 0 ? `on the board ${n} time${n === 1 ? "" : "s"}; add another` : "add"}>{n > 0 ? <span className="mr-1 rounded-full bg-brass/20 px-1.5 text-paper" data-testid={`eagle-n-${d.id}`}>×{n}</span> : null}＋</span>
+                      <span className="shrink-0 text-muted" aria-label={n > 0 ? `on the board${n > 1 ? ` ${n} times` : ""}; click to take it off` : "add"}>{n > 1 ? <span className="mr-1 rounded-full bg-brass/20 px-1.5 text-paper" data-testid={`eagle-n-${d.id}`}>×{n}</span> : null}{n > 0 ? "✓" : "＋"}</span>
                     </button>
                   </li>
                 );
@@ -231,7 +232,7 @@ function Board() {
         <span className="text-xs text-muted" data-testid="eagle-saved-state">{touched ? "unsaved changes (kept in this browser)" : justSaved ? "saved ✓" : saved ? "saved layout" : "no saved layout yet"}</span>
         <span className="text-xs text-muted" data-testid="eagle-count">{board.items.length} widget{board.items.length === 1 ? "" : "s"}</span>
         <span className="hidden text-xs text-muted md:inline">Drag a title bar to move · drag a corner to resize · ⧉ adds another copy · remembered in this browser</span>
-        {picking && <Picker board={board} onAdd={add} onAddAll={addAll} onClose={() => setPicking(false)} chartsOnly={chartsOnly} />}
+        {picking && <Picker board={board} onAdd={add} onRemove={remove} onAddAll={addAll} onClose={() => setPicking(false)} chartsOnly={chartsOnly} />}
       </div>
       <div ref={containerRef} data-testid="eagle-board" className={chartsOnly ? "eagle-board eagle-co" : "eagle-board"}>
         {stacked && boxes.length > 0 && (

@@ -1,5 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { checkAtStart } from "./lib/buildWatch";
 import { watchForStaleBuild } from "./lib/chunkReload";
 import { hydratePrefs, installPrefsSync } from "./lib/prefs";
 import { applyTheme, loadTheme } from "./lib/theme";
@@ -7,6 +8,7 @@ import "./index.css";
 
 applyTheme(loadTheme()); // at once, from this browser's copy, so the page does not flash the wrong theme while the server answers
 watchForStaleBuild();
+void checkAtStart(); // a page older than the server reloads itself once, before anything has been done in it
 
 async function start() {
   // The owner's layouts and choices live on the server: bring them into this browser BEFORE any page is loaded (several modules read them when they are first imported), so a second

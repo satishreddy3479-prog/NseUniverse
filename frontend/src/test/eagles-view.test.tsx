@@ -54,16 +54,32 @@ describe("the Eagles view", () => {
     expect(screen.getByLabelText("Strike range")).toBeTruthy();
   });
 
-  it("any widget can be added from the picker, as many times as wanted, and the copies are numbered", async () => {
+  it("a click on a widget in the picker adds it when it is not on the board and takes it off when it is; the picker shows the total", async () => {
     mount();
     await userEvent.click(await screen.findByRole("button", { name: /Add widgets/ }));
     const picker = screen.getByTestId("eagle-picker");
     expect(within(picker).getByText("Market Intelligence")).toBeTruthy(); // grouped
+    expect(within(picker).getByTestId("eagle-picker-total").textContent).toContain("2 widgets on the board");
+    await userEvent.click(within(picker).getByTestId("eagle-add-t:rolling")); // not on the board: added
+    expect(titles()).toEqual(["Day board", "Open interest by strike", "ATM Rolling Straddle"]);
+    expect(within(picker).getByTestId("eagle-add-t:rolling").getAttribute("aria-pressed")).toBe("true");
+    expect(within(picker).getByTestId("eagle-picker-total").textContent).toContain("3 widgets on the board");
+    await userEvent.click(within(picker).getByTestId("eagle-add-t:rolling")); // on the board: taken off
+    expect(titles()).toEqual(["Day board", "Open interest by strike"]);
+    expect(within(picker).getByTestId("eagle-add-t:rolling").getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByTestId("eagle-count").textContent).toBe("2 widgets");
+  });
+
+  it("a widget that is on the board several times loses its last copy per click, and the picker shows how many", async () => {
+    mount();
+    await userEvent.click(await screen.findByRole("button", { name: /Add widgets/ }));
+    const picker = screen.getByTestId("eagle-picker");
     await userEvent.click(within(picker).getByTestId("eagle-add-t:rolling"));
+    await userEvent.click(screen.getByRole("button", { name: /Add another ATM Rolling Straddle/ }));
+    expect(within(picker).getByTestId("eagle-n-t:rolling").textContent).toBe("×2");
     await userEvent.click(within(picker).getByTestId("eagle-add-t:rolling"));
-    expect(titles()).toEqual(["Day board", "Open interest by strike", "ATM Rolling Straddle #1", "ATM Rolling Straddle #2"]);
-    expect(within(picker).getByTestId("eagle-n-t:rolling").textContent).toBe("×2"); // the picker says how many are on the board
-    expect(screen.getByTestId("eagle-count").textContent).toBe("4 widgets");
+    expect(titles()).toEqual(["Day board", "Open interest by strike", "ATM Rolling Straddle"]);
+    expect(within(picker).queryByTestId("eagle-n-t:rolling")).toBeNull();
   });
 
   it("the picker searches, says when nothing matches, and closes with Escape", async () => {
@@ -232,10 +248,11 @@ describe("the Eagles view", () => {
     await userEvent.click(screen.getByRole("button", { name: `Add all (${missing.length})` }));
     expect(screen.getByRole("button", { name: "Add all (0)" })).toBeDisabled(); // nothing left to add
     expect(screen.getByTestId("eagle-count").textContent).toBe(`${2 + missing.length} widgets`);
-    expect(screen.queryByTestId("eagle-n-w:table")).toBeNull(); // the table-only widget was not added
+    expect(screen.getByTestId("eagle-add-w:oi").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByTestId("eagle-add-w:table")).toBeNull(); // the table-only widget is not listed with Charts only, so it was not added
     await userEvent.click(screen.getByTestId("eagle-charts-only")); // all widgets are listed now: the table-only one is missing
     await userEvent.click(screen.getByRole("button", { name: "Add all (1)" }));
-    expect(screen.getByTestId("eagle-n-w:table").textContent).toBe("×1");
+    expect(screen.getByTestId("eagle-add-w:table").getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByTestId("eagle-count").textContent).toBe("6 widgets"); // all six widgets of the mock are on the board once each
     quiet.mockRestore();
   });
