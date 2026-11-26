@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.library_routes import router as library_router
+from app.api.readcache import ReadCache
 from app.api.risk_routes import router as risk_router
 from app.api.routes import router
 from app.api.ws import router as ws_router
@@ -467,6 +468,8 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         runtime_metrics = RuntimeMetrics(MetricsStore(settings.data_dir), loopwatch, stream)
         runtime_metrics.start()  # one row a minute (GET /api/runtime/metrics)
         app.state.runtime_metrics = runtime_metrics
+        # heavy reads: one computation for everyone asking at the same moment
+        app.state.readcache = ReadCache(ttl_scale=settings.read_cache_scale)
         try:
             yield
         finally:

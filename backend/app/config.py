@@ -105,6 +105,9 @@ class Settings(BaseSettings):
     swing_paper_enabled: bool = True  # after-close swing scan + paper trades (paper only)
     swing_live_enabled: bool = True  # live prices for the swing paper book (shadow decisions only)
     edge_enabled: bool = True  # nightly scoring of the indicators (Edge monitor)
+    # how long heavy read answers are kept, as a share of their usual few seconds
+    # (0: only callers at the same moment share one computation)
+    read_cache_scale: float = 1.0
     forward_enabled: bool = True  # paper forward test of short straddles/strangles (paper only)
     intelligence_enabled: bool = True  # market-intelligence dashboard
     intelligence_volatility: str = ""  # JSON, e.g. {"mode": "context"}

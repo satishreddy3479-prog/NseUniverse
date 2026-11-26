@@ -38,6 +38,7 @@ def make_settings(tmp_path: Path, **overrides: Any) -> Settings:
         "breadth_enabled": False,
         "forward_enabled": False,
         "globalmkts_enabled": False,  # no network polling in tests
+        "read_cache_scale": 0.0,  # a test that changes data and asks again must see it
         **CREDS,
     }
     base.update(overrides)

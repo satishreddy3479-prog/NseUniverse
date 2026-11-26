@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Hashable
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import PlainTextResponse
@@ -394,6 +395,23 @@ async def stream_status(request: Request) -> StreamStatusModel:
     return request.app.state.stream.status()  # type: ignore[no-any-return]
 
 
+_T = TypeVar("_T")
+
+
+async def _shared(
+    request: Request, key: Hashable, ttl_s: float, fn: Callable[..., _T], *args: Any, **kwargs: Any
+) -> _T:
+    """Run ``fn`` in a worker thread, once for everyone asking the same thing at the same moment.
+
+    The answer is kept for ``ttl_s`` seconds (see app/api/readcache.py). Without the cache (an
+    application built without the start-up wiring, as in some tests) it simply runs in a thread.
+    """
+    call = functools.partial(fn, *args, **kwargs)
+    cache = getattr(request.app.state, "readcache", None)
+    out: _T = await asyncio.to_thread(call) if cache is None else await cache.get(key, ttl_s, call)
+    return out
+
+
 @router.get("/runtime/metrics")
 async def runtime_metrics(
     request: Request, minutes: Annotated[int, Query(ge=1, le=4320)] = 120
@@ -531,7 +549,8 @@ async def oi_series_route(
     max_points: Annotated[int, Query(ge=20, le=1000)] = 400,
 ) -> OiSeries:
     """Total OI, OI change and PCR through time over a fixed set of strikes."""
-    return await asyncio.to_thread(
+    return await _shared(
+        request, ("oi-series", expiry, strikes, since, until, max_points), 10.0,
         oi_series, _obs(request), _svc(request).underlying, expiry.isoformat(),
         each_side=_each_side(strikes), since=_time(since, "since"), until=_time(until, "until"),
         max_points=max_points,
@@ -554,7 +573,8 @@ async def strike_series_route(
     except ValueError as e:
         detail = "strikes must be 'atm' or comma-separated numbers"
         raise HTTPException(status_code=422, detail=detail) from e
-    return await asyncio.to_thread(
+    return await _shared(
+        request, ("strike-series", expiry, strikes, since, until, max_points), 10.0,
         strike_series, _obs(request), _svc(request).underlying, expiry.isoformat(),
         strikes=picked, since=_time(since, "since"), until=_time(until, "until"),
         max_points=max_points,
@@ -580,7 +600,7 @@ async def market_index_bars(request: Request, day: date | None = None) -> dict[s
         raise HTTPException(
             status_code=404, detail={"code": "disabled", "message": "stock breadth is turned off"}
         )
-    return await asyncio.to_thread(mk.index_bars, day)
+    return await _shared(request, ("index-bars", day), 5.0, mk.index_bars, day)
 
 
 @router.get("/market/status")
@@ -887,7 +907,7 @@ async def intelligence_outlook(
         raise HTTPException(status_code=404, detail={"code": "disabled", "message": msg})
     day = None if session is None else session.isoformat()
     exp = None if expiry is None else expiry.isoformat()
-    return await asyncio.to_thread(svc.outlook, day, exp)
+    return await _shared(request, ("outlook", day, exp), 4.0, svc.outlook, day, exp)
 
 
 @router.get("/intelligence/validation")
@@ -924,14 +944,14 @@ async def intelligence_straddle(
     if as_of is not None and as_of.tzinfo is None:
         msg = "as_of needs a time zone (for example ...Z)"
         raise HTTPException(status.HTTP_400_BAD_REQUEST, {"code": "bad_as_of", "message": msg})
-    return await asyncio.to_thread(svc.summary, ex, day, as_of)
+    return await _shared(request, ("straddle", ex, day, as_of), 8.0, svc.summary, ex, day, as_of)
 
 
 @router.get("/intelligence/straddle/scores")
 async def intelligence_straddle_scores(request: Request) -> dict[str, Any]:
     """The newest recorded seller and buyer scores (a small read for the top bar)."""
     svc = _straddle(request)
-    return await asyncio.to_thread(svc.latest_scores)
+    return await _shared(request, ("straddle-scores",), 4.0, svc.latest_scores)
 
 
 @router.get("/intelligence/straddle/alerts")
@@ -1040,7 +1060,10 @@ async def intraday_iv_series(
         raise HTTPException(status_code=422, detail={"code": "bad_range", "message": msg})
     svc = request.app.state.intraday
     iso = None if session is None else session.isoformat()
-    return await asyncio.to_thread(svc.iv_series, expiry.isoformat(), max_points, iso, tf)
+    return await _shared(
+        request, ("iv-series", expiry, max_points, iso, tf), 15.0,
+        svc.iv_series, expiry.isoformat(), max_points, iso, tf,
+    )  # fmt: skip
 
 
 @router.get("/intraday/iv-momentum")
@@ -1053,7 +1076,10 @@ async def intraday_iv_momentum(
         raise HTTPException(status_code=422, detail={"code": "bad_range", "message": msg})
     svc = request.app.state.intraday
     iso = None if session is None else session.isoformat()
-    return await asyncio.to_thread(svc.iv_momentum, expiry.isoformat(), iso, tf)
+    return await _shared(
+        request, ("iv-momentum", expiry, iso, tf), 15.0,
+        svc.iv_momentum, expiry.isoformat(), iso, tf,
+    )  # fmt: skip
 
 
 @router.get("/intraday/strike-positioning")
@@ -1505,7 +1531,8 @@ async def futures_series_route(
 
     market = request.app.state.market
     s = request.app.state.settings
-    return await asyncio.to_thread(
+    return await _shared(
+        request, ("futures-series", day, since), 10.0,
         futures_series, market.store, _obs(request), s.underlying,
         rate=s.risk_free_rate, day=day, since=parse_time(since),
     )
