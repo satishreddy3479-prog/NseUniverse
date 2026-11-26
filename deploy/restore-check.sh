@@ -27,4 +27,10 @@ for gz in "$dir"/*.sqlite3.gz; do
 done
 [ "$n" -gt 0 ] || { echo "restore-check: no databases in $dir"; exit 1; }
 if [ "$fail" = 0 ]; then echo "restore-check: $day restores cleanly ($n databases)"; else echo "restore-check: $day has problems"; fi
+# the result, for the watchdog (alerts when the last check failed or is overdue)
+STATE=${NSE_STATE_DIR:-/opt/nse-universe/state}
+if [ -d "$STATE" ]; then
+  printf '{"at":"%s","day":"%s","ok":%s,"databases":%s}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$day" "$([ "$fail" = 0 ] && echo true || echo false)" "$n" > "$STATE/restore-check.json.tmp" \
+    && mv -f "$STATE/restore-check.json.tmp" "$STATE/restore-check.json"
+fi
 exit "$fail"

@@ -94,3 +94,46 @@ def test_readers_class_refuses_new_connections_after_close(tmp_path: Path) -> No
     with pytest.raises(sqlite3.ProgrammingError), readers():
         pass
     c.close()
+
+
+def test_closing_waits_for_a_read_in_progress_instead_of_crashing_it(tmp_path: Path) -> None:
+    """A test run once crashed the whole process (access violation) because a store was closed while a background thread was inside a query on one of its connections."""
+    import sqlite3
+
+    path = tmp_path / "y.sqlite3"
+    c = sqlite3.connect(path)
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("CREATE TABLE t (a)")
+    c.execute("INSERT INTO t VALUES (1)")
+    c.commit()
+    readers = Readers(path)
+    inside, release, finished = threading.Event(), threading.Event(), threading.Event()
+    result: list[object] = []
+
+    def reader() -> None:
+        with readers() as r:
+            inside.set()
+            release.wait(5)  # a long read in progress
+            result.append(r.execute("SELECT a FROM t").fetchone())  # the connection is still open when it needs it
+        finished.set()
+
+    closer_done = threading.Event()
+
+    def closer() -> None:
+        readers.close()
+        closer_done.set()
+
+    t = threading.Thread(target=reader)
+    t.start()
+    assert inside.wait(2)
+    ct = threading.Thread(target=closer)
+    ct.start()
+    assert not closer_done.wait(0.3)  # close is waiting for the read
+    with pytest.raises(sqlite3.ProgrammingError), readers():
+        pass  # and no new read starts meanwhile
+    release.set()
+    assert finished.wait(2) and closer_done.wait(2)
+    t.join()
+    ct.join()
+    assert result == [(1,)]
+    c.close()

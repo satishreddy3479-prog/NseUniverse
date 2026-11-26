@@ -168,6 +168,17 @@ try:
 except OSError as e:
     add("backup", "warning", f"Backups cannot be read ({e.__class__.__name__}).")
 
+# 2b. the weekly proof that a backup really restores (nse-universe-restore-check.timer): failed, or overdue
+try:
+    rc = json.load(open(os.path.join(state_dir, "restore-check.json")))
+    rc_age = age_s(rc.get("at"))
+    if rc.get("ok") is not True:
+        add("restore", "critical", f"The last backup restore check ({rc.get('day')}) FAILED: a backup could not be restored. Run: sudo bash deploy/restore-check.sh")
+    elif rc_age is not None and rc_age > 9 * 86400:
+        add("restore", "warning", f"The backup restore check last ran {int(rc_age // 86400)} days ago; it runs every week.")
+except (OSError, ValueError):
+    pass  # never run yet (the timer is installed by the next deploy): no alert until there is a result to judge
+
 # 3. the last deploy did not fail
 try:
     failed = open(os.path.join(state_dir, "failed_sha")).read().strip()

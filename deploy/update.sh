@@ -164,7 +164,7 @@ echo "$sha" > "$STATE/deployed_sha"
 rm -f "$STATE/failed_sha"
 # the scripts the timers run are refreshed from the release that just proved healthy
 if [ "$TEST_MODE" != 1 ]; then
-  for pair in update:nse-universe-update deploy-guard:nse-universe-deploy-guard backup:nse-universe-backup monitor:nse-universe-monitor watchdog:nse-universe-watchdog; do
+  for pair in update:nse-universe-update deploy-guard:nse-universe-deploy-guard backup:nse-universe-backup monitor:nse-universe-monitor watchdog:nse-universe-watchdog restore-check:nse-universe-restore-check; do
     src="$rel/deploy/${pair%%:*}.sh"; dst="/usr/local/sbin/${pair##*:}"
     [ -f "$src" ] && install -m 755 "$src" "$dst.new" && mv -f "$dst.new" "$dst"
   done
@@ -173,6 +173,11 @@ fi
 if [ "$TEST_MODE" != 1 ] && [ -f "$rel/deploy/systemd/nse-universe-watchdog.timer" ] && [ ! -f /etc/systemd/system/nse-universe-watchdog.timer ]; then
   install -m 644 "$rel"/deploy/systemd/nse-universe-watchdog.service "$rel"/deploy/systemd/nse-universe-watchdog.timer /etc/systemd/system/
   systemctl daemon-reload && systemctl enable --now nse-universe-watchdog.timer || log "could not enable the watchdog timer"
+fi
+# the weekly restore check's units, installed once like the watchdog's (a server provisioned before they existed picks them up here)
+if [ "$TEST_MODE" != 1 ] && [ -f "$rel/deploy/systemd/nse-universe-restore-check.timer" ] && [ ! -f /etc/systemd/system/nse-universe-restore-check.timer ]; then
+  install -m 644 "$rel"/deploy/systemd/nse-universe-restore-check.service "$rel"/deploy/systemd/nse-universe-restore-check.timer /etc/systemd/system/
+  systemctl daemon-reload && systemctl enable --now nse-universe-restore-check.timer || log "could not enable the restore-check timer"
 fi
 log "deployed $sha; healthy"
 

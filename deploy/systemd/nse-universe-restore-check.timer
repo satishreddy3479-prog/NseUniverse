@@ -1,0 +1,9 @@
+[Unit]
+Description=Weekly NSE Universe backup restore check (Sunday 19:00 UTC = 00:30 IST Monday)
+
+[Timer]
+OnCalendar=Sun *-*-* 19:00:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

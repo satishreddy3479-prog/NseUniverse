@@ -1,0 +1,8 @@
+[Unit]
+Description=NSE Universe: prove that the newest backup restores (integrity check of every database)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nse-universe-restore-check
+Nice=15
+IOSchedulingClass=idle

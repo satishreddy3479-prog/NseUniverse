@@ -241,3 +241,54 @@ def test_a_pending_reboot_is_flagged_after_a_week(tmp_path: Path, monkeypatch: p
     os.utime(flag, (old, old))
     got = [a for a in run(tmp_path, healthy(), NOON)[0] if a["key"] == "reboot"]
     assert len(got) == 1 and "9 days" in got[0]["text"]
+
+
+def test_the_weekly_restore_check_is_judged_by_its_result(tmp_path: Path) -> None:
+    """The restore check leaves state/restore-check.json: a failed one is critical, one older than nine days is a warning, none yet is no alert."""
+    base = tmp_path / "a"
+    base.mkdir()
+    assert "restore" not in keys(run(base, healthy(), NOON)[0])  # never run: nothing to judge yet
+
+    def with_result(sub: str, body: dict[str, Any]) -> list[dict[str, Any]]:
+        d = tmp_path / sub
+        d.mkdir()
+        (d / "state").mkdir()
+        (d / "state" / "restore-check.json").write_text(json.dumps(body), encoding="utf-8")
+        return run(d, healthy(), NOON)[0]
+
+    good = {"at": (NOON - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ"), "day": "2026-11-11", "ok": True, "databases": 19}
+    assert "restore" not in keys(with_result("ok", good))
+    bad = with_result("bad", {**good, "ok": False})
+    assert [a["level"] for a in bad if a["key"] == "restore"] == ["critical"]
+    old = with_result("old", {**good, "at": (NOON - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")})
+    assert [a["level"] for a in old if a["key"] == "restore"] == ["warning"] and "10 days ago" in next(a["text"] for a in old if a["key"] == "restore")
+
+
+def test_the_restore_check_writes_its_result_and_exits_nonzero_on_a_damaged_backup(tmp_path: Path) -> None:
+    import gzip
+    import shutil
+    import sqlite3
+
+    bash = shutil.which("bash")
+    if bash is None or shutil.which("sqlite3") is None:
+        pytest.skip("needs bash and the sqlite3 command")
+    backups, state = tmp_path / "b", tmp_path / "state"
+    day = backups / "2026-11-25"
+    day.mkdir(parents=True)
+    state.mkdir()
+    db = tmp_path / "x.sqlite3"
+    c = sqlite3.connect(db)
+    c.execute("CREATE TABLE t (a)")
+    c.execute("INSERT INTO t VALUES (1)")
+    c.commit()
+    c.close()
+    (day / "x.sqlite3.gz").write_bytes(gzip.compress(db.read_bytes()))
+    script = Path(__file__).resolve().parents[3] / "deploy" / "restore-check.sh"
+    env = {**os.environ, "NSE_BACKUP_DIR": str(backups), "NSE_STATE_DIR": str(state)}
+    ok = subprocess.run([bash, str(script)], capture_output=True, text=True, env=env)
+    assert ok.returncode == 0, ok.stdout + ok.stderr
+    res = json.loads((state / "restore-check.json").read_text())
+    assert res["ok"] is True and res["day"] == "2026-11-25" and res["databases"] == 1
+    (day / "y.sqlite3.gz").write_bytes(b"not gzip at all")  # a damaged file
+    bad = subprocess.run([bash, str(script)], capture_output=True, text=True, env=env)
+    assert bad.returncode == 1 and json.loads((state / "restore-check.json").read_text())["ok"] is False
