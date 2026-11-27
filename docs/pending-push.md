@@ -25,3 +25,4 @@
 - 27 Nov 2026: D345 live position monitor (backend strategy/monitor.py, API, builder panel). Local branch `seller-trend`, not pushed.
 - 27 Nov 2026: D346 trend/regime and session-structure components removed from the seller score (back to the deployed behaviour).
 - 27 Nov 2026: D347 assumed rate 7 %; D348 Premium Change by strike (backend strike_premium, API, tool). Local branch `premium-strike-lab`, not pushed.
+- 27 Nov 2026: D349 Learn "How it works" guides (learnGuides.ts, learnFacts.json, test_learn_facts.py). Local branch `learn-guides`, not pushed.

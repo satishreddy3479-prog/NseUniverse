@@ -1,0 +1,50 @@
+{
+  "_about": "The figures the 'How it works' guides quote. A backend test (tests/unit/test_learn_facts.py) compares every one with the constant it names in the code and recomputes the guides' worked examples with the real functions, so a guide cannot drift from the engine.",
+  "mi": {
+    "weights": { "positioning": 25, "orderflow": 17, "volatility": 8, "structure": 17, "participation": 17, "trend": 16 },
+    "classes": [[70, "Strong Bullish"], [35, "Bullish"], [15, "Mild Bullish"], [-14.999, "Neutral"], [-34.999, "Mild Bearish"], [-69.999, "Bearish"]],
+    "min_coverage": 0.55,
+    "min_engines": 3,
+    "stale_live_s": 120,
+    "stale_stored_s": 420,
+    "lean_min_score": 15,
+    "lean_min_quality": 35,
+    "turn": { "smooth": 5, "lookback": 20, "flow_drop": 12, "score_drop": 20, "breadth_drop": 8, "breadth_min": 3, "persist_window": 6, "persist_min": 4 },
+    "pullback": { "pull_atr": 1.5, "strong_atr": 2.5, "run_atr": 2.0, "run_lookback": 60, "pull_window": 45, "persist_window": 4, "persist_min": 3, "neutral_cap": 15 }
+  },
+  "trend": {
+    "scales": { "er": [0.15, 0.45], "adx": [15, 35], "r2": [0.2, 0.8], "chop": [61.8, 38.2] },
+    "mixed": 0.3,
+    "weak": 0.45,
+    "trend": 0.65,
+    "margin": 0.05,
+    "tf": 5,
+    "window": 12,
+    "adx_n": 14,
+    "min_dwell": 3,
+    "min_window": 6,
+    "fade_bars": 3,
+    "fade_atr": 2.0,
+    "or_minutes": 15,
+    "atr_n": 14
+  },
+  "straddle": {
+    "rate": 0.07,
+    "lot_size": 65,
+    "efficient_pct": 75,
+    "meaningful_pct": 20,
+    "expansion_pct": -10,
+    "min_expected_pts": 3,
+    "full_confidence_pts": 8,
+    "restrike_points": 100,
+    "min_coverage": 0.5,
+    "seller_classes": [[80, "Highly favourable"], [60, "Favourable"], [40, "Neutral"], [25, "Unfavourable"], [0, "High risk"]],
+    "buyer_classes": [[75, "Strong buyer environment"], [60, "Favourable"], [45, "Selective"], [30, "Neutral"], [0, "Unfavourable"]],
+    "seller_weights": { "decay": 8, "prem_rolling": 14, "iv_trend": 12, "iv_sides": 6, "rv_gap": 12, "movement": 10, "gamma": 8, "gex_stable": 5, "skew": 5, "positioning": 6, "flow": 8, "heavy": 8 },
+    "buyer_weights": { "iv_up": 10, "iv_mom": 6, "rv_accel": 12, "directional": 12, "gamma": 8, "gex_mig": 5, "cvd": 7, "vwap": 5, "heavy": 6, "smart_oi": 5, "skew": 4, "prem_path": 8, "prem_exp": 8, "justified": 12 },
+    "convexity_ratio": 1.5,
+    "prem_scale_pct": 12,
+    "prem_stop_pct": 15,
+    "prem_stop_hard_pct": 30
+  }
+}
