@@ -17,3 +17,4 @@
 - 27 Nov 2026: D334 recorders at :15, first-sample point for GEX history and premium baskets, straddle score chart legend room, stall-report threads. Pushed and deployed 27 Nov with the market-hours override at the owner's order.
 - 27 Nov 2026: D335 daily-table index, cached session lists, single heavy-job worker (backend). Committed locally, not pushed: market hours.
 - 27 Nov 2026: D336 panel refreshes on the single heavy worker (backend/app/intelligence/service.py). Committed locally, not pushed: market hours.
+- 27 Nov 2026: D337 feed silence limit 60 -> 20 s (backend/app/stream/manager.py). Committed locally.

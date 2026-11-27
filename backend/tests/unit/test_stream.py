@@ -763,3 +763,23 @@ async def test_the_loop_watch_reports_where_the_loop_spends_its_time() -> None:
     assert busy["samples"] >= 5
     assert any(r["where"] == "idle (waiting)" for r in busy["top"])
     assert any("test_the_loop_watch_reports" in r["where"] or "test_stream" in r["where"] or "busy" in r["where"] for r in busy["top"]) or len(busy["top"]) >= 2
+
+
+async def test_the_default_silence_limit_is_20_s_and_reconnects_after_it() -> None:
+    """27 Nov 2026: three broker-side silences cost the live overlay 50-90 s each under the 60 s limit."""
+    assert StreamConfig().silence_reconnect_s == 20.0
+    clock = Clock()
+    f1, f2 = FakeFeed(), FakeFeed()
+    cfg = StreamConfig(test_timeout_s=0.05, silence_check_s=0.01)
+    m, _, calls = make_manager([f1, f2], clock=clock, cfg=cfg)
+    await m.start()
+    await until(lambda: len(f1.subs) >= 1)
+    f1.push(tick("Nifty 50", 22700.0, None))
+    await until(lambda: m.state is StreamState.STREAMING)
+    clock.advance(19)
+    await asyncio.sleep(0.1)
+    assert len(calls) == 1
+    clock.advance(2)
+    await until(lambda: len(f2.subs) >= 1)
+    assert len(calls) == 2 and any(e.code == "feed_silent" for e in m.errors)
+    await m.stop()

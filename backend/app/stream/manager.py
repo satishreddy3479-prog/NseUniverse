@@ -95,8 +95,11 @@ class StreamConfig:
     failed_retry_s: float = 0.0
     # A connection that says "streaming" but delivers nothing is dead (seen 25 Nov 2026: silent from
     # 11:10 IST with no disconnect event). In the trading window, this many seconds without any
-    # message makes the supervisor reconnect. 0 turns the watchdog off.
-    silence_reconnect_s: float = 60.0
+    # message makes the supervisor reconnect. 0 turns the watchdog off. 20 s since 27 Nov 2026
+    # (was 60):
+    # the feed carries about 800 messages a second, a 20 s hole is never a quiet market, and three
+    # broker-side silences that day each cost 50-90 s of the live overlay.
+    silence_reconnect_s: float = 20.0
     silence_check_s: float = 5.0
     # After the broker closes the connection the SDK reconnects by itself, usually with data
     # within 1-16 s (9 drops on 25 Nov 2026); twice it came back with nothing. Give it this
