@@ -1415,6 +1415,16 @@ async def running_pnl(request: Request) -> dict[str, Any]:
     return await asyncio.to_thread(_automation(request).pnl_now)
 
 
+@router.get("/strategies/running/monitor")
+async def running_monitor(request: Request) -> dict[str, Any]:
+    """The live position monitor: time income, NIFTY-move cost and volatility effect (paper)."""
+    mon = getattr(request.app.state, "position_monitor", None)
+    if mon is None:
+        msg = "the position monitor is not running"
+        raise HTTPException(503, {"code": "monitor_unavailable", "message": msg})
+    return await asyncio.to_thread(mon.payload)
+
+
 @router.put("/strategies/running")
 async def running_put(body: RunningPut, request: Request) -> dict[str, Any]:
     """Store the builder's current strategy. Refused (409) when the server changed it since `base_rev` (a stop or target it executed)."""  # noqa: E501

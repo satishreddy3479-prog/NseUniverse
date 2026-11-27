@@ -19,6 +19,7 @@ let calls: Call[];
 let running: { doc: unknown } = { doc: null };
 let serverDown = false;
 let strategies: { saved: unknown[]; closed: unknown[] } = { saved: [], closed: [] };
+let monitor: unknown = { available: false, reason: "No open option leg in the running strategy.", as_of: "2026-11-05T05:00:00+00:00", limits: "Paper only." };
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-05T05:00:00Z"));
@@ -26,6 +27,7 @@ beforeEach(() => {
   running = { doc: null };
   serverDown = false;
   strategies = { saved: [], closed: [] };
+  monitor = { available: false, reason: "No open option leg in the running strategy.", as_of: "2026-11-05T05:00:00+00:00", limits: "Paper only." };
   sessionStorage.clear();
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const full = String(input), url = full.split("?")[0]!, method = init?.method ?? "GET";
@@ -39,7 +41,7 @@ beforeEach(() => {
     chain.snapshot.underlying_ltp = 24050;
     const map: Record<string, unknown> = {
       "/api/status": status(), "/api/expiries": { ...expiries, weekly: "2026-11-10", monthly: "2026-11-24", available: ["2026-11-10", "2026-11-24"] }, "/api/snapshots": [summary()],
-      "/api/option-chain": chain, "/api/strategies": strategies,
+      "/api/option-chain": chain, "/api/strategies": strategies, "/api/strategies/running/monitor": monitor,
     };
     return map[url] == null ? new Response("{}", { status: 404 }) : new Response(JSON.stringify(map[url]), { status: 200 });
   }));
@@ -114,6 +116,27 @@ describe("Strategy builder with the server keeping the stops and targets", () =>
     expect(await screen.findByTestId("restrike-box")).toBeInTheDocument();
     expect((screen.getByLabelText("Re-strike distance in points") as HTMLInputElement).value).toBe("100");
     expect(await screen.findAllByLabelText("Stop-loss premium")).toHaveLength(2); // a sold CE and a sold PE
+  });
+
+  it("shows the position monitor above the legs when the running strategy has an open option leg, with the server's figures", async () => {
+    running = { doc: { rev: 4, auto: true, lotSize: 75, mult: 1, expiry: "2026-11-10", legs: [leg()] } };
+    monitor = {
+      available: true, live: true, as_of: "2026-11-05T05:00:00+00:00", limits: "Paper only.", legs: [{ label: "SELL 24050 CE", entry: 100, now: 108, delta: 0.5, iv_pct: 14 }], since: "2026-11-05T04:00:00+00:00",
+      pnl: { points: -8, rupees: -600, booked_other_rupees: 0 }, premium: { entry: 100, now: 108, loss_pct: 8, watch_pct: 15, stop_pct: 30, credit: true }, delta: { net: -0.5, units: -38 },
+      attribution: { theta: 2, vol: -1, spot: -9, other: 0, total: -8, ratio: null, steps: 4 }, distance: null, status: { level: "ok", text: "Within its limits", reasons: [] }, events: [],
+    };
+    mount();
+    const m = await screen.findByTestId("position-monitor");
+    expect(m).toHaveTextContent("SELL 24050 CE 100.00");
+    expect(screen.getByTestId("pm-pnl")).toHaveTextContent("−8.0 pts");
+    expect(screen.getByTestId("pm-pnl")).toHaveTextContent("−₹600 per lot"); // the server's rupees: 8 points x 75 units
+  });
+
+  it("shows no position monitor when no option leg is open", async () => {
+    mount();
+    await new Promise((r) => setTimeout(r, 400));
+    expect(screen.queryByTestId("position-monitor")).toBeNull();
+    expect(screen.queryByTestId("pm-unavailable")).toBeNull();
   });
 
   it("an old working copy kept in this browser is not written back when the server's running strategy is empty (20 and 23 Nov 2026: a closed straddle came back)", async () => {

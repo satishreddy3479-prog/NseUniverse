@@ -64,6 +64,7 @@ from app.storage.preferences import PreferenceStore
 from app.storage.store import SnapshotStore
 from app.storage.strategies import StrategyStore
 from app.strategy.automation import StrategyAutomation, ladder_from_snapshot
+from app.strategy.monitor import PositionMonitor
 from app.stream.heavy import stop_heavy
 from app.stream.hub import Hub
 from app.stream.index_close import IndexClose
@@ -273,6 +274,9 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         )
         app.state.strategy_automation = strategy_automation
         strategy_automation.start()
+        position_monitor = PositionMonitor(strategy_automation, settings.data_dir)
+        app.state.position_monitor = position_monitor
+        position_monitor.start()
         flows.start()
         globalmkts = GlobalService(
             GlobalStore(settings.data_dir), enabled=settings.globalmkts_enabled
@@ -501,6 +505,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             await market.stop()
             market_store.close()
             await close_tracker.stop()
+            await position_monitor.stop()
             await strategy_automation.stop()
             await eod.stop()
             await swing_live.stop()

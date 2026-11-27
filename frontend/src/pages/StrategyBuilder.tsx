@@ -3,6 +3,7 @@ import { ChartInfoToggle } from "../components/ChartInfoToggle";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StrategyTimeChart } from "../components/StrategyTimeChart";
 import { StrategyMtm } from "../components/StrategyMtm";
+import { PositionMonitor } from "../components/PositionMonitor";
 import { buildClosedMtm, readLiveTicks, toStored, type StoredMtm } from "../lib/closedMtm";
 import { liveKey, mergeRows, type LiveMode } from "../components/ChainTable";
 import { useThrottledVersion } from "../components/dashboard/DashContext";
@@ -1298,6 +1299,7 @@ export default function StrategyBuilder() {
                       </div>
                     );
                   })()}
+                  {!temp && hydrated && legs.some((l) => l.enabled !== false && !isExited(l) && l.type !== "FUT" && l.premium != null) && <PositionMonitor />}
                   {restrike && (
                     <div className="mb-2 rounded-sm bg-slate-2 px-3 py-2 text-xs text-muted" data-testid="restrike-box">
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">

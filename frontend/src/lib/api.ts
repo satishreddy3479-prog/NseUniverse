@@ -191,6 +191,8 @@ export const api = {
   runningGet: () => request<RunningResponse>("/api/strategies/running"),
   /** P&L now of the running strategy from the server's live prices; total is null while a price is missing. */
   runningPnl: () => request<RunningPnl>("/api/strategies/running/pnl"),
+  /** The live position monitor of the running strategy: time income, NIFTY-move cost, volatility effect and the limits (server-computed). */
+  runningMonitor: () => request<import("./positionMonitor").PositionMonitorData>("/api/strategies/running/monitor"),
   runningPut: (doc: unknown, baseRev: number | null) =>
     request<{ ok: boolean; rev: number }>("/api/strategies/running", {
       method: "PUT", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ doc, base_rev: baseRev }),
