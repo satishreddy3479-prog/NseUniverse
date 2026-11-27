@@ -42,9 +42,7 @@ def test_premium_expansion_is_a_negative_decay_efficiency() -> None:
 
 def test_the_seller_class_is_hard_capped_at_high_risk_by_a_convexity_blowout() -> None:
     base = env.evidence({}, {})
-    # the trend and structure readings are part of the evidence since 27 Nov 2026 (total weight 118): without them this set is 55 of 118 = 47 %, under the 50 % a score needs
-    good = {**base, "rv_gap": 6.0, "ratio": 0.6, "iv_atm_30": -0.5, "orderflow": 0.0, "skew_change": 0.0, "eff": eff(2.0, 10.0),
-            "trend_label": "Mixed", "trend_score": 0.35, "struct": {"n": 12, "crossings": 3, "distance_atr": 0.5}}
+    good = {**base, "rv_gap": 6.0, "ratio": 0.6, "iv_atm_30": -0.5, "orderflow": 0.0, "skew_change": 0.0, "eff": eff(2.0, 10.0)}
     calm = env.seller(good, {"value": None, "label": "unavailable", "parts": []})
     assert calm["flags"] == [] and calm["capped_by_flags"] is None and calm["class"] in ("Neutral", "Favourable", "Highly favourable")
     blown = env.seller({**good, "eff": eff(16.0, 10.0)}, {"value": None, "label": "unavailable", "parts": []})
