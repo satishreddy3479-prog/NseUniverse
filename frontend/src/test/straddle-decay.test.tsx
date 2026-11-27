@@ -38,7 +38,8 @@ const full = (over: Partial<StraddleDecay> = {}): StraddleDecay => ({
 });
 function mount(body: unknown, validation?: StraddleValidation, status = 200) {
   vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-    const v = String(url).includes("/validation") ? validation : body;
+    const none = { generated_at: "", threshold: 100, days: [], totals: { sessions: 0, restrikes: 0, total: 0, total_rupees: 0, winning_sessions: 0 } };
+    const v = String(url).includes("/validation") ? validation : String(url).includes("/managed-history") ? none : body;
     return new Response(JSON.stringify(v ?? {}), { status: status, headers: { "content-type": "application/json" } });
   }));
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -179,7 +180,7 @@ describe("environments and the twelve sections", () => {
   it("each tab holds its own sections, and the page opens on the reading", async () => {
     mount(rich());
     expect(await screen.findByTestId("sdi-reading-card")).toBeInTheDocument();
-    expect(screen.getAllByRole("tab").map((x) => x.textContent)).toEqual(["Overview", "Today's premium", "Why these scores", "Alerts & checks", "Method"]);
+    expect(screen.getAllByRole("tab").map((x) => x.textContent)).toEqual(["Overview", "Today's premium", "Re-strike log", "Why these scores", "Alerts & checks", "Method"]);
     const ids: Record<string, string[]> = {
       "Today's premium": ["sdi-tracker", "sdi-attribution"],
       "Why these scores": ["sdi-overall", "sdi-buyer", "sdi-seller", "sdi-iv", "sdi-rv", "sdi-structure", "sdi-positioning"],
@@ -459,6 +460,18 @@ describe("the opening strike goes stale and the managed straddle is shown", () =
     expect(card).toHaveTextContent("shown in the sections below");
     expect(screen.getByTestId("sdi-position-note")).toHaveTextContent("Managed position: the opening straddle, moved to the strike nearest NIFTY whenever NIFTY is 100 points from the held strike (now 24100). 2 re-strikes so far");
     expect(screen.getByTestId("sdi-compare-rolling").className).not.toContain("ring-brass");
+  });
+
+  itIn("restrike", "has a Re-strike log tab that lists the managed straddle's trades and, with no stored session yet, says so", async () => {
+    const f = full();
+    const managed = { threshold: 100, restrikes: 1, segments: [{ strike: 24000, from: "2026-11-19T04:00:00+00:00", to: "2026-11-19T04:02:00+00:00", entry: 300, exit: 330, pnl: -30, exit_carried: false }], open: { strike: 24100, from: "2026-11-19T04:02:00+00:00", entry: 310, last: 290, pnl: 20 }, strike_now: 24100, realised: -30, open_pnl: 20, total: -10, total_rupees: -650, lot_size: 65, note: "n" };
+    mount(full({ tracker: { ...f.tracker!, managed } } as never));
+    expect(await screen.findByTestId("restrike-log")).toBeInTheDocument();
+    expect(screen.getAllByTestId("restrike-trade")).toHaveLength(1);
+    expect(screen.getByTestId("restrike-trade")).toHaveTextContent("−₹1,950"); // sold 300, bought back 330: -30 points x 65
+    expect(screen.getByTestId("restrike-open")).toHaveTextContent("+₹1,300"); // sold 310, now 290: +20 points x 65
+    expect(screen.getByTestId("restrike-total")).toHaveTextContent("−₹650"); // -30 + 20 = -10 points x 65
+    expect(await screen.findByTestId("restrike-history-empty")).toBeInTheDocument();
   });
 
   itIn("today", "says nothing about a stale strike while the opening strike is still at the money", async () => {

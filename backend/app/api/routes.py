@@ -989,6 +989,17 @@ async def intelligence_straddle_alerts(
     return await asyncio.to_thread(svc.alerts, None if session is None else session.isoformat())
 
 
+@router.get("/intelligence/straddle/managed-history")
+async def intelligence_straddle_managed_history(
+    request: Request, sessions: int = 20
+) -> dict[str, Any]:
+    """The managed straddle's trades per stored session, newest first (read-only)."""
+    svc = _straddle(request)
+    n = max(1, min(sessions, 60))
+    key = f"straddle-managed-history|{id(svc)}|{n}"
+    return await run_heavy(_cached, key, 60.0, lambda: svc.managed_history(n))
+
+
 @router.get("/intelligence/straddle/validation")
 async def intelligence_straddle_validation(request: Request, sessions: int = 20) -> dict[str, Any]:
     """Predicted theta decay vs actual premium change over stored sessions (read-only)."""

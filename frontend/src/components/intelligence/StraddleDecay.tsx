@@ -11,6 +11,7 @@ import { useReplay } from "../dashboard/ReplayContext";
 import { canManaged, StraddleGlance, type Mode } from "./StraddleGlance";
 import { StraddlePreflightCard } from "./StraddlePreflightCard";
 import { StraddleReadingCard } from "./StraddleReading";
+import { StraddleRestrikeLog } from "./StraddleRestrikeLog";
 import { TabPanel, Tabs, type TabDef } from "../swing/shared";
 import { Loading } from "../../components/Loading";
 
@@ -97,9 +98,9 @@ export function StraddleSummaryCard() {
 }
 
 /** Straddle decay intelligence in the order of the brief: overall, buyer, seller, tracker, IV and skew, attribution, IV vs realised, gamma, positioning, alerts, validation, methodology. */
-type SdTab = "overview" | "today" | "why" | "alerts" | "method";
+type SdTab = "overview" | "today" | "restrike" | "why" | "alerts" | "method";
 const SD_TABS: TabDef[] = [
-  { id: "overview", label: "Overview" }, { id: "today", label: "Today's premium" }, { id: "why", label: "Why these scores" }, { id: "alerts", label: "Alerts & checks" }, { id: "method", label: "Method" },
+  { id: "overview", label: "Overview" }, { id: "today", label: "Today's premium" }, { id: "restrike", label: "Re-strike log" }, { id: "why", label: "Why these scores" }, { id: "alerts", label: "Alerts & checks" }, { id: "method", label: "Method" },
 ];
 const startTab = (): SdTab => {
   const h = typeof window === "undefined" ? "" : window.location.hash.replace("#", "");
@@ -396,6 +397,11 @@ export function StraddleDecayPanel() {
         ) : <p className="text-sm text-muted" data-testid="sdi-pos-none">UNAVAILABLE: positioning is read from the live Market Intelligence engines.</p>}
       </Box>
 
+        </TabPanel>
+      )}
+      {tab === "restrike" && (
+        <TabPanel id="restrike">
+          <StraddleRestrikeLog d={d} />
         </TabPanel>
       )}
       {tab === "alerts" && (

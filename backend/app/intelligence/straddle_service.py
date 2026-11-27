@@ -129,6 +129,7 @@ class StraddleDecay:
         self._cache: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
         self._asof: OrderedDict[tuple[str, str, str], dict[str, Any]] = OrderedDict()  # replay answers (past minutes do not change); a few dozen kept
         self._last: dict[tuple[str, str], straddle.Snap | None] = {}
+        self._managed_days: dict[str, dict[str, Any]] = {}  # finished sessions' managed books: they do not change
         self._lock = threading.RLock()
         self._task: asyncio.Task[None] | None = None
         self.last_error: str | None = None
@@ -360,6 +361,38 @@ class StraddleDecay:
             if ses:
                 env = straddle_validation.evaluate(ses)
         return {"generated_at": self._clock().isoformat(timespec="seconds"), "window_minutes": minutes, **straddle.validate(out), "environment": env}
+
+    def managed_history(self, sessions: int = 20) -> dict[str, Any]:
+        """The managed straddle's trades (re-struck when NIFTY is ``threshold`` points from the held strike) for each stored session, newest first: the day's
+        re-strikes with their times and prices, the open position, and the profit in points and rupees per lot. Past sessions do not change, so each is computed
+        once and kept (only the small book, not the analysis it came from); today's is read again. Read-only; stored last traded prices, before costs."""
+        now = self._clock().astimezone(IST)
+        days: list[dict[str, Any]] = []
+        for back in range(120):
+            if len(days) >= sessions:
+                break
+            day = now.date() - timedelta(days=back)
+            ex = self._expiries(day)
+            if not ex:
+                continue
+            key = day.isoformat()
+            past = day < now.date() or now.time() >= session_close()
+            item = self._managed_days.get(key) if past else None
+            if item is None:
+                a = self.summary(expiry=ex[0], session=key)
+                with self._lock:
+                    self._cache.pop((ex[0], key), None)  # the analysis of a day looked at only for its book is not kept
+                book = (a.get("tracker") or {}).get("managed") if a.get("status") == "ok" else None
+                keep = ("threshold", "restrikes", "segments", "open", "strike_now", "realised", "open_pnl", "total", "total_rupees", "lot_size", "note")
+                item = {"session": key, "expiry": ex[0], "live": not past, "opening_at": (a.get("tracker") or {}).get("opening_at"),
+                        "book": None if book is None else {k: book.get(k) for k in keep}, "message": None if book is not None else a.get("message") or "No managed-straddle book for this session."}  # fmt: skip
+                if past and book is not None:
+                    self._managed_days[key] = item
+            days.append(item)
+        done = [d["book"] for d in days if d["book"] is not None]
+        totals = {"sessions": len(done), "restrikes": sum(int(b["restrikes"]) for b in done), "total": straddle.rd(sum(float(b["total"]) for b in done if b["total"] is not None), 2),
+                  "total_rupees": straddle.rd(sum(float(b["total_rupees"]) for b in done if b["total_rupees"] is not None), 0), "winning_sessions": sum(1 for b in done if b["total"] is not None and b["total"] > 0)}  # fmt: skip
+        return {"generated_at": self._clock().isoformat(timespec="seconds"), "threshold": straddle.RESTRIKE_POINTS, "days": days, "totals": totals}
 
     # ------------------------------------------------------------------ lifecycle
     async def _loop(self) -> None:

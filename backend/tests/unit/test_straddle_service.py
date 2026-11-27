@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from app.intelligence.straddle_service import StraddleDecay
 from app.intelligence.straddle_store import StraddleStore
 from tests.unit.test_straddle_decay import EXPIRY, OPEN, STRIKES, chain
@@ -131,3 +133,71 @@ def test_as_of_shows_only_the_recorded_history_and_alerts_up_to_that_minute(tmp_
     assert [x for x in at["history"]["seller"]] == [65.0, 75.0, 85.0]  # only the minutes recorded by 26 minutes in
     assert sorted(a["kind"] for a in at["alerts"]) == ["k15", "k25", "k5"]
     assert at["environment_trend"]["seller"]["now"] == 85.0
+
+
+class RunningObs(FakeObs):
+    """A session in which NIFTY climbs 2 points a minute from 24,000: 100 points away from the opening strike at the 50th minute."""
+
+    def __init__(self, n: int) -> None:
+        super().__init__(n)
+        self.snaps = [chain(OPEN + timedelta(minutes=i), 24000.0 + 2 * i, 0.15) for i in range(n)]
+        self.sample_reads = 0
+
+    def samples(self, underlying: str, expiry: str, *, since: datetime | None = None, until: datetime | None = None, limit: int = 5000) -> list[FakeSample]:
+        self.sample_reads += 1
+        return super().samples(underlying, expiry, since=since, until=until, limit=limit)
+
+
+def test_the_managed_history_lists_each_sessions_re_strikes_and_keeps_finished_sessions() -> None:
+    obs = RunningObs(60)
+    s = StraddleDecay(observations=obs, underlying="NIFTY", gex=None, rate=0.06, clock=lambda: OPEN + timedelta(days=2))
+    h = s.managed_history(5)
+    assert h["threshold"] == 100.0 and len(h["days"]) == 1 and h["totals"]["sessions"] == 1
+    day = h["days"][0]
+    book = day["book"]
+    assert day["session"] == "2026-11-11" and day["expiry"] == EXPIRY.isoformat() and day["live"] is False
+    assert book["restrikes"] == 1 and len(book["segments"]) == 1 and book["strike_now"] == 24100.0
+    held = book["open"]
+    assert held["strike"] == 24100.0 and held["from"] == (OPEN + timedelta(minutes=50)).isoformat() and held["pnl"] == pytest.approx(held["entry"] - held["last"], abs=0.011)  # each figure is rounded to 0.01
+    assert book["open_pnl"] == held["pnl"]
+    seg = book["segments"][0]
+    assert seg["strike"] == 24000.0 and seg["from"] == OPEN.isoformat() and seg["to"] == (OPEN + timedelta(minutes=50)).isoformat()  # 24,100 is reached at the 50th minute
+    assert seg["pnl"] == pytest.approx(seg["entry"] - seg["exit"], abs=0.011)  # a sold straddle: entry minus exit
+    assert book["realised"] == seg["pnl"] and book["total"] == round(book["realised"] + book["open_pnl"], 2)
+    assert book["total_rupees"] == round(book["total"] * book["lot_size"])
+    assert h["totals"]["restrikes"] == 1 and h["totals"]["total"] == book["total"]
+    assert not s._cache  # the analysis the book came from is not kept  # noqa: SLF001
+    reads = obs.sample_reads
+    again = s.managed_history(5)
+    assert again["days"][0] == day and obs.sample_reads == reads  # a finished session is read once
+
+
+def test_the_running_session_is_read_again_and_marked_live() -> None:
+    obs = RunningObs(60)
+    s = StraddleDecay(observations=obs, underlying="NIFTY", gex=None, rate=0.06, clock=lambda: OPEN + timedelta(minutes=59))
+    first = s.managed_history(3)["days"][0]
+    assert first["live"] is True and first["book"] is not None
+    reads = obs.sample_reads
+    s.managed_history(3)
+    assert obs.sample_reads > reads  # today's book changes with every minute: not kept
+
+
+def test_a_day_without_samples_is_skipped_and_the_totals_are_empty() -> None:
+    s = StraddleDecay(observations=RunningObs(60), underlying="NIFTY", gex=None, rate=0.06, clock=lambda: OPEN + timedelta(days=130))  # the newest 120 days hold nothing stored
+    h = s.managed_history(5)
+    assert h["days"] == [] and h["totals"] == {"sessions": 0, "restrikes": 0, "total": 0.0, "total_rupees": 0.0, "winning_sessions": 0}
+
+
+def test_the_api_serves_the_managed_history(tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+
+    from tests.conftest import make_app
+
+    app = make_app(tmp_path / "app")
+    with TestClient(app) as c:
+        app.state.straddle = StraddleDecay(observations=RunningObs(60), underlying="NIFTY", gex=None, rate=0.06, clock=lambda: OPEN + timedelta(days=2))
+        body = c.get("/api/intelligence/straddle/managed-history?sessions=3").json()
+        assert body["threshold"] == 100.0 and body["days"][0]["session"] == "2026-11-11"
+        assert body["days"][0]["book"]["restrikes"] == 1 and body["totals"]["sessions"] == 1
+        app.state.straddle = StraddleDecay(observations=RunningObs(60), underlying="NIFTY", gex=None, rate=0.06, enabled=False)
+        assert c.get("/api/intelligence/straddle/managed-history").status_code == 404

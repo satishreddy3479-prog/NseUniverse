@@ -286,6 +286,8 @@ export const api = {
   /** The Entry Lab: a short-straddle rule replayed on the recorded sessions (past days, in-sample). */
   /** How far NIFTY has moved today and whether the move is speeding up (read-only description of the day so far). */
   straddleValidation: () => request<import("./straddleDecay").StraddleValidation>("/api/intelligence/straddle/validation"),
+  /** The managed straddle's trades for each stored session, newest first. */
+  straddleManagedHistory: (sessions = 20) => request<import("./straddleDecay").ManagedHistory>(`/api/intelligence/straddle/managed-history?sessions=${sessions}`),
   intelligenceSummary: (expiry?: string) => request<import("./intelligence").Intelligence>(`/api/intelligence/summary${expiry ? `?expiry=${encodeURIComponent(expiry)}` : ""}`),
   edgeReport: () => request<import("./edge").EdgeReport>("/api/edge/report"),
   intelligenceOutlook: (session?: string) => request<import("./intelligence").Outlook>(`/api/intelligence/outlook${session ? `?session=${encodeURIComponent(session)}` : ""}`),

@@ -301,7 +301,9 @@ def managed_book(times: Sequence[datetime], held: Sequence[float], straddle: Seq
         pnl.append(None if cur is None or px is None else rd(realised + entry - px, 2))
     open_pnl = None if cur is None or last_px is None else entry - last_px
     total = None if open_pnl is None else realised + open_pnl
-    return {"threshold": RESTRIKE_POINTS, "restrikes": len(segs), "segments": segs, "strike_now": cur, "realised": rd(realised, 2), "open_pnl": None if open_pnl is None else rd(open_pnl, 2), "total": None if total is None else rd(total, 2),
+    # the position still held: where it was sold, when, and its last price (the open row of the trade log)
+    open_seg = None if cur is None or last_px is None else {"strike": cur, "from": times[start].isoformat(), "entry": rd(entry, 2), "last": rd(last_px, 2), "pnl": rd(open_pnl, 2)}
+    return {"threshold": RESTRIKE_POINTS, "restrikes": len(segs), "segments": segs, "open": open_seg, "strike_now": cur, "realised": rd(realised, 2), "open_pnl": None if open_pnl is None else rd(open_pnl, 2), "total": None if total is None else rd(total, 2),
             "total_rupees": None if total is None else rd(total * LOT_SIZE, 0), "lot_size": LOT_SIZE, "pnl": pnl,
             "note": f"A seller who re-strikes to the nearest strike when spot is {RESTRIKE_POINTS:g} points from the held one. Stored last traded prices, before costs and slippage; profit = entry minus exit."}  # fmt: skip
 

@@ -110,7 +110,7 @@ export interface StraddleDecay {
   tracker?: {
     fixed: { strike: number; ce: Stat; pe: Stat; straddle: Stat; reference?: { distance: number | null; distance_pct_of_premium: number | null; net_delta: number | null; stale: boolean; threshold: number } };
     /** a short straddle re-struck to the nearest strike when spot is `threshold` points from the held one; profit = entry minus exit, before costs */
-    managed?: { ce?: Stat; pe?: Stat; straddle?: Stat; adjusted_change?: number | null; threshold: number; restrikes: number; segments: { strike: number; from: string; to: string; entry: number; exit: number; pnl: number; exit_carried: boolean }[]; strike_now: number | null; realised: number | null; open_pnl: number | null; total: number | null; total_rupees: number | null; lot_size: number; note: string };
+    managed?: ManagedBook & { ce?: Stat; pe?: Stat; straddle?: Stat; adjusted_change?: number | null; note: string };
     rolling: { ce: Stat; pe: Stat; straddle: Stat; rolls: number; adjusted_change: number | null };
     opening_at: string;
     atm_open?: number | null; atm_now?: number | null;
@@ -184,4 +184,18 @@ export interface StraddleValidation {
   sessions: { session: string; expiry: string; windows: number; predicted: number | null; actual: number | null; ratio: number | null }[];
   overall: ValAgg; earlier_half: ValAgg; later_half: ValAgg;
   environment?: EnvValidation;
+}
+
+/** One closed pair of the managed straddle: sold at `entry` and bought back at `exit` (points of straddle premium; a seller's profit is entry minus exit). `exit_carried`: the pair had no price at the re-strike and its last earlier price is used. */
+export interface ManagedSegment { strike: number; from: string; to: string; entry: number; exit: number; pnl: number; exit_carried: boolean }
+/** The pair still held: where and when it was sold and its last price. */
+export interface ManagedHeld { strike: number; from: string; entry: number; last: number; pnl: number }
+export interface ManagedBook {
+  threshold: number; restrikes: number; segments: ManagedSegment[]; /** absent in answers of an older server */ open?: ManagedHeld | null; strike_now: number | null;
+  realised: number | null; open_pnl: number | null; total: number | null; total_rupees: number | null; lot_size: number;
+}
+export interface ManagedDay { session: string; expiry: string; live: boolean; opening_at: string | null; book: ManagedBook | null; message: string | null }
+export interface ManagedHistory {
+  generated_at: string; threshold: number; days: ManagedDay[];
+  totals: { sessions: number; restrikes: number; total: number; total_rupees: number; winning_sessions: number };
 }
