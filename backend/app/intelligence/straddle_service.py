@@ -25,6 +25,7 @@ from app.intelligence import (
     straddle_validation,
     straddle_watch,
 )
+from app.intelligence.cadence import seconds_to_next_record
 from app.intelligence.straddle_store import StraddleStore
 from app.storage.observations import to_ms
 
@@ -371,7 +372,7 @@ class StraddleDecay:
             except Exception as e:  # noqa: BLE001 - recording must never stop the application
                 self.last_error = f"{type(e).__name__}: {e}"[:200]
                 logger.warning("straddle_record_failed", extra={"fields": {"error": self.last_error}})
-            await asyncio.sleep(max(5.0, 60.0 - self._clock().second))
+            await asyncio.sleep(seconds_to_next_record(self._clock()))
 
     def start(self) -> None:
         if self._task is None and self.enabled and self.store is not None:

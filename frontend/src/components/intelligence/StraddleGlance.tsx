@@ -157,7 +157,7 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
     if (env && Number.isFinite(nowMs) && ht.length > 0 && nowMs > (ht[ht.length - 1] as number) && isSessionMs(nowMs)) { ht.push(nowMs); hs.push(env.seller.score); hb.push(env.buyer.score); }
     if (ht.length < 2) return null;
     const f = (v: number) => v.toFixed(0);
-    return timeLinesOption(ht, [{ name: "Seller environment", color: c.up, data: hs, fmt: f }, { name: "Buyer environment", color: c.brass, data: hb, fmt: f }], c, null, { leftFmt: f });
+    return timeLinesOption(ht, [{ name: "Seller environment", color: c.up, data: hs, fmt: f }, { name: "Buyer environment", color: c.brass, data: hb, fmt: f }], c, null, { leftFmt: f, gridTop: 56 }); // two legend rows on a phone no longer sit on the axis labels
   }, [d, env, c]);
 
   const histEnd = d.history?.times?.length ? d.history.times[d.history.times.length - 1] : null;
@@ -263,7 +263,7 @@ export function StraddleGlance({ d, mode, setMode, part }: { d: StraddleDecay; m
       {part === "history" && hist && (
         <section aria-label="Score history" className="rounded-xl border border-rule bg-ink/40 p-3">
           <h4 className="text-sm font-semibold text-paper">How the scores moved today</h4>
-          <div className="mt-1 h-[190px]"><EChart group="sdi" option={hist} ariaLabel="Seller and buyer environment score history" /></div>
+          <div className="mt-1 h-[210px]"><EChart group="sdi" option={hist} ariaLabel="Seller and buyer environment score history" /></div>
           {gaps.length > 0 && <p className="text-[11px] text-muted" data-testid="sdi-hist-gaps">{gaps.join(". ")}. A score needs at least half of its evidence inputs, and several of them need 15 to 30 stored minutes, so the line starts later; a missing reading is left blank, never counted as neutral.</p>}
           <p className="text-[11px] text-muted" data-testid="sdi-hist-note">{histLive ? "One recorded reading per minute; the last point is the current reading shown in the gauges above." : `One recorded reading per minute. The market is closed: the chart ends at the last recorded minute${histEnd ? ` (${fmtTimeIST(histEnd)})` : ""}.`}</p>
         </section>

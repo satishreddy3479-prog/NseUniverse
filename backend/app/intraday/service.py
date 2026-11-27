@@ -690,9 +690,11 @@ class IntradayService:
     #: uncached snapshots a request may compute itself; more than this runs as a background job with progress
     SYNC_SNAPSHOTS = 60
 
-    def _bt_plan(self, expiry: str, sessions: int) -> dict[str, Any]:
+    def _bt_plan(self, expiry: str, sessions: int, with_open: bool = False) -> dict[str, Any]:
         """Which stored samples a run reads: the last sample of every 5-minute bucket of the last ``sessions`` sessions (in-session only),
-        found with one indexed query, before any calculation. Also each session's opening ATM (nearest listed strike to the first spot)."""
+        found with one indexed query, before any calculation. Also each session's opening ATM (nearest listed strike to the first spot).
+        ``with_open`` adds each session's first sample as an extra point before the buckets (key -1): the bucket of 09:15-09:19 is stamped with its last sample, so a chart of the
+        buckets starts at 09:19 (27 Nov 2026). Only the displayed series ask for it; the backtests step in whole buckets and must not see an uneven first step."""
         t0 = perf_counter()
         try:
             exp_d = date.fromisoformat(expiry)
@@ -711,6 +713,10 @@ class IntradayService:
             d_ = t_.date().isoformat()
             first.setdefault(d_, x)
             by_day.setdefault(d_, {})[(t_.hour * 60 + t_.minute) // 5] = x
+        if with_open:
+            for d_, x0 in first.items():
+                if all(y.sample_id != x0.sample_id for y in by_day[d_].values()):
+                    by_day[d_][-1] = x0
         days = sorted(by_day)[-sessions:]
         opening: dict[str, float | None] = {}
         for d_ in days:
@@ -861,7 +867,7 @@ class IntradayService:
         and open interest only; a snapshot that cannot be solved is listed as skipped with its reason, never filled."""
         if universe not in ("fixed", "dynamic", "full"):
             return {"status": "bad universe", "points": []}
-        plan = self._bt_plan(expiry, 60)
+        plan = self._bt_plan(expiry, 60, with_open=True)
         if "error" in plan:
             return {"status": plan["error"], "points": []}
         day = session if session else (plan["days"][-1] if plan["days"] else None)
@@ -919,6 +925,9 @@ class IntradayService:
             t_ = x.received_at.astimezone(IST)
             if x.spot is not None:
                 last[(t_.hour * 60 + t_.minute) // 5] = x
+        first_x = next((x for x in todays if x.spot is not None), None)  # the day's first sample is a point of its own: the 09:15-09:19 bucket is stamped 09:19
+        if first_x is not None and all(y.sample_id != first_x.sample_id for y in last.values()):
+            last[-1] = first_x
         samples = [last[b] for b in sorted(last)]
         key = ("prem", expiry, str(samples[-1].sample_id) if samples else "", n, kind)
         if key in self._iv_cache:

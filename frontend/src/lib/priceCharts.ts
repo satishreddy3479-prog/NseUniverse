@@ -38,7 +38,7 @@ export const TIME_LINES_RIGHT = 132;
 
 export function timeLinesOption(
   times: number[], lines: Line[], c: ChartColors, bounds: { min: number; max: number } | null,
-  opts: { leftFmt?: (v: number) => string; rightFmt?: (v: number) => string; zeroLine?: boolean } = {},
+  opts: { leftFmt?: (v: number) => string; rightFmt?: (v: number) => string; zeroLine?: boolean; gridTop?: number } = {},
 ): EChartsCoreOption {
   const hasRight = lines.some((l) => l.axis === 1);
   const yAxis = (right: boolean, f: (v: number) => string) => ({
@@ -59,7 +59,7 @@ export function timeLinesOption(
   }));
   return {
     animation: false,
-    grid: { left: 58, right: hasRight ? TIME_LINES_RIGHT : 64, top: 34, bottom: 28 },
+    grid: { left: 58, right: hasRight ? TIME_LINES_RIGHT : 64, top: opts.gridTop ?? 34, bottom: 28 }, // gridTop: room for a legend that wraps to two rows on a phone
     legend: { top: 0, left: 0, textStyle: { color: c.paper, fontSize: 11 }, itemWidth: 14, itemHeight: 8, selected: Object.fromEntries(lines.map((l) => [l.name, !l.hidden])) },
     axisPointer: { link: [{ xAxisIndex: "all" }], lineStyle: { color: c.muted, type: "dashed" } },
     tooltip: {

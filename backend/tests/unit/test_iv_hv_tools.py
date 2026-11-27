@@ -7,7 +7,7 @@ center's IV tests use, ATM IV about 16.5 %), so it checks wiring, thinning, orde
 from __future__ import annotations
 
 import math
-from datetime import UTC, date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -391,3 +391,15 @@ def test_iv_skew_shows_the_last_solvable_chain_when_the_newest_is_too_close_to_e
     assert svc.iv_skew(EXP)["status"].startswith("not computed: less than") and svc.iv_skew(EXP)["smile"] == []
     # a normal read has no fallback
     assert make(tmp_path / "n", 30, 30).iv_skew(EXP)["fallback"] is None
+
+
+def test_the_displayed_series_start_at_the_first_sample_not_at_the_end_of_the_first_bucket(tmp_path: Path) -> None:
+    """27 Nov 2026: GEX history and the premium baskets are built on the last sample of each 5-minute bucket, so they began at 09:19 although samples exist from 09:15."""
+    svc = make(tmp_path, 30, 30)
+    gex = svc.gex_history(EXP)
+    assert gex["status"] == "ok" and datetime.fromisoformat(gex["points"][0]["at"]) == ist(9, 15)
+    assert len(gex["points"]) == 1 + 6  # the open, then the buckets ending 09:19 ... 09:44
+    pb = svc.premium_baskets(EXP)
+    assert pb["status"] == "ok" and pb["snapshots"] == 7
+    bt = svc._bt_plan(EXP, 5)  # the backtests still see whole buckets only
+    assert -1 not in next(iter(bt["by_day"].values()))

@@ -190,3 +190,17 @@ def test_the_first_minutes_of_a_live_session_do_not_break_the_outlook() -> None:
                 assert first.get("trend") is None  # the one minute stored so far has no trend label: missing stays missing
             elif n > 1:
                 assert first["trend"] == "Warming up"  # later minutes carry one; the label of the first is not counted
+
+
+def test_the_recorders_run_at_15_seconds_so_a_minutes_row_holds_that_minutes_sample() -> None:
+    """27 Nov 2026: they ran at :00, before the sampler had stored the minute's chain, so the first row came at 09:16 (09:17 after a restart) instead of 09:15."""
+    from datetime import UTC, datetime
+
+    from app.intelligence.cadence import seconds_to_next_record
+
+    t = lambda s, us=0: datetime(2026, 11, 27, 3, 45, s, us, tzinfo=UTC)  # noqa: E731
+    assert seconds_to_next_record(t(0)) == 15.0
+    assert seconds_to_next_record(t(14)) == 1.0
+    assert seconds_to_next_record(t(15)) == 60.0  # just ran: the next one is a minute away
+    assert seconds_to_next_record(t(16)) == 59.0
+    assert seconds_to_next_record(t(59, 500_000)) == 15.5

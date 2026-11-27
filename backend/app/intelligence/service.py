@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 
 from app.intelligence import fusion as fz
 from app.intelligence import heavyweights, outlook, rolling, turn, validation, voleval
+from app.intelligence.cadence import seconds_to_next_record
 from app.intelligence.store import IntelligenceStore
 
 logger = logging.getLogger(__name__)
@@ -448,8 +449,7 @@ class MarketIntelligence:
             except Exception as e:  # noqa: BLE001 - recording must never stop the application
                 self.last_error = f"{type(e).__name__}: {e}"[:200]
                 logger.warning("intelligence_record_failed", extra={"fields": {"error": self.last_error}})
-            now = self._clock()
-            await asyncio.sleep(max(5.0, 60.0 - now.second))
+            await asyncio.sleep(seconds_to_next_record(self._clock()))
 
     def start(self) -> None:
         if self._task is None and self.enabled:
