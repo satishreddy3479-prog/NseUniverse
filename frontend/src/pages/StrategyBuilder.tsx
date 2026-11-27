@@ -101,11 +101,11 @@ const dayDiff = (iso: string, fromMs: number) => Math.round((Date.parse(`${iso}T
 const dmy = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", ...(iso.slice(0, 4) === new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 4) ? {} : { year: "2-digit" }), timeZone: "UTC" });
 const EMPTY_CG: Book["cg"] = new Map();
 
-function Thumb({ legs, lotSize, spot }: { legs: Leg[]; lotSize: number; spot: number }) {
+function Thumb({ pnlAt, spot }: { pnlAt: (s: number) => number | null; spot: number }) {
   const lo = spot * 0.94, hi = spot * 1.06, n = 80;
   const pts = Array.from({ length: n + 1 }, (_, i) => {
     const s = lo + ((hi - lo) * i) / n;
-    return { s, p: expiryPnl(legs, s, lotSize) };
+    return { s, p: pnlAt(s) };
   });
   if (pts.some((x) => x.p == null)) return null;
   const vals = pts.map((x) => x.p as number);
@@ -766,6 +766,15 @@ export default function StrategyBuilder() {
   /** the later expiry a calendar or diagonal template uses: the one picked, else the first listed after the shown one */
   const [farPick, setFarPick] = useState<string | null>(null);
   const farExpiry = expiry ? (farPick && farPick > expiry && available.includes(farPick) ? farPick : available.find((e) => e > expiry) ?? null) : null;
+  const farChain = useQuery({ queryKey: ["chain", farExpiry], queryFn: () => fetchChain(farExpiry!), enabled: bias === "Calendar" && !!farExpiry, retry: false, staleTime: 5_000 });
+  const farRowsView = useMemo(() => (farChain.data && farExpiry ? mergeRows(farChain.data.snapshot.rows, collected.has(farExpiry) ? liveMode : "off") : undefined), [farChain.data, farExpiry, liveMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** the legs of a calendar or diagonal template with the premiums now in the two chains; null while the later chain is not loaded */
+  const buildCalendar = (t: Template): Leg[] | null => {
+    if (!expiry || atm == null || !farExpiry || !farRowsView) return null;
+    const farLtpOf = (k: number, ty: OptionType) => { const q = farRowsView.find((x) => x.strike === k); const v = (ty === "CE" ? q?.call : q?.put)?.ltp; return v != null && v > 0 ? v : null; };
+    const out = t.build({ strikes, atm, expiry, far: farExpiry, farStrikes: farRowsView.map((x) => x.strike), premium: (e, k, ty) => (e === expiry ? ltp(k, ty) : farLtpOf(k, ty)) });
+    return "error" in out ? null : withIds(out);
+  };
   const apply = async (t: Template) => {
     if (!expiry || atm == null) { setNote("Load an option chain first."); return; }
     let far: string | undefined, farRows: ReturnType<typeof mergeRows> | undefined;
@@ -1115,11 +1124,14 @@ export default function StrategyBuilder() {
                 )}
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   {gallery.map((t) => {
-                    const l = t.group === "Calendar" ? null : build(t);
+                    const cal = t.group === "Calendar";
+                    const l = cal ? buildCalendar(t) : build(t);
+                    const pnlAt = l && lotSize ? (cal && expiry ? (sv: number) => pnlAtExpiry(l, sv, expiry, lotSize, val0) : (sv: number) => expiryPnl(l, sv, lotSize)) : null;
                     return (
                       <button key={t.id} type="button" onClick={() => apply(t)} aria-label={t.label} className="rounded-sm border border-rule bg-slate-2 p-2 text-left hover:border-info">
-                        <div className="h-16">{t.group === "Calendar" ? <div className="grid h-16 place-items-center text-center text-xs text-muted">two expiries: sell near, buy far</div> : l && lotSize && spot ? <Thumb legs={l} lotSize={lotSize} spot={spot} /> : <div className="grid h-16 place-items-center text-xs text-muted">needs a chain</div>}</div>
+                        <div className="h-16">{pnlAt && spot ? <Thumb pnlAt={pnlAt} spot={spot} /> : <div className="grid h-16 place-items-center text-center text-xs text-muted">{cal ? (farChain.isPending && farExpiry ? "loading the later expiry…" : "needs both expiries") : "needs a chain"}</div>}</div>
                         <div className="mt-1 text-center text-sm text-paper">{t.label}</div><div className="text-center text-[11px] text-muted">{t.view}</div>
+                        {cal && pnlAt && <div className="text-center text-[10px] text-muted">at the near expiry, model estimate for the far leg</div>}
                       </button>
                     );
                   })}

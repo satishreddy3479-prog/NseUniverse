@@ -409,6 +409,18 @@ describe("StockMojo-style layout", () => {
     expect(screen.getByRole("button", { name: /Iron Condor/i })).toBeInTheDocument();
   });
 
+  it("every calendar and diagonal card shows a payoff graph (a model estimate at the near expiry) once the later expiry is loaded", async () => {
+    mount();
+    await loaded();
+    await userEvent.click(await screen.findByRole("tab", { name: "Calendar" }));
+    const card = await screen.findByRole("button", { name: "Calendar straddle" });
+    await waitFor(() => expect(card.querySelector("svg")).not.toBeNull(), { timeout: 15000 });
+    expect(card).toHaveTextContent("model estimate for the far leg");
+    for (const name of ["Calendar spread (calls)", "Calendar spread (puts)", "Double calendar", "Diagonal spread (calls)", "Diagonal spread (puts)"])
+      expect(screen.getByRole("button", { name }).querySelector("svg")).not.toBeNull();
+    expect(screen.queryByText("two expiries: sell near, buy far")).toBeNull();
+  });
+
   it("the multiplier scales lots and total P&L and an unticked leg drops out of the payoff", async () => {
     mount();
     await loaded();
