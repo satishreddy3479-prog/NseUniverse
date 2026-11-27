@@ -48,7 +48,7 @@ export const TH = {
 } as const;
 
 /** The candle lengths the indicators are built for. */
-export const DIVERGENCE_TIMEFRAMES = [1, 3, 5] as const;
+export const DIVERGENCE_TIMEFRAMES = [1, 3, 5, 15] as const;
 /**
  * What counts in candles differs by candle length, so that the same stretch of time is meant on every one. 3 and 5 minutes are the values the indicators were built and tested with.
  * One minute keeps the same minutes: a swing needs 8 candles each side (3 minutes: 3 candles = 9 minutes), two swings at least 9 candles apart, the momentum average spans 15 candles
@@ -59,6 +59,9 @@ export const TFP: Record<number, { pivotK: number; minSwing: number; emaSpan: nu
   1: { pivotK: 8, minSwing: 9, emaSpan: 15, streak: 6, convMin: 24 },
   3: { pivotK: 3, minSwing: 3, emaSpan: 5, streak: 2, convMin: 8 },
   5: { pivotK: 2, minSwing: 3, emaSpan: 5, streak: 2, convMin: 8 },
+  // 15 minutes (added 27 Nov 2026): the same stretch of time as the 5-minute values, in candles that are three times as long (a swing needs 1 candle each side = 15 minutes, two swings 30 minutes apart,
+  // the average spans 3 candles, writing must hold 1 candle = 15 minutes, conviction needs 4 candles = 1 hour). Scaled by time, NOT tested on stored sessions: the page says so.
+  15: { pivotK: 1, minSwing: 2, emaSpan: 3, streak: 1, convMin: 4 },
 };
 export const tfp = (tf: number) => TFP[tf] ?? TFP[3]!;
 

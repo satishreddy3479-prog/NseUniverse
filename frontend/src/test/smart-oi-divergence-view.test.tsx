@@ -58,9 +58,10 @@ describe("Smart OI divergence panel", () => {
     expect(screen.getByTestId("div-writing")).toHaveTextContent("No stored per-strike series.");
     expect(screen.getByTestId("div-future")).toHaveTextContent("No stored NIFTY future series.");
   });
-  it("is off on 15 minute candles, runs on 1 minute ones, and waits for enough candles", () => {
-    mount(res(15), 15);
-    expect(screen.getByTestId("div-off")).toHaveTextContent("1, 3 and 5 minute candles");
+  it("runs on 15 minute candles too (the page says the settings are scaled, not tested), runs on 1 minute ones, and waits for enough candles", () => {
+    mount(res(15, 12), 15);
+    expect(screen.queryByTestId("div-off")).toBeNull();
+    expect(screen.getByTestId("divergence")).toHaveTextContent("not yet tested on stored sessions");
     cleanup();
     mount(res(1, 40), 1);
     expect(screen.getByTestId("divergence")).toHaveTextContent("1-minute candles");

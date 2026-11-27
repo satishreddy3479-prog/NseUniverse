@@ -17,7 +17,7 @@ const gradeTip: Record<string, string> = { A: "clean candles in the window", B: 
 
 export interface DivergenceData { on: boolean; report: DivergenceReport | null; bursts: Burst[]; score: ReturnType<typeof scoreBursts> | null }
 /**
- * The divergence indicators of the candles shown (lib/smartOiDivergence.ts), for 1, 3 and 5 minute candles: the same data feeds the signals panel of the Smart OI chart and the cards below it, so
+ * The divergence indicators of the candles shown (lib/smartOiDivergence.ts), for 1, 3, 5 and 15 minute candles: the same data feeds the signals panel of the Smart OI chart and the cards below it, so
  * both follow the timeframe chosen. The per-strike series (who is writing, where) and the NIFTY future are fetched beside the Smart OI totals; an indicator whose input is missing says so and
  * stays silent.
  */
@@ -57,7 +57,7 @@ export function SmartOiDivergence({ res, tf, d }: { res: SmartOiResult | null; t
     <section aria-label="Divergence indicators" className="flex flex-col gap-3 rounded-[var(--radius-panel)] border border-rule bg-slate p-3" data-testid="divergence">
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-base font-semibold text-paper">Divergence indicators <span className="text-xs font-normal text-muted">· {tf}-minute candles · indicator, not validated</span></h3>
+          <h3 className="text-base font-semibold text-paper">Divergence indicators <span className="text-xs font-normal text-muted">· {tf}-minute candles · indicator, not validated{tf === 15 ? "; the 15-minute settings are scaled from the 5-minute ones and not yet tested on stored sessions" : ""}</span></h3>
           <p className={`text-sm font-semibold ${tone(c.direction)}`} data-testid="div-composite">{arrow(c.direction)} {c.text}</p>
           <p className="mt-0.5 text-xs text-muted" data-testid="div-contrarian">A divergence is a disagreement with price. A bullish one during a fall means something under the fall is turning up; a bearish one during a rise means the rise is losing support. It is a warning to look closer, not a forecast of direction.</p>
         </div>

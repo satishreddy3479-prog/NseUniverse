@@ -34,7 +34,10 @@ describe("windows", () => {
     expect(one.emaSpan * 1).toBe(three.emaSpan * 3);
     expect(one.streak * 1).toBe(three.streak * 3);
     expect(one.convMin * 1).toBe(three.convMin * 3);
-    expect(tfp(15)).toEqual(tfp(3)); // an unsupported length falls back; the page does not run the indicators on it
+    expect(tfp(7)).toEqual(tfp(3)); // an unsupported length falls back; the page does not run the indicators on it
+    const fifteen = tfp(15), five = tfp(5); // 15 minutes: the 5-minute stretch of time in longer candles (scaled, not tested on stored sessions)
+    expect(fifteen.minSwing * 15).toBeGreaterThanOrEqual(five.minSwing * 5 * 2); expect(fifteen.streak * 15).toBeLessThanOrEqual(15);
+    expect(fifteen.convMin * 15).toBe(60); expect(fifteen.pivotK * 15).toBe(15);
   });
 });
 
