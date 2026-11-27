@@ -21,7 +21,7 @@ from app.intelligence import fusion as fz
 from app.intelligence import heavyweights, outlook, rolling, turn, validation, voleval
 from app.intelligence.cadence import seconds_to_next_record
 from app.intelligence.store import IntelligenceStore
-from app.stream.heavy import run_heavy
+from app.stream.heavy import HEAVY, run_heavy
 
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
@@ -105,7 +105,9 @@ class MarketIntelligence:
                         with self._inflight_lock:
                             self._inflight.discard(key)
 
-                threading.Thread(target=refresh, name=f"mi-{name}", daemon=True).start()
+                # One queue, not one thread per input: up to seven of these ran at once on the server's one core and
+                # starved the loop that carries the feed (27 Nov 2026: p99 loop lag 3.4 s, 159 stalls by midday).
+                HEAVY.submit(refresh)
             return hit[1], hit[2]
         return self._compute(name, expiry, now, hit)
 
