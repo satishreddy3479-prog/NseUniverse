@@ -78,15 +78,38 @@ class LoopWatch:
             frame = sys._current_frames().get(self._loop_thread or 0)  # noqa: SLF001
             where = traceback.format_stack(frame, limit=6) if frame else []
             self.stalls += 1
+            others = self._others()
             self.last_stall = {
                 "behind_s": round(behind, 2),
                 "at": time.time(),
                 "stack": [w.strip() for w in where[-4:]],
+                "others": others,
             }
             logger.warning(
                 "event_loop_stall",
-                extra={"fields": {"behind_s": round(behind, 2), "stack": self.last_stall["stack"]}},
+                extra={"fields": {"behind_s": round(behind, 2), "stack": self.last_stall["stack"], "others": others}},
             )
+
+    def _others(self) -> list[str]:
+        """What every other thread is doing at the moment of a stall (27 Nov 2026: stalls of a second at the open with the loop thread itself busy in the feed's decoder: the cause was
+        another thread holding the CPU or the interpreter lock, and the loop's own stack cannot show which). The innermost frame of this application's code in each thread."""
+        names = {t.ident: t.name for t in threading.enumerate()}
+        out: list[str] = []
+        for ident, frame in sys._current_frames().items():  # noqa: SLF001
+            if ident in (self._loop_thread, threading.get_ident()):
+                continue
+            f: Any = frame
+            mine = None
+            while f is not None and mine is None:
+                if "/app/" in f.f_code.co_filename.replace("\\", "/"):
+                    mine = f
+                f = f.f_back
+            inner = frame.f_code
+            if inner.co_name in ("wait", "_wait_for_tstate_lock", "select", "poll", "_poll", "get", "acquire") and mine is None:
+                continue  # parked, not working
+            where = self._label(mine) if mine is not None else f"{inner.co_filename.replace(chr(92), '/').rsplit('/', 1)[-1]}:{inner.co_name}"
+            out.append(f"{names.get(ident, ident)}: {where} (in {inner.co_name})")
+        return out[:8]
 
     def _sample(self) -> None:
         inner: Any = sys._current_frames().get(self._loop_thread or 0)  # noqa: SLF001

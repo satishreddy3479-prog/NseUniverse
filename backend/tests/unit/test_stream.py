@@ -719,6 +719,34 @@ async def test_the_loop_watch_names_what_blocks_the_loop() -> None:
     assert any("time.sleep" in line or "sleep" in line for line in stats["last_stall"]["stack"])
 
 
+async def test_a_stall_report_names_what_the_other_threads_were_doing() -> None:
+    """27 Nov 2026: stalls of a second at the open with the loop thread busy in the feed decoder; the cause was in another thread, which the loop's own stack cannot show."""
+    import threading
+    import time
+
+    from app.stream.loopwatch import LoopWatch
+
+    stop = threading.Event()
+
+    def heavy_background_job() -> None:
+        while not stop.is_set():
+            sum(range(10_000))
+
+    t = threading.Thread(target=heavy_background_job, name="bg-job")
+    t.start()
+    w = LoopWatch()
+    w.start()
+    await asyncio.sleep(0.6)
+    time.sleep(1.6)  # the loop is blocked while the background thread works
+    await asyncio.sleep(0.6)
+    stats = w.stats()
+    await w.stop()
+    stop.set()
+    t.join()
+    others = stats["last_stall"]["others"]
+    assert any(o.startswith("bg-job:") and "heavy_background_job" in o for o in others), others
+
+
 async def test_the_loop_watch_reports_where_the_loop_spends_its_time() -> None:
     import time
 
