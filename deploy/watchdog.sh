@@ -168,6 +168,19 @@ try:
 except OSError as e:
     add("backup", "warning", f"Backups cannot be read ({e.__class__.__name__}).")
 
+# 2a. open files of the backend: a leak fills the limit (1,024) and every database call then fails (27 Nov 2026); the count is read from /api/stream/health
+if reachable:
+    try:
+        proc = get("/api/stream/health").get("process") or {}
+        used, limit = proc.get("open_files"), proc.get("open_files_limit")
+        if isinstance(used, int) and isinstance(limit, int) and limit > 0:
+            if used >= 0.9 * limit:
+                add("open-files", "critical", f"The backend has {used} of {limit} files open: about to fail. Restart it: sudo systemctl restart nse-universe")
+            elif used >= 0.6 * limit:
+                add("open-files", "warning", f"The backend has {used} of {limit} files open and it should stay far lower: something is not closing files.")
+    except Exception as e:  # noqa: BLE001
+        add("open-files-status", "warning", f"/api/stream/health failed ({type(e).__name__}).")
+
 # 2b. the weekly proof that a backup really restores (nse-universe-restore-check.timer): failed, or overdue
 try:
     rc = json.load(open(os.path.join(state_dir, "restore-check.json")))

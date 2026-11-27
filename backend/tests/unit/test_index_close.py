@@ -41,3 +41,27 @@ def test_nothing_stored_after_the_index_feed_ends(tmp_path: Path) -> None:
 def test_a_corrupt_file_is_ignored(tmp_path: Path) -> None:
     (tmp_path / "index-close.json").write_text("{not json", encoding="utf-8")
     assert IndexClose(tmp_path).latest() is None
+
+
+async def test_the_endpoint_serves_the_close_and_answers_day_null_without_one(tmp_path: Path) -> None:
+    """27 Nov 2026: an edit removed the route decorator, the endpoint answered 404 on the server and no test noticed."""
+    from types import SimpleNamespace
+
+    import httpx
+    from fastapi import FastAPI
+
+    from app.api import routes
+
+    app = FastAPI()
+    app.include_router(routes.router)
+    ic = IndexClose(tmp_path)
+    app.state.stream = SimpleNamespace(index_close=ic)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.get("/api/market/index-close")
+        assert r.status_code == 200 and r.json() == {"day": None}
+        ic.observe(ist(15, 29), 25884.5, 25819.25)
+        body = (await c.get("/api/market/index-close")).json()
+        assert body["day"] == "2026-11-26" and body["ltp"] == 25884.5
+    app.state.stream = SimpleNamespace(index_close=None)  # an application built without it
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        assert (await c.get("/api/market/index-close")).json() == {"day": None}

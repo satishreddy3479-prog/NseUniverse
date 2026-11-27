@@ -84,6 +84,7 @@ def healthy(**over: Any) -> dict[str, Any]:
     r: dict[str, Any] = {
         "/api/health": {"status": "ok"},
         "/api/status": {"auth": {"state": "authenticated"}, "stream": {"state": "streaming", "freshness": "fresh", "market": {"state": "open"}}},
+        "/api/stream/health": {"process": {"open_files": 70, "open_files_limit": 1024}},
         "/api/sampler/status": {"enabled": True, "in_session": True, "state": "sampling", "last_success_at": "2026-11-13T04:58:00Z", "last_attempt_at": "2026-11-13T04:58:00Z", "last_error": None},
         "/api/storage/status": {"disk": {"free_gb": 11.5}, "end_of_day": {"pending_days": []}},
         "/api/market/session": {"holiday_coverage": ["2026-01-01", "2027-12-31"]},
@@ -104,6 +105,18 @@ def keys(alerts: list[dict[str, Any]]) -> set[str]:
 def test_a_healthy_session_raises_nothing(tmp_path: Path) -> None:
     alerts, out = run(tmp_path, healthy(), NOON)
     assert alerts == [] and "all checks passed" in out
+
+
+def test_open_files_close_to_the_limit_are_flagged(tmp_path: Path) -> None:
+    """27 Nov 2026: connections left open used up the 1,024-file limit and the site stopped answering."""
+    ok = {"process": {"open_files": 70, "open_files_limit": 1024}}
+    assert run(tmp_path, healthy(**{"/api/stream/health": ok}), NOON)[0] == []
+    warn = {"process": {"open_files": 700, "open_files_limit": 1024}}
+    assert [(a["key"], a["level"]) for a in run(tmp_path, healthy(**{"/api/stream/health": warn}), NOON)[0]] == [("open-files", "warning")]
+    crit = {"process": {"open_files": 950, "open_files_limit": 1024}}
+    assert [(a["key"], a["level"]) for a in run(tmp_path, healthy(**{"/api/stream/health": crit}), NOON)[0]] == [("open-files", "critical")]
+    none = {"process": {"open_files": None, "open_files_limit": None}}  # no /proc: nothing to judge
+    assert run(tmp_path, healthy(**{"/api/stream/health": none}), NOON)[0] == []
 
 
 def test_a_quiet_night_raises_nothing(tmp_path: Path) -> None:

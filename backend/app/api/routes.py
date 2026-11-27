@@ -52,6 +52,7 @@ from app.storage.store import SnapshotStore, StorageError
 from app.storage.strategies import StrategyError, StrategyStore
 from app.strategy.automation import RunningConflict, StrategyAutomation
 from app.stream.models import StreamStatusModel
+from app.stream.procstats import open_files
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -452,6 +453,7 @@ async def stream_health(request: Request) -> dict[str, Any]:
             "reconnects": stream.reconnect_count,
             "data_age_s": stream.status().data_age_seconds,
         },
+        "process": open_files(),
     }
 
 
