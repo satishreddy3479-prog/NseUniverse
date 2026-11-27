@@ -63,7 +63,7 @@ from app.storage.observations import ObservationStore, event_writer
 from app.storage.preferences import PreferenceStore
 from app.storage.store import SnapshotStore
 from app.storage.strategies import StrategyStore
-from app.strategy.automation import StrategyAutomation
+from app.strategy.automation import StrategyAutomation, ladder_from_snapshot
 from app.stream.heavy import stop_heavy
 from app.stream.hub import Hub
 from app.stream.index_close import IndexClose
@@ -269,6 +269,7 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             _live_price,
             lambda: stream.status().effective_state == "streaming",
             trading_day=lambda d: app.state.intraday.trading_day(d),
+            ladder_of=lambda expiry: ladder_from_snapshot(store.latest("NIFTY", expiry)),
         )
         app.state.strategy_automation = strategy_automation
         strategy_automation.start()

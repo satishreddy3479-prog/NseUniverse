@@ -12,11 +12,12 @@ import asyncio
 import logging
 import math
 import threading
+import time as time_module
 from collections.abc import Callable
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from typing import Any
 
-from app.domain.session import SESSION_OPEN, session_close
+from app.domain.session import SESSION_OPEN, session_close, spot_end
 from app.storage.strategies import StrategyStore
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 RUNNING_KIND = "running"
 RUNNING_KEY = "active"
 IST = timezone(timedelta(hours=5, minutes=30))
+_IST_ZONE = IST
 Leg = dict[str, Any]
 
 
@@ -224,6 +226,126 @@ def apply_strategy_rules(
             events.append(n["log"][-1]["text"])
             out.append(n)
     return out, {"floor": floor, "done": done, "at": at.isoformat(), "pnl": total}, events
+
+
+# ---- managed straddle: when NIFTY is ``points`` away from the held strike, close the pair and open the new at-the-money pair
+RESTRIKE_MAX_POINTS = 2000.0
+RESTRIKE_SPOT_KEY = "nse_cm|Nifty 50"  # the NIFTY 50 index in the live feed; the server reads the spot from here, never from a page
+LADDER_TTL_S = 300.0
+Ladder = list[dict[str, Any]]
+
+
+def restrike_problem(cfg: Any) -> bool:
+    """True when the re-strike setting cannot work (it is then ignored, never half-applied): no distance, or one outside 0 to 2,000 points."""
+    if not isinstance(cfg, dict):
+        return True
+    points = cfg.get("points")
+    return not isinstance(points, (int, float)) or isinstance(points, bool) or not 0 < points <= RESTRIKE_MAX_POINTS
+
+
+def clean_restrike(raw: Any) -> dict[str, Any] | None:
+    """What the server keeps of a page's re-strike setting: the distance and nothing else (the strikes and their feed keys are the server's own)."""
+    if not isinstance(raw, dict) or restrike_problem(raw):
+        return None
+    return {"points": float(raw["points"])}
+
+
+def ladder_from_snapshot(snap: Any) -> Ladder:
+    """The strikes of a stored option chain that have both a call and a put in the live feed, with the feed keys ("nse_fo|<token>") of the two. Ascending."""
+    out: Ladder = []
+    for row in getattr(snap, "rows", None) or []:
+        ce, pe = row.call, row.put
+        if row.strike is None or ce is None or pe is None:
+            continue
+        if not (ce.exchange_segment and ce.instrument_token and pe.exchange_segment and pe.instrument_token):
+            continue
+        out.append({"strike": float(row.strike), "ce": f"{ce.exchange_segment}|{ce.instrument_token}", "pe": f"{pe.exchange_segment}|{pe.instrument_token}"})
+    return sorted(out, key=lambda r: r["strike"])
+
+
+def roll_leg_to(leg: Leg, strike: float, key: str, old_price: float, new_price: float, lot_size: int, at: datetime, mult: float = 1) -> Leg:
+    """Close a leg at its live price (its profit or loss is booked in ``realised``) and open the same leg at another strike at its live price. The stop and
+    target keep their percentage distance from the new entry. Mirrors ``rollLeg`` in ``frontend/src/lib/strategy.ts``."""
+    prem = leg["premium"]
+    pnl = _sign(leg) * (old_price - prem) * leg["lots"] * mult * lot_size
+    buy = leg.get("action") == "BUY"
+
+    def pct(level: float | None) -> float | None:
+        return None if level is None else abs(level / prem - 1)
+
+    def lvl(p: float | None, profit_side: bool) -> float | None:
+        return None if p is None else _tick(new_price * (1 + p if profit_side == buy else 1 - p))
+
+    stop_typed = _stop_ref(leg)
+    text = (
+        f"{_stamp(at)} Re-strike: {leg['action']} {leg.get('strike'):g} {leg.get('type')} closed at {old_price:.2f} (entry {prem:.2f}), {_money(pnl)} booked; "
+        f"{leg['action']} {strike:g} {leg.get('type')} opened at {new_price:.2f} [server]"
+    )
+    out = dict(leg)
+    out.update(
+        strike=strike, key=key, premium=new_price, premiumSource="market", realised=(leg.get("realised") or 0) + pnl, cycles=(leg.get("cycles") or 0) + 1,
+        stop=lvl(pct(stop_typed), False), target=lvl(pct(leg.get("target")), True), stopBase=None, stopTrailed=False, costMoved=False,
+        exitPrice=None, exitReason=None, exitedAt=None, reentryLevel=None, enteredAt=at.isoformat(),
+        stopSetAt=None if stop_typed is None else at.isoformat(), targetSetAt=None if leg.get("target") is None else at.isoformat(),
+        log=[*(leg.get("log") or []), {"at": at.isoformat(), "text": text}][-20:],
+    )  # fmt: skip
+    return out
+
+
+def apply_restrike(
+    legs: list[Leg], cfg: dict[str, Any] | None, price_of: Callable[[Leg], float | None], ladder_of: Callable[[str], Ladder], lot_size: int, at: datetime,
+    mult: float = 1,
+) -> tuple[list[Leg], list[str]]:
+    """The managed straddle (paper only). While every ticked option leg is open and they all sit on one strike, and NIFTY is ``points`` or more
+    away from that strike, every leg is closed at its live price (profit or loss booked) and opened again on the strike nearest to NIFTY at its
+    live price. Everything comes from the server: the distance from the stored setting, the spot from the live index, the strikes and their feed
+    keys from the stored chain of the legs' expiry (``ladder_of``). All or nothing: with no live price for NIFTY or for one of the contracts
+    nothing moves. Only while the index is being collected (09:15 to the end of continuous cash trading: after it the index shows indicative auction
+    values). A leg that is closed (a stop or a target) or a position that is not one strike (the page was edited) is left alone: the rule needs the pair intact."""
+    if restrike_problem(cfg):
+        return legs, []
+    assert cfg is not None
+    local = at.astimezone(_IST_ZONE)
+    end = spot_end(local.date())
+    if local.time() < SESSION_OPEN or (end is not None and local.time() >= end):
+        return legs, []
+    live = [lg for lg in legs if lg.get("enabled") is not False and lg.get("type") in ("CE", "PE")]
+    if not live or any(is_exited(lg) or lg.get("premium") is None for lg in live):
+        return legs, []
+    held = {(lg.get("expiry"), lg.get("strike")) for lg in live}
+    if len(held) != 1:
+        return legs, []
+    strike = float(live[0]["strike"])
+    spot = price_of({"key": RESTRIKE_SPOT_KEY})
+    if spot is None or not spot > 0 or abs(spot - strike) < float(cfg["points"]):
+        return legs, []
+    ladder = ladder_of(str(live[0].get("expiry")))
+    if not ladder:
+        return legs, []
+    rung = min(ladder, key=lambda r: (abs(float(r["strike"]) - spot), float(r["strike"])))
+    new_strike = float(rung["strike"])
+    if new_strike == strike:
+        return legs, []
+    moves: dict[int, tuple[str, float, float]] = {}
+    for i, lg in enumerate(legs):
+        if lg not in live:
+            continue
+        new_key = rung["ce"] if lg["type"] == "CE" else rung["pe"]
+        old_px, new_px = price_of(lg), price_of({"key": new_key})
+        if old_px is None or new_px is None or not old_px > 0 or not new_px > 0:
+            return legs, []
+        moves[i] = (str(new_key), float(old_px), float(new_px))
+    out: list[Leg] = []
+    events: list[str] = []
+    for i, lg in enumerate(legs):
+        if i not in moves:
+            out.append(lg)
+            continue
+        new_key, old_px, new_px = moves[i]
+        n = roll_leg_to(lg, new_strike, new_key, old_px, new_px, lot_size, at, mult)
+        events.append(n["log"][-1]["text"])
+        out.append(n)
+    return out, events
 
 
 # ---- holding period: intraday (close every open leg at a set time of day) or overnight (hold to expiry, close at that time on expiry day)
@@ -476,8 +598,11 @@ class StrategyAutomation:
         interval_s: float = 1.0,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         trading_day: Callable[[date], bool | None] | None = None,
+        ladder_of: Callable[[str], Ladder] | None = None,
     ) -> None:
         self.trading_day = trading_day
+        self._ladder_source = ladder_of
+        self._ladders: dict[str, tuple[float, Ladder]] = {}
         self.store = store
         self.price_of_key = price_of_key
         self.is_live = is_live
@@ -512,6 +637,7 @@ class StrategyAutomation:
                 if kept:
                     at = self._now()
                     events = [*events, *({"at": at.isoformat(), "text": f"{_stamp(at)} Ignored an old copy of {t}: the server had already moved on (a re-entry changes the entry price; a reset needs the Reset button)"} for t in kept)][-50:]
+            doc = {**doc, "restrike": clean_restrike(doc.get("restrike"))}  # the distance only: the strikes and keys are the server's own
             # when the holding rule started counting: the browser's value, else the one kept while the rule is unchanged, else now
             same_hold = cur is not None and doc.get("hold") == cur.get("hold") and doc.get("rearmAt") == cur.get("rearmAt")
             hold_from = doc.get("holdFrom") or ((cur or {}).get("holdFrom") if same_hold else None) or self._now().isoformat()
@@ -547,6 +673,23 @@ class StrategyAutomation:
             return False
         return SESSION_OPEN <= t.time() <= session_close()
 
+    def _ladder(self, expiry: str) -> Ladder:
+        """The strikes and feed keys of an expiry's stored chain, kept for five minutes (a re-strike is rare; reading the chain file is not free)."""
+        if self._ladder_source is None:
+            return []
+        now = time_module.monotonic()
+        hit = self._ladders.get(expiry)
+        if hit is not None and now - hit[0] < LADDER_TTL_S:
+            return hit[1]
+        try:
+            ladder = self._ladder_source(expiry)
+        except Exception as exc:  # noqa: BLE001 - a chain that cannot be read means no re-strike this second, not a failed check
+            logger.warning("restrike_ladder_failed", extra={"fields": {"expiry": expiry, "error": type(exc).__name__}})
+            return hit[1] if hit is not None else []
+        if ladder:
+            self._ladders[expiry] = (now, ladder)
+        return ladder
+
     # ---- one evaluation
     def check_once(self) -> list[str]:
         at = self._now()
@@ -566,6 +709,8 @@ class StrategyAutomation:
             rstate = doc.get("rstate") or {}
             legs, new_state, rule_events = apply_strategy_rules(legs, doc.get("rules") or {}, rstate, price, int(lot), at, mult)
             events = [*events, *rule_events]
+            legs, restrike_events = apply_restrike(legs, doc.get("restrike"), price, self._ladder, int(lot), at, mult)
+            events = [*events, *restrike_events]
             legs, hold_events = apply_hold(legs, doc.get("hold"), _parse(doc.get("holdFrom")), price, int(lot), at, mult)
             events = [*events, *hold_events]
             if not events and new_state == rstate:

@@ -86,6 +86,36 @@ describe("Strategy builder with the server keeping the stops and targets", () =>
     expect(JSON.parse(localStorage.getItem(WORKING_KEY) ?? "{}").moveToCost).toBe(false); // and kept across a refresh
   });
 
+  it("takes the managed straddle's distance from the server's copy, shows it, and sends a change of it back (the distance only)", async () => {
+    running = { doc: { rev: 4, auto: true, lotSize: 75, mult: 1, expiry: "2026-11-10", legs: [leg(), leg({ id: "L2", type: "PE" })], restrike: { points: 100 } } };
+    mount();
+    const box = await screen.findByTestId("restrike-box");
+    expect(box).toHaveTextContent("re-strike when NIFTY is");
+    const points = screen.getByLabelText("Re-strike distance in points") as HTMLInputElement;
+    await waitFor(() => expect(points.value).toBe("100"));
+    const { fireEvent } = await import("@testing-library/react");
+    fireEvent.change(points, { target: { value: "150" } });
+    fireEvent.blur(points);
+    await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.url === "/api/strategies/running")).toBe(true), { timeout: 3000 });
+    const put = calls.find((c) => c.method === "PUT" && c.url === "/api/strategies/running")!.body as { doc: { restrike: Record<string, unknown> | null } };
+    expect(put.doc.restrike).toEqual({ points: 150 }); // the distance and nothing else: the index, the strikes and their keys are the server's
+    fireEvent.click(screen.getByRole("button", { name: "200" })); // the quick choices
+    await waitFor(() => expect((screen.getByLabelText("Re-strike distance in points") as HTMLInputElement).value).toBe("200"));
+    expect(screen.getByRole("button", { name: "200" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByTestId("restrike-off"));
+    await waitFor(() => expect(screen.queryByTestId("restrike-box")).toBeNull());
+  });
+
+  it("choosing the Managed straddle ready-made sells the ATM pair and turns the re-strike on at 100 points", async () => {
+    mount();
+    const { fireEvent } = await import("@testing-library/react");
+    fireEvent.click(await screen.findByRole("tab", { name: "Neutral" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Managed straddle" }));
+    expect(await screen.findByTestId("restrike-box")).toBeInTheDocument();
+    expect((screen.getByLabelText("Re-strike distance in points") as HTMLInputElement).value).toBe("100");
+    expect(await screen.findAllByLabelText("Stop-loss premium")).toHaveLength(2); // a sold CE and a sold PE
+  });
+
   it("an old working copy kept in this browser is not written back when the server's running strategy is empty (20 and 23 Nov 2026: a closed straddle came back)", async () => {
     // the server closed and reset the strategy: nothing is running; this browser still holds the old straddle, saved only a day ago
     running = { doc: { rev: 9, auto: true, lotSize: 75, mult: 1, expiry: "2026-11-10", legs: [] } };

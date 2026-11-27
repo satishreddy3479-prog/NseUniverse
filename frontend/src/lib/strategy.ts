@@ -498,7 +498,13 @@ export interface TemplateContext {
   premium: (expiry: string, strike: number, type: OptionType) => number | null;
 }
 type Draft = Omit<Leg, "id">;
-export interface Template { id: string; label: string; group: "Directional" | "Neutral" | "Spreads" | "Calendar"; view: string; build: (c: TemplateContext) => Draft[] | { error: string } }
+/** The managed straddle (paper only, kept by the server with everything it needs: the live index, the strikes and their feed keys come from the server, a page sends only the distance): while the sold pair is intact and NIFTY is `points` or more from its strike, both legs are closed at their live prices (profit or loss booked) and the pair is sold again at the strike nearest to NIFTY. */
+export interface RestrikeRule { points: number }
+export const DEFAULT_RESTRIKE_POINTS = 100;
+export const RESTRIKE_MAX_POINTS = 2000;
+/** quick choices for the distance; any number from 1 to 2,000 may be typed too */
+export const RESTRIKE_CHOICES = [100, 150, 200, 250, 300] as const;
+export interface Template { id: string; label: string; group: "Directional" | "Neutral" | "Spreads" | "Calendar"; view: string; /** a managed template: the points NIFTY may move from the strike before the pair is re-struck */ restrike?: number; build: (c: TemplateContext) => Draft[] | { error: string } }
 
 function strikeAt(c: TemplateContext, steps: number): number | null {
   const ks = [...c.strikes].sort((a, b) => a - b);
@@ -529,6 +535,7 @@ export const TEMPLATES: Template[] = [
   { id: "short_put", label: "Short put", group: "Directional", view: "Bullish or flat, large risk", build: (c) => mk(c, [["SELL", "PE", 0]]) },
   { id: "long_straddle", label: "Long straddle", group: "Neutral", view: "Big move either way", build: (c) => mk(c, [["BUY", "CE", 0], ["BUY", "PE", 0]]) },
   { id: "short_straddle", label: "Short straddle", group: "Neutral", view: "Range-bound, unlimited risk", build: (c) => mk(c, [["SELL", "CE", 0], ["SELL", "PE", 0]]) },
+  { id: "managed_straddle", label: "Managed straddle", group: "Neutral", view: "Sold ATM pair, re-struck every 100 points", restrike: DEFAULT_RESTRIKE_POINTS, build: (c) => mk(c, [["SELL", "CE", 0], ["SELL", "PE", 0]]) },
   { id: "long_strangle", label: "Long strangle", group: "Neutral", view: "Big move either way", build: (c) => mk(c, [["BUY", "CE", 2], ["BUY", "PE", -2]]) },
   { id: "short_strangle", label: "Short strangle", group: "Neutral", view: "Range-bound, unlimited risk", build: (c) => mk(c, [["SELL", "CE", 2], ["SELL", "PE", -2]]) },
   { id: "bull_call_spread", label: "Bull call spread", group: "Spreads", view: "Moderately bullish", build: (c) => mk(c, [["BUY", "CE", 0], ["SELL", "CE", 2]]) },
@@ -556,7 +563,7 @@ export type Bias = "Bullish" | "Bearish" | "Neutral" | "Calendar" | "Other";
 export const TEMPLATE_BIAS: Record<string, Bias> = {
   long_call: "Bullish", short_put: "Bullish", bull_call_spread: "Bullish", bull_put_spread: "Bullish",
   long_put: "Bearish", short_call: "Bearish", bear_put_spread: "Bearish", bear_call_spread: "Bearish",
-  short_straddle: "Neutral", short_strangle: "Neutral", iron_condor: "Neutral", iron_butterfly: "Neutral", butterfly: "Neutral",
+  short_straddle: "Neutral", managed_straddle: "Neutral", short_strangle: "Neutral", iron_condor: "Neutral", iron_butterfly: "Neutral", butterfly: "Neutral",
   long_straddle: "Other", long_strangle: "Other", ratio_spread: "Other",
   calendar_call: "Calendar", calendar_put: "Calendar", calendar_straddle: "Calendar", double_calendar: "Calendar", diagonal_call: "Calendar", diagonal_put: "Calendar",
 };

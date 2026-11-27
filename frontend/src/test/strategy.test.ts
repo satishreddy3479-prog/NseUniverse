@@ -131,7 +131,7 @@ describe("templates and validation", () => {
       for (const l of r) expect(strikes).toContain(l.strike);
     }
     expect(TEMPLATES.map((t) => t.id)).toEqual(expect.arrayContaining(["long_call", "long_put", "short_call", "short_put", "long_straddle", "short_straddle", "long_strangle", "short_strangle", "bull_call_spread", "bear_put_spread", "bull_put_spread", "bear_call_spread", "iron_condor", "iron_butterfly", "butterfly", "ratio_spread", "calendar_call", "calendar_put", "calendar_straddle", "double_calendar", "diagonal_call", "diagonal_put"]));
-    expect(TEMPLATES).toHaveLength(22);
+    expect(TEMPLATES).toHaveLength(23);
   });
   it("iron condor strikes are two and four listed strikes either side of the ATM", () => {
     const r = TEMPLATES.find((t) => t.id === "iron_condor")!.build(ctx) as Omit<Leg, "id">[];

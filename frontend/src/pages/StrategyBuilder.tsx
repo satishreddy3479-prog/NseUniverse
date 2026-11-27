@@ -26,14 +26,14 @@ import { futureOf, futurePrice, futureToAdd, futureToRollInto, useLiveFutureCont
 import { analyzeCurve, curveOf, isEstimateAt, legExpiries, pnlAtExpiry } from "../lib/multiExpiry";
 import { carryFromForward, expiryEnd, legGreeks, sdLevel, netGreeks, probabilityOfProfit, probabilityOfProfitFn, scenarioGrid, sdBands, spotAtPremium, theoreticalPnl, type ContractGreeks, type Valuation } from "../lib/optionModel";
 import { adoptExits,
-  analyzeExpiry, applyAutomation, applyHold, DEFAULT_HOLD, legName, holdProblem, type HoldRule, applyStrategyRules, exitLeg, expiryPnl, hitOf, isExited, isFinished, newLegId, reenterLeg, rollFutureLeg, rollLeg, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds, NO_RULES, hasRules, lockFloor, rulesProblem, type StrategyRules, type RulesState,
+  analyzeExpiry, applyAutomation, applyHold, DEFAULT_HOLD, legName, holdProblem, type HoldRule, applyStrategyRules, type RestrikeRule, RESTRIKE_MAX_POINTS, RESTRIKE_CHOICES, exitLeg, expiryPnl, hitOf, isExited, isFinished, newLegId, reenterLeg, rollFutureLeg, rollLeg, payoffCurve, sign, TEMPLATE_BIAS, TEMPLATES, validateStrategy, withIds, NO_RULES, hasRules, lockFloor, rulesProblem, type StrategyRules, type RulesState,
   type Action, type Bias, type Leg, type LegType, type OptionType, type Template,
 } from "../lib/strategy";
 
 export const WORKING_KEY = "nse.builder.working.v1";
 export const SAVE_KEY = "nse.strategies.v1";
 /** A saved strategy: its legs and, since 25 Nov 2026, the holding rule, the strategy stop/target/lock rules and the move-to-cost choice (older entries lack them and read as the defaults). */
-export interface Saved { name: string; savedAt: string; updatedAt?: string; expiry: string; legs: Leg[]; hold?: HoldRule; rules?: StrategyRules; moveToCost?: boolean }
+export interface Saved { name: string; savedAt: string; updatedAt?: string; expiry: string; legs: Leg[]; hold?: HoldRule; rules?: StrategyRules; moveToCost?: boolean; restrike?: RestrikeRule | null }
 export const CLOSED_KEY = "nse.closed.v1";
 /** The Strategy portfolio page asks the builder to open a saved strategy or a closed trade through the address (/strategy?open=NAME, /strategy?closed=ID), so it works from any device and any tab; the builder reads it once and removes it. */
 export const builderUrl = (what: { open?: string; closed?: string }): string => `/strategy${what.open ? `?open=${encodeURIComponent(what.open)}` : what.closed ? `?closed=${encodeURIComponent(what.closed)}` : ""}`;
@@ -159,7 +159,7 @@ export default function StrategyBuilder() {
   const fetchChain = (e: string) => (collected.has(e) ? api.optionChain(e) : api.optionChainOnDemand(e));
   // The strategy being worked on is kept in this browser, so a refresh does not bring back an older saved copy and
   // repeat exits that already happened. Copies older than three days are ignored.
-  type Work = { legs?: Leg[]; expiry?: string | null; name?: string; loaded?: string | null; baseline?: Leg[]; at?: number; rules?: StrategyRules; rstate?: RulesState | null; rearmAt?: string | null; hold?: HoldRule; holdFrom?: string | null; moveToCost?: boolean };
+  type Work = { legs?: Leg[]; expiry?: string | null; name?: string; loaded?: string | null; baseline?: Leg[]; at?: number; rules?: StrategyRules; rstate?: RulesState | null; rearmAt?: string | null; hold?: HoldRule; holdFrom?: string | null; moveToCost?: boolean; restrike?: RestrikeRule | null };
   // The server holds the strategy being worked on; nothing from this browser seeds the page, so a second device or a stale copy never shows a strategy that is no longer the real one.
   // Only a temporary view (a forward-test position) seeds the page, and this browser's own copy is read once, here, as the fallback for a server that cannot be reached (see the hydration below).
   const [work] = useState<Work | null>(() => (temp ? { legs: temp.legs, expiry: temp.expiry, name: temp.name, loaded: null, baseline: temp.legs, rules: temp.rules, rstate: null, rearmAt: temp.holdFrom, holdFrom: temp.holdFrom, moveToCost: temp.moveToCost, at: Date.now() } : null));
@@ -181,6 +181,7 @@ export default function StrategyBuilder() {
   const [mult, setMult] = useState(1);
   /** strategy-level stop loss, target and lock-and-trail (rupees), and what they have done so far (the profit floor, the rule that fired) */
   const [rules, setRules] = useState<StrategyRules>(work?.rules ?? NO_RULES);
+  const [restrike, setRestrike] = useState<RestrikeRule | null>(work?.restrike ?? null);
   const [rstate, setRstate] = useState<RulesState | null>(work?.rstate ?? null);
   const [rearmAt, setRearmAt] = useState<string | null>(work?.rearmAt ?? null);
   const [hold, setHold] = useState<HoldRule>(work?.hold ?? DEFAULT_HOLD);
@@ -483,8 +484,8 @@ export default function StrategyBuilder() {
   }, [rows, legs, autoActive, mult, lotSize, settle, rules, hold, holdFrom, moveToCost]);
   useEffect(() => {
     if (temp || !hydrated) return; // a temporary view is never the working copy; before the server has answered the page is empty and must not overwrite the copy kept for an unreachable server
-    try { localStorage.setItem(WORKING_KEY, JSON.stringify({ legs, expiry, name, loaded, baseline, rules, rstate, rearmAt, hold, holdFrom, moveToCost, at: Date.now() })); } catch { /* this visit only */ }
-  }, [hydrated, legs, expiry, name, loaded, baseline, rules, rstate, rearmAt, hold, holdFrom, moveToCost]);
+    try { localStorage.setItem(WORKING_KEY, JSON.stringify({ legs, expiry, name, loaded, baseline, rules, restrike, rstate, rearmAt, hold, holdFrom, moveToCost, at: Date.now() })); } catch { /* this visit only */ }
+  }, [hydrated, legs, expiry, name, loaded, baseline, rules, restrike, rstate, rearmAt, hold, holdFrom, moveToCost]);
 
   // ---- the server keeps this strategy and checks its stops and targets every second, with or without a page open.
   // The browser sends every change (after a short pause) and takes back what the server did; if the server cannot be
@@ -500,16 +501,16 @@ export default function StrategyBuilder() {
     const row = (collected.has(l.expiry) ? books.get(l.expiry)?.rows : undefined)?.find((x) => x.strike === l.strike);
     return liveKey(l.type === "CE" ? row?.call ?? null : row?.put ?? null) ?? l.key ?? null;
   };
-  const payloadJson = JSON.stringify({ name, loaded, expiry: strategyExpiry, lotSize, mult, auto: autoOn, moveToCost, rules, rearmAt, hold, holdFrom, baseline, legs: legs.map((l) => ({ ...l, key: keyOf(l) })) });
+  const payloadJson = JSON.stringify({ name, loaded, expiry: strategyExpiry, lotSize, mult, auto: autoOn, moveToCost, rules, restrike: restrike ? { points: restrike.points } : null, rearmAt, hold, holdFrom, baseline, legs: legs.map((l) => ({ ...l, key: keyOf(l) })) });
   // what the page compares to know whether anything it has not sent is waiting: the same document without the live-feed keys, which come and
   // go with the stream and must not make an idle page look as if it had unsent edits (it would then never take the server's exits)
-  const coreJson = JSON.stringify({ name, loaded, expiry: strategyExpiry, lotSize, mult, auto: autoOn, moveToCost, rules, rearmAt, hold, baseline, legs });
+  const coreJson = JSON.stringify({ name, loaded, expiry: strategyExpiry, lotSize, mult, auto: autoOn, moveToCost, rules, restrike, rearmAt, hold, baseline, legs });
   const adoptServer = (d: RunningDoc, announce: boolean) => {
     revRef.current = d.rev ?? null;
     emptyOnServer.current = !d.legs?.length;
     skipPush.current = true;
     setLegs(d.legs ?? []); setBaseline(d.baseline ?? d.legs ?? []); setName(d.name ?? ""); setLoaded(d.loaded ?? null); setMult(d.mult ?? 1);
-    setRules(d.rules ?? NO_RULES); setRstate(d.rstate ?? null); setRearmAt(d.rearmAt ?? null); setHold(d.hold ?? DEFAULT_HOLD); setHoldFrom(d.holdFrom ?? null); setMoveToCost(d.moveToCost ?? false);
+    setRules(d.rules ?? NO_RULES); setRestrike(d.restrike?.points ? { points: d.restrike.points } : null); setRstate(d.rstate ?? null); setRearmAt(d.rearmAt ?? null); setHold(d.hold ?? DEFAULT_HOLD); setHoldFrom(d.holdFrom ?? null); setMoveToCost(d.moveToCost ?? false);
     if (d.expiry) setPicked(d.expiry);
     const last = d.serverEvents?.[d.serverEvents.length - 1];
     if (last && last.at !== seenEvents.current) {
@@ -522,14 +523,14 @@ export default function StrategyBuilder() {
   const clearLocalCopy = () => {
     skipPush.current = true;
     setLegs([]); setBaseline([]); setName(""); setLoaded(null); setMult(1);
-    setRules(NO_RULES); setRstate(null); setRearmAt(null); setHold(DEFAULT_HOLD); setHoldFrom(null); setMoveToCost(false); setPicked(null);
+    setRules(NO_RULES); setRestrike(null); setRstate(null); setRearmAt(null); setHold(DEFAULT_HOLD); setHoldFrom(null); setMoveToCost(false); setPicked(null);
     try { localStorage.removeItem(WORKING_KEY); } catch { /* nothing to remove */ }
   };
   const adoptLocal = () => {
     const w = localWork;
     if (!w) return;
     setLegs(w.legs ?? []); setPicked(w.expiry ?? null); setBaseline(w.baseline ?? w.legs ?? []); setName(w.name ?? ""); setLoaded(w.loaded ?? null);
-    setRules(w.rules ?? NO_RULES); setRstate(w.rstate ?? null); setRearmAt(w.rearmAt ?? null); setHold(w.hold ?? DEFAULT_HOLD); setHoldFrom(w.holdFrom ?? null); setMoveToCost(w.moveToCost ?? false);
+    setRules(w.rules ?? NO_RULES); setRestrike(w.restrike ?? null); setRstate(w.rstate ?? null); setRearmAt(w.rearmAt ?? null); setHold(w.hold ?? DEFAULT_HOLD); setHoldFrom(w.holdFrom ?? null); setMoveToCost(w.moveToCost ?? false);
   };
   useEffect(() => {
     if (temp) { setHydrated(true); return; } // the server's running strategy is the user's own: not read, not replaced
@@ -792,6 +793,7 @@ export default function StrategyBuilder() {
     setNote(null);
     const at = new Date().toISOString();
     loadLegs(withIds(out).map((l) => (l.premium == null ? l : { ...l, enteredAt: at })));
+    setRestrike(t.restrike ? { points: t.restrike } : null); // a managed template turns the re-strike on, any other one turns it off
     if (far) setPayPick(null);
   };
   const chooseStrike = (l: Leg, strike: number) => {
@@ -908,7 +910,7 @@ export default function StrategyBuilder() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, sync, closed, temp]);
-  const openClosed = (c: Closed) => { setPicked(c.expiry); loadLegs(c.legs.map(({ exit: _e, ...l }) => ({ ...l, id: newLegId() }))); setMult(1); setNote(null); setOpened(c); setLoaded(null); };
+  const openClosed = (c: Closed) => { setRestrike(null); setPicked(c.expiry); loadLegs(c.legs.map(({ exit: _e, ...l }) => ({ ...l, id: newLegId() }))); setMult(1); setNote(null); setOpened(c); setLoaded(null); };
   const persist = (s: Saved[]) => { pushDiff("saved", saved, s, (x) => x.name); setSaved(s); try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch { /* storage unavailable: kept for this visit only */ } };
   const net = (k: number, t: OptionType) => legs.filter((l) => l.expiry === expiry && l.strike === k && l.type === t).reduce((s, l) => s + sign(l.action) * l.lots, 0);
   const canNew = legs.length > 0 || name !== "" || loaded != null || opened != null;
@@ -926,11 +928,11 @@ export default function StrategyBuilder() {
   };
   const savedEntry = loaded ? saved.find((x) => x.name === loaded) : undefined;
   const sig = (ls: Leg[]) => JSON.stringify(ls.map(({ id: _i, ...r }) => r));
-  const settings = { hold, rules, moveToCost };
-  const settingsSig = (x: { hold?: HoldRule; rules?: StrategyRules; moveToCost?: boolean }) => JSON.stringify([x.hold ?? DEFAULT_HOLD, x.rules ?? NO_RULES, x.moveToCost ?? false]);
+  const settings = { hold, rules, moveToCost, restrike };
+  const settingsSig = (x: { hold?: HoldRule; rules?: StrategyRules; moveToCost?: boolean; restrike?: RestrikeRule | null }) => JSON.stringify([x.hold ?? DEFAULT_HOLD, x.rules ?? NO_RULES, x.moveToCost ?? false, x.restrike?.points ?? null]);
   // the legs and the rules that go with them: changing Intraday to Overnight, or a stop, is an edit of the saved strategy too
   const dirty = !!savedEntry && (sig(legs) !== sig(savedEntry.legs) || settingsSig(settings) !== settingsSig(savedEntry));
-  const adoptSettings = (x: Saved) => { setHold(x.hold ?? DEFAULT_HOLD); setRules(x.rules ?? NO_RULES); setMoveToCost(x.moveToCost ?? false); };
+  const adoptSettings = (x: Saved) => { setHold(x.hold ?? DEFAULT_HOLD); setRules(x.rules ?? NO_RULES); setMoveToCost(x.moveToCost ?? false); setRestrike(x.restrike ?? null); };
   const gallery = useMemo(() => TEMPLATES.filter((t) => TEMPLATE_BIAS[t.id] === bias), [bias]);
 
   return (
@@ -1296,6 +1298,26 @@ export default function StrategyBuilder() {
                       </div>
                     );
                   })()}
+                  {restrike && (
+                    <div className="mb-2 rounded-sm bg-slate-2 px-3 py-2 text-xs text-muted" data-testid="restrike-box">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                        <span className="text-paper">Managed straddle: re-strike when NIFTY is</span>
+                        <span className="flex flex-wrap items-center gap-1" role="group" aria-label="Re-strike distance">
+                          {RESTRIKE_CHOICES.map((p) => (
+                            <button key={p} type="button" aria-pressed={restrike.points === p} onClick={() => setRestrike({ points: p })}
+                              className={`rounded-sm border px-2 py-1 ${restrike.points === p ? "border-info bg-info/10 text-paper" : "border-rule hover:text-paper"}`}>{p}</button>
+                          ))}
+                          <NumBox ariaLabel="Re-strike distance in points" className={`${field} w-[5rem] !px-1.5 text-right`} value={restrike.points} onCommit={(v) => { if (v != null && v > 0 && v <= RESTRIKE_MAX_POINTS) setRestrike({ points: v }); }} />
+                          points
+                        </span>
+                        <span>from the strike</span>
+                        <button type="button" className="rounded-sm border border-rule px-2 py-1 hover:text-paper" data-testid="restrike-off" onClick={() => setRestrike(null)}>Turn off</button>
+                      </div>
+                      <div className="mt-1" data-testid="restrike-note">
+                        Kept by the server (paper only, every second, with or without a page open, from any device): when the sold CE and PE are both open on one strike and NIFTY is {restrike.points} or more points away from it, both are closed at their live prices (profit or loss booked) and the pair is sold again at the strike nearest to NIFTY. The server reads the live index and the strikes itself, only while the index is traded (09:15 to the end of continuous cash trading). All or nothing: with a price missing nothing moves. A leg closed by its own stop or target, or legs on different strikes, pause the rule.
+                      </div>
+                    </div>
+                  )}
                   {(() => {
                     const bad = rulesProblem(rules);
                     const setR = (patch: Partial<StrategyRules>) => setRules((r) => ({ ...r, ...patch }));
