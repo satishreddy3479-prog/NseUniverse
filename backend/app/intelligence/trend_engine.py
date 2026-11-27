@@ -232,6 +232,34 @@ def opening_range(bars1m: Sequence[Mapping[str, Any]], minutes: int = OR_MINUTES
     return {"high": max(b["h"] for b in inside), "low": min(b["l"] for b in inside), "complete": complete, "minutes": minutes}
 
 
+def session_structure(closes: Sequence[float]) -> dict[str, Any] | None:
+    """How the closes sit around their own running mean (the session TWAP): the share above it, how often they cross it, the longest stay on one side (in bars), the last
+    distance (close minus mean). A port of ``structure`` in frontend ``lib/trendStats.ts`` (the Session Structure tab); a close equal to the mean counts as neither side. None under 2 bars."""
+    sides: list[int] = []
+    total = 0.0
+    last = 0.0
+    for i, c in enumerate(closes):
+        total += c
+        m = total / (i + 1)
+        sides.append((c > m) - (c < m))
+        last = c - m
+    if len(sides) < 2:
+        return None
+    nz = [s for s in sides if s != 0]
+    crossings = sum(1 for i in range(1, len(nz)) if nz[i] != nz[i - 1])
+    longest = run = 0
+    run_side = cur = 0
+    for s in sides:
+        if s != 0 and s == cur:
+            run += 1
+        else:
+            cur = s
+            run = 0 if s == 0 else 1
+        if run > longest:
+            longest, run_side = run, s
+    return {"pct_above": round(100 * sum(1 for s in sides if s > 0) / len(sides), 1), "crossings": crossings, "longest_run": longest, "run_side": run_side, "distance": round(last, 2), "n": len(sides)}
+
+
 def assess(raw_bars: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """The trend reading now plus the session figures the verdict uses: the regime of the latest 5-minute bar, the session mean of the 5-minute closes, the 14-bar ATR, the opening range
     and where price sits against them, and a compact series of the day (time, score, label, direction, close) for the timeline."""
@@ -256,7 +284,7 @@ def assess(raw_bars: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "available": True, "bars_1m": len(bars1m), "bars_5m": len(bars5), "last_bar_at": last_bar["t"].isoformat(), "last_bar_end": (last_bar["t"] + timedelta(minutes=1)).isoformat(),
         "price": price, "label": last["label"], "score": None if last["score"] is None else round(last["score"], 4), "scores": last["scores"], "agreement": last["agreement"],
         "metrics": last["metrics"], "direction": direction_of(last["label"]), "strength": strength(last["score"]),
-        "session_mean": round(mean, 2), "atr": None if atr is None else round(atr, 2),
+        "session_mean": round(mean, 2), "atr": None if atr is None else round(atr, 2), "structure": session_structure(closes),
         "from_mean_atr": None if atr is None or atr <= 0 else round((price - mean) / atr, 3),
         "opening_range": None if orr is None else {**orr, "state": state, "beyond_points": beyond, "beyond_atr": None if atr is None or atr <= 0 or beyond is None else round(beyond / atr, 3)},
         "series": [{"t": r["t"].isoformat(), "score": None if r["score"] is None else round(r["score"], 4), "label": r["label"], "dir": direction_of(r["label"])} for r in series],

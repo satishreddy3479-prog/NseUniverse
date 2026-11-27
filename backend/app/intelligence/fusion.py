@@ -680,7 +680,10 @@ def trend_group(inp: Mapping[str, Any], status: Mapping[str, Any]) -> dict[str, 
         Term("Close against the session mean", mean_score, _warm("atr", t, ok) if mean_score is None or mean is None or last is None else f"NIFTY {last:.0f} is {d_mean:+.1f} ATR from the session mean {mean:.0f}", family="price", weight=0.5, shares=("index price (group D)",)),
         Term("Close against the opening range", or_score, or_detail, family="price", weight=0.5, shares=("index price (group D)",)),
     ]
-    return engine("trend", terms, ["trend"], status, extra={"owns": "the intraday trend and regime of the index; futures, positioning and breadth are other groups'", "regime": None if not ok else {"label": label, "score": score, "direction": d}})
+    stc = s("structure")
+    atr_v = num(s("atr"))
+    structure = None if not ok or not isinstance(stc, Mapping) else {**stc, "atr": atr_v, "distance_atr": None if not atr_v else round(float(stc["distance"]) / atr_v, 2)}
+    return engine("trend", terms, ["trend"], status, extra={"owns": "the intraday trend and regime of the index; futures, positioning and breadth are other groups'", "regime": None if not ok else {"label": label, "score": score, "direction": d}, "structure": structure})
 
 
 def build_engines(inp: Mapping[str, Any], status: Mapping[str, Any]) -> list[dict[str, Any]]:

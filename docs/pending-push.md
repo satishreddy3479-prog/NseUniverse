@@ -21,3 +21,4 @@
 - 27 Nov 2026: D338 shutdown order, heavy-worker stop (backend/app/main.py, stream/heavy.py). Committed locally, not pushed.
 - 27 Nov 2026: D339 managed straddle ready-made + server re-strike rule (backend automation, builder page). Committed locally.
 - 27 Nov 2026: D340 managed-straddle trade log and history (straddle engine page, backend managed-history endpoint). Committed locally.
+- 27 Nov 2026: D341 seller environment reads Trend & Regime and Session Structure (backend straddle_env, trend_engine, fusion; research/seller-trend). Local branch `seller-trend`, not pushed.

@@ -60,6 +60,17 @@ def _band(v: float | None, bands: Sequence[tuple[int, str]]) -> str:
     return next(n for lo, n in bands if v >= lo)
 
 
+# Trend & Regime (the page's classes: Range-bound < 0.30 <= Mixed < 0.45 <= Weak < 0.65 <= Trending): how much a premium seller should fear one-way movement, whichever way it goes.
+# Provisional working values, like every weight here; not fitted to data. A label that price has already walked back from ("fading") counts half.
+# Weights: the owner asked for both readings in the score (27 Nov 2026). 10 puts the trend regime beside 'movement against break-even' (10), the other direct reading of how one-way the session is; 6 puts the
+# structure beside the positioning and skew readings (5-6) because it reads the same index price. A weight of 0 keeps a reading on the page and out of the score. D341: on the 15 stored sessions neither reading
+# predicted the seller's next 30 minutes (the trending class did better than the range class), so these two weights have no support in the stored data yet.
+TREND_REGIME_WEIGHT = 10
+SESSION_STRUCTURE_WEIGHT = 6
+TREND_VALUE = {"Range-bound": 0.6, "Mixed": 0.1, "Weak uptrend": -0.4, "Weak downtrend": -0.4, "Trending up": -1.0, "Trending down": -1.0}
+STRUCT_MIN_BARS = 6  # five-minute bars before the session structure says anything (half an hour)
+STRUCT_CROSS_RATE = (0.12, 0.12)  # crossings of the session mean per bar: 0.12 reads neutral, 0.24 or more fully range-like, none fully one-sided (provisional)
+STRUCT_ATR = (0.6, 1.5)  # distance from the session mean in ATR: 0 reads +0.6, each 1.5 ATR takes 1.0 off (provisional)
 CONVEXITY_RATIO = 1.5  # provisional: realised gamma cost above this multiple of the expected theta decay hard-caps the seller class
 PREM_SCALE_PCT = 12.0  # provisional: a straddle premium move of this many percent of its opening value is a full-strength reading
 PREM_STOP_PCT, PREM_STOP_HARD_PCT = 15.0, 30.0  # provisional stop zones for a short straddle: premium up this much from the open caps the class
@@ -115,6 +126,8 @@ def evidence(a: Mapping[str, Any], mi: Mapping[str, Any]) -> dict[str, Any]:
     sk = (mv.get("skew25") or {}).get("60") if (mv.get("skew25") or {}).get("60") is not None else g(iv, "skew25", "change")
     eng = {e["key"]: e.get("score") for e in (mi.get("engines") or []) if isinstance(e, Mapping)}
     hw = g(mi, "heavyweights", "aggregate", "15", "score")
+    trend_e = next((e for e in (mi.get("engines") or []) if isinstance(e, Mapping) and e.get("key") == "trend"), {})
+    tr_regime, tr_struct = trend_e.get("regime"), trend_e.get("structure")
     pulse = mi.get("pulse") or {}
     opt = g(mi, "panels", "options") or {}
     return {
@@ -124,7 +137,7 @@ def evidence(a: Mapping[str, Any], mi: Mapping[str, Any]) -> dict[str, Any]:
         "accel": g(rvs, "acceleration", "ratio"), "regime": (a.get("regime") or {}).get("label"), "eff30": g(a, "regime", "path_efficiency_30m"), "move30": rvs.get("move_30m_pts"),
         "move_vs_sd": rvs.get("move_vs_daily_sd"),
         "prem_rolling": premium_path(a, "rolling"),
-        "orderflow": num(eng.get("orderflow")), "positioning": num(eng.get("positioning")), "heavy15": num(hw), "cvd": num(pulse.get("futures_cvd_pct")),
+        "trend_label": g(tr_regime, "label"), "trend_score": num(g(tr_regime, "score")), "struct": tr_struct if isinstance(tr_struct, Mapping) else None, "orderflow": num(eng.get("orderflow")), "positioning": num(eng.get("positioning")), "heavy15": num(hw), "cvd": num(pulse.get("futures_cvd_pct")),
         "vwap_pct": num(g(pulse, "vwap", "distance_pct")), "vwap_side": g(pulse, "vwap", "side"), "opt": opt, "spot": num(pulse.get("spot")) or num(a.get("spot", [None])[-1] if a.get("spot") else None),
     }  # fmt: skip
 
@@ -181,6 +194,27 @@ def seller_components(ev: Mapping[str, Any]) -> list[dict[str, Any]]:
     tags = ev["reg30"]
     v = -1.0 if "both_expanding" in tags else 0.7 if "both_contracting" in tags else -0.5 if any(t in tags for t in ("put_expanding_faster", "call_expanding_faster")) else 0.0
     c.append(comp("iv_sides", "Call/put IV behaviour", 6, v if ev["dce30"] is not None else None, (("; ".join(tags) or "no clear call/put IV pattern") + " (30 min)") if ev["dce30"] is not None else "needs a 30-minute window of call and put IV (not enough samples yet)", "straddle IV"))
+    tl = ev.get("trend_label")
+    base_label = None if tl is None else str(tl).replace(" (fading)", "")
+    tv = TREND_VALUE.get(base_label) if base_label else None
+    if tv is not None and tl is not None and str(tl).endswith("(fading)") and tv < 0:
+        tv = tv / 2  # price has already walked back from the trend the label describes
+    c.append(comp("trend_regime", "Trend & regime (index)", TREND_REGIME_WEIGHT, tv, (f"the index reads '{tl}' (trend score {ev['trend_score']:.2f}): a one-way session is the seller's risk whichever way it goes" if ev.get("trend_score") is not None else f"the index reads '{tl}'") if tv is not None else "no trend reading yet (needs about 30 minutes of stored index bars)", "Market Intelligence trend engine (the Trend & Regime page's rules)"))
+    stc = ev.get("struct")
+    sv_parts: list[float] = []
+    sv_text: list[str] = []
+    if stc and (stc.get("n") or 0) >= STRUCT_MIN_BARS:
+        rate = stc["crossings"] / max(1, stc["n"] - 1)
+        sv_parts.append(clip((rate - STRUCT_CROSS_RATE[0]) / STRUCT_CROSS_RATE[1]))
+        sv_text.append(f"NIFTY crossed its session mean {stc['crossings']} times in {stc['n']} five-minute bars (more crossings = a range)")
+        if stc.get("distance_atr") is not None:
+            sv_parts.append(max(-1.0, STRUCT_ATR[0] - abs(stc["distance_atr"]) / STRUCT_ATR[1]))
+            sv_text.append(f"{stc['distance_atr']:+.1f} ATR from it")
+    vp = ev["vwap_pct"]
+    if vp is not None and sv_parts:
+        sv_parts.append(-0.5 if abs(vp) >= 0.3 else 0.3)
+        sv_text.append(f"the future is {vp:+.2f}% from its VWAP")
+    c.append(comp("session_structure", "Session structure (TWAP / VWAP)", SESSION_STRUCTURE_WEIGHT, (sum(sv_parts) / len(sv_parts)) if sv_parts else None, "; ".join(sv_text) if sv_parts else "needs about 30 minutes of stored index bars", "Market Intelligence trend engine (the Session Structure tab), futures VWAP"))
     gp = ev["rv_gap"]
     c.append(comp("rv_gap", "Realised versus implied vol", 12, None if gp is None else gp / 6, f"implied minus realised {gp:+.1f} vol points (positive: the premium is rich against actual movement)" + _thin(ev) if gp is not None else "no realised window", "straddle realised vs implied"))
     r = ev["ratio"]
@@ -265,8 +299,8 @@ def seller(ev: Mapping[str, Any], dirn: Mapping[str, Any], recent: Sequence[floa
         r = score(cs)
         return {"score": r["score"], "class": _band(r["score"], SELLER_CLASSES), "uses": [by[i]["name"] for i in ids]}
 
-    straddle = sub(["decay", "prem_rolling", "rv_gap", "movement", "gamma", "iv_trend", "flow"])
-    strangle = sub(["iv_trend", "rv_gap", "movement", "gex_stable", "positioning", "skew", "flow"], {"positioning": 12, "movement": 6})
+    straddle = sub(["decay", "prem_rolling", "rv_gap", "movement", "trend_regime", "session_structure", "gamma", "iv_trend", "flow"])
+    strangle = sub(["iv_trend", "rv_gap", "movement", "trend_regime", "session_structure", "gex_stable", "positioning", "skew", "flow"], {"positioning": 12, "movement": 6})
     if {"directional", "convexity_blowout"} & {f["id"] for f in fl} and straddle["score"] is not None:
         straddle["score"] = round(min(straddle["score"], 40), 1)
         straddle["class"] = _band(straddle["score"], SELLER_CLASSES)
