@@ -30,6 +30,7 @@ select = ["E", "F", "I", "B", "UP", "S", "W"]
 ignore = ["S101"]
 
 [tool.ruff.lint.per-file-ignores]
+"app/stream/heavy.py" = ["E501"]
 "app/stream/loopwatch.py" = ["E501"]
 "app/stream/procstats.py" = ["E501"]
 "app/stream/index_close.py" = ["E501"]

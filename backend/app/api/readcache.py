@@ -15,6 +15,8 @@ from collections import OrderedDict
 from collections.abc import Callable, Hashable
 from typing import Any
 
+from app.stream.heavy import run_heavy
+
 MAX_ENTRIES = 256
 
 
@@ -40,7 +42,7 @@ class ReadCache:
         fut: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
         self._inflight[key] = fut
         try:
-            value = await asyncio.to_thread(compute)
+            value = await run_heavy(compute)  # one heavy computation at a time, at a lower priority than the event loop (stream/heavy.py)
         except BaseException as e:
             if not fut.done():
                 fut.set_exception(e if isinstance(e, Exception) else RuntimeError("cancelled"))

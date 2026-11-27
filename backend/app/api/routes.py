@@ -51,6 +51,7 @@ from app.storage.preferences import PreferenceError, PreferenceStore
 from app.storage.store import SnapshotStore, StorageError
 from app.storage.strategies import StrategyError, StrategyStore
 from app.strategy.automation import RunningConflict, StrategyAutomation
+from app.stream.heavy import run_heavy
 from app.stream.models import StreamStatusModel
 from app.stream.procstats import open_files
 
@@ -814,7 +815,7 @@ async def storage_cleanup_overview(request: Request) -> dict[str, Any]:
         now=a["now"],
     )
     key = f"cleanup|{s.data_dir}|{a['today']}"
-    return await asyncio.to_thread(_cached, key, _STORAGE_TTL_SECONDS, build)
+    return await run_heavy(_cached, key, _STORAGE_TTL_SECONDS, build)
 
 
 @router.post("/storage/cleanup", dependencies=[Depends(require_local_control)])
@@ -996,7 +997,7 @@ async def intelligence_straddle_validation(request: Request, sessions: int = 20)
     # it recomputes over every stored session (about 5 s) and past sessions do not change
     # minute to minute: reused for five minutes
     key = f"straddle-validation|{id(svc)}|{n}"
-    return await asyncio.to_thread(_cached, key, 300.0, lambda: svc.validation(n))
+    return await run_heavy(_cached, key, 300.0, lambda: svc.validation(n))
 
 
 @router.get("/swing/minute")

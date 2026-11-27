@@ -177,3 +177,39 @@ def test_stream_events_are_written_by_a_worker_thread_in_order_and_at_once_witho
     later = seen[1:]
     assert [d for _k, d, _s, _t in later] == [f"change {i}" for i in range(50)]  # in order
     assert all(t != loop_thread for *_x, t in later) and len({t for *_x, t in later}) == 1  # one worker, never the loop thread
+
+
+async def test_heavy_jobs_run_one_at_a_time_in_order_without_blocking_the_loop() -> None:
+    """27 Nov 2026: five heavy threads at once starved the event loop at the open; they now queue on one worker (stream/heavy.py)."""
+    import threading
+    import time
+
+    from app.stream.heavy import run_heavy
+
+    running, peak, order = 0, 0, []
+    lock = threading.Lock()
+
+    def job(i: int) -> int:
+        nonlocal running, peak
+        with lock:
+            running += 1
+            peak = max(peak, running)
+        time.sleep(0.15)
+        with lock:
+            running -= 1
+            order.append(i)
+        return i
+
+    ticks = 0
+
+    async def heartbeat() -> None:
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0.02)
+            ticks += 1
+
+    hb = asyncio.create_task(heartbeat())
+    got = await asyncio.gather(*(run_heavy(job, i) for i in range(4)))
+    hb.cancel()
+    assert got == [0, 1, 2, 3] and order == [0, 1, 2, 3] and peak == 1
+    assert ticks >= 15  # the loop kept running while 0.6 s of work was queued

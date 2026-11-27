@@ -80,6 +80,10 @@ class MarketStore:
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA busy_timeout=5000")
         self._db.executescript(_SCHEMA)
+        # the daily table is keyed by (session, symbol): a read of one symbol's bars scanned all of it (37,000 rows, 10 ms), once per heavyweight stock on every market summary (27 Nov 2026)
+        self._db.execute("CREATE INDEX IF NOT EXISTS daily_by_symbol ON daily(symbol, session)")
+        self._data_version = 0  # bumped when a history table is written: the cached session lists below are then read again
+        self._sessions: dict[str, tuple[int, list[str]]] = {}
         for t in _IMMUTABLE:
             self._db.executescript(
                 f"CREATE TRIGGER IF NOT EXISTS {t}_no_update BEFORE UPDATE ON {t} BEGIN SELECT RAISE(ABORT, 'stored market data is never changed'); END;"
@@ -170,20 +174,25 @@ class MarketStore:
                 ],
             )
             self._db.commit()
+            self._data_version += 1
             return self._db.total_changes - before
 
-    def bhav_sessions(self) -> list[str]:
+    def _session_list(self, table: str) -> list[str]:
+        """The sessions held in ``bhav`` or ``daily``: they change once a day (the evening load), but were read again on every market summary and every due-check."""
+        v = self._data_version  # read before the query: a write during it leaves an older number, so the next call reads again
+        hit = self._sessions.get(table)
+        if hit is not None and hit[0] == v:
+            return list(hit[1])
         with self._reader() as _db:
-            return [
-                r[0] for r in _db.execute("SELECT DISTINCT session FROM bhav ORDER BY session")
-            ]
+            rows = [r[0] for r in _db.execute(f"SELECT DISTINCT session FROM {table} ORDER BY session")]  # noqa: S608 - fixed table names
+        self._sessions[table] = (v, rows)
+        return list(rows)
+
+    def bhav_sessions(self) -> list[str]:
+        return self._session_list("bhav")
 
     def daily_sessions(self) -> list[str]:
-        with self._reader() as _db:
-            return [
-                r[0]
-                for r in _db.execute("SELECT DISTINCT session FROM daily ORDER BY session")
-            ]
+        return self._session_list("daily")
 
     def daily_bars(
         self, symbol: str, n: int = 80

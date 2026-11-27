@@ -21,6 +21,7 @@ from app.intelligence import fusion as fz
 from app.intelligence import heavyweights, outlook, rolling, turn, validation, voleval
 from app.intelligence.cadence import seconds_to_next_record
 from app.intelligence.store import IntelligenceStore
+from app.stream.heavy import run_heavy
 
 logger = logging.getLogger(__name__)
 IST = ZoneInfo("Asia/Kolkata")
@@ -442,7 +443,7 @@ class MarketIntelligence:
         while True:
             try:
                 await asyncio.to_thread(self.record)
-                await asyncio.to_thread(self._refresh_outlook_history)  # a page never waits for it
+                await run_heavy(self._refresh_outlook_history)  # a page never waits for it; one heavy job at a time (stream/heavy.py)
                 self.last_error = None
             except asyncio.CancelledError:
                 raise

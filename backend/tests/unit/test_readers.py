@@ -161,3 +161,25 @@ def test_threads_that_come_and_go_do_not_leave_connections_open(tmp_path: Path) 
     assert readers.idle_count() <= 4
     readers.close()
     c.close()
+
+
+def test_the_history_session_lists_are_cached_until_a_load_and_a_symbols_bars_use_an_index(tmp_path: Path) -> None:
+    """27 Nov 2026: daily_bars scanned the whole 37,000-row table for each of 50 stocks on every market summary, and the session lists were read again each time."""
+    from datetime import date as d
+
+    from app.market.sources import BhavRow
+
+    store = MarketStore(tmp_path)
+    assert store.daily_sessions() == [] and store.bhav_sessions() == []
+    rows = [BhavRow(d(2026, 11, 24), "RELIANCE", 100.0, 101.0, 5000, 100, 100.5, 102.0, 99.0)]
+    assert store.save_bhav(rows) > 0
+    assert store.daily_sessions() == ["2026-11-24"] and store.bhav_sessions() == ["2026-11-24"]  # the load is seen at once
+    store.save_bhav([BhavRow(d(2026, 11, 25), "RELIANCE", 101.0, 102.0, 6000, 100, 101.5, 103.0, 100.0)])
+    assert store.daily_sessions() == ["2026-11-24", "2026-11-25"]
+    got = store.daily_sessions()
+    got.append("x")  # a caller changing its copy does not change the cache
+    assert store.daily_sessions() == ["2026-11-24", "2026-11-25"]
+    with store._reader() as c:
+        plan = " ".join(str(r) for r in c.execute("EXPLAIN QUERY PLAN SELECT session FROM daily WHERE symbol=? ORDER BY session DESC LIMIT 80", ("RELIANCE",)).fetchall())
+    assert "daily_by_symbol" in plan
+    assert [b[0] for b in store.daily_bars("RELIANCE", 80)] == ["2026-11-24", "2026-11-25"]
