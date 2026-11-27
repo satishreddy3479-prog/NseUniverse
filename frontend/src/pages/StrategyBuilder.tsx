@@ -1015,11 +1015,11 @@ export default function StrategyBuilder() {
               <table className="w-full text-sm" aria-label="Option chain">
                 <thead className="sticky top-0 z-[1] bg-slate text-xs text-muted">
                   <tr>
-                    {GCOLS.filter((g) => gcols.includes(g.key)).map((g) => <th key={`c${g.key}`} className="px-1.5 py-1 text-left font-normal max-sm:hidden" title={g.hint}>{g.short}</th>)}
+                    {GCOLS.filter((g) => gcols.includes(g.key)).map((g) => <th key={`c${g.key}`} className="px-1.5 py-1 text-left font-normal" title={g.hint}>{g.short}</th>)}
                     <th className="px-2 py-1 text-left font-normal">LTP</th><th className="whitespace-nowrap px-2 py-1 text-right font-normal">Call OI <Info term="Call OI" /></th>
                     <th className="px-2 py-1 text-center font-medium text-paper">Strike</th>
                     <th className="whitespace-nowrap px-2 py-1 text-left font-normal">Put OI <Info term="Put OI" /></th><th className="px-2 py-1 text-right font-normal">LTP</th>
-                    {[...GCOLS].reverse().filter((g) => gcols.includes(g.key)).map((g) => <th key={`p${g.key}`} className="px-1.5 py-1 text-right font-normal max-sm:hidden" title={g.hint}>{g.short}</th>)}
+                    {[...GCOLS].reverse().filter((g) => gcols.includes(g.key)).map((g) => <th key={`p${g.key}`} className="px-1.5 py-1 text-right font-normal" title={g.hint}>{g.short}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -1047,7 +1047,7 @@ export default function StrategyBuilder() {
                     });
                     const tag = (v: number) => (v === 0 ? null : <span data-testid={`held-${row.strike}`} className={`whitespace-nowrap rounded-sm border px-1 text-[10px] font-semibold ${v > 0 ? "border-up text-up" : "border-down text-down"}`}>{v > 0 ? "+" : "−"}{Math.abs(v)} lot{Math.abs(v) === 1 ? "" : "s"}</span>);
                     const cell = (c: ContractGreeks | null | undefined, key: GKey, right: boolean) => (
-                      <td key={`${right ? "p" : "c"}${key}`} className={`px-1.5 py-1 text-xs text-muted max-sm:hidden ${right ? "text-right" : "text-left"}`}>{c == null ? "—" : fmtG(key, c)}</td>
+                      <td key={`${right ? "p" : "c"}${key}`} className={`px-1.5 py-1 text-xs text-muted ${right ? "text-right" : "text-left"}`}>{c == null ? "—" : fmtG(key, c)}</td>
                     );
                     return (
                       <tr key={row.strike} onClick={() => setSel(row.strike)} data-testid={`chain-${row.strike}`} data-held={held ? "true" : undefined}
