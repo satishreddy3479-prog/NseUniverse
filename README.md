@@ -18,9 +18,10 @@ A long-term research platform for the Indian options market. It connects to one 
 ## Read this first
 
 1. [CLAUDE.md](CLAUDE.md): the project rules in one page (also read by AI coding tools through [AGENTS.md](AGENTS.md)).
-2. [docs/current-state.md](docs/current-state.md): what is built, what is live, what is unverified. Newest section first.
-3. [docs/code-map.md](docs/code-map.md): "to change X, look in Y".
-4. [docs/decisions.md](docs/decisions.md): why things are the way they are (append-only, newest last).
+2. [docs/requirements.md](docs/requirements.md): what the owner wants, what is out of scope, and how the owner wants the work done.
+3. [docs/current-state.md](docs/current-state.md): what is built, what is live, what is unverified. Newest section first.
+4. [docs/code-map.md](docs/code-map.md): "to change X, look in Y"; [docs/glossary.md](docs/glossary.md) for the terms.
+5. [docs/decisions.md](docs/decisions.md): why things are the way they are (append-only, newest last).
 
 ## Run and test (Windows, from the repo root)
 

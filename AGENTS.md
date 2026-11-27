@@ -5,11 +5,12 @@ This file is for any AI tool (Claude Code, Codex, Cursor, Copilot and others). T
 ## Read in this order
 
 1. [CLAUDE.md](CLAUDE.md): identity, architecture principles, the financial-data rules, commands, definition of done.
-2. [docs/current-state.md](docs/current-state.md): what is built, live and unverified (newest section first). Resume from here; do not re-read the whole repository.
-3. [docs/code-map.md](docs/code-map.md): which folder or file to open for a given change.
-4. [.claude/rules/](.claude/rules/): `financial-data.md`, `security.md`, `testing.md`, `python.md`, `frontend-ui.md`.
-5. [docs/decisions.md](docs/decisions.md): search it (`D###`) before changing behaviour that looks odd; it usually says why.
-6. [.claude/skills/](.claude/skills/): step-by-step recipes (implement a feature, debug live data, verify a calculation, build a widget, review code, test the dashboard). Each folder has a `SKILL.md`.
+2. [docs/requirements.md](docs/requirements.md): what the owner wants, what is out of scope, and how the owner wants you to work (when to commit, push, deploy; how to report).
+3. [docs/current-state.md](docs/current-state.md): what is built, live and unverified (newest section first). Resume from here; do not re-read the whole repository.
+4. [docs/code-map.md](docs/code-map.md) and [docs/glossary.md](docs/glossary.md): which folder or file to open for a change, and what the project's terms mean.
+5. [.claude/rules/](.claude/rules/): `financial-data.md`, `security.md`, `testing.md`, `python.md`, `frontend-ui.md`.
+6. [docs/decisions.md](docs/decisions.md): search it (`D###`) before changing behaviour that looks odd; it usually says why.
+7. [.claude/skills/](.claude/skills/): step-by-step recipes (implement a feature, debug live data, verify a calculation, build a widget, review code, test the dashboard). Each folder has a `SKILL.md`.
 
 ## Never, without the owner's explicit say-so
 

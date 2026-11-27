@@ -6,6 +6,8 @@ Which document to read, in what order. Documents carry dates and a status line: 
 
 | File | What it is |
 |---|---|
+| [requirements.md](requirements.md) | What the owner wants, what is out of scope, the quality bar, and how the owner wants the AI to work. Read it before proposing or changing anything. |
+| [glossary.md](glossary.md) | The project's terms (managed straddle, closing auction, OI change, armed, ...) and where each is implemented. |
 | [current-state.md](current-state.md) | What is built, live, and unverified; newest section first. The first thing to read when resuming. |
 | [../CLAUDE.md](../CLAUDE.md) | The project rules on one page. |
 | [code-map.md](code-map.md) | "To change X, look in Y": backend and frontend layout. |
@@ -48,3 +50,11 @@ Which document to read, in what order. Documents carry dates and a status line: 
 ## Keeping this index honest
 
 When a document is added, add a line here. When a plan is built, change its status line at the top of the plan and record it in `current-state.md` and `decisions.md`. Do not delete old audits; they are the evidence for later decisions.
+
+## Starting a new AI session
+
+Paste this as the first message to any AI coding tool opened on this repository:
+
+> Read `AGENTS.md`, then `docs/requirements.md`, `docs/current-state.md` (the newest sections first) and `docs/code-map.md`. Then tell me, in your own words: what this project is for, what is out of scope, what is live and what is unverified, and how I want you to work (when you may commit, push or deploy). List what you would ask me before starting. Do not change anything yet.
+
+A good answer names: read-only (no orders), NIFTY 50 only, no fabricated data, server-first, a push to `main` is a production release, and the open points at the end of `requirements.md`.
