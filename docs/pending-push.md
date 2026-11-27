@@ -18,3 +18,4 @@
 - 27 Nov 2026: D335 daily-table index, cached session lists, single heavy-job worker (backend). Committed locally, not pushed: market hours.
 - 27 Nov 2026: D336 panel refreshes on the single heavy worker (backend/app/intelligence/service.py). Committed locally, not pushed: market hours.
 - 27 Nov 2026: D337 feed silence limit 60 -> 20 s (backend/app/stream/manager.py). Committed locally.
+- 27 Nov 2026: D338 shutdown order, heavy-worker stop (backend/app/main.py, stream/heavy.py). Committed locally, not pushed.

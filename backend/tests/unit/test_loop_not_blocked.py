@@ -213,3 +213,21 @@ async def test_heavy_jobs_run_one_at_a_time_in_order_without_blocking_the_loop()
     hb.cancel()
     assert got == [0, 1, 2, 3] and order == [0, 1, 2, 3] and peak == 1
     assert ticks >= 15  # the loop kept running while 0.6 s of work was queued
+
+
+def test_stopping_the_heavy_worker_drops_queued_jobs_and_a_new_worker_takes_over() -> None:
+    """27 Nov 2026: queued jobs held the process exit past systemd's 20 s."""
+    import threading
+
+    from app.stream import heavy
+
+    gate = threading.Event()
+    ran: list[str] = []
+    running = heavy.submit(lambda: (gate.wait(5), ran.append("running"))[1])
+    queued = [heavy.submit(lambda: ran.append("queued")) for _ in range(3)]
+    heavy.stop_heavy()
+    assert all(f.cancelled() for f in queued)  # dropped, they never run
+    gate.set()
+    running.result(timeout=5)
+    assert ran == ["running"]
+    assert heavy.submit(lambda: "again").result(timeout=5) == "again"  # a fresh worker serves later use

@@ -64,6 +64,7 @@ from app.storage.preferences import PreferenceStore
 from app.storage.store import SnapshotStore
 from app.storage.strategies import StrategyStore
 from app.strategy.automation import StrategyAutomation
+from app.stream.heavy import stop_heavy
 from app.stream.hub import Hub
 from app.stream.index_close import IndexClose
 from app.stream.loopwatch import LoopWatch
@@ -486,6 +487,11 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
         try:
             yield
         finally:
+            # The broker connection first (it must end cleanly). 27 Nov, 13:01 IST: the stops below
+            # ran past systemd's 20 s, the process was killed with the feed open, and the next
+            # session's subscription was half-acknowledged and then silent.
+            await stream.shutdown()
+            stop_heavy()  # queued heavy jobs would hold the exit
             await runtime_metrics.stop()
             await loopwatch.stop()
             await servermgmt.stop()
@@ -513,7 +519,6 @@ def create_app(settings: Settings | None = None, broker: MarketDataBroker | None
             app.state.preferences.close()
             history_store.close()
             await sampler.stop()
-            await stream.shutdown()
             await b.close()
             observations.record_event("app_stopped", "backend stopping", session_id)
             observations.close()
