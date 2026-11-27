@@ -42,7 +42,7 @@ def test_a_read_does_not_wait_for_a_long_write_that_holds_the_stores_lock(tmp_pa
     assert waited < 0.5, f"the read waited {waited:.2f} s for the write lock"
 
 
-def test_a_reader_sees_what_the_writer_committed_at_once_and_each_thread_has_its_own_connection(tmp_path: Path) -> None:
+def test_a_reader_sees_what_the_writer_committed_at_once(tmp_path: Path) -> None:
     store = MarketStore(tmp_path)
     assert store.latest_tokens() is None
     store.save_tokens(tokens(), date(2026, 11, 26))
@@ -50,20 +50,6 @@ def test_a_reader_sees_what_the_writer_committed_at_once_and_each_thread_has_its
     store.save_tokens({"TCS": TokenInfo("TCS", "11536", "TCS-EQ")}, date(2026, 11, 27))
     latest = store.latest_tokens()
     assert latest is not None and set(latest[0]) == {"TCS"} and latest[1] == "2026-11-27"
-    ids: set[int] = set()
-
-    def read() -> None:
-        with store._reader() as c:
-            ids.add(id(c))
-
-    threads = [threading.Thread(target=read) for _ in range(3)]
-    for th in threads:
-        th.start()
-    for th in threads:
-        th.join()
-    with store._reader() as mine:
-        ids.add(id(mine))
-    assert len(ids) == 4  # one connection per thread
 
 
 def test_the_connections_are_read_only_and_closed_with_the_store(tmp_path: Path) -> None:
@@ -136,4 +122,42 @@ def test_closing_waits_for_a_read_in_progress_instead_of_crashing_it(tmp_path: P
     t.join()
     ct.join()
     assert result == [(1,)]
+    c.close()
+
+
+def test_threads_that_come_and_go_do_not_leave_connections_open(tmp_path: Path) -> None:
+    """27 Nov 2026: one connection per thread, kept forever, used up the server's 1,024 open files in a day and every database call failed."""
+    import sqlite3
+
+    path = tmp_path / "z.sqlite3"
+    c = sqlite3.connect(path)
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("CREATE TABLE t (a)")
+    c.commit()
+    readers = Readers(path)
+
+    def read() -> None:
+        with readers() as r:
+            r.execute("SELECT count(*) FROM t").fetchone()
+
+    for _ in range(60):  # 60 short-lived threads, one after another
+        th = threading.Thread(target=read)
+        th.start()
+        th.join()
+    assert readers.idle_count() <= 4
+    # reads running at the same time each get a connection of their own, and the pool shrinks back afterwards
+    barrier = threading.Barrier(6)
+
+    def together() -> None:
+        with readers() as r:
+            barrier.wait(5)
+            r.execute("SELECT count(*) FROM t").fetchone()
+
+    ts = [threading.Thread(target=together) for _ in range(6)]
+    for th in ts:
+        th.start()
+    for th in ts:
+        th.join()
+    assert readers.idle_count() <= 4
+    readers.close()
     c.close()
