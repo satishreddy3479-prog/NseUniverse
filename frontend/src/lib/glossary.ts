@@ -56,7 +56,7 @@ const E: Record<string, GlossaryEntry> = {
   "volatility skew": {
     what: "The implied volatility of each strike's call and put, solved from its own last traded price with the Black-76 model.",
     read: "A line that rises away from the money means the market pays more for protection or for large moves at those strikes. Calls and puts at one strike should be close; a gap hints at stale prices.",
-    caution: "Illiquid strikes have stale prices and noisy volatility. The model uses a 6 % rate and a forward from put-call parity; gaps in the line are contracts that gave no volatility.",
+    caution: "Illiquid strikes have stale prices and noisy volatility. The model uses a 7 % rate and a forward from put-call parity; gaps in the line are contracts that gave no volatility.",
   },
   "gamma exposure": {
     what: "Gamma × open interest × spot² × 1 %, per strike: the rupee value of NIFTY whose delta changes when the index moves 1 %.",
@@ -246,7 +246,7 @@ const E: Record<string, GlossaryEntry> = {
   "nifty spot vs futures gap": {
     what: "The NIFTY index and its current-month future on one axis, with the gap between them: future minus index, in points (area, right axis). The corner shows the latest gap, its percentage of the index, the carry it implies per year, and the gap that financing alone would justify.",
     read: "The future normally trades above the index by the cost of carry, shrinking to zero at expiry. Carry p.a. = ln(future ÷ index) ÷ years to expiry. 'Fair' is index × (e^(rT) − 1) at an assumed rate, with no dividends; 'vs fair' above zero means the future is rich to financing, below zero cheap. A sudden narrowing or a discount can signal selling pressure in futures.",
-    caution: "The assumed rate is 6% and dividends are ignored, so 'fair' is a reference, not a measurement. The index and future are read at the same moment from the live feed; older points may use the nearest stored snapshot.",
+    caution: "The assumed rate is 7% and dividends are ignored, so 'fair' is a reference, not a measurement. The index and future are read at the same moment from the live feed; older points may use the nearest stored snapshot.",
   },
   "nifty futures volume": {
     what: "Contracts of the NIFTY future traded today (line, cumulative) and per minute (bars).",

@@ -2,7 +2,7 @@ import { MultiStrikeBoard, PriceOiBoard } from "./dashboard/PriceBoards";
 import { RollingStraddleBoard } from "./dashboard/RollingStraddle";
 import { VegaAnalysisBoard } from "./dashboard/VegaAnalysis";
 import { GammaAnalysisBoard } from "./dashboard/GammaAnalysis";
-import { PremiumChangeBoard } from "./dashboard/PremiumChange";
+import { StrikePremiumBoard } from "./dashboard/StrikePremium";
 import { IndexToolBody } from "./IndexTools";
 import { FlowsPanel } from "./FlowsPanel";
 import { CashPanel } from "./CashPanel";
@@ -28,7 +28,7 @@ export function ToolBody({ tool, expiry }: { tool: Tool; expiry: string | null }
     <>
       {tool.board === "vega" && <VegaAnalysisBoard />}
       {tool.board === "gamma" && <GammaAnalysisBoard />}
-      {tool.board === "premiumChange" && <PremiumChangeBoard />}
+      {tool.board === "premiumChange" && <StrikePremiumBoard />}
       {tool.board === "priceOi" && <PriceOiBoard />}
       {tool.board === "multiStrike" && <MultiStrikeBoard straddle={false} />}
       {tool.board === "multiStraddle" && <MultiStrikeBoard straddle />}

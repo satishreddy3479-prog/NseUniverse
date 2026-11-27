@@ -62,7 +62,7 @@ class RiskUnavailable(Exception):
 class RiskSettings:
     """Everything the service decides by a number; filled from the application settings."""
 
-    rate: float = 0.06
+    rate: float = 0.07
     spread_threshold_pct: float = 15.0
     allow_ltp_fallback: bool = True
     rebuild_interval_s: float = 1.0

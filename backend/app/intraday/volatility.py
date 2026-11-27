@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 from app.domain.session import session_close
 
 IST = ZoneInfo("Asia/Kolkata")
-DEFAULT_RATE = 0.06
+DEFAULT_RATE = 0.07  # the app's assumed annual rate (7 % since 27 Nov 2026, was 6 %); Settings.risk_free_rate defaults to it
 MIN_T_MINUTES = 15
 MAX_IV = 3.0
 YEAR_DAYS = 365.0

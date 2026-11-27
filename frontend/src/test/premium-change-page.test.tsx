@@ -64,9 +64,12 @@ function mockApi() {
     return new Response(JSON.stringify(typeof hit === "function" ? (hit as (u: string) => unknown)(String(input)) : hit), { status: 200, headers: { "Content-Type": "application/json" } });
   }));
 }
-function renderPage() {
+/** Renders the tool and opens its classic ATM-windows view (the strike view is the default since 27 Nov 2026; it has its own tests). */
+async function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={["/tools/premium-change"]}><AppRoutes /></MemoryRouter></QueryClientProvider>);
+  const out = render(<QueryClientProvider client={qc}><MemoryRouter initialEntries={["/tools/premium-change"]}><AppRoutes /></MemoryRouter></QueryClientProvider>);
+  fireEvent.click(await screen.findByRole("button", { name: "ATM windows (classic)" }));
+  return out;
 }
 beforeEach(() => localStorage.clear());
 afterEach(() => vi.unstubAllGlobals());
@@ -75,7 +78,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("Premium Change tool page", () => {
   it("reads the ATM straddle's last window in a sentence whose three parts match the chart, and the chart has one bar group per window", async () => {
     mockApi();
-    renderPage();
+    await renderPage();
     const readout = await screen.findByTestId("pc-readout");
     expect(readout.textContent).toMatch(/^At \d\d:\d\d the \d{5} straddle \(₹\d+\.\d\) went (up|down) by ₹\d+\.\d in 5 minutes \(NIFTY [+−]\d+ points\): /);
     const parts = [...readout.textContent!.matchAll(/([+−])₹(\d+\.\d) from/g)].map((m) => (m[1] === "−" ? -1 : 1) * Number(m[2]));
@@ -93,7 +96,7 @@ describe("Premium Change tool page", () => {
 
   it("the slider (or a click on a window) moves the sentence to that window and Latest comes back", async () => {
     mockApi();
-    renderPage();
+    await renderPage();
     const latest = (await screen.findByTestId("pc-time")).textContent;
     const slider = screen.getByTestId("pc-slider");
     fireEvent.change(slider, { target: { value: "0" } });
@@ -107,7 +110,7 @@ describe("Premium Change tool page", () => {
 
   it("a longer window means fewer windows, and the choice is offered as a group of buttons", async () => {
     mockApi();
-    renderPage();
+    await renderPage();
     const pts = () => Number(screen.getByRole("img", { name: /^Change of the ATM straddle in every window/ }).getAttribute("data-points")!.split(",")[0]);
     await screen.findByTestId("pc-readout");
     const five = pts();
@@ -118,7 +121,7 @@ describe("Premium Change tool page", () => {
 
   it("says plainly that the last part is a remainder, and that this is not a forecast", async () => {
     mockApi();
-    renderPage();
+    await renderPage();
     const notes = await screen.findByTestId("pc-notes");
     expect(notes.textContent).toContain("a remainder");
     expect(notes.textContent).toContain("does not say which way premiums will go");

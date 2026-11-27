@@ -37,7 +37,7 @@ IST = ZoneInfo("Asia/Kolkata")
 NOW = datetime(2026, 10, 28, 5, 30, tzinfo=UTC)  # 11:00 IST, a Wednesday
 E1, E2 = "2026-11-03", "2026-11-23"  # the weekly and monthly expiry the replay broker reports
 SMILE = {E1: SVIParams(1.0e-4, 1.5e-3, -0.35, 0.002, 0.015), E2: SVIParams(1.5e-3, 6.0e-3, -0.35, 0.002, 0.06)}
-F, R, LOT = 25500.0, 0.06, 65
+F, R, LOT = 25500.0, 0.07, 65  # R: the app's assumed rate (7 %, was 6 %): the chains below are priced with it
 
 
 def instant(expiry: str) -> datetime:

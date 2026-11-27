@@ -287,6 +287,11 @@ export const api = {
     ),
   /** The Entry Lab: a short-straddle rule replayed on the recorded sessions (past days, in-sample). */
   /** How far NIFTY has moved today and whether the move is speeding up (read-only description of the day so far). */
+  /** What moved the price of one strike's straddle, call or put (or of the followed ATM straddle) over a stored session: theta, vega, delta, gamma, cross terms, other. */
+  strikePremium: (o: { expiry: string; session?: string; strike?: number | null; mode?: "fixed" | "atm"; contract?: string; window?: string; each?: number; asOf?: string | null }) =>
+    request<import("./strikePremium").StrikePremiumData>(
+      "/api/intelligence/strike-premium?" + [`expiry=${encodeURIComponent(o.expiry)}`, o.session ? `session=${encodeURIComponent(o.session)}` : "", o.strike != null ? `strike=${o.strike}` : "", o.mode ? `mode=${o.mode}` : "", o.contract ? `contract=${o.contract}` : "", o.window ? `window=${o.window}` : "", o.each ? `each=${o.each}` : "", o.asOf ? `as_of=${encodeURIComponent(o.asOf)}` : ""].filter(Boolean).join("&"),
+    ),
   straddleValidation: () => request<import("./straddleDecay").StraddleValidation>("/api/intelligence/straddle/validation"),
   /** The managed straddle's trades for each stored session, newest first. */
   straddleManagedHistory: (sessions = 20) => request<import("./straddleDecay").ManagedHistory>(`/api/intelligence/straddle/managed-history?sessions=${sessions}`),

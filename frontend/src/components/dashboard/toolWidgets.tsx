@@ -105,7 +105,7 @@ function useChainGreeks() {
   return { d, g, spot };
 }
 
-const MODEL_NOTE = "Black-76 model, 6 % rate, forward from put-call parity near spot; volatility is solved from each contract's own last price.";
+const MODEL_NOTE = "Black-76 model, 7 % rate, forward from put-call parity near spot; volatility is solved from each contract's own last price.";
 
 export function IvSkewWidget() {
   const { d, g } = useChainGreeks();

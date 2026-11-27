@@ -1000,6 +1000,33 @@ async def intelligence_straddle_managed_history(
     return await run_heavy(_cached, key, 60.0, lambda: svc.managed_history(n))
 
 
+@router.get("/intelligence/strike-premium")
+async def intelligence_strike_premium(
+    request: Request,
+    expiry: date | None = None,
+    session: date | None = None,
+    strike: float | None = None,
+    contract: str = "straddle",
+    mode: str = "fixed",
+    window: str = "30",
+    each: int = 5,
+    as_of: datetime | None = None,
+) -> dict[str, Any]:
+    """What moved one strike's straddle, call or put over a stored session."""
+    svc = _straddle(request)
+    bad = contract not in ("straddle", "call", "put") or mode not in ("fixed", "atm")
+    if bad or not (window == "open" or window.isdigit()):
+        msg = "contract is straddle, call or put; mode is fixed or atm; window is minutes or open"
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, {"code": "bad_parameter", "message": msg})
+    if as_of is not None and as_of.tzinfo is None:
+        msg = "as_of needs a time zone (for example ...Z)"
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, {"code": "bad_as_of", "message": msg})
+    ex, day = (None if x is None else x.isoformat() for x in (expiry, session))
+    key = f"strike-premium|{id(svc)}|{ex}|{day}|{strike}|{contract}|{mode}|{window}|{each}|{as_of}"
+    args = (ex, day, strike, contract, mode, window, each, as_of)
+    return await run_heavy(_cached, key, 15.0, lambda: svc.strike_premium(*args))
+
+
 @router.get("/intelligence/straddle/validation")
 async def intelligence_straddle_validation(request: Request, sessions: int = 20) -> dict[str, Any]:
     """Predicted theta decay vs actual premium change over stored sessions (read-only)."""

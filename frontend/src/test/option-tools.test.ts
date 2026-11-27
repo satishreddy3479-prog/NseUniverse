@@ -202,7 +202,7 @@ describe("Vega Analysis series", () => {
   // Independent arithmetic: prices come from a closed-form Black-76 written here (numeric normal CDF), not from the app's model.
   const pdf = (x: number) => Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
   const cdf = (x: number) => { let a = -10, sum = 0; const n = 20000, h = (x - a) / n; for (let i = 0; i <= n; i++) sum += (i === 0 || i === n ? 1 : i % 2 ? 4 : 2) * pdf(a + i * h); return (sum * h) / 3; };
-  const r = 0.06, sigma = 0.2, spot = 24000;
+  const r = 0.07, sigma = 0.2, spot = 24000; // r: the app's assumed rate (lib/assumptions.ts, 7 % since 27 Nov 2026); the prices below are made with it, so the app's volatility solve returns sigma
   const at = Date.parse("2026-11-04T04:00:00Z"); // 09:30 IST
   const T = (expiryEnd("2026-11-09") - at) / (365 * 86_400_000);
   const F = spot * Math.exp(r * T);

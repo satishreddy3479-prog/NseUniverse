@@ -32,7 +32,7 @@ from app.domain.models import OptionChainRow
 IST = ZoneInfo("Asia/Kolkata")
 TOLERANCE = 30.0  # points: broker index level against the level the options imply
 MAX_DAYS = 8.0
-RATE = 0.06  # the app's assumed annual rate (Settings.risk_free_rate default)
+RATE = 0.07  # the app's assumed annual rate (Settings.risk_free_rate default)
 STRIKES = 5  # nearest strikes with both prices
 MIN_STRIKES = 3
 EXPIRY_CLOSE = time(15, 30)

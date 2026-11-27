@@ -71,7 +71,7 @@ class EodService:
         observation_keep_sessions: int = 0,
         observation_prune_dry_run: bool = True,
         market: Any = None,
-        risk_free_rate: float = 0.06,
+        risk_free_rate: float = 0.07,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self.market, self.risk_free_rate = market, risk_free_rate  # market: MarketStore (futures, breadth, breakout recordings) or None

@@ -24,6 +24,7 @@ from app.intelligence import (
     straddle_env,
     straddle_validation,
     straddle_watch,
+    strike_premium,
 )
 from app.intelligence.cadence import seconds_to_next_record
 from app.intelligence.straddle_store import StraddleStore
@@ -129,6 +130,7 @@ class StraddleDecay:
         self._cache: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
         self._asof: OrderedDict[tuple[str, str, str], dict[str, Any]] = OrderedDict()  # replay answers (past minutes do not change); a few dozen kept
         self._last: dict[tuple[str, str], straddle.Snap | None] = {}
+        self._pts: OrderedDict[tuple[str, str, str | None], tuple[float, list[straddle.Snap], list[straddle.Point | None]]] = OrderedDict()  # the stored session as repriced points (a few kept)
         self._managed_days: dict[str, dict[str, Any]] = {}  # finished sessions' managed books: they do not change
         self._lock = threading.RLock()
         self._task: asyncio.Task[None] | None = None
@@ -361,6 +363,45 @@ class StraddleDecay:
             if ses:
                 env = straddle_validation.evaluate(ses)
         return {"generated_at": self._clock().isoformat(timespec="seconds"), "window_minutes": minutes, **straddle.validate(out), "environment": env}
+
+    def _points(self, expiry: str, day: date, until: datetime | None) -> tuple[list[straddle.Snap], list[straddle.Point | None]]:
+        """The stored samples of a session at full resolution and the repriced point of each; a running session is read again after CACHE_S seconds, a past one is kept."""
+        key = (expiry, day.isoformat(), None if until is None else until.isoformat())
+        live = until is None and day == self._clock().astimezone(IST).date()
+        with self._lock:
+            hit = self._pts.get(key)
+            if hit is not None and (not live or _time.monotonic() - hit[0] < CACHE_S):
+                self._pts.move_to_end(key)
+                return hit[1], hit[2]
+        snaps, _spots = self._read(expiry, day, None, until)
+        exp = date.fromisoformat(expiry)
+        pts = [straddle.build_point(s, exp, self.rate)[0] for s in snaps]
+        with self._lock:
+            self._pts[key] = (_time.monotonic(), snaps, pts)
+            while len(self._pts) > 4:
+                self._pts.popitem(last=False)
+        return snaps, pts
+
+    def strike_premium(
+        self, expiry: str | None = None, session: str | None = None, strike: float | None = None, contract: str = "straddle", mode: str = "fixed", window: str = "30", each: int = 5,
+        as_of: datetime | None = None,
+    ) -> dict[str, Any]:
+        """What moved the price of one strike's straddle, call or put (or of the at-the-money straddle followed), over a stored session: ``strike_premium.analyse`` on the session's points. ``window``:
+        minutes, or ``open`` for since the open. Read-only; ``as_of`` is a replay minute."""
+        pick = self.latest()
+        day = date.fromisoformat(session) if session else (pick[0] if pick else None)
+        if day is None:
+            return {"status": "unavailable", "message": "No option-chain samples are stored yet."}
+        if expiry is None:
+            ex = self._expiries(day)
+            expiry = ex[0] if ex else None
+        if expiry is None:
+            return {"status": "unavailable", "message": f"No samples are stored for {day.isoformat()}.", "session": day.isoformat()}
+        until = None if as_of is None else as_of.astimezone(IST).replace(second=0, microsecond=0) + timedelta(seconds=59)
+        snaps, pts = self._points(expiry, day, until)
+        minutes = None if window == "open" else max(1, min(int(window), 600))
+        out = strike_premium.analyse(snaps, pts, strike=strike, contract=contract, mode=mode, window=minutes, each=max(1, min(int(each), 12)), rate=self.rate)
+        return {**out, "session": day.isoformat(), "expiry": expiry, "generated_at": self._clock().isoformat(timespec="seconds")}
 
     def managed_history(self, sessions: int = 20) -> dict[str, Any]:
         """The managed straddle's trades (re-struck when NIFTY is ``threshold`` points from the held strike) for each stored session, newest first: the day's

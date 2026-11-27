@@ -1,4 +1,5 @@
 import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
+import { RISK_FREE_RATE } from "../lib/assumptions";
 import { useCallback, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { GammaMapPanel } from "../components/risk/GammaMapPanel";
@@ -39,7 +40,7 @@ export function AdvancedGreeks() {
   const first = chainQs.find((q) => q.data)?.data?.snapshot;
   const nowMs = first ? marketClockMs(Date.parse(first.retrieved_at)) : Date.now();
   const lotSize = first?.lot_size ?? doc?.lotSize ?? null;
-  const rate = 0.06;
+  const rate = RISK_FREE_RATE;
   const pos = useMemo(() => buildPosition(doc?.legs, chainQs.flatMap((q, i) => (q.data ? [{ expiry: legExpiries[i]!, rows: q.data.snapshot.rows, spot: q.data.snapshot.underlying_ltp }] : [])), nowMs, rate, lotSize, doc?.mult ?? 1),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [doc, chainKey, nowMs, lotSize]);

@@ -90,17 +90,17 @@ def test_the_atm_row_of_a_stored_observation_follows_the_checked_level_not_the_b
 
 def test_a_moving_quote_is_not_replaced_on_the_real_capture_of_19_nov_2026_09_20_ist() -> None:
     """Real chain, 19 Nov 2026 03:50:04 UTC (09:20 IST), expiry 23 Nov: the broker's index quote was 25,197.3 and the live index bars of that minute closed 25,178-25,201, while the five
-    strikes nearest it agreed on K + C - P = 25,178.0, 25,178.2, 25,178.8, 25,178.3 and 25,177.7 (median 25,178.2). 4.257 days to the 23 Nov 15:30 close: 25,178.2 / e^(0.06 x 4.257 / 365)
-    = 25,178.2 / 1.0007 = 25,160.6. That level was 37 points below the quote and the check replaced a healthy quote 32 times in the first 33 minutes."""
+    strikes nearest it agreed on K + C - P = 25,178.0, 25,178.2, 25,178.8, 25,178.3 and 25,177.7 (median 25,178.2). 4.257 days to the 23 Nov 15:30 close: 25,178.2 / e^(0.07 x 4.257 / 365)
+    = 25,178.2 / 1.000817 = 25,157.7 (25,160.6 at the 6 % rate used until 27 Nov 2026). That level was 40 points below the quote and the check replaced a healthy quote 32 times in the first 33 minutes."""
     at = datetime(2026, 11, 19, 3, 50, 4, tzinfo=UTC)
     expiry = date(2026, 11, 23)
     real = {25200.0: (134.8, 156.8), 25150.0: (160.0, 131.8), 25250.0: (113.05, 184.2), 25100.0: (188.1, 109.75), 25300.0: (93.5, 215.8)}
     chain = [OptionChainRow(strike=k, call=quote("CE", c), put=quote("PE", p)) for k, (c, p) in real.items()]
     implied = parity_spot(chain, 25197.3, expiry, at)
-    assert implied is not None and abs(implied - 25160.6) < 0.1
+    assert implied is not None and abs(implied - 25157.65) < 0.1
     assert checked_spot(chain, 25197.3, expiry, at) == (25197.3, None, None)  # moving quote: used as sent
     spot, broker, note = checked_spot(chain, 25197.3, expiry, at, frozen=True)  # the same numbers with a frozen quote would be replaced
-    assert broker == 25197.3 and spot is not None and abs(spot - 25160.6) < 0.1 and note is not None and "has not moved" in note
+    assert broker == 25197.3 and spot is not None and abs(spot - 25157.65) < 0.1 and note is not None and "has not moved" in note
 
 
 def test_a_quote_counts_as_frozen_after_three_identical_captures_ninety_seconds_apart() -> None:
