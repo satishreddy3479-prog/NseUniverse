@@ -1,0 +1,105 @@
+
+H = 60 minutes, samples 515, sessions 15, expiry-day samples 95
+
+=== ALL SESSIONS
+By the trend/regime class known at t:
+  Range-bound          n= 150 days=12  THETA   4.52%  GAMMA   5.27%  MOVE  +0.75%  P(move>time)   44%  VEGA  +1.26%  PNL  -1.64%
+  Mixed                n=  81 days= 9  THETA   3.54%  GAMMA   2.24%  MOVE  -1.30%  P(move>time)   53%  VEGA  -0.18%  PNL  +1.55%
+  Weak uptrend         n=  19 days= 5  THETA   5.64%  GAMMA   1.38%  MOVE  -4.26%  P(move>time)   58%  VEGA  +4.78%  PNL  -0.45%
+  Weak downtrend       n=  12 days= 2  THETA   0.38%  GAMMA   2.01%  MOVE  +1.63%  P(move>time)   67%  VEGA  -1.63%  PNL  +0.04%
+  Trending up          n= 112 days=10  THETA   3.73%  GAMMA   5.11%  MOVE  +1.37%  P(move>time)   51%  VEGA  +1.44%  PNL  -2.57%
+  Trending down        n= 141 days=11  THETA   6.89%  GAMMA   2.19%  MOVE  -4.70%  P(move>time)   40%  VEGA  +0.34%  PNL  +4.35%
+
+By trend/regime class group:
+  calm (Range/Mixed)   n= 231 days=14  THETA   4.17%  GAMMA   4.20%  MOVE  +0.03%  P(move>time)   47%  VEGA  +0.76%  PNL  -0.52%
+  trend (Weak/Trending) n= 284 days=15  THETA   5.29%  GAMMA   3.28%  MOVE  -2.01%  P(move>time)   46%  VEGA  +0.99%  PNL  +1.12%
+
+=== EXCLUDING EXPIRY-DAY SAMPLES
+By the trend/regime class known at t:
+  Range-bound          n= 127 days=10  THETA   0.74%  GAMMA   1.33%  MOVE  +0.59%  P(move>time)   43%  VEGA  -0.58%  PNL  +0.03%
+  Mixed                n=  69 days= 7  THETA   0.58%  GAMMA   1.69%  MOVE  +1.11%  P(move>time)   61%  VEGA  -0.50%  PNL  -0.58%
+  Weak uptrend         n=  17 days= 4  THETA   0.52%  GAMMA   2.24%  MOVE  +1.72%  P(move>time)   65%  VEGA  +2.08%  PNL  -3.74%
+  Weak downtrend       n=  12 days= 2  THETA   0.38%  GAMMA   2.01%  MOVE  +1.63%  P(move>time)   67%  VEGA  -1.63%  PNL  +0.04%
+  Trending up          n=  90 days= 8  THETA   0.54%  GAMMA   2.35%  MOVE  +1.81%  P(move>time)   56%  VEGA  +0.77%  PNL  -2.54%
+  Trending down        n= 105 days= 8  THETA   0.52%  GAMMA   0.90%  MOVE  +0.37%  P(move>time)   52%  VEGA  -1.77%  PNL  +1.41%
+
+By trend/regime class group:
+  calm (Range/Mixed)   n= 196 days=11  THETA   0.69%  GAMMA   1.46%  MOVE  +0.77%  P(move>time)   49%  VEGA  -0.55%  PNL  -0.19%
+  trend (Weak/Trending) n= 224 days=12  THETA   0.52%  GAMMA   1.64%  MOVE  +1.12%  P(move>time)   55%  VEGA  -0.45%  PNL  -0.64%
+
+##################  ALL SESSIONS  ##################
+Spearman correlation of each reading at t with the forward MOVE (gamma minus theta), pooled; and the number of sessions (of those with data) where the sign agrees with the pooled sign
+  score      rho=-0.048   same sign in 10 of 15 sessions
+  er         rho=-0.050   same sign in 10 of 15 sessions
+  adx        rho=-0.082   same sign in 8 of 15 sessions
+  r2         rho=-0.032   same sign in 9 of 15 sessions
+  chop       rho=+0.045   same sign in 8 of 15 sessions
+  slope_atr  rho=+0.002   same sign in 6 of 15 sessions
+  cross      rho=+0.153   same sign in 6 of 15 sessions
+  dist_atr   rho=+0.117   same sign in 8 of 15 sessions
+  vw         rho=+0.169   same sign in 8 of 15 sessions
+  past_move  rho=+0.262   same sign in 6 of 15 sessions
+  tod        rho=-0.002   same sign in 9 of 15 sessions
+
+Leave-one-session-out: rank correlation of the prediction with the realised MOVE on the held-out session (pooled), and how often the lower-risk half had the lower MOVE
+  persistence only (past 30-min movement vs time)         rho=+0.197   R2 vs the training mean +0.102
+  time of day only                                        rho=-0.193   R2 vs the training mean -0.007
+  trend/regime readings                                   rho=-0.270   R2 vs the training mean -0.110
+  session structure (TWAP crossings, distance, VWAP)      rho=-0.153   R2 vs the training mean -0.067
+  trend/regime + structure                                rho=-0.101   R2 vs the training mean -0.077
+  all of them + persistence + time of day                 rho=+0.199   R2 vs the training mean +0.050
+
+BACKTEST: sell the ATM straddle at t and hold the same strike H minutes. 'Calm half' = predicted MOVE below the median of the training sessions' predictions. Percent of the premium, before costs.
+  trend/regime readings
+    calm half   n= 219 mean PNL  -1.38%  win  55%  5th pct  -17.95%  mean MOVE  +1.21%
+    risky half  n= 296 mean PNL  +1.69%  win  70%  5th pct  -13.70%  mean MOVE  -2.80%
+    all         n= 515 mean PNL  +0.38%  win  63%  5th pct  -16.86%  mean MOVE  -1.09%
+    calm minus risky PNL, by session: better in 4 of 10 sessions; mean difference -2.40%
+  trend/regime + structure
+    calm half   n= 248 mean PNL  +0.63%  win  68%  5th pct  -15.91%  mean MOVE  -0.56%
+    risky half  n= 267 mean PNL  +0.15%  win  59%  5th pct  -17.95%  mean MOVE  -1.59%
+    all         n= 515 mean PNL  +0.38%  win  63%  5th pct  -16.86%  mean MOVE  -1.09%
+    calm minus risky PNL, by session: better in 9 of 13 sessions; mean difference +0.31%
+  all of them + persistence + time of day
+    calm half   n= 266 mean PNL  +0.89%  win  65%  5th pct  -23.73%  mean MOVE  -2.83%
+    risky half  n= 249 mean PNL  -0.16%  win  62%  5th pct   -9.24%  mean MOVE  +0.76%
+    all         n= 515 mean PNL  +0.38%  win  63%  5th pct  -16.86%  mean MOVE  -1.09%
+    calm minus risky PNL, by session: better in 4 of 11 sessions; mean difference -1.06%
+##################  EXCLUDING EXPIRY-DAY SAMPLES (the primary reading: expiry-day premiums decay and move on a different scale)  ##################
+Spearman correlation of each reading at t with the forward MOVE (gamma minus theta), pooled; and the number of sessions (of those with data) where the sign agrees with the pooled sign
+  score      rho=+0.026   same sign in 4 of 12 sessions
+  er         rho=-0.022   same sign in 8 of 12 sessions
+  adx        rho=+0.068   same sign in 5 of 12 sessions
+  r2         rho=+0.019   same sign in 5 of 12 sessions
+  chop       rho=-0.001   same sign in 5 of 12 sessions
+  slope_atr  rho=+0.018   same sign in 5 of 12 sessions
+  cross      rho=+0.035   same sign in 5 of 12 sessions
+  dist_atr   rho=+0.143   same sign in 6 of 12 sessions
+  vw         rho=+0.270   same sign in 6 of 12 sessions
+  past_move  rho=-0.018   same sign in 8 of 12 sessions
+  tod        rho=+0.002   same sign in 6 of 12 sessions
+
+Leave-one-session-out: rank correlation of the prediction with the realised MOVE on the held-out session (pooled), and how often the lower-risk half had the lower MOVE
+  persistence only (past 30-min movement vs time)         rho=-0.479   R2 vs the training mean -0.011
+  time of day only                                        rho=-0.597   R2 vs the training mean -0.038
+  trend/regime readings                                   rho=-0.554   R2 vs the training mean -0.119
+  session structure (TWAP crossings, distance, VWAP)      rho=+0.007   R2 vs the training mean -0.012
+  trend/regime + structure                                rho=-0.151   R2 vs the training mean -0.082
+  all of them + persistence + time of day                 rho=-0.247   R2 vs the training mean -0.145
+
+BACKTEST: sell the ATM straddle at t and hold the same strike H minutes. 'Calm half' = predicted MOVE below the median of the training sessions' predictions. Percent of the premium, before costs.
+  trend/regime readings
+    calm half   n= 202 mean PNL  -2.48%  win  46%  5th pct  -16.86%  mean MOVE  +1.99%
+    risky half  n= 218 mean PNL  +1.47%  win  75%  5th pct   -3.16%  mean MOVE  -0.00%
+    all         n= 420 mean PNL  -0.43%  win  61%  5th pct  -10.86%  mean MOVE  +0.96%
+    calm minus risky PNL, by session: better in 1 of 11 sessions; mean difference -3.86%
+  trend/regime + structure
+    calm half   n= 204 mean PNL  -0.45%  win  59%  5th pct   -8.16%  mean MOVE  +0.84%
+    risky half  n= 216 mean PNL  -0.41%  win  63%  5th pct  -13.70%  mean MOVE  +1.07%
+    all         n= 420 mean PNL  -0.43%  win  61%  5th pct  -10.86%  mean MOVE  +0.96%
+    calm minus risky PNL, by session: better in 3 of 9 sessions; mean difference -3.38%
+  all of them + persistence + time of day
+    calm half   n= 206 mean PNL  -1.16%  win  54%  5th pct  -12.70%  mean MOVE  +1.25%
+    risky half  n= 214 mean PNL  +0.28%  win  68%  5th pct   -9.01%  mean MOVE  +0.67%
+    all         n= 420 mean PNL  -0.43%  win  61%  5th pct  -10.86%  mean MOVE  +0.96%
+    calm minus risky PNL, by session: better in 2 of 10 sessions; mean difference -4.29%
