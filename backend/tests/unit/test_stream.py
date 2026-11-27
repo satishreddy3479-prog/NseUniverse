@@ -576,7 +576,7 @@ async def test_the_nifty_future_is_shown_to_browsers_live_but_other_internal_tic
 
 
 # ----------------------------------------------------------------- silent connection watchdog
-SILENT_CFG = StreamConfig(test_timeout_s=0.05, silence_reconnect_s=60.0, silence_check_s=0.01)
+SILENT_CFG = StreamConfig(test_timeout_s=0.05, silence_reconnect_s=60.0, silence_check_s=0.01, silence_after_empty_test_s=60.0)
 
 
 async def test_a_silent_open_feed_in_market_hours_is_reconnected() -> None:
@@ -770,13 +770,32 @@ async def test_the_default_silence_limit_is_20_s_and_reconnects_after_it() -> No
     assert StreamConfig().silence_reconnect_s == 20.0
     clock = Clock()
     f1, f2 = FakeFeed(), FakeFeed()
-    cfg = StreamConfig(test_timeout_s=0.05, silence_check_s=0.01)
+    cfg = StreamConfig(test_timeout_s=0.05, silence_check_s=0.01, silence_after_empty_test_s=20.0)
     m, _, calls = make_manager([f1, f2], clock=clock, cfg=cfg)
     await m.start()
     await until(lambda: len(f1.subs) >= 1)
     f1.push(tick("Nifty 50", 22700.0, None))
     await until(lambda: m.state is StreamState.STREAMING)
     clock.advance(19)
+    await asyncio.sleep(0.1)
+    assert len(calls) == 1
+    clock.advance(2)
+    await until(lambda: len(f2.subs) >= 1)
+    assert len(calls) == 2 and any(e.code == "feed_silent" for e in m.errors)
+    await m.stop()
+
+
+async def test_a_session_whose_test_subscription_got_no_data_is_reconnected_after_10_s() -> None:
+    """27 Nov 2026 06:47 IST: no data after the test subscription, then a full minute of silence before the watchdog."""
+    clock = Clock()
+    f1, f2 = FakeFeed(), FakeFeed()
+    cfg = StreamConfig(test_timeout_s=0.05, silence_check_s=0.01)
+    assert cfg.silence_after_empty_test_s == 10.0
+    m, _, calls = make_manager([f1, f2], clock=clock, cfg=cfg)
+    await m.start()
+    await until(lambda: m.test_result == "no_data" and m.phase == "full_subscription")
+    await asyncio.sleep(0.1)  # the watchdog has started its clock
+    clock.advance(9)
     await asyncio.sleep(0.1)
     assert len(calls) == 1
     clock.advance(2)

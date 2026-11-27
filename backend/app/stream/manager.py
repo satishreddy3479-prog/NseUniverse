@@ -101,6 +101,10 @@ class StreamConfig:
     # broker-side silences that day each cost 50-90 s of the live overlay.
     silence_reconnect_s: float = 20.0
     silence_check_s: float = 5.0
+    # A session whose test subscription brought no data at all (06:47 IST on 27 Nov 2026: the broker
+    # acknowledged 203 tokens, answered nothing, and the session then sat silent for a minute before
+    # the watchdog acted) is already known to be bad: it gets this shorter limit.
+    silence_after_empty_test_s: float = 10.0
     # After the broker closes the connection the SDK reconnects by itself, usually with data
     # within 1-16 s (9 drops on 25 Nov 2026); twice it came back with nothing. Give it this
     # long, then reconnect and subscribe again ourselves.
@@ -495,6 +499,20 @@ class StreamManager:
                 if consumer.done():
                     consumer.result()
                 else:
+                    # The connection's state when it went quiet (a record for the next one).
+                    now, last, up = self._now(), self.last_message_at, self.connected_since
+                    log_event(
+                        logger,
+                        logging.WARNING,
+                        "feed_silent_diagnostics",
+                        test=self.test_result,
+                        subscribed=self.subscribed_tokens,
+                        acknowledged=feed.acknowledged_count,
+                        messages=self.message_count,
+                        quiet_s=None if last is None else round((now - last).total_seconds()),
+                        connected_s=None if up is None else round((now - up).total_seconds(), 1),
+                        drops=self.drops,
+                    )
                     raise FeedSilentError
             finally:
                 dog.cancel()
@@ -514,6 +532,8 @@ class StreamManager:
         limit = self.cfg.silence_reconnect_s
         if limit <= 0:
             await asyncio.Event().wait()
+        if self.test_result == "no_data" and self.cfg.silence_after_empty_test_s > 0:
+            limit = min(limit, self.cfg.silence_after_empty_test_s)
         began = self._now()
         while True:
             await asyncio.sleep(self.cfg.silence_check_s)
