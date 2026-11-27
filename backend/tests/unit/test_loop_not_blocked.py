@@ -221,9 +221,10 @@ def test_stopping_the_heavy_worker_drops_queued_jobs_and_a_new_worker_takes_over
 
     from app.stream import heavy
 
-    gate = threading.Event()
+    gate, started = threading.Event(), threading.Event()
     ran: list[str] = []
-    running = heavy.submit(lambda: (gate.wait(5), ran.append("running"))[1])
+    running = heavy.submit(lambda: (started.set(), gate.wait(5), ran.append("running"))[2])
+    assert started.wait(10)  # other tests may have queued work before it: wait until this job really runs
     queued = [heavy.submit(lambda: ran.append("queued")) for _ in range(3)]
     heavy.stop_heavy()
     assert all(f.cancelled() for f in queued)  # dropped, they never run
