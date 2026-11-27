@@ -1,0 +1,10 @@
+samples 640, sessions 15
+
+Persistence tests, all samples (rank correlations; overlapping windows, so read the sessions count too):
+  trendiness persists?  past efficiency ER vs next efficiency ER        rho -0.025
+  displacement persists? |past net move| vs |next net move|              rho +0.025
+  variance persists?     past realised variance vs next realised variance rho +0.589
+  does variance forecast displacement? past variance vs |next net move|  rho +0.100
+  direction persists?    the next 30 minutes move the same way as the last 30: 54.1% of samples (50% = no persistence)
+  after the most one-sided quarter (past ER in the top quarter): same direction 55.6%, mean next ER 0.177 vs all 0.187
+  by session: past-ER vs next-ER correlation is positive in 6 of 14 sessions (mean -0.067)

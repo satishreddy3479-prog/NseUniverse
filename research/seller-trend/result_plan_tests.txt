@@ -1,0 +1,88 @@
+PART A: 701 samples (a start every 5 minutes, forward window 30 minutes), 15 sessions
+Out-of-sample (leave one session out) forecast of log(realised variance over the next 30 minutes): R2 against the training mean, rank correlation, sessions where the model beats the mean
+  time of day only (seasonal)              R2 +0.004  rho -0.217  beats the mean in 10 of 14 sessions
+  session average so far                   R2 +0.342  rho +0.531  beats the mean in 12 of 14 sessions
+  last 30 minutes                          R2 +0.360  rho +0.538  beats the mean in 12 of 14 sessions
+  last 5 minutes                           R2 +0.159  rho +0.314  beats the mean in 10 of 14 sessions
+  last 30 + session so far                 R2 +0.402  rho +0.576  beats the mean in 13 of 14 sessions
+  last 5 + last 30 + session + seasonal    R2 +0.409  rho +0.594  beats the mean in 12 of 14 sessions
+
+
+PART B: does the forecast realised/implied variance ratio at t tell a seller when selling pays? (30-minute hold of the ATM straddle, fixed strike; percent of the premium, before costs)
+  all sessions: n=133  rank correlation of fc_ratio with the SELLER'S PNL +0.109;  with the realised ratio +0.763
+    forecast ratio low   n=  45  mean PNL  -1.94%  win  62%  realised/implied  0.18  forecast  0.15
+    middle               n=  44  mean PNL  +0.10%  win  57%  realised/implied  0.33  forecast  0.35
+    high                 n=  44  mean PNL  +0.90%  win  66%  realised/implied  0.54  forecast  0.54
+  non-expiry sessions: n=107  rank correlation of fc_ratio with the SELLER'S PNL +0.032;  with the realised ratio +0.573
+    forecast ratio low   n=  36  mean PNL  +0.90%  win  75%  realised/implied  0.31  forecast  0.28
+    middle               n=  35  mean PNL  -0.27%  win  49%  realised/implied  0.34  forecast  0.38
+    high                 n=  36  mean PNL  +1.27%  win  69%  realised/implied  0.57  forecast  0.58
+PART B2: the forecast against the GAMMA cost and against MOVE (gamma minus theta), the quantities a seller is exposed to
+  all sessions: n=133  rank correlation of the forecast variance with GAMMA -0.128, with MOVE -0.022, with VEGA -0.232
+    forecast variance low  n=  45  THETA  3.24%  GAMMA  2.67%  MOVE  -0.57%  VEGA  +1.02%  PNL  -0.38%
+    middle                 n=  44  THETA  2.68%  GAMMA  3.27%  MOVE  +0.59%  VEGA  +2.69%  PNL  -2.83%
+    high                   n=  44  THETA  1.90%  GAMMA  0.77%  MOVE  -1.13%  VEGA  -1.08%  PNL  +2.23%
+  non-expiry sessions: n=107  rank correlation of the forecast variance with GAMMA -0.091, with MOVE -0.033, with VEGA -0.211
+    forecast variance low  n=  36  THETA  0.32%  GAMMA  0.87%  MOVE  +0.55%  VEGA  -0.88%  PNL  +0.35%
+    middle                 n=  35  THETA  0.32%  GAMMA  0.58%  MOVE  +0.26%  VEGA  -0.26%  PNL  +0.02%
+    high                   n=  36  THETA  0.25%  GAMMA  0.46%  MOVE  +0.20%  VEGA  -1.73%  PNL  +1.53%
+
+PART C: management rules for a sold ATM straddle, entered at the time shown and closed at 15:10 (points of straddle premium; one lot = 65 units). Costs: 0.75 point per fill, 4 fills at entry and exit and 4 more per re-strike.
+
+  NON-EXPIRY sessions
+   entry 09:20 (12 sessions)
+     rule                         mean pts after cost  win %    worst     best re-strikes
+     hold (no management)            -25.2      -28.2     50   -215.0    +57.6        0.0
+     re-strike 100                    -2.0      -12.7     42   -104.3    +57.6        2.6
+     re-strike 150                    -1.7       -7.7     42    -88.8    +57.6        1.0
+     re-strike 200                    -7.4      -12.4     42   -115.8    +57.6        0.7
+     stop +30%                       -12.1      -15.1     50   -110.5    +57.6        0.0
+     stop +50%                       -24.3      -27.3     50   -204.5    +57.6        0.0
+     re-strike 150 + stop +50%        -1.7       -7.7     42    -88.8    +57.6        1.0
+   entry 10:30 (12 sessions)
+     rule                         mean pts after cost  win %    worst     best re-strikes
+     hold (no management)             -8.8      -11.8     50   -101.6    +54.7        0.0
+     re-strike 100                    -4.4      -12.4     42   -104.7    +25.9        1.7
+     re-strike 150                    -4.0       -8.8     42    -76.0    +54.7        0.6
+     re-strike 200                    -6.3      -10.5     50    -94.1    +54.7        0.4
+     stop +30%                        -8.8      -11.8     50   -101.6    +54.7        0.0
+     stop +50%                        -8.8      -11.8     50   -101.6    +54.7        0.0
+     re-strike 150 + stop +50%        -4.0       -8.8     42    -76.0    +54.7        0.6
+   entry 12:00 (12 sessions)
+     rule                         mean pts after cost  win %    worst     best re-strikes
+     hold (no management)            -11.9      -14.9     58   -166.9    +40.9        0.0
+     re-strike 100                    -5.9      -12.6     50    -93.4    +25.9        1.2
+     re-strike 150                    -9.4      -14.1     58   -110.4    +23.5        0.6
+     re-strike 200                   -10.0      -14.0     50   -115.3    +40.9        0.3
+     stop +30%                        -6.6       -9.6     58   -103.6    +40.9        0.0
+     stop +50%                       -12.0      -15.0     58   -167.7    +40.9        0.0
+     re-strike 150 + stop +50%        -9.4      -14.1     58   -110.4    +23.5        0.6
+
+  EXPIRY-DAY sessions
+   entry 09:20 (3 sessions)
+     rule                         mean pts after cost  win %    worst     best re-strikes
+     hold (no management)            -60.4      -63.4     67   -285.2    +62.0        0.0
+     re-strike 100                    -6.6      -18.6     67   -108.1    +29.1        3.0
+     re-strike 150                    +6.1       +0.1     67    -94.8    +62.0        1.0
+     re-strike 200                    -0.5       -5.5     67   -111.6    +62.0        0.7
+     stop +30%                       -10.8      -13.8     33    -61.9    +62.0        0.0
+     stop +50%                        -2.1       -5.1     67   -110.3    +62.0        0.0
+     re-strike 150 + stop +50%        +6.1       +0.1     67    -94.8    +62.0        1.0
+   entry 10:30 (3 sessions)
+     rule                         mean pts after cost  win %    worst     best re-strikes
+     hold (no management)             +2.8       -0.2     67    -56.6    +50.5        0.0
+     re-strike 100                   +18.3      +11.3     67    -33.2    +50.5        1.3
+     re-strike 150                   +21.3      +17.3     67     -3.9    +50.5        0.3
+     re-strike 200                   +10.2       +6.2     67    -37.5    +50.5        0.3
+     stop +30%                       -16.7      -19.7     33    -60.2    +50.5        0.0
+     stop +50%                        +2.8       -0.2     67    -56.6    +50.5        0.0
+     re-strike 150 + stop +50%       +21.3      +17.3     67     -3.9    +50.5        0.3
+   entry 12:00 (3 sessions)
+     rule                         mean pts after cost  win %    worst     best re-strikes
+     hold (no management)            +18.5      +15.5     67     -1.8    +33.0        0.0
+     re-strike 100                   +16.6      +11.6     67    -12.4    +33.0        0.7
+     re-strike 150                   +18.5      +15.5     67     -1.8    +33.0        0.0
+     re-strike 200                   +18.5      +15.5     67     -1.8    +33.0        0.0
+     stop +30%                        +2.0       -1.0     33    -34.2    +33.0        0.0
+     stop +50%                        -4.3       -7.3     33    -53.0    +33.0        0.0
+     re-strike 150 + stop +50%        -4.3       -7.3     33    -53.0    +33.0        0.0
